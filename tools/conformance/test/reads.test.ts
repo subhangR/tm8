@@ -47,7 +47,12 @@ describe('entity detail (Z3/Z4 shape)', () => {
       expect(t101.state.assignees.map((a) => a.id)).toContain(w.forge);
       expect(t101.state.acceptance.total).toBe(2);
     }
-    expect(t101.counters.points).toBe(5);
+    // Deliberately NOT points: `grant_points` (007:1577) refuses anything that
+    // is not a member or team_member — points are earned by someone, and a
+    // task cannot earn anything. This asserted 5 points on a TASK, which the
+    // schema forbids, so it could never pass. The world builder grants them to
+    // the persona, and that is where the assertion belongs.
+    expect(t101.counters.points).toBe(0);
     expect(t101.counters.messages).toBe(1);
   });
 
