@@ -34,6 +34,11 @@
 
 - **AM-4 (2026-07-25, user directive): security work DEFERRED past G1A; speed to the working loop is the only priority.** v1-now security = bind 127.0.0.1, nothing else. Lynx's security suite cancelled for now; Altair's middleware trimmed to loopback bind + one seam file (Host/Origin/CSRF/CORS slot in post-G1A). 10-SECURITY-MODEL.md remains the post-G1A hardening spec — G1A's acceptance no longer includes its §10 checklist. DB-level items already in flight (RLS, F1/F2 RPC guards) stay — they are correctness, not ceremony, and cost nothing extra.
 - **Model policy (user directive 2026-07-25): all spawned sessions run Opus 5 only** (`--model opus-5` on spawn). Vega (this session) stays as-is.
+- **AM-5 (2026-07-25, user directive): Phase 1 = the G1A loop, nothing more.** After the current contract freeze, ALL remaining scope moves to post-Phase-1: former 1B platform completeness (channels/inbox/collections polish, custom kinds runtime UX, points/awards surfaces, full 73-op conformance green, golden workflows, Postgres FTS search, old-maestro import), security hardening (AM-4), and any further waves. Phase 1 DONE = in the browser on the snapshotted UI: open space → see tasks → run task → execution.spawn → manifest-booted agent in a live server-PTY terminal → progress in thread → complete + transcript. On G1A pass: Vega reports Phase 1 complete and STOPS — no new work without user direction. In-flight W1b/W2-prep/PTY-lift lanes are all loop-critical and continue; anything a worker surfaces that is not loop-critical gets parked in STATE.md under 'Post-Phase-1 backlog', not built.
+
+## Post-Phase-1 backlog (parked, do not build)
+
+- (accumulates here as workers surface non-loop items)
 
 ## Wave status
 
