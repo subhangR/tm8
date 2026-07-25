@@ -924,8 +924,61 @@ export const KIND_ORDER: EntityKind[] = [
   'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
 ];
 
-export function registryFor(kind: EntityKind): KindEntry {
-  return KIND_REGISTRY[kind];
+/**
+ * The entry every UNKNOWN kind resolves to.
+ *
+ * `registryFor` used to be a bare index typed `=> KindEntry` that actually
+ * returned `undefined` for anything not in `KIND_REGISTRY`, and ~20 call sites
+ * dereference the result immediately (`.tint`, `.glyph`, `.status.current`).
+ * So a single unrecognised kind did not degrade — it threw during render and,
+ * with no error boundary in the package, took the whole app to a white screen.
+ *
+ * That is not a hypothetical: the contract explicitly supports `c:*` CUSTOM
+ * kinds, which are unknown to this registry BY DESIGN and can be created at
+ * runtime. It also bit us with the core kinds tm8 added after the snapshot
+ * (`work_session`, `collection`) — patched from outside by mutating the
+ * registry at boot, which works but only for kinds we can enumerate ahead of
+ * time. Custom kinds can never be enumerated ahead of time.
+ *
+ * So: an unknown kind now renders as a plain, honest card. Universal fields
+ * only (title, kind name, scalar content), no status, no actions, no creation
+ * — because we genuinely do not know anything kind-specific about it. A
+ * registered entry is still strictly better; this is the floor, not a target.
+ */
+export function fallbackKindEntry(kind: string): KindEntry {
+  const label = kind.startsWith('c:') ? kind.slice(2) : kind;
+  return {
+    kind: kind as EntityKind,
+    label,
+    labelPlural: `${label}s`,
+    glyph: '◆',
+    tint: () => 'var(--pn-ink-3)',
+    chipLabel: (s) => s.title,
+    chipMeta: () => null,
+    chipPulse: () => false,
+    SummaryFields: () => null,
+    Content: ({ detail }) => <ContentRecord detail={detail} />,
+    fullLayout: 'generic',
+    status: { current: () => null },
+    patchTitle: null,
+    primaryActions: () => [],
+    creation: null,
+    creationDisabledReason: `"${label}" is not a kind this build knows how to create.`,
+    capabilities: { workStatusBearing: false, treeReparentable: false, markReadAnchor: false, actor: null },
+    createVia: null,
+    paletteCreate: null,
+    collectionEmptyHint: null,
+  };
+}
+
+/**
+ * Resolve a kind's registry entry. Takes `string`, not `EntityKind`, on
+ * purpose: the compile-time union cannot describe `c:*` custom kinds, and
+ * narrowing the parameter would only move the lie from runtime to the type
+ * system. Never returns undefined.
+ */
+export function registryFor(kind: EntityKind | string): KindEntry {
+  return KIND_REGISTRY[kind as EntityKind] ?? fallbackKindEntry(kind);
 }
 
 /** `registryFor(kind).capabilities[flag]`, as a one-call lookup. */

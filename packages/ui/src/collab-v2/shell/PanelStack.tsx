@@ -12,7 +12,7 @@
  * `renderPanel` slot (`PanelSlotProps`), which W1a's EntityPanel plugs into.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { IconBtn } from '../kit';
+import { ErrorBoundary, IconBtn } from '../kit';
 import { MAX_PINNED, useNavStore, type PanelRef, type PanelTab } from '../stores/nav';
 import { useGraphStore } from '../stores/graph';
 import type { CollabFacade } from '../facade/CollabFacade';
@@ -193,9 +193,17 @@ function PanelFrame({
         </header>
       )}
       <div className="cv2-panel__body">
-        {renderPanel
-          ? renderPanel(slotProps)
-          : <PlaceholderPanelBody facade={facade} entityId={entityId} onOpenEntity={onOpenEntity} />}
+        {/*
+          Panel bodies render arbitrary kinds through the registry, so an
+          unexpected shape throws HERE first. Bounding each panel keeps the
+          crash inside its own frame — the chrome above stays usable, so the
+          user can still close or pop it instead of losing the workspace.
+        */}
+        <ErrorBoundary label="This panel" resetKey={entityId}>
+          {renderPanel
+            ? renderPanel(slotProps)
+            : <PlaceholderPanelBody facade={facade} entityId={entityId} onOpenEntity={onOpenEntity} />}
+        </ErrorBoundary>
       </div>
     </section>
   );

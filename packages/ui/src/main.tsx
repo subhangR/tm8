@@ -18,9 +18,18 @@ import { CollabV2App } from './collab-v2/CollabV2App';
 import type { SpaceSummary } from './collab-v2/types/contract';
 import { ModeBanner } from './real/ModeBanner';
 import { createRealFacade, type RealFacade } from './real/RealFacade';
+import { SessionsScreen } from './real/sessions/SessionsScreen';
 import { SpacePicker } from './real/SpacePicker';
 import { SpawnDialog } from './real/SpawnDialog';
 import { installTm8Kinds } from './real/tm8Kinds';
+
+/**
+ * Screens the tm8 node supplies to the module's shell. Sessions is here rather
+ * than inside collab-v2 because it mounts a live PTY terminal over a tm8
+ * WebSocket and reads the `work_session` kind — both tm8-specific, and the
+ * module is backend-agnostic by law. See CollabV2App's `extraViews`.
+ */
+const TM8_VIEWS = { sessions: SessionsScreen };
 
 // Must run before the first render: the shell resolves kinds through
 // registryFor(), which has no fallback, so a work_session reaching a chip
@@ -85,6 +94,7 @@ function RealApp({ facade }: { facade: RealFacade }) {
         facade={facade}
         spaceId={spaceId}
         banner={banner}
+        extraViews={TM8_VIEWS}
       />
       <SpawnDialog facade={facade} />
     </>

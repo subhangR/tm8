@@ -6,8 +6,19 @@
  *
  * Hash grammar:
  *   #/s/{spaceId}/{view}                         a primary view
- *   #/s/{spaceId}/e/{entityId}                   an entity Z4 route
+ *   #/s/{spaceId}/{view}/{entityId}              a view focused on one entity
+ *   #/s/{spaceId}/e/{entityId}                   the generic entity Z4 route
  *   ...?p=id1.id2&pin=id3&t=id2:connections      stack, pins, active tabs
+ *
+ * The `{view}/{entityId}` form exists because some views are entity-focused but
+ * are NOT the generic Z4 route: `channel` (the hub) and `sessions` (a
+ * work_session and its live terminal). Before it existed, both serialized to
+ * `/e/{id}`, which `hydrateFromHash` could only read back as `entity` — so a
+ * channel deep link, a reload, or back/forward silently landed on the generic
+ * entity route instead of the hub, and the rail lost its active row.
+ *
+ * The invariant to preserve: **whatever `toHash` writes, `hydrateFromHash`
+ * reads back as the same view.** There is a round-trip test over every view.
  */
 import { create } from 'zustand';
 import type { EntityId, SpaceId } from '../types/contract';
@@ -19,9 +30,16 @@ export const MAX_PINNED = 3; // 2–3 persistent splits, per the UX brief
 
 export const VIEWS = [
   'home', 'tasks', 'docs', 'team', 'tracking', 'graph', 'leaderboard',
-  'inbox', 'settings', 'channel', 'entity',
+  'inbox', 'settings', 'sessions', 'channel', 'entity',
 ] as const;
 export type ViewName = typeof VIEWS[number];
+
+/**
+ * Views that focus a single entity without being the generic Z4 route. These
+ * serialize as `{view}/{entityId}` so they survive a reload; `entity` keeps its
+ * own `/e/{id}` spelling for backwards compatibility with existing links.
+ */
+const ENTITY_FOCUSED_VIEWS: ReadonlySet<string> = new Set(['channel', 'sessions']);
 
 export interface NavState {
   spaceId: SpaceId | null;
@@ -128,9 +146,18 @@ export const useNavStore = create<NavState>()((set, get) => ({
   toHash: () => {
     const s = get();
     if (!s.spaceId) return '#/';
-    const base = s.view === 'entity' || s.view === 'channel'
-      ? `#/s/${enc(s.spaceId)}/e/${enc(s.entityId ?? '')}`
-      : `#/s/${enc(s.spaceId)}/${s.view}`;
+    const space = enc(s.spaceId);
+    // An entity-focused view without an entity is a real state (the sessions
+    // LIST, before one is selected), so it must serialize as the bare view
+    // rather than a trailing empty segment — `/sessions/` would read back as a
+    // focused view on the id "".
+    const base = s.entityId
+      ? (s.view === 'entity'
+          ? `#/s/${space}/e/${enc(s.entityId)}`
+          : ENTITY_FOCUSED_VIEWS.has(s.view)
+            ? `#/s/${space}/${s.view}/${enc(s.entityId)}`
+            : `#/s/${space}/${s.view}`)
+      : `#/s/${space}/${s.view === 'entity' ? 'home' : s.view}`;
     const params = new URLSearchParams();
     if (s.stack.length > 0) params.set('p', serializeRefs(s.stack));
     if (s.pinned.length > 0) params.set('pin', serializeRefs(s.pinned));
@@ -153,6 +180,10 @@ export const useNavStore = create<NavState>()((set, get) => ({
       entityId = dec(segs[3]);
     } else if (segs[2] && (VIEWS as readonly string[]).includes(segs[2])) {
       view = segs[2] as ViewName;
+      // `{view}/{entityId}` — only honoured for the views that actually focus an
+      // entity, so a stray trailing segment on e.g. /tasks is ignored rather
+      // than silently putting the view into a focused state it cannot render.
+      if (segs[3] && ENTITY_FOCUSED_VIEWS.has(view)) entityId = dec(segs[3]);
     }
     const params = new URLSearchParams(queryPart ?? '');
     const tabMap = new Map<string, PanelTab>();

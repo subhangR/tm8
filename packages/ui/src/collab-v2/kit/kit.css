@@ -117,3 +117,46 @@
   from { opacity: 0; transform: translateY(3px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* --- ErrorBoundary (a crashed surface, captioned instead of blank) ---------------- */
+.cv2-errorboundary {
+  margin: var(--pn-space-4);
+  padding: var(--pn-space-4);
+  border: 1px solid var(--pn-block);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-block-soft);
+  max-width: 46rem;
+}
+.cv2-errorboundary__title {
+  font-weight: 600;
+  color: var(--pn-block);
+  margin-bottom: var(--pn-space-2);
+}
+.cv2-errorboundary__body {
+  margin: 0 0 var(--pn-space-3);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+}
+.cv2-errorboundary__detail {
+  margin: 0 0 var(--pn-space-3);
+  padding: var(--pn-space-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+.cv2-errorboundary__retry {
+  padding: 5px 12px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cv2-errorboundary__retry:hover { background: var(--pn-hover); }
+.cv2-errorboundary__retry:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }

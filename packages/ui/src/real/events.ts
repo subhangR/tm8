@@ -38,7 +38,28 @@ type Tm8Event = {
 
 interface PollPage {
   items?: Tm8Event[];
+  /** A seq rendered decimal. The server sends it as a STRING; see `toCursor`. */
   nextCursor?: number | string | null;
+}
+
+/**
+ * `nextCursor` → a usable `since`, or null when there is none.
+ *
+ * The server sends this as a STRING (server/src/events/poll.ts) — it is a seq
+ * rendered decimal, not a DEV-5 keyset token. A `typeof next === 'number'` test
+ * therefore never matched and the server's cursor was discarded on EVERY poll,
+ * which the `highWater` fallback hid in the common case.
+ *
+ * Coercion is explicit rather than a bare `Number()` because `Number('')`,
+ * `Number(null)` and `Number([])` are all 0, and a cursor that quietly became 0
+ * would replay the entire event log from the beginning. Anything that is not a
+ * finite number is treated as "no cursor" so the caller falls back instead.
+ */
+function toCursor(raw: unknown): number | null {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw !== 'string' || raw.trim() === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -132,8 +153,19 @@ export class EventPoller {
         }
       }
 
-      const next = page?.nextCursor;
-      this.since = typeof next === 'number' ? next : Math.max(highWater, this.since);
+      // The server's cursor wins when there is one, because it advances past
+      // rows the server EXAMINED but did not return (filtered, skipped, or
+      // non-durable) and `highWater` cannot see those — it only knows the seqs
+      // that arrived. That gap is the wedge: on a page whose rows are all
+      // filtered out, highWater stays equal to `this.since`, the next poll asks
+      // the same question, and the stream never moves again. Preferring the
+      // server's cursor is precisely what that cursor exists for.
+      //
+      // `Math.max` guards monotonicity. The cursor is a high-water mark, so it
+      // must never rewind — a backwards cursor would re-deliver events the
+      // listeners have already handled.
+      const next = toCursor(page?.nextCursor);
+      this.since = Math.max(next ?? highWater, this.since);
     } catch (err) {
       // A failed poll is not fatal: the client has already flipped the
       // connection flag, the banner reflects it, and the next tick retries

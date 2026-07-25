@@ -1,0 +1,135 @@
+/*
+ * Sessions surface. Uses the module's `--pn-*` tokens so it themes with
+ * everything else (including dark mode) rather than hardcoding a palette —
+ * this screen is supplied from the integration layer, but it must not LOOK
+ * like it came from somewhere else.
+ */
+
+.tm8-sess {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: var(--pn-space-6);
+  gap: var(--pn-space-4);
+  overflow-y: auto;
+}
+
+.tm8-sess__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-4);
+  flex: 0 0 auto;
+}
+.tm8-sess__h1 {
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h1);
+  line-height: var(--pn-lh-tight);
+  margin: 0 0 var(--pn-space-2);
+}
+.tm8-sess__blurb {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  max-width: 52ch;
+}
+.tm8-sess__spacer { flex: 1; }
+
+.tm8-sess__btn {
+  padding: 5px 12px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.tm8-sess__btn:hover:not(:disabled) { background: var(--pn-hover); }
+.tm8-sess__btn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tm8-sess__btn:disabled { opacity: 0.45; cursor: default; }
+
+.tm8-sess__group { display: flex; flex-direction: column; gap: var(--pn-space-1); }
+.tm8-sess__group .cv2-eyebrow { margin-bottom: var(--pn-space-2); }
+
+.tm8-sess__error {
+  margin: 0;
+  padding: var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft);
+  border: 1px solid var(--pn-block);
+  color: var(--pn-block);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  white-space: pre-wrap;
+}
+
+/* --- a session row -------------------------------------------------------- */
+
+.tm8-sessrow {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  width: 100%;
+  padding: var(--pn-space-3);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.tm8-sessrow:hover { background: var(--pn-hover); border-color: var(--pn-line-2); }
+.tm8-sessrow:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tm8-sessrow[data-active="true"] { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+
+.tm8-sessrow__title {
+  font-weight: 500;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tm8-sessrow__meta,
+.tm8-sessrow__time {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  flex: 0 0 auto;
+}
+
+/* --- the open session ----------------------------------------------------- */
+
+/*
+ * A column that lets the terminal have the leftover height. `min-height: 0` is
+ * load-bearing on both this and the terminal's own wrapper: without it a flex
+ * child refuses to shrink below its content, and xterm — which scrolls
+ * internally — pushes the controls off-screen instead.
+ */
+.tm8-sessdetail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: var(--pn-space-3);
+}
+.tm8-sessdetail__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+.tm8-sessdetail__title {
+  font-weight: 500;
+  font-size: var(--pn-fs-title);
+}
+.tm8-sessdetail__id {
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}

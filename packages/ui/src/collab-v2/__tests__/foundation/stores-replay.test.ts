@@ -10,6 +10,7 @@ import {
   selectUnreadNotificationCount, useCollectionsStore, useGraphStore,
   useNavStore, usePresenceStore,
 } from '../../stores';
+import { VIEWS } from '../../stores/nav';
 import type { EntitySummary, WorkspaceEvent } from '../../types/contract';
 import { createRig } from './helpers';
 
@@ -147,6 +148,54 @@ describe('nav store — panel stack + hash URL', () => {
     useNavStore.getState().hydrateFromHash(hash);
     expect(useNavStore.getState().view).toBe('entity');
     expect(useNavStore.getState().entityId).toBe('ent_doc');
+  });
+
+  /**
+   * The generalized version of the bug that shipped: `channel` serialized as
+   * `/e/{id}` and read back as `entity`, so the URL silently changed the view.
+   * Asserting one view at a time is what let it hide — this asserts EVERY view
+   * round-trips, so a new entity-focused view cannot reintroduce the asymmetry.
+   */
+  it('every view round-trips through the hash unchanged', () => {
+    for (const view of VIEWS) {
+      // `entity` and the entity-focused views are meaningless without a target;
+      // the rest are bare.
+      const entityId = view === 'entity' || view === 'channel' || view === 'sessions'
+        ? `ent_for_${view}`
+        : null;
+
+      useNavStore.getState().reset();
+      const nav = useNavStore.getState();
+      nav.setSpace('spc');
+      nav.setView(view, entityId);
+      const hash = useNavStore.getState().toHash();
+
+      useNavStore.getState().reset();
+      useNavStore.getState().hydrateFromHash(hash);
+      const s = useNavStore.getState();
+      expect(`${view}:${s.view}`).toBe(`${view}:${view}`);
+      expect(`${view}:${s.entityId ?? ''}`).toBe(`${view}:${entityId ?? ''}`);
+    }
+  });
+
+  it('ignores a stray trailing segment on a view that focuses nothing', () => {
+    useNavStore.getState().reset();
+    useNavStore.getState().hydrateFromHash('#/s/spc/tasks/ent_stray');
+    expect(useNavStore.getState().view).toBe('tasks');
+    expect(useNavStore.getState().entityId).toBeNull();
+  });
+
+  it('never emits a trailing empty id for an entity-focused view with no entity', () => {
+    const nav = useNavStore.getState();
+    nav.setSpace('spc');
+    nav.setView('sessions', null);
+    const hash = useNavStore.getState().toHash();
+    expect(hash).toBe('#/s/spc/sessions');
+
+    useNavStore.getState().reset();
+    useNavStore.getState().hydrateFromHash(hash);
+    expect(useNavStore.getState().view).toBe('sessions');
+    expect(useNavStore.getState().entityId).toBeNull();
   });
 
   it('stacks, pops, re-stacks without duplicates, promotes, caps pins at 3', () => {

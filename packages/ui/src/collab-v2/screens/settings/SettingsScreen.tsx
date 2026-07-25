@@ -19,7 +19,12 @@ export function SettingsScreen({ facade, spaceId, onOpenEntity }: ShellViewProps
     [facade, spaceId],
   );
 
-  if (!settings) {
+  // `settings.space` absent is treated exactly like `settings` absent. This
+  // screen once white-screened the whole app because an adapter returned a
+  // different shape and every section dereferenced it unguarded; the shape is
+  // fixed at the source now, but a read this screen cannot render should cost
+  // the user this screen at worst, never the workspace.
+  if (!settings?.space) {
     return (
       <div className="cv2-set cv2-set--loading" data-testid="view-settings">
         <EntityPanelSkeleton />
@@ -27,15 +32,23 @@ export function SettingsScreen({ facade, spaceId, onOpenEntity }: ShellViewProps
     );
   }
 
+  const gaps = settings.unavailable ?? {};
+
   return (
     <div className="cv2-set" data-testid="view-settings">
       <SpaceProfileSection space={settings.space} />
-      <MembersSection spaceId={spaceId} members={settings.members} onOpenEntity={onOpenEntity} />
-      <InvitesSection invites={settings.invites} />
+      <MembersSection
+        spaceId={spaceId}
+        members={settings.members ?? []}
+        unavailable={gaps.members}
+        onOpenEntity={onOpenEntity}
+      />
+      <InvitesSection invites={settings.invites ?? []} unavailable={gaps.invites} />
       <TaskAxesSection
         facade={facade}
         spaceId={spaceId}
-        axes={settings.taskAxes}
+        axes={settings.taskAxes ?? []}
+        unavailable={gaps.taskAxes}
         onChanged={reload}
       />
     </div>

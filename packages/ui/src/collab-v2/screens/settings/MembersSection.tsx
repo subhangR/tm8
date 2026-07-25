@@ -14,10 +14,17 @@ import type { CollectionQuery, EntityId, SpaceId, SpaceSettings } from '../../ty
 export interface MembersSectionProps {
   spaceId: SpaceId;
   members: SpaceSettings['members'];
+  /**
+   * The node cannot serve the roster projection. The member LIST below still
+   * works (it is a collection query over member entities); only the role tally
+   * is unknown — so it is omitted rather than rendered as an empty tally, which
+   * would read as "this space has no owner".
+   */
+  unavailable?: boolean;
   onOpenEntity: (id: EntityId) => void;
 }
 
-export function MembersSection({ spaceId, members, onOpenEntity }: MembersSectionProps) {
+export function MembersSection({ spaceId, members, unavailable = false, onOpenEntity }: MembersSectionProps) {
   const query: CollectionQuery = { spaceId, kinds: ['member'], sort: 'createdAt_desc' };
 
   const byRole = new Map<string, number>();
@@ -28,11 +35,13 @@ export function MembersSection({ spaceId, members, onOpenEntity }: MembersSectio
       <header className="cv2-set__sectionhead">
         <h2 className="cv2-set__h2">Members</h2>
         <div className="cv2-set__tally" data-testid="settings-role-tally">
-          {[...byRole.entries()].map(([role, count]) => (
-            <Pill key={role} tone={role === 'owner' ? 'brand' : 'neutral'} dot={false}>
-              {count} {role}
-            </Pill>
-          ))}
+          {unavailable
+            ? <span className="cv2-set__note">roles not available on this node</span>
+            : [...byRole.entries()].map(([role, count]) => (
+              <Pill key={role} tone={role === 'owner' ? 'brand' : 'neutral'} dot={false}>
+                {count} {role}
+              </Pill>
+            ))}
         </div>
       </header>
       <div data-testid="settings-members">

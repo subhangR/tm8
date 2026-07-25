@@ -16,15 +16,24 @@ import { Icon, type IconName } from './icons';
 import type { RailSection } from './types';
 import { useSectionCounts, useSpaceNavigation, useSpaces } from './useShellData';
 
-/** The seven primary sections, in brief order. */
+/**
+ * The primary sections, in brief order.
+ *
+ * `sessions` and `settings` were both routable and BOTH missing from this list,
+ * so the only way to reach either was to type the URL — which for sessions meant
+ * a running agent had no entry point at all. Sessions sits with the work it
+ * describes; Settings goes last, where a settings entry belongs.
+ */
 export const RAIL_SECTIONS: Array<{ view: ViewName; label: string; icon: IconName }> = [
   { view: 'home', label: 'Home', icon: 'home' },
   { view: 'tasks', label: 'Tasks', icon: 'list-checks' },
+  { view: 'sessions', label: 'Sessions', icon: 'terminal' },
   { view: 'docs', label: 'Docs', icon: 'file-text' },
   { view: 'team', label: 'Team', icon: 'users' },
   { view: 'tracking', label: 'Tracking', icon: 'git-pull-request' },
   { view: 'graph', label: 'Graph', icon: 'share-2' },
   { view: 'leaderboard', label: 'Leaderboard', icon: 'trophy' },
+  { view: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
 function ChannelRow({

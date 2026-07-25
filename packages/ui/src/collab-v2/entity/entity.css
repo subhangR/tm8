@@ -164,6 +164,33 @@
   font-family: var(--pn-ui);
 }
 
+/*
+ * ⚠ CLASS-NAME COLLISION, contained here.
+ *
+ * `shell/shell.css` ALSO defines `.cv2-panel` — for the shell's panel FRAME,
+ * with `width: 440px; flex: none`. This file defines it for the EntityPanel.
+ * Two different components, one class name, two stylesheets.
+ *
+ * When the shell hosts an EntityPanel (the normal case) they nest, and the
+ * inner one re-asserted a fixed width inside a parent that already has 16px of
+ * body padding — so the panel overflowed the viewport by exactly that padding
+ * (measured: 1176 → 1616 in a 1600px viewport) and drew a second border,
+ * radius and shadow inside the first.
+ *
+ * The real fix is to rename one of them, which touches both subsystems and
+ * their tests. This makes the nested case correct: fill the frame, and let the
+ * frame own the chrome. Renaming stays on the list.
+ */
+.cv2-panel .cv2-panel,
+.cv2-panel__body > .cv2-panel {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .cv2-panel__header { padding: 10px 14px; border-bottom: 1px solid var(--pn-line); }
 .cv2-panel__crumbs {
   display: flex;

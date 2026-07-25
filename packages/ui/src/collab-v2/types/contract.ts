@@ -486,6 +486,14 @@ export interface SpaceSettings {
   members: Array<{ actor: ActorSummary; role: 'owner'|'admin'|'member'; joinedAt: string }>;
   invites: Array<{ id: string; code: string; maxUses: number; uses: number; expiresAt: string | null; revoked: boolean }>;
   taskAxes: TaskAxis[];
+  /**
+   * Sections the backing node cannot serve AT ALL, as opposed to sections that
+   * are genuinely empty. An adapter over a partial backend sets these so the UI
+   * can say "not available on this node" instead of "none yet" — two very
+   * different facts that an empty array alone cannot tell apart. Absent means
+   * everything the read returned is the whole truth.
+   */
+  unavailable?: { members?: boolean; invites?: boolean; taskAxes?: boolean };
 }
 
 /** POST /v2/saved-views */

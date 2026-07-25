@@ -270,13 +270,28 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
    * No settings route. Echo the space's own identity from `spaces.get` and
    * leave everything else at its neutral default — every field here is either
    * server-sourced or an explicit blank, never a guess at what a user configured.
+   *
+   * This used to return `{spaceId, name, description, githubRepo, axes, members}`
+   * cast `as unknown as SpaceSettings` — a DIFFERENT SHAPE: no `space`, no
+   * `invites`, and `axes` where `taskAxes` belongs. The double cast is precisely
+   * what let it compile; the screen then read `settings.space.name` off
+   * `undefined` and threw, white-screening the entire app because nothing in the
+   * package caught it. Returning the real shape with NO cast makes the compiler
+   * enforce this from here on — that is the actual fix, the screen's guards are
+   * only the second line of defence.
+   *
+   * `unavailable` marks what this node cannot serve, so the screen can say
+   * "not available on this node" rather than the indistinguishable "none yet".
    */
   async getSettings(spaceId: SpaceId): Promise<SpaceSettings> {
     const space = await this.client.get<SpaceSummary>(`/v2/spaces/${spaceId}`);
     return {
-      spaceId, name: space.name, description: space.description ?? '',
-      githubRepo: space.githubRepo ?? null, axes: [], members: [],
-    } as unknown as SpaceSettings;
+      space,
+      members: [],
+      invites: [],
+      taskAxes: [],
+      unavailable: { members: true, invites: true, taskAxes: true },
+    };
   }
 
   /** DEV-13 defers search even in the contract; tm8 has no route either. */
@@ -343,6 +358,24 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
     return unwrapCommand(await this.client.post(`/v2/entities/${id}/commands/work`, input));
   }
 
+  /**
+   * The award ledger's manual entry point, and the one place this facade was
+   * more pessimistic than the node it talks to: `entities.points.add` IS built
+   * (POST /v2/entities/:id/points), so refusing it disabled two real
+   * affordances — the per-entity points control and the panel's points action —
+   * against a server that would have honoured them.
+   *
+   * `input` goes over whole, as every other command here does: GrantPointsInput
+   * is exactly the server's body (`amount`, `reason`, `referenceId`) plus the
+   * CommandContext envelope (`actorId`, `clientMutationId`) the handler reads
+   * off the same object. The grant is idempotent on `clientMutationId`
+   * server-side, so a double-press pays once — verified by live call, not by
+   * reading the handler.
+   */
+  async grantPoints(id: EntityId, input: GrantPointsInput): Promise<CommandResult> {
+    return unwrapCommand(await this.client.post(`/v2/entities/${id}/points`, input));
+  }
+
   // --- unbuilt writes: loud refusals, never silent no-ops ------------------
 
   moveEntity(_id: EntityId, _i: MoveEntityInput): Promise<CommandResult> { return notImplemented('moveEntity'); }
@@ -354,7 +387,6 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
   patchMessage(_id: EntityId, _i: PatchMessageInput): Promise<CommandResult> { return notImplemented('patchMessage'); }
   deleteMessage(_id: EntityId, _c?: CommandContext): Promise<CommandResult> { return notImplemented('deleteMessage'); }
   setReaction(_id: EntityId, _i: ReactionInput): Promise<CommandResult> { return notImplemented('setReaction'); }
-  grantPoints(_id: EntityId, _i: GrantPointsInput): Promise<CommandResult> { return notImplemented('grantPoints'); }
   pullEntity(_id: EntityId, _i: PullInput): Promise<CommandResult> { return notImplemented('pullEntity'); }
   linkPr(_id: EntityId, _i: LinkPrInput): Promise<CommandResult> { return notImplemented('linkPr'); }
   trackingRefresh(_i: TrackingRefreshInput): Promise<CommandResult> { return notImplemented('trackingRefresh'); }
@@ -425,6 +457,22 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
    * is one the operator just asked for by name and working directory — that is
    * the explicit yes `execution.spawn` demands. Projects arriving by any other
    * path keep the server's 'untrusted' default.
+   *
+   * ⚠ KNOWN GAP — DELIBERATELY DEFERRED TO WAVE 3 (projects + trust).
+   * The contract's default is `untrusted`, and this INVERTS it. The argument
+   * above is real but it is not the same thing as informed consent:
+   * `10-SECURITY-MODEL.md` S12 requires an explicit `confirmUntrusted` step,
+   * and that field does not exist in the frozen contract at all — so there is
+   * currently no conformant way to express the consent this default assumes.
+   *
+   * It is NOT flipped here on purpose. There is no projects-management UI yet
+   * (Wave 3), so this call is the only way a project enters the system from the
+   * app; defaulting it to `untrusted` today would make every newly created
+   * project un-spawnable with no surface to change it — trading a modelling
+   * flaw for a dead product.
+   *
+   * Fix as ONE piece of work: the projects UI + a trust control + the
+   * `confirmUntrusted` contract amendment. Do not flip this default alone.
    */
   createProject(input: { name: string; workingDir: string; trust?: 'trusted' | 'untrusted' }): Promise<Tm8Project> {
     return this.client.post<Tm8Project>('/v2/projects', { trust: 'trusted', ...input });

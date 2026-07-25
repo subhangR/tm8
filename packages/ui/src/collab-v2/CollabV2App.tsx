@@ -128,9 +128,25 @@ export interface CollabV2AppProps {
   spaceId?: SpaceId;
   /** Rendered above the shell — the real/mock mode banner. */
   banner?: ReactNode;
+  /**
+   * tm8 TOUCH #2: screens supplied by the INTEGRATION LAYER, merged over the
+   * module's own registry.
+   *
+   * The module is backend-agnostic and never imports `real/`, but some surfaces
+   * are irreducibly node-specific: the Sessions view hosts a live PTY terminal
+   * over a tm8 WebSocket and reads a `work_session`, a kind this module's
+   * `EntityKind` union does not even contain. Injecting them keeps that code on
+   * the tm8 side of the seam instead of forking the shell wiring, and mirrors
+   * how `installTm8Kinds()` already adds kinds from outside.
+   *
+   * Merged LAST, so the integration layer may also override a module screen.
+   */
+  extraViews?: ViewRegistry;
 }
 
-export function CollabV2App({ facade: injected, spaceId: injectedSpaceId, banner }: CollabV2AppProps = {}) {
+export function CollabV2App({
+  facade: injected, spaceId: injectedSpaceId, banner, extraViews,
+}: CollabV2AppProps = {}) {
   // The mock world is only constructed when no facade is injected — building a
   // seeded world behind a live server would waste the work and, worse, leave
   // fabricated entities one mistaken reference away from the screen.
@@ -167,7 +183,7 @@ export function CollabV2App({ facade: injected, spaceId: injectedSpaceId, banner
             <ShellLayout
               facade={facade}
               spaceId={spaceId}
-              views={VIEWS}
+              views={extraViews ? { ...VIEWS, ...extraViews } : VIEWS}
               palette={<CommandPalette />}
               renderPanel={(p) => <PanelBody {...p} />}
             />

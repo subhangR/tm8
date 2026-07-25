@@ -35,11 +35,13 @@ export interface TaskAxesSectionProps {
   facade: CollabFacade;
   spaceId: SpaceId;
   axes: TaskAxis[];
+  /** The node cannot serve axes at all — distinct from "none defined yet". */
+  unavailable?: boolean;
   /** Re-read the axes after a write (the settings screen owns the read). */
   onChanged: () => void;
 }
 
-export function TaskAxesSection({ facade, spaceId, axes, onChanged }: TaskAxesSectionProps) {
+export function TaskAxesSection({ facade, spaceId, axes, unavailable = false, onChanged }: TaskAxesSectionProps) {
   const [name, setName] = useState('');
   const [values, setValues] = useState('');
   const [busy, setBusy] = useState(false);
@@ -95,7 +97,13 @@ export function TaskAxesSection({ facade, spaceId, axes, onChanged }: TaskAxesSe
             onDelete={() => void run(() => facade.deleteTaskAxis(spaceId, axis.id))}
           />
         ))}
-        {axes.length === 0 && <p className="cv2-empty-line">No axes yet.</p>}
+        {axes.length === 0 && (
+          <p className="cv2-empty-line">
+            {unavailable
+              ? 'Task axes are not available on this node — the axis operations are not built yet.'
+              : 'No axes yet.'}
+          </p>
+        )}
       </div>
 
       <div className="cv2-set__form">

@@ -106,11 +106,21 @@ const workSession: Tm8KindEntry = {
           <div className="cv2-field"><span className="cv2-field__value t-mono">tool: {String(st.agentTool ?? '—')}</span></div>
           <div className="cv2-field"><span className="cv2-field__value t-mono">model: {String(st.model ?? '—')}</span></div>
         </div>
-        {/* Honest about the terminal: this node exposes no PTY stream, and an
-            empty black rectangle would imply a live-but-silent terminal. */}
+        {/*
+          This used to read "this tm8 node exposes no PTY route yet, so session
+          output cannot be shown". That went stale the day the PTY WebSocket
+          shipped, and it was actively misleading: the panel denied a terminal
+          the spawn surface was streaming at that very moment.
+
+          A terminal is still deliberately NOT mounted here. Panels stack, pin
+          and unmount freely, and every mounted xterm holds a socket plus a
+          repaint loop — so the terminal lives in the Sessions view, which owns
+          exactly one, and this panel points at it rather than competing.
+        */}
         <p className="t-secondary" style={{ marginTop: 12 }}>
-          No terminal stream: this tm8 node exposes no PTY route yet, so session
-          output cannot be shown. Status above is polled from the entity itself.
+          Live output streams in the <strong>Sessions</strong> view — open this
+          session there to watch it and type into it. The status above is polled
+          from the entity.
         </p>
       </div>
     );

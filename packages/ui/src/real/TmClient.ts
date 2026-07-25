@@ -135,4 +135,26 @@ export class TmClient {
   patch<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>('PATCH', path, body ?? {});
   }
+
+  /**
+   * DELETE and PUT are not dead code. Nine catalog operations bind to them —
+   * `entities.delete`, `edges.delete`, `messages.delete`, `taskAxes.delete`,
+   * `savedViews.delete` and `projects.unlink` on DELETE; `entities.react`,
+   * `inbox.markRead` and `readMarks.upsert` on PUT. Without these wrappers the
+   * TRANSPORT is what blocks them, so a facade method could not be written even
+   * against a server that had implemented the route — a failure that would look
+   * like a missing feature rather than a missing verb. `entities.react` already
+   * has live call sites above the seam, which is what makes this worth having
+   * ahead of the server rather than after it.
+   */
+  delete<T>(path: string): Promise<T> {
+    // No body, deliberately: HTTP DELETE conventionally carries none, and all
+    // six DELETE bindings name their subject in the path. `request` omits the
+    // body entirely when it is undefined, so no empty `{}` is sent either.
+    return this.request<T>('DELETE', path);
+  }
+
+  put<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>('PUT', path, body ?? {});
+  }
 }

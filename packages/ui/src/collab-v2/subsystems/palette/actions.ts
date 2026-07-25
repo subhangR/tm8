@@ -28,10 +28,14 @@ import type {
 const VIEW_LABELS: Record<ViewName, string> = {
   home: 'Home', tasks: 'Tasks', docs: 'Docs', team: 'Team', tracking: 'Tracking',
   graph: 'Graph', leaderboard: 'Leaderboard', inbox: 'Inbox', settings: 'Settings',
-  channel: 'Channel', entity: 'Entity',
+  sessions: 'Sessions', channel: 'Channel', entity: 'Entity',
 };
 
-/** Views reachable as a destination (channel/entity need an entity, not a jump). */
+/**
+ * Views reachable as a destination. `channel` and `entity` need an entity to
+ * focus, so they are not bare jumps. `sessions` IS a bare jump — it opens the
+ * list, and focusing one session is a further step from there.
+ */
 export const VIEW_CHOICES: ViewChoice[] = VIEWS
   .filter((v): v is Exclude<ViewName, 'channel' | 'entity'> => v !== 'channel' && v !== 'entity')
   .map((view) => ({ view, label: VIEW_LABELS[view], keywords: `go to ${VIEW_LABELS[view]}` }));

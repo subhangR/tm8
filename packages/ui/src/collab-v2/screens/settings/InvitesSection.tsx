@@ -13,9 +13,11 @@ import type { SpaceSettings } from '../../types/contract';
 
 export interface InvitesSectionProps {
   invites: SpaceSettings['invites'];
+  /** The node cannot serve invites at all — distinct from "there are none". */
+  unavailable?: boolean;
 }
 
-export function InvitesSection({ invites }: InvitesSectionProps) {
+export function InvitesSection({ invites, unavailable = false }: InvitesSectionProps) {
   const copy = (code: string): void => {
     void navigator.clipboard?.writeText(code).catch(() => {});
   };
@@ -51,7 +53,13 @@ export function InvitesSection({ invites }: InvitesSectionProps) {
               : <Pill tone="done" dot={false}>active</Pill>}
           </div>
         ))}
-        {invites.length === 0 && <p className="cv2-empty-line">No invites yet.</p>}
+        {invites.length === 0 && (
+          <p className="cv2-empty-line">
+            {unavailable
+              ? 'Invites are not available on this node — the invite operations are not built yet.'
+              : 'No invites yet.'}
+          </p>
+        )}
       </div>
     </section>
   );

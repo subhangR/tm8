@@ -6,6 +6,7 @@
  */
 import { useCallback } from 'react';
 import { useNavStore } from '../stores/nav';
+import { ErrorBoundary } from '../kit';
 import type { CollabFacade } from '../facade/CollabFacade';
 import type { EntityId } from '../types/contract';
 import { PlaceholderView } from './placeholders';
@@ -37,7 +38,14 @@ export function CenterHost({ facade, views = {}, fallback = null }: CenterHostPr
 
   return (
     <main className="cv2-center" data-view={view} data-entity={entityId ?? undefined}>
-      <View {...props} />
+      {/*
+        A screen that throws must cost the user that screen, not the whole
+        workspace. Keyed by route so navigating away clears a caught error —
+        otherwise the next screen you open inherits the broken one's fallback.
+      */}
+      <ErrorBoundary label={`The ${view} screen`} resetKey={`${view}:${entityId ?? ''}`}>
+        <View {...props} />
+      </ErrorBoundary>
     </main>
   );
 }

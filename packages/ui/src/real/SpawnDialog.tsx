@@ -12,17 +12,18 @@
  * - An untrusted project is shown and DISABLED with the reason, rather than
  *   hidden or silently upgraded. The server's refusal to spawn into a
  *   directory nobody vouched for is a feature, so the UI states it.
- * - Session status is POLLED, and the panel says so. Terminal OUTPUT is not:
- *   once a session exists the surface switches to a near-full-viewport layout
- *   with a live, interactive terminal streaming over the PTY WebSocket
- *   (`/v2/ws?sessionId=`). The old 500ms scrollback poll is gone — it was the
- *   terminal lag, repainting on a fixed tick regardless of output.
+ * - It SPAWNS, and then it gets out of the way. It used to keep the new session
+ *   in local state and host the terminal itself, which meant the only handle on
+ *   a running agent was this component: close it, or reload, and a live PTY
+ *   became unreachable with no way back. Now a successful spawn navigates to
+ *   `#/s/{space}/sessions/{id}` — the route IS the durable handle, and the
+ *   Sessions view owns the terminal. One terminal, one owner, survives reload.
  */
 import { useEffect, useState } from 'react';
 import type { EntitySummary } from '../collab-v2/types/contract';
+import { useNavStore } from '../collab-v2/stores/nav';
 import type { RealFacade, Tm8Project } from './RealFacade';
-import { SessionStatusPill, SPAWN_REQUEST_EVENT } from './tm8Kinds';
-import { SessionTerminal } from './SessionTerminal';
+import { SPAWN_REQUEST_EVENT } from './tm8Kinds';
 
 interface Req { taskId: string; spaceId: string }
 
@@ -32,19 +33,6 @@ const overlay: React.CSSProperties = {
 };
 const card: React.CSSProperties = {
   width: 'min(560px, 92vw)', maxHeight: '86vh', overflow: 'auto',
-  background: 'var(--pn-surface, #1b1c20)', color: 'var(--pn-text, #e7e7ea)',
-  border: '1px solid var(--pn-line, #33343a)', borderRadius: 10, padding: 20,
-  font: '13px/1.6 ui-sans-serif, system-ui, sans-serif',
-};
-/**
- * Once a session is LIVE the surface stops being a dialog and becomes a
- * terminal: near-full viewport, column layout, and `overflow: hidden` so the
- * terminal scrolls INTERNALLY (xterm owns its own scrollback) rather than the
- * card growing a second, competing scrollbar around it.
- */
-const sessionCard: React.CSSProperties = {
-  width: 'min(1500px, 96vw)', height: '94vh',
-  display: 'flex', flexDirection: 'column', overflow: 'hidden',
   background: 'var(--pn-surface, #1b1c20)', color: 'var(--pn-text, #e7e7ea)',
   border: '1px solid var(--pn-line, #33343a)', borderRadius: 10, padding: 20,
   font: '13px/1.6 ui-sans-serif, system-ui, sans-serif',
@@ -65,15 +53,15 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
   const [members, setMembers] = useState<EntitySummary[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [memberId, setMemberId] = useState<string | null>(null);
-  const [session, setSession] = useState<EntitySummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const setView = useNavStore((s) => s.setView);
 
   useEffect(() => {
     const onReq = (e: Event) => {
       const detail = (e as CustomEvent<Req>).detail;
       setReq(detail);
-      setSession(null); setError(null); setProjectId(null); setMemberId(null);
+      setError(null); setProjectId(null); setMemberId(null);
       facade.listProjects().then((ps) => {
         setProjects(ps);
         // If there is exactly one spawnable (trusted) project, pre-select it —
@@ -93,23 +81,9 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
     return () => window.removeEventListener(SPAWN_REQUEST_EVENT, onReq);
   }, [facade]);
 
-  // Poll the spawned session. The status transition spawning → running → exited
-  // is the whole point of the panel, and there is no push channel for it.
-  useEffect(() => {
-    if (!session) return;
-    const id = setInterval(() => {
-      facade.getEntity(session.id).then(
-        (fresh) => setSession(fresh),
-        () => {/* transient; the next tick retries */},
-      );
-    }, 1500);
-    return () => clearInterval(id);
-  }, [session?.id, facade]);
-
   if (!req) return null;
 
   const close = () => setReq(null);
-  const status = String((session?.state as { status?: string } | undefined)?.status ?? '');
 
   const spawn = async () => {
     if (!projectId || !memberId) return;
@@ -119,7 +93,11 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
         spaceId: req.spaceId, projectId, teamMemberId: memberId, taskIds: [req.taskId],
       });
       if (!result.entity) throw new Error('spawn returned no session entity');
-      setSession(result.entity);
+      // Hand the session to the route before dismissing. Navigating first means
+      // there is never an instant where a live agent exists and nothing on
+      // screen refers to it.
+      setView('sessions', result.entity.id);
+      setReq(null);
     } catch (err) {
       setError(String((err as Error)?.message ?? err));
     } finally {
@@ -127,41 +105,17 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
     }
   };
 
-  const prompt = async () => {
-    const message = window.prompt('Message to send to the agent:');
-    if (!message || !session) return;
-    setBusy(true); setError(null);
-    try {
-      await facade.promptSession(session.id, message);
-    } catch (err) {
-      setError(String((err as Error)?.message ?? err));
-    } finally { setBusy(false); }
-  };
-
-  const terminate = async () => {
-    if (!session) return;
-    setBusy(true); setError(null);
-    try {
-      const r = await facade.terminateSession(session.id);
-      if (r.entity) setSession(r.entity);
-    } catch (err) {
-      setError(String((err as Error)?.message ?? err));
-    } finally { setBusy(false); }
-  };
-
   return (
     <div style={overlay} role="dialog" aria-modal="true" aria-label="Spawn an agent">
-      <div style={session ? sessionCard : card}>
+      <div style={card}>
         <h2 style={{ margin: '0 0 4px', fontSize: 16, flex: '0 0 auto' }}>
-          {session ? 'Agent session' : 'Spawn an agent on this task'}
+          Spawn an agent on this task
         </h2>
 
-        {!session && (
-          <>
-            <p className="t-secondary" style={{ margin: '0 0 14px', opacity: 0.7 }}>
-              A session runs as a persona, in a project directory. Both are chosen
-              explicitly — this starts a real process.
-            </p>
+        <p className="t-secondary" style={{ margin: '0 0 14px', opacity: 0.7 }}>
+          A session runs as a persona, in a project directory. Both are chosen
+          explicitly — this starts a real process.
+        </p>
 
             <h3 style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.6, margin: '0 0 6px' }}>
               Project <span style={{ textTransform: 'none', opacity: 0.7 }}>· click to select</span>
@@ -210,25 +164,6 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
                 {memberId === m.id ? '✓ ' : ''}{m.title}
               </button>
             ))}
-          </>
-        )}
-
-        {session && (
-          // `minHeight: 0` on this column is what lets the terminal actually
-          // shrink-to-fit inside the flex card. Without it the flex child sizes
-          // to its content and pushes the footer buttons off the viewport.
-          <div style={{ margin: '10px 0 0', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flex: '0 0 auto' }}>
-              <SessionStatusPill status={status || 'unknown'} />
-              <span className="t-mono" style={{ opacity: 0.6, fontSize: 11 }}>{session.id}</span>
-            </div>
-            <SessionTerminal sessionId={session.id} live={status !== 'exited'} fill />
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flex: '0 0 auto' }}>
-              <button style={btn} onClick={prompt} disabled={busy || status === 'exited'}>Prompt</button>
-              <button style={btn} onClick={terminate} disabled={busy || status === 'exited'}>Terminate</button>
-            </div>
-          </div>
-        )}
 
         {error && (
           <pre style={{
@@ -239,16 +174,14 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flex: '0 0 auto' }}>
-          <button style={btn} onClick={close}>Close</button>
-          {!session && (
-            <button
-              style={{ ...btn, borderColor: 'var(--pn-brand, #6366f1)' }}
-              onClick={spawn}
-              disabled={busy || !projectId || !memberId}
-            >
-              {busy ? 'Spawning…' : 'Spawn'}
-            </button>
-          )}
+          <button style={btn} onClick={close}>Cancel</button>
+          <button
+            style={{ ...btn, borderColor: 'var(--pn-brand, #6366f1)' }}
+            onClick={spawn}
+            disabled={busy || !projectId || !memberId}
+          >
+            {busy ? 'Spawning…' : 'Spawn'}
+          </button>
         </div>
       </div>
     </div>

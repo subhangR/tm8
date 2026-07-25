@@ -52,7 +52,11 @@ export const UNIMPLEMENTED = {
     'patchEdge', 'deleteEdge', 'placements', 'undo',
     'patchMessage', 'deleteMessage',
     'setReaction',        // entities.react
-    'grantPoints',        // entities.points.add
+    // `grantPoints` was here and was WRONG: entities.points.add is implemented
+    // (catalog.ts:65 → facade/index.ts:110 → grant_points RPC, idempotent on
+    // clientMutationId). Listing it disabled the points control against a node
+    // that would have served it — the only case where this register was more
+    // pessimistic than the server.
     'pullEntity',         // entities.commands.pull
     'linkPr', 'trackingRefresh',
     // NOTE: `markRead` is NOT here. It is unbuilt server-side, but the UI calls

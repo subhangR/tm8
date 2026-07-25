@@ -60,7 +60,7 @@ describe('rails render from the facade', () => {
     await screen.findByTestId('view-docs');
   });
 
-  it('a channel click opens the channel Z4 route', async () => {
+  it('a channel click opens the channel Z4 route, and the URL round-trips', async () => {
     mount((ids) => `#/s/${encodeURIComponent(ids.space)}/home`);
     const rail = await screen.findByRole('navigation', { name: 'Space navigation' });
     const channel = (await facade.getNavigation(facade.ids.space)).channels[0];
@@ -68,7 +68,20 @@ describe('rails render from the facade', () => {
     fireEvent.click(await within(rail).findByText(channel.entity.title));
     await waitFor(() => expect(nav().view).toBe('channel'));
     expect(nav().entityId).toBe(channel.entity.id);
-    expect(target.getHash()).toContain('/e/');
+
+    // This asserted `/e/` and therefore locked in a REAL BUG: `toHash` wrote a
+    // channel as `/e/{id}`, but `hydrateFromHash` reads every `/e/{id}` back as
+    // the generic `entity` view — so a channel deep link, a reload, or
+    // back/forward silently landed on the wrong screen. Channels now have their
+    // own spelling, and what matters is not the spelling but that it SURVIVES
+    // a round-trip, which is what this now checks.
+    const hash = target.getHash();
+    expect(hash).toContain('/channel/');
+
+    useNavStore.getState().reset();
+    useNavStore.getState().hydrateFromHash(hash);
+    expect(useNavStore.getState().view).toBe('channel');
+    expect(useNavStore.getState().entityId).toBe(channel.entity.id);
   });
 });
 
