@@ -20,6 +20,7 @@ import { useEffect, useState } from 'react';
 import type { EntitySummary } from '../collab-v2/types/contract';
 import type { RealFacade, Tm8Project } from './RealFacade';
 import { SessionStatusPill, SPAWN_REQUEST_EVENT } from './tm8Kinds';
+import { SessionTerminal } from './SessionTerminal';
 
 interface Req { taskId: string; spaceId: string }
 
@@ -203,12 +204,8 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
               <SessionStatusPill status={status || 'unknown'} />
               <span className="t-mono" style={{ opacity: 0.6, fontSize: 11 }}>{session.id}</span>
             </div>
-            <p className="t-secondary" style={{ opacity: 0.7, margin: '0 0 12px' }}>
-              Status is polled every 1.5s from the session entity. This node exposes
-              no PTY route, so there is no terminal output here — only the state the
-              server reports.
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <SessionTerminal sessionId={session.id} live={status !== 'exited'} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button style={btn} onClick={prompt} disabled={busy || status === 'exited'}>Prompt</button>
               <button style={btn} onClick={terminate} disabled={busy || status === 'exited'}>Terminate</button>
             </div>

@@ -25,6 +25,8 @@ export default defineConfig({
     proxy: {
       '/v2': { target, changeOrigin: false },
       '/health': { target, changeOrigin: false },
+      // The session terminal's PTY byte-stream poll (non-catalog, beside /health).
+      '/pty': { target, changeOrigin: false },
     },
   },
   test: {

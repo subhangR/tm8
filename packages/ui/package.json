@@ -13,6 +13,7 @@
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@tm8/contract": "workspace:*",
+    "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.10.2",
     "dagre": "^0.8.5",
     "react": "^18.3.1",

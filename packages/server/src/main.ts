@@ -125,6 +125,18 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     upgrades: ws,
     ...(identityResolver ? { identityResolver } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
+    // The browser session terminal reads a live PTY's sanitized scrollback here.
+    // getReplay is the same offset-replay seam attach() uses, minus the live
+    // subscription — a poll, not a stream, which needs no WS proxy and cannot
+    // corrupt the scrollback ring. Absent on a database-less node.
+    ...(execution
+      ? {
+          ptyOutput: (sessionId: string, offset: number) => {
+            const r = execution.pty.getReplay(sessionId, offset);
+            return r ? { base: r.base, gap: r.gap, next: r.next, data: r.data } : null;
+          },
+        }
+      : {}),
   });
 
   const { url } = await server.listen();
