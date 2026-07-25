@@ -18,6 +18,10 @@
  *   TM8_BASE_URL=... node scripts/smoke-loop.mjs --keep   # leave the session running
  */
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 const BASE = (process.env.TM8_BASE_URL || 'http://127.0.0.1:4610').replace(/\/$/, '');
 const KEEP = process.argv.includes('--keep');
 
@@ -118,9 +122,17 @@ const space = await call('create a space', 'POST', '/v2/spaces', {
 const spaceId = need(space?.id ?? space?.space?.id, 'the new space id', 'create a space');
 
 // 3. a project, linked ----------------------------------------------------
+// projects.working_dir is globally UNIQUE, so every run needs its own
+// directory — and the directory must really exist, because the spawned PTY
+// gets it as cwd. A per-run temp dir satisfies both.
+const workingDir =
+  process.env.TM8_SMOKE_WORKDIR ||
+  mkdtempSync(join(tmpdir(), `tm8-smoke-${RUN_ID.slice(-6)}-`));
+console.log(`workdir ${workingDir}`);
+
 const project = await call('create a project', 'POST', '/v2/projects', {
   name: `Smoke Project ${RUN_ID.slice(-6)}`,
-  workingDir: process.env.TM8_SMOKE_WORKDIR || process.cwd(),
+  workingDir,
   clientMutationId: cmid('project'),
 });
 const projectId = need(project?.id ?? project?.project?.id, 'the new project id', 'create a project');
@@ -140,18 +152,38 @@ const task = await call('create a task', 'POST', '/v2/entities', {
 const taskId = need(task?.id ?? task?.entity?.id, 'the new task id', 'create a task');
 
 await call('read the task back', 'GET', `/v2/entities/${taskId}`);
+// `kinds` is an array and CollectionQuerySchema is .strict() — a singular
+// `kind` is rejected outright rather than ignored. That strictness is the
+// point: a typo'd filter silently widening a query is worse than a 400.
 await call('list the space tasks', 'POST', '/v2/collections/query', {
   spaceId,
-  kind: 'task',
+  kinds: ['task'],
   limit: 10,
 });
 
-// 5. spawn ----------------------------------------------------------------
+// 5. a team member — the persona the session runs as ----------------------
+// execution.spawn REQUIRES a teamMemberId: a session is always somebody, and
+// the manifest's identity block is built from this row.
+const member = await call('create a team member (the agent persona)', 'POST', '/v2/entities', {
+  spaceId,
+  kind: 'team_member',
+  title: 'Smoke Agent',
+  clientMutationId: cmid('member'),
+});
+const teamMemberId = need(
+  member?.id ?? member?.entity?.id,
+  'the new team_member id',
+  'create a team member',
+);
+
+// 6. spawn ----------------------------------------------------------------
 const spawned = await call('spawn an agent session on a real PTY', 'POST', '/v2/execution/spawn', {
   spaceId,
   projectId,
+  teamMemberId,
   taskIds: [taskId],
   workdir: { mode: 'project' },
+  mode: 'worker',
   clientMutationId: cmid('spawn'),
 });
 const sessionId = need(
@@ -163,7 +195,7 @@ const sessionId = need(
 // 6. prompt it ------------------------------------------------------------
 const marker = `smoke-prompt-${RUN_ID.slice(-6)}`;
 await call('deliver a prompt into the live PTY', 'POST', `/v2/entities/${sessionId}/commands/prompt`, {
-  text: marker,
+  message: marker,
   clientMutationId: cmid('prompt'),
 });
 

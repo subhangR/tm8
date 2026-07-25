@@ -12,7 +12,8 @@
 import { createDb } from './db/index.js';
 import type { Db } from './db/types.js';
 import { createWsServer, InMemorySeqSource, SubscriptionRegistry, WorkspaceEventPublisher } from './events/index.js';
-import { HandlerRegistry } from './facade/index.js';
+import { createExecutionRuntime } from './facade/execution-handlers.js';
+import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { loadConfig, type ServerConfig } from './http/config.js';
 import { createFacadeServer, type FacadeServer } from './http/server.js';
 import { createStaticHandler } from './http/static.js';
@@ -58,11 +59,26 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * connection error that looks like an outage.
    */
   const db = config.databaseUrl ? createDb(config.databaseUrl) : undefined;
+
+  /**
+   * The execution block builds its OWN PtyHostService and hands it back.
+   *
+   * It has to. `PtyHostService` takes `onSessionStatus` only at construction,
+   * and that sink must close over the SpawnService holding the spawner's
+   * claims — `work_session_transition` → `require_space_member` →
+   * `require_identity` has no node-admin bypass (002_identity.sql:297). A host
+   * constructed here and passed in could not carry that sink, so a PTY exiting
+   * would raise 42501, the transition would be dropped, and the work_session
+   * would sit at 'running' forever: a ghost the UI paints as a live agent and
+   * the concurrency cap counts against every future spawn. Silent, and it
+   * compounds. Hence `createExecutionRuntime` rather than a symmetrical
+   * `registerExecutionHandlers` here.
+   */
+  const execution = db ? createExecutionRuntime({ db, config }) : undefined;
+
   if (db) {
-    // Lane register functions land here as each block exports one:
-    //   registerFacadeHandlers(registry, { db, config })      — facade slice
-    //   registerEventHandlers(registry, { db, config })       — events.poll
-    //   registerExecutionHandlers(registry, { db, pty, config }) — spawn/prompt
+    registerFacadeHandlers(registry, { db, config });
+    execution?.register(registry);
   }
 
   const subscriptions = new SubscriptionRegistry();
