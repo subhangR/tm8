@@ -7,7 +7,7 @@
     "tm8": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && chmod +x dist/index.js",
     "test": "vitest run"
   },
   "dependencies": {

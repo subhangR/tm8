@@ -44,9 +44,18 @@ function esc(v: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Indent a free-text block so it reads as a child of its XML tag. */
+/**
+ * Indent a free-text block so it reads as a child of its XML tag — escaping
+ * it on the way in.
+ *
+ * The escape is not cosmetic. Persona text, skill bodies, task descriptions
+ * and coordinator directives are all AUTHORED content: a persona containing
+ * `</tm8_system_prompt>` would otherwise close the frame early and everything
+ * after it — including the reporting instructions — would read as loose text
+ * outside the agent's identity block.
+ */
 function block(text: string, pad: string): string {
-  return text
+  return esc(text)
     .split('\n')
     .map((l) => (l.trim() === '' ? '' : pad + l))
     .join('\n');
