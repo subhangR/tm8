@@ -67,6 +67,30 @@ export const UNIMPLEMENTED = {
     'markNotificationRead',
     'createTaskAxis', 'updateTaskAxis', 'deleteTaskAxis',
     'createSavedView', 'updateSavedView', 'deleteSavedView',
+    /**
+     * `files.uploadInit` / `uploadComplete` / `uploadAbort` — declared v1 in the
+     * catalog, no handler on this node.
+     *
+     * THE ONLY ENTRY HERE WITH NO FACADE METHOD BEHIND IT, and that is the
+     * point: every other name in this list is a method a screen could call and
+     * get a refusal from. There is no `uploadFile` on the facade at all, so
+     * without this line `isUnavailable('uploadFile')` answers FALSE — "this is
+     * available" — for an operation that does not exist in any form. An absent
+     * method reading as available is the worst answer the register can give.
+     *
+     * The consumer is the terminal's clipboard IMAGE paste. Text paste is
+     * unaffected and stays live.
+     *
+     * WHY THIS CAN NEVER BE FIXED CLIENT-SIDE, recorded here because the
+     * obvious workarounds are all wrong: maestro's flow uploads the image and
+     * then injects an ABSOLUTE SERVER PATH into the PTY. The agent reads that
+     * path from the machine it is running on, so a `data:` URI, a blob URL or
+     * any browser-only handle cannot substitute — the bytes must genuinely
+     * exist on the server's filesystem. Anything less injects a path to a file
+     * that is not there, which is not a failed paste but corrupt input to a
+     * running agent. Needs `files.upload*` handlers plus a blob dir (S17).
+     */
+    'uploadFile',
   ],
 } as const;
 

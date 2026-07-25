@@ -1,0 +1,432 @@
+/*
+ * Workspace layout + the left task column.
+ *
+ * Built entirely on the module's `--pn-*` tokens so the workspace themes with
+ * everything else, dark mode included. It is supplied from the integration
+ * layer, but it must not LOOK supplied from somewhere else — the same rule
+ * `sessions.css` follows.
+ *
+ * The grid is `left │ grip │ 1fr │ grip │ right`, with the two fixed tracks
+ * driven by CSS custom properties the screen writes. Resizing is therefore one
+ * style property changing, not a re-layout of the React tree.
+ *
+ * `min-height: 0` / `min-width: 0` appear on every scroll container on purpose:
+ * a grid or flex child defaults to `min-size: auto`, which refuses to shrink
+ * below its content — so without them the columns push the workspace wider than
+ * the viewport and the page scrolls sideways instead of the panels scrolling
+ * internally.
+ */
+
+/*
+ * THE SIDE TRACKS YIELD BEFORE THE CENTRE DOES, and that ordering is the whole
+ * point of the `minmax()`s rather than a plain `var()` per track.
+ *
+ * Written as fixed tracks (`var(--ws-left) 6px 1fr 6px var(--ws-right)`) the two
+ * sides hold their full width at every viewport and the centre absorbs 100% of
+ * the squeeze. Measured on a 1100px window that put the terminal column at
+ * **158px** — the shell's rails and the two side panels had taken everything —
+ * while both side panels sat at their comfortable width. A 158px terminal is
+ * not a terminal, and it is the pane the workspace exists for.
+ *
+ * The fallbacks below are maestro's MEASURED widths (280 task / 319 resource),
+ * not defaults picked here; `WorkspaceScreen` documents where they came from.
+ * They are only fallbacks — the screen writes the live values as inline custom
+ * properties, so these apply if the style ever fails to land.
+ *
+ * So each side may shrink toward a floor it still functions at, and the centre
+ * carries a 320px floor of its own. Below the point where those minima stop
+ * fitting, the layout stacks instead (see the query at the end of this file) —
+ * the breakpoint is set from THIS arithmetic, not from a round number:
+ *   200 + 6 + 320 + 6 + 220 = 752px of grid, plus ~290px of shell rails.
+ */
+/*
+ * maestro's window shape, and the reason this wrapper exists at all: the
+ * project tab bar spans the FULL width above everything, and the icon rail runs
+ * the full height beneath it. A single grid cannot express that — the bar would
+ * have to span columns the rail is not in — so the skeleton is a column
+ * (bar / body) whose body is a row (rail / panes).
+ *
+ * The bar and the rail draw themselves; these two rules only place them.
+ */
+.ws-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+.ws-app__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.ws-app__body > .ws {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ws {
+  display: grid;
+  grid-template-columns:
+    minmax(200px, var(--ws-left, 280px))
+    6px
+    minmax(320px, 1fr)
+    6px
+    minmax(220px, var(--ws-right, 319px));
+  height: 100%;
+  min-height: 0;
+  background: var(--pn-paper);
+}
+
+/* --- resizers ------------------------------------------------------------ */
+
+.ws-resizer {
+  cursor: col-resize;
+  background: var(--pn-line);
+  /* The hit target is the whole 6px track; the visible hairline is drawn with
+     a gradient so the grip reads as a seam rather than a scrollbar. */
+  background-image: linear-gradient(
+    to right,
+    transparent 0, transparent 2px,
+    var(--pn-line-2) 2px, var(--pn-line-2) 4px,
+    transparent 4px
+  );
+  background-color: transparent;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+  touch-action: none; /* pointer capture must not compete with page panning */
+}
+.ws-resizer:hover,
+.ws-resizer:active { background-color: var(--pn-brand-soft); }
+
+/* --- shared chrome ------------------------------------------------------- */
+
+.ws-spacer { flex: 1; }
+.ws-dim { color: var(--pn-ink-3); }
+
+.ws-btn {
+  padding: 3px 9px;
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--pn-line);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.ws-btn:hover:not(:disabled) { background: var(--pn-hover); }
+.ws-btn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.ws-btn:disabled { opacity: 0.42; cursor: default; }
+
+.ws-btn--run {
+  border-color: var(--pn-brand);
+  color: var(--pn-brand-2);
+  font-weight: 600;
+}
+.ws-btn--run:hover:not(:disabled) { background: var(--pn-brand-soft); }
+
+.ws-chip {
+  padding: 2px 8px;
+  border-radius: var(--pn-r-pill);
+  border: 1px solid var(--pn-line);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  cursor: pointer;
+  transition: all var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.ws-chip:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+.ws-chip[data-active] {
+  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand);
+  color: var(--pn-brand-2);
+}
+.ws-chip--clear { border-style: dashed; }
+
+.ws-error {
+  margin: 0 var(--pn-space-3) var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-radius: var(--pn-r-sm);
+  border: 1px solid var(--pn-block);
+  background: var(--pn-block-soft);
+  color: var(--pn-ink);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* --- P2 · the task column ------------------------------------------------ */
+
+.ws-tasks {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.ws-tasks__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3);
+  padding-bottom: var(--pn-space-2);
+  flex: 0 0 auto;
+}
+.ws-tasks__count { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+
+.ws-tasks__sort,
+.ws-task__status {
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  padding: 2px 4px;
+  cursor: pointer;
+  max-width: 100%;
+}
+.ws-tasks__sort:focus-visible,
+.ws-task__status:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.ws-tasks__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 var(--pn-space-3) var(--pn-space-2);
+  flex: 0 0 auto;
+}
+
+.ws-tasks__new {
+  display: flex;
+  gap: var(--pn-space-2);
+  padding: 0 var(--pn-space-3) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  padding-bottom: var(--pn-space-3);
+  flex: 0 0 auto;
+}
+.ws-tasks__newinput {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+}
+.ws-tasks__newinput:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 0; }
+
+.ws-tasks__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--pn-space-2) 0 var(--pn-space-6);
+}
+.ws-tasks__list .cv2-empty-line { padding: var(--pn-space-3); }
+
+/* --- a task row ---------------------------------------------------------- */
+
+.ws-task {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: var(--pn-space-2);
+  min-height: 30px;
+  border-left: 2px solid transparent;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+  /* The row's own background, tracked as a variable so the action overlay can
+     fade INTO it rather than approximating it with a hardcoded colour. */
+  --ws-row-bg: var(--pn-surface);
+}
+.ws-task:hover { background: var(--pn-hover); --ws-row-bg: var(--pn-hover); }
+.ws-task[data-selected] {
+  background: var(--pn-active);
+  border-left-color: var(--pn-brand);
+  --ws-row-bg: var(--pn-active);
+}
+/*
+ * ONE slot, two renderings: the pill reads the status, the select edits it, and
+ * they occupy the same place so the control appears where the information was.
+ * The slot is sized by whichever is showing rather than reserving the max of
+ * both — a 78px hole beside every row would be worse than the swap.
+ */
+.ws-task__statusslot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+.ws-task__statusslot .ws-task__status { display: none; width: 82px; }
+.ws-task:hover .ws-task__statusslot .cv2-pill,
+.ws-task:focus-within .ws-task__statusslot .cv2-pill,
+.ws-task[data-selected] .ws-task__statusslot .cv2-pill { display: none; }
+.ws-task:hover .ws-task__statusslot .ws-task__status,
+.ws-task:focus-within .ws-task__statusslot .ws-task__status,
+.ws-task[data-selected] .ws-task__statusslot .ws-task__status { display: block; }
+/* Finished work stays legible but recedes — it is context, not the queue. */
+.ws-task[data-finished] .ws-task__title { color: var(--pn-ink-3); }
+
+.ws-task__caret {
+  flex: 0 0 14px;
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pn-ink-3);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ws-task__caret:disabled { cursor: default; }
+.ws-task__caret:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+/* Color is never the only carrier — the dot has a `title` naming the priority. */
+.ws-task__prio {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pn-idle);
+}
+.ws-task__prio[data-prio='urgent'] { background: var(--pn-block); }
+.ws-task__prio[data-prio='high']   { background: var(--pn-wait); }
+.ws-task__prio[data-prio='medium'] { background: var(--pn-info); }
+.ws-task__prio[data-prio='low']    { background: var(--pn-idle); }
+
+.ws-task__title {
+  /* `flex-basis: 0` so the title takes the leftover track instead of bidding
+     its full text width and then being shrunk back. The `min-width` floor is
+     the guard rail for the bug above: if something ever does out-compete it,
+     the row must overflow rather than render a task with no name. */
+  flex: 1 1 0;
+  min-width: 3ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-task__title:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.ws-task__edit {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+  color: inherit;
+  font: inherit;
+  font-size: var(--pn-fs-sm);
+}
+
+.ws-task__ac {
+  flex: 0 0 auto;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+/*
+ * Row actions OVERLAY the row rather than sitting in its flex flow, and that is
+ * a correctness fix rather than a style preference.
+ *
+ * In flow, the four controls (a status select, Run, Done, the grip) claim ~210px
+ * of a 240–300px column before the title gets any. `.ws-task__title` is
+ * `min-width: 0` so it can ellipsize — which meant it shrank all the way to ZERO
+ * and every task title vanished. The row still rendered, the count was still
+ * right, and the jsdom tests still passed, because jsdom has no layout. It was
+ * caught by driving the real browser, which is the only place it exists.
+ *
+ * So the title now gets the full track, and the controls float above the right
+ * edge on hover / keyboard focus / selection, fading in from the row's own
+ * background. `pointer-events: none` while hidden is load-bearing: an invisible
+ * overlay stretched across the row would otherwise swallow clicks meant for the
+ * title underneath it.
+ */
+.ws-task__actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 var(--pn-space-2) 0 var(--pn-space-6);
+  background: linear-gradient(to right, transparent 0, var(--ws-row-bg) 20px);
+  opacity: 0;
+  /* Always `none` on the CONTAINER, even when shown: its transparent left edge
+     lies over the tail of the title, and a box that is invisible there must not
+     eat a click aimed at the text underneath. Only the controls themselves take
+     pointer events. */
+  pointer-events: none;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.ws-task:hover .ws-task__actions,
+.ws-task:focus-within .ws-task__actions,
+.ws-task[data-selected] .ws-task__actions { opacity: 1; }
+.ws-task:hover .ws-task__actions > *,
+.ws-task:focus-within .ws-task__actions > *,
+.ws-task[data-selected] .ws-task__actions > * { pointer-events: auto; }
+.ws-task__actions > * { pointer-events: none; }
+
+.ws-task__grip {
+  color: var(--pn-ink-4);
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: not-allowed;
+  user-select: none;
+}
+
+/* --- P3 · the center column ---------------------------------------------- */
+
+.ws-center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pn-paper);
+}
+
+/* Everything inside the center column is Lane C's `CenterPane` and styles
+   itself; this lane owns only the track it sits in. */
+
+/*
+ * Below the width where the three floors above still fit, the columns stop
+ * being columns. Stacking beats squeezing: a 120px terminal is not a terminal.
+ *
+ * 1080px, not 900px, and the difference was a real bug rather than taste. At
+ * 900px the grid still "fit" only because the centre had no floor and was being
+ * starved to ~158px — so the breakpoint that looked generous was hiding the
+ * problem instead of catching it. It is now derived: 752px of track minima plus
+ * the shell's ~290px of rails, rounded up.
+ */
+@media (max-width: 1080px) {
+  .ws {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: minmax(0, auto);
+    overflow-y: auto;
+  }
+  .ws-resizer { display: none; }
+  .ws-tasks { border-right: 0; border-bottom: 1px solid var(--pn-line); max-height: 50vh; }
+  .ws-center { min-height: 320px; }
+}

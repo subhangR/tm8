@@ -1,0 +1,21 @@
+[
+  { "input": "hello world", "expected": null },
+  { "input": "[31mred[0m", "expected": null },
+  { "input": "{\"type\":\"nope\"}", "expected": null },
+  { "input": "{\"foo\":1}", "expected": null },
+  { "input": "[1,2,3]", "expected": null },
+  { "input": "{\"type\":\"exit\",\"exitCode\":3,\"ignored\":true}", "expected": { "type": "exit", "exitCode": 3 } },
+  { "input": "{\"type\":\"exit\"}", "expected": { "type": "exit", "exitCode": null } },
+  { "input": "{\"type\":\"size\",\"cols\":80,\"rows\":24}", "expected": { "type": "size", "cols": 80, "rows": 24 } },
+  { "input": "{\"type\":\"size\",\"cols\":120,\"rows\":31,\"live\":true}", "expected": { "type": "size", "cols": 120, "rows": 31, "live": true } },
+  { "input": "{\"type\":\"size\",\"cols\":120,\"rows\":31,\"live\":false}", "expected": { "type": "size", "cols": 120, "rows": 31 } },
+  { "input": "{\"type\":\"size\",\"cols\":\"x\",\"rows\":24}", "expected": null },
+  { "input": "{\"type\":\"size\",\"cols\":null,\"rows\":24}", "expected": null },
+  { "input": "{\"type\":\"attached\",\"base\":100,\"gap\":0,\"next\":250,\"hasReplay\":true}", "expected": { "type": "attached", "base": 100, "gap": 0, "next": 250, "hasReplay": true } },
+  { "input": "{\"type\":\"attached\",\"base\":0,\"next\":0}", "expected": { "type": "attached", "base": 0, "gap": 0, "next": 0, "hasReplay": false } },
+  { "input": "{\"type\":\"attached\",\"base\":0}", "expected": null },
+  { "input": "{\"type\":\"attached\",\"base\":0,\"next\":0,\"epoch\":\"boot-7:3\"}", "expected": { "type": "attached", "base": 0, "gap": 0, "next": 0, "hasReplay": false, "epoch": "boot-7:3" } },
+  { "input": "{\"type\":\"attached\",\"base\":0,\"next\":0,\"epoch\":42}", "expected": { "type": "attached", "base": 0, "gap": 0, "next": 0, "hasReplay": false } },
+  { "input": "{\"type\":\"attached\",\"base\":5000,\"gap\":4000,\"next\":5000,\"hasReplay\":true,\"replayKind\":\"snapshot\"}", "expected": { "type": "attached", "base": 5000, "gap": 4000, "next": 5000, "hasReplay": true, "replayKind": "snapshot" } },
+  { "input": "{\"type\":\"attached\",\"base\":0,\"gap\":0,\"next\":4,\"hasReplay\":true,\"replayKind\":\"invalid\"}", "expected": { "type": "attached", "base": 0, "gap": 0, "next": 4, "hasReplay": true } }
+]

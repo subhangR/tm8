@@ -22,14 +22,32 @@ import { SessionsScreen } from './real/sessions/SessionsScreen';
 import { SpacePicker } from './real/SpacePicker';
 import { SpawnDialog } from './real/SpawnDialog';
 import { installTm8Kinds } from './real/tm8Kinds';
+import { useNavStore } from './collab-v2/stores/nav';
+import { WorkspaceScreen } from './real/workspace/WorkspaceScreen';
 
 /**
  * Screens the tm8 node supplies to the module's shell. Sessions is here rather
  * than inside collab-v2 because it mounts a live PTY terminal over a tm8
  * WebSocket and reads the `work_session` kind — both tm8-specific, and the
  * module is backend-agnostic by law. See CollabV2App's `extraViews`.
+ *
+ * `workspace` is an ADDITION, not an override, and that distinction was a
+ * deliberate call: an earlier cut of this registered `tasks: WorkspaceScreen`,
+ * which worked — `extraViews` is merged last — but it silently replaced the
+ * module's own Tasks screen, so the snapshot shipped a screen no route could
+ * reach. The workspace now has its own rail entry and its own route, and
+ * `#/s/{space}/tasks` still opens the module's screen exactly as before.
  */
-const TM8_VIEWS = { sessions: SessionsScreen };
+const TM8_VIEWS = { sessions: SessionsScreen, workspace: WorkspaceScreen };
+
+/**
+ * Views that render as the whole window, with no module chrome around them.
+ *
+ * Declared once and used twice — the shell reads it to omit its rails, and the
+ * mode banner reads it to stop consuming a strip of layout — so the two can
+ * never disagree about which route is full-bleed.
+ */
+const FULL_BLEED_VIEWS = ['workspace'] as const;
 
 // Must run before the first render: the shell resolves kinds through
 // registryFor(), which has no fallback, so a work_session reaching a chip
@@ -69,8 +87,18 @@ function RealApp({ facade }: { facade: RealFacade }) {
 
   useEffect(load, [facade]);
 
+  // Read from the store the shell already owns rather than tracked separately:
+  // the banner has to agree with the shell about which route is full-bleed, and
+  // two sources of that truth would drift.
+  const view = useNavStore((s) => s.view);
+
   const banner = (
-    <ModeBanner mode="real" detail="tm8 catalog over /v2 (proxied)" connected={connected} />
+    <ModeBanner
+      mode="real"
+      detail="tm8 catalog over /v2 (proxied)"
+      connected={connected}
+      floating={(FULL_BLEED_VIEWS as readonly string[]).includes(view)}
+    />
   );
 
   if (boot.phase !== 'ready' || !spaceId) {
@@ -95,6 +123,10 @@ function RealApp({ facade }: { facade: RealFacade }) {
         spaceId={spaceId}
         banner={banner}
         extraViews={TM8_VIEWS}
+        // The workspace is a transplant of maestro's whole window — its own
+        // project tab bar and icon rail — so the module's rails would double
+        // up beside it. It gets the viewport; every other view keeps the shell.
+        fullBleedViews={FULL_BLEED_VIEWS}
       />
       <SpawnDialog facade={facade} />
     </>

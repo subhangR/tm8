@@ -12,20 +12,35 @@
  * - An untrusted project is shown and DISABLED with the reason, rather than
  *   hidden or silently upgraded. The server's refusal to spawn into a
  *   directory nobody vouched for is a feature, so the UI states it.
- * - It SPAWNS, and then it gets out of the way. It used to keep the new session
- *   in local state and host the terminal itself, which meant the only handle on
- *   a running agent was this component: close it, or reload, and a live PTY
- *   became unreachable with no way back. Now a successful spawn navigates to
- *   `#/s/{space}/sessions/{id}` — the route IS the durable handle, and the
- *   Sessions view owns the terminal. One terminal, one owner, survives reload.
+ * - It SPAWNS, and then it gets out of the way. Outside the workspace a
+ *   successful spawn navigates to `#/s/{space}/sessions/{id}` — the route IS
+ *   the durable handle, and the Sessions view owns the terminal. A spawn that
+ *   originated inside the three-pane workspace stays there and publishes the
+ *   new session id so that workspace's single terminal can attach to it.
  */
 import { useEffect, useState } from 'react';
 import type { EntitySummary } from '../collab-v2/types/contract';
 import { useNavStore } from '../collab-v2/stores/nav';
 import type { RealFacade, Tm8Project } from './RealFacade';
-import { SPAWN_REQUEST_EVENT } from './tm8Kinds';
+import {
+  SESSION_SPAWNED_EVENT,
+  SPAWN_REQUEST_EVENT,
+  type SessionSpawnedDetail,
+} from './tm8Kinds';
 
-interface Req { taskId: string; spaceId: string }
+interface SpawnRequestDetail { taskId: string; spaceId: string }
+interface Req extends SpawnRequestDetail { returnToWorkspace: boolean }
+
+/**
+ * Capture the origin when the request arrives, rather than after the async
+ * spawn returns. The route may change while the dialog is open; the successful
+ * session still belongs to the surface that initiated it.
+ */
+export function isWorkspaceRoute(hash: string): boolean {
+  const path = hash.replace(/^#/, '').split('?')[0] ?? '';
+  const segments = path.split('/').filter(Boolean);
+  return segments[0] === 's' && segments[2] === 'workspace';
+}
 
 const overlay: React.CSSProperties = {
   position: 'fixed', inset: 0, zIndex: 200, display: 'grid', placeItems: 'center',
@@ -59,8 +74,8 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
 
   useEffect(() => {
     const onReq = (e: Event) => {
-      const detail = (e as CustomEvent<Req>).detail;
-      setReq(detail);
+      const detail = (e as CustomEvent<SpawnRequestDetail>).detail;
+      setReq({ ...detail, returnToWorkspace: isWorkspaceRoute(window.location.hash) });
       setError(null); setProjectId(null); setMemberId(null);
       facade.listProjects().then((ps) => {
         setProjects(ps);
@@ -93,10 +108,16 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
         spaceId: req.spaceId, projectId, teamMemberId: memberId, taskIds: [req.taskId],
       });
       if (!result.entity) throw new Error('spawn returned no session entity');
-      // Hand the session to the route before dismissing. Navigating first means
-      // there is never an instant where a live agent exists and nothing on
-      // screen refers to it.
-      setView('sessions', result.entity.id);
+      if (req.returnToWorkspace) {
+        const detail: SessionSpawnedDetail = {
+          sessionId: result.entity.id,
+          taskId: req.taskId,
+        };
+        window.dispatchEvent(new CustomEvent(SESSION_SPAWNED_EVENT, { detail }));
+      } else {
+        // The Sessions screen keeps its existing durable, reload-safe handle.
+        setView('sessions', result.entity.id);
+      }
       setReq(null);
     } catch (err) {
       setError(String((err as Error)?.message ?? err));

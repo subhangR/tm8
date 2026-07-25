@@ -40,6 +40,14 @@ import type { EntityDetail, EntityKind, EntitySummary } from '../collab-v2/types
 /** The event a task's "Spawn agent" action raises; the host renders the dialog. */
 export const SPAWN_REQUEST_EVENT = 'tm8:spawn-request';
 
+/** A successful workspace spawn hands its new session back to the three-pane view. */
+export const SESSION_SPAWNED_EVENT = 'tm8:session-spawned';
+
+export interface SessionSpawnedDetail {
+  sessionId: string;
+  taskId: string;
+}
+
 type Mutable = Record<string, KindEntry>;
 
 /**

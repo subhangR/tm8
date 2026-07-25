@@ -73,6 +73,8 @@ describe('pty transport — offset resume', () => {
     offOut();
     offRe();
     ptyTransport.closeSession('s1');
+    ptyTransport.closeSession('s2');
+    ptyTransport.closeSession('s3');
     vi.unstubAllGlobals();
   });
 
@@ -175,31 +177,105 @@ describe('pty transport — offset resume', () => {
     expect(ptyTransport.__received('s1')).toBe(100);
   });
 
-  it('a resize measured BEFORE the socket opens is flushed on open, not dropped', () => {
+  it('input and resize produced while disconnected are flushed in FIFO order on open', () => {
     // The real sequence: the terminal mounts and fits itself immediately, which
-    // races openSession()'s connect. Dropping that frame strands the PTY at
-    // 80x24 forever — the local grid is already resized, so no later fit ever
-    // re-sends it, and an agent TUI draws into a fraction of a wide terminal.
+    // races openSession()'s connect. User input during that same window must not
+    // vanish either.
     ptyTransport.openSession('s1');
     const ws = last();
     ws.readyState = 0; // CONNECTING — not yet OPEN
+    ptyTransport.write('s1', 'TM8-ECHO');
     ptyTransport.resize('s1', 205, 51);
     expect(ws.sent).toEqual([]); // nothing sent while connecting
 
     ws.readyState = 1;
     ws.onopen?.();
-    expect(ws.sent).toEqual([JSON.stringify({ type: 'resize', cols: 205, rows: 51 })]);
+    expect(new TextDecoder().decode(ws.sent[0] as Uint8Array)).toBe('TM8-ECHO');
+    expect(ws.sent[1]).toBe(JSON.stringify({ type: 'resize', cols: 205, rows: 51 }));
   });
 
-  it('keeps only the LATEST pre-open size (superseded ones would just reflow twice)', () => {
+  it('preserves queued frame order rather than silently replacing input-adjacent frames', () => {
     ptyTransport.openSession('s1');
     const ws = last();
     ws.readyState = 0;
     ptyTransport.resize('s1', 100, 20);
+    ptyTransport.write('s1', 'between');
     ptyTransport.resize('s1', 205, 51);
     ws.readyState = 1;
     ws.onopen?.();
-    expect(ws.sent).toEqual([JSON.stringify({ type: 'resize', cols: 205, rows: 51 })]);
+    expect(ws.sent[0]).toBe(JSON.stringify({ type: 'resize', cols: 100, rows: 20 }));
+    expect(new TextDecoder().decode(ws.sent[1] as Uint8Array)).toBe('between');
+    expect(ws.sent[2]).toBe(JSON.stringify({ type: 'resize', cols: 205, rows: 51 }));
+  });
+
+  it('fails closed on pending overflow: discards the whole queue and every tail frame', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ptyTransport.openSession('s1');
+    const ws = last();
+    ws.readyState = 0;
+
+    ptyTransport.write('s1', 'prefix-command ');
+    ptyTransport.write('s1', 'x'.repeat(256 * 1024 + 1));
+    ptyTransport.write('s1', 'dangerous-tail\r');
+
+    ws.readyState = 1;
+    ws.onopen?.();
+    expect(ws.sent).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    // Successful open clears the latch; only input produced afterwards flows.
+    ptyTransport.write('s1', 'after-open');
+    expect(new TextDecoder().decode(ws.sent[0] as Uint8Array)).toBe('after-open');
+    warn.mockRestore();
+  });
+
+  it('requestFullReplay replaces the socket and reconnects at offset 0', () => {
+    ptyTransport.openSession('s1');
+    const old = last();
+    old.text({ type: 'attached', base: 0, gap: 0, next: 480, hasReplay: false, epoch: 'e1' });
+    old.bin('live');
+    expect(ptyTransport.__received('s1')).toBe(484);
+
+    ptyTransport.requestFullReplay('s1');
+    const replacement = last();
+    expect(replacement).not.toBe(old);
+    expect(old.readyState).toBe(FakeWebSocket.CLOSED);
+    expect(offsetOf(replacement)).toBe(0);
+    expect(ptyTransport.__received('s1')).toBe(0);
+  });
+
+  it('forwards size.live so views can distinguish peer resizes from attach snapshots', () => {
+    const sizes: Array<{ cols: number; rows: number; live?: boolean }> = [];
+    const offSize = ptyTransport.onSize((_id, size) => sizes.push(size));
+    ptyTransport.openSession('s1');
+    last().text({ type: 'size', cols: 120, rows: 31 });
+    last().text({ type: 'size', cols: 180, rows: 44, live: true });
+    expect(sizes).toEqual([
+      { cols: 120, rows: 31, live: undefined },
+      { cols: 180, rows: 44, live: true },
+    ]);
+    offSize();
+  });
+
+  it('stagger-reconnects on wake and repeated wakes do not duplicate or re-slot timers', () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    ptyTransport.openSession('s1');
+    ptyTransport.openSession('s2');
+    ptyTransport.openSession('s3');
+    const original = FakeWebSocket.instances.slice();
+    for (const socket of original) socket.close();
+    expect(FakeWebSocket.instances).toHaveLength(3);
+
+    window.dispatchEvent(new Event('online'));
+    // Exactly one reconnects immediately; the others own one stagger slot each.
+    expect(FakeWebSocket.instances).toHaveLength(4);
+    window.dispatchEvent(new Event('online'));
+    expect(FakeWebSocket.instances).toHaveLength(4);
+
+    vi.advanceTimersByTime(500);
+    expect(FakeWebSocket.instances).toHaveLength(6);
+    vi.useRealTimers();
   });
 
   it('sends keystrokes as BINARY frames (a text frame would be a control message)', () => {

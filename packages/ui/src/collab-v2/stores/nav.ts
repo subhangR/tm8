@@ -28,8 +28,20 @@ export interface PanelRef { entityId: EntityId; tab?: PanelTab }
 
 export const MAX_PINNED = 3; // 2–3 persistent splits, per the UX brief
 
+/**
+ * ⚠ tm8 addition (drift ledger): `workspace`.
+ *
+ * The tm8 node supplies a three-column execution workspace (tasks │ live agent │
+ * resources) through the shell's `extraViews` seam. It is a NEW route rather
+ * than an override of `tasks`: the module's own Tasks screen stays exactly as it
+ * was, so nothing the snapshot ships is replaced or forked.
+ *
+ * Listing it here is the entire store-side change. It is not entity-focused, so
+ * `#/s/{space}/workspace` serializes through the existing generic grammar and
+ * round-trips under the every-view test with no special case.
+ */
 export const VIEWS = [
-  'home', 'tasks', 'docs', 'team', 'tracking', 'graph', 'leaderboard',
+  'home', 'tasks', 'workspace', 'docs', 'team', 'tracking', 'graph', 'leaderboard',
   'inbox', 'settings', 'sessions', 'channel', 'entity',
 ] as const;
 export type ViewName = typeof VIEWS[number];

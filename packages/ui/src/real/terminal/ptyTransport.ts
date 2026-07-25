@@ -1,12 +1,14 @@
 /**
  * The live PTY transport — one WebSocket per session, with offset resume.
  *
- * Ported from old maestro's `webTerminal` (maestro-ui/src/platform/terminal.ts)
- * and kept deliberately faithful: the wire protocol here is byte-identical to
- * maestro's, so both codebases run the same proven streaming path. The only
- * difference is the URL — maestro serves this at `/pty`, tm8 at
- * `/v2/ws?sessionId=<id>` (the URL the `execution.streams.attach` grant already
- * hands out; tm8's WS path is catalog-derived and must not be a literal).
+ * Ported from maestro's `webTerminal` (maestro-ui/src/platform/terminal.ts).
+ * Its resume accounting, replay hydration, bounded pending-send queue, wake
+ * reconnect staggering and stream-identity handling intentionally stay aligned
+ * with Maestro. tm8 differs in exactly two server-integration seams:
+ *  - Maestro attaches at `/pty`; tm8 attaches at `/v2/ws?sessionId=<id>` (the
+ *    URL represented by `execution.streams.attach`).
+ *  - Maestro can bootstrap a plain PTY through `/pty/spawn`; tm8 does not,
+ *    because `execution.spawn` creates the PTY before this transport attaches.
  *
  * This REPLACES the 500ms `GET /pty/output` poll. The poll was the terminal lag:
  * it repainted on a fixed tick regardless of output, so a fast agent arrived in
@@ -34,6 +36,8 @@
  * being emitted as a replacement char.
  */
 
+import { parseControlFrame } from './ptyProtocol.js';
+
 export interface ReplayInfo {
   kind: 'delta' | 'snapshot';
 }
@@ -41,10 +45,13 @@ export interface ReplayInfo {
 type OutputHandler = (id: string, data: string) => void;
 type ReplayHandler = (id: string, data: string, info: ReplayInfo) => void;
 type ExitHandler = (id: string, exitCode?: number | null) => void;
-type SizeHandler = (id: string, size: { cols: number; rows: number }) => void;
+type SizeHandler = (id: string, size: { cols: number; rows: number; live?: boolean }) => void;
 type ReattachHandler = (id: string) => void;
 
 const _sockets = new Map<string, WebSocket>();
+const _pendingSends = new Map<string, { frames: Array<string | Uint8Array>; bytes: number }>();
+/** Fail-closed after queue overflow until a socket successfully opens. */
+const _overflowLatched = new Set<string>();
 const _outputHandlers: OutputHandler[] = [];
 const _replayHandlers: ReplayHandler[] = [];
 const _exitHandlers: ExitHandler[] = [];
@@ -74,6 +81,13 @@ const _suspended = new Set<string>();
 const _exitedSessions = new Set<string>();
 const _reconnectAttempts = new Map<string, number>();
 const _reconnectTimers = new Map<string, number>();
+/** Sessions whose reconnect timer is a wake-stagger slot, not backoff. */
+const _wakeStaggered = new Set<string>();
+
+const MAX_PENDING_BYTES = 256 * 1024;
+const MAX_PENDING_ENTRIES = 1024;
+const STAGGER_STEP_MS = 250;
+const MAX_STAGGER_MS = 2000;
 
 /**
  * One streaming decoder per session. PTY output arrives as raw bytes split on
@@ -87,23 +101,6 @@ const _decoders = new Map<string, TextDecoder>();
 const _received = new Map<string, number>();
 /** Sessions whose NEXT binary frame is the single display-only replay frame. */
 const _pendingReplay = new Map<string, ReplayInfo['kind']>();
-/**
- * The latest grid size requested for a session whose socket was not OPEN at the
- * time, flushed on the next open.
- *
- * This exists because the FIRST fit necessarily races the connect: the terminal
- * measures itself as soon as it mounts, which is before `openSession()`'s socket
- * finishes opening. Dropping that frame is not a transient glitch, it is
- * PERMANENT — the local grid has already been resized, so every later fit sees
- * no difference and never re-sends, and the PTY stays at its 80x24 default while
- * the browser renders a much wider grid. The visible symptom is an agent TUI
- * drawing itself into the left ~40% of a wide terminal.
- *
- * LATEST-WINS rather than a queue: unlike keystrokes, where order and
- * completeness matter, only the newest size is meaningful — replaying a
- * superseded intermediate size would just cause an extra reflow.
- */
-const _pendingResize = new Map<string, { cols: number; rows: number }>();
 /** Last `epoch` seen per session. Compared by EQUALITY ONLY. */
 const _epochs = new Map<string, string>();
 
@@ -158,53 +155,13 @@ function _handleAttached(id: string, frame: AttachedFrame): void {
   else _pendingReplay.delete(id);
 }
 
-function _parseControlFrame(text: string):
-  | ({ type: 'attached' } & AttachedFrame)
-  | { type: 'exit'; exitCode: number | null }
-  | { type: 'size'; cols: number; rows: number }
-  | null {
-  let msg: unknown;
-  try {
-    msg = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (typeof msg !== 'object' || msg === null) return null;
-  const m = msg as Record<string, unknown>;
-  if (m.type === 'exit') {
-    const code = m.exitCode;
-    return { type: 'exit', exitCode: typeof code === 'number' ? code : null };
-  }
-  if (m.type === 'size' && typeof m.cols === 'number' && typeof m.rows === 'number') {
-    return { type: 'size', cols: m.cols, rows: m.rows };
-  }
-  if (
-    m.type === 'attached' &&
-    typeof m.base === 'number' &&
-    typeof m.gap === 'number' &&
-    typeof m.next === 'number'
-  ) {
-    return {
-      type: 'attached',
-      base: m.base,
-      gap: m.gap,
-      next: m.next,
-      hasReplay: m.hasReplay === true,
-      ...(m.replayKind === 'snapshot' || m.replayKind === 'delta'
-        ? { replayKind: m.replayKind }
-        : {}),
-      ...(typeof m.epoch === 'string' ? { epoch: m.epoch } : {}),
-    };
-  }
-  return null;
-}
-
 function _clearReconnectTimer(id: string): void {
   const timer = _reconnectTimers.get(id);
   if (timer !== undefined) {
     window.clearTimeout(timer);
     _reconnectTimers.delete(id);
   }
+  _wakeStaggered.delete(id);
 }
 
 /** Exponential backoff + jitter. */
@@ -252,18 +209,20 @@ function _ensureSocket(id: string): WebSocket {
 
   ws.onopen = () => {
     _reconnectAttempts.set(id, 0);
-    // Flush a grid size that was measured before this socket was open (see
-    // _pendingResize). Without this the PTY keeps its 80x24 default forever.
-    const size = _pendingResize.get(id);
-    if (size) {
-      _pendingResize.delete(id);
-      ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+    // A successful open is the only thing that clears the fail-closed latch.
+    // The overflowing queue itself was already discarded; this just permits
+    // input produced after the reconnect to flow again.
+    _overflowLatched.delete(id);
+    const pending = _pendingSends.get(id);
+    if (pending) {
+      for (const frame of pending.frames) ws.send(frame);
+      _pendingSends.delete(id);
     }
   };
 
   ws.onmessage = (ev) => {
     if (typeof ev.data === 'string') {
-      const frame = _parseControlFrame(ev.data);
+      const frame = parseControlFrame(ev.data);
       if (frame) {
         if (frame.type === 'exit') {
           // A real process exit: mark it so the close that follows is recognized
@@ -274,7 +233,9 @@ function _ensureSocket(id: string): WebSocket {
           return;
         }
         if (frame.type === 'size') {
-          for (const h of _sizeHandlers) h(id, { cols: frame.cols, rows: frame.rows });
+          for (const h of _sizeHandlers) {
+            h(id, { cols: frame.cols, rows: frame.rows, live: frame.live });
+          }
           return;
         }
         if (frame.type === 'attached') {
@@ -342,6 +303,8 @@ function _ensureSocket(id: string): WebSocket {
       _received.delete(id);
       _pendingReplay.delete(id);
       _epochs.delete(id);
+      _pendingSends.delete(id);
+      _overflowLatched.delete(id);
       if (!alreadyExited) {
         for (const h of _exitHandlers) h(id, null);
       }
@@ -360,6 +323,7 @@ function _ensureSocket(id: string): WebSocket {
       _received.delete(id);
       _pendingReplay.delete(id);
       _epochs.delete(id);
+      _overflowLatched.delete(id);
     }
   };
 
@@ -367,9 +331,108 @@ function _ensureSocket(id: string): WebSocket {
   return ws;
 }
 
+let _wakeListenersRegistered = false;
+
+/** Reattach active sockets after wake/network recovery without a stampede. */
+function _reattachActiveSockets(): void {
+  let immediateUsed = false;
+  let staggerCount = 0;
+  for (const id of _activeSessions) {
+    if (_suspended.has(id)) continue;
+    const ws = _sockets.get(id);
+    if (
+      ws &&
+      ws.readyState !== WebSocket.CLOSED &&
+      ws.readyState !== WebSocket.CLOSING
+    ) {
+      continue;
+    }
+    if (_wakeStaggered.has(id)) continue;
+
+    _clearReconnectTimer(id);
+    _reconnectAttempts.set(id, 0);
+
+    if (!immediateUsed) {
+      immediateUsed = true;
+      _ensureSocket(id);
+      continue;
+    }
+
+    staggerCount += 1;
+    const delay =
+      Math.min(staggerCount * STAGGER_STEP_MS, MAX_STAGGER_MS) +
+      Math.random() * STAGGER_STEP_MS;
+    _wakeStaggered.add(id);
+    const timer = window.setTimeout(() => {
+      _reconnectTimers.delete(id);
+      _wakeStaggered.delete(id);
+      if (!_activeSessions.has(id)) return;
+      const current = _sockets.get(id);
+      if (
+        current &&
+        current.readyState !== WebSocket.CLOSED &&
+        current.readyState !== WebSocket.CLOSING
+      ) {
+        return;
+      }
+      _ensureSocket(id);
+    }, delay);
+    _reconnectTimers.set(id, timer);
+  }
+}
+
+function _registerWakeListeners(): void {
+  if (_wakeListenersRegistered) return;
+  if (typeof document === 'undefined' || typeof window === 'undefined') return;
+  _wakeListenersRegistered = true;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _reattachActiveSockets();
+  });
+  window.addEventListener('online', _reattachActiveSockets);
+}
+
+function _frameSize(frame: string | Uint8Array): number {
+  return typeof frame === 'string' ? frame.length : frame.byteLength;
+}
+
+/**
+ * Queue a disconnected input/resize frame with Maestro's deterministic bounds.
+ * Overflow discards the entire queue and latches the session until a real open;
+ * retaining a tail could execute a partial paste after reconnect.
+ */
+function _enqueuePending(id: string, frame: string | Uint8Array): void {
+  if (_overflowLatched.has(id)) return;
+
+  const entry = _pendingSends.get(id) ?? { frames: [], bytes: 0 };
+  entry.frames.push(frame);
+  entry.bytes += _frameSize(frame);
+
+  if (entry.bytes > MAX_PENDING_BYTES || entry.frames.length > MAX_PENDING_ENTRIES) {
+    _pendingSends.delete(id);
+    _overflowLatched.add(id);
+    console.warn(
+      `[ptyTransport] pending input overflow for ${id}: queued input exceeded ` +
+        `${MAX_PENDING_BYTES}B / ${MAX_PENDING_ENTRIES} entries — dropping ALL queued ` +
+        'input until reconnect (fail-closed; no partial paste is replayed)',
+    );
+    return;
+  }
+  _pendingSends.set(id, entry);
+}
+
+function _sendFrame(id: string, frame: string | Uint8Array): void {
+  const ws = _sockets.get(id);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(frame);
+    return;
+  }
+  _enqueuePending(id, frame);
+}
+
 export const ptyTransport = {
   /** Attach to a session's live stream. Idempotent. */
   openSession(id: string): void {
+    _registerWakeListeners();
     _activeSessions.add(id);
     // A fresh attach is never born suspended (a prior use of this id may have
     // left the flag set), and starts its offset accounting at 0.
@@ -379,7 +442,9 @@ export const ptyTransport = {
     _epochs.delete(id);
     _exitedSessions.delete(id);
     _decoders.delete(id);
-    _pendingResize.delete(id);
+    // A newly attached PTY must never inherit queued input from a prior logical
+    // use of the same id.
+    _pendingSends.delete(id);
     _ensureSocket(id);
   },
 
@@ -397,7 +462,8 @@ export const ptyTransport = {
     _received.delete(id);
     _pendingReplay.delete(id);
     _epochs.delete(id);
-    _pendingResize.delete(id);
+    _pendingSends.delete(id);
+    _overflowLatched.delete(id);
     const ws = _sockets.get(id);
     if (ws) {
       _sockets.delete(id);
@@ -416,30 +482,17 @@ export const ptyTransport = {
    * so routing input through it would make a user typing `{"type":"resize"...}`
    * a control-frame injection. Raw bytes cannot be confused for control.
    *
-   * Dropped (not queued) when the socket is down. Queuing input across a
-   * reconnect is what old maestro's fail-closed pending queue exists to bound —
-   * a queued trailing newline can EXECUTE against whatever PTY opens next. Until
-   * that queue is ported, silently dropping is the safe behaviour: the user sees
-   * their keystroke not appear, rather than it running later out of context.
+   * While the socket is down, Maestro's bounded fail-closed queue preserves the
+   * whole input sequence. Overflow discards the entire queue and latches further
+   * writes until a successful open, so a partial paste can never execute later.
    */
   write(id: string, data: string): void {
-    const ws = _sockets.get(id);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(new TextEncoder().encode(data));
-    }
+    _sendFrame(id, new TextEncoder().encode(data));
   },
 
   /** Tell the server the grid size (a JSON text control frame). */
   resize(id: string, cols: number, rows: number): void {
-    const ws = _sockets.get(id);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'resize', cols, rows }));
-      return;
-    }
-    // Not open yet, or mid-reconnect. Hold the LATEST size and send it on open —
-    // dropping it here would strand the PTY at 80x24 permanently (see
-    // _pendingResize for why no later fit recovers it).
-    _pendingResize.set(id, { cols, rows });
+    _sendFrame(id, JSON.stringify({ type: 'resize', cols, rows }));
   },
 
   /**
@@ -511,6 +564,32 @@ export const ptyTransport = {
       const i = _sizeHandlers.indexOf(handler);
       if (i >= 0) _sizeHandlers.splice(i, 1);
     };
+  },
+
+  /**
+   * A fresh xterm is remounting for an already-active PTY. Reset the resume
+   * offset and force a new attach so the server hydrates the full retained ring
+   * into the empty screen rather than returning only a delta.
+   */
+  requestFullReplay(id: string): void {
+    if (!_activeSessions.has(id)) return;
+    _clearReconnectTimer(id);
+    _reconnectAttempts.set(id, 0);
+    _received.set(id, 0);
+    _decoders.delete(id);
+    _pendingReplay.delete(id);
+    _epochs.delete(id);
+    _suspended.delete(id);
+    const old = _sockets.get(id);
+    if (old) {
+      _sockets.delete(id);
+      try {
+        old.close();
+      } catch {
+        /* already closing */
+      }
+    }
+    _ensureSocket(id);
   },
 
   /** Fires when the stream identity changed and the terminal must be cleared. */

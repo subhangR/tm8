@@ -23,10 +23,21 @@ import { useSectionCounts, useSpaceNavigation, useSpaces } from './useShellData'
  * so the only way to reach either was to type the URL — which for sessions meant
  * a running agent had no entry point at all. Sessions sits with the work it
  * describes; Settings goes last, where a settings entry belongs.
+ *
+ * ⚠ tm8 addition (drift ledger): `workspace`. The execution workspace is a NEW
+ * entry, not a replacement — `tasks` above still opens the module's own Tasks
+ * screen, unchanged. It sits between Tasks and Sessions because that is what it
+ * spans: it is where a task becomes a running agent.
+ *
+ * No `SECTION_QUERIES` entry accompanies it on purpose. The other sections are
+ * saved collection views and their badge is that query's total; the workspace is
+ * a composed surface with no single count, and a badge invented for it would be
+ * a number that means nothing.
  */
 export const RAIL_SECTIONS: Array<{ view: ViewName; label: string; icon: IconName }> = [
   { view: 'home', label: 'Home', icon: 'home' },
   { view: 'tasks', label: 'Tasks', icon: 'list-checks' },
+  { view: 'workspace', label: 'Workspace', icon: 'columns' },
   { view: 'sessions', label: 'Sessions', icon: 'terminal' },
   { view: 'docs', label: 'Docs', icon: 'file-text' },
   { view: 'team', label: 'Team', icon: 'users' },

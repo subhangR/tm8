@@ -130,8 +130,9 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
   const { pty } = opts;
   const logger = opts.logger ?? NOOP_LOGGER;
   const connections = new Set<PtyWsConnection>();
+  const connectionsBySession = new Map<string, Set<PtyWsConnection>>();
 
-  function handleControl(sessionId: string, text: string): void {
+  function handleControl(sessionId: string, origin: PtyWsConnection, text: string): void {
     let msg: unknown;
     try {
       msg = JSON.parse(text);
@@ -144,7 +145,17 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     const cols = Number(frame.cols);
     const rows = Number(frame.rows);
     if (Number.isFinite(cols) && Number.isFinite(rows)) {
+      const previous = pty.getSize(sessionId);
+      // This equality check terminates client echo loops. A peer that merely
+      // reasserts the current geometry produces no PTY signal and no broadcast.
+      if (previous && previous.cols === cols && previous.rows === rows) return;
       pty.resize(sessionId, cols, rows);
+      const peers = connectionsBySession.get(sessionId);
+      if (!peers) return;
+      const liveFrame = JSON.stringify({ type: 'size', cols, rows, live: true });
+      for (const peer of peers) {
+        if (peer !== origin) peer.send(liveFrame);
+      }
     }
   }
 
@@ -235,14 +246,20 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     // stay observable during that window.
     const conn = new PtyWsConnection(socket as WsSocket, {
       onInput: (data) => pty.write(sessionId, data),
-      onControl: (text) => handleControl(sessionId, text),
+      onControl: (text) => handleControl(sessionId, conn, text),
       onClose: () => {
         connections.delete(conn);
+        const peers = connectionsBySession.get(sessionId);
+        peers?.delete(conn);
+        if (peers?.size === 0) connectionsBySession.delete(sessionId);
         pty.removeSubscriber(sessionId, conn);
         logger.info('PtyWsServer: client detached', { sessionId });
       },
     });
     connections.add(conn);
+    const sessionConnections = connectionsBySession.get(sessionId) ?? new Set<PtyWsConnection>();
+    sessionConnections.add(conn);
+    connectionsBySession.set(sessionId, sessionConnections);
     if (head.length > 0) conn.ingest(head);
 
     const offset = parseOffset(url);

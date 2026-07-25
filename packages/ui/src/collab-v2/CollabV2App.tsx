@@ -142,10 +142,17 @@ export interface CollabV2AppProps {
    * Merged LAST, so the integration layer may also override a module screen.
    */
   extraViews?: ViewRegistry;
+
+  /**
+   * ⚠ tm8 addition (drift ledger): injected views that own the whole window,
+   * so the shell renders them without its own rails. See `ShellLayoutProps
+   * .fullBleedViews` for why omitting the chrome beats painting over it.
+   */
+  fullBleedViews?: readonly string[];
 }
 
 export function CollabV2App({
-  facade: injected, spaceId: injectedSpaceId, banner, extraViews,
+  facade: injected, spaceId: injectedSpaceId, banner, extraViews, fullBleedViews,
 }: CollabV2AppProps = {}) {
   // The mock world is only constructed when no facade is injected — building a
   // seeded world behind a live server would waste the work and, worse, leave
@@ -184,6 +191,7 @@ export function CollabV2App({
               facade={facade}
               spaceId={spaceId}
               views={extraViews ? { ...VIEWS, ...extraViews } : VIEWS}
+              fullBleedViews={fullBleedViews}
               palette={<CommandPalette />}
               renderPanel={(p) => <PanelBody {...p} />}
             />

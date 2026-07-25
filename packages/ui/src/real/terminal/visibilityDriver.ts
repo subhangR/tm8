@@ -153,6 +153,18 @@ export function stopTerminalVisibilityDriver(): void {
   deps = null;
 }
 
+/**
+ * Eviction seam for the bounded mounted-terminal LRU. Forget every reference to
+ * an xterm that is being fully disposed immediately, rather than waiting for
+ * the next 2s reconciliation pass to discover that its DOM was detached.
+ */
+export function forgetTerminalVisibility(id: string): void {
+  hiddenSince.delete(id);
+  suspendedIds.delete(id);
+  const warmIndex = warmLru.indexOf(id);
+  if (warmIndex >= 0) warmLru.splice(warmIndex, 1);
+}
+
 /** Test-only reset of module state. */
 export function __resetTerminalVisibilityDriver(): void {
   stopTerminalVisibilityDriver();

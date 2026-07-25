@@ -11,6 +11,18 @@
   overflow: hidden;
 }
 
+/*
+ * ⚠ tm8 addition: a view that IS an application shell in its own right — the
+ * execution workspace, a verbatim transplant of maestro's window — takes the
+ * whole viewport. ShellLayout omits the rails entirely in this mode rather
+ * than hiding them, so there is nothing to cover here: just one full track.
+ */
+.cv2-shell--fullbleed > .cv2-center {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
 .cv2-icon { flex: none; }
 
 /* --- Icon rail ---------------------------------------------------------------- */

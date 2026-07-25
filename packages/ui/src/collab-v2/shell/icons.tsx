@@ -8,7 +8,8 @@ import type { ReactNode } from 'react';
 export type IconName =
   | 'home' | 'list-checks' | 'file-text' | 'users' | 'git-pull-request'
   | 'share-2' | 'trophy' | 'inbox' | 'hash' | 'pin' | 'maximize-2' | 'x'
-  | 'chevron-right' | 'settings' | 'square' | 'terminal';
+  // ⚠ tm8 addition (drift ledger): 'columns' — the Workspace rail entry.
+  | 'chevron-right' | 'settings' | 'square' | 'terminal' | 'columns';
 
 const PATHS: Record<IconName, ReactNode> = {
   'home': <><path d="M3 9.5 10 3l7 6.5" /><path d="M5 9v8h10V9" /></>,
@@ -28,6 +29,9 @@ const PATHS: Record<IconName, ReactNode> = {
   'square': <rect x="4" y="4" width="12" height="12" rx="3" />,
   // A shell prompt: the caret an agent's session runs behind.
   'terminal': <><rect x="2.5" y="3.5" width="15" height="13" rx="2" /><path d="m6 8 2.5 2L6 12" /><path d="M10.5 12.5H14" /></>,
+  // ⚠ tm8 addition: three columns — the workspace's own shape, so the rail entry
+  // shows what the screen is rather than borrowing another section's glyph.
+  'columns': <><rect x="2.5" y="3.5" width="15" height="13" rx="2" /><path d="M7.5 3.5v13" /><path d="M12.5 3.5v13" /></>,
 };
 
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {

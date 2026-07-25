@@ -25,10 +25,15 @@ import type {
 
 // --- static choice tables -----------------------------------------------------
 
+/**
+ * Exhaustive over `ViewName` on purpose: a new route that forgets its label is a
+ * compile error here rather than a palette entry reading `undefined`. That is
+ * exactly how the ⚠ tm8 `workspace` addition surfaced.
+ */
 const VIEW_LABELS: Record<ViewName, string> = {
-  home: 'Home', tasks: 'Tasks', docs: 'Docs', team: 'Team', tracking: 'Tracking',
-  graph: 'Graph', leaderboard: 'Leaderboard', inbox: 'Inbox', settings: 'Settings',
-  sessions: 'Sessions', channel: 'Channel', entity: 'Entity',
+  home: 'Home', tasks: 'Tasks', workspace: 'Workspace', docs: 'Docs', team: 'Team',
+  tracking: 'Tracking', graph: 'Graph', leaderboard: 'Leaderboard', inbox: 'Inbox',
+  settings: 'Settings', sessions: 'Sessions', channel: 'Channel', entity: 'Entity',
 };
 
 /**
