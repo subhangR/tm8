@@ -1,0 +1,95 @@
+# tm8 CI — the merge gate.
+#
+# This file is ready for the day tm8 gains a remote; until then the same gate runs
+# locally via `bun run check` (and optionally as a pre-push hook: `bun run hooks:install`).
+#
+# Two jobs on purpose:
+#   check       — install + per-package scoped `tsc -b` + vitest. No database needed.
+#   migrations  — the same script against a real Postgres service container.
+#
+# Deliberately NOT here: any parallel vite build. The UI (W3/M2) gets ONE build step
+# inside the `check` job when it lands — concurrent vite builds SIGTERM each other.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # packages/server + packages/execution run under node (node-pty is broken under bun).
+  NODE_VERSION: "22"
+  BUN_VERSION: "1.2.x"
+
+jobs:
+  check:
+    name: typecheck + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      # --fast skips the migration apply (the `migrations` job owns it) but still
+      # does install, every scoped tsc -b, and every package's vitest suite.
+      - name: Gate
+        run: bash tools/ci/check.sh --fast
+        env:
+          CI: "1"
+
+  migrations:
+    name: migrations apply clean
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        # PIN: keep this aligned with the sidecar major settled in
+        # docs/ops/SIDECAR-PACKAGING.md. A drift between CI and the shipped sidecar
+        # is exactly the class of bug the migration gate exists to catch.
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: tm8
+          POSTGRES_USER: tm8
+          POSTGRES_DB: postgres
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd "pg_isready -U tm8"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Migration gate
+        run: bash tools/ci/migrations-check.sh
+        env:
+          CI: "1"
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8:tm8@localhost:5442/postgres

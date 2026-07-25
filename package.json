@@ -8,6 +8,11 @@
     "tools/*"
   ],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:server": "node scripts/dev.mjs --server-only",
+    "start": "node scripts/start.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "build": "tsc -b packages/contract packages/server packages/execution packages/cli tools/conformance",
     "typecheck": "tsc -b packages/contract packages/server packages/execution packages/cli tools/conformance",
     "build:contract": "tsc -b packages/contract",
     "build:server": "tsc -b packages/server",
@@ -15,7 +20,10 @@
     "build:cli": "tsc -b packages/cli",
     "test:contract": "cd packages/contract && bun run test",
     "test:conformance": "cd tools/conformance && bun run test",
-    "dev:server": "cd packages/server && bun run dev"
+    "check": "bash tools/ci/check.sh",
+    "check:migrations": "bash tools/ci/migrations-check.sh",
+    "hooks:install": "git config core.hooksPath tools/ci/hooks && echo 'tm8 git hooks enabled (pre-push runs tools/ci/check.sh --fast)'",
+    "hooks:uninstall": "git config --unset core.hooksPath && echo 'tm8 git hooks disabled'"
   },
   "devDependencies": {
     "typescript": "^5.5.0"

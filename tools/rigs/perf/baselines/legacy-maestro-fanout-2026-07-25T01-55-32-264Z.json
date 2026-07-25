@@ -1,0 +1,51 @@
+{
+  "rig": "pty-latency",
+  "rigVersion": 1,
+  "target": "legacy-maestro",
+  "baseUrl": "http://localhost:4570",
+  "label": "W0 baseline: 4-subscriber fan-out skew (Vega)",
+  "startedAt": "2026-07-25T01:55:32.264Z",
+  "durationMs": 60222.838,
+  "machine": {
+    "hostname": "Srees-MacBook-Pro.local",
+    "platform": "darwin 23.4.0",
+    "arch": "arm64",
+    "cpuModel": "Apple M1 Pro",
+    "cpuCount": 8,
+    "totalMemGB": 16,
+    "loadAvg1m": 12.21,
+    "nodeVersion": "v25.6.1"
+  },
+  "result": {
+    "mode": "fanout",
+    "sessionId": "sess_1784943069601_y42xw5b9m",
+    "subscribers": 4,
+    "seconds": 60,
+    "matchedFrames": 544,
+    "aligned": true,
+    "perSubscriberFrames": [
+      544,
+      544,
+      544,
+      544
+    ],
+    "perSubscriberBytes": [
+      59733,
+      59733,
+      59733,
+      59733
+    ],
+    "skewMs": {
+      "n": 544,
+      "min": 0.045,
+      "p50": 0.083,
+      "p90": 0.325,
+      "p95": 0.603,
+      "p99": 3.522,
+      "max": 7.746,
+      "mean": 0.228,
+      "stddev": 0.655
+    },
+    "note": "skewMs = spread between first and last subscriber receiving the same flush."
+  }
+}

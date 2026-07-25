@@ -1,0 +1,347 @@
+{
+  "rig": "pty-latency",
+  "rigVersion": 1,
+  "target": "legacy-maestro",
+  "baseUrl": "http://localhost:4570",
+  "label": "W0 baseline: live cadence on a busy worker (Rigel)",
+  "startedAt": "2026-07-25T01:55:30.453Z",
+  "durationMs": 75202.709,
+  "machine": {
+    "hostname": "Srees-MacBook-Pro.local",
+    "platform": "darwin 23.4.0",
+    "arch": "arm64",
+    "cpuModel": "Apple M1 Pro",
+    "cpuCount": 8,
+    "totalMemGB": 16,
+    "loadAvg1m": 11.35,
+    "nodeVersion": "v25.6.1"
+  },
+  "result": {
+    "mode": "observe",
+    "sessionId": "sess_1784943363017_3it4ewy2m",
+    "seconds": 75,
+    "liveFrames": 62,
+    "liveBytes": 4536,
+    "bytesPerSecond": 60.455,
+    "framesPerSecond": 0.826,
+    "frameBytes": {
+      "n": 62,
+      "min": 1,
+      "p50": 5,
+      "p90": 5,
+      "p95": 5,
+      "p99": 4208,
+      "max": 4208,
+      "mean": 73.161,
+      "stddev": 533.745
+    },
+    "interArrivalMs": {
+      "n": 61,
+      "min": 190.563,
+      "p50": 1105.567,
+      "p90": 1573.215,
+      "p95": 1629.876,
+      "p99": 1954.881,
+      "max": 1954.881,
+      "mean": 1199.522,
+      "stddev": 333.675
+    },
+    "interArrivalHistogram": {
+      "buckets": [
+        {
+          "ltMs": 1,
+          "count": 0
+        },
+        {
+          "ltMs": 4,
+          "count": 0
+        },
+        {
+          "ltMs": 8,
+          "count": 0
+        },
+        {
+          "ltMs": 16,
+          "count": 0
+        },
+        {
+          "ltMs": 33,
+          "count": 0
+        },
+        {
+          "ltMs": 66,
+          "count": 0
+        },
+        {
+          "ltMs": 150,
+          "count": 0
+        },
+        {
+          "ltMs": 500,
+          "count": 3
+        },
+        {
+          "ltMs": 2000,
+          "count": 58
+        }
+      ],
+      "overflow": 0
+    },
+    "coalescing": {
+      "windowMs": 16,
+      "gapsBelowWindow": 0,
+      "belowWindowPct": 0,
+      "note": "Frames arriving closer than windowMs escaped the server-side coalescer. Near-zero is healthy; a rising share is the terminal-lag regression signature."
+    },
+    "samples": [
+      {
+        "tMs": 779.19,
+        "bytes": 5
+      },
+      {
+        "tMs": 2308.107,
+        "bytes": 5
+      },
+      {
+        "tMs": 3809.545,
+        "bytes": 5
+      },
+      {
+        "tMs": 5382.76,
+        "bytes": 5
+      },
+      {
+        "tMs": 7034.211,
+        "bytes": 5
+      },
+      {
+        "tMs": 8433.581,
+        "bytes": 5
+      },
+      {
+        "tMs": 10063.457,
+        "bytes": 5
+      },
+      {
+        "tMs": 11529.099,
+        "bytes": 5
+      },
+      {
+        "tMs": 12901.183,
+        "bytes": 5
+      },
+      {
+        "tMs": 14285.579,
+        "bytes": 5
+      },
+      {
+        "tMs": 15615.126,
+        "bytes": 5
+      },
+      {
+        "tMs": 17021.8,
+        "bytes": 5
+      },
+      {
+        "tMs": 18497.373,
+        "bytes": 5
+      },
+      {
+        "tMs": 20109.766,
+        "bytes": 5
+      },
+      {
+        "tMs": 21418.549,
+        "bytes": 5
+      },
+      {
+        "tMs": 22822.622,
+        "bytes": 5
+      },
+      {
+        "tMs": 24329.058,
+        "bytes": 5
+      },
+      {
+        "tMs": 25690.491,
+        "bytes": 5
+      },
+      {
+        "tMs": 27162.826,
+        "bytes": 5
+      },
+      {
+        "tMs": 28727.207,
+        "bytes": 5
+      },
+      {
+        "tMs": 30185.45,
+        "bytes": 5
+      },
+      {
+        "tMs": 31595.352,
+        "bytes": 5
+      },
+      {
+        "tMs": 33211.769,
+        "bytes": 5
+      },
+      {
+        "tMs": 34699.824,
+        "bytes": 5
+      },
+      {
+        "tMs": 36184.24,
+        "bytes": 5
+      },
+      {
+        "tMs": 38139.121,
+        "bytes": 5
+      },
+      {
+        "tMs": 38706.593,
+        "bytes": 1
+      },
+      {
+        "tMs": 39145.4,
+        "bytes": 5
+      },
+      {
+        "tMs": 40125.991,
+        "bytes": 5
+      },
+      {
+        "tMs": 41122.617,
+        "bytes": 5
+      },
+      {
+        "tMs": 42134.97,
+        "bytes": 5
+      },
+      {
+        "tMs": 43341.221,
+        "bytes": 5
+      },
+      {
+        "tMs": 44217.623,
+        "bytes": 5
+      },
+      {
+        "tMs": 45214.68,
+        "bytes": 5
+      },
+      {
+        "tMs": 46246.581,
+        "bytes": 5
+      },
+      {
+        "tMs": 47235.316,
+        "bytes": 5
+      },
+      {
+        "tMs": 48231.616,
+        "bytes": 5
+      },
+      {
+        "tMs": 49774.096,
+        "bytes": 5
+      },
+      {
+        "tMs": 50837.445,
+        "bytes": 32
+      },
+      {
+        "tMs": 51255.819,
+        "bytes": 4208
+      },
+      {
+        "tMs": 51446.382,
+        "bytes": 5
+      },
+      {
+        "tMs": 53083.404,
+        "bytes": 5
+      },
+      {
+        "tMs": 54121.728,
+        "bytes": 5
+      },
+      {
+        "tMs": 55095.282,
+        "bytes": 5
+      },
+      {
+        "tMs": 56096.338,
+        "bytes": 5
+      },
+      {
+        "tMs": 57101.843,
+        "bytes": 5
+      },
+      {
+        "tMs": 58102.172,
+        "bytes": 5
+      },
+      {
+        "tMs": 59118.634,
+        "bytes": 5
+      },
+      {
+        "tMs": 60109.585,
+        "bytes": 5
+      },
+      {
+        "tMs": 61113.487,
+        "bytes": 5
+      },
+      {
+        "tMs": 62128.035,
+        "bytes": 5
+      },
+      {
+        "tMs": 63189.974,
+        "bytes": 5
+      },
+      {
+        "tMs": 64201.826,
+        "bytes": 5
+      },
+      {
+        "tMs": 65204.679,
+        "bytes": 5
+      },
+      {
+        "tMs": 66310.247,
+        "bytes": 5
+      },
+      {
+        "tMs": 67240.37,
+        "bytes": 5
+      },
+      {
+        "tMs": 68256.948,
+        "bytes": 5
+      },
+      {
+        "tMs": 69418.195,
+        "bytes": 5
+      },
+      {
+        "tMs": 70447.353,
+        "bytes": 5
+      },
+      {
+        "tMs": 71451.557,
+        "bytes": 5
+      },
+      {
+        "tMs": 72449.003,
+        "bytes": 5
+      },
+      {
+        "tMs": 73950.043,
+        "bytes": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# tm8 pre-push hook — OPT-IN, not installed by default.
+#
+# Enable:   bun run hooks:install     (sets core.hooksPath=tools/ci/hooks)
+# Disable:  bun run hooks:uninstall
+# Bypass once: git push --no-verify
+#
+# Runs the same gate as CI in its fast form: no install, no migration apply.
+# The full gate (tools/ci/check.sh) is what runs remotely and is the real merge bar.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+
+echo "tm8 pre-push: running tools/ci/check.sh --fast (skip with --no-verify)"
+if ! bash "$REPO_ROOT/tools/ci/check.sh" --fast; then
+  echo ""
+  echo "tm8 pre-push: the gate is red — push aborted."
+  echo "Fix it, or push with --no-verify if you know what you are doing."
+  exit 1
+fi
