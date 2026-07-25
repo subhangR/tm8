@@ -23,6 +23,14 @@ export interface ServerConfig {
   readonly uiDir: string | undefined;
   /** Request body cap — over this the frame answers `payload_too_large` (413). */
   readonly maxBodyBytes: number;
+  /**
+   * Postgres connection string for the graph (`TM8_DATABASE_URL`).
+   *
+   * Undefined leaves the handler registry empty, so every operation keeps
+   * answering an honest 501 — a node with no database should say it has no
+   * database, not boot and then fail at the first query.
+   */
+  readonly databaseUrl: string | undefined;
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -65,5 +73,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port,
     uiDir: env.TM8_UI_DIR?.trim() || undefined,
     maxBodyBytes,
+    databaseUrl: env.TM8_DATABASE_URL?.trim() || undefined,
   };
 }
