@@ -51,20 +51,6 @@ export interface UpgradeTarget {
   closeAll?(): void;
 }
 
-/**
- * A read-since-offset view of a live PTY's sanitized scrollback, used by the
- * browser session terminal. Returns `null` when no live PTY exists for the id
- * (never spawned, or already exited and finalized). Deliberately NOT a catalog
- * operation: it is a dev-time byte-stream poll for the terminal pane, the HTTP
- * analogue of the WS `execution.streams.attach` seam, and lives beside `/health`
- * so it never masquerades as a contract read. Post-G1A this is replaced by the
- * real WS fan-out; the shape (offset in, bytes + next offset out) is the same.
- */
-export type PtyOutputReader = (
-  sessionId: string,
-  offset: number,
-) => { base: number; gap: number; next: number; data: Buffer } | null;
-
 export interface FacadeServerOptions {
   readonly config: ServerConfig;
   readonly registry: HandlerRegistry;
@@ -72,7 +58,6 @@ export interface FacadeServerOptions {
   readonly identityResolver?: IdentityResolver;
   readonly upgrades?: UpgradeTarget;
   readonly staticHandler?: StaticHandler;
-  readonly ptyOutput?: PtyOutputReader;
 }
 
 export interface FacadeServer {
@@ -85,7 +70,7 @@ export interface FacadeServer {
 }
 
 export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
-  const { config, registry, staticHandler, upgrades, ptyOutput } = opts;
+  const { config, registry, staticHandler, upgrades } = opts;
   const router = opts.router ?? new Router();
   const resolveIdentity = opts.identityResolver ?? autoOwnerResolver;
 
@@ -136,29 +121,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         return;
       }
 
-      // The browser session terminal's byte-stream poll. Non-catalog and
-      // unenveloped, exactly like /health: it carries raw PTY scrollback, not a
-      // contract entity. `data` is base64 (JSON has no byte type); `next` is the
-      // raw offset the client resumes from. `found:false` means no live PTY.
-      if (pathname === '/pty/output' && method === 'GET') {
-        if (!ptyOutput) throw fail('not_implemented', 'no execution runtime on this node');
-        const sessionId = url.searchParams.get('sessionId') ?? '';
-        const offset = Number(url.searchParams.get('offset') ?? '0');
-        if (sessionId === '') throw fail('invalid_input', 'sessionId is required');
-        const slice = ptyOutput(sessionId, Number.isFinite(offset) ? offset : 0);
-        if (!slice) {
-          sendRaw(res, 200, requestId, { found: false });
-          return;
-        }
-        sendRaw(res, 200, requestId, {
-          found: true,
-          base: slice.base,
-          gap: slice.gap,
-          next: slice.next,
-          data: slice.data.toString('base64'),
-        });
-        return;
-      }
+      // NOTE: the interim `GET /pty/output` 500ms scrollback poll used to live
+      // here. It was replaced by the real push stream — the PTY WebSocket in
+      // ../pty/, which shares the events WS path and is told apart by its
+      // `sessionId` query param. The poll WAS the terminal lag: it re-rendered
+      // on a fixed 500ms tick regardless of output, so a fast agent arrived in
+      // visible bursts. Do not reintroduce it as a fallback; a live PTY has one
+      // delivery path and a second one desynchronizes the offset accounting.
 
       const isApiPath = pathname === BASE_PATH || pathname.startsWith(`${BASE_PATH}/`);
 

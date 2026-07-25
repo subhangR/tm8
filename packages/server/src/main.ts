@@ -22,9 +22,10 @@ import { createExecutionRuntime } from './facade/execution-handlers.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { resolveLoopbackOwner } from './identity/loopback.js';
 import { loadConfig, type ServerConfig } from './http/config.js';
-import { createFacadeServer, type FacadeServer } from './http/server.js';
+import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver } from './http/types.js';
 import { createStaticHandler } from './http/static.js';
+import { createPtyWsServer, isPtyUpgrade } from './pty/index.js';
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
@@ -98,6 +99,34 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const ws = createWsServer({ registry: subscriptions });
 
   /**
+   * The LIVE terminal socket, sharing the WS path with the event stream.
+   *
+   * Both sockets upgrade at `events.subscribe`'s catalog path; they are told
+   * apart by the `sessionId` query param, which is exactly what the
+   * `execution.streams.attach` grant hands the client
+   * (`/v2/ws?sessionId=<id>`). Dispatching here keeps events/ws-server.ts
+   * untouched and avoids inventing a second, off-contract path — tm8's WS path
+   * is catalog-derived and must not be written as a literal.
+   *
+   * It is handed `execution.pty` — the SAME PtyHostService the spawn handlers
+   * write to. A second host would have its own session map and every attach
+   * would find no live PTY.
+   */
+  const ptyWs = execution ? createPtyWsServer({ pty: execution.pty }) : undefined;
+  const upgrades: UpgradeTarget = ptyWs
+    ? {
+        handleUpgrade: (req, socket, head) =>
+          isPtyUpgrade(req)
+            ? ptyWs.handleUpgrade(req, socket, head)
+            : ws.handleUpgrade(req, socket, head),
+        closeAll: () => {
+          ptyWs.closeAll();
+          ws.closeAll();
+        },
+      }
+    : ws;
+
+  /**
    * ONE identity path for every handler.
    *
    * The frame's default resolver reports `auto-owner` with no identityId,
@@ -122,21 +151,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const server = createFacadeServer({
     config,
     registry,
-    upgrades: ws,
+    upgrades,
     ...(identityResolver ? { identityResolver } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
-    // The browser session terminal reads a live PTY's sanitized scrollback here.
-    // getReplay is the same offset-replay seam attach() uses, minus the live
-    // subscription — a poll, not a stream, which needs no WS proxy and cannot
-    // corrupt the scrollback ring. Absent on a database-less node.
-    ...(execution
-      ? {
-          ptyOutput: (sessionId: string, offset: number) => {
-            const r = execution.pty.getReplay(sessionId, offset);
-            return r ? { base: r.base, gap: r.gap, next: r.next, data: r.data } : null;
-          },
-        }
-      : {}),
   });
 
   const { url } = await server.listen();

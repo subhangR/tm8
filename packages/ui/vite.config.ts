@@ -23,10 +23,14 @@ export default defineConfig({
     strictPort: true,
     host: '127.0.0.1',
     proxy: {
-      '/v2': { target, changeOrigin: false },
+      // `ws: true` is REQUIRED, not cosmetic: /v2 carries both WebSockets —
+      // the workspace event stream and the per-session PTY terminal stream
+      // (told apart by the ?sessionId= query param). Without it vite answers
+      // the upgrade itself and the sockets never reach tm8-server.
+      '/v2': { target, changeOrigin: false, ws: true },
       '/health': { target, changeOrigin: false },
-      // The session terminal's PTY byte-stream poll (non-catalog, beside /health).
-      '/pty': { target, changeOrigin: false },
+      // NOTE: the '/pty' entry that proxied the interim 500ms scrollback poll is
+      // gone with the poll — terminal bytes now arrive over the /v2 WebSocket.
     },
   },
   test: {
