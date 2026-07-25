@@ -33,6 +33,7 @@ import {
   type SpawnRequest,
   type Tm8Manifest,
   type TransitionInput,
+  type WorkSessionStatus,
 } from '@tm8/execution';
 import type {
   ExecutionPromptInput,
@@ -266,6 +267,36 @@ export class DbGraphPort implements GraphPort {
     ]);
   }
 
+  /**
+   * Non-terminal work sessions recorded against `nodeId` — the ghost candidates
+   * startup reconciliation retires.
+   *
+   * A plain READ rather than an RPC: nothing is written here, and the catalog
+   * has no "sessions on a node" operation because this is node-local
+   * maintenance, not a contract surface. RLS still applies through the caller's
+   * claims, so it can only ever see rows the caller is entitled to.
+   *
+   * `deleted_at is null` is load-bearing: a soft-deleted session is already gone
+   * as far as the graph is concerned, and transitioning it would write a ledger
+   * row resurrecting something nobody asked about.
+   */
+  async listNodeActiveSessions(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>> {
+    const rows = await this.db.query<{ entity_id: string; status: string }>(
+      this.claims(auth),
+      `select ws.entity_id, ws.status
+         from public.work_sessions ws
+         join public.entities e on e.id = ws.entity_id
+        where ws.node_id = $1
+          and ws.status in ('spawning', 'running', 'idle')
+          and e.deleted_at is null`,
+      [nodeId],
+    );
+    return rows.map((r) => ({ sessionId: r.entity_id, status: r.status as WorkSessionStatus }));
+  }
+
   async recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown> {
     return this.db.rpc(this.claims(auth), 'public.record_execution_command', [
       input.sessionId,
@@ -319,6 +350,16 @@ export interface ExecutionRuntime {
   spawnService: SpawnService;
   graph: DbGraphPort;
   register(registry: HandlerRegistry): void;
+  /**
+   * Retire sessions this node left behind when it last died. Call ONCE at
+   * startup, before serving: a fresh process has an empty PTY map, so any row
+   * this node owns that still claims to be running provably has no process.
+   *
+   * Exposed rather than run inside the constructor so the composition root owns
+   * the ordering (and so tests can drive it deliberately). Resolves to the count
+   * retired and NEVER rejects — see `SpawnService.reconcileNodeGhosts`.
+   */
+  reconcileGhosts(): Promise<number>;
 }
 
 /**
@@ -364,6 +405,28 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     spawnService,
     graph,
     register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner),
+    reconcileGhosts: async () => {
+      // Runs as the loopback OWNER. `work_session_transition` goes through
+      // `require_space_member` → `require_identity` with no node-admin bypass,
+      // so reconciliation needs a real identity; the node's owner is the honest
+      // one — they are whose node left the rows behind.
+      //
+      // Wrapped because resolving the owner touches the database, and a node
+      // whose graph is briefly unreachable at boot must still start.
+      try {
+        const o = await owner();
+        return await spawnService.reconcileNodeGhosts({
+          identityId: o.identityId,
+          nodeAdmin: o.isNodeAdmin,
+          requestId: 'startup-reconcile',
+        });
+      } catch (error) {
+        deps.logger?.warn?.('execution: ghost reconciliation skipped', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return 0;
+      }
+    },
   };
 }
 
@@ -398,7 +461,26 @@ export function registerExecutionHandlers(
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
   registerHandlers(registry, spawnService, graph, deps.db, owner);
-  return { pty: deps.pty, spawnService, graph, register: () => {} };
+  return {
+    pty: deps.pty,
+    spawnService,
+    graph,
+    register: () => {},
+    // Same reconciliation as createExecutionRuntime — a node wired through the
+    // legacy shape leaves the same ghosts behind and deserves the same cleanup.
+    reconcileGhosts: async () => {
+      try {
+        const o = await owner();
+        return await spawnService.reconcileNodeGhosts({
+          identityId: o.identityId,
+          nodeAdmin: o.isNodeAdmin,
+          requestId: 'startup-reconcile',
+        });
+      } catch {
+        return 0;
+      }
+    },
+  };
 }
 
 // --- handlers ----------------------------------------------------------------

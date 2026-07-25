@@ -162,6 +162,17 @@ export interface GraphPort {
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
   /** `public.record_execution_command` — the ledger row for prompt/terminate. */
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
+  /**
+   * Work sessions THIS node still believes are alive (status not terminal).
+   *
+   * A read, used only by startup ghost reconciliation. Scoped by `node_id`
+   * because a non-terminal session belonging to ANOTHER node may be perfectly
+   * alive over there — only the node that owns a PTY can say whether it is gone.
+   */
+  listNodeActiveSessions(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
 }
 
 // --- the manifest ------------------------------------------------------------

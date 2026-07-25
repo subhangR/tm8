@@ -334,6 +334,74 @@ export class SpawnService {
   }
 
   /**
+   * STARTUP GHOST RECONCILIATION — retire sessions this node can no longer own.
+   *
+   * A PTY lives in THIS process. When the server dies — a dev restart, a crash,
+   * a `kill` — every PTY dies with it, but the `work_sessions` rows stay at
+   * `running`, because the exit transition is written by `handlePtyExit` and
+   * that never runs for a process that was killed along with its host. The rows
+   * become GHOSTS: the UI paints them as live agents, and each one burns a slot
+   * against the 8-session concurrency cap forever. In practice a handful of dev
+   * restarts is enough to make spawning fail outright with
+   * `session concurrency cap reached`, which is how this was found.
+   *
+   * The inference is only sound at STARTUP, and only for THIS node: a fresh
+   * process has an empty session map, so a row this node owns that claims to be
+   * running provably has no PTY. Rows belonging to other nodes are left alone —
+   * they may be perfectly alive over there.
+   *
+   * `terminate()` is reused rather than calling `transition` directly so the
+   * ledger records the retirement like any other terminate; its `kill()` is a
+   * no-op returning 'not_found', which is exactly right here.
+   *
+   * NEVER THROWS. Reconciliation is a cleanup, not a precondition: a node that
+   * refuses to boot because it could not tidy stale rows is strictly worse than
+   * one that boots with the cap slightly over-subscribed. Per-session failures
+   * are logged and skipped so one unreadable row cannot block the rest.
+   *
+   * @returns how many sessions were retired.
+   */
+  async reconcileNodeGhosts(auth: GraphAuth): Promise<number> {
+    if (!this.nodeId) return 0;
+
+    let candidates: Array<{ sessionId: string; status: WorkSessionStatus }>;
+    try {
+      candidates = await this.graph.listNodeActiveSessions(auth, this.nodeId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: ghost reconciliation could not list sessions', {
+        nodeId: this.nodeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return 0;
+    }
+
+    let retired = 0;
+    for (const { sessionId, status } of candidates) {
+      // Defensive, and what makes this safe to call at any time rather than
+      // only at boot: a session with a LIVE PTY on this node is not a ghost.
+      if (this.pty.hasSession(sessionId)) continue;
+      try {
+        await this.terminate(auth, sessionId);
+        retired += 1;
+        this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: failed to retire ghost session', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (retired > 0) {
+      this.logger?.info('SpawnService: ghost reconciliation complete', {
+        nodeId: this.nodeId,
+        retired,
+      });
+    }
+    return retired;
+  }
+
+  /**
    * The PTY-exit sink (R29's single writer). Wire this into
    * `PtyHostService`'s `onSessionStatus` at construction —
    * `createExecutionPtyHost` in the server's execution-handlers does exactly

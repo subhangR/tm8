@@ -157,6 +157,28 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   });
 
   const { url } = await server.listen();
+
+  /**
+   * Retire the sessions this node left behind when it last died.
+   *
+   * A PTY lives in THIS process, so every restart kills its agents — but their
+   * `work_sessions` rows stay at 'running', because the exit transition is
+   * written by a sink that never runs for a process killed with its host. Those
+   * ghosts show in the UI as live agents and each one burns a slot against the
+   * 8-session concurrency cap permanently: a handful of dev restarts is enough
+   * to make spawning fail with `session concurrency cap reached`.
+   *
+   * AFTER listen(), deliberately: this is cleanup, not a precondition, and it
+   * must never be able to delay or prevent the node accepting connections. It
+   * never rejects, so there is nothing to catch.
+   */
+  if (execution) {
+    const retired = await execution.reconcileGhosts();
+    if (retired > 0) {
+      console.log(`  reconciled: retired ${retired} ghost session(s) left by a previous run`);
+    }
+  }
+
   return { server, subscriptions, events, url, db };
 }
 

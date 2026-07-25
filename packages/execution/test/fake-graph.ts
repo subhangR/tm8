@@ -17,6 +17,7 @@ import type {
   SpawnContext,
   Tm8Manifest,
   TransitionInput,
+  WorkSessionStatus,
 } from '../src/spawn/types.js';
 
 export interface FakeGraphOptions {
@@ -109,8 +110,31 @@ export class FakeGraph implements GraphPort {
 
   async recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown> {
     this.authSeen.push(auth);
+    if (this.failTerminateFor.has(input.sessionId)) {
+      throw new Error(`injected failure for ${input.sessionId}`);
+    }
     this.commands.push(input);
     return { entityId: input.sessionId, patches: [input.sessionId] };
+  }
+
+  /** Rows startup reconciliation should find. Set by the test. */
+  nodeActiveSessions: Array<{ sessionId: string; status: WorkSessionStatus }> = [];
+  /** Node ids `listNodeActiveSessions` was asked about. */
+  readonly nodeSessionQueries: string[] = [];
+  /** When set, the listing REJECTS — the unreadable-graph case at boot. */
+  listNodeActiveSessionsError: Error | null = null;
+  /** Session ids whose `terminate` should blow up, to prove one bad row cannot
+   *  stop the sweep. */
+  failTerminateFor = new Set<string>();
+
+  async listNodeActiveSessions(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>> {
+    this.authSeen.push(auth);
+    this.nodeSessionQueries.push(nodeId);
+    if (this.listNodeActiveSessionsError) throw this.listNodeActiveSessionsError;
+    return this.nodeActiveSessions;
   }
 
   statusesFor(sessionId: string): string[] {
