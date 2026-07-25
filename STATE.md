@@ -123,7 +123,11 @@ via `git archive`) into `packages/ui/src/collab-v2/`. The import-path pass was a
   custom kind, which the contract explicitly supports.** The durable fix is a
   fallback entry so an unknown kind degrades to a generic chip.
 
-## ⚠ WORKSPACE TRANSPLANT — REDIRECTED TO VERBATIM (2026-07-25) — first attempt REJECTED
+## ✅ WORKSPACE TRANSPLANT — DELIVERED & COMMITTED 2d5fad2 (2026-07-25)
+
+Maestro's actual four-pane workspace (icon rail + task panel + center terminal + Sessions/Resources) is live in tm8's **Workspace tab** (`#/s/{space}/workspace`) — real maestro components + real CSS onto tm8's identical Atelier tokens, data rewired to the tm8 backend. Original `#/tasks` untouched. **Run spawns DIRECTLY (no dialog), maestro-style** (runTask.ts: trusted project + persona → execution.spawn → session-spawned handoff). Terminal = maestro's full SessionTerminal, DOM renderer, keep-warm model (bounded mounted-LRU k=4 + suspend + warm-sockets-3 + full-ring-replay-on-evicted-return); @tm8/pty-protocol vendored BYTE-IDENTICAL + golden-frames anti-drift test. Vega-verified: typecheck clean, ui 975 / harness 5/5 / protocol 31/31, protocol cmp-identical, node-pty intact, side-by-side matches maestro, live terminal drive (queued-keystroke-after-reconnect, evicted-return replay, resize, suspend/resume, terminate), Run direct-spawn 0-dialog-events. Led by Atlas + codex PX lanes; terminal perf guidance from the maestro streaming owner. The tm8-native first attempt stays in git stash (recoverable). Reference/verification artifacts under docs/ui-audit/{reference,verification,artifacts,output}/ + PIXEL-TRANSPLANT-SPEC + TERMINAL-TRANSPLANT-NOTES.
+
+### (history) redirect record — first tm8-native attempt REJECTED
 
 The first build (Atlas/Rhea/Draco/Sol) REBUILT the four-pane layout in tm8's OWN collab-v2 design language ('fill tm8's panes' per the blueprint). **The user REJECTED it — they want maestro's ACTUAL UI verbatim** (its real components + real CSS, pixel/behavior-identical), with ONLY the data/actions rewired to the tm8 backend. That first build is **git-stashed** ('tm8-native workspace rebuild — SCRAPPED…', recover via `git stash list`); reusable cherry-picks live in it (SpawnDialog workspace-origin fix + tm8:session-spawned event, useTasks/useSessions data hooks, the 'workspace' route/nav/rail/palette mount wiring). Tree reset to 3cce920.
 
