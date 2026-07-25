@@ -11,6 +11,7 @@
  * conventions, DEF-1/2/3).
  */
 import { z } from 'zod';
+import { SHA256_HEX_RE } from './contract.js';
 import type {
   AcceptanceCriterion, ActivityItem, ActorSummary, ChannelTab, CollectionGroup,
   CollectionQuery, CollectionResult, CommandContext, CommandErrorCode,
@@ -20,14 +21,17 @@ import type {
   EntityContent, EntityCounters, EntityDetail, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityState, EntitySummary,
   ExecutionPromptInput, ExecutionSpawnInput, ExecutionStreamsAttachInput,
-  ExecutionTerminateInput, FileAttachment, GraphQuery, GraphResult,
+  ExecutionTerminateInput, FileAttachment, FileUploadGrant, FileUploadInitInput,
+  GraphQuery, GraphResult,
   GrantPointsInput, Hierarchy, HomeSnapshot, LeaderboardRow, LinkCommitInput,
   LinkPrInput, LiveWork, Mention, MessageView, MoveEntityInput,
   NavChannelNode, NotificationItem, Page, PaletteAction, PatchEdgeInput,
   PatchEntityInput, PatchMessageInput, PatchTaskInput, PlacementInput,
-  PointEventView, PostMessageInput, PresenceSnapshot, PullInput, PullState,
+  PointEventView, PostMessageInput, PresenceSnapshot, ProjectCreateInput,
+  ProjectDefaults, ProjectLinkInput, ProjectResource, ProjectTrustLevel,
+  ProjectUpdateInput, PullInput, PullState,
   ReactionInput, SavedView, SavedViewInput, SpaceNavigation, SpaceSettings,
-  SpaceSummary, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  SpaceSummary, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TrackingRefreshInput, UndoToken, UpdateSpaceInput, WorkInput, WorkSessionShareMode,
   WorkSessionStatus, WorkspaceEvent,
 } from './contract.js';
@@ -334,7 +338,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   z.object({
     kind: z.literal('work_session'),
     nodeId: z.string().nullable(),
-    projectRef: z.string().nullable(),
+    projectId: z.string().nullable(),
     workingOn: z.array(EntitySummarySchema),
     transcriptDoc: EntitySummarySchema.nullable(),
   }).strict(),
@@ -513,50 +517,62 @@ export const NotificationItemSchema: z.ZodType<NotificationItem> = z.lazy(() => 
 // Realtime events
 // ---------------------------------------------------------------------------
 
+/** AM-2 §3: the envelope every event variant carries. */
+const workspaceEventEnvelopeShape = {
+  spaceId: SpaceIdSchema,
+  seq: z.number().int().nonnegative(),
+  occurredAt: IsoTimestamp,
+  schemaVersion: z.number().int().positive(),
+};
+
 export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.union([
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.enum(['entity.upsert', 'entity.deleted']),
-    eventId: z.string(),
     entity: EntitySummarySchema,
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.enum(['edge.upsert', 'edge.deleted']),
-    eventId: z.string(),
     edge: EdgeViewSchema,
     clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.enum(['message.created', 'message.updated', 'message.deleted']),
-    eventId: z.string(),
     anchorId: EntityIdSchema,
     message: MessageViewSchema,
+    clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.literal('counter.changed'),
-    eventId: z.string(),
     entityId: EntityIdSchema,
     counters: EntityCountersSchema,
+    clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.literal('activity.created'),
-    eventId: z.string(),
     activity: ActivityItemSchema,
+    clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.enum(['notification.created', 'notification.read']),
-    eventId: z.string(),
     notification: NotificationItemSchema,
+    clientMutationId: z.string().optional(),
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.literal('presence.changed'),
-    eventId: z.string(),
     entityId: EntityIdSchema,
     presence: PresenceSnapshotSchema,
   }).strict(),
   z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.literal('typing.changed'),
-    eventId: z.string(),
     anchorId: EntityIdSchema,
     typingActorIds: z.array(EntityIdSchema),
   }).strict(),
@@ -774,15 +790,98 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 }).strict();
 
 // ---------------------------------------------------------------------------
+// Projects — linked resources (AM-2 §1, T-D17)
+// ---------------------------------------------------------------------------
+
+export const ProjectIdSchema = z.string().min(1);
+
+export const ProjectTrustLevelSchema: z.ZodType<ProjectTrustLevel> =
+  z.enum(['trusted', 'untrusted']);
+
+export const ProjectDefaultsSchema: z.ZodType<ProjectDefaults> = z.object({
+  model: z.string().nullable().optional(),
+  agentTool: z.string().nullable().optional(),
+  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).nullable().optional(),
+}).strict();
+
+export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
+  id: ProjectIdSchema,
+  name: z.string(),
+  repoUrl: z.string().nullable().optional(),
+  workingDir: z.string(),
+  trust: ProjectTrustLevelSchema,
+  defaults: ProjectDefaultsSchema,
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object({
+  ...commandContextShape,
+  name: z.string().min(1),
+  workingDir: z.string().min(1),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema.optional(),
+  defaults: ProjectDefaultsSchema.optional(),
+}).strict();
+
+export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({
+  ...commandContextShape,
+  name: z.string().min(1).optional(),
+  workingDir: z.string().min(1).optional(),
+  repoUrl: z.string().nullable().optional(),
+  trust: ProjectTrustLevelSchema.optional(),
+  defaults: ProjectDefaultsSchema.optional(),
+}).strict();
+
+export const ProjectLinkInputSchema: z.ZodType<ProjectLinkInput> = z.object({
+  ...commandContextShape,
+  projectId: ProjectIdSchema,
+}).strict();
+
+// ---------------------------------------------------------------------------
+// files.* blob lifecycle (AM-2 §2)
+// ---------------------------------------------------------------------------
+
+export const ChecksumSha256Schema = z.string().regex(SHA256_HEX_RE, 'must be a lowercase sha-256 hex digest');
+
+export const FileUploadInitInputSchema: z.ZodType<FileUploadInitInput> = z.object({
+  ...commandContextShape,
+  spaceId: SpaceIdSchema,
+  name: z.string().min(1),
+  mime: z.string().min(1),
+  sizeBytes: z.number().int().positive(),
+  checksumSha256: ChecksumSha256Schema,
+  entityId: EntityIdSchema.nullable().optional(),
+}).strict();
+
+export const FileUploadGrantSchema: z.ZodType<FileUploadGrant> = z.object({
+  uploadId: z.string(),
+  uploadUrl: z.string().min(1),
+  token: z.string().nullable().optional(),
+  expiresAt: IsoTimestamp,
+  maxSizeBytes: z.number().int().positive(),
+}).strict();
+
+/** Complete/abort carry only the command context; ids travel in the path. */
+export const FileUploadCompleteInputSchema = CommandContextSchema;
+export const FileUploadAbortInputSchema = CommandContextSchema;
+
+// ---------------------------------------------------------------------------
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
+
+export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.object({
+  mode: z.enum(['project', 'worktree']),
+  baseRef: z.string().nullable().optional(),
+}).strict();
 
 export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.object({
   ...commandContextShape,
   spaceId: SpaceIdSchema,
   teamMemberId: EntityIdSchema,
   taskIds: z.array(EntityIdSchema).optional(),
-  projectRef: z.string().nullable().optional(),
+  projectId: ProjectIdSchema.nullable().optional(),
+  workdir: SpawnWorkdirSchema.optional(),
   mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
@@ -957,7 +1056,7 @@ export const CommandErrorCodeSchema: z.ZodType<CommandErrorCode> = z.enum([
   'invalid_input', 'invalid_cursor',
   'unauthenticated', 'forbidden', 'not_found',
   'version_conflict', 'invariant_violation',
-  'payload_too_large', 'rate_limited',
+  'payload_too_large', 'rate_limited', 'limit_exceeded',
   'not_implemented', 'upstream_unavailable',
 ]);
 

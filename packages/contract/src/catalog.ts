@@ -1,7 +1,8 @@
 /**
  * The operation catalog (T-L12, api-design 02 §4) — canonical, transport-
  * independent operation names + their HTTP bindings, extended with the tm8
- * families (`execution.*` per R16, `entityKinds.*` per T-L4).
+ * families (`execution.*` per R16, `entityKinds.*` per T-L4, `projects.*` +
+ * `files.*` per AM-2).
  *
  * HTTP facade, CLI, and future MCP tools are projections of THIS list — never
  * parallel APIs. `status: 'reserved'` operations are part of the contract but
@@ -92,6 +93,22 @@ export const OPERATIONS = [
 
   // search — DEFERRED v1 (DEV-13): reserved slot, honest 501 forever until built
   { name: 'search.query',            method: 'GET',    path: '/v2/search',                                  kind: 'read',    status: 'reserved' },
+
+  // projects — linked resources, space↔project M2M (AM-2 §1, T-D17)
+  { name: 'projects.list',           method: 'GET',    path: '/v2/projects',                                kind: 'read',    status: 'v1' },
+  { name: 'projects.create',         method: 'POST',   path: '/v2/projects',                                kind: 'command', status: 'v1' },
+  { name: 'projects.get',            method: 'GET',    path: '/v2/projects/:projectId',                     kind: 'read',    status: 'v1' },
+  { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
+  { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
+  { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
+
+  // files.* blob lifecycle (AM-2 §2, 03 §6); download returns bytes, not the JSON envelope
+  { name: 'files.uploadInit',        method: 'POST',   path: '/v2/files/uploads',                           kind: 'command', status: 'v1' },
+  { name: 'files.uploadComplete',    method: 'POST',   path: '/v2/files/uploads/:uploadId/complete',        kind: 'command', status: 'v1' },
+  { name: 'files.uploadAbort',       method: 'POST',   path: '/v2/files/uploads/:uploadId/abort',           kind: 'command', status: 'v1' },
+  { name: 'files.download',          method: 'GET',    path: '/v2/files/:fileEntityId/download',            kind: 'read',    status: 'v1' },
+  // cross-node blob fetch over the asymmetric bridge — Phase 2, honest 501 (DEV-13)
+  { name: 'bridge.fetchBlob',        method: 'GET',    path: '/v2/bridge/blobs/:fileEntityId',              kind: 'read',    status: 'reserved' },
 
   // per-member read state
   { name: 'inbox.list',              method: 'GET',    path: '/v2/inbox',                                   kind: 'read',    status: 'v1' },

@@ -7,7 +7,9 @@ import {
   ActorSummarySchema, BASE_PATH, CollabError, CommandResultSchema,
   CreateEntityInputSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
   EntityKindSchema, EntitySummarySchema, ERROR_STATUS, ExecutionSpawnInputSchema,
+  FileUploadGrantSchema, FileUploadInitInputSchema,
   getOperation, isCollabError, isKeysetCursor, MessageViewSchema, OPERATIONS,
+  ProjectCreateInputSchema, ProjectLinkInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
 } from '../src/index.js';
@@ -38,9 +40,15 @@ describe('error taxonomy (DEV-8)', () => {
       invalid_input: 400, invalid_cursor: 400,
       unauthenticated: 401, forbidden: 403, not_found: 404,
       version_conflict: 409, invariant_violation: 409,
-      payload_too_large: 413, rate_limited: 429,
+      payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
       not_implemented: 501, upstream_unavailable: 503,
     });
+  });
+
+  it('limit_exceeded (AM-2 §4 governance) is 429 and retryable by default', () => {
+    const e = new CollabError('limit_exceeded', 'session concurrency cap reached');
+    expect(e.status).toBe(429);
+    expect(e.retryable).toBe(true);
   });
 
   it('CollabError carries code/status/requestId/retryable', () => {
@@ -99,9 +107,19 @@ describe('operation catalog', () => {
     }
   });
 
-  it('search is the only reserved v1 slot (DEV-13)', () => {
-    expect(RESERVED_OPERATIONS.map((o) => o.name)).toEqual(['search.query']);
-    expect(V1_OPERATIONS.length).toBe(OPERATIONS.length - 1);
+  it('carries the projects.* and files.* families (AM-2 §1/§2) as v1', () => {
+    for (const name of ['projects.list', 'projects.create', 'projects.get', 'projects.update',
+                        'projects.link', 'projects.unlink',
+                        'files.uploadInit', 'files.uploadComplete', 'files.uploadAbort', 'files.download'] as const) {
+      expect(getOperation(name).status).toBe('v1');
+    }
+    // link/unlink bind under the space (M2M semantics, T-D17)
+    expect(bindPath('projects.unlink', { spaceId: 's1', projectId: 'p1' })).toBe('/v2/spaces/s1/projects/p1');
+  });
+
+  it('search + bridge.fetchBlob are the only reserved slots (DEV-13, AM-2 §2)', () => {
+    expect(RESERVED_OPERATIONS.map((o) => o.name)).toEqual(['search.query', 'bridge.fetchBlob']);
+    expect(V1_OPERATIONS.length).toBe(OPERATIONS.length - 2);
   });
 
   it('bindPath substitutes params and refuses missing ones', () => {
@@ -150,10 +168,17 @@ describe('DTO schemas', () => {
     expect(MessageViewSchema.safeParse(msg).success).toBe(true);
   });
 
-  it('validates WorkspaceEvent unions incl. clientMutationId threading (DEV-9)', () => {
-    const ev: WorkspaceEvent = { type: 'entity.upsert', eventId: 'evt_1', entity: taskSummary, clientMutationId: 'cmid-1' };
+  it('validates WorkspaceEvent unions with the AM-2 §3 envelope + clientMutationId threading (DEV-9)', () => {
+    const envelope = { spaceId: 'space_1', seq: 41, occurredAt: '2026-07-25T12:00:00.000Z', schemaVersion: 1 };
+    const ev: WorkspaceEvent = { ...envelope, type: 'entity.upsert', entity: taskSummary, clientMutationId: 'cmid-1' };
     expect(WorkspaceEventSchema.safeParse(ev).success).toBe(true);
-    expect(WorkspaceEventSchema.safeParse({ type: 'entity.exploded', eventId: 'evt_2', entity: taskSummary }).success).toBe(false);
+    // clientMutationId is legal on every mutation-derived variant
+    const counter: WorkspaceEvent = { ...envelope, type: 'counter.changed', entityId: 'ent_task_1', counters, clientMutationId: 'cmid-2' };
+    expect(WorkspaceEventSchema.safeParse(counter).success).toBe(true);
+    // the envelope is mandatory — a bare pre-AM-2 event (eventId, no seq) is drift
+    expect(WorkspaceEventSchema.safeParse({ type: 'entity.upsert', eventId: 'evt_1', entity: taskSummary }).success).toBe(false);
+    expect(WorkspaceEventSchema.safeParse({ ...envelope, seq: undefined, type: 'entity.upsert', entity: taskSummary }).success).toBe(false);
+    expect(WorkspaceEventSchema.safeParse({ ...envelope, type: 'entity.exploded', entity: taskSummary }).success).toBe(false);
   });
 
   it('CommandResult requires patches', () => {
@@ -181,11 +206,44 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(CreateEntityInputSchema.safeParse({ ...base, kind: 'c:design_asset' }).success).toBe(true);
   });
 
-  it('execution.spawn validates persona + mode enums', () => {
+  it('execution.spawn validates persona + mode enums and the typed project/workdir (AM-2 §1)', () => {
     const ok = { spaceId: 'space_1', teamMemberId: 'ent_tm_1', taskIds: ['ent_task_1'], mode: 'worker' };
     expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, mode: 'boss' }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: 'space_1' }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, projectId: 'proj_1', workdir: { mode: 'worktree', baseRef: 'main' },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'yolo' } }).success).toBe(false);
+    // the pre-AM-2 untyped ref is dead
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, projectRef: '~/code/x' }).success).toBe(false);
+  });
+
+  it('project resources + inputs validate (AM-2 §1)', () => {
+    const project = {
+      id: 'proj_1', name: 'tm8', repoUrl: null, workingDir: '/Users/x/tm8',
+      trust: 'trusted', defaults: { model: 'claude-opus-4-8' },
+      createdAt: '2026-07-25T12:00:00.000Z', updatedAt: '2026-07-25T12:00:00.000Z',
+    };
+    expect(ProjectResourceSchema.safeParse(project).success).toBe(true);
+    expect(ProjectResourceSchema.safeParse({ ...project, trust: 'sorta' }).success).toBe(false);
+    expect(ProjectCreateInputSchema.safeParse({ name: 'tm8', workingDir: '/Users/x/tm8' }).success).toBe(true);
+    expect(ProjectCreateInputSchema.safeParse({ name: 'tm8' }).success).toBe(false);
+    expect(ProjectLinkInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(true);
+  });
+
+  it('file upload init enforces sha-256 checksums and positive sizes (AM-2 §2)', () => {
+    const ok = {
+      spaceId: 'space_1', name: 'design.png', mime: 'image/png', sizeBytes: 1024,
+      checksumSha256: 'a'.repeat(64),
+    };
+    expect(FileUploadInitInputSchema.safeParse(ok).success).toBe(true);
+    expect(FileUploadInitInputSchema.safeParse({ ...ok, checksumSha256: 'XYZ' }).success).toBe(false);
+    expect(FileUploadInitInputSchema.safeParse({ ...ok, sizeBytes: 0 }).success).toBe(false);
+    expect(FileUploadGrantSchema.safeParse({
+      uploadId: 'up_1', uploadUrl: '/v2/files/uploads/up_1/bytes',
+      expiresAt: '2026-07-25T12:10:00.000Z', maxSizeBytes: 536870912,
+    }).success).toBe(true);
   });
 
   it('actor summaries validate', () => {

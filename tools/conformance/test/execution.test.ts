@@ -34,27 +34,45 @@ async function gated<T>(fn: () => Promise<T>): Promise<{ gated: true } | { gated
 }
 
 describe('execution.* (R16)', () => {
-  it('spawn input schema itself enforces persona/mode shapes (contract-side)', () => {
+  it('spawn input schema itself enforces persona/mode/project/workdir shapes (contract-side)', () => {
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: w.spaceId, teamMemberId: w.forge }).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: w.spaceId }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: w.spaceId, teamMemberId: w.forge, mode: 'boss' }).success).toBe(false);
+    // AM-2 §1: typed projectId + worktree semantics; the untyped projectRef is dead
+    expect(ExecutionSpawnInputSchema.safeParse({
+      spaceId: w.spaceId, teamMemberId: w.forge, projectId: 'proj_1', workdir: { mode: 'worktree', baseRef: 'main' },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      spaceId: w.spaceId, teamMemberId: w.forge, projectRef: '~/code/x',
+    }).success).toBe(false);
   });
 
-  it('execution.spawn: 501-gated or a schema-valid work_session with single-writer status', async () => {
-    const res = await gated(() => api.command('execution.spawn', {
-      spaceId: w.spaceId, teamMemberId: w.forge, taskIds: [w.t104],
-      clientMutationId: `cmid-spawn-${Date.now()}`,
-    }));
-    if (res.gated) return; // honest gate — allowed before M3
-    const result = res.value as { entity?: EntityDetail };
-    const ws = expectValid(EntityDetailSchema, result.entity, 'work_session detail');
-    expect(ws.kind).toBe('work_session');
-    if (ws.state.kind === 'work_session') {
-      expect(WorkSessionStatusSchema.safeParse(ws.state.status).success).toBe(true);
+  it('execution.spawn: 501-gated, capacity-refused (limit_exceeded, AM-2 §4), or a schema-valid work_session', async () => {
+    try {
+      const res = await gated(() => api.command('execution.spawn', {
+        spaceId: w.spaceId, teamMemberId: w.forge, taskIds: [w.t104],
+        clientMutationId: `cmid-spawn-${Date.now()}`,
+      }));
+      if (res.gated) return; // honest gate — allowed before M3
+      const result = res.value as { entity?: EntityDetail };
+      const ws = expectValid(EntityDetailSchema, result.entity, 'work_session detail');
+      expect(ws.kind).toBe('work_session');
+      if (ws.state.kind === 'work_session') {
+        expect(WorkSessionStatusSchema.safeParse(ws.state.status).success).toBe(true);
+      }
+      // working_on edge to the task must exist
+      const types = ws.connections.outgoing.map((g) => g.type);
+      expect(types).toContain('working_on');
+    } catch (e) {
+      // The governance refusal path: a node at its session concurrency cap
+      // must answer 429 limit_exceeded (retryable), never queue silently.
+      if (isWireError(e) && e.code === 'limit_exceeded' && !e.malformedBody) {
+        expect(e.status).toBe(429);
+        expect(e.retryable).toBe(true);
+        return;
+      }
+      throw e;
     }
-    // working_on edge to the task must exist
-    const types = ws.connections.outgoing.map((g) => g.type);
-    expect(types).toContain('working_on');
   });
 
   it('execution.prompt / terminate: 501-gated, or a typed refusal on a non-work_session target', async () => {

@@ -145,7 +145,9 @@ export type CoreEntityContent =
       commandPermissions: Record<string, unknown>; equipped: EntitySummary[]; work: EntitySummary[] }
   | { kind: 'pull_request' | 'commit' | 'file' | 'spell' | 'skill'; [key: string]: unknown }
   // tm8 additions (03 §1, §4).
-  | { kind: 'work_session'; nodeId: string | null; projectRef: string | null;
+  | { kind: 'work_session'; nodeId: string | null;
+      /** AM-2 §1: typed link to the project resource the session runs in. */
+      projectId: ProjectId | null;
       workingOn: EntitySummary[]; transcriptDoc: EntitySummary | null }
   | { kind: 'collection'; description: string; items: EntitySummary[] };
 
@@ -231,17 +233,51 @@ export interface PresenceSnapshot { viewers: ActorSummary[]; typingActorIds: Ent
 
 // ---------------------------------------------------------------------------
 // Realtime event contract (§5)
+//
+// ⚠ AM-2 §3 AMENDMENT INSIDE §1 (flagged for the UI team): the event shape
+// here deliberately DIVERGES from the UI snapshot. The bare `eventId` field is
+// replaced by a mandatory envelope `{spaceId, seq, occurredAt, schemaVersion}`
+// on every event, and `clientMutationId?` widens to ALL mutation-derived
+// variants (not just entity/edge). Dedupe/ordering key = (spaceId, seq).
+// This is the only intentional §1 divergence besides the `limit_exceeded`
+// taxonomy code below.
 // ---------------------------------------------------------------------------
 
-export type WorkspaceEvent =
- | { type: 'entity.upsert'|'entity.deleted'; eventId: string; entity: EntitySummary; clientMutationId?: string }
- | { type: 'edge.upsert'|'edge.deleted'; eventId: string; edge: EdgeView; clientMutationId?: string }
- | { type: 'message.created'|'message.updated'|'message.deleted'; eventId: string; anchorId: EntityId; message: MessageView }
- | { type: 'counter.changed'; eventId: string; entityId: EntityId; counters: EntityCounters }
- | { type: 'activity.created'; eventId: string; activity: ActivityItem }
- | { type: 'notification.created'|'notification.read'; eventId: string; notification: NotificationItem }
- | { type: 'presence.changed'; eventId: string; entityId: EntityId; presence: PresenceSnapshot }
- | { type: 'typing.changed'; eventId: string; anchorId: EntityId; typingActorIds: EntityId[] };
+/** Bump when the event envelope or a payload shape changes incompatibly. */
+export const WORKSPACE_EVENT_SCHEMA_VERSION = 1;
+
+/**
+ * AM-2 §3: the envelope every WorkspaceEvent carries on the multiplexed
+ * socket and the poll fallback. `seq` is a per-space monotonic sequence
+ * assigned by the durable event log — it is the client's dedupe key, ordering
+ * key, and the basis of the `events.poll` `since` cursor. For the ephemeral
+ * presence/typing events (DEV-4, never on the durable stream) `seq` is
+ * channel-local and MUST NOT be used as a durable cursor.
+ */
+export interface WorkspaceEventEnvelope {
+  spaceId: SpaceId;
+  /** Per-space monotonic; gaps allowed, order is authoritative. */
+  seq: number;
+  occurredAt: string;
+  schemaVersion: number;
+}
+
+/**
+ * Every event carries its full typed payload — there are NO bare-entity-id
+ * variants that force a refetch (AM-2 §3). `clientMutationId` is present on
+ * every event derived from a ledgered mutation and echoes the originating
+ * command's id for optimistic reconciliation (DEV-9); presence/typing are
+ * client-synthesized and never carry one.
+ */
+export type WorkspaceEvent = WorkspaceEventEnvelope & (
+ | { type: 'entity.upsert'|'entity.deleted'; entity: EntitySummary; clientMutationId?: string }
+ | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
+ | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId; message: MessageView; clientMutationId?: string }
+ | { type: 'counter.changed'; entityId: EntityId; counters: EntityCounters; clientMutationId?: string }
+ | { type: 'activity.created'; activity: ActivityItem; clientMutationId?: string }
+ | { type: 'notification.created'|'notification.read'; notification: NotificationItem; clientMutationId?: string }
+ | { type: 'presence.changed'; entityId: EntityId; presence: PresenceSnapshot }
+ | { type: 'typing.changed'; anchorId: EntityId; typingActorIds: EntityId[] });
 
 /**
  * DEV-4: presence/typing are CLIENT-SYNTHESIZED, ephemeral events. They stay in
@@ -272,23 +308,31 @@ export interface NotificationItem {
 // Commands / mutation contract (§4)
 // ---------------------------------------------------------------------------
 
-/** Closed error set (04-COMMUNICATION-MODEL §4, adopted via DEV-8). */
+/**
+ * Closed error set (04-COMMUNICATION-MODEL §4, adopted via DEV-8).
+ *
+ * ⚠ AM-2 §4 AMENDMENT INSIDE §1 (flagged for the UI team): `limit_exceeded`
+ * is added for governance caps — a refusal because a countable resource limit
+ * is at capacity (e.g. the execution.spawn per-node/per-space session
+ * concurrency cap). Distinct from `rate_limited` (request-frequency
+ * throttling): same 429 status, retryable once capacity frees.
+ */
 export type CommandErrorCode =
   | 'invalid_input' | 'invalid_cursor'
   | 'unauthenticated' | 'forbidden' | 'not_found'
   | 'version_conflict' | 'invariant_violation'
-  | 'payload_too_large' | 'rate_limited'
+  | 'payload_too_large' | 'rate_limited' | 'limit_exceeded'
   | 'not_implemented' | 'upstream_unavailable';
 
 export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   invalid_input: 400, invalid_cursor: 400,
   unauthenticated: 401, forbidden: 403, not_found: 404,
   version_conflict: 409, invariant_violation: 409,
-  payload_too_large: 413, rate_limited: 429,
+  payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
   not_implemented: 501, upstream_unavailable: 503,
 };
 
-export const RETRYABLE_BY_DEFAULT = new Set<CommandErrorCode>(['rate_limited', 'upstream_unavailable']);
+export const RETRYABLE_BY_DEFAULT = new Set<CommandErrorCode>(['rate_limited', 'limit_exceeded', 'upstream_unavailable']);
 
 let requestSeq = 0;
 
@@ -579,6 +623,78 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
 /** Graph-side announce/authorize state for live terminal sharing (T-L10). */
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
 
+// --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
+
+/**
+ * A project is a repo/workingDir reference linked to spaces many-to-many
+ * (T-D17: workspace = root container of one server instance; space = sharing
+ * boundary; projects = linked resources). It deliberately is NOT an entity —
+ * no hierarchy, edges, messages, or reactions — so it lives as a resource DTO
+ * + the `projects.*` op family, and rides `space_projects` in the schema.
+ */
+export type ProjectId = string;
+
+/**
+ * Governance: `untrusted` projects are spawn-restricted — the execution block
+ * refuses (or sandboxes, later) sessions whose cwd resolves into them;
+ * `trusted` is the explicit opt-in for full agent execution.
+ */
+export type ProjectTrustLevel = 'trusted' | 'untrusted';
+
+/** Per-project spawn defaults, overridable per `execution.spawn` call. */
+export interface ProjectDefaults {
+  model?: string | null;
+  agentTool?: string | null;
+  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | null;
+}
+
+export interface ProjectResource {
+  id: ProjectId;
+  name: string;
+  repoUrl?: string | null;
+  /** Absolute path on the owning node; path-traversal/symlink-guarded (10-SECURITY-MODEL). */
+  workingDir: string;
+  trust: ProjectTrustLevel;
+  defaults: ProjectDefaults;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/projects — workspace-scoped (node-level), then linked to spaces. */
+export interface ProjectCreateInput extends CommandContext {
+  name: string;
+  workingDir: string;
+  repoUrl?: string | null;
+  /** Defaults to 'untrusted' — trust is an explicit grant. */
+  trust?: ProjectTrustLevel;
+  defaults?: ProjectDefaults;
+}
+
+/** PATCH /v2/projects/:projectId */
+export interface ProjectUpdateInput extends CommandContext {
+  name?: string;
+  workingDir?: string;
+  repoUrl?: string | null;
+  trust?: ProjectTrustLevel;
+  defaults?: ProjectDefaults;
+}
+
+/** POST /v2/spaces/:spaceId/projects — link (M2M); unlink is the DELETE binding. */
+export interface ProjectLinkInput extends CommandContext {
+  projectId: ProjectId;
+}
+
+/**
+ * Worktree semantics for a spawn (AM-2 §1): `project` runs the session
+ * directly in `project.workingDir`; `worktree` gives it an isolated git
+ * worktree (server-managed path under the node data dir, guarded per
+ * 10-SECURITY-MODEL) off `baseRef` (default: the repo's default branch).
+ */
+export interface SpawnWorkdir {
+  mode: 'project' | 'worktree';
+  baseRef?: string | null;
+}
+
 // --- execution.* operation family (R16) ------------------------------------
 
 /**
@@ -588,6 +704,15 @@ export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
  * emits the spawn request to the server-hosted PTY (AM-1: server PTY is the
  * ONLY spawn path — there is no desktop shell). Result: `CommandResult` whose
  * `entity` is the new work_session detail.
+ *
+ * Governance minimums (AM-2 §4):
+ * - The server enforces a session concurrency cap (per node and per space);
+ *   a spawn over the cap is refused with `429 limit_exceeded` (retryable
+ *   once a session exits) — never queued silently.
+ * - `execution.terminate` is THE cancellation path — there is no separate
+ *   cancel operation.
+ * - Every `execution.*` command is recorded in the command_ledger like any
+ *   other mutation — the ledger is the execution audit trail.
  */
 export interface ExecutionSpawnInput extends CommandContext {
   spaceId: SpaceId;
@@ -595,8 +720,15 @@ export interface ExecutionSpawnInput extends CommandContext {
   teamMemberId: EntityId;
   /** Tasks the session works on — become `working_on` edges. */
   taskIds?: EntityId[];
-  /** Repo/workingDir reference (space↔project link, T-D17). */
-  projectRef?: string | null;
+  /**
+   * AM-2 §1: typed project reference (replaces the untyped `projectRef`).
+   * The project must be linked to `spaceId` and pass its trust gate.
+   * Required when `workdir.mode` is 'worktree'; omitted/null = a projectless
+   * scratch session in a server-managed temp dir.
+   */
+  projectId?: ProjectId | null;
+  /** Working-directory semantics; default `{ mode: 'project' }`. */
+  workdir?: SpawnWorkdir;
   mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
   model?: string | null;
   agentTool?: string | null;
@@ -614,7 +746,11 @@ export interface ExecutionPromptInput extends CommandContext {
   message: string;
 }
 
-/** execution.terminate — POST /v2/entities/:id/commands/terminate. */
+/**
+ * execution.terminate — POST /v2/entities/:id/commands/terminate. This IS the
+ * cancellation path (AM-2 §4): graceful stop by default, `force` kills the
+ * PTY. Terminations are ledgered like every execution.* command.
+ */
 export interface ExecutionTerminateInput extends CommandContext {
   force?: boolean;
 }
@@ -636,6 +772,73 @@ export interface StreamAttachGrant {
   token?: string | null;
   expiresAt: string;
 }
+
+// --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------
+
+/**
+ * Blob storage model (03 §6): bytes live on local disk under the node's data
+ * dir (object storage on hubs) at `spaces/<spaceId>/…`, brokered exclusively
+ * by tm8-server routes carrying the SAME membership checks as the graph —
+ * graph RLS and blob authz must never disagree. Blobs are part of a space's
+ * backup/export.
+ *
+ * Lifecycle: `uploadInit` reserves an upload slot and returns a grant;
+ * the client PUTs the raw bytes to `uploadUrl`; `uploadComplete` verifies
+ * size + checksum and creates the `file` entity (the graph-side record) in
+ * one transaction; `uploadAbort` (or grant expiry) releases the slot.
+ *
+ * GC/retention: orphaned upload slots (never completed) are GC'd after grant
+ * expiry; blob bytes are GC'd when their `file` entity is hard-purged after
+ * the soft-delete retention window — a soft-deleted file's bytes remain
+ * restorable until then.
+ */
+
+/** Deployment-configurable ceiling; grants carry the effective value. */
+export const FILE_MAX_SIZE_BYTES_DEFAULT = 512 * 1024 * 1024;
+
+/** Blob checksums are SHA-256, lowercase hex. */
+export const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
+
+/** POST /v2/files/uploads */
+export interface FileUploadInitInput extends CommandContext {
+  spaceId: SpaceId;
+  name: string;
+  mime: string;
+  /** Declared size; uploadComplete refuses a mismatch (payload_too_large above the limit). */
+  sizeBytes: number;
+  /** SHA-256 of the blob, lowercase hex; verified at uploadComplete. */
+  checksumSha256: string;
+  /** Optional anchor: on complete, the file entity is `attached_to` this entity. */
+  entityId?: EntityId | null;
+}
+
+export interface FileUploadGrant {
+  uploadId: string;
+  /** PUT target for the raw bytes (server-relative or absolute). */
+  uploadUrl: string;
+  token?: string | null;
+  expiresAt: string;
+  /** The deployment's effective per-blob size limit. */
+  maxSizeBytes: number;
+}
+
+/**
+ * POST /v2/files/uploads/:uploadId/complete — verifies size + checksum,
+ * creates the `file` entity; result is a CommandResult whose `entity` is the
+ * new file detail. POST /v2/files/uploads/:uploadId/abort releases the slot.
+ * Both take only the command context (ids travel in the path).
+ */
+export type FileUploadCompleteInput = CommandContext;
+export type FileUploadAbortInput = CommandContext;
+
+/**
+ * GET /v2/files/:fileEntityId/download — the authorized, entity-scoped byte
+ * stream. NOTE: this is the one read that returns raw bytes, NOT the DEV-6
+ * JSON envelope (content-type/content-length from file state; errors still
+ * use the wire error body). `bridge.fetchBlob` — cross-node blob fetch over
+ * the asymmetric bridge — is RESERVED for Phase 2 and must answer an honest
+ * 501 until built (DEV-13).
+ */
 
 // --- custom entity kinds (T-L4, R7–R9) --------------------------------------
 
