@@ -11,7 +11,13 @@
  * `project.working_dir` — never from anything a client sent (S11). No project,
  * no spawn.
  */
-import { CollabError, type ProjectCreateInput, type ProjectLinkInput, type ProjectResource } from '@tm8/contract';
+import {
+  CollabError,
+  type ProjectCreateInput,
+  type ProjectLinkInput,
+  type ProjectResource,
+  type ProjectUpdateInput,
+} from '@tm8/contract';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
@@ -100,8 +106,40 @@ export function projectsCreate(deps: FacadeDeps): OperationHandler {
         JSON.stringify(input.defaults ?? {}),
         envelope.clientMutationId ?? null,
       ]);
-      return { kind: 'json' as const, status: 201, data: { project: toProject(raw.project) } };
+      // A BARE ProjectResource, not `{project: ...}`. A project is a resource,
+      // not an entity, so there is no CommandResult to wrap it in — and
+      // conformance validates ProjectResourceSchema against `data` directly
+      // (projects.test.ts:27). This is the one place my earlier
+      // "commands wrap, reads do not" summary was wrong.
+      return { kind: 'json' as const, status: 201, data: toProject(raw.project) };
     });
+  };
+}
+
+export function projectsUpdate(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const envelope = commandEnvelope(ctx);
+    const projectId = requireUuidParam(ctx, 'projectId');
+    const input = ctx.body as ProjectUpdateInput;
+
+    const raw = await deps.db.rpc<{ project: ProjectRow }>(
+      claimsFor(owner, ctx, envelope),
+      'update_project',
+      [
+        projectId,
+        input.name ?? null,
+        input.workingDir ?? null,
+        input.repoUrl ?? null,
+        // Trust is patched only when named: `coalesce` in the RPC means an
+        // absent field keeps its value, so null is "leave it", not "reset it".
+        input.trust ?? null,
+        input.defaults === undefined ? null : JSON.stringify(input.defaults),
+        envelope.clientMutationId ?? null,
+      ],
+    );
+    // Bare, like create and get — a project is a resource, not an entity.
+    return toProject(raw.project);
   };
 }
 

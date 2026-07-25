@@ -1,0 +1,246 @@
+/* ConnectionsRail — paper/ink rail styling. Tokens only, no magic colors. */
+
+.cv2-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  font-size: var(--pn-fs-sm);
+}
+
+/* --- blocked rollup ---------------------------------------------------------- */
+
+.cv2-rail__blocked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--cv2-status-blocked);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--cv2-status-blocked-soft);
+}
+
+.cv2-rail__blockedtext {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+}
+
+/* --- section heads ----------------------------------------------------------- */
+
+.cv2-rail__grouphead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.cv2-rail__spacer { flex: 1; }
+
+.cv2-rail__dir {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-rail__count {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  padding: 0 4px;
+  border: 1px solid var(--pn-line);
+  border-radius: 99px;
+}
+
+.cv2-rail__warn {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--cv2-status-blocked);
+}
+
+/* --- hierarchy --------------------------------------------------------------- */
+
+.cv2-rail__hierarchy,
+.cv2-rail__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cv2-rail__updown,
+.cv2-rail__children {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 6px;
+}
+
+.cv2-rail__children {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 4px;
+  border: 1px dashed transparent;
+}
+
+.cv2-rail__children[data-dropactive] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+
+.cv2-rail__axis {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+.cv2-rail__childlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-rail__ordinal {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+  min-width: 14px;
+  text-align: right;
+}
+
+.cv2-rail__reorder { display: inline-flex; gap: 0; }
+
+/* --- edge items -------------------------------------------------------------- */
+
+.cv2-rail__edges {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+}
+
+.cv2-rail__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-rail__item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 2px;
+  border-radius: 5px;
+  min-width: 0;
+}
+
+.cv2-rail__item:hover { background: var(--pn-hover); }
+
+/* Remove-on-hover: the row's icon buttons stay out of the way until wanted. */
+.cv2-rail__item .cv2-iconbtn {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.cv2-rail__item:hover .cv2-iconbtn,
+.cv2-rail__item:focus-within .cv2-iconbtn { opacity: 1; }
+
+.cv2-rail__res {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: var(--pn-track-label);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--pn-ink-3);
+  background: var(--pn-active);
+}
+
+.cv2-rail__res[data-resolved] {
+  color: var(--cv2-status-done);
+  background: var(--cv2-status-done-soft);
+}
+
+.cv2-rail__res--open {
+  color: var(--cv2-status-blocked);
+  background: var(--cv2-status-blocked-soft);
+}
+
+.cv2-rail__note {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+.cv2-rail__showall {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-brand);
+  cursor: pointer;
+}
+
+.cv2-rail__showall:hover { text-decoration: underline; }
+.cv2-rail__showall:disabled { color: var(--pn-ink-4); cursor: default; text-decoration: none; }
+
+/* --- composer ---------------------------------------------------------------- */
+
+.cv2-rail__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-surface);
+}
+
+.cv2-rail__composerrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-rail__composeractions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+
+.cv2-rail__composertype {
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+.cv2-rail__select,
+.cv2-rail__input {
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+.cv2-rail__candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cv2-rail__error {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--cv2-status-blocked);
+}

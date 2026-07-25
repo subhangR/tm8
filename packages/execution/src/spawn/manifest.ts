@@ -274,7 +274,7 @@ export function composeEnv(
     TM8_TASK_IDS: manifest.tasks.map((t) => t.id).join(','),
   };
   if (manifest.project) env.TM8_PROJECT_ID = manifest.project.id;
-  if (manifest.launch.model) env.TM8_MODEL = manifest.agent.model;
+  if (manifest.launch.model) env.TM8_MODEL = manifest.launch.model;
 
   for (const key of AUTH_ENV_KEYS) {
     const value = parentEnv[key];

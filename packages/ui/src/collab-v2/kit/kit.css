@@ -1,0 +1,119 @@
+/* Collab V2 kit primitives — styled entirely from tokens.css (--pn-* / --cv2-*). */
+
+/* --- Pill: status is always color + word ---------------------------------- */
+.cv2-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-ink-2);
+  background: var(--pn-idle-soft);
+  white-space: nowrap;
+}
+.cv2-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.cv2-pill--working, .cv2-pill--done { color: var(--cv2-status-working); background: var(--cv2-status-working-soft); }
+.cv2-pill--blocked { color: var(--cv2-status-blocked); background: var(--cv2-status-blocked-soft); }
+.cv2-pill--review  { color: var(--cv2-status-review);  background: var(--cv2-status-review-soft); }
+.cv2-pill--stale, .cv2-pill--waiting { color: var(--cv2-status-stale); background: var(--cv2-status-stale-soft); }
+.cv2-pill--idle, .cv2-pill--open, .cv2-pill--neutral { color: var(--pn-ink-3); background: var(--cv2-status-idle-soft); }
+.cv2-pill--brand { color: var(--pn-brand); background: var(--pn-brand-soft); }
+.cv2-pill--pulse .cv2-pill__dot { animation: cv2-pulse 1.6s var(--pn-ease-standard) infinite; }
+@keyframes cv2-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+/* --- Avatar: humans round, agents rounded-square --------------------------- */
+.cv2-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  overflow: hidden;
+  user-select: none;
+  border: 1px solid var(--pn-line-2);
+  box-sizing: border-box;
+}
+.cv2-avatar--human { border-radius: 50%; }
+.cv2-avatar--agent { border-radius: 27%; background: var(--pn-brand-soft); color: var(--pn-brand); }
+.cv2-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* --- Eyebrow: the uppercase mono micro-label -------------------------------- */
+.cv2-eyebrow {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  font-size: var(--pn-fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+/* --- Kbd --------------------------------------------------------------------- */
+.cv2-kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  border: 1px solid var(--pn-line-2);
+  border-bottom-width: 2px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-surface);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  line-height: 1.5;
+}
+
+/* --- IconBtn ------------------------------------------------------------------ */
+.cv2-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard), color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-iconbtn:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-iconbtn:active { background: var(--pn-active); }
+.cv2-iconbtn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.cv2-iconbtn[data-active="true"] { color: var(--pn-brand); background: var(--pn-brand-soft); }
+.cv2-iconbtn:disabled { opacity: 0.45; cursor: default; }
+
+/* --- Popover (the shared hover-preview engine) ----------------------------------- */
+.cv2-popover {
+  position: fixed;
+  z-index: 1000;
+  min-width: 200px;
+  max-width: 360px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: var(--pn-space-3);
+  animation: cv2-popover-in var(--pn-dur-fast) var(--pn-ease-out);
+}
+@keyframes cv2-popover-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}

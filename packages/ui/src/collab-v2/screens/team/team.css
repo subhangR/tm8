@@ -1,0 +1,128 @@
+/**
+ * Team screen — member cards and nested agent org-trees. The people
+ * themselves are EntityCards (styled in entity.css); this file styles the
+ * card frame, the agent section and the indentation ticks.
+ */
+
+.cv2-root .cv2-team {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--pn-paper);
+}
+
+.cv2-root .cv2-team__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) var(--pn-space-5);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  flex: none;
+}
+.cv2-root .cv2-team__glyph { font-size: var(--pn-fs-title); }
+
+.cv2-root .cv2-team__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-5);
+  align-items: start;
+}
+
+/* --- member card ----------------------------------------------------------- */
+.cv2-root .cv2-team__card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg, 14px);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
+  overflow: hidden;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .cv2-team__card:hover {
+  border-color: var(--pn-line-2);
+  box-shadow: var(--pn-sh-md);
+}
+.cv2-root .cv2-team__cardhead {
+  cursor: pointer;
+  padding: var(--pn-space-3);
+}
+.cv2-root .cv2-team__cardhead:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+}
+
+/* --- agent section --------------------------------------------------------- */
+.cv2-root .cv2-team__agents {
+  padding: var(--pn-space-3);
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .cv2-team__agenthead {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin-bottom: var(--pn-space-2);
+}
+.cv2-root .cv2-team__agentspace { flex: 1; }
+
+.cv2-root .cv2-team__org {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+.cv2-root .cv2-team__orgrow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.cv2-root .cv2-team__orgtick {
+  flex: none;
+  width: 10px;
+  border-left: 1px solid var(--pn-line-2);
+  border-bottom: 1px solid var(--pn-line-2);
+  border-bottom-left-radius: 6px;
+  margin: 0 0 18px 0;
+}
+.cv2-root .cv2-team__orgcell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  cursor: pointer;
+  border-radius: var(--pn-r-md, 10px);
+}
+.cv2-root .cv2-team__orgcell:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* --- profile Z4 (optional route) ------------------------------------------- */
+.cv2-root .cv2-profile {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+.cv2-root .cv2-profile__below {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: var(--pn-space-5);
+  padding: 0 var(--pn-space-6) var(--pn-space-10);
+  align-items: start;
+}
+.cv2-root .cv2-profile__wall {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}

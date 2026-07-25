@@ -39,6 +39,13 @@ export const SQLSTATE_TO_ERROR_CODE: Readonly<Record<string, CommandErrorCode>> 
   '28000': 'unauthenticated',
   '42501': 'forbidden',
   P0002: 'not_found',
+  // 22P02 invalid_text_representation — almost always a malformed uuid reaching
+  // a `uuid` parameter (e.g. `projectId: 'proj-missing-x'`). `not_found` is the
+  // honest answer: a string that cannot BE a uuid cannot identify a row, so it
+  // is not found, and it is not retryable. Left in the catch-all it became a
+  // 503, which tells the client "the node is broken, retry" about a request
+  // that will never succeed — wrong on both the code and the retry flag.
+  '22P02': 'not_found',
   '22023': 'invalid_input',
   '23514': 'invariant_violation',
   '23503': 'invariant_violation',

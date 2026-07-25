@@ -13,6 +13,13 @@
     "composite": true,
     "isolatedModules": true,
     "noUncheckedIndexedAccess": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    // A failing build must not leave a runnable dist behind. Without this, tsc
+    // reports errors, exits non-zero, and EMITS ANYWAY — so a server started
+    // from that dist boots and appears to work while the source that produced
+    // it does not compile. Found by Phoenix, who ran a full green verification
+    // against a dist emitted from a red build and only noticed because he
+    // checked the build separately.
+    "noEmitOnError": true
   }
 }

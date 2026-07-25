@@ -47,12 +47,24 @@ import { createLoopbackOwnerResolver } from '../identity/loopback.js';
 import type { FacadeDeps } from './deps.js';
 
 import { identityGet } from './handlers/identity.js';
-import { spacesCreate, spacesGet, spacesHome, spacesList } from './handlers/spaces.js';
-import { projectsCreate, projectsGet, projectsLink, projectsList } from './handlers/projects.js';
+import { spacesCreate, spacesGet, spacesHome, spacesList, spacesNavigation } from './handlers/spaces.js';
+import {
+  projectsCreate,
+  projectsGet,
+  projectsLink,
+  projectsList,
+  projectsUpdate,
+} from './handlers/projects.js';
 import { entitiesChildren, entitiesCreate, entitiesGet, entitiesPatch } from './handlers/entities.js';
 import { collectionsQuery } from './handlers/collections.js';
 import { messagesList, messagesPost } from './handlers/messages.js';
-import { commandsComplete, commandsWork, entitiesActivity } from './handlers/commands.js';
+import { edgesCreate } from './handlers/edges.js';
+import {
+  commandsComplete,
+  commandsWork,
+  entitiesActivity,
+  entitiesPointsAdd,
+} from './handlers/commands.js';
 
 /**
  * Mount the built operations onto the registry.
@@ -80,19 +92,25 @@ export function registerFacadeHandlers(
     'spaces.create': spacesCreate(facade),
     'spaces.get': spacesGet(facade),
     'spaces.home': spacesHome(facade),
+    'spaces.navigation': spacesNavigation(facade),
 
     // projects — execution.spawn needs a real projectId
     'projects.list': projectsList(facade),
     'projects.create': projectsCreate(facade),
     'projects.get': projectsGet(facade),
+    'projects.update': projectsUpdate(facade),
     'projects.link': projectsLink(facade),
 
-    // entities — task and doc only (AM-5); other kinds answer an honest 501
+    // entities — task/doc/team_member/channel; other kinds answer an honest 501
     'entities.get': entitiesGet(facade),
     'entities.create': entitiesCreate(facade),
     'entities.patch': entitiesPatch(facade),
     'entities.children': entitiesChildren(facade),
     'entities.activity': entitiesActivity(facade),
+    'entities.points.add': entitiesPointsAdd(facade),
+
+    // edges — the write side of the relationship seam the reads already render
+    'edges.create': edgesCreate(facade),
 
     // collections — the query executor behind every list
     'collections.query': collectionsQuery(facade),

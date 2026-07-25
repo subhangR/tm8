@@ -206,9 +206,13 @@ describe('composeManifest', () => {
 
     expect(manifest.manifestVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
-    expect(manifest.agent.permissionMode).toBe('bypassPermissions');
+    expect(manifest.launch.permissionMode).toBe('bypassPermissions');
     expect(manifest.session.workingDirectory).toBe('/tmp/tm8-fixture');
-    expect(manifest.teamMember.name).toBe('Draco');
+    // `agent` is the PERSONA (Phoenix's CLI reader owns this shape); `launch`
+    // is how the session was started. The two must never swap names again.
+    expect(manifest.agent.name).toBe('Draco');
+    expect(manifest.agent.teamMemberId).toBe('tm-1');
+    expect(manifest.agent.memory).toEqual([]);
     expect(manifest.promptExtra).toBe('focus on the seam');
     expect(manifest.generatedAt).toBe('2026-07-25T12:00:00.000Z');
   });

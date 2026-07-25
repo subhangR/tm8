@@ -1,0 +1,128 @@
+/* Home (My Work) + the shared screen-row chrome. Tokens only (--pn-*). */
+
+.cv2-home {
+  height: 100%;
+  overflow: auto;
+  padding: var(--pn-space-6) var(--pn-space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-5);
+}
+
+.cv2-home__header { display: flex; flex-direction: column; gap: var(--pn-space-1); }
+.cv2-home__h1 {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-h1);
+  line-height: var(--pn-lh-tight);
+  letter-spacing: var(--pn-track-tight);
+  font-weight: 500;
+}
+.cv2-home__blurb { margin: 0; color: var(--pn-ink-3); font-size: var(--pn-fs-sm); max-width: 62ch; }
+
+.cv2-home__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr)) minmax(220px, 0.8fr);
+  gap: var(--pn-space-5);
+  align-items: start;
+}
+@media (max-width: 1200px) {
+  .cv2-home__grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+}
+@media (max-width: 760px) {
+  .cv2-home__grid { grid-template-columns: 1fr; }
+}
+
+.cv2-home__col,
+.cv2-home__feed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.cv2-home__colhead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  border-bottom: 1px solid var(--pn-line);
+  padding-bottom: var(--pn-space-2);
+}
+.cv2-home__count {
+  margin-left: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+.cv2-home__hint { margin: 0; color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+
+.cv2-home__rows { display: flex; flex-direction: column; gap: var(--pn-space-3); }
+.cv2-home__loading { color: var(--pn-ink-3); font-size: var(--pn-fs-sm); padding: var(--pn-space-3) 0; }
+.cv2-home__error {
+  display: flex; align-items: center; gap: var(--pn-space-2);
+  color: var(--pn-block);
+  font-size: var(--pn-fs-sm);
+}
+.cv2-home__retry,
+.cv2-home__pull {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-card);
+  color: var(--pn-brand);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-home__pull:hover:not(:disabled) { background: var(--pn-brand-soft); }
+.cv2-home__pull:disabled { color: var(--pn-ink-4); cursor: default; }
+
+/* --- activity column ---------------------------------------------------------- */
+.cv2-home__acts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cv2-home__act {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) 0;
+  border-bottom: 1px solid var(--pn-line);
+  font-size: var(--pn-fs-sm);
+  min-width: 0;
+}
+.cv2-home__actbody { flex: 1; min-width: 0; }
+.cv2-home__actwho { font-weight: 600; }
+.cv2-home__actverb { color: var(--pn-ink-2); }
+.cv2-home__actdot { color: var(--pn-ink-4); }
+.cv2-home__acttime {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+/* --- shared screen row -------------------------------------------------------- */
+.cv2-screenrow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+.cv2-screenrow[data-selected='true'] { outline: 2px solid var(--pn-brand); outline-offset: 3px; border-radius: var(--pn-r-md); }
+.cv2-screenrow__check { margin-top: var(--pn-space-3); accent-color: var(--pn-brand); }
+.cv2-screenrow__cell { flex: 1; min-width: 0; cursor: pointer; }
+.cv2-screenrow__cell:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; border-radius: var(--pn-r-md); }
+.cv2-screenrow__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pn-space-1);
+  flex: none;
+}
+.cv2-screenrow__attrib { display: inline-flex; gap: var(--pn-space-2); flex-wrap: wrap; justify-content: flex-end; }
+.cv2-screenrow__attribpair { display: inline-flex; align-items: center; gap: 3px; }
+.cv2-screenrow__attribfor {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}

@@ -40,16 +40,22 @@ PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
   -o "-p 5442 -c listen_addresses=127.0.0.1" start
 ```
 
-**After any `bun install` or `bun add`, repair node-pty.** bun extracts npm
-tarballs without the executable bit, so `spawn-helper` lands at 0644 and every
-PTY spawn dies with `posix_spawnp failed`. The prebuilt binaries survive; only
-the mode bit is lost.
+**On a fresh clone, and after any `bun install` or `bun add`, repair node-pty.**
+This is not optional and it is the first thing a new machine trips over: bun
+extracts npm tarballs without the executable bit, so `spawn-helper` lands at
+0644 and **every PTY spawn dies with `posix_spawnp failed`** — which surfaces
+as "spawning is broken" rather than as an install problem. The prebuilt
+binaries survive; only the mode bit is lost.
 
 ```bash
 cd ~/Desktop/Projects/tm8
+bun install
 bash scripts/repair-node-pty.sh
 cd packages/execution && bun run harness     # → 5/5 checks passed / HARNESS GREEN
 ```
+
+Run the harness whenever spawning misbehaves — it isolates the PTY layer from
+everything else in about two seconds.
 
 ---
 
@@ -297,6 +303,7 @@ red while most of the catalog is still deliberately unbuilt.
 | `ECONNREFUSED` right after starting the server | The backgrounded server was reaped between shell invocations. Use the single command in §1, or run the server in its own window. |
 | Server exits 0 silently, no output | You ran `dist/main.js`. Use `dist/index.js`. |
 | `28000 no identity bound to this transaction` | The request reached the database with no identity claim. Should not happen on loopback; report it. |
+| `401 account creation requires an authenticated node admin` on the very first call | You are serving from a database that already has accounts but no `owner`. The loopback owner is bootstrapped on the **zero-accounts first run** (guard F1); once other accounts exist, it will not mint itself. Most often this means you pointed the server at the database you just ran `db/test/run.mjs` against — that suite creates its own accounts. Use a separate database for the suite, or `reset --force` before serving. |
 | `forbidden: spawning into an untrusted project` | Working as designed. Create the project with `"trust":"trusted"`. |
 | `409 duplicate key … projects_working_dir_key` | `working_dir` is globally unique — two projects cannot share a directory, or a spawn's cwd would be ambiguous. |
 | `400 request body failed contract validation` | The DTOs are `.strict()`. A misspelled or extra field is rejected rather than ignored. |

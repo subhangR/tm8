@@ -49,8 +49,12 @@ import {
  * a session is always somebody, and the manifest's identity block is built
  * from that row. Without it the loop cannot reach spawn at all, so the persona
  * is on the critical path even though nothing else about team_member is.
+ *
+ * `channel` is here because a space with no channels is not navigable, and
+ * `spaces.navigation` renders the channel tree (AM-3: "open a space, see
+ * tasks").
  */
-const SUPPORTED_CREATE_KINDS = new Set(['task', 'doc', 'team_member']);
+const SUPPORTED_CREATE_KINDS = new Set(['task', 'doc', 'team_member', 'channel']);
 
 /**
  * Fetch one entity for a LIVE read.
@@ -282,6 +286,43 @@ export function entitiesGet(deps: FacadeDeps): OperationHandler {
   };
 }
 
+/**
+ * Attach the CURRENT state to a `version_conflict`.
+ *
+ * A stale write is only actionable if the client is told what it lost the race
+ * to. Without `details.current` the client's only move is another round trip
+ * to find out — and it has to know to make it.
+ *
+ * The re-read happens in a FRESH transaction, deliberately: the conflicting
+ * one was rolled back, so there is no querier left to ask, and reading through
+ * the dead transaction would fail. The wire body carries it under `details`
+ * because `toWireError` prefers `details` when both are present (04 §4).
+ *
+ * Best-effort by construction: if the entity has since become unreadable, the
+ * original conflict is rethrown untouched. Losing the conflict itself in order
+ * to report a failure to decorate it would be a strictly worse error.
+ */
+export async function enrichVersionConflict(
+  deps: FacadeDeps,
+  ctx: Parameters<OperationHandler>[0],
+  id: string,
+  err: unknown,
+): Promise<unknown> {
+  if (!(err instanceof CollabError) || err.code !== 'version_conflict') return err;
+  try {
+    const owner = await deps.owner();
+    const current = await deps.db.tx(claimsFor(owner, ctx), (q) =>
+      buildDetail(q, id, owner.identityId),
+    );
+    return new CollabError('version_conflict', err.message, {
+      details: { ...(err.details ?? {}), current },
+      current,
+    });
+  } catch {
+    return err;
+  }
+}
+
 /** The one EntityDetail assembler — every command result reuses it too. */
 export async function buildDetail(
   q: Querier,
@@ -358,8 +399,20 @@ function viewerIdentity(id: string): string {
 /** The jsonb `internal.command_result` shape the write RPCs return. */
 interface RpcCommandResult {
   entity?: { id: string };
+  /** `internal.command_edge` — a raw `to_jsonb(edges)` row, so snake_case. */
+  edge?: {
+    id: string;
+    src_id: string;
+    dst_id: string;
+    type: string;
+    props: Record<string, unknown>;
+    created_by: string;
+    created_at: string;
+  };
   activity?: string | null;
   patches?: Array<{ id: string }>;
+  /** DEV-11: a 5-minute redemption handle on cheaply-invertible commands. */
+  undo?: { token: string; label: string; expiresAt?: string };
 }
 
 /**
@@ -387,9 +440,44 @@ async function toCommandResult(
         );
   const patches = await assembleSummaries(q, patchRows, viewerIdentityId);
 
+  let edge: EdgeView | undefined;
+  if (raw.edge) {
+    // `write_edge` patches both endpoints, so the summaries the EdgeView needs
+    // are already in hand — no extra round trip for the common case.
+    const byId = new Map(patches.map((p) => [p.id, p]));
+    const source = byId.get(raw.edge.src_id);
+    const target = byId.get(raw.edge.dst_id);
+    if (source && target) {
+      const actors = await loadActors(q, [raw.edge.created_by]);
+      edge = {
+        id: raw.edge.id,
+        type: raw.edge.type,
+        source,
+        target,
+        props: raw.edge.props ?? {},
+        createdBy: actorOf(actors, raw.edge.created_by),
+        createdAt: new Date(raw.edge.created_at).toISOString(),
+      };
+    }
+  }
+
   return {
     ...(entityId ? { entity: await buildDetail(q, entityId, viewerIdentityId) } : {}),
+    ...(edge ? { edge } : {}),
     patches,
+    ...(raw.undo
+      ? {
+          undo: {
+            token: raw.undo.token,
+            label: raw.undo.label,
+            // Normalised for the same reason every other jsonb-sourced
+            // timestamp is: Postgres serialises it with a UTC offset.
+            ...(raw.undo.expiresAt
+              ? { expiresAt: new Date(raw.undo.expiresAt).toISOString() }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -459,6 +547,24 @@ export function entitiesCreate(deps: FacadeDeps): OperationHandler {
         return { kind: 'json' as const, status: 201, data: created };
       }
 
+      if (input.kind === 'channel') {
+        // `create_channel` lowercases and trims the name itself (007:1069),
+        // because `channels.name` is regex-constrained and unique per space —
+        // so the title travels through as-is rather than being pre-mangled
+        // here where the two normalisations could drift apart.
+        const raw = await q.rpc<RpcCommandResult>('create_channel', [
+          input.spaceId,
+          input.title,
+          envelope.actorId ?? null,
+          content.topic ?? '',
+          input.parentId ?? null,
+          input.position ?? null,
+          envelope.clientMutationId ?? null,
+        ]);
+        const created = await toCommandResult(q, raw, owner.identityId);
+        return { kind: 'json' as const, status: 201, data: created };
+      }
+
       const raw =
         input.kind === 'task'
           ? await q.rpc<RpcCommandResult>('create_task', [
@@ -490,10 +596,47 @@ export function entitiesCreate(deps: FacadeDeps): OperationHandler {
               envelope.clientMutationId ?? null,
             ]);
 
+      await attachEdgeInto(q, raw, attach);
       const result = await toCommandResult(q, raw, owner.identityId);
       return { kind: 'json' as const, status: 201, data: result };
     });
   };
+}
+
+/**
+ * Surface the edge that `attachTo` created.
+ *
+ * `create_task` / `create_document` call `internal.attach_on_create`, which
+ * DOES create the edge — but they pass `null` as `command_result`'s edge
+ * argument, so the id never comes back (007:939). The edge is real and
+ * committed; only the reporting is missing, and a client that asked for an
+ * atomic create-and-attach needs to see what it got. Looked up here rather
+ * than patched into the RPC, which is Cygnus's file.
+ */
+async function attachEdgeInto(
+  q: Querier,
+  raw: RpcCommandResult,
+  attach: CreateEntityInput['attachTo'],
+): Promise<void> {
+  const newId = raw.entity?.id;
+  if (!attach?.entityId || !newId || raw.edge) return;
+
+  const rows = await q.query<NonNullable<RpcCommandResult['edge']>>(
+    `select id, src_id, dst_id, type, props, created_by, created_at
+       from public.edges
+      where src_id = $1 and dst_id = $2 and type = $3`,
+    [newId, attach.entityId, attach.edgeType ?? 'attached_to'],
+  );
+  const row = rows[0];
+  if (row) {
+    raw.edge = row;
+    // `toCommandResult` builds the EdgeView from `patches`, so both endpoints
+    // must be in there. The RPC patches only the new entity.
+    const patches = raw.patches ?? [];
+    if (!patches.some((p) => p.id === attach.entityId)) {
+      raw.patches = [...patches, { id: attach.entityId }];
+    }
+  }
 }
 
 export function entitiesPatch(deps: FacadeDeps): OperationHandler {
@@ -505,7 +648,8 @@ export function entitiesPatch(deps: FacadeDeps): OperationHandler {
     const content = (input.content ?? {}) as Record<string, unknown>;
     const claims = claimsFor(owner, ctx, envelope);
 
-    return deps.db.tx(claims, async (q) => {
+    const run = (): Promise<unknown> =>
+      deps.db.tx(claims, async (q) => {
       // Dispatch on the STORED kind, not on anything the client said: a patch
       // body has no `kind`, and trusting one would let a caller aim a task
       // update at a document.
@@ -556,6 +700,14 @@ export function entitiesPatch(deps: FacadeDeps): OperationHandler {
 
       return toCommandResult(q, raw, owner.identityId);
     });
+
+    try {
+      return await run();
+    } catch (err) {
+      // A stale write is told what it lost the race to, rather than being left
+      // to discover it with another request.
+      throw await enrichVersionConflict(deps, ctx, id, err);
+    }
   };
 }
 

@@ -36,9 +36,13 @@ async function main() {
   } else {
     try {
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+      // `agent` is the PERSONA, `launch` is how the session was started. They
+      // are separate keys precisely because conflating them is how an agent
+      // boots with an empty identity block and nobody sees an error.
       say(
         `TM8-ECHO-MANIFEST ok session=${manifest.sessionId} mode=${manifest.mode} ` +
-          `model=${manifest.agent?.model ?? 'none'} tool=${manifest.agent?.tool ?? 'none'} ` +
+          `model=${manifest.launch?.model ?? 'none'} tool=${manifest.launch?.tool ?? 'none'} ` +
+          `persona=${manifest.agent?.name ?? 'none'} ` +
           `tasks=${manifest.tasks?.length ?? 0} cwd=${manifest.session?.workingDirectory ?? 'none'}`,
       );
     } catch (error) {

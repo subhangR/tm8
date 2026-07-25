@@ -69,6 +69,55 @@ const SORTS: Record<SortName, SortSpec> = {
 
 const DEFAULT_SORT: SortName = 'activityAt_desc';
 
+/**
+ * A cursor must fail CLOSED.
+ *
+ * A cursor minted for one sort is meaningless under another — `encodeCursor
+ * (['zzz-not-a-real-sort-value', 'ent_foreign'])` aimed at an `activityAt_desc`
+ * page is not a timestamp. Bound straight into `$n::timestamptz` it raises
+ * SQLSTATE 22007 from deep inside the query, which surfaces as a 503 and reads
+ * like the database is unwell.
+ *
+ * Worse than the wrong status is the failure mode this prevents: if a foreign
+ * key were ever coerced into something castable, the page would silently
+ * resume from the WRONG POSITION — a wrong-page-of-results bug that presents
+ * as data loss. So the key is checked against the sort's own type before it
+ * goes anywhere near SQL, and a mismatch is `invalid_cursor` (400), which is
+ * exactly what it is: the client's cursor is not usable here.
+ */
+function assertCursorKey(value: unknown, cast: string): string | number {
+  const fail = (why: string): never => {
+    throw new CollabError('invalid_cursor', `invalid cursor: ${why}`);
+  };
+  if (value === null || value === undefined) return fail('missing sort key');
+
+  switch (cast) {
+    case 'timestamptz':
+    case 'date': {
+      const s = String(value);
+      if (Number.isNaN(Date.parse(s))) return fail(`sort key ${JSON.stringify(s)} is not a timestamp`);
+      return s;
+    }
+    case 'double precision':
+    case 'integer': {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return fail(`sort key ${JSON.stringify(value)} is not a number`);
+      return n;
+    }
+    default:
+      return String(value);
+  }
+}
+
+/** The last row's id, which is always a uuid. */
+function assertCursorId(value: unknown): string {
+  const s = String(value ?? '');
+  if (!UUID_RE.test(s)) {
+    throw new CollabError('invalid_cursor', `invalid cursor: ${JSON.stringify(s)} is not an entity id`);
+  }
+  return s;
+}
+
 /** The raw sort value for the last row of a page, as it goes into the cursor. */
 function sortKeyOf(row: { __sort?: unknown }, sort: SortName): string | number {
   const raw = row.__sort;
@@ -338,13 +387,15 @@ export async function queryCollection(
     if (k.length !== 2) {
       throw new CollabError('invalid_cursor', 'invalid cursor: expected [sortValue, id]');
     }
-    const [sortValue, lastId] = k;
+    // Validated against THIS sort's type before binding — see assertCursorKey.
+    const sortValue = assertCursorKey(k[0], sort.cast);
+    const lastId = assertCursorId(k[1]);
     // A row comparison, not two ORed predicates: `(a, b) < (x, y)` is exactly
     // the "everything after this row in this ordering" the keyset needs, and
     // Postgres can use the composite index for it.
     const op = sort.dir === 'desc' ? '<' : '>';
     where.push(
-      `(${sort.expr}, e.id) ${op} (${p.add(sortValue)}::${sort.cast}, ${p.add(String(lastId))}::uuid)`,
+      `(${sort.expr}, e.id) ${op} (${p.add(sortValue)}::${sort.cast}, ${p.add(lastId)}::uuid)`,
     );
   }
 

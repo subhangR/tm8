@@ -1,0 +1,130 @@
+/* Space Settings (L5) — profile · members · invites · task axes. */
+
+.cv2-root .cv2-set {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-6);
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  padding: var(--pn-space-5);
+  background: var(--pn-paper);
+}
+
+.cv2-root .cv2-set__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  min-width: 0;
+}
+
+.cv2-root .cv2-set__sectionhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .cv2-set__h1 {
+  font-family: var(--pn-serif);
+  font-weight: 500;
+  font-size: var(--pn-fs-h1);
+  line-height: var(--pn-lh-tight);
+  color: var(--pn-ink);
+  margin: 0;
+  width: 100%;
+}
+
+.cv2-root .cv2-set__h2 {
+  font-family: var(--pn-ui);
+  font-weight: 600;
+  font-size: var(--pn-fs-h3);
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink);
+  margin: 0;
+}
+
+.cv2-root .cv2-set__blurb,
+.cv2-root .cv2-set__note {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .cv2-set__facts,
+.cv2-root .cv2-set__tally {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .cv2-set__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cv2-root .cv2-set__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  min-width: 0;
+}
+
+.cv2-root .cv2-set__rowname {
+  font-weight: 600;
+  color: var(--pn-ink);
+  flex: none;
+}
+
+.cv2-root .cv2-set__rowvalues {
+  color: var(--pn-ink-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .cv2-set__rowspace { flex: 1 1 auto; }
+
+.cv2-root .cv2-set__copy {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.cv2-root .cv2-set__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .cv2-set__input {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 7px 10px;
+  min-width: 0;
+  flex: 0 1 200px;
+}
+
+.cv2-root .cv2-set__input--wide { flex: 1 1 280px; }
+.cv2-root .cv2-set__input:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.cv2-root .cv2-set__error {
+  margin: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--cv2-status-blocked);
+}

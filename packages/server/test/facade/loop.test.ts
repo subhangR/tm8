@@ -131,16 +131,18 @@ describeDb('G1A loop over HTTP', () => {
 
   it('projects.create + projects.link give the spawn path a real projectId', async () => {
     const dir = `/tmp/tm8-loop-${Date.now()}`;
-    const created = await call<{ project: { id: string; trust: string; workingDir: string } }>(
+    // A BARE ProjectResource — a project is a resource, not an entity, so there
+    // is no CommandResult to wrap it in (conformance projects.test.ts:27).
+    const created = await call<{ id: string; trust: string; workingDir: string }>(
       'POST',
       '/v2/projects',
       { name: 'loop-project', workingDir: dir },
     );
     expect(created.status).toBe(201);
     // Trust is an explicit grant, never a default (S12).
-    expect(created.data.project.trust).toBe('untrusted');
-    expect(created.data.project.workingDir).toBe(dir);
-    projectId = created.data.project.id;
+    expect(created.data.trust).toBe('untrusted');
+    expect(created.data.workingDir).toBe(dir);
+    projectId = created.data.id;
 
     const linked = await call<{ projectId: string }>('POST', `/v2/spaces/${spaceId}/projects`, {
       projectId,
@@ -181,9 +183,11 @@ describeDb('G1A loop over HTTP', () => {
     expect(data.entity.state.workStatus).toBe('open');
     expect(data.entity.state.acceptance).toEqual({ total: 1, completed: 0 });
     expect(data.entity.content.description).toBe('Prove the vertical slice works.');
-    // One criterion outstanding, so completion is gated — and the capability
-    // says so rather than letting the UI find out via a 409.
-    expect(data.entity.capabilities.canComplete).toBe(false);
+    // `canComplete` is an AFFORDANCE, not a pre-flight check: it is true on a
+    // live task even with criteria outstanding. The gate lives in the RPC and
+    // is asserted separately below. (I had this backwards until conformance
+    // reads.test.ts:45 settled it.)
+    expect(data.entity.capabilities.canComplete).toBe(true);
     expect(data.entity.capabilities.canEdit).toBe(true);
     expect(data.patches.map((p) => p.id)).toContain(data.entity.id);
 
@@ -325,7 +329,8 @@ describeDb('G1A loop over HTTP', () => {
       content: { acceptanceCriteria: [{ id: 'ac_1', text: 'server answers', done: true }] },
     });
     expect(patched.data.entity.content.acceptanceCriteria[0]?.done).toBe(true);
-    // The gate is now open, and the capability flipped to say so.
+    // The gate is now satisfied — the RPC will accept the completion. The
+    // capability was already true; it tracks the kind and liveness, not the gate.
     expect(patched.data.entity.capabilities.canComplete).toBe(true);
 
     const completed = await call<{

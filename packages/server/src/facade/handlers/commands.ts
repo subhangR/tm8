@@ -19,7 +19,7 @@ import type { CompleteTaskInput, WorkInput } from '@tm8/contract';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
-import { toCommandResult, type RpcCommandResult } from './entities.js';
+import { enrichVersionConflict, toCommandResult, type RpcCommandResult } from './entities.js';
 import { loadActivity } from './activity.js';
 
 export function commandsWork(deps: FacadeDeps): OperationHandler {
@@ -50,11 +50,49 @@ export function commandsComplete(deps: FacadeDeps): OperationHandler {
     const id = requireUuidParam(ctx, 'id');
     const input = ctx.body as CompleteTaskInput;
 
+    const run = (): Promise<unknown> =>
+      deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const raw = await q.rpc<RpcCommandResult>('complete_task', [
+          id,
+          input.expectedVersion,
+          input.completerIds ?? [],
+          envelope.actorId ?? null,
+          envelope.clientMutationId ?? null,
+        ]);
+        return toCommandResult(q, raw, owner.identityId);
+      });
+
+    try {
+      return await run();
+    } catch (err) {
+      // complete_task asserts the version too, so it conflicts the same way a
+      // patch does and owes the client the same `current`.
+      throw await enrichVersionConflict(deps, ctx, id, err);
+    }
+  };
+}
+
+/**
+ * `entities.points.add` — the award ledger's manual entry point.
+ *
+ * Two rules are the RPC's and stay there: points go only to a `member` or
+ * `team_member` (007:1577), and the grant is idempotent on
+ * `client_event_id` — so a retried grant does not pay twice. The counter on
+ * the entity is a trigger-maintained cache of the ledger, never written here.
+ */
+export function entitiesPointsAdd(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const envelope = commandEnvelope(ctx);
+    const id = requireUuidParam(ctx, 'id');
+    const input = ctx.body as { amount: number; reason?: string; referenceId?: string };
+
     return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-      const raw = await q.rpc<RpcCommandResult>('complete_task', [
+      const raw = await q.rpc<RpcCommandResult>('grant_points', [
         id,
-        input.expectedVersion,
-        input.completerIds ?? [],
+        input.amount,
+        input.reason ?? 'grant',
+        input.referenceId ?? null,
         envelope.actorId ?? null,
         envelope.clientMutationId ?? null,
       ]);

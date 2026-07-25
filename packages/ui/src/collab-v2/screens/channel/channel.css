@@ -1,0 +1,150 @@
+/* Channel Hub (L5) — header · shelf · auto-tabs · feed. Paper/ink tokens only. */
+
+.cv2-root .cv2-hub {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  background: var(--pn-paper);
+}
+
+.cv2-root .cv2-hub--loading,
+.cv2-root .cv2-hub--empty {
+  padding: var(--pn-space-4);
+}
+
+/* --- header ---------------------------------------------------------------- */
+
+.cv2-root .cv2-hub__head {
+  padding: var(--pn-space-4) var(--pn-space-5) 0;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .cv2-hub__headrow {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+  padding-bottom: var(--pn-space-3);
+  min-width: 0;
+}
+
+.cv2-root .cv2-hub__glyph {
+  font-size: 18px;
+  line-height: 1;
+  flex: none;
+}
+
+.cv2-root .cv2-hub__name {
+  font-family: var(--pn-ui);
+  font-weight: 700;
+  font-size: var(--pn-fs-h3);
+  letter-spacing: var(--pn-track-tight);
+  color: var(--pn-ink);
+  margin: 0;
+  flex: none;
+  white-space: nowrap;
+}
+
+.cv2-root .cv2-hub__topic {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .cv2-hub__headspace { flex: 1 1 auto; }
+
+/* --- shelf + tabs (sticky sub-header of the body) ------------------------- */
+
+.cv2-root .cv2-hub__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.cv2-root .cv2-hub__shelf {
+  display: flex;
+  gap: var(--pn-space-3);
+  align-items: stretch;
+  padding: var(--pn-space-3) var(--pn-space-5);
+  overflow-x: auto;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .cv2-hub__shelf--empty { padding: var(--pn-space-2) var(--pn-space-5); }
+
+.cv2-root .cv2-hub__shelfcell {
+  position: relative;
+  flex: 0 0 auto;
+  max-width: 280px;
+  cursor: pointer;
+  border-radius: var(--pn-r-md);
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.cv2-root .cv2-hub__shelfcell:hover { box-shadow: var(--pn-sh-md); }
+.cv2-root .cv2-hub__shelfcell:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+.cv2-root .cv2-hub__pin {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11px;
+  opacity: 0.7;
+  z-index: 1;
+}
+
+.cv2-root .cv2-hub__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--pn-space-5);
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+  overflow-x: auto;
+}
+
+.cv2-root .cv2-hub__tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--pn-space-3) var(--pn-space-3);
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cv2-root .cv2-hub__tab:hover { color: var(--pn-ink); }
+.cv2-root .cv2-hub__tab[data-active] { color: var(--pn-ink); border-bottom-color: var(--pn-brand); }
+.cv2-root .cv2-hub__tabcount { color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
+
+/* --- panes ---------------------------------------------------------------- */
+
+.cv2-root .cv2-hub__pane {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: var(--pn-space-4) var(--pn-space-5);
+}
+
+/* The Thread owns its own scroller and composer — give it the whole box. */
+.cv2-root .cv2-hub__pane--feed {
+  overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}

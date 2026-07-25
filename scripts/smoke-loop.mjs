@@ -141,6 +141,9 @@ const project = await call('create a project (trusted — spawn refuses untruste
   trust: 'trusted',
   clientMutationId: cmid('project'),
 });
+// projects.create returns the ProjectResource BARE, matching projects.get —
+// a project is deliberately not an entity (T-D17), so there is no
+// CommandResult to wrap it in.
 const projectId = need(project?.id ?? project?.project?.id, 'the new project id', 'create a project');
 
 await call('link the project to the space', 'POST', `/v2/spaces/${spaceId}/projects`, {

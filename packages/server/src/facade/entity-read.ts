@@ -684,16 +684,25 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
  *
  * These mirror real refusals rather than expressing a UI preference: v1 is
  * loopback single-owner, so "is the caller allowed" is settled — what is left
- * is what the KIND and the STATE permit. `canComplete` in particular encodes
- * `complete_task`'s acceptance-criteria gate (007:1835), so the button and the
- * 409 agree.
+ * is what the KIND and the STATE permit.
+ *
+ * `canComplete` is an AFFORDANCE, not a pre-flight check. It answers "is
+ * completing this a thing you can do here", not "would completing it succeed
+ * this instant". Conformance settles it: `reads.test.ts:45` expects
+ * `canComplete === true` on a task with two UNFINISHED acceptance criteria
+ * (:49 asserts `acceptance.total === 2`). I originally folded
+ * `complete_task`'s criteria gate (007:1835) in here, reasoning that the
+ * button and the 409 should agree — but that conflates two questions. The
+ * gate is a runtime invariant the RPC enforces; the client already has
+ * `state.acceptance` to render progress and decide what to grey out. Encoding
+ * the gate here would also make the capability lie the moment another actor
+ * ticks a criterion.
  */
 export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   const live = row.deleted_at === null;
   const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
-  const acceptance = acceptanceOf(row);
 
   return {
     canEdit: live && editable.has(row.kind),
@@ -705,11 +714,8 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
     canPull: live && pullable.has(row.kind),
     canReact: live,
     canGrantPoints: live && (row.kind === 'member' || row.kind === 'team_member'),
-    canComplete:
-      live &&
-      row.kind === 'task' &&
-      row.work_status !== 'done' &&
-      acceptance.completed === acceptance.total,
+    // Not gated on acceptance criteria — see the note above.
+    canComplete: live && row.kind === 'task' && row.work_status !== 'done',
   };
 }
 

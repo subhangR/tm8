@@ -312,24 +312,44 @@ export class SpawnService {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
     if (auth === undefined) {
-      // A PTY this process did not spawn (server restarted under a live agent,
-      // or a terminate already consumed the entry). Nothing to write as.
-      this.logger?.warn('SpawnService: PTY exited with no captured auth; skipping transition', {
-        sessionId,
-        status,
-      });
+      this.loud(
+        `PTY for session ${sessionId} exited (${status}) with no captured claims — ` +
+          `the graph still believes this session is running. Expect a ghost session.`,
+      );
       return;
     }
     try {
       await this.graph.transition(auth, { sessionId, status: EXIT_STATUS_MAP[status] });
     } catch (error) {
+      // LOUD, always, even with no logger injected.
+      //
+      // This is the failure that compounds in silence: the row stays 'running',
+      // the UI paints a dead agent as live, and the session keeps counting
+      // against the concurrency cap — so spawning degrades over hours for
+      // reasons nobody can trace back to here. A ghost session that announces
+      // itself is recoverable; a silent one is not. The SQLSTATE is included
+      // because 42501 here means a claims problem, not an RLS policy problem,
+      // and those look identical from the outside.
+      const sqlState =
+        (error as { code?: string } | null)?.code ?? '(no sqlstate)';
+      this.loud(
+        `FAILED to transition work_session ${sessionId} to ` +
+          `${EXIT_STATUS_MAP[status]} after its PTY exited — sqlstate=${sqlState}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
       this.logger?.error(
         'SpawnService: failed to record PTY exit transition',
         error instanceof Error ? error : new Error(String(error)),
-        { sessionId, status },
+        { sessionId, status, sqlState },
       );
     }
   };
+
+  /** Exit-path failures must never depend on a logger having been injected. */
+  private loud(message: string): void {
+    // eslint-disable-next-line no-console
+    console.error(`[tm8:SpawnService] ${message}`);
+  }
 
   /** Best-effort removal of a session's manifest file. Used by tests + cleanup. */
   async discardManifest(sessionId: string): Promise<void> {

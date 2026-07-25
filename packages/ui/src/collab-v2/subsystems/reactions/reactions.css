@@ -1,0 +1,142 @@
+/* ReactionsPointsBar — identical on every entity, two densities. */
+
+.cv2-rxbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.cv2-rxbar[data-size='sm'] {
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-rxbar[data-size='sm'] .cv2-iconbtn,
+.cv2-rxbar[data-size='sm'] .cv2-points__btn {
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
+.cv2-rxbar__error {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--cv2-status-blocked);
+}
+
+/* --- points control ---------------------------------------------------------- */
+
+.cv2-points {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.cv2-points__btn,
+.cv2-points__caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  touch-action: none; /* hold-to-choose must not scroll the panel */
+  user-select: none;
+}
+
+.cv2-points__caret {
+  padding: 2px 3px;
+  font-size: 9px;
+  color: var(--pn-ink-3);
+}
+
+.cv2-points__btn:hover,
+.cv2-points__caret:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-line);
+}
+
+.cv2-points__btn:disabled,
+.cv2-points__caret:disabled { color: var(--pn-ink-4); cursor: default; background: none; }
+
+.cv2-points__picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  min-width: 170px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  box-shadow: 0 8px 22px rgba(35, 32, 27, 0.12);
+}
+
+.cv2-points__preset {
+  font: inherit;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 5px;
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.cv2-points__preset:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+.cv2-points__customrow { display: flex; align-items: center; gap: 4px; width: 100%; }
+
+.cv2-points__input {
+  font: inherit;
+  font-size: var(--pn-fs-label);
+  width: 68px;
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+/* --- hover pool popover ------------------------------------------------------ */
+
+.cv2-points__pool { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
+
+.cv2-points__pooltotal {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-h3);
+  color: var(--pn-brand);
+}
+
+.cv2-points__granters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cv2-points__granters li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-2);
+}
+
+.cv2-points__granteramount {
+  margin-left: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand);
+}

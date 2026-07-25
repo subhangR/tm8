@@ -45,26 +45,24 @@ import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
 import { json } from '../http/types.js';
+import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
+import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
+import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 
-// --- claims ------------------------------------------------------------------
-
-/**
- * Request identity → the four canonical claims, and nothing else.
- *
- * `nodeAdmin` is left unset rather than defaulted: the db client serialises it
- * through the shared claim binder, and the value is the literal string
- * `'true'`/`'false'` (001_core_graph.sql:166 tests `lower(claim) = 'true'`, so
- * `'on'` reads as "not an admin" instead of raising). Hand-rolling it here would
- * present as an RLS bug rather than a claims bug.
- */
-function claimsFor(ctx: RequestContext): DbClaims {
-  return {
-    ...(ctx.identity.identityId === undefined ? {} : { identityId: ctx.identity.identityId }),
-    ...(ctx.identity.actorId === undefined ? {} : { actorId: ctx.identity.actorId }),
-    requestId: ctx.requestId,
-  };
-}
+// Claims come from ./context.ts, deliberately NOT from a local helper.
+//
+// This file used to build its own, and it was wrong in two ways that both
+// present as authorization bugs rather than as claims bugs:
+//   - it read `identityId` off the request instead of the resolved loopback
+//     owner, so the auto-owner path could bind nothing at all;
+//   - it bound `actorId` on EVERY transaction. A member row belongs to ONE
+//     space, so a globally-bound actor from space A used on a request touching
+//     space B fails `can_act_as` and raises 42501 for the space's own owner
+//     (context.ts's header documents exactly this). The actor must be left
+//     unset so `internal.resolve_actor` can pick the correct per-space member
+//     row itself.
+// A second claims path is how two handlers disagree about who the caller is.
 
 // --- the graph, over Db ------------------------------------------------------
 
@@ -306,6 +304,13 @@ export interface ExecutionRuntimeDeps {
   dataDir?: string;
   nodeId?: string;
   sessionCap?: number;
+  /**
+   * The v1 loopback auto-owner. Pass the SAME memoized resolver the facade
+   * uses; omitted, one is created here. Sharing it matters only for efficiency
+   * — both resolve the same row — but two identity paths is the failure mode
+   * this whole file just stopped having.
+   */
+  owner?: () => Promise<LoopbackOwner>;
 }
 
 export interface ExecutionRuntime {
@@ -352,11 +357,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     ...(deps.logger ? { logger: deps.logger } : {}),
   });
 
+  const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
+
   return {
     pty,
     spawnService,
     graph,
-    register: (registry) => registerHandlers(registry, spawnService, graph),
+    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner),
   };
 }
 
@@ -371,7 +378,14 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
  */
 export function registerExecutionHandlers(
   registry: HandlerRegistry,
-  deps: { db: Db; pty: PtyHostService; config: ServerConfig; logger?: Logger; dataDir?: string },
+  deps: {
+    db: Db;
+    pty: PtyHostService;
+    config: ServerConfig;
+    logger?: Logger;
+    dataDir?: string;
+    owner?: () => Promise<LoopbackOwner>;
+  },
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
   const spawnService = new SpawnService({
@@ -382,7 +396,8 @@ export function registerExecutionHandlers(
     nodeId: `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
   });
-  registerHandlers(registry, spawnService, graph);
+  const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
+  registerHandlers(registry, spawnService, graph, deps.db, owner);
   return { pty: deps.pty, spawnService, graph, register: () => {} };
 }
 
@@ -415,18 +430,47 @@ async function rethrowing<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function sessionIdFrom(ctx: RequestContext): string {
-  const id = ctx.params.id;
-  if (!id) throw fail('invalid_input', 'missing work session id in path');
-  return id;
+/**
+ * Every execution.* command result goes through the SAME assembler the reads
+ * use, and this is the whole point of the function.
+ *
+ * `internal.command_result` hands back the DATABASE's shape: `to_jsonb(e)` on
+ * the entities row, so snake_case columns (`space_id`, `created_at`) and none
+ * of the derived truth — no title, state, badges, capabilities, connections or
+ * hierarchy. Returning that straight to the wire is what made a spawned
+ * work_session fail the contract schema on `spaceId` and render as an untitled
+ * session that client-side grouping silently dropped.
+ *
+ * The fix is reuse, not a second mapping. `toCommandResult` also rebuilds
+ * `patches` into real EntitySummary DTOs — which the raw jsonb likewise
+ * returns snake_case, so fixing only `entity` would have left the same bug one
+ * field deeper.
+ *
+ * It runs in its own transaction AFTER the flow completes rather than inside
+ * the RPC's: holding a transaction open across a process spawn is its own
+ * problem, and re-reading afterwards means the client sees the session as it
+ * finally IS (status `running`) rather than mid-flight (`spawning`).
+ */
+async function assembleCommandResult(
+  db: Db,
+  claims: DbClaims,
+  raw: unknown,
+  viewerIdentityId: string,
+): Promise<unknown> {
+  return db.tx(claims, (q) => toCommandResult(q, (raw ?? {}) as RpcCommandResult, viewerIdentityId));
 }
 
 function registerHandlers(
   registry: HandlerRegistry,
   spawnService: SpawnService,
   graph: DbGraphPort,
+  db: Db,
+  resolveOwner: () => Promise<LoopbackOwner>,
 ): void {
   registry.register('execution.spawn', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
     const input = ctx.body as ExecutionSpawnInput;
     const request: SpawnRequest = {
       spaceId: input.spaceId,
@@ -439,55 +483,70 @@ function registerHandlers(
       agentTool: input.agentTool ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
-      clientMutationId: input.clientMutationId ?? null,
+      clientMutationId: envelope.clientMutationId ?? null,
     };
 
-    const result = await rethrowing(() => spawnService.spawn(claimsFor(ctx), request));
+    const result = await rethrowing(() => spawnService.spawn(claims, request));
 
-    // 201: a spawn creates a work_session. The RPC's CommandResult is forwarded
-    // untouched so the client's patch application is identical to every other
-    // mutation's.
-    return json(result.commandResult, { status: 201 });
+    // 201: a spawn creates a work_session.
+    return json(
+      await assembleCommandResult(db, claims, result.commandResult, owner.identityId),
+      { status: 201 },
+    );
   });
 
   registry.register('execution.prompt', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
     const input = ctx.body as ExecutionPromptInput;
     const result = await rethrowing(() =>
-      spawnService.prompt(claimsFor(ctx), sessionIdFrom(ctx), input.message, {
-        clientMutationId: input.clientMutationId ?? null,
+      spawnService.prompt(claims, requireUuidParam(ctx, 'id'), input.message, {
+        clientMutationId: envelope.clientMutationId ?? null,
       }),
     );
-    return json(result.commandResult);
+    return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
   });
 
   registry.register('execution.terminate', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
     const input = ctx.body as ExecutionTerminateInput;
     const result = await rethrowing(() =>
-      spawnService.terminate(claimsFor(ctx), sessionIdFrom(ctx), {
+      spawnService.terminate(claims, requireUuidParam(ctx, 'id'), {
         force: input.force ?? false,
-        clientMutationId: input.clientMutationId ?? null,
+        clientMutationId: envelope.clientMutationId ?? null,
       }),
     );
-    return json(result.commandResult);
+    return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
   });
 
   registry.register('execution.streams.attach', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
     const input = ctx.body as ExecutionStreamsAttachInput;
-    const sessionId = sessionIdFrom(ctx);
+    const sessionId = requireUuidParam(ctx, 'id');
     const granted = await graph.grantStreamAttach(
-      claimsFor(ctx),
+      claims,
       sessionId,
       input.mode,
-      input.clientMutationId ?? null,
+      envelope.clientMutationId ?? null,
     );
-    // The grant the RPC returns describes AUTHORIZATION; the URL is transport,
-    // which only the server knows. Bytes never flow through this response.
+
+    // NOT an EntityDetail — `StreamAttachGrant` is its own small contract DTO,
+    // so it is mapped explicitly here rather than run through the entity
+    // assembler. The RPC's `grant` is a raw `to_jsonb(stream_grants)` row
+    // (snake_case, token_hash already stripped), and the URL is transport that
+    // only the server knows. Bytes never flow through this response (T-L10).
+    const grant = (granted.grant ?? {}) as { expires_at?: string; mode?: string };
     return json({
-      ...granted,
       workSessionId: sessionId,
       url: `/v2/ws?sessionId=${encodeURIComponent(sessionId)}`,
       protocol: 'ws',
       mode: input.mode,
+      ...(grant.expires_at ? { expiresAt: new Date(grant.expires_at).toISOString() } : {}),
     });
   });
 }

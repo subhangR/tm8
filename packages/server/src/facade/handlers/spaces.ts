@@ -7,12 +7,27 @@
  * message — needs the member row that this call is what creates, which is why
  * it is first after identity.
  */
-import { CollabError, type CollectionResult, type HomeSnapshot, type SpaceSummary } from '@tm8/contract';
+import {
+  CollabError,
+  type CollectionResult,
+  type HomeSnapshot,
+  type NavChannelNode,
+  type SpaceNavigation,
+  type SpaceSummary,
+} from '@tm8/contract';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
 import { queryCollection } from './collections.js';
 import { loadActivity } from './activity.js';
+import {
+  actorOf,
+  assembleSummaries,
+  ENTITY_COLUMNS,
+  ENTITY_FROM,
+  loadActors,
+  type EntityRow,
+} from '../entity-read.js';
 
 interface SpaceRow {
   id: string;
@@ -122,6 +137,76 @@ export function spacesCreate(deps: FacadeDeps): OperationHandler {
         defaultChannelId: result.defaultChannelId,
       },
     };
+  };
+}
+
+/**
+ * `spaces.navigation` — the viewer plus the channel tree.
+ *
+ * This is what makes a space navigable (AM-3: "open a space, see tasks"), and
+ * it is the first call a client makes after picking a space. Channels are
+ * ordinary entities with an ordinary parent/child hierarchy, so the tree is
+ * built here from a flat, position-ordered read rather than by recursing in
+ * SQL — one query, assembled in memory, because a space has tens of channels
+ * and not thousands.
+ */
+export function spacesNavigation(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+
+    return deps.db.tx(claimsFor(owner, ctx), async (q) => {
+      const memberRows = await q.query<{ entity_id: string }>(
+        `select entity_id from public.members where space_id = $1 and identity_id = $2`,
+        [spaceId, owner.identityId],
+      );
+      const viewerId = memberRows[0]?.entity_id;
+      // Membership is what `spaces.navigation` is FOR, so its absence is a
+      // refusal rather than an empty tree — an empty nav would read as "this
+      // space has no channels", which is a different and wrong statement.
+      if (!viewerId) throw new CollabError('forbidden', 'not a member of this space');
+
+      const viewers = await loadActors(q, [viewerId]);
+      const viewer = actorOf(viewers, viewerId);
+
+      const rows = await q.query<EntityRow>(
+        `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
+          where e.space_id = $1 and e.kind = 'channel' and e.deleted_at is null
+          order by e.position asc, e.id asc`,
+        [spaceId],
+      );
+      const summaries = await assembleSummaries(q, rows, owner.identityId);
+
+      // Build the tree in one pass, then attach. A channel whose parent is
+      // outside this result set (deleted, or not readable) is surfaced at the
+      // root rather than dropped — losing a channel from the nav would hide
+      // real content.
+      const nodes = new Map<string, NavChannelNode>(
+        summaries.map((entity) => [entity.id, { entity, childCount: 0, children: [] }]),
+      );
+      const roots: NavChannelNode[] = [];
+      for (const summary of summaries) {
+        const node = nodes.get(summary.id);
+        if (!node) continue;
+        const parent = summary.parentId ? nodes.get(summary.parentId) : undefined;
+        if (parent) {
+          parent.children.push(node);
+          parent.childCount += 1;
+        } else {
+          roots.push(node);
+        }
+      }
+
+      const navigation: SpaceNavigation = {
+        spaceId,
+        viewer,
+        // Per-member unread rollup is `unread_counts` (007:1986), outside the
+        // G1A slice — 0 is honest for a required, uncomputed field.
+        unreadTotal: 0,
+        channels: roots,
+      };
+      return navigation;
+    });
   };
 }
 
