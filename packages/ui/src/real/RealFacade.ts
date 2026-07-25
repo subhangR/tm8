@@ -58,12 +58,19 @@ function emptyPage<T>(): Page<T> {
  * The refusal every unbuilt WRITE gets. Loud on purpose: a write that quietly
  * does nothing while the UI reports success is the exact failure this lane
  * exists to prevent.
+ *
+ * Returns a REJECTED PROMISE rather than throwing synchronously. That
+ * distinction is not pedantry: these methods are declared `Promise<…>`, so a
+ * caller writing `facade.moveEntity(…).catch(showToast)` — which is the normal
+ * shape — would never catch a synchronous throw. The error would escape as an
+ * unhandled exception at the call site instead of flowing through the caller's
+ * own error handling. Caught by the mapping tests, not by reading the code.
  */
-function notImplemented(method: string): never {
-  throw new CollabError(
+function notImplemented<T>(method: string): Promise<T> {
+  return Promise.reject(new CollabError(
     'not_implemented',
     `${method} is not implemented on this tm8 node — the affordance should be disabled, not invoked`,
-  );
+  ));
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
