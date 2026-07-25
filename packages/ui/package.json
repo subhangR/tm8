@@ -8,6 +8,27 @@
     "test": "echo 'no tests yet'"
   },
   "dependencies": {
-    "@tm8/contract": "workspace:*"
+    "@dnd-kit/core": "^6.3.1",
+    "@tm8/contract": "workspace:*",
+    "@xyflow/react": "^12.10.2",
+    "dagre": "^0.8.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "react-mentions": "^4.4.10",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/dagre": "^0.7.54",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@types/react-mentions": "^4.4.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "jsdom": "^28.1.0",
+    "vite": "^5.4.8",
+    "vitest": "^4.0.18"
   }
 }
