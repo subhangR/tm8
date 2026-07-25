@@ -1179,4 +1179,129 @@ A node-environment source-grepper whose stated purpose (`:4-8`) is: *"Each `GAP:
 
 **`real/terminal/writeScheduler.test.ts` (5)** — coalesces `'a','b','c'` into **one** write per frame with nothing written before it; `flushTerminalOutput` writes **synchronously** (*"the visibility driver depends on this — it flushes and suspends with no await in between"*); force-flushes past the hidden throttle; `dropTerminalOutput` discards.
 
-<!--NEXT-->
+---
+
+## 11. Consolidated: present-but-dead, mock-only, or unreachable from the real entry
+
+This is the section that matters most for the gap audit. Everything below **exists as shipped code** and is either never mounted, never opened, or inert against the live server.
+
+### 11.1 Never mounted / never opened in the running app
+
+| Thing | Status |
+|---|---|
+| **The whole `interactions/create/` UI** — `CreationModal`, `CreatePlus`, `openCreation`, `seedForChannel`, `seedForParent` | `CreationHost` **is** mounted (`dnd.tsx:235`) but **nothing ever opens it**. The context-seeded "+" affordance does not appear anywhere. (Palette creation works via its own path.) |
+| **The whole keyboard-parity surface** — `MoveToMenu`, `LinkMenu`, `openMoveTo`, `openLink`, `keyboardOptionsFor` | `InteractionMenusHost` **is** mounted but nothing ever opens it. Drag-drop has no keyboard equivalent in the running app |
+| **Rail edge creation** | `EdgeComposer` is wired to `facade.createEdge`, but its target picker needs an injected `pickEntity` that **no production call site supplies**, and the `candidates` fallback is never passed either → "Choose entity…" is permanently `disabled` |
+| **`ProfileZ4View`** (`screens/team/`) | Exported as an optional `profileViews` fragment; `CollabV2App.tsx:92` claims the `entity` route with `EntityZ4Route` instead. Its own header says "wire it only if no other screen claims that route" — nothing does |
+| **`DiscussionPanel`** (`thread/DiscussionSlot.tsx:47`) | Zero references anywhere, **including tests** |
+| **`TypingIndicator`** (`live/`) | Fully built with 4 phrasings; mounted nowhere. The Thread renders its own inline typing text instead |
+| **`usePresenceChannel`** (`live/`) | Zero consumers anywhere, including tests; superseded by `connectStores` |
+| **`PLACEHOLDER_VIEWS`** (`shell/placeholders.tsx:127`) | Dead export — only `graph` actually falls through |
+| **`extraSections`** (LeftRail) | Prop exists; no caller passes it |
+| **`onLink` / `onAddChild`** (EntityPanel) | The `Link` and `Add child` buttons render (titled *"arrives in W4"*) and **do nothing** — the app passes only `slots` |
+| **`dependencies` slot** (EntityFullView `subtree` layout, i.e. every task Z4) | Renders the hint *"The dependency mini-graph plugs in here (W2/W4)."* — no caller fills it |
+| **`Copy to space`** (panel overflow menu) | Hardcoded `disabled`, titled *"Cross-space copy arrives later"* |
+| **`Watch` / `Unwatch`** (panel overflow menu) | Local `useState` only — **no facade call**, purely cosmetic |
+| **`refreshSlot`** (TrackingRow) | A designed per-row seam no caller supplies |
+| **`onOpenCollection`** (rail HierarchySection) | Absent → "Open as tree"/"Open as board" render `disabled` |
+| **`rowAction` / `selection` / `expandDepth` / `savedView` / `emptyState` / `sortBy`** (CollectionView) | Six props with **no production caller** (tests only) |
+| **`onMutationError`** (Board/Tree layouts) | `CollectionView` never passes it |
+| **`DraggableEntity`** (the dnd-kit drag source) | Unused — only the native HTML5 drag path is exercised |
+| **`icons.tsx` `settings` and `square`** | Drawn, referenced nowhere |
+| **Two grammar rows** — `chip-to-composer` and `same-kind-to-parent-zone` | Their surfaces (`composer`, `parent-zone`) are never registered by any production drop target |
+| **Sort UI** | `uiSort` exists in `CollectionView`; no UI, no screen passes `sortBy` |
+| **Filter UI** | No filter control exists anywhere in the collections layer |
+| **Saved-views list** | Creatable, but re-selectable **only** inside the graph canvas dropdown; `deleteSavedView` is never called |
+| **Offline UI** | `connection.ts` has **zero UI readers**; no offline banner, no queued composer — asserted as a gap in `gaps-static.test.ts` |
+| **`isHollow()` / `hollowReason()`** (`real/capabilities.ts`) | Built precisely so a screen can caption a hollow zero — **no screen calls either** |
+| **`facade.getHome()`** | Implemented in both facades, called by nothing (HomeScreen re-expresses the presets as live queries) |
+| **`facade.deleteSavedView()`** | Defined on the seam and in the mock, called by no UI |
+| **`content.autoTabs`** | Declared in the contract, deliberately bypassed in favour of `getChannelTabs()` |
+
+### 11.2 Mock-only by construction
+
+| Thing | Why |
+|---|---|
+| **`gallery/Gallery.tsx`** (the `#/gallery` QA route) | Builds its own `createSeededFacade()` and hardcodes one seed entity id per kind from `facade.ids` — a property only `MockFacade` exposes. It also **resets and rewires the app-wide stores** to its own world on mount. Cannot run against `RealFacade` |
+| **The simulation toggle** (`▶`/`◼` + step counter) | Explicitly gated off in real mode (`CollabV2App.tsx:180`), because "a 'sim on/off' toggle over live data would imply the events are synthetic when they are not" |
+| **`mock/` (3,921 lines incl. a 2,460-line `world.ts`)** | The behavioural spec of the whole contract, shipped in the bundle |
+| **`useViewerActors`** (Home) | Repurposes `getLeaderboard` as the actor roster — mock-shaped: `getLeaderboard` returns `{actor, score, rank}`, and the mock happens to include every `member` *and* `team_member`. Against `RealFacade` it returns an empty page, so **Home has no actor scope at all** and every column query carries an empty `assigneeIds` |
+| **`filters.readyToPull` / `inReviewForActorId` semantics** | Defined only in `mock/world.ts` |
+| **`assignTaskTo`** (collections/mutations) | Paints no optimistic state and relies on `patches` arriving synchronously — the comment says "the mock emits the fresh summary synchronously after latency" |
+| **`model.ts:46` comment** (screens/team) | Names concrete seed agents ("Forge → Scout, Probe") in production source |
+
+### 11.3 Inert against the live server (code is alive; the server is not)
+
+Because 21 writes + `search` throw and 9 reads return typed empties:
+
+| Surface | Effect on the real server |
+|---|---|
+| **Drag & drop, all of it** | `placements` throws → every drop toasts a failure |
+| **⌘Z / the undo pill** | `undo` throws |
+| **👍 👎 ⭐ and ◈ points** (panel action bar, every message's `ReactionsPointsBar`, `PointsControl`) | `setReaction` / `grantPoints` throw |
+| **Home's PULL, every RE-PULL, the palette's Pull/Re-pull rows** | `pullEntity` throws |
+| **Message edit and delete** | `patchMessage` / `deleteMessage` throw |
+| **`Delete` in the panel overflow menu** | `deleteEntity` throws |
+| **Tree drag-reparent, rail reorder/reparent, `moveEntity` anywhere** | `moveEntity` throws |
+| **Tracking's `↻` and `↻ Refresh all`** | `trackingRefresh` throws |
+| **Task-axes CRUD** (the only mutating Settings section) | all three throw |
+| **"Save view" and "save layout"** | `createSavedView` / `updateSavedView` throw |
+| **Inbox** (screen + the icon-rail unread dot) | `getInbox` → empty page ⇒ permanently "no notifications yet.", dot never appears |
+| **Leaderboard** (whole screen) | `getLeaderboard` + `getAwards` → empty ⇒ three empty-state lines |
+| **Docs → History** | `getVersions` → empty ⇒ always "No edits recorded yet." |
+| **Channel auto-tabs** | `getChannelTabs` → `[]` ⇒ only the Feed pane; **and therefore the layout switcher — the sole route to Board/Tree/Feed/Gallery/Graph — is unreachable** |
+| **The graph canvas** | Unreachable (above) *and* `queryGraph` returns fully empty |
+| **The task-axis pivot** | `getTaskAxes` → `[]` ⇒ only `None`/`Status`/`Assignee` |
+| **All presence and typing** | `getPresence` → no viewers, `subscribePresence` → no-op ⇒ `PresenceAvatars` and typing render nothing |
+| **Working badges** | `team_member.state.liveWork` is a **hollow null** ⇒ `WorkingPulse`/`WorkingAggregate` render nothing |
+| **Every unread count** | `channel.state.unreadCount`, `space.unreadTotal`, `navigation.unreadTotal` are **hollow zeros** — a real "0 unread" and an unbuilt "0 unread" are pixel-identical |
+| **The palette's whole facade-supplied action group** | `getActions` → `[]` ⇒ no Complete, Set status, Pull or facade Link rows |
+| **The Settings screen** | ⚠️ Not empty — **crashes**: `getSettings` returns a shape that does not match `SpaceSettings`, so `{space.name}` reads a property of `undefined` |
+| **Realtime everywhere** | `subscribe` is a **1500 ms poll**, so every "live" surface updates on that tick |
+
+### 11.4 Internal inconsistencies found while reading
+
+1. **`view:'channel'` does not round-trip through the URL.** `toHash` writes `/e/{id}`; `hydrateFromHash` reads any `/e/{id}` back as `'entity'`. A channel deep link, reload or back/forward lands on `EntityZ4Route`, and the LeftRail channel row loses its active state.
+2. **Two hash codecs.** `nav.toHash` emits `t=` (panel tabs); `router.buildHash` does not — links built for sharing silently drop tabs.
+3. **The work_session Z3 panel still says there is no terminal** (`tm8Kinds.tsx:111-114`), which stopped being true when the PTY WebSocket shipped.
+4. **The palette's `g <letter>` hints disagree with the real chords** for Team (`g m`) and Tracking (`g k`) — both are advertised as `g t`.
+5. **Duplicate palette rows** — facade `go-home/go-tasks/go-graph` vs local `goto-home/goto-tasks/goto-graph`, deduped by id so both survive.
+6. **Two unrelated `EdgeComposer` components**, and **two differently-ordered edge-type lists** (`palette/actions.ts` `EDGE_TYPE_CHOICES` vs `rail/model.ts` `RAIL_EDGE_TYPES`).
+7. **Two divergent `initials()` helpers** — `IconRail` (first+second, `'??'`) vs `Avatar` (first+last, `'?'`).
+8. **Two screen-root testid conventions** — `view-<name>` vs `<name>-screen`.
+9. **Axis renaming is unreachable** — the `✎` editor sends only `axisValues` though `onRename` accepts `{name?, axisValues?}`.
+10. **Bulk-unassign is impossible by design** — `BulkBar` filters out the `unassigned` column.
+11. **`TasksScreen` "None" pivot still shows status columns in the bulk bar** (`groupBy={pivot ?? 'workStatus'}`).
+12. **Duplicate reads:** Tasks fetches `getTaskAxes` twice and issues ≥2 `queryCollection` calls for the same task set (distinct cache keys); Docs issues its doc query twice; Tracking issues **one `getConnections` per row** (an N+1 that, under `RealFacade`, is one full `getEntity` per PR).
+13. **No pagination** on Inbox, the Home activity feed, the leaderboard-as-roster, both Team rosters, the leaderboard, or the Tracking commits list — several of which then present a first-page count as a total.
+14. **Declared ARIA roles without their keyboard contracts** — `role="tablist"` (Tasks), `role="radiogroup"` (GroupByPivot) and `role="tree"` (AgentOrgTree, TreeLayout) all lack arrow-key navigation; the org tree also lacks `aria-expanded` and is permanently expanded.
+15. **`tokens.css` fetches Google Fonts over the network** at CSS-parse time — the module's only outbound request.
+16. **The layer-direction law is enforced nowhere** except as a pinned-list assertion in `gaps-static.test.ts`; the two known upward `screens/ → interactions/` imports are `ChannelHubBody.tsx` and `MemberCard.tsx`.
+
+---
+
+## Appendix — file/line inventory by area
+
+| Area | Files | Source lines |
+|---|---|---|
+| `src/main.tsx` | 1 | 113 |
+| `src/real/` (excl. tests) | 13 | 2,317 |
+| `src/real/__tests__` + terminal tests | 3 | 584 |
+| `collab-v2/` root (`CollabV2App`, `index`, `tokens.css`) | 3 | 387 |
+| `collab-v2/shell/` | 13 | 1,565 |
+| `collab-v2/entity/` | 10 | 1,391 |
+| `collab-v2/registry/` | 4 | 1,193 |
+| `collab-v2/collections/` (incl. `layouts/`, `graph/`) | 23 | 2,404 |
+| `collab-v2/interactions/` | 9 | 2,026 |
+| `collab-v2/subsystems/` | 50 | 6,272 |
+| `collab-v2/screens/` | 61 | 4,395 |
+| `collab-v2/stores/` | 6 | 715 |
+| `collab-v2/facade/` + `types/` | 4 | 692 |
+| `collab-v2/kit/` | 9 | 468 |
+| `collab-v2/mock/` | 7 | 3,921 |
+| `collab-v2/gallery/` | 3 | 239 |
+| `collab-v2/__tests__/` | 78 | 13,148 |
+| **Total** | **297** | **~40,230** |
+
+*Roughly 34% of the package by line count is tests; roughly 10% is the mock world. Of the ~26,600 non-test module lines, the sections marked dead or unreachable in §11.1–11.3 account for a substantial minority — the gap audit owns quantifying that.*
+

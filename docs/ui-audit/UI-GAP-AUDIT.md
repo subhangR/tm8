@@ -15,7 +15,7 @@
 
 | Lane | Deliverable | Scope |
 |---|---|---|
-| **A** | [`_research/A-inventory.md`](./_research/A-inventory.md) | Exhaustive code inventory of `packages/ui` — what exists, what is alive vs dead |
+| **A** | [`_research/A-inventory.md`](./_research/A-inventory.md) + [`A-inventory-pass2.md`](./_research/A-inventory-pass2.md) | Exhaustive code inventory of `packages/ui` — what exists, what is alive vs dead. **Two independent passes** that agree on every major finding; treat as cross-verification. |
 | **B** | [`_research/B-contract-matrix.md`](./_research/B-contract-matrix.md) | 81-op catalog × UI consumption × server implementation |
 | **C** | [`_research/C-old-maestro-benchmark.md`](./_research/C-old-maestro-benchmark.md) | What old maestro's UI actually shipped (the benchmark) |
 | **D** | [`_research/D-design-intent.md`](./_research/D-design-intent.md) | The design corpus — what is specified vs never designed |
@@ -47,7 +47,7 @@ Everything else falls into three buckets, and the distinction is the point of th
    account, projects, custom-kind authoring, files. These need **design before code**, and they
    are the majority of the remaining product.
 
-### The five findings that matter most
+### The findings that matter most
 
 **F1 — There is no sessions surface, and a running agent is unrecoverable.**
 `work_session` is a core kind and tm8 spawns real agents, but there is no sessions tab, list,
@@ -75,7 +75,21 @@ at all). Everything else — invites, files, saved views, axes, undo, placements
 inbox — already has a catalog op that merely answers 501 (B). The work is implementation, not
 redesign.
 
-**F5 — tm8 cannot state its own acceptance criteria from its own repo.**
+**F5 — The test suite cannot see any of this.**
+All ~534 module tests run against `MockFacade`; **not one exercises the real path.** That includes
+the golden-workflow acceptance suites — workflow 2 is driven entirely by `pullEntity`,
+`placements` and presence, all three of which throw or return empty against the real server. So a
+screen can be blank or crashing in the running app and 100% green in CI. Any remediation plan
+needs real-path integration tests, or it will re-accumulate exactly this drift.
+
+**F6 — The "honest degradation" design was never wired up.**
+`real/capabilities.ts` — the register of what this node cannot do — has **zero production call
+sites** (imported only by `ModeBanner` and one test), because `collab-v2` never imports `real/`.
+Nothing is gated, no emptiness is captioned, and the banner's promise that panels are "empty or
+disabled on purpose" is therefore untrue: they are just empty, indistinguishable from a bug. This
+is the design that was supposed to make all the 501s survivable, and it is inert.
+
+**F7 — tm8 cannot state its own acceptance criteria from its own repo.**
 `COLLAB_V2_UI_UX_BRIEF.md` — the master UI spec holding the view catalog, the five golden
 workflows and the state inventory — was never vendored into tm8, despite
 `09-IMPLEMENTATION-PLAN.md:41` promising exactly that. Gates **G1, G2 and G3 are all defined
@@ -83,15 +97,21 @@ against it** (D-0). Vendoring it is a five-minute fix and should happen before a
 
 ### Scale of the remaining work
 
-| Category | Surfaces | Design needed | Build effort |
-|---|---|---|---|
-| Sessions & execution | 6 | **All of it** | XL |
-| Auth / account / onboarding | 4 | **All of it** | L |
-| Collab: spaces, members, invites | 4 | Partial (flows absent) | L |
-| Projects & trust | 3 | **All of it** | M |
-| Custom kinds, files | 4 | Authoring undesigned; rendering designed | L |
-| Existing-screen completion | 9 | Designed already | L (mostly server) |
-| Interactions & defects | 8 | Designed already | M |
+| Category | Surfaces | Design needed | Build effort | §|
+|---|---|---|---|---|
+| Sessions & execution | 9 | **All of it** | XL | 2.1, 2.2 |
+| Auth / account / onboarding | 10 | **All of it** | L | 2.5, 2.6 |
+| Collab: spaces, members, invites | 7 | Partial — contents listed, every flow absent | L | 2.7 |
+| Projects & trust | 4 | **All of it** | M | 2.8 |
+| Custom kinds & files | 8 | Authoring undesigned; rendering designed | L | 2.9, 2.10 |
+| Node settings | 4 | **All of it** (+ contract amendment) | M | 2.11 |
+| Existing-screen completion | 9 screens | Designed already | L — mostly server-side | 2.12 |
+| Built-but-unreachable (recover) | 11 | Designed already | M | 2.13 |
+| Interactions | 9 | Designed already | M | 2.14 |
+| Live defects | 11 | — | S–M | 3 |
+
+**Roughly: one third of the work is design-first, two thirds is build-only** — and a large share
+of the build-only portion is server implementation of ops that already exist in the catalog.
 
 ---
 
@@ -400,14 +420,43 @@ no surface. Old maestro exposed a good deal of this.
 | **Channel** | Auto-tabs projection dead; pinned shelf; living embeds | B | P2 |
 | **Settings** | Crashes; no nav entry; every section dead (§2.7) | B | **P0** |
 
-### 2.13 INTERACTIONS
+### 2.13 BUILT BUT UNREACHABLE (dead code)
+
+A distinct category from "dead against the server": these are **finished components that ship in
+the bundle and no code path ever opens.** They represent work already paid for that a small
+wiring effort would recover — and they are also a warning about how the mock-era build drifted.
+
+| Component | State | To recover | Effort |
+|---|---|---|---|
+| **`CreationHost`** — the context-seeded "+" creation modal | Mounted; nothing ever opens it. Palette creation uses a separate path. | Wire the "+" affordances | S |
+| **Keyboard parity surface** — `MoveToMenu`, `LinkMenu`, `openMoveTo`, `openLink` | `InteractionMenusHost` mounted, never opened. **Drag-drop therefore has no keyboard equivalent at all** — an a11y gap, not just a missing feature. | Wire + a11y pass | M |
+| **`EdgeComposer`** (rail edge creation) | Wired to `createEdge` but requires an injected `pickEntity` that **no production call site supplies** → "Choose entity…" is permanently disabled | Supply the picker | S |
+| **`ProfileZ4View`** — member/agent full view with wall and rail | Built, exported, unwired; `EntityZ4Route` claims the route | Register it | S |
+| **`TypingIndicator`**, **`usePresenceChannel`**, **`DiscussionPanel`** | Zero references anywhere, including tests | Wire (needs presence server-side) | M |
+| **`Gallery`** (`#/gallery`) | Mock-only *by construction* — hardcodes seed ids and resets app-wide stores to its own world | Keep as QA-only; document it | — |
+| **Sort UI and filter UI** | **Do not exist anywhere in the collections layer** — the query supports both; no surface offers them | Design + build | M |
+| **Offline UI** | Does not exist. `stores/connection.ts` has **zero UI readers** (their own `gaps-static.test.ts` asserts this). The only offline signal is the integration layer's `ModeBanner`. | Design + build | M |
+| **`isHollow()` / `hollowReason()`** | Built precisely so a screen can caption a permanently-zero value. **No screen calls either.** (See F6.) | Wire | M |
+| **`EntityPanel` "Link" / "Add child"** | Render with the title *"arrives in W4"* and do nothing. "Copy to space" is hardcoded disabled; "Watch" is local `useState` with no facade call. | Build | M |
+| **Drop surfaces** | Only **three** exist in the whole app; two grammar rows (composer, parent-zone) have no registered target | Build | M |
+
+Also noted by both passes: **Z4 is never kind-specific** — there are five shared layouts and eight
+kinds fall through to `generic`. The plan specified kind layout variants (doc = reader + chapter
+tree + margin threads, channel = hub, task = subtree board + dep mini-graph, member = profile).
+That is a designed-but-unbuilt gap, and `ProfileZ4View` above is the half-built proof.
+
+Smaller structural debt from the inventory: two hash codecs, two `EdgeComposer`s, two `initials()`
+helpers, two testid conventions, N+1 reads in Tracking, **no pagination on six surfaces**, and ARIA
+roles without their keyboard contracts.
+
+### 2.14 INTERACTIONS
 
 | # | Interaction | State | D/B | Priority |
 |---|---|---|---|---|
 | X1 | **Navigation** | Works. 7 rail destinations; Settings and Sessions unreachable | B | P0 |
 | X2 | **Deep links** | Mostly good — `#/s/{space}/{view}` and `?p=<entityId>` verified live. **But `channel` is unreachable from a URL** (§3.9): a channel deep link, reload, or back/forward lands on the generic entity route instead of the channel hub. | B | P1 |
 | X3 | **Panel stack** | Works — peek/stack/pin/promote, breadcrumbs, ⌫ pops | — | — |
-| X4 | **Drag & drop** | **Entirely inert** — the grammar module exists, `placements` throws | B | **P0** |
+| X4 | **Drag & drop** | **Entirely inert, at a single point.** Every grammar drop — all 7 rows × every surface — commits through one call, `interactions/execute.ts:90` → `facade.placements()`, which throws. It fails *gracefully* (a toast), but targets still highlight and ghosts still promise "Attach to #general", so the UI advertises a grammar it cannot perform. **The highest-leverage single fix in this report.** Also: only 3 drop surfaces exist, and there is no keyboard equivalent (§2.13). | B | **P0** |
 | X5 | **Keyboard** | Map exists (⌘K, ⌫, g+t/g+d/g+h, arrows); a11y parity unverified against real data | B | P2 |
 | X6 | **Command palette** | Renders; `search` throws, so entity search is dead — it can only offer recents | B | P1 |
 | X7 | **Realtime** | **Poll-only at 1500ms.** The events WS can never carry a graph event — three independent breaks, needing a contract amendment *and* a log→publish bridge (B). PTY WS is true push and works. | B | P1 |
@@ -575,7 +624,7 @@ Pure build, all small, all high-impact.
 7. **Fix the channel deep-link codec** (§3.9) — a URL asymmetry, not a redesign.
 8. **Correct the two stale user-facing strings** — the `work_session` "no PTY route" paragraph
    (§3.10) and the project-trust default inversion (§3.8).
-9. **Vendor `COLLAB_V2_UI_UX_BRIEF.md`** into `docs/` (F5) so gates are stateable in-repo.
+9. **Vendor `COLLAB_V2_UI_UX_BRIEF.md`** into `docs/` (F7) so gates are stateable in-repo.
 
 *Outcome: the app stops crashing, and a spawned agent stops being disposable.*
 
@@ -597,7 +646,11 @@ The largest design gap, and the one that defines tm8. Design before code.
 
 Everything here is already designed; it is dead only because the server answers 501.
 
-1. `placements.apply` → the entire drag-drop grammar comes alive (X4, M2).
+0. **Wire `capabilities.ts` into the screens** (F6) so every hollow zero and disabled control says
+   why. This is the cheapest way to make the whole 501 surface survivable, and it is the design
+   that was already agreed and then never connected. Do it first — it changes how everything
+   below *feels* while it is still being built.
+1. `placements.apply` → the entire drag-drop grammar comes alive at one call site (X4, M2).
 2. `edges.*` writes → Connections tab, link composer (R4).
 3. `entities.move` / `entities.delete` (R5).
 4. `entities.react` (needs `TmClient.put`) → reactions (R2).
@@ -624,7 +677,16 @@ session expiry, token posture.
 
 Files/blobs · custom-kind authoring · saved views · task axes · docs versions and margin threads
 · channel auto-tabs · presence · undo · terminal theming · realtime WS (needs the amendment) ·
-a11y and keyboard parity · the five golden workflows green against the real backend (G2).
+a11y and keyboard parity · sort/filter UI · offline UI · kind-specific Z4 layouts · the five
+golden workflows green against the real backend (G2).
+
+### A standing requirement, not a wave
+
+**Add real-path integration tests.** All ~534 existing tests run on `MockFacade` (F5), so today's
+suite would stay green through every defect in §3 — including the Settings crash. Until at least
+the golden workflows run against a live server, this audit will need repeating. Pair this with
+wiring `capabilities.ts` (Wave 2.0): together they are the two mechanisms that would have caught
+almost everything in this report automatically.
 
 ### Sequencing note
 
