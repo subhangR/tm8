@@ -86,6 +86,39 @@ AM-1/T-D21 no Tauri (server+web only) · AM-2 review adoption · AM-3 G1A includ
 
 - **AM-5 UI corollary (user-directed, relayed to Atlas's coordinator 2026-07-25):** the collab-v2 UI build finishes ONLY loop-critical surfaces + Keystone's W5.4 reconciliation, then CODE-FREEZES; W4/W5 and non-loop screens are post-Phase-1. Snapshot package (SHA, facade interface-diff→freeze, tests/purity, dep manifest, deferral list) is the transplant trigger.
 
+## UI transplant — drift ledger (for Atlas's M2 re-sync; SHA b422978)
+
+The collab-v2 module was snapshotted from **committed SHA `b422978`** on
+`feat/collab-v2-ui` (`maestro-ui/src/collab-v2/`, 270 files, extracted read-only
+via `git archive`) into `packages/ui/src/collab-v2/`. The import-path pass was a
+**verified no-op** — the module has zero imports escaping itself.
+
+**Files touched inside the module: 2.** Everything else is byte-identical.
+1. `CollabV2App.tsx` — optional `{facade, spaceId, banner}` props; a no-prop call
+   is byte-identical to before. Its own header names it the Atlas-owned
+   integration point. Also gates the sim control on the mock existing, because a
+   "sim on/off" toggle floating over live server data implies the events are
+   synthetic when they are not. NOT compiler-forced.
+2. `tsconfig.json` (host file, not Atlas's) — mirrors the source tsconfig at
+   b422978 rather than editing 20+ files we do not own. The snapshot's config
+   excludes tests from tsc (vitest runs them) and does not set `noUnusedLocals`.
+
+**TWO DEFECTS FOR ATLAS, and the second is the one that matters:**
+- **Fixed here, outside the module:** tm8's contract promotes `work_session` and
+  `collection` to CORE kinds; the snapshot's `EntityKind` union knows only the
+  inherited eleven. The server returns a `work_session` the moment anything is
+  spawned, so the first activity row **white-screened the entire app**
+  (`TypeError: cannot read properties of undefined (reading 'tint')` in
+  `EntityChip`). Registered from `packages/ui/src/real/tm8Kinds.tsx` at boot via
+  the runtime KindRegistry path `packages/ui/README.md` already anticipated —
+  the snapshot's registry is untouched. **A seeded mock world can never produce
+  this**: it needs real data to appear, which is the argument for the wired lane.
+- **NOT fixed — Atlas's to make, and it is the real defect:** `registryFor(kind)`
+  promises `KindEntry` and can return `undefined`. The missing kinds were only
+  the symptom. **Any unknown kind white-screens the app — including any `c:*`
+  custom kind, which the contract explicitly supports.** The durable fix is a
+  fallback entry so an unknown kind degrades to a generic chip.
+
 ## Post-Phase-1 backlog (parked, do not build)
 
 - (accumulates here as workers surface non-loop items)
