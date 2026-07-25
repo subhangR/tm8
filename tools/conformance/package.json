@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "stub": "bun src/stub-main.ts"
   },
   "dependencies": {
     "@tm8/contract": "workspace:*",

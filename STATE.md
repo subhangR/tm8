@@ -19,8 +19,8 @@
 
 | Wave | Status | Notes |
 |---|---|---|
-| W0 (M0 scaffold + contract + conformance) | **IN PROGRESS** | Repo created, corpus vendored (tm8-architecture 00-09 + COMBINED, collab-v2-api-design 00-05, UI data contract, entity-graph design, gaps doc), workspace scaffolded (contract/server/execution/cli/ui, db/migrations, tools/conformance). Contract package + conformance harness authoring underway. |
-| W1 (db+RPC+RLS · identity · sidecar+scheduler) | not started | |
+| W0 (M0 scaffold + contract + conformance) | **DONE — G0 PASSED 2026-07-25** | Contract + conformance landed and verified by Vega (typecheck green; contract 18/18; conformance red-in-the-right-way against the honest stub: 3 failed + 4 passed + 47 red-skipped, headline = 26 v1 GETs answering 501). Ops (Argo: start story/CI) + rigs (Lynx) finishing as non-gating W0 tail. |
+| W1 (db+RPC+RLS · identity · sidecar+scheduler) | **IN PROGRESS** | Cygnus: db/migrations 001-008 + RPCs. Lyra: identity block (packages/server/src/identity/ ONLY). Castor (via Altair): sidecar lifecycle + scheduler (packages/server/src/sidecar/ + src/scheduler/ ONLY). |
 | W2 (facade+derived truth · events+WS · conformance completion) | not started | Gate G1 = M1 |
 | W3 (UI transplant + RealFacade · web boot) | not started | waits on Atlas's collab-v2-ui W5 (T-D18) |
 | W4 (execution lifts · SpawnService+execution.* · CLI+adapter) | not started | |
@@ -28,7 +28,7 @@
 
 ## Gates
 
-- G0: not yet — needs contract package building + conformance harness running red against stub server.
+- **G0: PASSED 2026-07-25** (Vega-verified). Contract surface: `@tm8/contract` = contract.ts (§1 near-verbatim UI transcription incl. CollabError/ERROR_STATUS; §2 tm8 extensions: work_session/collection state+content, c:* custom kinds scalars-only, execution.* inputs, EntityKindDef, Create/UpdateSpaceInput; work_session is spawn-only — excluded from entities.create), catalog.ts (62-op closed catalog + HTTP bindings; search.query = only reserved slot; execution.spawn = POST /v2/execution/spawn, prompt/terminate/streams-attach = /v2/entities/:id/commands/*; spaces.home = GET /v2/spaces/:spaceId/home; WS /v2/ws + poll fallback /v2/spaces/:spaceId/events), schemas.ts (zod for every shape, compile-bound z.ZodType<T>, .strict() DTOs and inputs), cursor.ts (DEV-5 {v:2,k:[...]} base64url), envelope.ts (DEV-6 {data,requestId}; DEV-8 wire error per api-design 04 §4 normative nesting — note: UI doc-comment sketch differs, relayed to Keystone). `tools/conformance` = catalog-driven client + honest stub (:4610) + world builder + 8 suites (envelope/taxonomy/cursors/idempotency/events/reads/commands/execution). Conformance test/ dirs are vitest-only (not tsc -b rootDir) — accepted posture. Route bindings accepted by Vega as listed.
 - G1/G2/G3: pending.
 
 ## Ground rules (law)
@@ -51,3 +51,9 @@
 - **Gateway — Cepheus (lead) + Pavo + Volans: DORMANT until G3 (Phase 2 owners; do not spawn in Phase 1).**
 
 Ownership boundary during W0: Rigel owns tools/conformance until G0; Lynx works in tools/rigs/ only, takes conformance extension post-G0.
+
+## Operational facts (verified by workers)
+
+- Old maestro LIVE server for perf baselining = **:4570** (authMode none, commit 07d504d) and it already runs `MAESTRO_PTY_HOST=server`; read-only PTY attach verified at `ws://localhost:4570/pty?sessionId=<id>&offset=<n>` (Lynx, 2026-07-25). Staging 4569/4568 and prod 3001 also exist — do not disturb any of them with writes.
+- Non-invasive baseline capturable now: attach/hydration latency, replay throughput, live-frame cadence, 16ms-coalescing conformance, multi-subscriber fan-out skew. Keystroke-echo round-trip needs a controlled session — scheduled through Vega.
+- tools/rigs/ is intentionally ZERO-dependency (node ≥22 global fetch/WebSocket) to avoid bun.lock churn.
