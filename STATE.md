@@ -32,6 +32,13 @@
 - Old maestro live server = :4570 (perf baselines); NEVER write to it without the rig's `--confirm-controlled` discipline (Lynx's near-miss: a 'working' session can look idle).
 - Spawn all workers `--model opus-5` (user law). Workers never run git — YOU commit per verified wave. `maestro` CLI can hang when the server is loaded — keep prompts short, verify via files not logs when in doubt.
 
+### Pending contract amendment (the ONE approved post-freeze change; assign to Rigel tm_1784942907081_vduwa76a0 before Sirius's WS work)
+The contract has no **client→server WS control message** shape (subscribe-to-space / unsubscribe / presence-channel toggle) — browsers cannot subscribe over the wire; the frame's registry has the methods but nothing may call them. Amendment must define the control frames + zod schemas + conformance coverage. Blocked-behind-it: W2-DECOMPOSITION S4 only (S1–S3 proceed).
+
+### Adjudications on record (do not relitigate)
+- Catalog count: frozen contract at d8f4ae9 = **81 entries (78 v1 + 3 reserved), unchanged since freeze** — verified `git diff d8f4ae9 HEAD -- packages/contract/` empty. Rigel's "73" was a report miscount, not drift. (`/health` says 80 — one-off audit task, cosmetic.)
+- W2 plan: Altair's decomposition ACCEPTED verbatim — `docs/plans/W2-DECOMPOSITION.md` (with Vega's G1A-subset note). packages/server test dir is shared across owners — scope per-owner runs during waves; whole-dir green required only at gates.
+
 ### Standing user directives (all law, details in Amendments below)
 AM-1/T-D21 no Tauri (server+web only) · AM-2 review adoption · AM-3 G1A includes the wired UI · AM-4 security deferred past G1A (loopback bind only) · AM-5 **Phase 1 = the loop, then STOP and report** · Opus-5-only spawns · org roster + boundaries in 'Team' section.
 
