@@ -40,10 +40,14 @@
 - Ports 4610 (server) / 4611 (UI dev) / 5442 (sidecar PG); data ~/.tm8 (dev ~/.tm8-dev).
 - Polaris independently verifies from W2 onward; a claim Polaris did not reproduce is not green.
 
-## Team
+## Team (expanded 2026-07-25 — seven sub-teams under tm8 Org)
 
 - Rigel (Platform lead): contract + db/RPC + identity/RLS — workers Cygnus (db/RPC), Lyra (identity/RLS).
-- Altair (Server lead): facade + events + sidecar + scheduler — workers Deneb, Sirius, Castor.
-- Orion (Execution lead): PTY lifts + SpawnService + CLI — workers Draco, Phoenix.
+- Altair (Server lead): facade + events + sidecar lifecycle code + scheduler — workers Deneb, Sirius, Castor.
+- Orion (Execution lead): PTY lifts + SpawnService + CLI — workers Draco (lift scope per T-D21: PTY host + terminal components only, no Tauri), Phoenix.
 - Atlas (UI lead): existing Collab V2 UI team; joins at W3 (M2) after their mock build completes.
-- Polaris: independent verification, reports only to Vega.
+- **Ops — Argo (lead) + Vela (CI/packaging): one-command start story, CI-as-merge-gate (conformance suite), env isolation, release packaging incl sidecar distribution (R15).** Supersedes the earlier note assigning one-command start to Altair — sidecar *lifecycle code* stays Altair/Castor; start story/packaging/CI = Argo. Active from W0.
+- **Quality — Polaris (lead; audits only, writes no product code, reports only to Vega) + Lynx (builds test machinery: conformance plumbing post-G0 handoff, golden-workflow rigs, execution.prompt PTY round-trip rig, SpawnService parity fixtures, perf rigs).** Active from W0.
+- **Gateway — Cepheus (lead) + Pavo + Volans: DORMANT until G3 (Phase 2 owners; do not spawn in Phase 1).**
+
+Ownership boundary during W0: Rigel owns tools/conformance until G0; Lynx works in tools/rigs/ only, takes conformance extension post-G0.
