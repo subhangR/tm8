@@ -28,6 +28,10 @@
   - **Revised wave map:** W1a Rigel contract amendments + conformance updates → contract freeze · W1b Cygnus migrations + Lyra identity + Castor sidecar/scheduler (gate: apply-clean + RLS negative + identity tests) · W2 facade slice + events/WS (gate G1A-server: 1A ops conformance-green) · W2.5 execution vertical pulled forward (PTY lift, minimal SpawnService, prompt delivery, CLI compat core) → **gate G1A = Phase 1A acceptance (the loop works)** · then W3+ for 1B: full conformance green (G1), UI transplant (G2), full execution parity + golden workflows (G3).
   - **Session-limit ops rule:** ≤3 concurrent worker sessions fleet-wide; leads do not fan out wider without Vega approval.
 
+- **AM-3 (2026-07-25, user decision): Gate G1A includes the NEW UI, wired.** The first gate is now: in the browser, on the Collab V2 UI, open a space → see tasks → run a task → `execution.spawn` creates a work_session with a composed manifest → terminal panel streams the live server PTY → progress lands in the task thread → completion produces a transcript. Everything else (1B platform completeness, remaining screens, golden workflows) proceeds only after G1A passes.
+  - Mechanism: an **early snapshot** of Atlas's collab-v2 module — taken from **committed, gate-verified state only** (never their working tree; their build stays untouched) — transplants into `packages/ui` at W2 kickoff (latest possible moment before wiring, to capture the most finished waves). A minimal vite host (port 4611; prod served by tm8-server) + `RealFacade` over the slice ops + work_session panel hosting the lifted terminal component complete the wiring at W2.5.
+  - T-D18 adjustment: Atlas's team still finishes their mock build undisturbed and still owns the M2 **final re-sync** (mechanical: self-contained module + frozen CollabFacade seam + my ui-snapshot drift tracking). The 9-point handoff protocol stands.
+
 ## Wave status
 
 | Wave | Status | Notes |
