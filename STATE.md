@@ -15,12 +15,26 @@
   - AM-1 is now canonical in the master corpus as **T-D21** (05-DECISIONS.md) + status amendment on 09; both re-vendored here 2026-07-25. Draco's persona updated design-side (lift scope = PTY host + terminal components only).
   - Design-session nuances to carry: (a) the G3 perf-parity bar is measured against old maestro's **desktop** terminal on the same machine — web-only rendering inherits old maestro's WebGL-on-Chromium web path, so parity is achievable but must be **measured explicitly, never assumed** (Polaris owns the measurement at W5); (b) with "install the app" gone, the **one-command start story** (tm8-server starts sidecar PG, serves/points to UI; `bun run dev` for dev + a single launcher for prod) is a W0/W1 deliverable — startup UX is part of the definition of done, owned by Altair's sidecar/ops workstream at W1.
 
+- **AM-2 (2026-07-25, user-sanctioned implementation review — CONDITIONAL GO adopted).** An independent review (sess_1784945489792_14ws8ejrk) was accepted by the user. Adopted into the plan:
+  - **P0 contract amendments — must land BEFORE migrations/events freeze (W1a, blocks W1b):**
+    1. **Projects first-class:** `project` resource (repoUrl, workingDir, trust level), `space_projects` many-to-many, `projects.*` operation family, working-dir/worktree semantics; `execution.spawn` takes a real projectId, not an untyped ref.
+    2. **Blob I/O:** `files.*` lifecycle (initiate/complete/abort upload, authorized download), checksums, size/MIME limits, GC policy, blobs included in backup/export; bridge fetch-blob shape reserved for Phase 2.
+    3. **WorkspaceEvent envelope:** every event carries `{spaceId, seq (per-space monotonic), occurredAt, schemaVersion, clientMutationId? (on all mutation-derived events)}` — no bare-entity-id variants on the multiplexed socket.
+    4. **Security model:** new `docs/tm8-architecture/10-SECURITY-MODEL.md` — loopback-only default bind; non-loopback requires token auth; WS Origin checks; CSRF/CORS posture; DNS-rebinding defense (Host allowlist); path-traversal/symlink guards (blobs, worktrees); secret redaction in manifests/transcripts/logs/backups; agent-governance minimums (session concurrency cap, terminate-as-cancellation, audit via command_ledger; budgets later).
+    5. **Doc contradictions:** master-corpus rewrite requested from the design session (04/06/09 normative Tauri text → rewritten per T-D21; 08 FAIL conclusion → clean passing verification appended); re-vendor after.
+  - **Sequencing restructure — Phase 1A vertical slice before platform completeness:**
+    - **1A (prove the loop):** space + project link · task/doc/team_member/skill · spawn one server PTY · execution.prompt delivery · progress report-back · PR/commit link · completion + transcript · restart/recovery · security + terminal-perf acceptance. A minimal dev terminal page (a rig, NOT product UI) hosts xterm for the slice.
+    - **1B (platform completeness):** channels/inbox/collections/custom kinds/points, full op catalog green (G1), Atlas UI transplant (G2, T-D18 timing unchanged), **basic Postgres FTS behind search.query (un-reserved in 1B)**, minimal old-maestro import (tasks/docs). Deferred within Phase 1: leaderboard polish, custom-kind UX polish, saved-views/axes UI (schema keeps them all).
+  - **Revised wave map:** W1a Rigel contract amendments + conformance updates → contract freeze · W1b Cygnus migrations + Lyra identity + Castor sidecar/scheduler (gate: apply-clean + RLS negative + identity tests) · W2 facade slice + events/WS (gate G1A-server: 1A ops conformance-green) · W2.5 execution vertical pulled forward (PTY lift, minimal SpawnService, prompt delivery, CLI compat core) → **gate G1A = Phase 1A acceptance (the loop works)** · then W3+ for 1B: full conformance green (G1), UI transplant (G2), full execution parity + golden workflows (G3).
+  - **Session-limit ops rule:** ≤3 concurrent worker sessions fleet-wide; leads do not fan out wider without Vega approval.
+
 ## Wave status
 
 | Wave | Status | Notes |
 |---|---|---|
 | W0 (M0 scaffold + contract + conformance) | **DONE — G0 PASSED 2026-07-25** | Contract + conformance landed and verified by Vega (typecheck green; contract 18/18; conformance red-in-the-right-way against the honest stub: 3 failed + 4 passed + 47 red-skipped, headline = 26 v1 GETs answering 501). Ops (Argo: start story/CI) + rigs (Lynx) finishing as non-gating W0 tail. |
-| W1 (db+RPC+RLS · identity · sidecar+scheduler) | **IN PROGRESS** | Cygnus: db/migrations 001-008 + RPCs. Lyra: identity block (packages/server/src/identity/ ONLY). Castor (via Altair): sidecar lifecycle + scheduler (packages/server/src/sidecar/ + src/scheduler/ ONLY). |
+| W1a (contract amendments per AM-2) | **IN PROGRESS** | Rigel: projects/blobs/event-envelope/governance into @tm8/contract + conformance updates → contract freeze. First W1b work was reset by the session limit before producing files. |
+| W1b (db+RPC+RLS · identity · sidecar+scheduler) | queued behind W1a | Cygnus: db/migrations vs AMENDED contract. Lyra: identity (packages/server/src/identity/). Castor via Altair: sidecar+scheduler. Dev PG18 bootstrapped by Vega at ~/.tm8-dev/pg (port 5442). |
 | W2 (facade+derived truth · events+WS · conformance completion) | not started | Gate G1 = M1 |
 | W3 (UI transplant + RealFacade · web boot) | not started | waits on Atlas's collab-v2-ui W5 (T-D18) |
 | W4 (execution lifts · SpawnService+execution.* · CLI+adapter) | not started | |
