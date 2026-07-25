@@ -123,6 +123,11 @@ via `git archive`) into `packages/ui/src/collab-v2/`. The import-path pass was a
   custom kind, which the contract explicitly supports.** The durable fix is a
   fallback entry so an unknown kind degrades to a generic chip.
 
+## Live terminal — interim shipped, proper WS port in flight (2026-07-25)
+
+- **Interim (SHIPPED, committed):** browser xterm (DOM renderer, no WebGL/Canvas addons — they crash in StrictMode) polling non-catalog `GET /pty/output?sessionId&offset` (sendRaw, unenveloped, over PtyHostService.getReplay) every 500ms. Renders real PTY bytes; verified in-browser. Files: `packages/ui/src/real/SessionTerminal.tsx`, `/pty/output` route in `packages/server/src/http/server.ts` + `ptyOutput` wiring in `main.ts`, `/pty` proxy in `packages/ui/vite.config.ts`.
+- **Proper fix (IN FLIGHT, user-directed):** Draco (opus-5, sess_1784978305099_dr08kboeh) is pairing with the maestro streaming/lag owner (sess_1784921923533_ad4ub81gu) to land the proper design in maestro first, then port to tm8 — **replacing the poll** (the poll IS the lag). Design (owner-authoritative): per-session `/pty` WS, binary output frames + JSON control (attached{base,gap,next,epoch}/exit/size/resize), 16ms server coalesce (tm8 already has it), rAF client write-scheduler, **suspend offscreen sockets** (O(visible) not O(running)), blink only the active terminal, resume by snapping `_received` to `attached.next` (not base+len), persist UTF-8 decoder across normal reconnect. **UI-LAG ROOT CAUSE (tm8 inherits the components): xterm WebGL renderer = one GPU context per terminal → browser ~16-context cap → thrash → whole-tab GPU stall. DOM renderer only, forever.** Full brief: scratchpad/draco-brief.txt. Also honor the StrictMode stale-socket-onclose guard (getting it wrong triples PTY input injection).
+
 ## Post-Phase-1 backlog (parked, do not build)
 
 - (accumulates here as workers surface non-loop items)
