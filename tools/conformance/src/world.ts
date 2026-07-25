@@ -43,10 +43,27 @@ export async function buildWorld(prefix: string): Promise<World> {
   const spaceId = (space.id ?? (space as { space?: { id: string } }).space?.id) as string;
   if (!spaceId) throw new Error('spaces.create returned no space id');
 
-  const nav = (await api.read('spaces.navigation', { spaceId })) as { viewer: { id: string } };
+  const nav = (await api.read('spaces.navigation', { spaceId })) as {
+    viewer: { id: string };
+    // Nav channels are TREE NODES wrapping a summary, not bare summaries.
+    channels?: Array<{ entity?: { id: string; title?: string } }>;
+  };
   const viewerId = nav.viewer.id;
 
-  const chGeneral = (await createEntity({ spaceId, kind: 'channel', title: 'general', content: { topic: 'Everything else' }, clientMutationId: cmid('ch1') })).id;
+  // `general` is NOT ours to create. `create_space` already seeds the space
+  // with an owner member, a `general` channel and the default `type` task axis
+  // in one transaction (007:424), and `channels` is UNIQUE (space_id, name)
+  // (001:507). Creating it here collided with the space's own channel on every
+  // single run — a 409 that aborted buildWorld before one suite executed. The
+  // server is right and the world builder was wrong: adopt the seeded channel.
+  const seededGeneral = nav.channels?.find((c) => c.entity?.title === 'general')?.entity;
+  if (!seededGeneral) {
+    throw new Error(
+      "spaces.navigation did not report the 'general' channel that create_space seeds — " +
+        'the world builder cannot adopt it',
+    );
+  }
+  const chGeneral = seededGeneral.id;
   const chBuild = (await createEntity({ spaceId, kind: 'channel', title: 'build', content: { topic: 'The build' }, clientMutationId: cmid('ch2') })).id;
 
   const epic = (await createEntity({
@@ -108,7 +125,12 @@ export async function buildWorld(prefix: string): Promise<World> {
   })) as { entity?: { id: string } };
   const rootMessage = msg.entity?.id ?? '';
 
-  await api.command('entities.points.add', { amount: 5, reason: 'grant', clientMutationId: cmid('pts') }, { id: t101 });
+  // Points go to the PERSONA, not the task. `grant_points` (007:1577) refuses
+  // anything that is not a member or team_member — "points are granted to a
+  // member or team_member" (22023) — and it is right to: points are earned by
+  // someone, and a task cannot earn anything. This targeted t101 (a task), so
+  // buildWorld raised 400 even once the channel collision was fixed.
+  await api.command('entities.points.add', { amount: 5, reason: 'grant', clientMutationId: cmid('pts') }, { id: forge });
 
   return { spaceId, chGeneral, chBuild, epic, t101, t102, t103, t104, forge, docSpec, rootMessage, viewerId, depEdgeId };
 }

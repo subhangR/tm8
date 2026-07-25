@@ -171,9 +171,16 @@ export function runRawAsync(script, { url = APP_URL } = {}) {
   });
 }
 
-/** Async runner with the standard claim/transaction wrapper. */
-export function runAsync(sql, { url = APP_URL, claims = null, singleTransaction = false } = {}) {
-  return runRawAsync(buildScript(sql, { claims, singleTransaction, verbose: false }), { url });
+/**
+ * Async runner with the standard claim/transaction wrapper. Pass verbose: true when
+ * the test needs the loser's SQLSTATE out of a concurrent pair — psql only prints
+ * the code under VERBOSITY verbose.
+ */
+export function runAsync(
+  sql,
+  { url = APP_URL, claims = null, singleTransaction = false, verbose = false } = {},
+) {
+  return runRawAsync(buildScript(sql, { claims, singleTransaction, verbose }), { url });
 }
 
 /** Run SQL that must succeed; returns trimmed stdout. */

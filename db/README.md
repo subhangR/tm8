@@ -30,6 +30,14 @@ so each fix is a NEW file — forward-only, never an edit:
 - 012 `command_ledger` reserves the clientMutationId at the top of the RPC instead
   of recording it at the end, so a simultaneous duplicate submission waits on the
   primary key rather than running the body twice.
+- 013 no behaviour change: carves the "seq order IS commit order" invariant into
+  `internal.next_event_seq`'s own body, because the engineer who would replace it
+  with a Postgres sequence is reading the SQL, not the tests.
+- 014 `internal.assert_version` now locks the entities row `FOR UPDATE` while
+  checking (and is therefore VOLATILE). An unlocked read meant two callers holding
+  the same expectedVersion both passed the check and the second silently
+  overwrote the first — a lost update, in the one mechanism that exists to prevent
+  it.
 
 Crib freely from agent-maestro branch `feat/collab-v2-supabase-backend` supabase/
 migrations; import none of them verbatim.
@@ -67,6 +75,11 @@ The suites, and what each is for:
   space, but not in another space). The last property is what makes a cursor safe.
 - `ledger_replay` clientMutationId idempotency, including a genuinely concurrent
   double-submit.
+- `second_user` two entitled members racing on the SAME row: editing a task,
+  completing it (it pays points), redeeming a single-use invite (it grants
+  membership). Every assertion is "exactly one won, the loser was refused, and the
+  side effect happened once", because the failure mode is never an error — it is a
+  double effect nobody notices. Found the 014 lost update.
 - `triggers` the invariants that hold even for a writer that bypassed the catalog,
   so most of it runs as the schema owner.
 - `loop_rpcs` the G1A loop end to end, asserting the CONTENT of every result. This
