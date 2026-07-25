@@ -1,6 +1,10 @@
 # tm8 STATE
 
-## ⚡ HANDOFF FOR FRESH VEGA (written 2026-07-25 at controlled shutdown; read this first, then the amendments, then everything else)
+## ✅ PHASE 1 DELIVERED — G1A PASSED 2026-07-25 (AM-5 scope)
+
+The loop closes **in the browser against the real graph**: :4611 UI (RealFacade over tm8-server :4610) → create task in UI → Spawn agent (real server PTY + composed manifest) → prompt → progress in thread → complete — Orion-driven 15/15 with independent Postgres re-verification, then **re-verified by Vega** at final HEAD (fresh-worktree build EXIT 0, 14 migrations clean, smoke loop 17/17, UI host 200). Suites at delivery: server 241 · execution 25 · cli 35 · db green · conformance 46/65 (remainder = deliberate AM-5 honest-501s). `HOW-TO-TEST.md` (incl. §UI) is the user manual — every command executed as written (jq-free). Per AM-5: **work is STOPPED**; the parked backlog lives in 'Post-Phase-1 backlog' + 'CARRIED FORWARD' notes (EntityProjector injection, entities.move if ruled loop-critical, Atlas drift ledger incl. registryFor-undefined, live WS/PTY streaming in the UI, security hardening per AM-4, everything in doc 10). No new work without user direction.
+
+## ⚡ HANDOFF FOR FRESH VEGA (historical — written mid-Phase-1 at the controlled shutdown; state matrix below is SUPERSEDED by the delivery stamp above; gotchas and adjudications remain valid)
 
 **You are Vega, CTO of tm8.** The user stopped the maestro server deliberately after wave salvage; every prior session is gone. Repo HEAD (`e1bd4de`) is fully Vega-verified — trust the commits, not memories. Your immediate mission per the user: **drive testing of tm8 session spawning** (the G1A loop), then finish Phase 1 = the loop ONLY (AM-5).
 
