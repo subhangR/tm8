@@ -283,6 +283,54 @@ facts — "command rejected" and "handler not built" must not be confused.
 
 ---
 
+## 3b. The UI
+
+The Collab V2 workspace is wired to the real server. Start the server as in
+§2.2, then in a second terminal:
+
+```bash
+cd ~/Desktop/Projects/tm8/packages/ui
+bunx vite --port 4611 --strictPort
+```
+
+Open **http://127.0.0.1:4611**.
+
+You should see a dark banner reading **REAL SERVER** and a count of operations
+this node has not built. That banner is the honesty surface — the panels behind
+it are empty *on purpose* rather than filled with placeholder data, and it tells
+you how many. If it says MOCK, the UI is running against its seeded fixture and
+nothing you do touches Postgres.
+
+What works end to end, driven from the browser:
+
+1. real spaces and tasks render (sidebar counts are live `collections.query`)
+2. create a task in the UI
+3. **Spawn agent** on that task → a session appears with a real server-assigned id
+4. prompt the session
+5. progress lands in the task thread
+6. complete the task
+
+Verify it independently rather than trusting the screen — the same discipline
+§2.3 uses:
+
+```bash
+curl -s $B/v2/entities/<TASK_ID> | j data.state.workStatus     # → done
+curl -s $B/v2/entities/<TASK_ID> | j data.version              # → 2
+```
+
+**No terminal yet.** The session panel polls status every 1.5s and says so in
+those words. This node exposes no `/pty` route, so there is no terminal output
+to show — and an empty black rectangle implying a live-but-quiet stream would be
+exactly the kind of confident-looking lie the rest of this document avoids.
+
+**Things that will look broken and are not:** drag-to-reparent refuses
+(`entities.move` is 501), and unread counts, `taskDoneCount` and channel auto-tabs
+are permanently `0`/empty because the operations behind them are not built. The
+UI knows which fields those are and prefers hiding an affordance to rendering a
+confident zero, but where it does show one, that is why.
+
+---
+
 ## 4. Running the test suites
 
 ```bash
