@@ -36,7 +36,7 @@
 The contract has no **client→server WS control message** shape (subscribe-to-space / unsubscribe / presence-channel toggle) — browsers cannot subscribe over the wire; the frame's registry has the methods but nothing may call them. Amendment must define the control frames + zod schemas + conformance coverage. Blocked-behind-it: W2-DECOMPOSITION S4 only (S1–S3 proceed).
 
 ### Adjudications on record (do not relitigate)
-- Catalog count: frozen contract at d8f4ae9 = **81 entries (78 v1 + 3 reserved), unchanged since freeze** — verified `git diff d8f4ae9 HEAD -- packages/contract/` empty. Rigel's "73" was a report miscount, not drift. (`/health` says 80 — one-off audit task, cosmetic.)
+- Catalog count (FINAL, audited twice): frozen contract at d8f4ae9 = **81 entries = 79 v1 + 2 reserved (search.query, bridge.fetchBlob), unchanged since freeze** — `git diff d8f4ae9 HEAD -- packages/contract/` empty. Rigel's "73" was a report miscount, not drift. `/health` correctly reports 80 HTTP-mounted routes because `events.subscribe` is WS-only. CLOSED — do not re-audit.
 - W2 plan: Altair's decomposition ACCEPTED verbatim — `docs/plans/W2-DECOMPOSITION.md` (with Vega's G1A-subset note). packages/server test dir is shared across owners — scope per-owner runs during waves; whole-dir green required only at gates.
 
 ### Standing user directives (all law, details in Amendments below)
