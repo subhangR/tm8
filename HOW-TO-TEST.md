@@ -108,7 +108,7 @@ TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_dev \
   node db/migrate.mjs reset --force
 ```
 
-Expect `dropped database` / `created database` / 12 migrations `ok` /
+Expect `dropped database` / `created database` / 14 migrations `ok` /
 `migrations applied`.
 
 ### 2.2 Build and start the server
@@ -123,14 +123,14 @@ TM8_PORT=4610 TM8_AGENT_CMD=echo-agent \
 
 ```
 tm8-server listening on http://127.0.0.1:4610
-  catalog: 80 HTTP operations mounted · 24 implemented · the rest answer 501 not_implemented (DEV-13)
+  catalog: 80 HTTP operations mounted · 28 implemented · the rest answer 501 not_implemented (DEV-13)
   graph: connected
   ws: /v2/ws  ·  health: http://127.0.0.1:4610/health
 ```
 
 Two lines are worth reading:
 
-- **`24 implemented`** — how many operations are real. If it says `0`, you
+- **`28 implemented`** — how many operations are real. If it says `0`, you
   started without `TM8_DATABASE_URL` and everything below will 501.
 - **`graph: connected`** — the pool reached Postgres.
 
@@ -145,67 +145,83 @@ That refusal is the security posture, not a misconfiguration.
 
 Each block is one step. Copy the ids forward as you go.
 
+`jq` is **not** required — this repo does not assume it is installed. Define this
+tiny reader once per shell and every command below works with stock Python:
+
+```bash
+j() { python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for k in sys.argv[1].split('.'):
+    d = d[int(k)] if k.lstrip('-').isdigit() else d[k]
+print(d if isinstance(d, str) else json.dumps(d, indent=2))
+" "$1"; }
+```
+
+(If you do have `jq` installed, `| j data.space.id` and `| jq -r .data.space.id`
+are interchangeable throughout.)
+
 ```bash
 B=http://127.0.0.1:4610
 
 # who am I — proves claims and identity reach the database
-curl -s $B/v2/identity | jq .data
+curl -s $B/v2/identity | j data.username
 
 # a space
 curl -s -X POST $B/v2/spaces -H 'content-type: application/json' \
-  -d '{"name":"My Space"}' | jq .data.space.id
+  -d '{"name":"My Space"}' | j data.space.id
 
 # a project — trust MATTERS, see the note below
 mkdir -p /tmp/tm8-demo
 curl -s -X POST $B/v2/projects -H 'content-type: application/json' \
-  -d '{"name":"Demo","workingDir":"/tmp/tm8-demo","trust":"trusted"}' | jq .data.project.id
+  -d '{"name":"Demo","workingDir":"/tmp/tm8-demo","trust":"trusted"}' | j data.id
 
 # link the project into the space
 curl -s -X POST $B/v2/spaces/<SPACE_ID>/projects -H 'content-type: application/json' \
-  -d '{"projectId":"<PROJECT_ID>"}' | jq .data
+  -d '{"projectId":"<PROJECT_ID>"}' | j data
 
 # a task
 curl -s -X POST $B/v2/entities -H 'content-type: application/json' \
-  -d '{"spaceId":"<SPACE_ID>","kind":"task","title":"Try tm8"}' | jq .data.entity.id
+  -d '{"spaceId":"<SPACE_ID>","kind":"task","title":"Try tm8"}' | j data.entity.id
 
 # see it in the space's task list
 curl -s -X POST $B/v2/collections/query -H 'content-type: application/json' \
-  -d '{"spaceId":"<SPACE_ID>","kinds":["task"],"limit":10}' | jq '.data.page.items[].title'
+  -d '{"spaceId":"<SPACE_ID>","kinds":["task"],"limit":10}' | j data.page.items.0.title
 
 # a team member — the persona the session runs as
 curl -s -X POST $B/v2/entities -H 'content-type: application/json' \
-  -d '{"spaceId":"<SPACE_ID>","kind":"team_member","title":"My Agent"}' | jq .data.entity.id
+  -d '{"spaceId":"<SPACE_ID>","kind":"team_member","title":"My Agent"}' | j data.entity.id
 
 # SPAWN — this starts a real PTY process
 curl -s -X POST $B/v2/execution/spawn -H 'content-type: application/json' \
   -d '{"spaceId":"<SPACE_ID>","projectId":"<PROJECT_ID>","teamMemberId":"<MEMBER_ID>",
        "taskIds":["<TASK_ID>"],"workdir":{"mode":"project"},"mode":"worker"}' \
-  | jq '.data.entity | {id, status: .content.status}'
+  | j data.entity.id
 
 # PROMPT it — the bytes go into the live terminal
 curl -s -X POST $B/v2/entities/<SESSION_ID>/commands/prompt \
   -H 'content-type: application/json' -d '{"message":"hello agent"}' \
-  | jq '.data.entity.content.status'      # → "running"
+  | j data.entity.state.status      # → "running"
 
 # progress into the task thread
 curl -s -X POST $B/v2/messages -H 'content-type: application/json' \
-  -d '{"anchorId":"<TASK_ID>","body":"Making progress."}' | jq .data.entity.title
+  -d '{"anchorId":"<TASK_ID>","body":"Making progress."}' | j data.entity.title
 
 # read the thread back
-curl -s $B/v2/entities/<TASK_ID>/messages | jq '.data.items[].title'
+curl -s $B/v2/entities/<TASK_ID>/messages | j data.items.0.title
 
 # the event log — what a reconnecting client replays
-curl -s "$B/v2/spaces/<SPACE_ID>/events?since=0" | jq '.data.items[] | {seq, type}'
+curl -s "$B/v2/spaces/<SPACE_ID>/events?since=0" | j data.items.0.type
 
 # complete the task (expectedVersion and completerIds are both REQUIRED)
-curl -s $B/v2/entities/<TASK_ID> | jq .data.version
+curl -s $B/v2/entities/<TASK_ID> | j data.version
 curl -s -X POST $B/v2/entities/<TASK_ID>/commands/complete \
   -H 'content-type: application/json' \
-  -d '{"expectedVersion":<VERSION>,"completerIds":["<MEMBER_ID>"]}' | jq .data.entity.workStatus
+  -d '{"expectedVersion":<VERSION>,"completerIds":["<MEMBER_ID>"]}' | j data.entity.state.workStatus
 
 # stop the session
 curl -s -X POST $B/v2/entities/<SESSION_ID>/commands/terminate \
-  -H 'content-type: application/json' -d '{}' | jq .data.entity.content.status
+  -H 'content-type: application/json' -d '{}' | j data.entity.state.status
 ```
 
 **About `trust`.** Projects default to `untrusted`, and `execution.spawn`
@@ -274,7 +290,7 @@ cd ~/Desktop/Projects/tm8
 
 bun run typecheck                                    # whole workspace, exit 0
 
-cd packages/server   && bunx vitest run              # 218 passed
+cd packages/server   && bunx vitest run              # 237 passed
 cd packages/execution && bunx vitest run             # 25 passed
 cd packages/execution && bun run harness             # 5/5 — real PTY
 cd packages/cli      && bunx vitest run              # 35 passed
@@ -282,7 +298,7 @@ cd packages/cli      && bunx vitest run              # 35 passed
 # the database's own suite: RLS negatives, triggers, seq, ledger
 PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
 TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_cygnus \
-  node db/test/run.mjs                               # 71 passed
+  node db/test/run.mjs                               # 76 passed
 ```
 
 Some server tests need a database; give them one with `TM8_DATABASE_URL`.
