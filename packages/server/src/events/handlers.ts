@@ -13,15 +13,19 @@
  */
 import { CollabError } from '@tm8/contract';
 
-import type { Db, DbClaims } from '../db/types.js';
+import type { Db } from '../db/types.js';
+import { claimsFor } from '../facade/context.js';
 import type { HandlerRegistry } from '../facade/index.js';
 import type { ServerConfig } from '../http/config.js';
-import { json, type RequestContext } from '../http/types.js';
+import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
+import { json } from '../http/types.js';
 import { DEFAULT_POLL_LIMIT, PgDurableEventLog, type DurableEventLog } from './poll.js';
 
 export interface EventHandlerDeps {
   readonly db: Db;
   readonly config: ServerConfig;
+  /** The v1 loopback auto-owner, resolved once per process. */
+  readonly owner?: () => Promise<LoopbackOwner>;
   /**
    * Override the log implementation. Tests inject a fake; production leaves it
    * undefined and gets `PgDurableEventLog` over `deps.db`.
@@ -65,24 +69,15 @@ function parseLimit(raw: string | null): number {
   return value;
 }
 
-/**
- * The four canonical claims for this request (STATE 'Claims contract').
- *
- * `nodeAdmin` is a BOOLEAN here and is rendered to the wire format by the db
- * client, deliberately: `internal.is_node_admin()` compares against the literal
- * 'true', so a hand-rolled 'on' would read as "not an admin" and present as an
- * RLS bug rather than a claims bug. Nothing in this lane formats a claim value.
- */
-function claimsFor(ctx: RequestContext): DbClaims {
-  return {
-    identityId: ctx.identity.identityId,
-    actorId: ctx.identity.actorId,
-    nodeAdmin: false,
-    requestId: ctx.requestId,
-  };
-}
-
 export function registerEventHandlers(registry: HandlerRegistry, deps: EventHandlerDeps): void {
+  // One identity path (see test/one-identity-path.test.ts). Claims come from
+  // facade/context.ts's `claimsFor` and nowhere else — this file used to define
+  // its own copy, which bound `actorId` globally. A member row belongs to ONE
+  // space and `internal.resolve_actor` coalesces to it, so a globally-bound
+  // actor from space A on a poll of space B raises 42501 for the space's own
+  // owner. `events.poll` is a read with no command envelope, so it passes no
+  // actor at all and lets `current_member_id(space)` resolve the right one.
+  const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
   const log = deps.log ?? new PgDurableEventLog(deps.db, {
     // A skipped row is a real (if legitimate) loss of a delivery, so it must
     // never be silent. See WorkspaceEventMapper.mapRows for the skip policy.
@@ -99,7 +94,7 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
       spaceId,
       parseSince(ctx.query.get('since')),
       parseLimit(ctx.query.get('limit')),
-      claimsFor(ctx),
+      claimsFor(await owner(), ctx),
     );
 
     return json(page);

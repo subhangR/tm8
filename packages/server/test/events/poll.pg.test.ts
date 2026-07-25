@@ -17,6 +17,7 @@ import { WorkspaceEventSchema, WORKSPACE_EVENT_SCHEMA_VERSION } from '@tm8/contr
 import { HandlerRegistry } from '../../src/facade/index.js';
 import { registerEventHandlers } from '../../src/events/handlers.js';
 import { PgDurableEventLog } from '../../src/events/poll.js';
+import type { LoopbackOwner } from '../../src/identity/loopback.js';
 import { createTestDb, TEST_DATABASE_URL, type TestDb } from './pg-harness.js';
 
 const url = TEST_DATABASE_URL;
@@ -34,13 +35,37 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
   let identityId: string;
   let log: PgDurableEventLog;
 
-  /** Claims for the space's owning member. */
-  const claims = (): { identityId: string; actorId: string; nodeAdmin: boolean; requestId: string } => ({
+  /**
+   * Claims for a poll, shaped exactly as the handler builds them.
+   *
+   * Note what is NOT here: `actorId`. A member row belongs to ONE space, and
+   * `internal.resolve_actor` coalesces to `current_member_id(space)`, so binding
+   * an actor globally makes a cross-space request raise 42501 for the space's own
+   * owner. Leaving it unset lets the database pick the right member row — and
+   * this test asserting the read works WITHOUT an actor is what proves it does.
+   */
+  const claims = (): { identityId: string; nodeAdmin: boolean; requestId: string } => ({
     identityId,
-    actorId: memberId,
     nodeAdmin: false,
     requestId: `req_${randomUUID()}`,
   });
+
+  /**
+   * The owner resolver the handler is given.
+   *
+   * The handler takes identity from the resolved loopback OWNER, not from
+   * `ctx.identity` — that is the one-identity-path rule. So a test that wants the
+   * handler to poll as its own fixture identity must inject that identity here;
+   * faking it on `ctx` no longer has any effect, which is the point.
+   */
+  const testOwner = (): Promise<LoopbackOwner> =>
+    Promise.resolve({
+      identityId,
+      accountId: '00000000-0000-0000-0000-000000000000',
+      username: 'owner',
+      isNodeAdmin: false,
+      isOwner: true,
+    });
 
   beforeAll(async () => {
     db = createTestDb(url!);
@@ -273,7 +298,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
 
   it('registers events.poll on the handler registry and answers through it', async () => {
     const registry = new HandlerRegistry();
-    registerEventHandlers(registry, { db, config: {} as never });
+    registerEventHandlers(registry, { db, config: {} as never, owner: testOwner });
     expect(registry.has('events.poll')).toBe(true);
 
     const handler = registry.get('events.poll')!;
@@ -293,7 +318,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
 
   it('refuses a malformed since rather than answering an empty page', async () => {
     const registry = new HandlerRegistry();
-    registerEventHandlers(registry, { db, config: {} as never });
+    registerEventHandlers(registry, { db, config: {} as never, owner: testOwner });
     const handler = registry.get('events.poll')!;
 
     // A 200 with [] here would tell a reconnecting client it had missed nothing.
