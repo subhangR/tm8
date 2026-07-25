@@ -11,7 +11,16 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
 import type { Logger, PtySessionStatus } from '../pty/types.js';
-import { buildAgentCommand, composeEnv, composeManifest, resolveLaunchConfig, resolveWorkdir } from './manifest.js';
+import { composePrompt } from '@tm8/prompt';
+
+import {
+  buildAgentCommand,
+  composeEnv,
+  composeManifest,
+  resolveLaunchConfig,
+  resolveWorkdir,
+  withAgentPrompt,
+} from './manifest.js';
 import type {
   GraphAuth,
   GraphPort,
@@ -137,7 +146,11 @@ export class SpawnService {
     this.sessionAuth.set(sessionId, auth);
 
     try {
-      const command = buildAgentCommand(launch, this.env);
+      // The base command is built FIRST and recorded in the manifest; the system
+      // prompt is then derived FROM that manifest and appended to produce the
+      // line the PTY actually runs. See `withAgentPrompt` for why this is two
+      // steps and not one — it unties an apparent circular dependency.
+      const baseCommand = buildAgentCommand(launch, this.env);
       const manifestPath = this.manifestPathFor(sessionId);
       const manifest = composeManifest({
         sessionId,
@@ -145,9 +158,27 @@ export class SpawnService {
         context,
         launch,
         workdir: { mode: workdir.mode, path: cwd },
-        command,
+        command: baseCommand,
         baseUrl: this.baseUrl,
       });
+
+      // Compose the agent's briefing IN-PROCESS and embed it in the command.
+      //
+      // In-process, NOT by having the PTY shell out to `tm8 worker init`: the
+      // prompt must exist at the agent's FIRST TOKEN, before it could run any
+      // CLI, so a boot that depends on the CLI being resolvable on PATH is a
+      // failure mode designed out rather than handled. `tm8 worker init` remains
+      // for an agent that wants to re-read its own briefing, and shares this
+      // exact composer (`@tm8/prompt`) so the two can never drift.
+      const envelope = composePrompt(manifest, {
+        sessionId,
+        baseUrl: this.baseUrl,
+      });
+      const command = withAgentPrompt(
+        baseCommand,
+        `${envelope.system}\n\n${envelope.task}`,
+        this.env,
+      );
 
       const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env);
       const envVarNames = Object.keys(env).sort();

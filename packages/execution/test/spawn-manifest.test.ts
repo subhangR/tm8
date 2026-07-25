@@ -2,6 +2,8 @@
 // flow that are pure functions, and therefore the parts where a regression is
 // cheap to catch and expensive to notice in production.
 
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   agentToolForModel,
@@ -10,6 +12,7 @@ import {
   composeManifest,
   resolveLaunchConfig,
   resolveWorkdir,
+  withAgentPrompt,
 } from '../src/spawn/manifest.js';
 import { SpawnError, type SpawnContext, type SpawnRequest } from '../src/spawn/types.js';
 
@@ -131,14 +134,87 @@ describe('buildAgentCommand', () => {
     expect(cmd).toMatch(/^node '.*harness\/echo-agent\.mjs'$/);
   });
 
-  it('derives claude flags from the manifest posture', () => {
-    expect(buildAgentCommand(launch, {})).toBe('claude --permission-mode acceptEdits --model opus');
-    expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).toContain(
-      '--permission-mode plan',
+  it('always skips permissions so an unattended agent cannot hang on a prompt', () => {
+    // Claude can block forever on TWO dialogs — the folder-trust gate and
+    // per-tool-use confirmations — and a blocked agent produces no output,
+    // never reports, and burns a slot against the concurrency cap. The human
+    // authorization layer is tm8's spawn-time project-trust gate, which has
+    // already refused untrusted directories by the time we get here.
+    expect(buildAgentCommand(launch, {})).toBe(
+      'claude --dangerously-skip-permissions --model opus',
     );
     expect(
       buildAgentCommand({ ...launch, permissionMode: 'bypassPermissions' }, {}),
     ).toBe('claude --dangerously-skip-permissions --model opus');
+  });
+
+  it('overrides a MORE RESTRICTIVE permissionMode — deliberate, and worth knowing', () => {
+    // `readOnly` used to map to `--permission-mode plan`. It no longer does:
+    // permissionMode is currently ADVISORY for Claude. Honouring it needs a
+    // launch path that cannot deadlock, which is post-Slice-1 work. Pinned as a
+    // test so the trade-off stays visible rather than being rediscovered.
+    expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).toBe(
+      'claude --dangerously-skip-permissions --model opus',
+    );
+    expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).not.toContain(
+      '--permission-mode',
+    );
+  });
+
+  it('appends the composed system prompt for claude, shell-quoted', () => {
+    const base = buildAgentCommand(launch, {});
+    const prompt = "<tm8_system_prompt>it's \"quoted\"\nand multiline</tm8_system_prompt>";
+    const cmd = withAgentPrompt(base, prompt, {});
+    expect(cmd.startsWith(base)).toBe(true);
+    expect(cmd).toContain('--append-system-prompt');
+    // POSIX single-quote escaping: the embedded apostrophe MUST be broken out,
+    // or the shell terminates the argument early and the agent boots with a
+    // truncated briefing (or the command fails outright).
+    expect(cmd).toContain(`'\\''`);
+  });
+
+  it('leaves a non-claude agent command UNCHANGED rather than guessing its flags', () => {
+    // codex takes `-c developer_instructions=`, gemini has no system-prompt flag
+    // at all. Approximating either is how an agent silently ignores its
+    // briefing, so Slice 1 wires claude only.
+    const echo = buildAgentCommand(launch, { TM8_AGENT_CMD: 'echo-agent' });
+    expect(withAgentPrompt(echo, 'PROMPT', { TM8_AGENT_CMD: 'echo-agent' })).toBe(echo);
+    expect(withAgentPrompt('my-agent', 'PROMPT', { TM8_AGENT_CMD: 'my-agent' })).toBe('my-agent');
+  });
+
+  it('appends nothing when the composed prompt is empty', () => {
+    const base = buildAgentCommand(launch, {});
+    expect(withAgentPrompt(base, '   ', {})).toBe(base);
+  });
+
+  it('puts a RESOLVABLE `tm8` on the agent PATH, not merely a plausible directory', () => {
+    // The prompt tells the agent to run `tm8 task report ...` — that IS the
+    // reporting loop. The built entrypoint is `dist/index.js`, so a PATH entry
+    // pointing at a directory that contains only `index.js` looks correct,
+    // typechecks, and still leaves every reporting call dying with
+    // `tm8: command not found` while the agent believes it reported. So assert
+    // the executable NAME resolves, which is the thing that actually matters.
+    const env = composeEnv(
+      composeManifest({
+        sessionId: 's-path',
+        request: { spaceId: 'space-1', teamMemberId: 'tm-1' } as SpawnRequest,
+        context: context(),
+        launch,
+        workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+        command: 'claude',
+        baseUrl: 'http://127.0.0.1:4620',
+      }),
+      '/tmp/manifest.json',
+      'http://127.0.0.1:4620',
+      { PATH: '/usr/bin:/bin' },
+    );
+    const first = (env.PATH ?? '').split(':')[0] ?? '';
+    expect(first).not.toBe('');
+    expect(existsSync(join(first, 'tm8'))).toBe(true);
+    // PREPENDED: a stale globally-installed tm8 must not shadow the build this
+    // server actually shipped with.
+    expect(env.PATH).toContain('/usr/bin:/bin');
+    expect(env.PATH?.endsWith('/usr/bin:/bin')).toBe(true);
   });
 
   it('uses any other TM8_AGENT_CMD verbatim rather than guessing its flags', () => {

@@ -17,6 +17,8 @@
 // branch table that drifts every time a model ships.
 
 import { fileURLToPath } from 'node:url';
+import { existsSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
   AgentMode,
   PermissionMode,
@@ -211,13 +213,65 @@ export function buildAgentCommand(
   if (raw !== 'claude') return raw;
 
   const args: string[] = [];
-  if (launch.permissionMode === 'bypassPermissions') {
-    args.push('--dangerously-skip-permissions');
-  } else {
-    args.push('--permission-mode', mapClaudePermissionMode(launch.permissionMode));
-  }
+  // ALWAYS skip permissions for a tm8-spawned Claude, whatever the persona's
+  // configured permissionMode says.
+  //
+  // An unattended agent must not be able to hang on an interactive prompt, and
+  // TWO separate dialogs can block it forever: Claude's "do you trust this
+  // folder?" gate on first access, and per-tool-use confirmations. A blocked
+  // agent produces no output, never reports, and burns a slot against the
+  // concurrency cap until a human notices — indistinguishable from a hung agent.
+  // Pre-trusting the folder alone does NOT cover the tool prompts.
+  //
+  // The human-authorization layer is tm8's own spawn-time PROJECT TRUST gate:
+  // `execution_spawn` refuses an untrusted project, so by the time we launch an
+  // operator has explicitly vouched for this working directory. Mirrors old
+  // maestro's proven worker spawn.
+  //
+  // DELIBERATE TRADE-OFF: this overrides a MORE RESTRICTIVE configured mode — a
+  // `readOnly` persona still launches with full access, so `permissionMode` is
+  // currently advisory for Claude. Honouring it needs a launch path that cannot
+  // deadlock; that is post-Slice-1 work, and `mapClaudePermissionMode` is kept
+  // for it rather than deleted.
+  args.push('--dangerously-skip-permissions');
   if (launch.model) args.push('--model', launch.model);
   return ['claude', ...args].join(' ');
+}
+
+/**
+ * Append the composed system prompt to an agent command line.
+ *
+ * SEPARATE from {@link buildAgentCommand} because of an ordering constraint that
+ * looks circular and is not: the prompt is composed FROM the manifest, and the
+ * manifest records the command. Splitting the two unties it — the base command
+ * is built and recorded, the manifest is composed, the prompt is derived from
+ * it, and only then is the prompt appended to produce the line the PTY runs.
+ * Nothing in the prompt renders `launch.command`, so there is no real cycle.
+ *
+ * THIS IS THE STEP THAT WAS MISSING. Before it, tm8 composed a complete manifest
+ * AND a complete system prompt, wrote the manifest to disk, exported
+ * `TM8_MANIFEST_PATH` — then launched a bare `claude` that read none of it. Every
+ * real agent booted with no identity and no task. It went unnoticed because the
+ * smoke stub (`echo-agent`) DOES read the manifest, so the loop passed on a path
+ * the product never takes.
+ *
+ * Delivery is PER-TOOL and only Claude is wired here: codex takes
+ * `-c developer_instructions=<json>` (`instructions` is reserved and ignored),
+ * gemini has no system-prompt flag at all so system and task must be
+ * concatenated into `--prompt`, and hermes uses an env var. Guessing flags for a
+ * CLI we have not verified is how you get an agent that silently ignores its
+ * briefing, so anything that is not Claude is returned UNCHANGED rather than
+ * approximated. Wiring the other three is Slice 2.
+ */
+export function withAgentPrompt(
+  command: string,
+  systemPrompt: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const raw = env.TM8_AGENT_CMD?.trim() || 'claude';
+  if (raw !== 'claude') return command;
+  if (systemPrompt.trim() === '') return command;
+  return `${command} --append-system-prompt ${shellQuote(systemPrompt)}`;
 }
 
 /** tm8's four postures → the three `--permission-mode` values Claude accepts. */
@@ -286,7 +340,67 @@ export function composeEnv(
   env.CLAUDE_CODE_ENTRYPOINT = '';
   env.CLAUDECODE = '';
 
+  // Put the `tm8` binary on the agent's PATH.
+  //
+  // The system prompt instructs the agent to run `tm8 task report progress|
+  // complete|blocked` — that IS the reporting loop, and it is the only way its
+  // work becomes visible in the graph. `@tm8/cli` is a workspace package with a
+  // `bin` entry that nothing ever installs globally, so without this every one
+  // of those commands dies with "command not found" and the agent looks broken
+  // while believing it reported. PREPENDED so a stale globally-installed `tm8`
+  // cannot shadow the build this server actually shipped with.
+  const binDir = cliBinDir();
+  if (binDir) {
+    const inherited = parentEnv.PATH ?? '';
+    env.PATH = inherited === '' ? binDir : `${binDir}:${inherited}`;
+  }
+
   return env;
+}
+
+/**
+ * Directory containing an executable literally named `tm8`, or null.
+ *
+ * Resolved RELATIVE TO THIS MODULE rather than from cwd or an env var, so the
+ * agent gets the CLI from the same checkout as the server that spawned it.
+ * `../../../cli/dist` lands on `packages/cli/dist` from both `src/spawn/`
+ * (vitest, running TypeScript directly) and `dist/spawn/` (the built server) —
+ * both are three levels below `packages/`.
+ *
+ * WHY IT CHECKS FOR `tm8` AND NOT `index.js`: the built entrypoint is
+ * `dist/index.js`, and `tm8` only exists because the CLI's build step links it
+ * (`package.json` `bin` is a manifest declaration — it materializes a `tm8`
+ * executable only when a package manager INSTALLS the package, which nothing
+ * does for a workspace member). Putting `dist` on PATH while it contains only
+ * `index.js` looks correct, passes every type check, and still leaves the agent
+ * with `tm8: command not found` on every reporting call — a silent failure where
+ * the agent believes it reported and nothing reached the graph. So the probe is
+ * for the exact name the prompt tells the agent to type.
+ *
+ * The symlink is created idempotently rather than merely asserted: relying on
+ * build ordering would reintroduce the same silent gap for anyone who builds
+ * with a bare `tsc -b`.
+ *
+ * Returns null rather than throwing when it cannot be made: a server on a
+ * read-only or unbuilt checkout should still spawn agents that do useful work,
+ * just without the reporting verbs. Failing the spawn outright is a worse trade.
+ */
+function cliBinDir(): string | null {
+  const dir = fileURLToPath(new URL('../../../cli/dist', import.meta.url));
+  const entry = join(dir, 'index.js');
+  if (!existsSync(entry)) return null;
+  const link = join(dir, 'tm8');
+  if (!existsSync(link)) {
+    try {
+      symlinkSync('index.js', link);
+    } catch {
+      // Raced with another spawn, or the checkout is read-only. If it exists
+      // now the race was benign; otherwise report honestly that there is no
+      // usable bin dir instead of poisoning PATH with one that cannot work.
+      if (!existsSync(link)) return null;
+    }
+  }
+  return dir;
 }
 
 export interface ComposeManifestInput {

@@ -1,0 +1,16 @@
+{
+  "name": "@tm8/prompt",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0",
+    "@types/node": "^20.14.0"
+  }
+}

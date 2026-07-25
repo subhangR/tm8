@@ -20,18 +20,11 @@
 import { readFileSync } from 'node:fs';
 import { CliError, EXIT_USAGE } from './exit.js';
 
-export type AgentMode =
-  | 'worker'
-  | 'coordinator'
-  | 'coordinated-worker'
-  | 'coordinated-coordinator';
-
-export const AGENT_MODES: readonly AgentMode[] = [
-  'worker',
-  'coordinator',
-  'coordinated-worker',
-  'coordinated-coordinator',
-];
+// The four-mode model is defined ONCE, in the shared composer package — the
+// prompt is the only thing that varies by mode, so it owns the vocabulary.
+// Re-exported here so this module stays the CLI's manifest surface.
+export { AGENT_MODES, type AgentMode } from '@tm8/prompt';
+import { AGENT_MODES, type AgentMode } from '@tm8/prompt';
 
 /** The persona this process is running as — a `team_member` entity (T-L7). */
 export interface ManifestAgent {
@@ -52,6 +45,13 @@ export interface ManifestTask {
   description?: string;
   priority?: string;
   workStatus?: string;
+  /**
+   * The agent's definition of done. Composed into the manifest from the graph
+   * but previously dropped by this reader, so an agent could not tell when its
+   * task was actually finished. Kept as `unknown[]` because the graph column is
+   * free-form jsonb; the composer renders only the string entries.
+   */
+  acceptanceCriteria?: unknown[];
 }
 
 /** The linked project resource whose workingDir the PTY cd'd into (AM-2 §1). */
@@ -146,6 +146,13 @@ export function parseManifest(raw: unknown): Tm8Manifest {
                 description: str(t.description),
                 priority: str(t.priority),
                 workStatus: str(t.workStatus),
+                // Kept RAW (`unknown[]`) rather than coerced to strings here:
+                // the graph column is free-form jsonb, and narrowing at the
+                // reader would silently discard structured criteria that a
+                // later renderer could format. The composer filters to strings.
+                acceptanceCriteria: Array.isArray(t.acceptanceCriteria)
+                  ? t.acceptanceCriteria
+                  : undefined,
               }),
             ];
       })

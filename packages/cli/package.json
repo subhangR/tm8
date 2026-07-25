@@ -7,11 +7,12 @@
     "tm8": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -b && chmod +x dist/index.js",
+    "build": "tsc -b && chmod +x dist/index.js && ln -sf index.js dist/tm8",
     "test": "vitest run"
   },
   "dependencies": {
-    "@tm8/contract": "workspace:*"
+    "@tm8/contract": "workspace:*",
+    "@tm8/prompt": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
