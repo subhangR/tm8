@@ -37,12 +37,23 @@ describe('idempotent replay (DEV-9)', () => {
     expect(relates?.edges).toHaveLength(1);
   });
 
+  // Points are granted to the PERSONA, not to a task. `grant_points`
+  // (007:1577) refuses anything that is not a member or team_member and is
+  // right to — points are earned by someone. This targeted a task, so it
+  // failed with 22023 regardless of whether dedupe worked, which meant the
+  // idempotency claim it exists to check was never actually tested.
   it('points grants dedupe on clientMutationId', async () => {
+    const points = async (): Promise<number> =>
+      ((await api.read('entities.get', { id: w.forge })) as { counters: { points: number } }).counters.points;
+
+    // Assert the DELTA, not an absolute: buildWorld already grants forge
+    // points, so a fixed expectation would encode the world's history rather
+    // than this operation's idempotency.
+    const before = await points();
     const id = `cmid-pts-${randomUUID()}`;
-    await api.command('entities.points.add', { amount: 5, reason: 'grant', clientMutationId: id }, { id: w.t104 });
-    await api.command('entities.points.add', { amount: 5, reason: 'grant', clientMutationId: id }, { id: w.t104 });
-    const t104 = await api.read('entities.get', { id: w.t104 }) as { counters: { points: number } };
-    expect(t104.counters.points).toBe(5);
+    await api.command('entities.points.add', { amount: 5, reason: 'grant', clientMutationId: id }, { id: w.forge });
+    await api.command('entities.points.add', { amount: 5, reason: 'grant', clientMutationId: id }, { id: w.forge });
+    expect((await points()) - before).toBe(5);
   });
 
   it('same clientMutationId on a DIFFERENT operation → 409 invariant_violation', async () => {
