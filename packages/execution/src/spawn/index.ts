@@ -1,0 +1,39 @@
+// @tm8/execution — the spawn block's public surface.
+export { SpawnService, type SpawnServiceOptions } from './SpawnService.js';
+export {
+  DEFAULT_AGENT_TOOL,
+  DEFAULT_MODEL,
+  DEFAULT_PERMISSION_MODE,
+  ECHO_AGENT_CMD,
+  agentToolForModel,
+  buildAgentCommand,
+  composeEnv,
+  composeManifest,
+  echoAgentPath,
+  resolveLaunchConfig,
+  resolveWorkdir,
+  shellQuote,
+  type ComposeManifestInput,
+  type ResolvedLaunchConfig,
+} from './manifest.js';
+export { SpawnError } from './types.js';
+export type {
+  AgentMode,
+  CreateWorkSessionInput,
+  CreateWorkSessionResult,
+  GraphAuth,
+  GraphPort,
+  LoadSpawnContextInput,
+  PermissionMode,
+  ProjectContext,
+  RecordCommandInput,
+  SpawnContext,
+  SpawnRequest,
+  SpawnResult,
+  TaskContext,
+  TeamMemberContext,
+  Tm8Manifest,
+  TransitionInput,
+  WorkdirMode,
+  WorkSessionStatus,
+} from './types.js';

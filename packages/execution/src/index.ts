@@ -13,6 +13,13 @@
 // WebSocket type) are stripped at the seam: logging + the exit-status sink
 // arrive as plain params, and live delivery targets are structural FrameSinks.
 // SpawnService + the server WS layer wire the real implementations later.
+//
+// The spawn block (G1A) sits on top: SpawnService composes the manifest
+// IN-PROCESS — no CLI subprocess, no shared-disk handshake, unlike the old
+// route it re-authors — and drives PtyHostService. It reaches the graph only
+// through `GraphPort`, because this package has no database driver and must
+// never gain one; the port is implemented over `Db` in the server package at
+// src/facade/execution-handlers.ts.
 
 export { PtyHostService, stripScrollbackDeviceQueries } from './pty/PtyHostService.js';
 export { OutputBuffer, type ReplaySlice } from './pty/OutputBuffer.js';
@@ -26,5 +33,7 @@ export type {
   PtySessionStatus,
   PtySpawnParams,
 } from './pty/types.js';
+
+export * from './spawn/index.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';

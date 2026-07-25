@@ -1,0 +1,119 @@
+// A GraphPort with no Postgres behind it.
+//
+// This is the payoff of declaring GraphPort in packages/execution instead of
+// reaching for `Db`: the spawn loop's real assertions are about PTY BYTES, and
+// bytes do not need a database to be wrong. Running them against a fake graph
+// keeps the test honest about what it is proving (the terminal seam) and lets it
+// run in CI with no sidecar.
+
+import { randomUUID } from 'node:crypto';
+import type {
+  CreateWorkSessionInput,
+  CreateWorkSessionResult,
+  GraphAuth,
+  GraphPort,
+  LoadSpawnContextInput,
+  RecordCommandInput,
+  SpawnContext,
+  Tm8Manifest,
+  TransitionInput,
+} from '../src/spawn/types.js';
+
+export interface FakeGraphOptions {
+  workingDir: string;
+  /** Omit the project to exercise the projectless scratch-session path. */
+  withProject?: boolean;
+  model?: string | null;
+  permissionMode?: string | null;
+}
+
+export class FakeGraph implements GraphPort {
+  readonly created: CreateWorkSessionInput[] = [];
+  readonly transitions: TransitionInput[] = [];
+  readonly commands: RecordCommandInput[] = [];
+  readonly manifests: Array<{ sessionId: string; manifest: Tm8Manifest; envVarNames: string[] }> = [];
+  readonly authSeen: GraphAuth[] = [];
+
+  /** Set to make the next createWorkSession throw, for the rollback test. */
+  failNextCreate: Error | null = null;
+
+  constructor(private readonly options: FakeGraphOptions) {}
+
+  async loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext> {
+    this.authSeen.push(auth);
+    return {
+      spaceId: input.spaceId,
+      project:
+        this.options.withProject === false
+          ? null
+          : {
+              id: input.projectId ?? randomUUID(),
+              name: 'tm8-fixture',
+              workingDir: this.options.workingDir,
+              trust: 'trusted',
+            },
+      teamMember: {
+        id: input.teamMemberId,
+        name: 'Draco',
+        role: 'PTY engineer',
+        identity: 'You own the terminal seam.',
+        memories: [],
+        model: this.options.model === undefined ? 'opus' : this.options.model,
+        agentTool: null,
+        mode: 'worker',
+        permissionMode: this.options.permissionMode ?? null,
+        avatar: '🖥️',
+        capabilities: { canReportProgress: true },
+        commandPermissions: {},
+      },
+      tasks: (input.taskIds ?? []).map((id, i) => ({
+        id,
+        title: `fixture task ${i + 1}`,
+        description: 'prove the loop',
+        priority: 'high',
+        workStatus: 'open',
+        acceptanceCriteria: [],
+      })),
+    };
+  }
+
+  async createWorkSession(
+    auth: GraphAuth,
+    input: CreateWorkSessionInput,
+  ): Promise<CreateWorkSessionResult> {
+    this.authSeen.push(auth);
+    if (this.failNextCreate) {
+      const err = this.failNextCreate;
+      this.failNextCreate = null;
+      throw err;
+    }
+    this.created.push(input);
+    const sessionId = randomUUID();
+    return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] } };
+  }
+
+  async recordManifest(
+    auth: GraphAuth,
+    sessionId: string,
+    manifest: Tm8Manifest,
+    envVarNames: string[],
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    this.manifests.push({ sessionId, manifest, envVarNames });
+  }
+
+  async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {
+    this.authSeen.push(auth);
+    this.transitions.push(input);
+  }
+
+  async recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown> {
+    this.authSeen.push(auth);
+    this.commands.push(input);
+    return { entityId: input.sessionId, patches: [input.sessionId] };
+  }
+
+  statusesFor(sessionId: string): string[] {
+    return this.transitions.filter((t) => t.sessionId === sessionId).map((t) => t.status);
+  }
+}
