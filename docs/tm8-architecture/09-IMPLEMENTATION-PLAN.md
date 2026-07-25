@@ -1,6 +1,6 @@
 # tm8 — Phase 1 Implementation Plan (v1: the node)
 
-**Status:** Ready for execution — written after the T-D19 gate closed (architecture FINAL, docs 00–08).
+**Status:** In execution (Vega, sess_1784943069601_y42xw5b9m; tm8 repo + project live). **Amended by AM-1/T-D21 (user-directed, mid-W0): NO TAURI — server + web only.** Read this plan with: `apps/desktop` deleted from §1; every "Tauri shell/spawn plumbing" reference void; server-side PTY host is the only spawn path; UI = browser app (Vite dev 4611, prod served by tm8-server 4610); M2's "desktop shell" deliverable becomes "browser app boots to the workspace UI, sidecar managed by tm8-server". G3 parity bar unchanged. Normative running state lives in tm8/STATE.md.
 **Date:** 2026-07-25
 **Author:** Design session `sess_1784931993141_0y6d4fs4v` (user-directed).
 **Scope:** Phase 1 only — tm8 v1 per T-D14/R21: **one from-contract build** (graph engine + facade) **+ one transplant** (execution), shipping a full local-maestro replacement that is natively a collab space. Phases 2–4 (hub/gateway, migration+mobile, federation) get their own plans when Phase 1's gates close.
