@@ -28,7 +28,12 @@ export interface DbClaims {
   readonly identityId?: string | undefined;
   /** → `SET LOCAL tm8.actor_id`. The effective author (acting-as target). */
   readonly actorId?: string | undefined;
-  /** → `SET LOCAL tm8.node_admin` as 'on' | 'off'. */
+  /**
+   * → `SET LOCAL tm8.node_admin`, serialised as the literal string `'true'` or
+   * `'false'`. Not `'on'`/`'off'`: 001_core_graph.sql:166 tests
+   * `lower(claim) = 'true'`, so any other spelling silently reads as "not an
+   * admin" rather than raising. Verified against a live database, 2026-07-25.
+   */
   readonly nodeAdmin?: boolean | undefined;
   /** → `SET LOCAL tm8.request_id`. Joins an audit row to a client-visible id. */
   readonly requestId?: string | undefined;

@@ -82,14 +82,21 @@ describe('claim set (R2/T-L11)', () => {
     expect(asAgent[CLAIM_NAMES.identityId]).toBe(asSelf[CLAIM_NAMES.identityId]);
   });
 
-  it('encodes node_admin as on/off', async () => {
+  // The database is the authority here, and it tests for the literal 'true':
+  //   001_core_graph.sql:166
+  //   select coalesce(lower(internal.claim_text('tm8.node_admin')) = 'true', false)
+  // This test used to assert 'on'/'off' and therefore PINNED A BUG: 'on' never
+  // equals 'true', so the claim silently read as "not an admin" instead of
+  // failing loudly, and 008's projects_select policy hid a node admin's own
+  // projects from him. Verified against a live database 2026-07-25.
+  it('encodes node_admin as the literal true/false the DB compares against', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
 
     const claims = await h.service.buildClaims({ accountId: owner.id });
-    expect(byName(toClaimBindings(claims))[CLAIM_NAMES.nodeAdmin]).toBe('on');
-    expect(byName(toClaimBindings({ ...claims, isNodeAdmin: false }))[CLAIM_NAMES.nodeAdmin]).toBe('off');
+    expect(byName(toClaimBindings(claims))[CLAIM_NAMES.nodeAdmin]).toBe('true');
+    expect(byName(toClaimBindings({ ...claims, isNodeAdmin: false }))[CLAIM_NAMES.nodeAdmin]).toBe('false');
   });
 
   it('omits request_id when the caller does not supply one', async () => {

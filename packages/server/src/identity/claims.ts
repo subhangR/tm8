@@ -41,9 +41,23 @@ export const CLAIM_NAMES = {
   requestId: 'tm8.request_id',
 } as const;
 
-/** `on`/`off` per 002's `internal.is_node_admin()`. */
+/**
+ * `true`/`false` — the literal strings `internal.is_node_admin()` tests for.
+ *
+ * 001_core_graph.sql:166 is the authority:
+ *     select coalesce(lower(internal.claim_text('tm8.node_admin')) = 'true', false)
+ * This previously emitted `on`/`off` (and cited 002, where the function does not
+ * live), which meant the claim could never grant node-admin — `'on' = 'true'` is
+ * false, so it silently degraded to "not an admin" instead of failing loudly.
+ * Caught by Deneb against a live database, 2026-07-25.
+ *
+ * The blast radius was narrow only by luck: `internal.require_node_admin()`
+ * reads the accounts TABLE rather than this claim, so the command path worked.
+ * The one consumer that does read it is 008's projects_select policy — so a
+ * node admin could not SELECT a project outside his own spaces.
+ */
 function boolClaim(value: boolean): string {
-  return value ? 'on' : 'off';
+  return value ? 'true' : 'false';
 }
 
 /**

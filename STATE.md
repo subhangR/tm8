@@ -26,6 +26,7 @@
 
 ### Gotchas the fleet found (do not rediscover these)
 - Draco HAND-COPIED prebuilt `node-pty`/`@xterm/headless`/`@xterm/addon-serialize` into `packages/execution/node_modules` (bun install strips node-pty's spawn-helper exec bit). A real install needs npm, or bun + `chmod +x` the darwin spawn-helper. Packaging item for Argo (tm_1784943810645_4pbuyw77b).
+  - **Refined 2026-07-25 (Orion, reproduced live while adding `pg`):** the PREBUILDS SURVIVE a bun install — only the **mode bit** is lost. `bun add` re-links node-pty through `node_modules/.bun/`, `spawn-helper` lands 0644, and the harness goes 5/5 → 0/5 with `posix_spawnp failed`. Fix is one command: **`bash scripts/repair-node-pty.sh`** (chmods every darwin spawn-helper under the repo, store copies included), then re-verify with `cd packages/execution && bun run harness`. Run it after ANY bun install.
 - `tools/ci/check.sh` flips conformance advisory→BLOCKING when anything answers :4610 — with 0 ops implemented that's a guaranteed red. Don't run check.sh with the dev server up until real ops land (or gate with TM8_CONFORMANCE_GATE=advisory).
 - packages/server tests flap when the dev server/PG is up concurrently (isolation gap — Altair's to fix, parked).
 - PG18 runs at 127.0.0.1:5442 (superuser `tm8`, data `~/.tm8-dev/pg`, logs `~/.tm8-dev/pg.log`); `initdb` needs LANG=en_US.UTF-8. Scratch dbs `tm8_salvage_check`/`tm8_check` are disposable.
@@ -86,6 +87,7 @@ AM-1/T-D21 no Tauri (server+web only) · AM-2 review adoption · AM-3 G1A includ
 ## Post-Phase-1 backlog (parked, do not build)
 
 - (accumulates here as workers surface non-loop items)
+- **`packages/server/src/identity/pg-store.ts` is DEAD ON ARRIVAL against the delivered 002/007 — repair or delete it post-G1A.** Written against Cygnus's published notes rather than the shipped migration. Three independent breaks, all found by Deneb 2026-07-25 before writing any code: (a) column names — it selects `login`/`node_admin`/`password_algo`, real 002:45-62 has `username`/`is_node_admin`/`password_algorithm` plus a `status` column it does not know about; (b) return types — it does `SELECT <cols> FROM public.ensure_account(...)` etc., but ALL of those RPCs return **JSONB**, not records (007:110,131,150,288), so every such query is a runtime type error; (c) `ensure_account` arity — real signature is 8 args `(p_identity_id, p_username, p_display_name, p_email, p_is_owner, p_is_node_admin, p_password_algorithm, p_password_hash)`, pg-store passes 7 in a different order. STATE's "61/61 identity tests" are ALL against `InMemoryIdentityRepository`; the PG path has never executed. G1A routes around it via a new `identity/loopback.ts` (Orion's ruling: rewriting an uncalled file on the critical path is pure risk).
 
 ## Wave status
 

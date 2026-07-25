@@ -1,0 +1,224 @@
+/**
+ * The session manifest — the ONLY thing a booting agent reads from disk.
+ *
+ * SpawnService (Draco's lane) composes this IN-PROCESS from graph reads and
+ * writes it to `TM8_MANIFEST_PATH`; the CLI keeps manifest *reading* only
+ * (04-EXECUTION-TRANSPLANT §1.2 — the old subprocess-reads-~/.maestro/data
+ * pipeline is deliberately dead). So this file is a consumer's declaration of
+ * exactly which fields it needs, and nothing more.
+ *
+ * Reading rules, on purpose:
+ *  - EVERY field except `sessionId` is optional. A manifest that is missing a
+ *    task list still boots an agent that knows who it is; refusing to boot
+ *    would leave the operator with a terminal that printed a stack trace.
+ *  - Unknown fields are IGNORED, never rejected. The composer is allowed to
+ *    grow ahead of the reader.
+ *  - Nothing here is a zod schema: the contract is frozen and the manifest is
+ *    NOT part of it (it is an internal server↔agent file), so it must not
+ *    accrete a parallel schema surface in @tm8/contract.
+ */
+import { readFileSync } from 'node:fs';
+import { CliError, EXIT_USAGE } from './exit.js';
+
+export type AgentMode =
+  | 'worker'
+  | 'coordinator'
+  | 'coordinated-worker'
+  | 'coordinated-coordinator';
+
+export const AGENT_MODES: readonly AgentMode[] = [
+  'worker',
+  'coordinator',
+  'coordinated-worker',
+  'coordinated-coordinator',
+];
+
+/** The persona this process is running as — a `team_member` entity (T-L7). */
+export interface ManifestAgent {
+  teamMemberId?: string;
+  name?: string;
+  avatar?: string;
+  role?: string;
+  /** Free-text persona prompt authored on the team_member entity. */
+  identity?: string;
+  /** Persistent per-persona memory entries, rendered verbatim. */
+  memory?: string[];
+}
+
+/** A task the session is `working_on`. Titles/descriptions, not entity blobs. */
+export interface ManifestTask {
+  id: string;
+  title?: string;
+  description?: string;
+  priority?: string;
+  workStatus?: string;
+}
+
+/** The linked project resource whose workingDir the PTY cd'd into (AM-2 §1). */
+export interface ManifestProject {
+  id?: string;
+  name?: string;
+  workingDir?: string;
+}
+
+/** Present when a coordinator spawned this session — the return path. */
+export interface ManifestCoordinator {
+  sessionId?: string;
+  displayName?: string;
+}
+
+/** The spawn-time directive, embedded so delivery cannot be lost. */
+export interface ManifestDirective {
+  subject?: string;
+  message?: string;
+  fromSessionId?: string;
+}
+
+/** A skill rendered into the prompt from the graph via `equips` edges (R19). */
+export interface ManifestSkill {
+  name?: string;
+  body?: string;
+}
+
+export interface Tm8Manifest {
+  manifestVersion?: string;
+  /** work_session entity id. Falls back to TM8_SESSION_ID when absent. */
+  sessionId?: string;
+  /** Pinned space — every graph command the agent runs is scoped to it. */
+  spaceId?: string;
+  mode?: AgentMode;
+  agent?: ManifestAgent;
+  project?: ManifestProject | null;
+  tasks?: ManifestTask[];
+  coordinator?: ManifestCoordinator | null;
+  directive?: ManifestDirective | null;
+  skills?: ManifestSkill[];
+  /** `ExecutionSpawnInput.promptExtra`, passed through verbatim. */
+  promptExtra?: string | null;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === 'string' && v.trim() !== '' ? v : undefined;
+}
+
+function strArray(v: unknown): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === 'string' && x.trim() !== '');
+  return out.length > 0 ? out : undefined;
+}
+
+function mode(v: unknown): AgentMode | undefined {
+  return typeof v === 'string' && (AGENT_MODES as readonly string[]).includes(v)
+    ? (v as AgentMode)
+    : undefined;
+}
+
+function defined<T extends object>(o: T): T {
+  for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k];
+  return o;
+}
+
+/**
+ * Coerce arbitrary JSON into the manifest view. Never throws on shape — a
+ * malformed sub-object degrades to `undefined` rather than killing the boot.
+ */
+export function parseManifest(raw: unknown): Tm8Manifest {
+  if (!isRecord(raw)) return {};
+
+  const agentRaw = isRecord(raw.agent) ? raw.agent : undefined;
+  const projectRaw = isRecord(raw.project) ? raw.project : undefined;
+  const coordRaw = isRecord(raw.coordinator) ? raw.coordinator : undefined;
+  const directiveRaw = isRecord(raw.directive) ? raw.directive : undefined;
+
+  const tasks = Array.isArray(raw.tasks)
+    ? raw.tasks.filter(isRecord).flatMap((t): ManifestTask[] => {
+        const id = str(t.id);
+        return id === undefined
+          ? []
+          : [
+              defined<ManifestTask>({
+                id,
+                title: str(t.title),
+                description: str(t.description),
+                priority: str(t.priority),
+                workStatus: str(t.workStatus),
+              }),
+            ];
+      })
+    : undefined;
+
+  const skills = Array.isArray(raw.skills)
+    ? raw.skills.filter(isRecord).map((s) => defined<ManifestSkill>({ name: str(s.name), body: str(s.body) }))
+    : undefined;
+
+  return defined<Tm8Manifest>({
+    manifestVersion: str(raw.manifestVersion),
+    sessionId: str(raw.sessionId),
+    spaceId: str(raw.spaceId),
+    mode: mode(raw.mode),
+    agent: agentRaw
+      ? defined<ManifestAgent>({
+          teamMemberId: str(agentRaw.teamMemberId),
+          name: str(agentRaw.name),
+          avatar: str(agentRaw.avatar),
+          role: str(agentRaw.role),
+          identity: str(agentRaw.identity),
+          memory: strArray(agentRaw.memory),
+        })
+      : undefined,
+    project: projectRaw
+      ? defined<ManifestProject>({
+          id: str(projectRaw.id),
+          name: str(projectRaw.name),
+          workingDir: str(projectRaw.workingDir),
+        })
+      : undefined,
+    tasks: tasks && tasks.length > 0 ? tasks : undefined,
+    coordinator: coordRaw
+      ? defined<ManifestCoordinator>({
+          sessionId: str(coordRaw.sessionId),
+          displayName: str(coordRaw.displayName),
+        })
+      : undefined,
+    directive: directiveRaw
+      ? defined<ManifestDirective>({
+          subject: str(directiveRaw.subject),
+          message: str(directiveRaw.message),
+          fromSessionId: str(directiveRaw.fromSessionId),
+        })
+      : undefined,
+    skills: skills && skills.length > 0 ? skills : undefined,
+    promptExtra: str(raw.promptExtra),
+  });
+}
+
+/**
+ * Read + parse the manifest at `path`. Unreadable or non-JSON is a USAGE
+ * failure with the path in the message — the operator needs to see WHICH file
+ * the agent could not open, because the composer wrote it moments earlier.
+ */
+export function readManifest(path: string): Tm8Manifest {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (err) {
+    throw new CliError(
+      `cannot read manifest at ${path}: ${err instanceof Error ? err.message : String(err)}`,
+      EXIT_USAGE,
+    );
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (err) {
+    throw new CliError(
+      `manifest at ${path} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      EXIT_USAGE,
+    );
+  }
+  return parseManifest(json);
+}
