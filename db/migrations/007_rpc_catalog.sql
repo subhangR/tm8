@@ -123,6 +123,27 @@ returns jsonb language sql stable security definer set search_path = public, int
      and a.status = 'active'
 $$;
 
+-- The auth-only twin of resolve_auth_session: password login has no identity to
+-- bind yet, so this read is claim-free BY DESIGN. It is deliberately the second
+-- and last such hole in the schema. It returns the verifier, never a decision —
+-- constant-time comparison (and the dummy-hash path that makes a missing login
+-- cost the same as a wrong password) belongs in the identity block.
+create or replace function public.resolve_account_credential(p_login text)
+returns jsonb language sql stable security definer set search_path = public, internal, pg_temp as $$
+  select jsonb_build_object(
+    'accountId', a.id, 'identityId', a.identity_id, 'username', a.username,
+    'passwordHash', a.password_hash, 'passwordAlgorithm', a.password_algorithm,
+    'isNodeAdmin', a.is_node_admin, 'isOwner', a.is_owner,
+    'status', a.status, 'disabledAt', a.disabled_at)
+    from public.accounts a
+   where lower(a.username) = lower(btrim(p_login))
+$$;
+
+comment on function public.resolve_account_credential(text) is
+  'Claim-free by design (auth bootstrap): a caller presenting a password has no '
+  'identity yet. Returns the stored verifier for server-side comparison — never '
+  'an authentication verdict.';
+
 -- First-run owner bootstrap (T-L7 degenerate case: one row, same code path).
 -- Idempotent by construction — the single-owner index makes a second owner
 -- impossible, so a repeated bootstrap returns the existing one.
@@ -134,7 +155,21 @@ create or replace function public.ensure_account(
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare a public.accounts;
 begin
-  select * into a from public.accounts where identity_id = p_identity_id;
+  -- F1 (Lyra's security review): this function is reachable by anything holding
+  -- a tm8_app connection and must be callable with NO claim bound — that is the
+  -- first-run case. So it is claim-free ONLY while the node has zero accounts;
+  -- from the second account onward it is node-admin-only. Without this, an
+  -- unauthenticated caller could mint itself an account.
+  if exists (select 1 from public.accounts) then
+    if internal.identity_id() is null then
+      raise exception 'account creation requires an authenticated node admin'
+        using errcode = '28000';
+    end if;
+    perform internal.require_node_admin();
+  end if;
+
+  select * into a from public.accounts
+   where identity_id = p_identity_id or lower(username) = lower(btrim(p_username));
   if a.id is not null then
     return to_jsonb(a) - 'password_hash';
   end if;
@@ -161,48 +196,92 @@ begin
 end
 $$;
 
-create or replace function public.set_account_password(
-  p_identity_id text, p_password_algorithm text, p_password_hash text
+-- R6 recovery. Either you are changing your own credential, or you administer
+-- the node — there is no third case.
+create or replace function public.set_account_credential(
+  p_account_id uuid, p_hash text, p_algo text
 ) returns void language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare owner_identity text;
 begin
-  -- Either you are changing your own credential, or you administer the node.
-  if internal.identity_id() is distinct from p_identity_id then
-    perform internal.require_node_admin();
-  else
-    perform internal.require_identity();
-  end if;
-  update public.accounts
-     set password_algorithm = p_password_algorithm, password_hash = p_password_hash
-   where identity_id = p_identity_id;
-  if not found then
+  perform internal.require_identity();
+  select identity_id into owner_identity from public.accounts where id = p_account_id;
+  if owner_identity is null then
     raise exception 'account not found' using errcode = 'P0002';
   end if;
+  if owner_identity is distinct from internal.identity_id() then
+    perform internal.require_node_admin();
+  end if;
+  update public.accounts set password_hash = p_hash, password_algorithm = p_algo
+   where id = p_account_id;
 end
 $$;
 
-create or replace function public.set_account_status(p_identity_id text, p_status text)
+-- R6 revocation. Flips the account only: the member entity and everything it
+-- authored stay exactly where they are. Disabling a person does not un-write
+-- their history.
+create or replace function public.set_account_disabled(p_account_id uuid, p_disabled boolean)
 returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare a public.accounts;
 begin
   perform internal.require_node_admin();
-  if p_status not in ('active','disabled') then
-    raise exception 'invalid account status' using errcode = '22023';
-  end if;
   update public.accounts
-     set status = p_status,
-         disabled_at = case when p_status = 'disabled' then now() else null end
-   where identity_id = p_identity_id
+     set status = case when p_disabled then 'disabled' else 'active' end,
+         disabled_at = case when p_disabled then now() else null end
+   where id = p_account_id
   returning * into a;
   if a.id is null then
     raise exception 'account not found' using errcode = 'P0002';
   end if;
-  -- Disabling an account kills its live tokens in the same transaction: a
-  -- revocation that leaves valid bearer tokens behind is not a revocation.
-  if p_status = 'disabled' then
-    update public.auth_sessions set revoked_at = now()
-     where account_id = a.id and revoked_at is null;
+  -- A revocation that leaves valid bearer tokens behind is not a revocation.
+  if p_disabled then
+    perform public.revoke_account_sessions(p_account_id);
   end if;
   return to_jsonb(a) - 'password_hash';
+end
+$$;
+
+create or replace function public.revoke_account_sessions(p_account_id uuid)
+returns integer language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  revoked integer;
+  owner_identity text;
+begin
+  perform internal.require_identity();
+  select identity_id into owner_identity from public.accounts where id = p_account_id;
+  if owner_identity is null then
+    raise exception 'account not found' using errcode = 'P0002';
+  end if;
+  if owner_identity is distinct from internal.identity_id() then
+    perform internal.require_node_admin();
+  end if;
+  update public.auth_sessions set revoked_at = now()
+   where account_id = p_account_id and revoked_at is null;
+  get diagnostics revoked = row_count;
+  return revoked;
+end
+$$;
+
+-- Claim-READING (the caller has already bound tm8.identity_id from
+-- resolve_auth_session): the identity's whole actor scope across every space in
+-- one round trip, so claim assembly needs no third claim-free hole.
+create or replace function public.current_actor_scope()
+returns jsonb language plpgsql stable security definer set search_path = public, internal, pg_temp as $$
+declare
+  identity text := internal.require_identity();
+begin
+  return jsonb_build_object(
+    'identityId', identity,
+    'memberIds', coalesce((
+      select jsonb_agg(jsonb_build_object('memberId', m.entity_id, 'spaceId', m.space_id, 'role', m.role)
+             order by m.joined_at)
+        from public.members m where m.identity_id = identity), '[]'::jsonb),
+    'teamMembers', coalesce((
+      select jsonb_agg(jsonb_build_object('id', tm.entity_id, 'spaceId', owner.space_id,
+                                          'ownerMemberId', tm.owner_member_id, 'name', tm.name)
+             order by tm.name)
+        from public.team_members tm
+        join public.members owner on owner.entity_id = tm.owner_member_id
+       where owner.identity_id = identity), '[]'::jsonb));
 end
 $$;
 
@@ -1714,6 +1793,566 @@ begin
   return internal.ledger_record(p_client_mutation_id, 'messages.delete',
            internal.command_result(p_message_id, null, null, array[message.anchor_id]));
 end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 10. Task kind-commands (02 §3.2) — the few operations that carry an invariant
+--     a uniform patch cannot express.
+-- -----------------------------------------------------------------------------
+
+-- entities.commands.complete — criteria gate, completion attribution and the
+-- award ledger in ONE transaction. A task that is "done" with unfinished
+-- acceptance criteria, or completed twice paying out twice, are both unreachable
+-- states rather than bugs to be found later.
+create or replace function public.complete_task(
+  p_task_id uuid, p_expected_version integer, p_completer_ids uuid[] default '{}'::uuid[],
+  p_actor_id uuid default null, p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  e public.entities;
+  actor uuid;
+  completer uuid;
+  task public.tasks;
+  activity_id uuid;
+  patches uuid[];
+begin
+  replay := internal.ledger_replay(p_client_mutation_id, 'entities.commands.complete');
+  if replay is not null then return replay; end if;
+  select * into e from public.entities where id = p_task_id and kind = 'task' and deleted_at is null for update;
+  if e.id is null then
+    raise exception 'task not found' using errcode = 'P0002';
+  end if;
+  perform internal.require_space_member(e.space_id);
+  actor := internal.resolve_actor(p_actor_id, e.space_id);
+  perform internal.bind_actor(actor);
+  perform internal.assert_version(p_task_id, p_expected_version);
+
+  select * into task from public.tasks where entity_id = p_task_id;
+  if task.work_status = 'done' then
+    raise exception 'task is already complete' using errcode = '23514';
+  end if;
+  if exists (
+    select 1 from jsonb_array_elements(task.acceptance_criteria) c
+     where not coalesce((c ->> 'done')::boolean, false)
+  ) then
+    raise exception 'all acceptance criteria must be complete first' using errcode = '23514';
+  end if;
+
+  patches := array[p_task_id];
+  update public.tasks set work_status = 'done', updated_at = now() where entity_id = p_task_id;
+
+  foreach completer in array coalesce(p_completer_ids, '{}'::uuid[]) loop
+    if not exists (
+      select 1 from public.entities c
+       where c.id = completer and c.space_id = e.space_id
+         and c.kind in ('member','team_member') and c.deleted_at is null
+    ) then
+      raise exception 'invalid completer %', completer using errcode = '23503';
+    end if;
+    insert into public.edges(space_id, src_id, dst_id, type, created_by)
+    values (e.space_id, p_task_id, completer, 'completed_by', actor)
+    on conflict (src_id, dst_id, type) do nothing;
+    -- The award is idempotent per (command, completer): a retry of the same
+    -- completion cannot pay twice, which is why the key includes both.
+    insert into public.point_events(space_id, entity_id, actor_id, amount, reason, ref_id, client_event_id)
+    select e.space_id, completer, actor, task.points_estimate, 'award', p_task_id,
+           case when p_client_mutation_id is null then null
+                else p_client_mutation_id || ':award:' || completer::text end
+     where coalesce(task.points_estimate, 0) > 0
+    on conflict (client_event_id) do nothing;
+    patches := patches || completer;
+  end loop;
+
+  activity_id := internal.record_activity(e.space_id, p_task_id, actor, 'completed', null,
+                   jsonb_build_object('completerIds', to_jsonb(coalesce(p_completer_ids, '{}'::uuid[]))));
+  return internal.ledger_record(p_client_mutation_id, 'entities.commands.complete',
+           internal.command_result(p_task_id, null, activity_id, patches));
+end
+$$;
+
+-- entities.commands.work — work_status transitions with the per-actor
+-- `working_on` edge. `done` is refused here on purpose: completion has a gate.
+create or replace function public.set_work_state(
+  p_task_id uuid, p_status text, p_actor_id uuid default null,
+  p_started_at timestamptz default null, p_note text default null,
+  p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  e public.entities;
+  actor uuid;
+  edge_id uuid;
+begin
+  replay := internal.ledger_replay(p_client_mutation_id, 'entities.commands.work');
+  if replay is not null then return replay; end if;
+  e := internal.live_entity(p_task_id, 'task');
+  perform internal.require_space_member(e.space_id);
+  actor := internal.resolve_actor(p_actor_id, e.space_id);
+  perform internal.bind_actor(actor);
+  if p_status not in ('open','pulled','working','in_review','blocked','cancelled') then
+    if p_status = 'done' then
+      raise exception 'completion goes through complete_task' using errcode = '23514';
+    end if;
+    raise exception 'invalid work status: %', p_status using errcode = '22023';
+  end if;
+
+  if p_status in ('open','cancelled') then
+    delete from public.edges
+     where src_id = actor and dst_id = p_task_id and type = 'working_on';
+  else
+    insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
+    values (e.space_id, actor, p_task_id, 'working_on',
+            jsonb_build_object('status', p_status, 'startedAt', coalesce(p_started_at, now()), 'note', p_note),
+            actor)
+    on conflict (src_id, dst_id, type) do update
+      set props = excluded.props, updated_at = now()
+    returning id into edge_id;
+  end if;
+
+  update public.tasks set work_status = p_status, updated_at = now() where entity_id = p_task_id;
+  return internal.ledger_record(p_client_mutation_id, 'entities.commands.work',
+           internal.command_result(p_task_id, edge_id,
+             internal.record_activity(e.space_id, p_task_id, actor, 'work.changed', edge_id,
+               jsonb_build_object('status', p_status)), array[p_task_id]));
+end
+$$;
+
+-- entities.commands.pull — the projection/adoption edge carrying the pinned
+-- version. Staleness (pinnedVersion < entity.version) is derived by the server
+-- from this edge; nothing here duplicates that computation.
+create or replace function public.set_pull_state(
+  p_entity_id uuid, p_pinned_version integer, p_local_id text default null,
+  p_actor_id uuid default null, p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  e public.entities;
+  actor uuid;
+  edge_id uuid;
+begin
+  replay := internal.ledger_replay(p_client_mutation_id, 'entities.commands.pull');
+  if replay is not null then return replay; end if;
+  e := internal.live_entity(p_entity_id);
+  perform internal.require_space_member(e.space_id);
+  actor := internal.resolve_actor(p_actor_id, e.space_id);
+  perform internal.bind_actor(actor);
+  if p_pinned_version < 1 or p_pinned_version > e.version then
+    raise exception 'pinned version % is not a version of this entity', p_pinned_version
+      using errcode = '22023';
+  end if;
+
+  insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
+  values (e.space_id, actor, p_entity_id, 'pulled',
+          jsonb_build_object('localId', p_local_id, 'pinnedVersion', p_pinned_version,
+                             'pulledAt', now()), actor)
+  on conflict (src_id, dst_id, type) do update set props = excluded.props, updated_at = now()
+  returning id into edge_id;
+  return internal.ledger_record(p_client_mutation_id, 'entities.commands.pull',
+           internal.command_result(p_entity_id, edge_id,
+             internal.record_activity(e.space_id, p_entity_id, actor, 'pulled', edge_id,
+               jsonb_build_object('pinnedVersion', p_pinned_version)), array[p_entity_id]));
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 11. Read state: read marks, unread counts, inbox.
+-- -----------------------------------------------------------------------------
+create or replace function public.mark_read(p_anchor_id uuid, p_client_mutation_id text default null)
+returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  e public.entities;
+  member_id uuid;
+  marked timestamptz := now();
+begin
+  perform internal.ledger_replay(p_client_mutation_id, 'readMarks.upsert');
+  e := internal.live_entity(p_anchor_id);
+  perform internal.require_space_member(e.space_id);
+  member_id := internal.current_member_id(e.space_id);
+  insert into public.read_marks(member_id, anchor_id, last_read_at)
+  values (member_id, p_anchor_id, marked)
+  on conflict (member_id, anchor_id) do update set last_read_at = excluded.last_read_at;
+  -- Reading the thing the notification pointed at IS reading the notification.
+  update public.notifications set read_at = coalesce(read_at, marked)
+   where recipient_member_id = member_id and target_entity_id = p_anchor_id and read_at is null;
+  return internal.ledger_record(p_client_mutation_id, 'readMarks.upsert',
+           jsonb_build_object('anchorId', p_anchor_id, 'lastReadAt', marked, 'patches', '[]'::jsonb));
+end
+$$;
+
+-- Unread counts for every anchor the caller can see, in ONE call — this powers
+-- channel badges and the navigation total together. The comparison rides the
+-- uuidv7 primary key (04 §3) instead of a timestamp column.
+create or replace function public.unread_counts(p_space_id uuid)
+returns table(anchor_id uuid, unread integer)
+language sql stable security definer set search_path = public, internal, pg_temp as $$
+  with me as (select internal.current_member_id(p_space_id) as member_id)
+  select m.anchor_id, count(*)::integer as unread
+    from public.messages m
+    join public.entities me_entity on me_entity.id = m.entity_id and me_entity.deleted_at is null
+    join public.entities anchor on anchor.id = m.anchor_id and anchor.space_id = p_space_id
+    left join public.read_marks r
+      on r.anchor_id = m.anchor_id and r.member_id = (select member_id from me)
+   where internal.is_space_member(p_space_id)
+     and m.author_id is distinct from (select member_id from me)
+     and (r.last_read_at is null or m.entity_id > internal.uuid_at(r.last_read_at))
+   group by m.anchor_id
+$$;
+
+create or replace function public.mark_notification_read(p_notification_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare n public.notifications;
+begin
+  perform internal.require_identity();
+  update public.notifications set read_at = coalesce(read_at, now())
+   where id = p_notification_id
+     and exists (select 1 from public.members m
+                  where m.entity_id = notifications.recipient_member_id
+                    and m.identity_id = internal.identity_id())
+  returning * into n;
+  if n.id is null then
+    raise exception 'notification not found' using errcode = 'P0002';
+  end if;
+  return to_jsonb(n);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 12. Execution (R16/R29) — the graph side of the spawn loop.
+--
+-- `work_session` is excluded from entities.create by the contract: a session is
+-- born HERE and nowhere else (S10), so RLS, the concurrency cap and the command
+-- ledger see every spawn that has ever happened.
+-- -----------------------------------------------------------------------------
+create or replace function public.execution_spawn(
+  p_space_id uuid, p_team_member_id uuid, p_task_ids uuid[] default '{}'::uuid[],
+  p_project_id uuid default null, p_workdir_mode text default 'project',
+  p_workdir_path text default null, p_base_ref text default null,
+  p_mode text default null, p_model text default null, p_agent_tool text default null,
+  p_title text default null, p_node_id text default null,
+  p_confirm_untrusted boolean default false, p_session_cap integer default 8,
+  p_actor_id uuid default null, p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  actor uuid;
+  persona public.entities;
+  project public.projects;
+  session_id uuid;
+  task_id uuid;
+  patches uuid[];
+begin
+  replay := internal.ledger_replay(p_client_mutation_id, 'execution.spawn');
+  if replay is not null then return replay; end if;
+  perform internal.require_space_member(p_space_id);
+  actor := internal.resolve_actor(p_actor_id, p_space_id);
+  perform internal.bind_actor(actor);
+
+  -- The persona must be one this identity may act as: spawning an agent is
+  -- speaking as it (T-L7).
+  persona := internal.live_entity(p_team_member_id, 'team_member');
+  if persona.space_id <> p_space_id then
+    raise exception 'persona belongs to another space' using errcode = '22023';
+  end if;
+  if not internal.can_act_as(p_team_member_id, p_space_id) then
+    raise exception 'not permitted to spawn this persona' using errcode = '42501';
+  end if;
+
+  -- Governance cap (S10): refuse loudly at capacity, never queue silently.
+  -- 53400 → limit_exceeded (429), retryable once a session exits.
+  if internal.live_work_session_count(null) >= greatest(coalesce(p_session_cap, 8), 1) then
+    raise exception 'session concurrency cap reached' using errcode = '53400',
+      detail = jsonb_build_object('cap', p_session_cap,
+                                  'live', internal.live_work_session_count(null))::text;
+  end if;
+
+  if p_project_id is not null then
+    select * into project from public.projects where id = p_project_id;
+    if project.id is null then
+      raise exception 'project not found' using errcode = 'P0002';
+    end if;
+    if not exists (select 1 from public.space_projects
+                    where space_id = p_space_id and project_id = p_project_id) then
+      raise exception 'project is not linked to this space' using errcode = '42501';
+    end if;
+    -- S12: trust is informed consent, and consent has to be given per spawn.
+    if project.trust = 'untrusted' and not coalesce(p_confirm_untrusted, false) then
+      raise exception 'spawning into an untrusted project requires explicit confirmation'
+        using errcode = '42501',
+              detail = jsonb_build_object('projectId', p_project_id, 'trust', project.trust)::text;
+    end if;
+  elsif coalesce(p_workdir_mode, 'project') = 'worktree' then
+    raise exception 'worktree mode requires a project' using errcode = '22023';
+  end if;
+
+  session_id := internal.create_envelope(p_space_id, 'work_session', actor, null, null);
+  insert into public.work_sessions(entity_id, title, node_id, project_id, workdir_mode,
+                                   workdir_path, base_ref, status, agent_tool, model, mode)
+  values (session_id, coalesce(p_title, ''), p_node_id, p_project_id,
+          coalesce(p_workdir_mode, 'project'), p_workdir_path, p_base_ref,
+          'spawning', p_agent_tool, p_model, p_mode);
+
+  patches := array[session_id];
+  foreach task_id in array coalesce(p_task_ids, '{}'::uuid[]) loop
+    perform internal.live_entity(task_id, 'task');
+    insert into public.edges(space_id, src_id, dst_id, type, created_by)
+    values (p_space_id, session_id, task_id, 'working_on', actor)
+    on conflict (src_id, dst_id, type) do nothing;
+    patches := patches || task_id;
+  end loop;
+  -- Attribution: the session belongs to the persona that runs in it.
+  insert into public.edges(space_id, src_id, dst_id, type, created_by)
+  values (p_space_id, session_id, p_team_member_id, 'relates_to', actor)
+  on conflict (src_id, dst_id, type) do nothing;
+
+  return internal.ledger_record(p_client_mutation_id, 'execution.spawn',
+           internal.command_result(session_id, null,
+             internal.record_activity(p_space_id, session_id, actor, 'created', null,
+               jsonb_build_object('kind', 'work_session', 'teamMemberId', p_team_member_id)),
+             patches));
+end
+$$;
+
+-- R29: THE single writer of work_session.status. The table trigger refuses any
+-- other path, so "who moved this session to failed" always has one answer.
+create or replace function public.work_session_transition(
+  p_session_id uuid, p_status text, p_exit_code integer default null,
+  p_error text default null, p_transcript_doc_id uuid default null,
+  p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  e public.entities;
+  current_status text;
+  allowed boolean;
+begin
+  replay := internal.ledger_replay(p_client_mutation_id, 'execution.transition');
+  if replay is not null then return replay; end if;
+  e := internal.live_entity(p_session_id, 'work_session');
+  perform internal.require_space_member(e.space_id);
+  if p_status not in ('spawning','running','idle','exited','failed') then
+    raise exception 'invalid work_session status: %', p_status using errcode = '22023';
+  end if;
+
+  select status into current_status from public.work_sessions where entity_id = p_session_id for update;
+  -- Terminal states are terminal. A late frame from a dead PTY must not
+  -- resurrect a session that already produced its transcript.
+  allowed := case
+    when current_status = p_status then true
+    when current_status in ('exited','failed') then false
+    when p_status = 'spawning' then false
+    else true end;
+  if not allowed then
+    raise exception 'illegal work_session transition % -> %', current_status, p_status
+      using errcode = '23514';
+  end if;
+
+  perform set_config('tm8.work_session_transition', 'on', true);
+  update public.work_sessions
+     set status = p_status,
+         exit_code = coalesce(p_exit_code, exit_code),
+         error = coalesce(p_error, error),
+         transcript_doc_id = coalesce(p_transcript_doc_id, transcript_doc_id),
+         started_at = case when p_status = 'running' then coalesce(started_at, now()) else started_at end,
+         exited_at = case when p_status in ('exited','failed') then coalesce(exited_at, now()) else exited_at end
+   where entity_id = p_session_id;
+  perform set_config('tm8.work_session_transition', 'off', true);
+
+  return internal.ledger_record(p_client_mutation_id, 'execution.transition',
+           internal.command_result(p_session_id, null, null, array[p_session_id]));
+end
+$$;
+
+create or replace function public.record_session_manifest(
+  p_session_id uuid, p_manifest jsonb, p_env_var_names text[] default '{}'::text[]
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare e public.entities;
+begin
+  e := internal.live_entity(p_session_id, 'work_session');
+  perform internal.require_space_member(e.space_id);
+  insert into public.session_manifests(work_session_id, manifest, env_var_names)
+  values (p_session_id, p_manifest, coalesce(p_env_var_names, '{}'::text[]))
+  on conflict (work_session_id) do update
+    set manifest = excluded.manifest, env_var_names = excluded.env_var_names;
+  return jsonb_build_object('workSessionId', p_session_id);
+end
+$$;
+
+-- execution.streams.attach — the graph authorises, and returns a GRANT. Bytes
+-- never pass through here (T-L10). `drive` is owner-only in v1 (S14).
+create or replace function public.grant_stream_attach(
+  p_session_id uuid, p_mode text default 'view', p_token_hash text default null,
+  p_ttl interval default interval '15 minutes', p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  e public.entities;
+  session public.work_sessions;
+  identity text;
+  grant_row public.stream_grants;
+begin
+  replay := internal.ledger_replay(p_client_mutation_id, 'execution.streams.attach');
+  if replay is not null then return replay; end if;
+  e := internal.live_entity(p_session_id, 'work_session');
+  perform internal.require_space_member(e.space_id);
+  identity := internal.identity_id();
+  select * into session from public.work_sessions where entity_id = p_session_id;
+  if p_mode not in ('view','drive') then
+    raise exception 'invalid stream mode' using errcode = '22023';
+  end if;
+
+  -- view: space share mode or explicit membership in the space.
+  if session.share_mode = 'none' and e.created_by is distinct from internal.current_member_id(e.space_id)
+     and not internal.can_act_as(e.created_by, e.space_id) then
+    raise exception 'this session is not shared' using errcode = '42501';
+  end if;
+  -- drive: input into somebody's live shell. v1 grants it to the spawner only.
+  if p_mode = 'drive' and not internal.can_act_as(e.created_by, e.space_id) then
+    raise exception 'drive access is limited to the spawning owner in v1' using errcode = '42501';
+  end if;
+
+  insert into public.stream_grants(work_session_id, subject_identity, mode, granted_by,
+                                   token_hash, expires_at)
+  values (p_session_id, identity, p_mode, e.created_by, p_token_hash,
+          now() + coalesce(p_ttl, interval '15 minutes'))
+  on conflict (work_session_id, subject_identity, mode) where revoked_at is null
+  do update set token_hash = excluded.token_hash, expires_at = excluded.expires_at
+  returning * into grant_row;
+
+  return internal.ledger_record(p_client_mutation_id, 'execution.streams.attach',
+           jsonb_build_object('grant', to_jsonb(grant_row) - 'token_hash', 'patches', '[]'::jsonb));
+end
+$$;
+
+-- execution.prompt / execution.terminate deliver into a live PTY: their EFFECT
+-- is not graph state (R17). What the graph owes them is an audit row, which the
+-- ledger already is — this records the intent and returns the session.
+create or replace function public.record_execution_command(
+  p_session_id uuid, p_operation text, p_payload jsonb default '{}'::jsonb,
+  p_actor_id uuid default null, p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  replay jsonb;
+  e public.entities;
+  actor uuid;
+begin
+  if p_operation not in ('execution.prompt','execution.terminate') then
+    raise exception 'unsupported execution command: %', p_operation using errcode = '22023';
+  end if;
+  replay := internal.ledger_replay(p_client_mutation_id, p_operation);
+  if replay is not null then return replay; end if;
+  e := internal.live_entity(p_session_id, 'work_session');
+  perform internal.require_space_member(e.space_id);
+  actor := internal.resolve_actor(p_actor_id, e.space_id);
+  perform internal.bind_actor(actor);
+  return internal.ledger_record(p_client_mutation_id, p_operation,
+           internal.command_result(p_session_id, null, null, array[p_session_id]));
+end
+$$;
+
+create or replace function public.open_session_modal(
+  p_session_id uuid, p_kind text, p_prompt jsonb default '{}'::jsonb,
+  p_expires_at timestamptz default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  e public.entities;
+  modal public.session_modals;
+begin
+  e := internal.live_entity(p_session_id, 'work_session');
+  perform internal.require_space_member(e.space_id);
+  insert into public.session_modals(work_session_id, space_id, kind, prompt, expires_at)
+  values (p_session_id, e.space_id, p_kind, coalesce(p_prompt, '{}'::jsonb), p_expires_at)
+  returning * into modal;
+  return to_jsonb(modal);
+end
+$$;
+
+create or replace function public.answer_session_modal(p_modal_id uuid, p_response jsonb)
+returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare modal public.session_modals;
+begin
+  select * into modal from public.session_modals where id = p_modal_id for update;
+  if modal.id is null then
+    raise exception 'modal not found' using errcode = 'P0002';
+  end if;
+  perform internal.require_space_member(modal.space_id);
+  if modal.status <> 'open' then
+    raise exception 'modal is already %', modal.status using errcode = '23514';
+  end if;
+  update public.session_modals
+     set status = 'answered', response = coalesce(p_response, '{}'::jsonb), answered_at = now()
+   where id = p_modal_id
+  returning * into modal;
+  return to_jsonb(modal);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- 13. Compound reads.
+--
+-- SECURITY INVOKER, every one of them: a definer read here would hand tm8_app
+-- every space in the database and silently make RLS decorative. Views carry
+-- `security_invoker = true` for the same reason.
+-- -----------------------------------------------------------------------------
+
+-- The subtree walk boards, doc navigation, the composer and delete_entity all
+-- reuse. Depth-capped so a pathological tree cannot become an unbounded scan.
+create or replace function public.entity_tree(p_root_id uuid, p_max_depth integer default 10)
+returns table(id uuid, parent_id uuid, kind text, depth integer, path uuid[], sort_position double precision)
+language sql stable set search_path = public, internal, pg_temp as $$
+  with recursive tree(id, parent_id, kind, depth, path, sort_position) as (
+    select e.id, e.parent_id, e.kind, 0, array[e.id], e.position
+      from public.entities e
+     where e.id = p_root_id and e.deleted_at is null
+    union all
+    select child.id, child.parent_id, child.kind, t.depth + 1, t.path || child.id, child.position
+      from public.entities child
+      join tree t on child.parent_id = t.id
+     where child.deleted_at is null
+       and t.depth < greatest(coalesce(p_max_depth, 10), 0)
+       and not child.id = any (t.path)
+  )
+  select id, parent_id, kind, depth, path, sort_position from tree order by depth, sort_position, id
+$$;
+
+-- The points ledger, grouped and ranked. The ledger is the truth; the counter is
+-- a cache — so the leaderboard reads the ledger.
+create or replace function public.leaderboard(p_space_id uuid, p_limit integer default 50)
+returns table(actor_id uuid, kind text, score bigint, rank bigint)
+language sql stable set search_path = public, internal, pg_temp as $$
+  select e.id as actor_id, e.kind, coalesce(sum(p.amount), 0)::bigint as score,
+         rank() over (order by coalesce(sum(p.amount), 0) desc)::bigint as rank
+    from public.entities e
+    left join public.point_events p on p.entity_id = e.id
+   where e.space_id = p_space_id
+     and e.kind in ('member','team_member')
+     and e.deleted_at is null
+   group by e.id, e.kind
+   order by score desc, e.id
+   limit greatest(coalesce(p_limit, 50), 1)
+$$;
+
+-- Open tasks with no unresolved hard dependency — backs the readyToPull home
+-- preset and the agent's "what can I pull" question (01 §5.2).
+create or replace function public.ready_to_work(p_space_id uuid)
+returns table(entity_id uuid, title text, priority text, work_status text, due_date date, sort_position double precision)
+language sql stable set search_path = public, internal, pg_temp as $$
+  select t.entity_id, t.title, t.priority, t.work_status, t.due_date, e.position
+    from public.tasks t
+    join public.entities e on e.id = t.entity_id
+   where e.space_id = p_space_id
+     and e.deleted_at is null
+     and t.work_status in ('open','pulled')
+     and not exists (
+       select 1 from public.edges dep
+        where dep.src_id = t.entity_id
+          and dep.type = 'depends_on'
+          and coalesce((dep.props ->> 'hard')::boolean, true)
+          and not internal.is_resolved(dep.dst_id)
+     )
+   order by
+     case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end,
+     t.due_date nulls last, e.position, t.entity_id
 $$;
 
 revoke all on all functions in schema internal from public;

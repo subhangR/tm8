@@ -108,6 +108,12 @@ describeLive('sidecar lifecycle (live cluster on 5443)', () => {
   }, 120_000);
 
   afterAll(async () => {
+    // `TM8_TEST_KEEP=1` leaves the cluster up for post-mortem poking. It is a
+    // throwaway dir on its own port, so leaving it running harms nothing.
+    if (process.env['TM8_TEST_KEEP']) {
+      console.warn(`[sidecar:live] KEEPING ${DATA_DIR} (TM8_TEST_KEEP=1)`);
+      return;
+    }
     await nukeThrowawayCluster();
   }, 120_000);
 
@@ -238,11 +244,27 @@ describeLive('sidecar lifecycle (live cluster on 5443)', () => {
   }, 120_000);
 
   it('restarts against the existing cluster without re-running initdb', async () => {
-    const restarted = new PostgresSidecarManager(cfg, { logger: testLogger, health: fastHealth });
+    // The migration seam is stubbed here on purpose. This test is about restart
+    // and cluster adoption; re-applying an already-applied sequence is the db
+    // runner's concern, and it legitimately refuses when a migration file was
+    // edited after it was applied — which happens constantly while the db
+    // workstream is still writing them. Coupling a lifecycle assertion to that
+    // would make this suite flaky for reasons that say nothing about restart.
+    let migrationsInvoked = 0;
+    const restarted = new PostgresSidecarManager(cfg, {
+      logger: testLogger,
+      health: fastHealth,
+      runMigrations: async () => {
+        migrationsInvoked += 1;
+        return { ran: false, reason: 'stubbed by the restart test' };
+      },
+    });
     const status = await restarted.ensureStarted();
 
     expect(status.state).toBe('RUNNING');
     expect(status.clusterMajor).toBe(PINNED_PG_MAJOR);
+    // The boot sequence still reaches the migration seam after healthcheck.
+    expect(migrationsInvoked).toBe(1);
     // Data written before the stop is still there — this is the same cluster.
     const probe = await selectOne({
       binariesDir: cfg.binariesDir,
