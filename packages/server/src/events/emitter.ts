@@ -1,20 +1,32 @@
 /**
- * Envelope construction and publication.
+ * The contract tripwire, envelope construction for presence, and fan-out.
  *
- * Callers hand in the BODY of an event — the discriminated-union arm, e.g.
- * `{ type: 'entity.upsert', entity }` — and this file supplies the AM-2 §3
- * envelope (`spaceId`, `seq`, `occurredAt`, `schemaVersion`). Handlers never
- * build an envelope themselves, for the same reason they never mint a seq:
- * one place to get it right, one place to change it when the schema version
- * bumps.
+ * ## There is exactly one emitter, and it is the database
  *
- * Every constructed event is validated against `WorkspaceEventSchema` before
- * it leaves the process, unconditionally — not behind a dev flag. The contract
- * schemas are `.strict()`, so this is the tripwire that fires the moment a W2
- * handler invents an off-contract event or an extra field: it throws here, in
- * the server's own stack, instead of reaching a client that will silently
- * ignore a variant it does not know. The cost is one zod parse per event; the
- * alternative is a class of bug that only shows up as missing UI.
+ * Durable events are NOT created here. They are captured by the trigger in
+ * db/migrations/003 inside the mutating transaction, and this process only ever
+ * PROJECTS that log (see mapper.ts) and forwards the result. This file used to
+ * expose a `publish(spaceId, body)` that minted a seq and synthesized a durable
+ * event; that method is gone on purpose. Two emitters would mean two orderings,
+ * duplicate deliveries for one mutation, and a `seq` that is no longer a dedupe
+ * key — and the second emitter would be the one that silently wins whenever a
+ * handler forgot to call it. The only durable entry point left is
+ * `publishDurable`, which takes an ALREADY-SEQUENCED event off the log.
+ *
+ * The ephemeral presence/typing channel is different and still builds its own
+ * envelope here: those events have no database row to be projected from
+ * (DEV-4), and their seq is channel-local by contract.
+ *
+ * ## The tripwire
+ *
+ * Every event is validated against `WorkspaceEventSchema` before it leaves the
+ * process, unconditionally — not behind a dev flag. The contract schemas are
+ * `.strict()`, so this fires the moment a projection invents an off-contract
+ * event or an extra field: it throws here, in the server's own stack, instead
+ * of reaching a client that will silently ignore a variant it does not know.
+ * `assertWorkspaceEvent` is exported precisely so the mapper shares it — the
+ * `events.poll` path never touches the publisher, and a tripwire that only
+ * guards the socket would leave the poll response unchecked.
  */
 import {
   WORKSPACE_EVENT_SCHEMA_VERSION,
@@ -125,25 +137,53 @@ function summarizeIssues(issues: unknown, out: LeafIssue[] = [], depth = 0): Lea
   return out;
 }
 
+/**
+ * THE tripwire. Parses `candidate` as a `WorkspaceEvent` or throws
+ * `OffContractEventError` with an actionable message.
+ *
+ * Shared by the publisher (socket path) and the mapper (`events.poll` path) so
+ * that both are guarded by the same check. `describe` is used only to name the
+ * offender in the error — it never affects whether the parse succeeds.
+ */
+export function assertWorkspaceEvent(candidate: unknown, describe: string): WorkspaceEvent {
+  const parsed = WorkspaceEventSchema.safeParse(candidate);
+  if (parsed.success) return parsed.data;
+  const detail = summarizeIssues(parsed.error.issues)
+    .map((i) => `${i.path}: ${i.message}`)
+    .join('; ');
+  throw new OffContractEventError(
+    `refusing to emit ${describe}: not a WorkspaceEvent — ${detail || 'no matching variant'}`,
+  );
+}
+
 export class WorkspaceEventPublisher {
-  private readonly seq: SeqSource;
+  /**
+   * The PRESENCE channel's counter (S8). Named for what it is: durable seqs come
+   * off the database log and are never minted here, so this source is only ever
+   * asked for a channel-local presence number.
+   */
+  private readonly presenceSeq: SeqSource;
   private readonly registry: SubscriptionRegistry;
 
-  constructor(seq: SeqSource, registry: SubscriptionRegistry) {
-    this.seq = seq;
+  constructor(presenceSeq: SeqSource, registry: SubscriptionRegistry) {
+    this.presenceSeq = presenceSeq;
     this.registry = registry;
   }
 
   /**
-   * Publish a durable event to the space's subscribers.
+   * Forward an already-sequenced durable event from the log to the space's
+   * subscribers.
    *
-   * Async because `SeqSource.next` is async at W2 (it reads the counter row in
-   * the mutation's transaction). The skeleton's in-memory source resolves
-   * immediately.
+   * Takes a whole `DurableWorkspaceEvent`, not a body-plus-options, because by
+   * the time an event reaches this method its `seq`, `occurredAt` and
+   * `clientMutationId` are FACTS from the `workspace_events` row — there is
+   * nothing left for the server to decide. The event is re-validated anyway:
+   * cheap, and it means a mapper bug cannot reach a client through this door
+   * either.
    */
-  async publish(spaceId: SpaceId, body: DurableEventBody, opts: PublishOptions = {}): Promise<PublishResult> {
-    const event = this.build(spaceId, await this.seq.next(spaceId), body, opts.clientMutationId);
-    return { event, delivered: fanOutDurable(this.registry, spaceId, JSON.stringify(event)) };
+  publishDurable(event: DurableWorkspaceEvent): PublishResult {
+    const validated = assertWorkspaceEvent(event, `'${event.type}' on space ${event.spaceId} (seq ${event.seq})`);
+    return { event: validated, delivered: fanOutDurable(this.registry, event.spaceId, JSON.stringify(validated)) };
   }
 
   /**
@@ -152,25 +192,12 @@ export class WorkspaceEventPublisher {
    * DEV-4: this never touches the durable stream. Its `seq` is CHANNEL-LOCAL —
    * the contract says so explicitly (contract.ts §5) — and a client must not
    * use it as a durable cursor or feed it to `events.poll?since=`. It exists
-   * purely so a client can order presence updates among themselves.
-   *
-   * TODO(W2): the channel-local seq currently shares the durable `SeqSource`,
-   * which burns durable sequence numbers on ephemeral events. Harmless while
-   * the durable log does not exist (gaps are explicitly allowed by AM-2 §3),
-   * but the presence channel needs its own counter before the Postgres seq
-   * lands, or the two will disagree about what `next()` means.
+   * purely so a client can order presence updates among themselves. Since S8
+   * that number comes from a counter that the durable log does not share, so
+   * the two can no longer disagree about it.
    */
   async publishPresence(spaceId: SpaceId, body: PresenceEventBody): Promise<PublishResult> {
-    const event = this.build(spaceId, await this.seq.next(spaceId), body, undefined);
-    return { event, delivered: fanOutPresence(this.registry, spaceId, JSON.stringify(event)) };
-  }
-
-  private build(
-    spaceId: SpaceId,
-    seq: number,
-    body: DurableEventBody | PresenceEventBody,
-    clientMutationId: string | undefined,
-  ): WorkspaceEvent {
+    const seq = await this.presenceSeq.next(spaceId);
     const envelope: WorkspaceEventEnvelope = {
       spaceId,
       seq,
@@ -178,22 +205,9 @@ export class WorkspaceEventPublisher {
       schemaVersion: WORKSPACE_EVENT_SCHEMA_VERSION,
     };
     // Typed `unknown` deliberately: the assembled object is only a
-    // WorkspaceEvent once the schema says it is, and `parse` is what says so.
-    const candidate: unknown = {
-      ...body,
-      ...envelope,
-      ...(clientMutationId === undefined ? {} : { clientMutationId }),
-    };
-
-    const parsed = WorkspaceEventSchema.safeParse(candidate);
-    if (!parsed.success) {
-      const detail = summarizeIssues(parsed.error.issues)
-        .map((i) => `${i.path}: ${i.message}`)
-        .join('; ');
-      throw new OffContractEventError(
-        `refusing to emit '${body.type}' on space ${spaceId}: not a WorkspaceEvent — ${detail || 'no matching variant'}`,
-      );
-    }
-    return parsed.data;
+    // WorkspaceEvent once the schema says it is, and the parse is what says so.
+    const candidate: unknown = { ...body, ...envelope };
+    const event = assertWorkspaceEvent(candidate, `'${body.type}' on space ${spaceId}`);
+    return { event, delivered: fanOutPresence(this.registry, spaceId, JSON.stringify(event)) };
   }
 }

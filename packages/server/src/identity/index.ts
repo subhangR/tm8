@@ -79,3 +79,16 @@ export {
   parseToken,
   type PasswordHasher,
 } from './crypto.js';
+
+/**
+ * The v1 loopback auto-owner path (S5). Separate from `IdentityServiceImpl`
+ * on purpose — see loopback.ts for why the PG-backed repository is not on the
+ * G1A critical path.
+ */
+export {
+  createLoopbackOwnerResolver,
+  resolveLoopbackOwner,
+  LOOPBACK_OWNER_USERNAME,
+  LOOPBACK_OWNER_DISPLAY_NAME,
+  type LoopbackOwner,
+} from './loopback.js';

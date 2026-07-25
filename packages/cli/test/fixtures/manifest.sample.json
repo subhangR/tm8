@@ -1,0 +1,44 @@
+{
+  "manifestVersion": "1",
+  "sessionId": "ws_01HZPHOENIXSESSION",
+  "spaceId": "sp_01HZDEMOSPACE",
+  "mode": "coordinated-worker",
+  "agent": {
+    "teamMemberId": "tm_01HZPHOENIX",
+    "name": "Phoenix",
+    "avatar": "🛠️",
+    "role": "CLI engineer",
+    "identity": "You own packages/cli. You bind every HTTP route through the contract's operation catalog and never hand-write a URL.",
+    "memory": ["The PTY host runs under node, never bun."]
+  },
+  "project": {
+    "id": "prj_01HZTM8",
+    "name": "tm8",
+    "workingDir": "/Users/subhang/Desktop/Projects/tm8"
+  },
+  "tasks": [
+    {
+      "id": "ent_01HZTASKONE",
+      "title": "Wire the CLI worker-init boot path",
+      "description": "Read the manifest, compose the system prompt, and give the agent report verbs that reach the graph.",
+      "priority": "high",
+      "workStatus": "working"
+    }
+  ],
+  "coordinator": {
+    "sessionId": "ws_01HZORION",
+    "displayName": "Orion"
+  },
+  "directive": {
+    "subject": "G1A lane 4 — the agent's boot and its return path",
+    "message": "Build worker init and the report verbs. Bind through the catalog. Report back when the first slice works.",
+    "fromSessionId": "ws_01HZORION"
+  },
+  "skills": [
+    {
+      "name": "reporting-discipline",
+      "body": "Quote real command output when you report. Never claim green without having run the command."
+    }
+  ],
+  "promptExtra": "Handlers may still answer 501 while you build — that is expected."
+}
