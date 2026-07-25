@@ -199,9 +199,15 @@ describe('PTY WebSocket', () => {
       cwd: CWD,
       env: {},
     });
+    // Gate on BOTH conditions the assertions below depend on: the ring has
+    // evicted (gap>0) AND the final line has actually been produced. Waiting on
+    // gap>0 alone is a load-sensitive race — eviction can fire after LINE-400
+    // while the shell is still printing, so a snapshot taken then would not yet
+    // contain LINE-800 and the test flakes only under concurrent-suite load. The
+    // tail line is always retained (it is the newest), so this is deterministic.
     await waitFor(() => {
       const r = host!.getReplay('s-gap', 0);
-      return !!r && r.gap > 0;
+      return !!r && r.gap > 0 && r.data.toString('utf8').includes('LINE-800');
     });
 
     const server = createPtyWsServer({ pty: host });
