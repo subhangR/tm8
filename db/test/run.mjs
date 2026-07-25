@@ -15,6 +15,7 @@
 // (internal.live_work_session_count) predictable.
 
 import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +50,18 @@ step(`reset ${testDb} and apply migrations`, process.execPath, [
   '--force',
 ]);
 
-step('run db suites', process.execPath, ['--test', '--test-concurrency=1', join(HERE)]);
+// Explicit, lexically sorted file list rather than the directory: node 25 no
+// longer expands a bare directory positional under --test (it tries to load it as
+// a module), and an explicit list also fixes the ORDER, which matters because the
+// suites share one database.
+const suites = readdirSync(HERE)
+  .filter((f) => f.endsWith('.test.mjs'))
+  .sort()
+  .map((f) => join(HERE, f));
+if (suites.length === 0) {
+  process.stderr.write(`no *.test.mjs suites found in ${HERE}\n`);
+  process.exit(1);
+}
+step(`run ${suites.length} db suite(s)`, process.execPath, ['--test', '--test-concurrency=1', ...suites]);
 
 process.stdout.write('\nall db suites green\n');

@@ -328,7 +328,17 @@ export function ensureRoot({ url = APP_URL } = {}) {
     // very same call resolves to it.
     res = run(sql, { url, claims });
   }
-  if (!res.ok) throw new Error(`root bootstrap failed:\n${res.stderr}`);
+  if (!res.ok) {
+    if (/node admin required/.test(res.stderr)) {
+      throw new Error(
+        `root bootstrap failed: ${TEST_DB} already has an owner account that is NOT ` +
+          `'${ROOT_IDENTITY}', so the suites cannot mint their accounts.\n` +
+          `This database was populated by something other than the suites. Start clean:\n` +
+          `  node db/test/run.mjs\n\n${res.stderr}`,
+      );
+    }
+    throw new Error(`root bootstrap failed:\n${res.stderr}`);
+  }
   return JSON.parse(res.stdout.split('\n').filter((l) => l.trim()).pop()).id;
 }
 
@@ -382,8 +392,11 @@ export function buildWorld(tag = 'w', { url = APP_URL } = {}) {
     claims: claimsFor(idA, memberA),
   });
 
+  // working_dir is UNIQUE node-wide, so it carries the space id: ensure_account and
+  // create_space tolerate a second run against a non-reset database, and this is
+  // the one call that would not.
   const project = json(
-    `select public.create_project('proj-${tag}', '/tmp/tm8-test-${tag}', null, 'trusted')`,
+    `select public.create_project('proj-${tag}', '/tmp/tm8-test-${tag}-${spaceA.space.id}', null, 'trusted')`,
     { ...opts, claims: claimsFor(idA, null, true) },
   );
   ok(`select public.link_project(${uuid(spaceA.space.id)}, ${uuid(project.project.id)})`, {
