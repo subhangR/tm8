@@ -28,3 +28,17 @@ Replace `window.prompt()` with a real composer: multi-line, a history of what wa
 
 ## R-UI-8 — Token/context gauge: DEFERRED as a contract question
 Do not build a usage/token dial: tm8 collects no token or tool-call data server-side, so it would be a gauge with nothing behind it. Recording per-session usage is a future contract addition (a usage side-table on `work_session`), not Wave 1. Flagged, not built.
+
+---
+
+## Addendum (2026-07-25) — buildability resolutions after Atlas verified the design against the frozen contract
+
+Atlas confirmed R-UI-7 (prompt composer) is buildable today (`post_message` anchors to any live entity, no kind restriction). Three items needed contract surface the frozen contract lacks; all resolved to keep Wave 1 shippable with NO contract change:
+
+- **R-UI-4 (session_modals): DEFERRED — design-drawn, not built** (same class as the token gauge, R-UI-8). The frozen contract has zero `modal` surface (no op, no WorkspaceEvent variant). A future amendment batch adds `modals.*` (list-open / answer) + an **immediate-class** WorkspaceEvent variant (a modal 1.5s late on the poll tick is already annoying). Until then the session surface simply has no modal chrome; nothing lies.
+- **Status filtering: CLIENT-SIDE for Wave 1.** `CollectionQuery` has no `work_session.state.status` filter. Wave 1 filters fetched sessions client-side and captions the count honestly ("Live · N of M fetched" once it could truncate). A `status` filter on CollectionQuery joins the same future amendment batch as `modals.*`.
+- **`state.ptyAlive`: DEFERRED.** Wave 1 liveness uses TWO mechanisms — Draco's server-side startup reconciliation + a client belt that demotes a row to "stale" when an attach fails/closes immediately. A future `state.ptyAlive` boolean would make `sessionIsAttachable` a pure function of the entity and delete the client belt; it is a clean-up, not a Wave-1 requirement.
+
+Design calls ADOPTED (Atlas's): six presented states (5 contract + "stale" as a status-vs-reality disagreement); **composer delivers FIRST then records** — a recorded-but-undelivered prompt is a lie the user acts on, so the "record ok / delivery failed" case renders visually distinct as "not delivered — the agent never received this"; terminate's confirm states its blast radius (cascade count); a `session_modals`-blocked session sorts to a **NEEDS YOU** group above idle; a `view`-grant terminal renders but says it is swallowing keystrokes (never silently drops). **Send key: Cmd/Ctrl+Enter = send, Enter = newline** (multi-line agent prompts; an accidental send can't be recalled) — the user may override this one UX call.
+
+**Net: Wave 1 sessions surface is fully buildable with no contract change.** The `modals.* + status-filter (+ optional ptyAlive)` amendment is a SEPARATE, batched, post-Wave-1 conversation.
