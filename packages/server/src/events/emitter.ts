@@ -47,19 +47,15 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 type EnvelopeKey = keyof WorkspaceEventEnvelope;
 
 /**
- * A durable event minus the envelope. `clientMutationId` is omitted too — it
- * arrives via `publish` options because it belongs to the originating command
- * (DEV-9), not to the event body.
+ * A durable event minus the envelope — the shape a PROJECTION produces before
+ * the log's own `seq`/`occurredAt`/`clientMutationId` are stamped onto it. The
+ * mapper builds one of these per `workspace_events` row; nothing constructs one
+ * from thin air.
  */
 export type DurableEventBody = DistributiveOmit<DurableWorkspaceEvent, EnvelopeKey | 'clientMutationId'>;
 
 /** A presence/typing event minus the envelope. These never carry a mutation id. */
 export type PresenceEventBody = DistributiveOmit<PresenceWorkspaceEvent, EnvelopeKey>;
-
-export interface PublishOptions {
-  /** Echo of the originating command's id, for optimistic reconciliation (DEV-9). */
-  clientMutationId?: string;
-}
 
 export interface PublishResult {
   event: WorkspaceEvent;

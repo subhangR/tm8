@@ -261,9 +261,15 @@ export function json(sql, opts = {}) {
   }
 }
 
-/** Rows of a query, as objects. */
+/**
+ * Rows of a query, as objects.
+ *
+ * jsonb_agg, not json_agg: `json` preserves the input's formatting and psql prints
+ * a multi-element aggregate across several lines, which the single-line payload
+ * convention above cannot read. jsonb normalises to one line.
+ */
 export function rows(sql, opts = {}) {
-  return json(`select coalesce(json_agg(t), '[]'::json) from (${sql}) t`, opts) ?? [];
+  return json(`select coalesce(jsonb_agg(t), '[]'::jsonb) from (${sql}) t`, opts) ?? [];
 }
 
 /** A single scalar. */

@@ -11,11 +11,19 @@
  */
 import { createDb } from './db/index.js';
 import type { Db } from './db/types.js';
-import { createWsServer, InMemorySeqSource, SubscriptionRegistry, WorkspaceEventPublisher } from './events/index.js';
+import {
+  createWsServer,
+  InMemorySeqSource,
+  registerEventHandlers,
+  SubscriptionRegistry,
+  WorkspaceEventPublisher,
+} from './events/index.js';
 import { createExecutionRuntime } from './facade/execution-handlers.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
+import { resolveLoopbackOwner } from './identity/loopback.js';
 import { loadConfig, type ServerConfig } from './http/config.js';
 import { createFacadeServer, type FacadeServer } from './http/server.js';
+import type { IdentityResolver } from './http/types.js';
 import { createStaticHandler } from './http/static.js';
 
 export interface BootstrapOptions {
@@ -78,6 +86,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
 
   if (db) {
     registerFacadeHandlers(registry, { db, config });
+    registerEventHandlers(registry, { db, config });
     execution?.register(registry);
   }
 
@@ -88,10 +97,33 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const events = new WorkspaceEventPublisher(new InMemorySeqSource(), subscriptions);
   const ws = createWsServer({ registry: subscriptions });
 
+  /**
+   * ONE identity path for every handler.
+   *
+   * The frame's default resolver reports `auto-owner` with no identityId,
+   * because the skeleton had no database to look one up in. The facade block
+   * grew its own owner resolver over `Db` — which was fine while it was the
+   * only consumer, and wrong the moment a second block read `ctx.identity`:
+   * the execution handlers correctly derived their claims from the request
+   * context, got an undefined identityId, and every spawn died with
+   * `28000 no identity bound to this transaction`. Neither lane was at fault;
+   * the composition root was, for leaving two paths where there should be one.
+   *
+   * Resolving it here means `ctx.identity` carries the real owner for every
+   * handler in the process, and any future block gets it for free.
+   */
+  const identityResolver: IdentityResolver | undefined = db
+    ? async () => {
+        const owner = await resolveLoopbackOwner(db);
+        return { kind: 'auto-owner', identityId: owner.identityId };
+      }
+    : undefined;
+
   const server = createFacadeServer({
     config,
     registry,
     upgrades: ws,
+    ...(identityResolver ? { identityResolver } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 

@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@tm8/contract": "workspace:*",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "@tm8/execution": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

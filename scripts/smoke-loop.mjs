@@ -130,9 +130,15 @@ const workingDir =
   mkdtempSync(join(tmpdir(), `tm8-smoke-${RUN_ID.slice(-6)}-`));
 console.log(`workdir ${workingDir}`);
 
-const project = await call('create a project', 'POST', '/v2/projects', {
+// trust MATTERS: projects default to 'untrusted', and execution.spawn refuses
+// to launch an agent into an untrusted working directory. That refusal is a
+// feature — spawning a coding agent into a directory nobody vouched for is
+// exactly the thing worth an explicit yes — so the smoke run says yes on
+// purpose rather than routing around it.
+const project = await call('create a project (trusted — spawn refuses untrusted)', 'POST', '/v2/projects', {
   name: `Smoke Project ${RUN_ID.slice(-6)}`,
   workingDir,
+  trust: 'trusted',
   clientMutationId: cmid('project'),
 });
 const projectId = need(project?.id ?? project?.project?.id, 'the new project id', 'create a project');
@@ -186,8 +192,12 @@ const spawned = await call('spawn an agent session on a real PTY', 'POST', '/v2/
   mode: 'worker',
   clientMutationId: cmid('spawn'),
 });
+// Entity commands return the contract's CommandResult — {entity, patches} —
+// so the work_session arrives as result.entity, same as any other created
+// entity. Reads return their DTO bare; commands wrap. That asymmetry is the
+// contract's, not an accident.
 const sessionId = need(
-  spawned?.workSessionId ?? spawned?.id ?? spawned?.workSession?.id,
+  spawned?.entity?.id ?? spawned?.workSessionId ?? spawned?.id,
   'the new work_session id',
   'spawn an agent session',
 );
@@ -216,9 +226,14 @@ await call('poll the space event log from seq 0', 'GET', `/v2/spaces/${spaceId}/
 
 // 9. complete -------------------------------------------------------------
 const before = await call('re-read the task for its version', 'GET', `/v2/entities/${taskId}`);
-const version = before?.version ?? before?.entity?.version;
+// expectedVersion is REQUIRED, not optional: completion is optimistic-
+// concurrency controlled, so you must say which version of the task you
+// believe you are completing. completerIds must name at least one member —
+// a task is completed BY somebody, and that is what earns the points.
+const version = need(before?.version ?? before?.entity?.version, 'the task version', 're-read the task');
 await call('complete the task', 'POST', `/v2/entities/${taskId}/commands/complete`, {
-  ...(version === undefined ? {} : { expectedVersion: version }),
+  expectedVersion: version,
+  completerIds: [teamMemberId],
   clientMutationId: cmid('complete'),
 });
 const after = await call('confirm the task actually moved', 'GET', `/v2/entities/${taskId}`);
