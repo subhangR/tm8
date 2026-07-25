@@ -116,11 +116,15 @@ test('F1 — a second owner is refused by the single-owner index (T-L7)', () => 
 });
 
 test('F2 — resolve_account_credential is the sole claim-free auth read, and returns a verifier not a verdict', () => {
-  ok(`select public.set_account_credential(
-        (select id from public.accounts where username = 'f1plain'),
-        'deadbeef', 'argon2id')`,
-    { ...app, claims: claimsFor('identity-f1-owner', null, true) },
-  );
+  // The account id has to come from the OWNER connection: tm8_app cannot read
+  // public.accounts at all, which is the reason F2 has to exist in the first place.
+  const plainAccount = scalar(`select id from public.accounts where username = 'f1plain'`, {
+    url: fresh.ownerUrl,
+  });
+  ok(`select public.set_account_credential(${literal(plainAccount)}::uuid, 'deadbeef', 'argon2id')`, {
+    ...app,
+    claims: claimsFor('identity-f1-owner', null, true),
+  });
 
   const credential = json(`select public.resolve_account_credential('f1plain')`, {
     ...app,
@@ -146,33 +150,26 @@ test('F2 — resolve_account_credential is the sole claim-free auth read, and re
 });
 
 test('F2 — the credential tables themselves are unreadable to tm8_app, claims or not', () => {
+  // 008 §2 reasons about these as "RLS enabled with zero policies, which means zero
+  // rows". In practice they are one wall further out than that: they are also absent
+  // from 008's SELECT grant list, so tm8_app gets a hard 42501 rather than an empty
+  // result. Both fail closed; asserting the ACTUAL behaviour means this test breaks
+  // loudly if a future migration ever adds the grant and leaves the policy off.
   const admin = { ...app, claims: claimsFor('identity-f1-owner', null, true) };
-  invisible(
-    'accounts: NO select policy exists — even the node owner reads zero rows through tm8_app',
-    'select count(*) from public.accounts',
-    admin,
-  );
-  invisible(
-    'auth_sessions: NO select policy exists — token hashes are unreachable by query',
-    'select count(*) from public.auth_sessions',
-    admin,
-  );
-  invisible(
-    'command_ledger: NO select policy exists',
-    'select count(*) from public.command_ledger',
-    admin,
-  );
-  invisible(
-    'space_event_seq: NO select policy exists',
-    'select count(*) from public.space_event_seq',
-    admin,
-  );
-  invisible(
-    'notification_outbox: NO select policy exists',
-    'select count(*) from public.notification_outbox',
-    admin,
-  );
-  invisible('undo_tokens: NO select policy exists', 'select count(*) from public.undo_tokens', admin);
+  for (const table of [
+    'accounts', // credential material
+    'auth_sessions', // token hashes
+    'command_ledger',
+    'notification_outbox',
+    'space_event_seq',
+    'undo_tokens',
+  ]) {
+    denied(
+      `${table}: no policy AND no grant — unreachable by query, even for the node owner`,
+      `select count(*) from public.${table}`,
+      { ...admin, expect: '42501' },
+    );
+  }
 });
 
 test('F2 — resolve_auth_session is claim-free too (bearer bootstrap) and leaks no token_hash', () => {
