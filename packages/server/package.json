@@ -9,7 +9,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tm8/contract": "workspace:*"
+    "@tm8/contract": "workspace:*",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",
