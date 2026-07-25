@@ -36,6 +36,8 @@
 - **Model policy (user directive 2026-07-25): all spawned sessions run Opus 5 only** (`--model opus-5` on spawn). Vega (this session) stays as-is.
 - **AM-5 (2026-07-25, user directive): Phase 1 = the G1A loop, nothing more.** After the current contract freeze, ALL remaining scope moves to post-Phase-1: former 1B platform completeness (channels/inbox/collections polish, custom kinds runtime UX, points/awards surfaces, full 73-op conformance green, golden workflows, Postgres FTS search, old-maestro import), security hardening (AM-4), and any further waves. Phase 1 DONE = in the browser on the snapshotted UI: open space → see tasks → run task → execution.spawn → manifest-booted agent in a live server-PTY terminal → progress in thread → complete + transcript. On G1A pass: Vega reports Phase 1 complete and STOPS — no new work without user direction. In-flight W1b/W2-prep/PTY-lift lanes are all loop-critical and continue; anything a worker surfaces that is not loop-critical gets parked in STATE.md under 'Post-Phase-1 backlog', not built.
 
+- **AM-5 UI corollary (user-directed, relayed to Atlas's coordinator 2026-07-25):** the collab-v2 UI build finishes ONLY loop-critical surfaces + Keystone's W5.4 reconciliation, then CODE-FREEZES; W4/W5 and non-loop screens are post-Phase-1. Snapshot package (SHA, facade interface-diff→freeze, tests/purity, dep manifest, deferral list) is the transplant trigger.
+
 ## Post-Phase-1 backlog (parked, do not build)
 
 - (accumulates here as workers surface non-loop items)
