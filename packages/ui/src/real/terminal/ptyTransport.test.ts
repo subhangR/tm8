@@ -175,6 +175,43 @@ describe('pty transport — offset resume', () => {
     expect(ptyTransport.__received('s1')).toBe(100);
   });
 
+  it('a resize measured BEFORE the socket opens is flushed on open, not dropped', () => {
+    // The real sequence: the terminal mounts and fits itself immediately, which
+    // races openSession()'s connect. Dropping that frame strands the PTY at
+    // 80x24 forever — the local grid is already resized, so no later fit ever
+    // re-sends it, and an agent TUI draws into a fraction of a wide terminal.
+    ptyTransport.openSession('s1');
+    const ws = last();
+    ws.readyState = 0; // CONNECTING — not yet OPEN
+    ptyTransport.resize('s1', 205, 51);
+    expect(ws.sent).toEqual([]); // nothing sent while connecting
+
+    ws.readyState = 1;
+    ws.onopen?.();
+    expect(ws.sent).toEqual([JSON.stringify({ type: 'resize', cols: 205, rows: 51 })]);
+  });
+
+  it('keeps only the LATEST pre-open size (superseded ones would just reflow twice)', () => {
+    ptyTransport.openSession('s1');
+    const ws = last();
+    ws.readyState = 0;
+    ptyTransport.resize('s1', 100, 20);
+    ptyTransport.resize('s1', 205, 51);
+    ws.readyState = 1;
+    ws.onopen?.();
+    expect(ws.sent).toEqual([JSON.stringify({ type: 'resize', cols: 205, rows: 51 })]);
+  });
+
+  it('sends keystrokes as BINARY frames (a text frame would be a control message)', () => {
+    ptyTransport.openSession('s1');
+    ptyTransport.write('s1', 'ls -la\r');
+    // Filter by "not a string" rather than `instanceof Uint8Array`: under jsdom
+    // the TextEncoder can come from a different realm, so instanceof lies.
+    const sentBin = last().sent.filter((f) => typeof f !== 'string');
+    expect(sentBin.length).toBe(1);
+    expect(new TextDecoder().decode(sentBin[0] as Uint8Array)).toBe('ls -la\r');
+  });
+
   it('a real exit frame ends the session and does not reconnect', () => {
     const exits: Array<number | null | undefined> = [];
     const offExit = ptyTransport.onExit((_id, code) => exits.push(code));

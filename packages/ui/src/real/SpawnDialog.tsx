@@ -12,9 +12,11 @@
  * - An untrusted project is shown and DISABLED with the reason, rather than
  *   hidden or silently upgraded. The server's refusal to spawn into a
  *   directory nobody vouched for is a feature, so the UI states it.
- * - Session status is POLLED, and the panel says so. There is no PTY route on
- *   this node, so there is no terminal here — an empty terminal pane would
- *   imply a live stream that happens to be quiet.
+ * - Session status is POLLED, and the panel says so. Terminal OUTPUT is not:
+ *   once a session exists the surface switches to a near-full-viewport layout
+ *   with a live, interactive terminal streaming over the PTY WebSocket
+ *   (`/v2/ws?sessionId=`). The old 500ms scrollback poll is gone — it was the
+ *   terminal lag, repainting on a fixed tick regardless of output.
  */
 import { useEffect, useState } from 'react';
 import type { EntitySummary } from '../collab-v2/types/contract';
@@ -30,6 +32,19 @@ const overlay: React.CSSProperties = {
 };
 const card: React.CSSProperties = {
   width: 'min(560px, 92vw)', maxHeight: '86vh', overflow: 'auto',
+  background: 'var(--pn-surface, #1b1c20)', color: 'var(--pn-text, #e7e7ea)',
+  border: '1px solid var(--pn-line, #33343a)', borderRadius: 10, padding: 20,
+  font: '13px/1.6 ui-sans-serif, system-ui, sans-serif',
+};
+/**
+ * Once a session is LIVE the surface stops being a dialog and becomes a
+ * terminal: near-full viewport, column layout, and `overflow: hidden` so the
+ * terminal scrolls INTERNALLY (xterm owns its own scrollback) rather than the
+ * card growing a second, competing scrollbar around it.
+ */
+const sessionCard: React.CSSProperties = {
+  width: 'min(1500px, 96vw)', height: '94vh',
+  display: 'flex', flexDirection: 'column', overflow: 'hidden',
   background: 'var(--pn-surface, #1b1c20)', color: 'var(--pn-text, #e7e7ea)',
   border: '1px solid var(--pn-line, #33343a)', borderRadius: 10, padding: 20,
   font: '13px/1.6 ui-sans-serif, system-ui, sans-serif',
@@ -136,8 +151,8 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
 
   return (
     <div style={overlay} role="dialog" aria-modal="true" aria-label="Spawn an agent">
-      <div style={card}>
-        <h2 style={{ margin: '0 0 4px', fontSize: 16 }}>
+      <div style={session ? sessionCard : card}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 16, flex: '0 0 auto' }}>
           {session ? 'Agent session' : 'Spawn an agent on this task'}
         </h2>
 
@@ -199,13 +214,16 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
         )}
 
         {session && (
-          <div style={{ margin: '10px 0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          // `minHeight: 0` on this column is what lets the terminal actually
+          // shrink-to-fit inside the flex card. Without it the flex child sizes
+          // to its content and pushes the footer buttons off the viewport.
+          <div style={{ margin: '10px 0 0', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flex: '0 0 auto' }}>
               <SessionStatusPill status={status || 'unknown'} />
               <span className="t-mono" style={{ opacity: 0.6, fontSize: 11 }}>{session.id}</span>
             </div>
-            <SessionTerminal sessionId={session.id} live={status !== 'exited'} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <SessionTerminal sessionId={session.id} live={status !== 'exited'} fill />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flex: '0 0 auto' }}>
               <button style={btn} onClick={prompt} disabled={busy || status === 'exited'}>Prompt</button>
               <button style={btn} onClick={terminate} disabled={busy || status === 'exited'}>Terminate</button>
             </div>
@@ -220,7 +238,7 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
           }} role="alert">{error}</pre>
         )}
 
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18, flex: '0 0 auto' }}>
           <button style={btn} onClick={close}>Close</button>
           {!session && (
             <button

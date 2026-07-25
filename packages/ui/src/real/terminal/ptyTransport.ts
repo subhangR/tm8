@@ -87,6 +87,23 @@ const _decoders = new Map<string, TextDecoder>();
 const _received = new Map<string, number>();
 /** Sessions whose NEXT binary frame is the single display-only replay frame. */
 const _pendingReplay = new Map<string, ReplayInfo['kind']>();
+/**
+ * The latest grid size requested for a session whose socket was not OPEN at the
+ * time, flushed on the next open.
+ *
+ * This exists because the FIRST fit necessarily races the connect: the terminal
+ * measures itself as soon as it mounts, which is before `openSession()`'s socket
+ * finishes opening. Dropping that frame is not a transient glitch, it is
+ * PERMANENT — the local grid has already been resized, so every later fit sees
+ * no difference and never re-sends, and the PTY stays at its 80x24 default while
+ * the browser renders a much wider grid. The visible symptom is an agent TUI
+ * drawing itself into the left ~40% of a wide terminal.
+ *
+ * LATEST-WINS rather than a queue: unlike keystrokes, where order and
+ * completeness matter, only the newest size is meaningful — replaying a
+ * superseded intermediate size would just cause an extra reflow.
+ */
+const _pendingResize = new Map<string, { cols: number; rows: number }>();
 /** Last `epoch` seen per session. Compared by EQUALITY ONLY. */
 const _epochs = new Map<string, string>();
 
@@ -235,6 +252,13 @@ function _ensureSocket(id: string): WebSocket {
 
   ws.onopen = () => {
     _reconnectAttempts.set(id, 0);
+    // Flush a grid size that was measured before this socket was open (see
+    // _pendingResize). Without this the PTY keeps its 80x24 default forever.
+    const size = _pendingResize.get(id);
+    if (size) {
+      _pendingResize.delete(id);
+      ws.send(JSON.stringify({ type: 'resize', cols: size.cols, rows: size.rows }));
+    }
   };
 
   ws.onmessage = (ev) => {
@@ -355,6 +379,7 @@ export const ptyTransport = {
     _epochs.delete(id);
     _exitedSessions.delete(id);
     _decoders.delete(id);
+    _pendingResize.delete(id);
     _ensureSocket(id);
   },
 
@@ -372,6 +397,7 @@ export const ptyTransport = {
     _received.delete(id);
     _pendingReplay.delete(id);
     _epochs.delete(id);
+    _pendingResize.delete(id);
     const ws = _sockets.get(id);
     if (ws) {
       _sockets.delete(id);
@@ -383,12 +409,37 @@ export const ptyTransport = {
     }
   },
 
+  /**
+   * Send keystrokes to the PTY as a BINARY frame.
+   *
+   * Binary, not text: a text frame is a JSON control message on this protocol,
+   * so routing input through it would make a user typing `{"type":"resize"...}`
+   * a control-frame injection. Raw bytes cannot be confused for control.
+   *
+   * Dropped (not queued) when the socket is down. Queuing input across a
+   * reconnect is what old maestro's fail-closed pending queue exists to bound —
+   * a queued trailing newline can EXECUTE against whatever PTY opens next. Until
+   * that queue is ported, silently dropping is the safe behaviour: the user sees
+   * their keystroke not appear, rather than it running later out of context.
+   */
+  write(id: string, data: string): void {
+    const ws = _sockets.get(id);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(new TextEncoder().encode(data));
+    }
+  },
+
   /** Tell the server the grid size (a JSON text control frame). */
   resize(id: string, cols: number, rows: number): void {
     const ws = _sockets.get(id);
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      return;
     }
+    // Not open yet, or mid-reconnect. Hold the LATEST size and send it on open —
+    // dropping it here would strand the PTY at 80x24 permanently (see
+    // _pendingResize for why no later fit recovers it).
+    _pendingResize.set(id, { cols, rows });
   },
 
   /**
