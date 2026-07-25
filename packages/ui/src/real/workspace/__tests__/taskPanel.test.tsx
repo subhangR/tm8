@@ -59,10 +59,17 @@ function project(id: string, trust: 'trusted' | 'untrusted') {
   };
 }
 
-function stubNode(items: unknown[] = ROWS, opts: { projects?: unknown[] } = {}) {
+function stubNode(
+  items: unknown[] = ROWS,
+  opts: { projects?: unknown[]; linked?: unknown[] } = {},
+) {
   // Untrusted first on purpose: execution.spawn REFUSES untrusted projects, so
   // resolution must skip it rather than pick the head of the list.
   const projects = opts.projects ?? [project('prj_untrusted', 'untrusted'), project(TRUSTED_PROJECT, 'trusted')];
+  // `linked` models GET /v2/projects?spaceId= — the SPACE's linked projects,
+  // which is a different set from the node's projects. Defaults to "the trusted
+  // one is already linked"; pass [] for the not-yet-linked case.
+  const linked = opts.linked ?? [project(TRUSTED_PROJECT, 'trusted')];
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -72,8 +79,11 @@ function stubNode(items: unknown[] = ROWS, opts: { projects?: unknown[] } = {}) 
     let data: unknown = {};
     if (u.includes('/v2/execution/spawn')) {
       data = { entity: { id: NEW_SESSION, kind: 'work_session' }, patches: [] };
+    } else if (u.includes('/v2/spaces/') && u.includes('/projects')) {
+      data = { spaceId: SPACE, projectId: body?.projectId, patches: [] };
     } else if (u.includes('/v2/projects')) {
-      data = projects;
+      // Scoped vs unscoped is the whole bug: the unfiltered list is node-wide.
+      data = u.includes('spaceId=') ? linked : projects;
     } else if (u.includes('/v2/collections/query')) {
       const kinds: string[] = body?.kinds ?? [];
       data = kinds.includes('team_member')
@@ -290,10 +300,56 @@ describe('the spawn loop and the honest refusal', () => {
     expect(spawned).toEqual([{ sessionId: NEW_SESSION, taskId: 't_parent' }]);
   });
 
+  it('resolves the SPACE-LINKED project, not the first project on the node', async () => {
+    // THE BUG THIS PINS, and it blocked a real user: execution.spawn requires
+    // the project be linked to the task's SPACE, but the unfiltered
+    // GET /v2/projects is node-wide. Resolving from it picked a project linked
+    // to some OTHER space and the server refused with
+    // "project ... is not linked to this space".
+    stubNode(ROWS, {
+      projects: [project('prj_other_space', 'trusted'), project(TRUSTED_PROJECT, 'trusted')],
+      linked: [project(TRUSTED_PROJECT, 'trusted')],
+    });
+    render(panel());
+    await waitFor(() => expect(screen.getByTestId('task-run-t_parent')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('task-run-t_parent'));
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v2/execution/spawn'))).toBe(true));
+    // The node-wide list's FIRST trusted entry is prj_other_space; taking it
+    // would reproduce the outage. The space-scoped answer must win.
+    expect(calls.find((c) => c.url.includes('/v2/execution/spawn'))!.body.projectId).toBe(TRUSTED_PROJECT);
+    expect(calls.some((c) => c.url.includes('spaceId='))).toBe(true);
+  });
+
+  it('LINKS a trusted project when the space has none, instead of dead-ending', async () => {
+    stubNode(ROWS, { linked: [] });
+    render(panel());
+    await waitFor(() => expect(screen.getByTestId('task-run-t_parent')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('task-run-t_parent'));
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v2/execution/spawn'))).toBe(true));
+    // Linked first, then spawned — and the link names the trusted project.
+    const link = calls.find((c) => c.method === 'POST' && /\/v2\/spaces\/.*\/projects$/.test(c.url));
+    expect(link).toBeTruthy();
+    expect(link!.body.projectId).toBe(TRUSTED_PROJECT);
+    expect(calls.indexOf(link!)).toBeLessThan(calls.findIndex((c) => c.url.includes('/v2/execution/spawn')));
+    expect(calls.find((c) => c.url.includes('/v2/execution/spawn'))!.body.projectId).toBe(TRUSTED_PROJECT);
+  });
+
+  it('does NOT relink when the space already has a linked project', async () => {
+    stubNode(ROWS, { linked: [project(TRUSTED_PROJECT, 'trusted')] });
+    render(panel());
+    await waitFor(() => expect(screen.getByTestId('task-run-t_parent')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('task-run-t_parent'));
+
+    await waitFor(() => expect(calls.some((c) => c.url.includes('/v2/execution/spawn'))).toBe(true));
+    expect(calls.some((c) => c.method === 'POST' && /\/v2\/spaces\/.*\/projects$/.test(c.url))).toBe(false);
+  });
+
   it('surfaces a spawn failure instead of a Run button that does nothing', async () => {
     // A Run that silently no-ops is indistinguishable from a slow spawn, and
     // there is nothing on screen to read. Resolution failures must be visible.
-    stubNode(ROWS, { projects: [] });
+    stubNode(ROWS, { projects: [], linked: [] });
     render(panel());
     await waitFor(() => expect(screen.getByTestId('task-run-t_parent')).toBeTruthy());
     fireEvent.click(screen.getByTestId('task-run-t_parent'));

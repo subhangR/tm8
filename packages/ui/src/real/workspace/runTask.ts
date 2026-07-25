@@ -30,24 +30,20 @@ import type { RealFacade, Tm8Project } from '../RealFacade';
 import { SESSION_SPAWNED_EVENT, type SessionSpawnedDetail } from '../tm8Kinds';
 
 /**
- * Pick the project to spawn into.
+ * Pick the project to spawn into, from an ALREADY SPACE-SCOPED list.
  *
  * Trusted only — `execution.spawn` rejects untrusted projects, so offering one
  * would guarantee a failed spawn. Where several are trusted the first is taken
  * deterministically (the server returns a stable order) rather than prompting:
  * maestro does not prompt here, and an operator who has trusted several
  * projects has already said yes to each of them.
+ *
+ * Returns `null` rather than throwing when nothing qualifies, because "this
+ * space has no usable project yet" is a recoverable state — see `runTask`,
+ * which links one instead of dead-ending.
  */
-export function resolveProject(projects: readonly Tm8Project[]): Tm8Project {
-  const trusted = projects.filter((p) => p.trust === 'trusted');
-  if (trusted.length === 0) {
-    throw new Error(
-      projects.length === 0
-        ? 'no projects are registered on this node — create one before running a task'
-        : 'no TRUSTED project is registered — execution.spawn refuses untrusted projects',
-    );
-  }
-  return trusted[0]!;
+export function resolveProject(projects: readonly Tm8Project[]): Tm8Project | null {
+  return projects.find((p) => p.trust === 'trusted') ?? null;
 }
 
 export interface RunTaskResult {
@@ -68,17 +64,45 @@ export async function runTask(
   taskId: EntityId,
   spaceId: string,
 ): Promise<RunTaskResult> {
-  // Both reads are needed before the spawn and neither depends on the other.
-  const [projects, members] = await Promise.all([
-    facade.listProjects(),
+  // SPACE-SCOPED, and this is the bug fix. `execution.spawn` requires the
+  // project to be LINKED to the task's space; the unfiltered list is every
+  // project on the NODE, so resolving from it picked a project linked to some
+  // OTHER space and the server refused with "project … is not linked to this
+  // space". That is precisely how it blocked the user.
+  const [linked, members] = await Promise.all([
+    facade.listProjects(spaceId),
     facade.queryCollection({ spaceId, kinds: ['team_member'], limit: 50 }),
   ]);
-
-  const project = resolveProject(projects);
 
   const teamMember = members.page.items[0];
   if (!teamMember) {
     throw new Error('no team member (persona) exists in this space — create one before running a task');
+  }
+
+  let project = resolveProject(linked);
+
+  if (!project) {
+    // NOTHING USABLE IS LINKED YET — link a trusted project rather than
+    // dead-ending. Defensible without stretching: the operator explicitly
+    // trusted this project, and is now pressing Run on a task in this space.
+    // Those two acts together are the consent that linking represents, and
+    // maestro would simply have used its ambient project here.
+    //
+    // Note what is NOT being relaxed: trust. An untrusted project is still
+    // refused, by this function and independently by the server.
+    const candidate = resolveProject(await facade.listProjects());
+    if (!candidate) {
+      throw new Error(
+        'no trusted project exists on this node — create or trust one before running a task',
+      );
+    }
+    await facade.linkProject(spaceId, candidate.id);
+    project = candidate;
+  } else {
+    // Already linked. `projects.link` is IDEMPOTENT (verified by live call: a
+    // second link answers 200, not a conflict), so re-linking here would be
+    // harmless — it is skipped anyway to keep the common path one call cheaper
+    // and to avoid writing on a read-shaped action.
   }
 
   const result = await facade.spawnSession({

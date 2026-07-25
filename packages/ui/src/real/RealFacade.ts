@@ -109,7 +109,7 @@ export interface ExecutionControl {
   }): Promise<CommandResult>;
   promptSession(sessionId: EntityId, message: string, ctx?: CommandContext): Promise<CommandResult>;
   terminateSession(sessionId: EntityId, ctx?: CommandContext): Promise<CommandResult>;
-  listProjects(): Promise<Tm8Project[]>;
+  listProjects(spaceId?: SpaceId): Promise<Tm8Project[]>;
   createProject(input: { name: string; workingDir: string; trust?: 'trusted' | 'untrusted' }): Promise<Tm8Project>;
   linkProject(spaceId: SpaceId, projectId: string): Promise<void>;
   createSpace(name: string): Promise<{ space: SpaceSummary; memberId?: EntityId }>;
@@ -448,8 +448,23 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
     );
   }
 
-  listProjects(): Promise<Tm8Project[]> {
-    return this.client.get<Tm8Project[]>('/v2/projects');
+  /**
+   * `projects.list`, optionally scoped to ONE SPACE's linked projects.
+   *
+   * The `spaceId` filter is not decoration — it is the difference between a
+   * spawn that works and one the server refuses. `execution.spawn` requires the
+   * project to be LINKED to the task's space (`space_projects`), and the
+   * unfiltered list is every project on the NODE. Resolving a run target from
+   * the unfiltered list picks a project that is very often linked to some OTHER
+   * space, and the spawn dies with "project … is not linked to this space" —
+   * which is exactly how it shipped and blocked the user.
+   *
+   * There is no `projects.listForSpace` in the catalog, so this looked
+   * unavailable; the filter was found by calling the endpoint rather than by
+   * reading the catalog, and it works today.
+   */
+  listProjects(spaceId?: SpaceId): Promise<Tm8Project[]> {
+    return this.client.get<Tm8Project[]>(`/v2/projects${qs({ spaceId })}`);
   }
 
   /**
