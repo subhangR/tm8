@@ -1,8 +1,8 @@
 # tm8 — Architecture Doc Set (Combined Edition)
 
-**Assembled:** 2026-07-25 (regenerated: AM-1/T-D21 no-Tauri amendment recorded) · Concatenation of docs 00–09. The individual files remain the normative sources; running build state lives in tm8/STATE.md.
+**Assembled:** 2026-07-25 (regenerated: AM-1 in-place rewrites P0-5, T-D22/AM-2 recorded, 08 resolution addendum, 10-SECURITY-MODEL adopted) · Concatenation of docs 00–10. Individual files normative; running build state in tm8/STATE.md.
 
-**Contents:** 00-VISION · 01-LAWS · 02-NODE-AND-GATEWAY · 03-ENTITY-GRAPH-DELTAS · 04-EXECUTION-TRANSPLANT · 05-DECISIONS · 06-SEQUENCING-AND-REVIEW · 07-ARCHITECTURE-REVIEW · 08-AMENDMENT-VERIFICATION · 09-IMPLEMENTATION-PLAN
+**Contents:** 00-VISION · 01-LAWS · 02-NODE-AND-GATEWAY · 03-ENTITY-GRAPH-DELTAS · 04-EXECUTION-TRANSPLANT · 05-DECISIONS · 06-SEQUENCING-AND-REVIEW · 07-ARCHITECTURE-REVIEW · 08-AMENDMENT-VERIFICATION · 09-IMPLEMENTATION-PLAN · 10-SECURITY-MODEL
 
 
 ---
@@ -330,7 +330,7 @@ File blobs: local disk under the node's data dir (laptop) / object storage or di
 
 # tm8 — The Execution Transplant
 
-**Status:** FINAL (2026-07-25) — amended per `07-ARCHITECTURE-REVIEW.md` (R16–R20, R27–R29; source-audit corrections applied); verified per `08-AMENDMENT-VERIFICATION.md` (fixes F5, F6 applied). Execution (running agent sessions) is the one capability not specified by the Collab V2 corpus. The true lifts (PTY host, WS engine, terminal UI, Tauri plumbing, prompt composition — audited portable) are **transplanted, never rewritten**; spawn/manifest is a **bounded re-authoring with the old code as behavioral spec** [R27]. This doc is the corrected inventory.
+**Status:** FINAL (2026-07-25) — amended per `07-ARCHITECTURE-REVIEW.md` (R16–R20, R27–R29; source-audit corrections applied); verified per `08-AMENDMENT-VERIFICATION.md`; **rewritten in place for AM-1/T-D21 (no Tauri — tm8 is server + web only; server-side PTY is the only spawn path)**. Execution (running agent sessions) is the one capability not specified by the Collab V2 corpus. The true lifts (PTY host, WS engine, terminal UI, prompt composition — audited portable) are **transplanted, never rewritten**; spawn/manifest is a **bounded re-authoring with the old code as behavioral spec** [R27]. This doc is the corrected inventory.
 
 ---
 
@@ -340,10 +340,10 @@ File blobs: local disk under the node's data dir (laptop) / object storage or di
 
 | Asset | Why it's load-bearing |
 |---|---|
-| **PTY host** (server-side pty management) | node-pty must run under **node, not bun** (onData never fires under bun; bun strips spawn-helper exec bit). 16ms output-frame coalescing. `MAESTRO_PTY_HOST=server` mode (server-hosted PTY — required for thin clients/mobile, and the basis of hosted-workspace sessions). |
+| **PTY host** (server-side pty management) | node-pty must run under **node, not bun** (onData never fires under bun; bun strips spawn-helper exec bit). 16ms output-frame coalescing. What was `MAESTRO_PTY_HOST=server` mode in old maestro is **the architecture** in tm8 (T-D21): all sessions spawn on the server PTY host — laptop, hub, and hosted workspaces are the same path; there is no client-side spawn. |
 | **WS bridge** (batching, per-entity throttling, subscription filtering, immediate bypass for spawn/modal) | The *engine* lifts cleanly behind its event-bus seam. **Budgeted delta [R28]:** ~40% of the module (~150–190 LOC) is policy hard-wired to the old entity taxonomy — immediate-bypass lists, per-entity throttle tables, subscription families, namespace filtering — and is a deliberate small rewrite (~200 LOC) against the WorkspaceEvent + `work_session` vocabulary. Semantically load-bearing (spawn/modal immediacy is what makes the desktop feel right). One socket per client for graph events *and* stream frames. |
-| **Terminal UI components** | xterm setup, write scheduler, WebGL-on-web with DOM fallback (WebGL/Canvas addons crash in the Tauri/StrictMode combination — keep the fallback logic exactly), unmount-terminals-of-exited-sessions memory work, bounded log strips. |
-| **Tauri shell + spawn plumbing** | spawn_request event → Tauri spawns terminal with env vars + manifest path → CLI `worker init` boots the agent. Mechanism unchanged. |
+| **Terminal UI components** (browser app) | xterm setup, write scheduler, WebGL renderer on Chromium with DOM fallback, unmount-terminals-of-exited-sessions memory work, bounded log strips. tm8 is web-only (T-D21); the lifted renderer path is the one old maestro already shipped on web. |
+| **Spawn wire contract** | The `session:spawn` payload shape (session, command, cwd, envVars, manifest path, ids, spawn provenance) is preserved **verbatim** as the internal server→UI contract [R29]: the server PTY host executes the spawn, the UI receives the event over the WS bridge and attaches a terminal to the session's stream, and CLI `worker init` boots the agent inside the server-hosted PTY. (Old maestro's Tauri-side spawn handler is **not** transplanted — T-D21 removed the client-spawn path entirely.) |
 
 ### 1.2 Re-authored with behavioral parity — bounded build, NOT a lift [R27]
 
@@ -363,7 +363,7 @@ spawn(taskIds, teamMemberId, mode) — one transaction through the contract:
 
 Report-back writes become graph appends: progress → messages anchored to the work_session/task; status → work commands; PR → link-pr command. Session timeline is retired in favor of anchored messages + activity (inherited law: one message shape).
 
-**Single-writer status [R29]:** today session status has 3+ independent writers (create route, PTY host on exit, stop route, agent-side REST flips). In tm8 every transition funnels through one function in the execution block → one command → one WorkspaceEvent. **Preserved integration shape [R29]:** the Tauri handler consumes an exact `session:spawn` payload (session, command, cwd, envVars, manifest path, ids, spawn provenance) — preserve it verbatim or desktop spawn breaks. **Status chattiness [R20]:** idle-detection flapping is debounced in the execution block *before* touching the graph — status is graph state; keystroke-grade liveness never becomes entity writes. **Skills/spells feed the manifest from the graph [R19]:** the spawn transaction renders `equips`-edged spell/skill content into the manifest (replacing filesystem scope-loading); the hardened spell *engine* (gating, ensembles, notify) is homed in the **server block** as a WorkspaceEvent-driven service (see 06, "Homes for the completeness holes").
+**Single-writer status [R29]:** today session status has 3+ independent writers (create route, PTY host on exit, stop route, agent-side REST flips). In tm8 every transition funnels through one function in the execution block → one command → one WorkspaceEvent. **Preserved integration shape [R29]:** the `session:spawn` payload (session, command, cwd, envVars, manifest path, ids, spawn provenance) is preserved verbatim as the server→UI wire contract; spawn executes on the server PTY host (T-D21), the UI only attaches. **Status chattiness [R20]:** idle-detection flapping is debounced in the execution block *before* touching the graph — status is graph state; keystroke-grade liveness never becomes entity writes. **Skills/spells feed the manifest from the graph [R19]:** the spawn transaction renders `equips`-edged spell/skill content into the manifest (replacing filesystem scope-loading); the hardened spell *engine* (gating, ensembles, notify) is homed in the **server block** as a WorkspaceEvent-driven service (see 06, "Homes for the completeness holes").
 
 ### 1.3 Replaced (deliberately)
 
@@ -397,7 +397,7 @@ The adapter is sugar over the operation catalog (T-L12) and ages out as prompts 
 
 - Run the server's PTY code under node; never bun (node-pty incompatibilities).
 - Never run parallel UI builds (vite SIGTERM storm); verify with scoped `tsc -b`.
-- WebGL xterm addon: web/Chromium only, DOM fallback elsewhere; no Canvas addon in Tauri/StrictMode.
+- WebGL xterm renderer on Chromium, DOM fallback otherwise (tm8 is browser-only per T-D21; the old Tauri addon-crash lesson survives as: never assume a GPU renderer, always keep the DOM fallback).
 - Server test suites: `--forceExit` (open-handle hangs).
 - Terminal perf: coalesce PTY output into 16ms frames server-side; bound client-side log memory; unmount exited terminals.
 - Spawned workers get bypass permissions (no prompt stalls); parallel workers need disjoint working trees (worktree-per-worker or package-disjoint scopes).
@@ -444,12 +444,13 @@ tm8 v1 replaces local maestro when: spawn from a task (any team_member persona, 
 | T-D11 | **Custom entity kinds**: `entity_kinds` registry as data + shared jsonb detail table, schema-validated; all universal capabilities free at the envelope; namespaced (`c:`); no custom commands/triggers; promotion to core = migration (T-L4). | The Notion-databases move grounded in the graph; mirrors `x:` edge-type promotion. |
 | T-D12 | **Streams invariant** (T-L10): live media announced/authorized through the graph, delivered peer↔home-server over the WS bridge, gateway relays as dumb pipe, never stored. Terminal *sharing/broadcast* = explicit act, later feature, same skeleton. Session record = transcript artifact, not byte recording. | Keeps the DB out of hot paths; coheres today's terminals with future screen-share-like features. |
 | T-D13 | **Contract is the seam; Postgres is the implementation** (T-L11). Local = bundled native Postgres sidecar managed by tm8-server; PGlite = watched fallback; SQLite port rejected. | "Any database" abstraction forfeits triggers/CTEs/GIN/RLS — the machinery the design leans on. One code path laptop↔hub. |
-| T-D14 | **tm8 v1 scope = graph engine + execution** — a full local-maestro replacement that is natively a collab space. *Amended per R21/R27:* v1 is honestly **one from-contract build** (the graph engine + facade, implementing the api-design contract fresh with the branch as crib) **+ one transplant** (execution: PTY host, WS engine, terminal UI, Tauri plumbing, prompt composition lift as-is; spawn/manifest is a bounded ~1.5–2k-LOC re-authoring with the old code as behavioral spec). Old-maestro bridge/coexistence is a migration convenience, not a required phase. | The audited lifts carry the scar tissue; the re-authoring is bounded and well-specified (04 §1.2). |
+| T-D14 | **tm8 v1 scope = graph engine + execution** — a full local-maestro replacement that is natively a collab space. *Amended per R21/R27:* v1 is honestly **one from-contract build** (the graph engine + facade, implementing the api-design contract fresh with the branch as crib) **+ one transplant** (execution: PTY host, WS engine, terminal UI, prompt composition lift as-is — client-spawn/Tauri path excluded per T-D21; spawn/manifest is a bounded ~1.5–2k-LOC re-authoring with the old code as behavioral spec). Old-maestro bridge/coexistence is a migration convenience, not a required phase. | The audited lifts carry the scar tissue; the re-authoring is bounded and well-specified (04 §1.2). |
 | T-D15 | **Agent CLI = the graph CLI** (space-scoped, inherited command tree) + a **compat adapter covering the worker+coordinator core loop** (the R18 frozen list in 04 §1.3 — incl. `session spawn` and `modal`) as sugar over graph ops, aging out as prompts migrate. | Protects every tuned prompt/skill through transition; scope corrected per R18 (the runtime surface is ~54 endpoints, not six verbs). |
 | T-D16 | **Full superset everywhere**: local spaces get channels, points, leaderboards — the local UI is literally the collab UI with one member. One KindRegistry, one code path. | An empty channel costs nothing; trimmed registries rot the symmetry. |
 | T-D17 | **Space ↔ projects is many-to-many**; workspace = root container of one server instance (one owner); space = sharing/permission boundary; projects = linked resources. Supersedes "one space per project" (remains the sensible local default convention). | |
 | T-D18 | **In-flight work disposition**: Atlas's UI waves run to completion in the current worktree, then the module transplants to tm8-ui (built self-contained for exactly this). The api-design docs are inherited as tm8's API contract (s/maestro-server/tm8-server/ + T-D3 auth delta). The backend branch is *reference*; tm8 re-derives a clean migration sequence per api-design 01 §11 (no UID-bypass history, no Supabase-auth assumptions). Collab V1 Firestore retires with old maestro. | Nothing in flight is wasted; the branch's toxic history (bypass migration) never enters the new repo. |
 | T-D19 | **Architecture review gate before implementation**: a Fable 5 reviewer session reads the full corpus + this doc set and challenges it; implementation planning for the tm8 repo begins only after the review is resolved and the architecture is finalized. | User directive, 2026-07-25. |
+| T-D22 | **AM-2 (2026-07-25): the user-sanctioned implementation review (sess_1784945489792_14ws8ejrk, CONDITIONAL GO) is adopted.** Substance: (a) **contract amendments before migration freeze** — first-class `projects` resource (`space_projects` + `projects.*` operations), `files.*` blob-lifecycle operations, WorkspaceEvent gains a common envelope `{spaceId, seq, occurredAt, schemaVersion, clientMutationId}`, execution-governance minimums; (b) **`10-SECURITY-MODEL.md`** threat model (Vega-authored, adopted into the master corpus as doc 10; tm8 copy is source): loopback-only default bind, Host allowlist vs DNS rebinding, WS Origin checks, CSRF posture, CLI/agent bearer tokens scoped to team_member identity, spawn-path discipline (server-computed cwd, symlink-resolved containment), project trust levels, prompt-injection containment via server-side per-persona command permissions, secrets-never-in-Postgres, blob path/checksum/nosniff, backup incl. blobs with tested restore, 7-point scripted acceptance folded into gate G1A; (c) **sequencing restructure** — Phase 1A vertical slice (space+project → task → spawn server PTY → prompt delivery → progress → PR link → complete+transcript → restart/recovery, with security + perf acceptance) BEFORE platform completeness; 1B adds channels/collections/custom kinds/points + basic Postgres FTS behind `search.query` (**partially un-defers D12/DEV-13: search enters at 1B as Postgres FTS**, palette upgrade accordingly) + minimal old-maestro import. Full normative text in tm8/STATE.md. | Reviewer-driven; user-sanctioned. Master corpus records the decision; tm8 STATE.md carries the running detail. |
 | T-D21 | **AM-1 (user-directed, mid-W0, 2026-07-25): NO TAURI — tm8 is server + web only.** `apps/desktop` dropped from the scaffold. The server-side PTY host is the **only** spawn path (the `session:spawn` payload contract is preserved verbatim on the server path per R29 — it becomes an internal server↔UI contract, no longer a Tauri handler shape). The UI is a browser app: Vite dev on 4611, production bundle served by tm8-server on 4610. Terminal rendering: xterm WebGL on Chromium + DOM fallback, unmount-exited-terminals, bounded log memory (the Tauri/StrictMode WebGL caveat is moot; the web renderer path is the one that already shipped in old maestro). Consequences: 04's "Tauri shell + spawn plumbing" lift row is void; Draco's lift scope = PTY host + terminal components only; `MAESTRO_PTY_HOST=server` stops being a mode and becomes the architecture; mobile (Phase 3) and hosted workspaces (Phase 2) are strengthened (they always needed the server path). G3 terminal-parity bar unchanged. Recorded in tm8/STATE.md by Vega; master corpus updated here. | Simplifies distribution (no app bundling/signing), one spawn path instead of two, browser-first matches the hub/thin-client future. |
 | T-D20 | **Review adjudication (2026-07-25):** `07-ARCHITECTURE-REVIEW.md` verdict GO accepted. **R1–R13, R15–R29 accepted** and folded into docs 00–06 (amendment markers `[Rn]` inline). **R14 (push-notification transport) DEFERRED by the user** — the outbox stays transport-agnostic (`channel` column, workers per transport); no transport is chosen now; nothing in v1 needs one (local nodes use in-app + OS-native desktop notifications). A second Fable 5 reviewer verifies the amendments before the doc set is stamped FINAL. Key doc-changing accepts: R1 (identity into the server block, every composition), R2 (per-transaction identity claims; JWTs only at bridge boundaries), R3 (bridge carries the full catalog; asymmetry binds the pulled-projection discipline), R7–R9 (custom-kind keying/scalars-only/schema-evolution), R16–R18 (`execution.*` catalog family; `session prompt` = PTY delivery; adapter = worker+coordinator core loop), R21 (v1 = one from-contract build + one transplant; M1–M3), R27–R29 (spawn/manifest re-authoring; WS-policy re-map; single-writer status). | Amendments applied by sess_1784931993141_0y6d4fs4v; verification reviewer to confirm fidelity. |
 
@@ -470,7 +471,7 @@ Push dispatcher = hub-side worker, Phase 2+, transport deferred (T-D20). Mobile 
 ## 1. Phases (architecture-level)
 
 **Phase 1 — tm8 v1: the node (one from-contract build + one transplant) [R21].**
-Scope: graph engine on Postgres (clean migration sequence re-derived from api-design 01 §11 + tm8 deltas: work_session, collection, entity_kinds/custom_entities, native identity, `execution.*` catalog family) — this is a **full implementation of the api-design contract written fresh with the branch as a crib** (the branch lacks walk, EntityDetail projection, delete/restore, invites, saved views, leaderboard, versions-read, link-pr, event push, universal idempotency); tm8-server facade (entities grammar, commands, WorkspaceEvent over WS, keyset cursors, error taxonomy, command ledger); bundled Postgres sidecar (R15 operational rules: pinned major, backup-before-migrate, pg_dump export, PG18+/vendored uuidv7); execution per 04 (lifts + R27 SpawnService re-authoring + R17 prompt delivery + R28 WS-policy re-map); graph CLI + R18 compat adapter; tm8-ui = transplanted Collab V2 module + terminal components + Tauri shell; single-user auth (auto-owner).
+Scope: graph engine on Postgres (clean migration sequence re-derived from api-design 01 §11 + tm8 deltas: work_session, collection, entity_kinds/custom_entities, native identity, `execution.*` catalog family) — this is a **full implementation of the api-design contract written fresh with the branch as a crib** (the branch lacks walk, EntityDetail projection, delete/restore, invites, saved views, leaderboard, versions-read, link-pr, event push, universal idempotency); tm8-server facade (entities grammar, commands, WorkspaceEvent over WS, keyset cursors, error taxonomy, command ledger); bundled Postgres sidecar (R15 operational rules: pinned major, backup-before-migrate, pg_dump export, PG18+/vendored uuidv7); execution per 04 (lifts + R27 SpawnService re-authoring + R17 prompt delivery + R28 WS-policy re-map); graph CLI + R18 compat adapter; tm8-ui = transplanted Collab V2 module + terminal components as a browser app served by tm8-server (T-D21 — no Tauri, no desktop shell); single-user auth (auto-owner). Sequencing within Phase 1 is restructured by T-D22: Phase 1A vertical slice first, 1B platform completeness (normative order in tm8/STATE.md).
 Internal milestones [R21]: **M1** — graph engine passes a **headless contract conformance suite** (the UI build's mock-facade contract tests, re-pointed at tm8-server: a real inherited asset, treated as a deliverable). **M2** — tm8-ui swaps MockFacade→real facade (adapter-only per T-D18). **M3** — execution to 04 §7 parity.
 Acceptance: 04 §7 execution parity + the five golden workflows from the UI brief running against the real backend (not mock).
 
@@ -493,7 +494,6 @@ tm8/  (bun workspace monorepo)
   packages/gateway/     phase 2 (ported maestro-gateway Design A)
   packages/cli/         graph CLI + worker compat adapter
   packages/ui/          the entity-component UI (transplanted collab-v2 module) + terminal components
-  apps/desktop/         Tauri shell
   db/migrations/        one clean sequence (no legacy history)
   docs/                 this doc set + inherited corpus snapshot
 ```
@@ -851,11 +851,23 @@ All other references checked and valid: 06 Phase 1 and M3 correctly point at **0
 
 ---
 
+## Resolution addendum (2026-07-25, design session sess_1784931993141_0y6d4fs4v)
+
+The FAIL verdict above was **narrow and is now resolved**; this addendum is the closing record so the doc no longer contradicts the set's FINAL stamp:
+
+1. **F1, F2 (blocking)** — applied same-day: T-D6 reworded to the R1 gateway scope (routing + relay + spawner + remote-facing auth, never the primary account store); the 02 §2 bridge row's "never does" now reads "writes outside the operation catalog; any automated write-back from a pulled projection (T-L6b)". Spot-check per this doc's own guidance ("no second full pass") completed.
+2. **F3–F6 (nits)** — applied: T-D15 points at the R18 frozen list; 04 §2 / execution.spawn §5 cross-references corrected; 06 homes promoted to a proper heading; 05 status updated.
+3. **Post-FINAL in-place rewrites** — per AM-1/T-D21 (no Tauri) the overlay amendments flagged as P0-5 by the tm8 implementation review were replaced with in-place rewrites across 04 (lift table, R29 wire-contract wording, §4 lesson), 06 (Phase-1 scope, repo shape), and 09 (definition of done, scaffold, M2/M3, wave table). No normative Tauri requirement remains anywhere in docs 00–09.
+
+**Closing verdict: PASS — the FINAL stamp on docs 00–06 (and the amended 09) stands.** Subsequent amendments are tracked as decision-log rows (T-D21, T-D22) with in-place rewrites, never overlay notes.
+
+---
+
 <!-- ======================= 09-IMPLEMENTATION-PLAN.md ======================= -->
 
 # tm8 — Phase 1 Implementation Plan (v1: the node)
 
-**Status:** In execution (Vega, sess_1784943069601_y42xw5b9m; tm8 repo + project live). **Amended by AM-1/T-D21 (user-directed, mid-W0): NO TAURI — server + web only.** Read this plan with: `apps/desktop` deleted from §1; every "Tauri shell/spawn plumbing" reference void; server-side PTY host is the only spawn path; UI = browser app (Vite dev 4611, prod served by tm8-server 4610); M2's "desktop shell" deliverable becomes "browser app boots to the workspace UI, sidecar managed by tm8-server". G3 parity bar unchanged. Normative running state lives in tm8/STATE.md.
+**Status:** In execution (Vega, sess_1784943069601_y42xw5b9m; tm8 repo + project live). Rewritten in place for **AM-1/T-D21** (no Tauri — server + web only; server-side PTY is the only spawn path). **AM-2/T-D22** (implementation-review adoption) restructures sequencing: a **Phase 1A vertical slice** (space+project → task → spawn → prompt delivery → progress → PR link → complete+transcript → restart/recovery, with security + perf acceptance) lands **before** platform completeness; **1B** adds channels/collections/custom kinds/points, basic Postgres FTS behind `search.query`, and minimal old-maestro import. This doc remains the content reference for the M-milestones; **execution order and the AM-2 contract amendments are normative in tm8/STATE.md** (+ 10-SECURITY-MODEL.md, Vega-authored).
 **Date:** 2026-07-25
 **Author:** Design session `sess_1784931993141_0y6d4fs4v` (user-directed).
 **Scope:** Phase 1 only — tm8 v1 per T-D14/R21: **one from-contract build** (graph engine + facade) **+ one transplant** (execution), shipping a full local-maestro replacement that is natively a collab space. Phases 2–4 (hub/gateway, migration+mobile, federation) get their own plans when Phase 1's gates close.
@@ -865,7 +877,7 @@ All other references checked and valid: 06 Phase 1 and M3 correctly point at **0
 
 ## 0. Definition of done (Phase 1)
 
-A user installs the tm8 desktop app on a laptop and, with no other infrastructure:
+A user runs tm8 on a laptop — one command starts tm8-server (which starts the Postgres sidecar and serves the browser UI) — and, with no other infrastructure:
 
 1. Opens their workspace, creates spaces, tasks, docs, channels, team-member personas, custom kinds — the full entity-graph UI (five golden workflows pass against the real backend, not mock).
 2. Spawns an agent session from a task (any persona, any mode) → terminal opens → agent boots with correct manifest/prompt → posts progress into the task thread → links a PR → completes with award flow — at terminal latency/stability parity with old maestro (04 §7 acceptance).
@@ -883,7 +895,6 @@ tm8/                          # new repo, bun workspace
   packages/execution/         # PTY host (lift), SpawnService (build), manifest composition
   packages/cli/               # graph CLI + compat adapter + manifest reader (worker init)
   packages/ui/                # transplanted collab-v2 module + terminal components + shell glue
-  apps/desktop/               # Tauri shell (spawn plumbing preserved verbatim)
   db/migrations/              # ONE clean sequence (no legacy history)
   docs/                       # snapshot: tm8-architecture 00-08 + collab-v2-api-design + UI contract
   tools/conformance/          # the contract conformance suite (M1 gate artifact)
@@ -947,7 +958,7 @@ Accounts + sessions + `can_act_as` in the server block, every composition (R1). 
 - **Transplant** `maestro-ui/src/collab-v2/` → `packages/ui` after Atlas's W5 completes (T-D18). Mechanical move + import-path pass; the module was built self-contained.
 - **`RealFacade implements CollabFacade`** over tm8-server HTTP + WS: the seam the UI plan promised ("real backend later = new class"). Mock stays available behind a flag as demo/simulation mode.
 - **KindRegistry runtime path** (review §12): generated default renderers for `entity_kinds` rows (custom kinds) + registry entries for `work_session` (panel = entity chrome; terminal canvas exempt per T-L10/R16) and `collection`.
-- **Desktop shell:** Tauri app boots to the workspace UI; auth = auto-owner; sidecar starts with the app.
+- **Browser app boot:** tm8-server serves the production UI bundle (4610); Vite dev on 4611; auth = auto-owner; sidecar managed by tm8-server (T-D21).
 
 **Gate G2:** five golden workflows in the running app against the real backend; deep-links/panel stack/back-forward hold; no mock imports outside the demo flag; typecheck + vitest clean.
 
@@ -955,7 +966,7 @@ Accounts + sessions + `can_act_as` in the server block, every composition (R1). 
 
 Per 04 (amended). In order:
 
-1. **Lifts:** PTY host (+`MAESTRO_PTY_HOST=server` mode) into `packages/execution`; WS-bridge engine into `packages/server` with the **policy re-map** written fresh against WorkspaceEvent + `work_session` (R28); terminal components into `packages/ui`; Tauri spawn plumbing into `apps/desktop` with the `session:spawn` payload preserved **verbatim** (R29).
+1. **Lifts:** PTY host into `packages/execution` (server-hosted PTY is the only spawn path — T-D21); WS-bridge engine into `packages/server` with the **policy re-map** written fresh against WorkspaceEvent + `work_session` (R28); terminal components into `packages/ui`; the `session:spawn` payload preserved **verbatim** as the server→UI wire contract (R29).
 2. **SpawnService (the R27 build, ~1.5–2k LOC):** graph reads via contract → work_session + edges + manifest (in-process composition; `session_manifests`; model-power as model-profile data) → spawn_request (immediate-class). Behavioral spec = old route + subprocess, kept side-by-side during the build for parity checking.
 3. **`execution.*` family live** (R16), incl. **`execution.prompt` PTY delivery** (R17): per-hosted-session subscription → inject → mark delivered. Single-writer status transitions + idle debounce (R29/R20).
 4. **CLI:** graph command tree (api-design 03 §3.1) + **compat adapter** per the R18 frozen list — *preceded by the prompt-corpus grep* (seed skills, spells, identity/commands/spawner prompt sections, user skills) to confirm/adjust the list before freezing. Prompt composer transplant: manifest-reading only; command catalog re-targeted to the graph grammar + adapter verbs.
@@ -973,7 +984,7 @@ Ground rules inherited verbatim from the Collab V2 UI orchestration (proven this
 | W0 | lead alone | §2 M0: scaffold, contract, conformance harness, migration runner | G0 |
 | W1 | 3 parallel | db/migrations+RPCs+RLS · identity block · sidecar+scheduler ops | migrations apply clean; RLS negative tests; identity unit tests |
 | W2 | 2–3 parallel | facade+derived truth · event mapper+WS · conformance completion | **G1 (M1)** |
-| W3 | 2 parallel | UI transplant+RealFacade · desktop shell/boot | **G2 (M2)** |
+| W3 | 2 parallel | UI transplant+RealFacade · browser-app boot/serving | **G2 (M2)** |
 | W4 | 3 parallel | execution lifts+policy re-map · SpawnService+`execution.*` · CLI+adapter (+grep first) | integration checkpoints |
 | W5 | lead + verifier | spell engine port, transcript, acceptance runs, perf parity measurement | **G3 (Phase 1 done)** |
 
@@ -1015,3 +1026,79 @@ Dependencies on in-flight work: W3 waits on Atlas's W5 (UI complete) — if tm8 
 | R26 | §3.3 scheduler |
 | R27 | §5.2 SpawnService as a planned build |
 | R28 | §5.1 policy re-map |
+
+---
+
+<!-- ======================= 10-SECURITY-MODEL.md ======================= -->
+
+# tm8 — Security Model (v1: the local node, server + web)
+
+**Status:** DRAFT v1 (2026-07-25) — authored by Vega per AM-2 P0-4 (adopted implementation review). Scope: Phase 1 local node under AM-1/T-D21 (no Tauri; browser UI on 4611/served bundle + tm8-server on 4610 + sidecar PG on 5442; server-side PTY execution). Phase 2 (gateway/hub/hosted) inherits the seams named in §9 and gets its own hardening pass.
+
+**The core fact this document exists for:** tm8 v1 is a *browser-controlled arbitrary-code-execution system*. The web UI spawns agent sessions that run real shells with the user's credentials on the user's machine. RLS answers "who may read/write which graph rows"; everything else here answers "who may reach the server at all, and what can a reached server be made to do."
+
+## 1. Assets and adversaries
+
+**Assets:** the user's filesystem + shell (via PTY), provider API credentials (Claude/etc.), the graph DB (may contain private work), transcripts/logs/backups, git repositories (possibly with push credentials).
+
+**Adversaries in scope for v1:**
+- A1 Malicious web page in the same browser (drive-by): CSRF, DNS rebinding, WebSocket cross-origin hijack.
+- A2 Other local processes/users on the machine (shared machines): port access, data-dir access.
+- A3 Malicious repository content checked out into a project (compromised deps, hooks, prompt-injection payloads in files an agent reads).
+- A4 Malicious or compromised agent output (prompt-injected agent attempts privileged CLI/API calls).
+- Out of scope v1 (Phase 2+): remote network attackers (server is loopback-only by default), multi-tenant isolation, malicious space members (single-owner node).
+
+## 2. Network binding and transport
+
+- **S1. Loopback-only by default.** tm8-server binds `127.0.0.1:4610`; sidecar PG binds `127.0.0.1:5442`; Vite dev binds `127.0.0.1:4611`. Non-loopback binding (`TM8_BIND`) is an explicit opt-in and **requires token auth (S8) — the server refuses to start non-loopback with auth disabled.**
+- **S2. Host-header allowlist** (DNS-rebinding defense): requests must carry `Host: localhost:4610`, `127.0.0.1:4610`, or an explicitly configured hostname; otherwise `403`. Applies to HTTP and the WS upgrade.
+- **S3. WS Origin check:** the `/v2/ws` upgrade (and any PTY stream socket) rejects browser origins other than the served UI origin(s) (`http://localhost:4610`, `http://localhost:4611` in dev, configured origins otherwise). Non-browser clients (CLI) send no Origin — allowed, they authenticate per S8.
+- **S4. CORS:** same-origin only. No `Access-Control-Allow-Origin: *`, no reflected origins. The UI is served by tm8-server (or the dev server proxies) precisely so cross-origin API access is never needed.
+
+## 3. Browser-facing auth (CSRF posture)
+
+- **S5.** v1 local mode auto-authenticates the owner (T-L7) — but **auto-auth only applies to requests that pass S1–S4** (loopback + Host + Origin discipline). A cross-site form-POST or rebound-DNS request never gets the auto-owner identity.
+- **S6.** If cookies are used for the browser session they are `HttpOnly; SameSite=Strict`; state-changing endpoints additionally require a custom header (`X-TM8-Client`) that simple cross-site requests cannot set. Bearer-token clients (CLI, rigs) are exempt from cookie CSRF rules by construction.
+- **S7.** The poll-fallback endpoint and all `/v2/*` reads obey the same rules — no "harmless" unauthenticated reads; graph reads leak private work.
+
+## 4. Non-browser clients
+
+- **S8. Token auth for CLI/agents:** `tm8` CLI and spawned agents authenticate with a node-issued bearer token (from `auth_sessions`), delivered to agent sessions via the manifest env, scoped to the agent's `team_member` identity (`can_act_as` resolves through the owner, T-L7). Tokens are revocable (session row deletion) and expire per R6 lifecycle.
+- **S9.** The DB claims path stays per R2/T-L11: tm8-server owns the PG connection as a **low-privilege role**, sets `SET LOCAL` claims per transaction; no client ever holds DB credentials; no service-role bypass exists.
+
+## 5. Execution safety (spawn, PTY, worktrees)
+
+- **S10. Spawn only through the catalog.** `execution.spawn` is the sole session-creation path (work_session is excluded from `entities.create`), so RLS + capability gating + the command ledger see every spawn. Governance minimums: per-node concurrent-session cap (config, default 8) → `limit_exceeded`; `execution.terminate` is the universal cancellation path; every `execution.*` command lands in `command_ledger` (audit).
+- **S11. Path discipline.** Session cwd/worktree paths are **server-computed** from the project's registered `workingDir` — never accepted raw from the client. Computed paths must resolve (after symlink resolution) inside the project root or the node's worktree area; otherwise `invalid_input`. Same rule for transcript/blob write paths (§7).
+- **S12. Project trust levels.** A `project` carries `trust: trusted|untrusted` (AM-2). Spawning into an `untrusted` project requires an explicit per-spawn confirmation flag (`confirmUntrusted: true`); manifests for untrusted projects note the trust level so agent prompts can warn. v1 does not sandbox — trust is informed consent, and that is stated honestly in the UI copy.
+- **S13. Prompt injection containment (v1 posture):** agents act with their own `team_member` identity and its command permissions — never with a broader identity; the compat adapter + graph CLI enforce per-persona `command_permissions` server-side (not just in the prompt). Destructive graph ops an agent's persona lacks are `forbidden` regardless of what the model asks for.
+- **S14. Streams.** PTY attach requires `execution.streams.attach` authorization resolved through the graph (T-L10; `share_mode` + membership). Stream sockets obey S2/S3/S8. Frames never touch the DB; `drive` (input) mode is a later, separately-gated permission tier — v1 grants input only to the spawning owner.
+
+## 6. Secrets
+
+- **S15. Secrets never enter Postgres.** Provider API keys live in the OS environment / keychain and are injected into agent processes at spawn time by the execution block; `session_manifests` stores *references* (env var names), never values. Consequence: pg_dump backups are secret-free by construction.
+- **S16. Redaction.** Transcript artifacts and server logs pass a redaction filter (known credential patterns: `sk-`-style keys, bearer headers, `AWS_`/`ANTHROPIC_`/`OPENAI_` env values seen in the clear) before storage. Redaction is best-effort and stated as such; S15 is the real defense.
+
+## 7. Blob I/O safety (files.*)
+
+- **S17.** Blob storage lives under the node data dir at `blobs/spaces/<spaceId>/<uuid>` — server-generated names only; client-supplied filenames are metadata, never paths. Upload requires the same membership RLS as the graph (invariant: graph RLS and blob authz never disagree); size limits and checksum verification on `uploadComplete`; MIME is stored as declared but served with `X-Content-Type-Options: nosniff` and a conservative `Content-Disposition` for non-media types.
+- **S18.** Backups include blobs + registry + transcripts (AM-2): the scheduled backup job pairs `pg_dump` with a blob-dir snapshot; restore is a tested path (G1B acceptance), not a hope.
+
+## 8. Data-dir hygiene
+
+- **S19.** `~/.tm8*` created `0700`; PG `--auth=trust` is acceptable only because PG binds loopback and the dir is user-private — hosted compositions (Phase 2) use password/peer auth provisioned by the gateway.
+- **S20.** Single-instance locking (R15) prevents two servers sharing one data dir; the lock file records pid+port for honest `doctor` diagnostics.
+
+## 9. Phase 2 seams (named, not built)
+
+Remote-facing auth surface (gateway) authenticates against the identity block (R1); bridge JWTs at verifying boundaries (R2); hosted-workspace quotas/isolation (process-per-user per maestro-gateway Design A); bridge fetch-blob authorization. None of this is reachable in v1: there is no remote surface (S1).
+
+## 10. Acceptance (folds into gate G1A)
+
+1. Server refuses non-loopback bind without auth; refuses bad Host; WS upgrade rejects foreign Origin (scripted negative tests in tools/conformance security suite).
+2. Cross-site form-POST and rebound-Host mutation attempts fail (403/401) — rig-scripted.
+3. Spawn path traversal attempts (`../`, symlinked project dir) → `invalid_input` (test).
+4. Untrusted project spawn without `confirmUntrusted` → `forbidden` (test).
+5. Manifest for a session with provider creds present in env contains no secret values (test greps manifest JSON).
+6. Concurrency cap → `limit_exceeded`; terminate mid-run → single-writer transition to `exited` + ledger rows for both commands (test).
+7. Blob upload with wrong checksum rejected; download without membership → `forbidden` (test).

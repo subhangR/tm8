@@ -11,7 +11,7 @@ Push dispatcher = hub-side worker, Phase 2+, transport deferred (T-D20). Mobile 
 ## 1. Phases (architecture-level)
 
 **Phase 1 — tm8 v1: the node (one from-contract build + one transplant) [R21].**
-Scope: graph engine on Postgres (clean migration sequence re-derived from api-design 01 §11 + tm8 deltas: work_session, collection, entity_kinds/custom_entities, native identity, `execution.*` catalog family) — this is a **full implementation of the api-design contract written fresh with the branch as a crib** (the branch lacks walk, EntityDetail projection, delete/restore, invites, saved views, leaderboard, versions-read, link-pr, event push, universal idempotency); tm8-server facade (entities grammar, commands, WorkspaceEvent over WS, keyset cursors, error taxonomy, command ledger); bundled Postgres sidecar (R15 operational rules: pinned major, backup-before-migrate, pg_dump export, PG18+/vendored uuidv7); execution per 04 (lifts + R27 SpawnService re-authoring + R17 prompt delivery + R28 WS-policy re-map); graph CLI + R18 compat adapter; tm8-ui = transplanted Collab V2 module + terminal components + Tauri shell; single-user auth (auto-owner).
+Scope: graph engine on Postgres (clean migration sequence re-derived from api-design 01 §11 + tm8 deltas: work_session, collection, entity_kinds/custom_entities, native identity, `execution.*` catalog family) — this is a **full implementation of the api-design contract written fresh with the branch as a crib** (the branch lacks walk, EntityDetail projection, delete/restore, invites, saved views, leaderboard, versions-read, link-pr, event push, universal idempotency); tm8-server facade (entities grammar, commands, WorkspaceEvent over WS, keyset cursors, error taxonomy, command ledger); bundled Postgres sidecar (R15 operational rules: pinned major, backup-before-migrate, pg_dump export, PG18+/vendored uuidv7); execution per 04 (lifts + R27 SpawnService re-authoring + R17 prompt delivery + R28 WS-policy re-map); graph CLI + R18 compat adapter; tm8-ui = transplanted Collab V2 module + terminal components as a browser app served by tm8-server (T-D21 — no Tauri, no desktop shell); single-user auth (auto-owner). Sequencing within Phase 1 is restructured by T-D22: Phase 1A vertical slice first, 1B platform completeness (normative order in tm8/STATE.md).
 Internal milestones [R21]: **M1** — graph engine passes a **headless contract conformance suite** (the UI build's mock-facade contract tests, re-pointed at tm8-server: a real inherited asset, treated as a deliverable). **M2** — tm8-ui swaps MockFacade→real facade (adapter-only per T-D18). **M3** — execution to 04 §7 parity.
 Acceptance: 04 §7 execution parity + the five golden workflows from the UI brief running against the real backend (not mock).
 
@@ -34,7 +34,6 @@ tm8/  (bun workspace monorepo)
   packages/gateway/     phase 2 (ported maestro-gateway Design A)
   packages/cli/         graph CLI + worker compat adapter
   packages/ui/          the entity-component UI (transplanted collab-v2 module) + terminal components
-  apps/desktop/         Tauri shell
   db/migrations/        one clean sequence (no legacy history)
   docs/                 this doc set + inherited corpus snapshot
 ```

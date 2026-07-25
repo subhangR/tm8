@@ -1,6 +1,6 @@
 # tm8 — Phase 1 Implementation Plan (v1: the node)
 
-**Status:** In execution (Vega, sess_1784943069601_y42xw5b9m; tm8 repo + project live). **Amended by AM-1/T-D21 (user-directed, mid-W0): NO TAURI — server + web only.** Read this plan with: `apps/desktop` deleted from §1; every "Tauri shell/spawn plumbing" reference void; server-side PTY host is the only spawn path; UI = browser app (Vite dev 4611, prod served by tm8-server 4610); M2's "desktop shell" deliverable becomes "browser app boots to the workspace UI, sidecar managed by tm8-server". G3 parity bar unchanged. Normative running state lives in tm8/STATE.md.
+**Status:** In execution (Vega, sess_1784943069601_y42xw5b9m; tm8 repo + project live). Rewritten in place for **AM-1/T-D21** (no Tauri — server + web only; server-side PTY is the only spawn path). **AM-2/T-D22** (implementation-review adoption) restructures sequencing: a **Phase 1A vertical slice** (space+project → task → spawn → prompt delivery → progress → PR link → complete+transcript → restart/recovery, with security + perf acceptance) lands **before** platform completeness; **1B** adds channels/collections/custom kinds/points, basic Postgres FTS behind `search.query`, and minimal old-maestro import. This doc remains the content reference for the M-milestones; **execution order and the AM-2 contract amendments are normative in tm8/STATE.md** (+ 10-SECURITY-MODEL.md, Vega-authored).
 **Date:** 2026-07-25
 **Author:** Design session `sess_1784931993141_0y6d4fs4v` (user-directed).
 **Scope:** Phase 1 only — tm8 v1 per T-D14/R21: **one from-contract build** (graph engine + facade) **+ one transplant** (execution), shipping a full local-maestro replacement that is natively a collab space. Phases 2–4 (hub/gateway, migration+mobile, federation) get their own plans when Phase 1's gates close.
@@ -10,7 +10,7 @@
 
 ## 0. Definition of done (Phase 1)
 
-A user installs the tm8 desktop app on a laptop and, with no other infrastructure:
+A user runs tm8 on a laptop — one command starts tm8-server (which starts the Postgres sidecar and serves the browser UI) — and, with no other infrastructure:
 
 1. Opens their workspace, creates spaces, tasks, docs, channels, team-member personas, custom kinds — the full entity-graph UI (five golden workflows pass against the real backend, not mock).
 2. Spawns an agent session from a task (any persona, any mode) → terminal opens → agent boots with correct manifest/prompt → posts progress into the task thread → links a PR → completes with award flow — at terminal latency/stability parity with old maestro (04 §7 acceptance).
@@ -28,7 +28,6 @@ tm8/                          # new repo, bun workspace
   packages/execution/         # PTY host (lift), SpawnService (build), manifest composition
   packages/cli/               # graph CLI + compat adapter + manifest reader (worker init)
   packages/ui/                # transplanted collab-v2 module + terminal components + shell glue
-  apps/desktop/               # Tauri shell (spawn plumbing preserved verbatim)
   db/migrations/              # ONE clean sequence (no legacy history)
   docs/                       # snapshot: tm8-architecture 00-08 + collab-v2-api-design + UI contract
   tools/conformance/          # the contract conformance suite (M1 gate artifact)
@@ -92,7 +91,7 @@ Accounts + sessions + `can_act_as` in the server block, every composition (R1). 
 - **Transplant** `maestro-ui/src/collab-v2/` → `packages/ui` after Atlas's W5 completes (T-D18). Mechanical move + import-path pass; the module was built self-contained.
 - **`RealFacade implements CollabFacade`** over tm8-server HTTP + WS: the seam the UI plan promised ("real backend later = new class"). Mock stays available behind a flag as demo/simulation mode.
 - **KindRegistry runtime path** (review §12): generated default renderers for `entity_kinds` rows (custom kinds) + registry entries for `work_session` (panel = entity chrome; terminal canvas exempt per T-L10/R16) and `collection`.
-- **Desktop shell:** Tauri app boots to the workspace UI; auth = auto-owner; sidecar starts with the app.
+- **Browser app boot:** tm8-server serves the production UI bundle (4610); Vite dev on 4611; auth = auto-owner; sidecar managed by tm8-server (T-D21).
 
 **Gate G2:** five golden workflows in the running app against the real backend; deep-links/panel stack/back-forward hold; no mock imports outside the demo flag; typecheck + vitest clean.
 
@@ -100,7 +99,7 @@ Accounts + sessions + `can_act_as` in the server block, every composition (R1). 
 
 Per 04 (amended). In order:
 
-1. **Lifts:** PTY host (+`MAESTRO_PTY_HOST=server` mode) into `packages/execution`; WS-bridge engine into `packages/server` with the **policy re-map** written fresh against WorkspaceEvent + `work_session` (R28); terminal components into `packages/ui`; Tauri spawn plumbing into `apps/desktop` with the `session:spawn` payload preserved **verbatim** (R29).
+1. **Lifts:** PTY host into `packages/execution` (server-hosted PTY is the only spawn path — T-D21); WS-bridge engine into `packages/server` with the **policy re-map** written fresh against WorkspaceEvent + `work_session` (R28); terminal components into `packages/ui`; the `session:spawn` payload preserved **verbatim** as the server→UI wire contract (R29).
 2. **SpawnService (the R27 build, ~1.5–2k LOC):** graph reads via contract → work_session + edges + manifest (in-process composition; `session_manifests`; model-power as model-profile data) → spawn_request (immediate-class). Behavioral spec = old route + subprocess, kept side-by-side during the build for parity checking.
 3. **`execution.*` family live** (R16), incl. **`execution.prompt` PTY delivery** (R17): per-hosted-session subscription → inject → mark delivered. Single-writer status transitions + idle debounce (R29/R20).
 4. **CLI:** graph command tree (api-design 03 §3.1) + **compat adapter** per the R18 frozen list — *preceded by the prompt-corpus grep* (seed skills, spells, identity/commands/spawner prompt sections, user skills) to confirm/adjust the list before freezing. Prompt composer transplant: manifest-reading only; command catalog re-targeted to the graph grammar + adapter verbs.
@@ -118,7 +117,7 @@ Ground rules inherited verbatim from the Collab V2 UI orchestration (proven this
 | W0 | lead alone | §2 M0: scaffold, contract, conformance harness, migration runner | G0 |
 | W1 | 3 parallel | db/migrations+RPCs+RLS · identity block · sidecar+scheduler ops | migrations apply clean; RLS negative tests; identity unit tests |
 | W2 | 2–3 parallel | facade+derived truth · event mapper+WS · conformance completion | **G1 (M1)** |
-| W3 | 2 parallel | UI transplant+RealFacade · desktop shell/boot | **G2 (M2)** |
+| W3 | 2 parallel | UI transplant+RealFacade · browser-app boot/serving | **G2 (M2)** |
 | W4 | 3 parallel | execution lifts+policy re-map · SpawnService+`execution.*` · CLI+adapter (+grep first) | integration checkpoints |
 | W5 | lead + verifier | spell engine port, transcript, acceptance runs, perf parity measurement | **G3 (Phase 1 done)** |
 

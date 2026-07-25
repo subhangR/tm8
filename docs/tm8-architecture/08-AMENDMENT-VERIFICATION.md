@@ -76,3 +76,15 @@ All other references checked and valid: 06 Phase 1 and M3 correctly point at **0
 **FAIL — do not stamp FINAL yet.** The amendment quality is high: every accepted R is present, none is semantically diluted at its primary target, the R14 deferral is recorded consistently with no accidental transport commitment, and the 04 renumbering broke nothing. But the sweep missed two consequential edits (F1 in the decision log, F2 in 02's block-responsibility table), each of which reintroduces exactly the pre-review architecture the adjudicated changes removed — a FINAL stamp over either would leave the set self-contradictory on its two headline law changes (R1, R3).
 
 **Path to FINAL:** apply F1 and F2 (two one-line edits; F3–F6 recommended in the same pass), then stamp. Re-verification can be a spot-check of the edited lines; no further full pass is required.
+
+---
+
+## Resolution addendum (2026-07-25, design session sess_1784931993141_0y6d4fs4v)
+
+The FAIL verdict above was **narrow and is now resolved**; this addendum is the closing record so the doc no longer contradicts the set's FINAL stamp:
+
+1. **F1, F2 (blocking)** — applied same-day: T-D6 reworded to the R1 gateway scope (routing + relay + spawner + remote-facing auth, never the primary account store); the 02 §2 bridge row's "never does" now reads "writes outside the operation catalog; any automated write-back from a pulled projection (T-L6b)". Spot-check per this doc's own guidance ("no second full pass") completed.
+2. **F3–F6 (nits)** — applied: T-D15 points at the R18 frozen list; 04 §2 / execution.spawn §5 cross-references corrected; 06 homes promoted to a proper heading; 05 status updated.
+3. **Post-FINAL in-place rewrites** — per AM-1/T-D21 (no Tauri) the overlay amendments flagged as P0-5 by the tm8 implementation review were replaced with in-place rewrites across 04 (lift table, R29 wire-contract wording, §4 lesson), 06 (Phase-1 scope, repo shape), and 09 (definition of done, scaffold, M2/M3, wave table). No normative Tauri requirement remains anywhere in docs 00–09.
+
+**Closing verdict: PASS — the FINAL stamp on docs 00–06 (and the amended 09) stands.** Subsequent amendments are tracked as decision-log rows (T-D21, T-D22) with in-place rewrites, never overlay notes.

@@ -1,6 +1,6 @@
 # tm8 — The Execution Transplant
 
-**Status:** FINAL (2026-07-25) — amended per `07-ARCHITECTURE-REVIEW.md` (R16–R20, R27–R29; source-audit corrections applied); verified per `08-AMENDMENT-VERIFICATION.md` (fixes F5, F6 applied). Execution (running agent sessions) is the one capability not specified by the Collab V2 corpus. The true lifts (PTY host, WS engine, terminal UI, Tauri plumbing, prompt composition — audited portable) are **transplanted, never rewritten**; spawn/manifest is a **bounded re-authoring with the old code as behavioral spec** [R27]. This doc is the corrected inventory.
+**Status:** FINAL (2026-07-25) — amended per `07-ARCHITECTURE-REVIEW.md` (R16–R20, R27–R29; source-audit corrections applied); verified per `08-AMENDMENT-VERIFICATION.md`; **rewritten in place for AM-1/T-D21 (no Tauri — tm8 is server + web only; server-side PTY is the only spawn path)**. Execution (running agent sessions) is the one capability not specified by the Collab V2 corpus. The true lifts (PTY host, WS engine, terminal UI, prompt composition — audited portable) are **transplanted, never rewritten**; spawn/manifest is a **bounded re-authoring with the old code as behavioral spec** [R27]. This doc is the corrected inventory.
 
 ---
 
@@ -10,10 +10,10 @@
 
 | Asset | Why it's load-bearing |
 |---|---|
-| **PTY host** (server-side pty management) | node-pty must run under **node, not bun** (onData never fires under bun; bun strips spawn-helper exec bit). 16ms output-frame coalescing. `MAESTRO_PTY_HOST=server` mode (server-hosted PTY — required for thin clients/mobile, and the basis of hosted-workspace sessions). |
+| **PTY host** (server-side pty management) | node-pty must run under **node, not bun** (onData never fires under bun; bun strips spawn-helper exec bit). 16ms output-frame coalescing. What was `MAESTRO_PTY_HOST=server` mode in old maestro is **the architecture** in tm8 (T-D21): all sessions spawn on the server PTY host — laptop, hub, and hosted workspaces are the same path; there is no client-side spawn. |
 | **WS bridge** (batching, per-entity throttling, subscription filtering, immediate bypass for spawn/modal) | The *engine* lifts cleanly behind its event-bus seam. **Budgeted delta [R28]:** ~40% of the module (~150–190 LOC) is policy hard-wired to the old entity taxonomy — immediate-bypass lists, per-entity throttle tables, subscription families, namespace filtering — and is a deliberate small rewrite (~200 LOC) against the WorkspaceEvent + `work_session` vocabulary. Semantically load-bearing (spawn/modal immediacy is what makes the desktop feel right). One socket per client for graph events *and* stream frames. |
-| **Terminal UI components** | xterm setup, write scheduler, WebGL-on-web with DOM fallback (WebGL/Canvas addons crash in the Tauri/StrictMode combination — keep the fallback logic exactly), unmount-terminals-of-exited-sessions memory work, bounded log strips. |
-| **Tauri shell + spawn plumbing** | spawn_request event → Tauri spawns terminal with env vars + manifest path → CLI `worker init` boots the agent. Mechanism unchanged. |
+| **Terminal UI components** (browser app) | xterm setup, write scheduler, WebGL renderer on Chromium with DOM fallback, unmount-terminals-of-exited-sessions memory work, bounded log strips. tm8 is web-only (T-D21); the lifted renderer path is the one old maestro already shipped on web. |
+| **Spawn wire contract** | The `session:spawn` payload shape (session, command, cwd, envVars, manifest path, ids, spawn provenance) is preserved **verbatim** as the internal server→UI contract [R29]: the server PTY host executes the spawn, the UI receives the event over the WS bridge and attaches a terminal to the session's stream, and CLI `worker init` boots the agent inside the server-hosted PTY. (Old maestro's Tauri-side spawn handler is **not** transplanted — T-D21 removed the client-spawn path entirely.) |
 
 ### 1.2 Re-authored with behavioral parity — bounded build, NOT a lift [R27]
 
@@ -33,7 +33,7 @@ spawn(taskIds, teamMemberId, mode) — one transaction through the contract:
 
 Report-back writes become graph appends: progress → messages anchored to the work_session/task; status → work commands; PR → link-pr command. Session timeline is retired in favor of anchored messages + activity (inherited law: one message shape).
 
-**Single-writer status [R29]:** today session status has 3+ independent writers (create route, PTY host on exit, stop route, agent-side REST flips). In tm8 every transition funnels through one function in the execution block → one command → one WorkspaceEvent. **Preserved integration shape [R29]:** the Tauri handler consumes an exact `session:spawn` payload (session, command, cwd, envVars, manifest path, ids, spawn provenance) — preserve it verbatim or desktop spawn breaks. **Status chattiness [R20]:** idle-detection flapping is debounced in the execution block *before* touching the graph — status is graph state; keystroke-grade liveness never becomes entity writes. **Skills/spells feed the manifest from the graph [R19]:** the spawn transaction renders `equips`-edged spell/skill content into the manifest (replacing filesystem scope-loading); the hardened spell *engine* (gating, ensembles, notify) is homed in the **server block** as a WorkspaceEvent-driven service (see 06, "Homes for the completeness holes").
+**Single-writer status [R29]:** today session status has 3+ independent writers (create route, PTY host on exit, stop route, agent-side REST flips). In tm8 every transition funnels through one function in the execution block → one command → one WorkspaceEvent. **Preserved integration shape [R29]:** the `session:spawn` payload (session, command, cwd, envVars, manifest path, ids, spawn provenance) is preserved verbatim as the server→UI wire contract; spawn executes on the server PTY host (T-D21), the UI only attaches. **Status chattiness [R20]:** idle-detection flapping is debounced in the execution block *before* touching the graph — status is graph state; keystroke-grade liveness never becomes entity writes. **Skills/spells feed the manifest from the graph [R19]:** the spawn transaction renders `equips`-edged spell/skill content into the manifest (replacing filesystem scope-loading); the hardened spell *engine* (gating, ensembles, notify) is homed in the **server block** as a WorkspaceEvent-driven service (see 06, "Homes for the completeness holes").
 
 ### 1.3 Replaced (deliberately)
 
@@ -67,7 +67,7 @@ The adapter is sugar over the operation catalog (T-L12) and ages out as prompts 
 
 - Run the server's PTY code under node; never bun (node-pty incompatibilities).
 - Never run parallel UI builds (vite SIGTERM storm); verify with scoped `tsc -b`.
-- WebGL xterm addon: web/Chromium only, DOM fallback elsewhere; no Canvas addon in Tauri/StrictMode.
+- WebGL xterm renderer on Chromium, DOM fallback otherwise (tm8 is browser-only per T-D21; the old Tauri addon-crash lesson survives as: never assume a GPU renderer, always keep the DOM fallback).
 - Server test suites: `--forceExit` (open-handle hangs).
 - Terminal perf: coalesce PTY output into 16ms frames server-side; bound client-side log memory; unmount exited terminals.
 - Spawned workers get bypass permissions (no prompt stalls); parallel workers need disjoint working trees (worktree-per-worker or package-disjoint scopes).
