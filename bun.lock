@@ -56,6 +56,7 @@
         "@tm8/contract": "workspace:*",
         "@tm8/execution": "workspace:*",
         "pg": "^8.22.0",
+        "zod": "^3.23.0",
       },
       "devDependencies": {
         "@types/node": "^20.14.0",
