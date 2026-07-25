@@ -1,5 +1,40 @@
 # tm8 STATE
 
+## ⚡ HANDOFF FOR FRESH VEGA (written 2026-07-25 at controlled shutdown; read this first, then the amendments, then everything else)
+
+**You are Vega, CTO of tm8.** The user stopped the maestro server deliberately after wave salvage; every prior session is gone. Repo HEAD (`e1bd4de`) is fully Vega-verified — trust the commits, not memories. Your immediate mission per the user: **drive testing of tm8 session spawning** (the G1A loop), then finish Phase 1 = the loop ONLY (AM-5).
+
+### Verified-true state (all reproduced by prior Vega at commit time)
+| Lane | State | Reproduce with |
+|---|---|---|
+| Contract (FROZEN d8f4ae9) | **81 catalog entries = 78 v1 + 3 reserved** (freeze record said 73 — that was an undercount, corrected here; server frame reports 80 — one-off audit for the discrepancy is a 5-min task) | `bun run typecheck`; contract vitest 22/22 |
+| db 001–006 | apply clean to fresh db | `PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_check node db/migrate.mjs reset --force` |
+| **db 007 RPC catalog + 008 RLS** | **NOT WRITTEN — the top blocker.** Cygnus (tm_1784942907336_l3xwp0oda) was mid-flight; respawn him on task task_1784944699768_kifemjszm with slice-first order (STATE 'Slice-first migration order') + claims ruling + F1/F2 mandates (all recorded below) | — |
+| Identity block | DONE, 61/61 tests; seam documented in `src/identity/index.ts`; PG-backed tests pending 002-at-5442 (say the word to Lyra tm_1784942923389_w9tgzxce7) | `cd packages/server && bun run test` (157/157 total) |
+| Server frame | DONE: boots :4610, catalog-driven router, honest 501s; conformance vs REAL frame == stub profile (3F/4P/58skip) | `node packages/server/dist/main.js` then `TM8_CONFORMANCE_BASE_URL=http://127.0.0.1:4610 bun run test` in tools/conformance |
+| Sidecar + scheduler | landed w/ tests (in the 157) | same suite |
+| PTY host lift | DONE: harness 5/5, scars intact | `cd packages/execution && bun run harness` |
+| Rigs | keystroke-echo rig READY (needs a controlled session on :4570 — `tools/rigs/perf/PROCEDURE.md`); 4 legacy baselines captured | `node tools/rigs/perf/echo-dry-run.mjs --help` |
+
+### Remaining path to G1A (in order)
+1. **Cygnus: 007-slice RPCs + 008-slice RLS** (everything else queues behind this).
+2. **Facade slice handlers** (Altair tm_1784942923643_pt95o62ow → Deneb/Sirius if he wants hands): plug into the frame's handler registry; identity seam + db RPCs; WS events with (spaceId,seq) envelope.
+3. **SpawnService** (Orion's team; Draco's `attach()` seam is ready): graph reads → work_session + manifest (in-process) → spawn via PtyHostService; old spawn route = behavioral oracle (agent-maestro maestro-server/src, ~850-LOC inline route — run `graphify query` there first).
+4. **CLI worker-init minimal** (Phoenix tm_1784942971125_lj13ikkc2): manifest reader + report-back verbs.
+5. **UI snapshot → packages/ui + RealFacade**: WAIT for the snapshot package from Atlas's coordinator (sess_1784923719598_k7wt05wk3, may be dead — re-establish via user); rules in 'UI snapshot rules' below.
+6. **G1A acceptance**: browser loop + Lynx's echo rig diff vs legacy baselines (never absolute ms — rig floor is 10–16ms, see PROCEDURE §1).
+
+### Gotchas the fleet found (do not rediscover these)
+- Draco HAND-COPIED prebuilt `node-pty`/`@xterm/headless`/`@xterm/addon-serialize` into `packages/execution/node_modules` (bun install strips node-pty's spawn-helper exec bit). A real install needs npm, or bun + `chmod +x` the darwin spawn-helper. Packaging item for Argo (tm_1784943810645_4pbuyw77b).
+- `tools/ci/check.sh` flips conformance advisory→BLOCKING when anything answers :4610 — with 0 ops implemented that's a guaranteed red. Don't run check.sh with the dev server up until real ops land (or gate with TM8_CONFORMANCE_GATE=advisory).
+- packages/server tests flap when the dev server/PG is up concurrently (isolation gap — Altair's to fix, parked).
+- PG18 runs at 127.0.0.1:5442 (superuser `tm8`, data `~/.tm8-dev/pg`, logs `~/.tm8-dev/pg.log`); `initdb` needs LANG=en_US.UTF-8. Scratch dbs `tm8_salvage_check`/`tm8_check` are disposable.
+- Old maestro live server = :4570 (perf baselines); NEVER write to it without the rig's `--confirm-controlled` discipline (Lynx's near-miss: a 'working' session can look idle).
+- Spawn all workers `--model opus-5` (user law). Workers never run git — YOU commit per verified wave. `maestro` CLI can hang when the server is loaded — keep prompts short, verify via files not logs when in doubt.
+
+### Standing user directives (all law, details in Amendments below)
+AM-1/T-D21 no Tauri (server+web only) · AM-2 review adoption · AM-3 G1A includes the wired UI · AM-4 security deferred past G1A (loopback bind only) · AM-5 **Phase 1 = the loop, then STOP and report** · Opus-5-only spawns · org roster + boundaries in 'Team' section.
+
 **Updated:** 2026-07-25 (W0 in progress)
 **CTO/coordinator:** Vega (sess_1784943069601_y42xw5b9m). Only Vega commits.
 **Maestro project:** proj_1784943131214_fkap03n0m (workingDir: this repo).
