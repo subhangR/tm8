@@ -58,10 +58,20 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
       const detail = (e as CustomEvent<Req>).detail;
       setReq(detail);
       setSession(null); setError(null); setProjectId(null); setMemberId(null);
-      facade.listProjects().then(setProjects, (err) => setError(String(err?.message ?? err)));
+      facade.listProjects().then((ps) => {
+        setProjects(ps);
+        // If there is exactly one spawnable (trusted) project, pre-select it —
+        // there is no choice to make, so making the user hunt for the click is
+        // pure friction. Ambiguity (0 or >1) is still left explicit.
+        const trusted = ps.filter((p) => p.trust === 'trusted');
+        if (trusted.length === 1) setProjectId(trusted[0]!.id);
+      }, (err) => setError(String(err?.message ?? err)));
       facade
         .queryCollection({ spaceId: detail.spaceId, kinds: ['team_member'], limit: 50 })
-        .then((r) => setMembers(r.page.items), (err) => setError(String(err?.message ?? err)));
+        .then((r) => {
+          setMembers(r.page.items);
+          if (r.page.items.length === 1) setMemberId(r.page.items[0]!.id);
+        }, (err) => setError(String(err?.message ?? err)));
     };
     window.addEventListener(SPAWN_REQUEST_EVENT, onReq);
     return () => window.removeEventListener(SPAWN_REQUEST_EVENT, onReq);
@@ -137,7 +147,9 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
               explicitly — this starts a real process.
             </p>
 
-            <h3 style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.6, margin: '0 0 6px' }}>Project</h3>
+            <h3 style={{ fontSize: 12, textTransform: 'uppercase', opacity: 0.6, margin: '0 0 6px' }}>
+              Project <span style={{ textTransform: 'none', opacity: 0.7 }}>· click to select</span>
+            </h3>
             {projects.length === 0 && <p style={{ opacity: 0.7 }}>No projects on this node.</p>}
             {projects.map((p) => {
               const untrusted = p.trust !== 'trusted';
@@ -149,12 +161,13 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
                     opacity: untrusted ? 0.5 : 1,
                     cursor: untrusted ? 'not-allowed' : 'pointer',
                     outline: projectId === p.id ? '2px solid var(--pn-brand, #6366f1)' : 'none',
+                    background: projectId === p.id ? 'rgba(99,102,241,.15)' : (row.background as string),
                   }}
                   disabled={untrusted}
                   title={untrusted ? 'Spawning into an untrusted project is refused by the server' : p.workingDir}
                   onClick={() => setProjectId(p.id)}
                 >
-                  <strong>{p.name}</strong>
+                  <strong>{projectId === p.id ? '✓ ' : ''}{p.name}</strong>
                   <div style={{ opacity: 0.6, fontSize: 11 }} className="t-mono">{p.workingDir}</div>
                   {untrusted && <div style={{ color: '#fbbf24', fontSize: 11 }}>untrusted — spawn refused</div>}
                 </button>
@@ -171,10 +184,14 @@ export function SpawnDialog({ facade }: { facade: RealFacade }) {
             {members.map((m) => (
               <button
                 key={m.id}
-                style={{ ...row, outline: memberId === m.id ? '2px solid var(--pn-brand, #6366f1)' : 'none' }}
+                style={{
+                  ...row,
+                  outline: memberId === m.id ? '2px solid var(--pn-brand, #6366f1)' : 'none',
+                  background: memberId === m.id ? 'rgba(99,102,241,.15)' : (row.background as string),
+                }}
                 onClick={() => setMemberId(m.id)}
               >
-                {m.title}
+                {memberId === m.id ? '✓ ' : ''}{m.title}
               </button>
             ))}
           </>
