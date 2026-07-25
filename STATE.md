@@ -123,6 +123,10 @@ via `git archive`) into `packages/ui/src/collab-v2/`. The import-path pass was a
   custom kind, which the contract explicitly supports.** The durable fix is a
   fallback entry so an unknown kind degrades to a generic chip.
 
+## WORKSPACE TRANSPLANT — build IN FLIGHT (2026-07-25, user-directed; supersedes the Wave-1 native sessions build)
+
+User directive: put maestro's MAIN WORKSPACE (icon rail + left task panel + middle terminal + right Sessions/Resources panel) into tm8's TASKS TAB, working on the tm8 backend. Acceptance = (1) this UI, (2) run a task → spawn, (3) run a terminal, (4) left+right lists work properly; NO reorders/deletes/reactions (deferred appendix). Blueprint: docs/ui-audit/WORKSPACE-TRANSPLANT-PLAN.md (Rhea, committed) — mount-and-fill, NOT a port: shell is already four-pane, extraViews override-last mounts WorkspaceScreen under 'tasks' (one main.tsx line), terminal already the byte-identical port, spawn loop already runs. Docs/Drawings are REAL today (docs via entities.*; drawings = doc format:excalidraw — maestro persists the same Excalidraw JSON blob). Vega rulings (§11): defer @excalidraw editor (list+read-only day 1); sorted task list + drag disabled-with-reason; terminal first, thread as 2nd middle-pane tab. THREE LANES under packages/ui/src/real/workspace/ (file-disjoint; real/terminal/* + SessionTerminal READ-ONLY to all): A Atlas (mount+layout+TaskPanel, task_1784991846605_gu18rbugg) · B Rhea (ResourcePanel+4 tabs, task_1784991847038_qiz6k3yri) · C Draco (CenterPane+Composer+Unavailable.tsx-stub-first, task_1784991847429_qhrju7jjy). §9 top risk policed by Draco: ONE mounted terminal, no xterm addons ever. Wave-1 native sessions design stays shelved (future). Atlas's Wave-1 partials (SessionsList.tsx, liveness.ts) were cleaned from the tree when the build went on hold.
+
 ## Terminal/UI perf lessons ported from maestro (2026-07-25, from the streaming owner's 5-cause leak audit)
 
 The maestro UI got gradually laggy over minutes with an 11-agent streaming fleet (reload fixed it → client heap/state accumulation). Five causes found+fixed there; tm8 implications:
