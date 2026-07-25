@@ -1,0 +1,23 @@
+{
+  "name": "tm8",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tools/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b packages/contract packages/server packages/execution packages/cli tools/conformance",
+    "build:contract": "tsc -b packages/contract",
+    "build:server": "tsc -b packages/server",
+    "build:execution": "tsc -b packages/execution",
+    "build:cli": "tsc -b packages/cli",
+    "test:contract": "cd packages/contract && bun run test",
+    "test:conformance": "cd tools/conformance && bun run test",
+    "dev:server": "cd packages/server && bun run dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

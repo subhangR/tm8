@@ -1,0 +1,13 @@
+{
+  "name": "@tm8/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'UI arrives at M2 (W3): collab-v2 module transplant + RealFacade. Vite dev port 4611.'",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "@tm8/contract": "workspace:*"
+  }
+}
