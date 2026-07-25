@@ -4,8 +4,11 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "echo 'UI arrives at M2 (W3): collab-v2 module transplant + RealFacade. Vite dev port 4611.'",
-    "test": "echo 'no tests yet'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

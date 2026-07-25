@@ -12,7 +12,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { WorkspaceEventSchema, WORKSPACE_EVENT_SCHEMA_VERSION } from '@tm8/contract';
+import { WorkspaceEventSchema, WORKSPACE_EVENT_SCHEMA_VERSION, type DurableWorkspaceEvent } from '@tm8/contract';
 
 import { HandlerRegistry } from '../../src/facade/index.js';
 import { registerEventHandlers } from '../../src/events/handlers.js';
@@ -34,6 +34,8 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
   let memberId: string;
   let identityId: string;
   let log: PgDurableEventLog;
+  /** A task to anchor messages to. Created once in `beforeAll`. */
+  let firstTaskId: string;
 
   /**
    * Claims for a poll, shaped exactly as the handler builds them.
@@ -92,6 +94,16 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
     memberId = members[0]!.entity_id;
 
     log = new PgDurableEventLog(db);
+
+    const anchor = await db.rpc<CommandResult>(claims(), 'public.create_task', [
+      spaceId,
+      'Anchor task',
+      memberId,
+      '',
+      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      `cmid_${randomUUID()}`,
+    ]);
+    firstTaskId = anchor.entity.id;
   });
 
   afterAll(async () => {
@@ -250,6 +262,156 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
   it('the durable feed never carries presence or typing (DEV-4)', async () => {
     const { items } = await log.since(spaceId, 0, 500, claims());
     expect(items.every((e) => e.type !== 'presence.changed' && e.type !== 'typing.changed')).toBe(true);
+  });
+
+  /**
+   * REGRESSION: page-size-dependent event loss.
+   *
+   * `edge.upsert` requires its author hydrated. The mapper used to request only
+   * the edge's endpoints, so the event survived ONLY when its author happened to
+   * also be an endpoint of some other event in the SAME page. At a large limit
+   * the author was practically always present, so the bug was invisible; at a
+   * small limit the edge was silently skipped and a polling client lost it.
+   *
+   * THE PAGE SIZE IS THE ASSERTION, and it is pinned by ISOLATING the edge event
+   * rather than by picking a small number and hoping.
+   *
+   * A first version of this test walked the log at limit=2 and PASSED with the
+   * fix reverted — because the edge happened to share its 2-event page with an
+   * `activity.created` whose actor was the same member, which hydrated the author
+   * by luck. That is precisely the incidental-page-contents flakiness this test
+   * must not have. So instead it locates the edge's own seq and polls
+   * `since = seq - 1, limit = 1`: a page containing that edge and nothing else.
+   * The author then CANNOT be hydrated as a side effect, so the event survives
+   * only if the mapper asks for it explicitly. Verified to fail with the fix
+   * reverted and pass with it. Do not widen the page.
+   */
+  it('delivers an edge event in a page that contains only that edge', async () => {
+    // A `depends_on` edge between two TASKS, authored by the member.
+    //
+    // The edge type matters as much as the page size: `created_by` (the member)
+    // is NOT either endpoint here, so the author can only be hydrated if the
+    // mapper explicitly asks for it. An `assigned_to` edge would point AT the
+    // member, hydrating the author as a side effect of the endpoint and hiding
+    // the bug this test exists to catch.
+    const other = await db.rpc<CommandResult>(claims(), 'public.create_task', [
+      spaceId,
+      'Dependency target',
+      memberId,
+      '',
+      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      `cmid_${randomUUID()}`,
+    ]);
+    await db.rpc(claims(), 'public.write_edge', [
+      firstTaskId,
+      other.entity.id,
+      'depends_on',
+      null,
+      memberId,
+      `cmid_${randomUUID()}`,
+    ]);
+
+    // Every edge event's seq, straight from the log.
+    const edgeRows = await db.asOwner((q) =>
+      q.query<{ seq: string }>(
+        `select seq from public.workspace_events
+          where space_id = $1 and event_type = 'edge.upsert' order by seq asc`,
+        [spaceId],
+      ),
+    );
+    expect(edgeRows.length, 'fixture must produce at least one edge event').toBeGreaterThan(0);
+
+    for (const { seq } of edgeRows) {
+      const edgeSeq = Number(seq);
+      // A page of exactly one row: this edge, alone.
+      const { items } = await log.since(spaceId, edgeSeq - 1, 1, claims());
+
+      expect(
+        items.length,
+        `edge event seq ${String(edgeSeq)} was dropped when alone in its page — ` +
+          `its author is not being hydrated, so delivery depends on page contents`,
+      ).toBe(1);
+
+      const event = items[0]!;
+      expect(event.seq).toBe(edgeSeq);
+      if (event.type !== 'edge.upsert') throw new Error('unreachable');
+      // And the author is the edge's own, not whoever created that member.
+      expect(event.edge.createdBy.id).toBe(memberId);
+      expect(event.edge.createdBy.displayName.length).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * REDACTION. `redact_message` overwrites the row, but the `message.created`
+   * event captured at insert time still holds the original text in its payload —
+   * so a client replaying from seq 0 would be handed the redacted words unless
+   * the mapper reads the live row. This is the assertion that the payload is not
+   * the source for message content.
+   */
+  it('never serves a redacted body, not even from the original captured event', async () => {
+    const secret = `SECRET-${randomUUID()}`;
+    const posted = await db.rpc<CommandResult>(claims(), 'public.post_message', [
+      firstTaskId,
+      secret,
+      memberId,
+      null,
+      null,
+      null,
+      `cmid_${randomUUID()}`,
+    ]);
+    const messageId = posted.entity.id;
+
+    // Present before redaction — otherwise the test proves nothing.
+    const before = await log.since(spaceId, 0, 500, claims());
+    expect(
+      before.items.some((e) => e.type === 'message.created' && e.message.content.body === secret),
+      'the message must be visible before redaction',
+    ).toBe(true);
+
+    await db.rpc(claims(), 'public.redact_message', [messageId, memberId, `cmid_${randomUUID()}`]);
+
+    const after = await log.since(spaceId, 0, 500, claims());
+    const everything = JSON.stringify(after.items);
+    expect(everything.includes(secret), 'the redacted text is still on the event feed').toBe(false);
+
+    const msgEvents = after.items.filter(
+      (e) => (e.type === 'message.created' || e.type === 'message.updated') && e.message.id === messageId,
+    );
+    expect(msgEvents.length).toBeGreaterThan(0);
+    for (const e of msgEvents) {
+      if (e.type !== 'message.created' && e.type !== 'message.updated') continue;
+      expect(e.message.content.body, 'redacted body must be blank, matching entity-read').toBe('');
+      expect(e.message.content.mentions).toEqual([]);
+      expect(e.message.content.attachments).toEqual([]);
+      expect(e.message.excerpt, 'a redacted message has no excerpt').toBeUndefined();
+    }
+  });
+
+  /** TOMBSTONE: a deleted entity must stop announcing its real title. */
+  it('a deleted entity is tombstoned on the feed, not titled', async () => {
+    const title = `DOOMED-${randomUUID()}`;
+    const doomed = await db.rpc<CommandResult>(claims(), 'public.create_task', [
+      spaceId,
+      title,
+      memberId,
+      'about to go',
+      null, null, null, 'medium', null, null, null, null, 'attached_to',
+      `cmid_${randomUUID()}`,
+    ]);
+
+    await db.rpc(claims(), 'public.delete_entity', [doomed.entity.id, memberId, `cmid_${randomUUID()}`]);
+
+    const { items } = await log.since(spaceId, 0, 500, claims());
+    const mine = items.filter(
+      (e) => (e.type === 'entity.upsert' || e.type === 'entity.deleted') && e.entity.id === doomed.entity.id,
+    );
+    expect(mine.length).toBeGreaterThan(0);
+    for (const e of mine) {
+      if (e.type !== 'entity.upsert' && e.type !== 'entity.deleted') continue;
+      expect(e.entity.title, 'a deleted entity must be tombstoned').toBe('Deleted');
+      expect(e.entity.excerpt, 'a deleted entity has no excerpt').toBeUndefined();
+    }
+    expect(JSON.stringify(items).includes(title), 'the deleted title is still on the feed').toBe(false);
   });
 
   /**

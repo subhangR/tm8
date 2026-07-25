@@ -95,6 +95,16 @@ function oneOf<T extends string>(raw: unknown, allowed: readonly T[], fallback: 
   return typeof raw === 'string' && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
 }
 
+/**
+ * The title a deleted entity gets instead of its real one.
+ *
+ * Duplicated from `facade/entity-read.ts:222`, where it is module-private rather
+ * than exported. If these two ever disagree the same entity will tombstone
+ * differently on the read path and the event path — so if you change one, change
+ * both, and prefer exporting the facade's constant over keeping this copy.
+ */
+const TOMBSTONE_TITLE = 'Deleted';
+
 const WORK_STATUSES = ['open', 'pulled', 'working', 'in_review', 'done', 'blocked', 'cancelled'] as const;
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const;
 const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
@@ -119,6 +129,18 @@ export interface EntityProjector {
    * mapper.ts), and telling them apart would itself be an information leak.
    */
   entitySummaries(q: Querier, ids: readonly string[]): Promise<Map<string, EntitySummary>>;
+
+  /**
+   * `ActorSummary` for each id that is a member or team_member.
+   *
+   * OPTIONAL, and optional for a reason: an `ActorSummary` can be approximated
+   * from an `EntitySummary` (the title is the display name, the state carries the
+   * role), so the mapper can fall back and any injected assembler works without
+   * implementing this. But the approximation loses `avatar`, which is not on
+   * `EntitySummary` at all — so an implementation that CAN answer properly
+   * should, and `PgEntityProjector` does.
+   */
+  actorSummaries?(q: Querier, ids: readonly string[]): Promise<Map<string, ActorSummary>>;
 }
 
 /** Row shape of the wide hydration join. Every kind-specific column is nullable. */
@@ -157,6 +179,7 @@ interface SummaryRow {
   msg_author_id: string | null;
   msg_body: string | null;
   msg_edited_at: Date | string | null;
+  msg_redacted_at: Date | string | null;
   member_role: string | null;
   member_display_name: string | null;
   member_identity_id: string | null;
@@ -224,6 +247,7 @@ select
   msg.author_id      as msg_author_id,
   msg.body           as msg_body,
   msg.edited_at      as msg_edited_at,
+  msg.redacted_at    as msg_redacted_at,
   mem.role           as member_role,
   mem.display_name   as member_display_name,
   mem.identity_id    as member_identity_id,
@@ -382,6 +406,22 @@ export class PgEntityProjector implements EntityProjector {
     return out;
   }
 
+  /**
+   * `ActorSummary` for the ids that are actors, with the `avatar` an
+   * `EntitySummary` cannot carry.
+   */
+  async actorSummaries(q: Querier, ids: readonly string[]): Promise<Map<string, ActorSummary>> {
+    const out = new Map<string, ActorSummary>();
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return out;
+    const rows = await q.query<SummaryRow>(SUMMARY_SQL, [unique]);
+    for (const r of rows) {
+      const actor = this.actorOf(r);
+      if (actor !== null) out.set(r.id, actor);
+    }
+    return out;
+  }
+
   /** An `ActorSummary`, if this row is a member or team_member. */
   private actorOf(r: SummaryRow): ActorSummary | null {
     if (r.kind === 'member') {
@@ -466,8 +506,50 @@ export class PgEntityProjector implements EntityProjector {
     return excerpt === null ? summary : { ...summary, excerpt };
   }
 
-  /** Kind-specific display title. Never an id (contract: "never an ID"). */
+  /**
+   * Kind-specific display title. Never an id (contract: "never an ID").
+   *
+   * ## ⚠ THERE ARE TWO OF THESE, AND THEY DISAGREE
+   *
+   * The other one is `titleOf` in `facade/entity-read.ts` (the tombstone branch
+   * is at entity-read.ts:485, the work_session fallback at :503). That is the
+   * facade's read path; this is the event path. The SAME entity therefore gets a
+   * different title depending on whether you fetched it or were pushed it — the
+   * observed symptom is a work_session that reads as "Session" in the panel and
+   * as "" in the event stream.
+   *
+   * **The intended fix is NOT to hand-match the tables below.** Doing that
+   * creates a second copy of the fallback table, which is exactly what the
+   * `EntityProjector` seam exists to eliminate, and a hand-matched copy that
+   * looks right today drifts silently tomorrow. The fix is to inject the
+   * facade's assembler behind `EntityProjector` (scheduled; the seam and the
+   * exported assembler both already exist). Until then these gaps are left
+   * VISIBLE on purpose.
+   *
+   * Known divergences, this file → entity-read.ts. Cosmetic, deliberately unfixed:
+   *   task         ''                → 'Untitled task'
+   *   doc          ''                → 'Untitled document'
+   *   channel      ''                → 'channel'
+   *   member       ''                → 'Member'
+   *   team_member  ''                → 'Agent'
+   *   work_session ''                → 'Session'
+   *   file         ''                → 'File'
+   *   collection   ''                → 'Collection'
+   *   message      body.slice(0,120) → excerpt(body) ?? 'Message'
+   *
+   * Behavioural, and FIXED here because they are correctness/privacy rather than
+   * labels — do not regress them while waiting for the injection:
+   *   deleted entity   → tombstone title, not the live title (below)
+   *   redacted message → body and excerpt suppressed (see `excerptOf`, and the
+   *                      live-row read in mapper.ts `messageContents`)
+   *
+   * If you are here to "fix one side", read the paragraph above first: widening
+   * the gap by patching only one implementation is worse than the gap.
+   */
   private titleOf(r: SummaryRow): string {
+    // A deleted entity must not keep announcing its real title over the event
+    // feed. Matches entity-read.ts:485, which tombstones before the kind switch.
+    if (r.deleted_at !== null) return TOMBSTONE_TITLE;
     switch (r.kind) {
       case 'task':
         return r.task_title ?? '';
@@ -505,7 +587,21 @@ export class PgEntityProjector implements EntityProjector {
     }
   }
 
+  /**
+   * The excerpt, or null for "no excerpt".
+   *
+   * Two suppressions, both matching `facade/entity-read.ts:517-521` and both
+   * load-bearing rather than cosmetic:
+   * - a DELETED entity gets no excerpt, for the same reason it gets a tombstone
+   *   title instead of its real one;
+   * - a REDACTED message gets no excerpt. Redaction is a user asking for
+   *   something to be unsaid, and the event feed is the path a client is most
+   *   likely to cache, so leaking it here defeats the request more thoroughly
+   *   than leaking it on a read would.
+   */
   private excerptOf(r: SummaryRow): string | null {
+    if (r.deleted_at !== null) return null;
+    if (r.kind === 'message' && r.msg_redacted_at !== null) return null;
     const source =
       r.kind === 'task' ? r.task_description
       : r.kind === 'doc' ? r.doc_body

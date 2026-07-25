@@ -148,14 +148,48 @@ describe('WorkspaceEventMapper', () => {
     const event = m.mapRow(
       row({
         event_type: 'message.created',
-        payload: { entity_id: 'msg_1', anchor_id: TASK, body: 'hello', mentions: [], attachments: [] },
+        // The payload body is deliberately DIFFERENT from the live content below.
+        // The projection must use the live row, so this stale text must not
+        // appear — that is the redaction fix in miniature.
+        payload: { entity_id: 'msg_1', anchor_id: TASK, body: 'stale payload text', mentions: [], attachments: [] },
       }),
       new Map([['msg_1', msgSummary]]),
+      new Map(),
+      new Map([['msg_1', { body: 'hello', mentions: [], attachments: [] }]]),
     );
     if (event.type !== 'message.created') throw new Error('unreachable');
     expect(event.anchorId).toBe(TASK);
     expect(event.message.content.body).toBe('hello');
+    expect(event.message.content.body, 'the frozen payload must not be the source').not.toBe(
+      'stale payload text',
+    );
     expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  /**
+   * The privacy guarantee, at the unit level: with no live row available the
+   * mapper must SKIP rather than fall back to the captured payload. A fallback
+   * would serve pre-redaction text, since `message.created`'s payload froze the
+   * original body at insert time.
+   */
+  it('refuses to serve a message from its captured payload when the live row is gone', () => {
+    const msgSummary = summary({
+      id: 'msg_1',
+      kind: 'message',
+      state: { kind: 'message', anchorId: TASK, rootMessageId: null, author: summary().createdBy, editedAt: null },
+    });
+    const m = new WorkspaceEventMapper(fixedProjector(new Map([['msg_1', msgSummary]])));
+    expect(() =>
+      m.mapRow(
+        row({
+          event_type: 'message.created',
+          payload: { entity_id: 'msg_1', anchor_id: TASK, body: 'secret', mentions: [], attachments: [] },
+        }),
+        new Map([['msg_1', msgSummary]]),
+        new Map(),
+        new Map(), // no live content
+      ),
+    ).toThrow(UnprojectableEventError);
   });
 
   it('SKIPS a row whose entity is unreadable, and says so', async () => {

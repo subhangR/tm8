@@ -1,0 +1,32 @@
+{
+  "//": "Mirrors maestro-ui/tsconfig.json at snapshot b422978 — the config the 270-file collab-v2 module was gate-verified against. Deliberately NOT stricter: adding noUnusedLocals/noUnusedParameters here produced 20+ errors inside Atlas's module that are config drift rather than transplant breakage, and satisfying them would have meant editing files this lane does not own.",
+  "compilerOptions": {
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "types": ["vite/client"],
+    "paths": {
+      "react": ["./node_modules/@types/react"],
+      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
+    },
+    "baseUrl": "."
+  },
+  "//react-types-pin": "@types/react-mentions declares a floating `@types/react: \"*\"`, which bun resolved to 19.x nested beside it while this app is React 18. That made MentionsInput/Mention typecheck as React-19 components and fail at their JSX use sites in Composer.tsx — the giveaway being 'bigint is not assignable to ReactNode', a React-19-only widening. It is types-only: esbuild strips types, so the runtime was never affected. The `paths` pin above fixes it WITHOUT editing Composer.tsx, which this lane does not own, and without another install cycle.",
+  "include": ["src"],
+  "//tests": "Tests are compiled and run by Vitest, not by tsc — same rationale as the source repo: test-only imports of node builtins (node:fs/path/url, used by the purity tests to walk the source tree) must not break the browser build, and app code stays guarded against accidental node imports because `types` omits @types/node.",
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/**/__tests__/**"
+  ]
+}

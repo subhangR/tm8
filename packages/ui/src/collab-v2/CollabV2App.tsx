@@ -5,8 +5,10 @@
  * floating control. W1a's EntityPanel plugs in via `renderPanel`, W2's palette
  * via `palette`, W3 screens via `views` as they land.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import './tokens.css';
+import type { CollabFacade } from './facade/CollabFacade';
+import type { SpaceId } from './types/contract';
 import { CollabFacadeProvider, EntityFullView, EntityPanel } from './entity';
 import { Gallery } from './gallery';
 import { channelHubSlot, channelViews } from './screens/channel';
@@ -107,17 +109,43 @@ function useGalleryRoute(): boolean {
   return on;
 }
 
-export function CollabV2App() {
-  const facade = useMemo(() => createSeededFacade(), []);
-  const simulation = useMemo(() => createSimulation(facade), [facade]);
+/**
+ * tm8 TOUCH #1 (Keystone, W3 transplant — approved by Orion).
+ *
+ * Facade selection + a banner slot, and nothing else. Every prop is optional
+ * and the no-prop call is byte-for-byte the previous behaviour (seeded mock +
+ * simulation control), so existing consumers and the acceptance suite are
+ * unaffected.
+ *
+ * Why here rather than a parallel app root: this file's own header names it the
+ * Atlas-owned integration point, and duplicating its composition to swap one
+ * value would fork the shell wiring and let the copy rot silently.
+ */
+export interface CollabV2AppProps {
+  /** Defaults to the seeded MockFacade when omitted. */
+  facade?: CollabFacade;
+  /** Required alongside `facade`; the mock supplies its own via `ids.space`. */
+  spaceId?: SpaceId;
+  /** Rendered above the shell — the real/mock mode banner. */
+  banner?: ReactNode;
+}
+
+export function CollabV2App({ facade: injected, spaceId: injectedSpaceId, banner }: CollabV2AppProps = {}) {
+  // The mock world is only constructed when no facade is injected — building a
+  // seeded world behind a live server would waste the work and, worse, leave
+  // fabricated entities one mistaken reference away from the screen.
+  const mock = useMemo(() => (injected ? null : createSeededFacade()), [injected]);
+  const facade = (injected ?? mock) as CollabFacade & { ids?: { space: SpaceId } };
+  const simulation = useMemo(() => (mock ? createSimulation(mock) : null), [mock]);
   const [simOn, setSimOn] = useState(false);
   const galleryRoute = useGalleryRoute();
-  const spaceId = facade.ids.space;
+  const spaceId = injectedSpaceId ?? (facade.ids?.space as SpaceId);
 
   useEffect(() => connectStores(facade, spaceId), [facade, spaceId]);
   useEffect(() => startRecentsTracker(), []);
 
   useEffect(() => {
+    if (!simulation) return;
     if (simOn) simulation.start();
     else simulation.stop();
     return () => simulation.stop();
@@ -128,6 +156,7 @@ export function CollabV2App() {
       <CollabFacadeProvider facade={facade}>
       <CollabDndProvider>
       <div className="cv2-root" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {banner}
         <div style={{ flex: 1, minHeight: 0, overflow: galleryRoute ? 'auto' : undefined }}>
           {galleryRoute ? (
             <>
@@ -145,6 +174,10 @@ export function CollabV2App() {
           )}
         </div>
         <ToastViewport />
+        {/* tm8 TOUCH #1: the simulation control belongs to the mock world and
+            is hidden against a real server — a "sim on/off" toggle over live
+            data would imply the events are synthetic when they are not. */}
+        {simulation && (
         <div
           style={{
             position: 'fixed', right: 16, bottom: 16, zIndex: 60,
@@ -164,6 +197,7 @@ export function CollabV2App() {
             sim {simOn ? 'on' : 'off'} · {simulation.stepIndex}/{simulation.totalSteps}
           </span>
         </div>
+        )}
       </div>
       </CollabDndProvider>
       </CollabFacadeProvider>

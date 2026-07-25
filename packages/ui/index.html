@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>tm8 — Modular Workspace</title>
+    <!-- An inline icon, not a file: without it Chrome requests /favicon.ico,
+         Vite answers 404, and the console carries a permanent error. A console
+         with one harmless error in it is a console people stop reading, which
+         is how the next REAL error gets missed. -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▶</text></svg>" />
+    <style>
+      html, body { margin: 0; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="collab-v2-root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

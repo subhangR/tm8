@@ -27,6 +27,7 @@
  * wrong — not the tripwire.
  */
 import type {
+  ActorSummary,
   ActivityItem,
   DurableWorkspaceEvent,
   EdgeView,
@@ -109,6 +110,17 @@ export class UnprojectableEventError extends Error {
   }
 }
 
+/**
+ * A message's content as it stands NOW, with redaction already applied.
+ *
+ * @see WorkspaceEventMapper.messageContents for why this is read live.
+ */
+interface LiveMessageContent {
+  body: string;
+  mentions: unknown[];
+  attachments: unknown[];
+}
+
 /** Which entity ids a row's projection will need hydrated. */
 function referencedEntityIds(row: WorkspaceEventRow): string[] {
   const p = row.payload;
@@ -118,7 +130,15 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
       return [str(p['id'])].filter((v): v is string => v !== null);
     case 'edge.upsert':
     case 'edge.deleted':
-      return [str(p['src_id']), str(p['dst_id'])].filter((v): v is string => v !== null);
+      // `created_by` MUST be here. It is required by the projection below, and
+      // omitting it made edge events survive only when their author happened to
+      // also be an endpoint of some other event in the SAME page — so an edge
+      // was delivered at limit=500 and silently skipped at limit=2. Page-size-
+      // dependent delivery is the worst shape of this bug: it passes every test
+      // that reads the whole log at once.
+      return [str(p['src_id']), str(p['dst_id']), str(p['created_by'])].filter(
+        (v): v is string => v !== null,
+      );
     case 'message.created':
     case 'message.updated':
     case 'message.deleted':
@@ -126,7 +146,7 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
     case 'counter.changed':
       return [];
     case 'activity.created':
-      return [];
+      return [str(p['actor_id'])].filter((v): v is string => v !== null);
     case 'notification.created':
     case 'notification.read':
       return [str(p['target_entity_id']), str(p['actor_id'])].filter((v): v is string => v !== null);
@@ -172,11 +192,16 @@ export class WorkspaceEventMapper {
     const ids = new Set<string>();
     for (const row of rows) for (const id of referencedEntityIds(row)) ids.add(id);
     const entities = await this.projector.entitySummaries(q, [...ids]);
+    const actors =
+      this.projector.actorSummaries === undefined
+        ? new Map<string, ActorSummary>()
+        : await this.projector.actorSummaries(q, [...ids]);
+    const contents = await this.messageContents(q, rows);
 
     const out: DurableWorkspaceEvent[] = [];
     for (const row of rows) {
       try {
-        out.push(this.mapRow(row, entities));
+        out.push(this.mapRow(row, entities, actors, contents));
       } catch (err) {
         if (err instanceof UnprojectableEventError) {
           onSkip?.(err);
@@ -192,9 +217,75 @@ export class WorkspaceEventMapper {
    * Project one row. Throws `UnprojectableEventError` if a needed entity is not
    * in `entities`, `OffContractEventError` if the result is off-contract.
    */
-  mapRow(row: WorkspaceEventRow, entities: Map<string, EntitySummary>): DurableWorkspaceEvent {
+  /**
+   * Message bodies read LIVE, not from the captured payload — a privacy fix, and
+   * the root of it.
+   *
+   * `public.redact_message` (007:1790) overwrites the row: `body = '[redacted]'`,
+   * mentions and attachments emptied. But the `message.created` event captured at
+   * INSERT time keeps the original text in its `payload` forever, so a client
+   * polling from `since=0` after a redaction would still be handed the words the
+   * author asked to unsay. Reading the current row instead means redaction
+   * propagates to history for free, because the RPC already did the erasing.
+   *
+   * Done here rather than behind the `EntityProjector` seam deliberately: an
+   * injected assembler that did not implement it would silently reintroduce the
+   * leak, and a privacy guarantee must not depend on which implementation is
+   * wired. One extra query per page, and only when the page contains message
+   * events.
+   *
+   * Runs on the caller's `Querier`, so an unreadable message simply does not come
+   * back and the event is skipped by the normal policy.
+   */
+  private async messageContents(
+    q: Querier,
+    rows: readonly WorkspaceEventRow[],
+  ): Promise<Map<string, LiveMessageContent>> {
+    const out = new Map<string, LiveMessageContent>();
+    const ids = [
+      ...new Set(
+        rows
+          .filter((r) => r.event_type.startsWith('message.'))
+          .map((r) => str(r.payload['entity_id']))
+          .filter((v): v is string => v !== null),
+      ),
+    ];
+    if (ids.length === 0) return out;
+
+    const live = await q.query<{
+      entity_id: string;
+      body: string | null;
+      mentions: unknown;
+      attachments: unknown;
+      redacted_at: Date | string | null;
+    }>(
+      `select entity_id, body, mentions, attachments, redacted_at
+         from public.messages where entity_id = any($1::uuid[])`,
+      [ids],
+    );
+
+    for (const m of live) {
+      // Belt and braces: the RPC already replaced the body, but forcing the
+      // suppression here means a future write path that forgets to cannot leak
+      // through this file. Matches entity-read.ts:792.
+      const redacted = m.redacted_at !== null;
+      out.set(m.entity_id, {
+        body: redacted ? '' : (m.body ?? ''),
+        mentions: redacted || !Array.isArray(m.mentions) ? [] : m.mentions,
+        attachments: redacted || !Array.isArray(m.attachments) ? [] : m.attachments,
+      });
+    }
+    return out;
+  }
+
+  mapRow(
+    row: WorkspaceEventRow,
+    entities: Map<string, EntitySummary>,
+    actors: Map<string, ActorSummary> = new Map(),
+    contents: Map<string, LiveMessageContent> = new Map(),
+  ): DurableWorkspaceEvent {
     const seq = Number(row.seq);
-    const body = this.bodyOf(row, entities, seq);
+    const body = this.bodyOf(row, entities, actors, contents, seq);
 
     // The envelope is the ROW's, verbatim. `schema_version` comes from the row
     // rather than the current constant on purpose: an event captured under an
@@ -222,10 +313,57 @@ export class WorkspaceEventMapper {
     return found;
   }
 
+  /**
+   * The `ActorSummary` for an actor entity id.
+   *
+   * Prefers the projector's own answer (which has `avatar`); otherwise derives
+   * one from the entity summary, whose title IS the display name and whose state
+   * carries the role. Returns null when the id is not an actor or is unreadable.
+   *
+   * This exists because the previous code read `.createdBy` off the AUTHOR's
+   * entity summary — which is the actor who created that member, not the member.
+   * An edge authored by Alice was attributed to whoever created Alice's row.
+   */
+  private actorOf(
+    id: string | null,
+    entities: Map<string, EntitySummary>,
+    actors: Map<string, ActorSummary>,
+  ): ActorSummary | null {
+    if (id === null) return null;
+    const direct = actors.get(id);
+    if (direct !== undefined) return direct;
+
+    const summary = entities.get(id);
+    if (summary === undefined) return null;
+    if (summary.state.kind === 'member') {
+      return {
+        id: summary.id,
+        kind: 'member',
+        displayName: summary.title,
+        avatar: null,
+        role: summary.state.role,
+        isAgent: false,
+      };
+    }
+    if (summary.state.kind === 'team_member') {
+      return {
+        id: summary.id,
+        kind: 'team_member',
+        displayName: summary.title,
+        avatar: null,
+        role: null,
+        isAgent: true,
+      };
+    }
+    return null;
+  }
+
   /** The discriminated-union arm for a row, minus the envelope. */
   private bodyOf(
     row: WorkspaceEventRow,
     entities: Map<string, EntitySummary>,
+    actors: Map<string, ActorSummary>,
+    contents: Map<string, LiveMessageContent>,
     seq: number,
   ): Record<string, unknown> {
     const p = row.payload;
@@ -248,11 +386,18 @@ export class WorkspaceEventMapper {
           source,
           target,
           props: record(p['props']),
-          // The edge's author is an entity id in the row; if it did not come
-          // back from the projector we still have a valid EdgeView by using the
-          // source's author, which is wrong-but-typed. Prefer honesty: require
-          // it, and let the row be skipped rather than misattributed.
-          createdBy: this.need(entities, str(p['created_by']), seq, 'edge author').createdBy,
+          // The edge's author, resolved as an ACTOR. Requiring it (rather than
+          // substituting the source's author) means a misattributed edge is
+          // impossible: either we know who made it or the row is skipped and
+          // reported.
+          createdBy:
+            this.actorOf(str(p['created_by']), entities, actors) ??
+            (() => {
+              throw new UnprojectableEventError(
+                seq,
+                `edge author ${String(p['created_by'])} is not a readable actor`,
+              );
+            })(),
           createdAt: iso(p['created_at']) ?? source.createdAt,
         };
         return { type: row.event_type, edge };
@@ -270,16 +415,25 @@ export class WorkspaceEventMapper {
         // reply count. `replyCount` is 0 here — see projector KNOWN_GAPS; the
         // thread view gets it from the read path, and an event consumer that
         // needs it re-reads the anchor.
+        // LIVE content, not `p['body']`. The captured payload froze the original
+        // text at insert time and would keep serving it after a redaction — see
+        // `messageContents`. A message with no live row was deleted or is
+        // unreadable, so it is skipped rather than served from the payload.
+        const live = contents.get(summary.id);
+        if (live === undefined) {
+          throw new UnprojectableEventError(
+            seq,
+            `message ${summary.id} has no readable live row — refusing to serve its captured payload`,
+          );
+        }
         const message: MessageView = {
           ...summary,
           state: summary.state,
           content: {
             kind: 'message',
-            body: str(p['body']) ?? '',
-            mentions: Array.isArray(p['mentions']) ? (p['mentions'] as MessageView['content']['mentions']) : [],
-            attachments: Array.isArray(p['attachments'])
-              ? (p['attachments'] as MessageView['content']['attachments'])
-              : [],
+            body: live.body,
+            mentions: live.mentions as MessageView['content']['mentions'],
+            attachments: live.attachments as MessageView['content']['attachments'],
           },
           replyCount: 0,
         };
@@ -315,7 +469,9 @@ export class WorkspaceEventMapper {
         const activity: ActivityItem = {
           id: str(p['id']) ?? '',
           entityId: str(p['entity_id']),
-          actor: null,
+          // WHO did it. `activity.created` is how completion reaches the client,
+          // and an activity feed that cannot name its actor is not a feed.
+          actor: this.actorOf(str(p['actor_id']), entities, actors),
           verb: str(p['verb']) ?? '',
           summary: record(p['summary']),
           createdAt: iso(p['created_at']) ?? new Date(0).toISOString(),
@@ -327,12 +483,11 @@ export class WorkspaceEventMapper {
       case 'notification.created':
       case 'notification.read': {
         const target = entities.get(str(p['target_entity_id']) ?? '') ?? null;
-        const actorEntity = entities.get(str(p['actor_id']) ?? '');
         const notification: NotificationItem = {
           id: str(p['id']) ?? '',
           spaceId: row.space_id,
           kind: str(p['kind']) ?? 'mention',
-          actor: actorEntity === undefined ? null : actorEntity.createdBy,
+          actor: this.actorOf(str(p['actor_id']), entities, actors),
           target,
           readAt: iso(p['read_at']),
           createdAt: iso(p['created_at']) ?? new Date(0).toISOString(),
