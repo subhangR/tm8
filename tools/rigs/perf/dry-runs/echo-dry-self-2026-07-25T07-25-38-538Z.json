@@ -1,0 +1,168 @@
+{
+  "rig": "echo-dry-run",
+  "rigVersion": 1,
+  "mode": "self",
+  "startedAt": "2026-07-25T07:25:38.538Z",
+  "baseUrl": "mock://local-fixture",
+  "sessionId": null,
+  "checks": [
+    {
+      "name": "mock server computes the RFC 6455 §1.3 accept key correctly",
+      "status": "pass",
+      "why": "A bad handshake fails as an unexplained socket error, not as a clear message.",
+      "detail": {
+        "acceptKey": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      }
+    },
+    {
+      "name": "safety interlock: echo mode refuses to run without TM8_PERF_ALLOW_WRITE=1",
+      "status": "pass",
+      "why": "echo writes into a live PTY; the interlock is what keeps it off a working agent.",
+      "detail": null
+    },
+    {
+      "name": "measures ground truth: fixture delay 25ms → reported p50",
+      "status": "pass",
+      "why": "A latency rig that does not track a known delay is measuring the wrong thing.",
+      "detail": {
+        "p50": 39.85,
+        "min": 28.22,
+        "max": 65.03
+      }
+    },
+    {
+      "name": "scrollback replay is not counted as an echo sample",
+      "status": "pass",
+      "why": "Measuring the replay blob yields a fast, plausible, entirely fictional number.",
+      "detail": {
+        "echoBytes": 4
+      }
+    },
+    {
+      "name": "discriminates fast from slow (1ms fixture vs 25ms fixture)",
+      "status": "pass",
+      "why": "If both fixtures read the same, the rig is reporting its own overhead.",
+      "detail": {
+        "fastP50": 11.67,
+        "slowP50": 39.85,
+        "deltaMs": 28.19
+      }
+    },
+    {
+      "name": "a silent PTY yields timeouts, never a fabricated number",
+      "status": "pass",
+      "why": "A broken prompt path must read as absent, not as fast (04 §6 / R17).",
+      "detail": {
+        "timeouts": 2
+      }
+    },
+    {
+      "name": "legacy adapter parses the `attached` handshake frame",
+      "status": "pass",
+      "why": "Wrong handshake parsing = the rig never starts sampling.",
+      "detail": {
+        "type": "attached",
+        "hasReplay": true,
+        "base": 0,
+        "gap": 0,
+        "next": 10,
+        "epoch": null,
+        "replayKind": "delta"
+      }
+    }
+  ],
+  "passed": true,
+  "payload": {
+    "slow": {
+      "roundTripMs": {
+        "n": 6,
+        "min": 28.21833400000014,
+        "p50": 39.854707999999846,
+        "p90": 65.02949999999964,
+        "p95": 65.02949999999964,
+        "p99": 65.02949999999964,
+        "max": 65.02949999999964,
+        "mean": 43.504319333333264,
+        "stddev": 12.58892367886157
+      },
+      "samples": [
+        {
+          "roundTripMs": 65.02949999999964,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 41.84983300000022,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 49.318333000000166,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 28.21833400000014,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 39.854707999999846,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 36.755207999999584,
+          "bytes": 4
+        }
+      ]
+    },
+    "fast": {
+      "roundTripMs": {
+        "n": 6,
+        "min": 5.002208000001701,
+        "p50": 11.669417000000976,
+        "p90": 49.57104200000049,
+        "p95": 49.57104200000049,
+        "p99": 49.57104200000049,
+        "max": 49.57104200000049,
+        "mean": 23.394291833333682,
+        "stddev": 17.70313035694731
+      },
+      "samples": [
+        {
+          "roundTripMs": 49.57104200000049,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 8.922042000000147,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 28.920500000000175,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 11.669417000000976,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 36.280541999998604,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 5.002208000001701,
+          "bytes": 4
+        }
+      ]
+    },
+    "silent": {
+      "timeouts": 2,
+      "samples": [
+        {
+          "roundTripMs": null,
+          "timedOut": true
+        },
+        {
+          "roundTripMs": null,
+          "timedOut": true
+        }
+      ]
+    }
+  }
+}

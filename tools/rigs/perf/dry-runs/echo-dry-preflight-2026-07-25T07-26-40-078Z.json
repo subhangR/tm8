@@ -1,0 +1,56 @@
+{
+  "rig": "echo-dry-run",
+  "rigVersion": 1,
+  "mode": "preflight",
+  "startedAt": "2026-07-25T07:26:40.078Z",
+  "baseUrl": "http://localhost:4570",
+  "sessionId": "sess_1784921923533_ad4ub81gu",
+  "checks": [
+    {
+      "name": "target reachable: GET /api/sessions",
+      "status": "pass",
+      "why": "No target, no baseline.",
+      "detail": {
+        "liveSessions": 22
+      }
+    },
+    {
+      "name": "controlled session sess_1784921923533_ad4ub81gu exists and is live",
+      "status": "pass",
+      "why": "Writing to the wrong session id injects keystrokes into a working agent.",
+      "detail": {
+        "id": "sess_1784921923533_ad4ub81gu",
+        "status": "working",
+        "name": null,
+        "projectId": "proj_1770533548982_3bgizuthk"
+      }
+    },
+    {
+      "name": "session is quiet enough to attribute an echo (4s idle watch)",
+      "status": "pass",
+      "why": "The echo metric assumes the next frame is a response. On a chatty session that assumption is false and the number is fiction.",
+      "detail": {
+        "quietSeconds": 4,
+        "unsolicitedFrames": 0,
+        "framesPerSecond": 0,
+        "observedMs": 4242.68
+      }
+    }
+  ],
+  "passed": true,
+  "payload": {
+    "sessions": 22,
+    "match": {
+      "id": "sess_1784921923533_ad4ub81gu",
+      "status": "working",
+      "name": null,
+      "projectId": "proj_1770533548982_3bgizuthk"
+    },
+    "quiet": {
+      "quietSeconds": 4,
+      "unsolicitedFrames": 0,
+      "framesPerSecond": 0,
+      "observedMs": 4242.68
+    }
+  }
+}

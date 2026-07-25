@@ -1,0 +1,144 @@
+/**
+ * R2/T-L11 — claim production.
+ *
+ * This block produces the name/value pairs; the db layer binds them with
+ * `SET LOCAL`. Two properties matter: the emitted set matches 002's RLS helpers
+ * exactly and nothing more (Vega ruling — membership is resolved from rows, not
+ * from claims), and "no identity" has exactly one shape.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { makeHarness, SPACE_A, SPACE_B } from './harness.js';
+import {
+  CLAIM_NAMES,
+  anonymousClaimBindings,
+  toClaimBindings,
+  type ClaimBinding,
+} from '../../src/identity/index.js';
+
+function byName(bindings: ClaimBinding[]): Record<string, string> {
+  return Object.fromEntries(bindings.map((b) => [b.name, b.value]));
+}
+
+describe('claim set (R2/T-L11)', () => {
+  it('emits exactly the four settings 002 RLS helpers read', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    h.join(owner.identityId, SPACE_A);
+    const claims = await h.service.buildClaims({ accountId: owner.id });
+
+    expect(toClaimBindings(claims, 'req_123').map((b) => b.name).sort()).toEqual(
+      [
+        CLAIM_NAMES.identityId,
+        CLAIM_NAMES.actorId,
+        CLAIM_NAMES.nodeAdmin,
+        CLAIM_NAMES.requestId,
+      ].sort(),
+    );
+  });
+
+  it('never binds membership or can_act_as into Postgres', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const member = h.join(owner.identityId, SPACE_A);
+    const persona = h.persona(member.id, SPACE_A);
+    const claims = await h.service.buildClaims({
+      accountId: owner.id,
+      actingAsTeamMemberId: persona.id,
+    });
+
+    const names = toClaimBindings(claims, 'req_1').map((b) => b.name);
+    // Authorization truth lives in rows: a claim-carried membership list goes
+    // stale across join/leave/role-change/disable, invisibly.
+    expect(names).not.toContain('tm8.member_ids');
+    expect(names).not.toContain('tm8.team_member_ids');
+    expect(names).not.toContain('tm8.can_act_as');
+    expect(names).not.toContain('tm8.acting_as');
+    expect(names).not.toContain('tm8.account_id');
+    expect(names).toHaveLength(4);
+
+    // The server-side facts survive — the facade gates capabilities with them.
+    expect(claims.memberIds).toEqual([member.id]);
+    expect(claims.canActAs).toEqual([persona.id]);
+    expect(claims.actingAsTeamMemberId).toBe(persona.id);
+  });
+
+  it('carries acting_as through actor_id, not through a separate claim', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const member = h.join(owner.identityId, SPACE_A);
+    const persona = h.persona(member.id, SPACE_A);
+
+    const asSelf = byName(toClaimBindings(await h.service.buildClaims({ accountId: owner.id })));
+    const asAgent = byName(
+      toClaimBindings(
+        await h.service.buildClaims({ accountId: owner.id, actingAsTeamMemberId: persona.id }),
+      ),
+    );
+
+    expect(asSelf[CLAIM_NAMES.actorId]).toBe(member.id);
+    expect(asAgent[CLAIM_NAMES.actorId]).toBe(persona.id);
+    // Identity is unchanged: authorization still resolves through the owner.
+    expect(asAgent[CLAIM_NAMES.identityId]).toBe(asSelf[CLAIM_NAMES.identityId]);
+  });
+
+  it('encodes node_admin as on/off', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    h.join(owner.identityId, SPACE_A);
+
+    const claims = await h.service.buildClaims({ accountId: owner.id });
+    expect(byName(toClaimBindings(claims))[CLAIM_NAMES.nodeAdmin]).toBe('on');
+    expect(byName(toClaimBindings({ ...claims, isNodeAdmin: false }))[CLAIM_NAMES.nodeAdmin]).toBe('off');
+  });
+
+  it('omits request_id when the caller does not supply one', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const claims = await h.service.buildClaims({ accountId: owner.id });
+
+    expect(toClaimBindings(claims).some((b) => b.name === CLAIM_NAMES.requestId)).toBe(false);
+    expect(toClaimBindings(claims, 'req_1').some((b) => b.name === CLAIM_NAMES.requestId)).toBe(true);
+  });
+
+  it('pins authorship to the requested space', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const a = h.join(owner.identityId, SPACE_A);
+    h.clock.advance(1000);
+    const b = h.join(owner.identityId, SPACE_B);
+
+    expect((await h.service.buildClaims({ accountId: owner.id, spaceId: SPACE_B })).actorId).toBe(b.id);
+    // Unscoped requests author as the oldest membership — the only one on a v1
+    // local node.
+    expect((await h.service.buildClaims({ accountId: owner.id })).actorId).toBe(a.id);
+  });
+
+  it('binds identity even when the account has joined no space', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const claims = await h.service.buildClaims({ accountId: owner.id });
+
+    expect(claims.identityId).toBe(owner.identityId);
+    expect(claims.memberIds).toEqual([]);
+    // Empty actor_id: identity is bound, every space predicate is false.
+    expect(byName(toClaimBindings(claims))[CLAIM_NAMES.actorId]).toBe('');
+  });
+
+  it('anonymous bindings assert nothing — the only "no identity" shape', () => {
+    const values = byName(anonymousClaimBindings('req_9'));
+
+    expect(values[CLAIM_NAMES.identityId]).toBe('');
+    expect(values[CLAIM_NAMES.actorId]).toBe('');
+    expect(values[CLAIM_NAMES.nodeAdmin]).toBe('off');
+    expect(Object.keys(values)).toHaveLength(4);
+    // No bypass claim exists to find.
+    expect(Object.keys(values).some((n) => /bypass|service_role|superuser/.test(n))).toBe(false);
+  });
+
+  it('every claim name is namespaced under tm8.', () => {
+    for (const name of Object.values(CLAIM_NAMES)) {
+      expect(name).toMatch(/^tm8\.[a-z_]+$/);
+    }
+  });
+});

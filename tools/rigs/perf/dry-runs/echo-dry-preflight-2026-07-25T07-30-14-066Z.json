@@ -1,0 +1,42 @@
+{
+  "rig": "echo-dry-run",
+  "rigVersion": 1,
+  "mode": "preflight",
+  "startedAt": "2026-07-25T07:30:14.066Z",
+  "baseUrl": "http://localhost:4570",
+  "sessionId": "sess_does_not_exist",
+  "checks": [
+    {
+      "name": "target reachable: GET /api/sessions",
+      "status": "pass",
+      "why": "No target, no baseline.",
+      "detail": {
+        "liveSessions": 22
+      }
+    },
+    {
+      "name": "controlled session sess_does_not_exist exists and is live",
+      "status": "fail",
+      "why": "Writing to the wrong session id injects keystrokes into a working agent.",
+      "error": "session sess_does_not_exist is not in the live list (sess_1784921923533_ad4ub81gu, sess_1784923719598_k7wt05wk3, sess_1784928134842_yy0a6x5ys, sess_1784929602380_uqgmhgptx, sess_1784931993141_0y6d4fs4v, sess_1784943069601_y42xw5b9m, sess_1784943363017_3it4ewy2m, sess_1784943920590_77o4ans1w, sess_1784943934204_qzsevksjb, sess_1784943991311_m4s5pk6dn, sess_1784944010630_wqur6ik1f, sess_1784944387822_6fnwe49m6, sess_1784944730149_4x8f87rtx, sess_1784944783018_yoanvcfrb, sess_1784944811459_sbugzas5h, sess_1784944885274_utjcuysn1, sess_1784963336241_otmwck8r6, sess_1784963392121_vpxnam1dc, sess_1784963405595_xmm1u60ga, sess_1784963455127_840utwts7, sess_1784963473127_zcla1wp9t, sess_1784963799367_lob0w8phv)"
+    },
+    {
+      "name": "session is designated for measurement, not a working agent (status: n/a)",
+      "status": "fail",
+      "why": "A quiet window proves nothing about whether an agent owns this terminal.",
+      "error": "no session to classify"
+    },
+    {
+      "name": "session is quiet enough to attribute an echo (2s idle watch)",
+      "status": "fail",
+      "why": "The echo metric assumes the next frame is a response. On a chatty session that assumption is false and the number is fiction.",
+      "error": "idle watch did not run (attach failed)"
+    }
+  ],
+  "passed": false,
+  "payload": {
+    "sessions": 22,
+    "match": null,
+    "quiet": null
+  }
+}

@@ -51,7 +51,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { getAdapter } from './adapters.mjs';
 import { openRecordedSocket, waitFor, sleep, assertWebSocketAvailable } from '../lib/ws.mjs';
 import { summarize, histogram, roundDeep, round } from '../lib/stats.mjs';
@@ -366,7 +366,7 @@ async function modeFanout(adapter, baseUrl, sessionId, subscribers, seconds) {
  * agent injects keystrokes into that agent's prompt. It sends a bare CR
  * (`\r`) — the most inert thing a shell/TUI echoes — and never a command.
  */
-async function modeEcho(adapter, baseUrl, sessionId, cycles) {
+export async function modeEcho(adapter, baseUrl, sessionId, cycles) {
   if (process.env.TM8_PERF_ALLOW_WRITE !== '1') {
     throw new Error(
       'echo mode WRITES into the target PTY and is refused by default.\n' +
@@ -521,10 +521,18 @@ async function main() {
   console.error(`\n# artifact: ${outPath}`);
 }
 
-main().then(
-  () => process.exit(0),
-  (error) => {
-    console.error(`\nperf rig failed: ${error.message}`);
-    process.exit(1);
-  },
-);
+// Run only when invoked as a script. `echo-dry-run.mjs` imports `modeEcho` from
+// here so the dry run exercises THE measurement code that will produce the
+// controlled baseline — a dry run against a copy of the logic proves nothing.
+const INVOKED_DIRECTLY =
+  process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+
+if (INVOKED_DIRECTLY) {
+  main().then(
+    () => process.exit(0),
+    (error) => {
+      console.error(`\nperf rig failed: ${error.message}`);
+      process.exit(1);
+    },
+  );
+}

@@ -1,0 +1,168 @@
+{
+  "rig": "echo-dry-run",
+  "rigVersion": 1,
+  "mode": "self",
+  "startedAt": "2026-07-25T07:32:43.310Z",
+  "baseUrl": "mock://local-fixture",
+  "sessionId": null,
+  "checks": [
+    {
+      "name": "mock server computes the RFC 6455 §1.3 accept key correctly",
+      "status": "pass",
+      "why": "A bad handshake fails as an unexplained socket error, not as a clear message.",
+      "detail": {
+        "acceptKey": "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      }
+    },
+    {
+      "name": "safety interlock: echo mode refuses to run without TM8_PERF_ALLOW_WRITE=1",
+      "status": "pass",
+      "why": "echo writes into a live PTY; the interlock is what keeps it off a working agent.",
+      "detail": null
+    },
+    {
+      "name": "measures ground truth: fixture delay 25ms → reported p50",
+      "status": "pass",
+      "why": "A latency rig that does not track a known delay is measuring the wrong thing.",
+      "detail": {
+        "p50": 42.78,
+        "min": 30.7,
+        "max": 81.91
+      }
+    },
+    {
+      "name": "scrollback replay is not counted as an echo sample",
+      "status": "pass",
+      "why": "Measuring the replay blob yields a fast, plausible, entirely fictional number.",
+      "detail": {
+        "echoBytes": 4
+      }
+    },
+    {
+      "name": "discriminates fast from slow (1ms fixture vs 25ms fixture)",
+      "status": "pass",
+      "why": "If both fixtures read the same, the rig is reporting its own overhead.",
+      "detail": {
+        "fastP50": 24.74,
+        "slowP50": 42.78,
+        "deltaMs": 18.04
+      }
+    },
+    {
+      "name": "a silent PTY yields timeouts, never a fabricated number",
+      "status": "pass",
+      "why": "A broken prompt path must read as absent, not as fast (04 §6 / R17).",
+      "detail": {
+        "timeouts": 2
+      }
+    },
+    {
+      "name": "legacy adapter parses the `attached` handshake frame",
+      "status": "pass",
+      "why": "Wrong handshake parsing = the rig never starts sampling.",
+      "detail": {
+        "type": "attached",
+        "hasReplay": true,
+        "base": 0,
+        "gap": 0,
+        "next": 10,
+        "epoch": null,
+        "replayKind": "delta"
+      }
+    }
+  ],
+  "passed": true,
+  "payload": {
+    "slow": {
+      "roundTripMs": {
+        "n": 6,
+        "min": 30.700541999999587,
+        "p50": 42.7847499999998,
+        "p90": 81.909584,
+        "p95": 81.909584,
+        "p99": 81.909584,
+        "max": 81.909584,
+        "mean": 51.24764616666638,
+        "stddev": 19.027020704746995
+      },
+      "samples": [
+        {
+          "roundTripMs": 42.7847499999998,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 37.21112499999981,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 81.909584,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 30.700541999999587,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 64.597667,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 50.28220899999906,
+          "bytes": 4
+        }
+      ]
+    },
+    "fast": {
+      "roundTripMs": {
+        "n": 6,
+        "min": 6.937291999998706,
+        "p50": 24.74029199999859,
+        "p90": 129.716124999999,
+        "p95": 129.716124999999,
+        "p99": 129.716124999999,
+        "max": 129.716124999999,
+        "mean": 39.895673833333,
+        "stddev": 45.0773456648178
+      },
+      "samples": [
+        {
+          "roundTripMs": 14.658499999999549,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 6.937291999998706,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 129.716124999999,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 30.311084000000847,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 24.74029199999859,
+          "bytes": 4
+        },
+        {
+          "roundTripMs": 33.01075000000128,
+          "bytes": 4
+        }
+      ]
+    },
+    "silent": {
+      "timeouts": 2,
+      "samples": [
+        {
+          "roundTripMs": null,
+          "timedOut": true
+        },
+        {
+          "roundTripMs": null,
+          "timedOut": true
+        }
+      ]
+    }
+  }
+}

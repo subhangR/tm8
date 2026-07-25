@@ -5,10 +5,14 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "harness": "node harness/pty-harness.mjs"
   },
   "dependencies": {
-    "@tm8/contract": "workspace:*"
+    "@tm8/contract": "workspace:*",
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.0.0"
   },
   "devDependencies": {
     "typescript": "^5.5.0",

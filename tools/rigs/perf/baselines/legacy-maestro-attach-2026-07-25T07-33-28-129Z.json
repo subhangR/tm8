@@ -1,0 +1,102 @@
+{
+  "rig": "pty-latency",
+  "rigVersion": 1,
+  "target": "legacy-maestro",
+  "baseUrl": "http://localhost:4570",
+  "label": null,
+  "startedAt": "2026-07-25T07:33:28.129Z",
+  "durationMs": 4699.523,
+  "machine": {
+    "hostname": "Srees-MacBook-Pro.local",
+    "platform": "darwin 23.4.0",
+    "arch": "arm64",
+    "cpuModel": "Apple M1 Pro",
+    "cpuCount": 8,
+    "totalMemGB": 16,
+    "loadAvg1m": 84.02,
+    "nodeVersion": "v25.6.1"
+  },
+  "result": {
+    "mode": "attach",
+    "sessionId": "sess_1784921923533_ad4ub81gu",
+    "cycles": 2,
+    "failures": 0,
+    "connectMs": {
+      "n": 2,
+      "min": 339.032,
+      "p50": 339.032,
+      "p90": 858.204,
+      "p95": 858.204,
+      "p99": 858.204,
+      "max": 858.204,
+      "mean": 598.618,
+      "stddev": 367.11
+    },
+    "handshakeMs": {
+      "n": 2,
+      "min": 1057.039,
+      "p50": 1057.039,
+      "p90": 1330.903,
+      "p95": 1330.903,
+      "p99": 1330.903,
+      "max": 1330.903,
+      "mean": 1193.971,
+      "stddev": 193.651
+    },
+    "hydrationMs": {
+      "n": 2,
+      "min": 1057.856,
+      "p50": 1057.856,
+      "p90": 1331.117,
+      "p95": 1331.117,
+      "p99": 1331.117,
+      "max": 1331.117,
+      "mean": 1194.487,
+      "stddev": 193.225
+    },
+    "replayBytes": {
+      "n": 2,
+      "min": 2557,
+      "p50": 2557,
+      "p90": 2557,
+      "p95": 2557,
+      "p99": 2557,
+      "max": 2557,
+      "mean": 2557,
+      "stddev": 0
+    },
+    "replayThroughputMBps": {
+      "n": 2,
+      "min": 0.002,
+      "p50": 0.002,
+      "p90": 0.002,
+      "p95": 0.002,
+      "p99": 0.002,
+      "max": 0.002,
+      "mean": 0.002,
+      "stddev": 0
+    },
+    "samples": [
+      {
+        "connectMs": 858.204,
+        "handshakeMs": 1330.903,
+        "hydrationMs": 1331.117,
+        "replayBytes": 2557,
+        "replayThroughputMBps": 0.002,
+        "gap": 4873419,
+        "replayKind": "snapshot",
+        "totalMs": 2189.263
+      },
+      {
+        "connectMs": 339.032,
+        "handshakeMs": 1057.039,
+        "hydrationMs": 1057.856,
+        "replayBytes": 2557,
+        "replayThroughputMBps": 0.002,
+        "gap": 4873419,
+        "replayKind": "snapshot",
+        "totalMs": 1407.492
+      }
+    ]
+  }
+}
