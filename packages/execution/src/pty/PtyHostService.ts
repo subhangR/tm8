@@ -747,6 +747,16 @@ export class PtyHostService {
   }
 
   /**
+   * ⚠ NOT the seam for a browser PTY WebSocket — use the primitives directly as
+   * `packages/server/src/pty/pty-ws-server.ts` does. This method delivers the
+   * replay THROUGH the sink BEFORE returning its metadata (replay-then-handshake).
+   * The tm8 wire protocol is handshake-then-replay: the client must receive the
+   * `attached` control frame and reset its xterm BEFORE a snapshot replay paints,
+   * or the repaint lands in the old buffer and is then wiped by the reset. Reach
+   * for this only for an in-process consumer that needs no separate handshake
+   * (today: `harness/pty-harness.mjs`). Fixing the ordering here would change
+   * behaviour the harness depends on, so it is left as-is with this warning.
+   *
    * High-level attach seam: resolve the resume point for a (re)connecting sink
    * at raw byte `fromOffset`, deliver the sanitized scrollback THROUGH the sink,
    * and join it to the live fan-out — returning the resume-handshake metadata.
