@@ -227,25 +227,17 @@ this lane's deliverable, shipped as pure framework-free modules FE wires into it
   entity upsert/delete (+ counter fold-in), edge upsert/delete (+ per-entity index), message
   upsert-by-anchor (sorted, capped, tombstones stay), activity prepend (capped), notification upsert.
   Inputs/outputs are plain immutable records — usable inside any `set()`.
-- **Passthrough route** (Delta 1 consumers) — one small table, no generic magic. **Delta 1 v1
-  scope (server-owner, verified at write sites): only `menu.updated` and
-  `space.default_channel.updated` actually flow.** The remaining rows are stored as bare flat
-  payloads that cannot pass strict verbatim passthrough and stay OFF the wire until write-side
-  reshaping is ruled (escalated to master, timing unknown). Their table rows stay — the contract
-  types are real and handling is forward-compatible — but the data layer MUST NOT rely on them for
-  correctness. Source of truth for handoff/session state transitions is entity-backed:
-  `entity.upsert`/`edge.upsert` from the trigger, which flow today (work_session status changes
-  included).
+- **Passthrough route** (Delta 1 consumers) — one small table, no generic magic:
 
-  | event type | handling | Delta 1 v1 |
-  |---|---|---|
-  | `menu.updated` | apply (full `MenuConfig` in payload) | **flows** |
-  | `space.default_channel.updated` | apply to space-settings slice | **flows** |
-  | `message.delivery_reserved` / `message.delivery_settled` | apply to `deliveryByMessageId` | dormant |
-  | `message.attachments.updated` | apply (full `MessageView`) | dormant |
-  | `handoff.prepared/…/withdrawn` | apply to `handoffsByWorkSession` (full `HandoffView`) | dormant |
-  | `project.association.corrected` | invalidate `connections(entityId)` — refetch on demand | dormant |
-  | `interaction_profile.*` | invalidate profile slice (Phase-2 surface; no eager handling) | dormant + **blocked**: contract-vs-migration event-name drift (027 authors `teammate_default_updated`/`space_default_updated`; contract declares only `default_updated`) — build against neither until master rules |
+  | event type | handling |
+  |---|---|
+  | `menu.updated` | apply (full `MenuConfig` in payload) |
+  | `space.default_channel.updated` | apply to space-settings slice |
+  | `message.delivery_reserved` / `message.delivery_settled` | apply to `deliveryByMessageId` |
+  | `message.attachments.updated` | apply (full `MessageView`) |
+  | `handoff.prepared/…/withdrawn` | apply to `handoffsByWorkSession` (full `HandoffView`) |
+  | `project.association.corrected` | invalidate `connections(entityId)` — refetch on demand |
+  | `interaction_profile.*` | invalidate profile slice (Phase-2 surface; no eager handling) |
 
 - **`journal.ts`** — `createJournal()`: `applyOptimistic(cmid, patches)` captures prior summaries,
   `reconcile(cmid)` drops the entry (called on event echo OR CommandResult success — first wins),
@@ -268,13 +260,10 @@ same `clientMutationId` also reconciles (idempotent; seq-dedupe makes double-app
   (recipient-private rows on the same spine, §6.6). Badge = `readAt == null` count; toast on
   `notification.created` newer than hydration point.
 - `markRead` is optimistic (set `readAt` locally, rollback on failure).
-- Delivery facets: `delivery(messageId)` **on demand is the correctness path** — the
-  `message.delivery_settled` passthrough is Delta-1-dormant (§7), so live push of facet changes
-  does not exist in v1. Facets refresh on read: when a message's delivery detail is opened, and on
-  a visible-row refetch when its anchor's messages are re-read. When the passthrough later flows,
-  it upgrades freshness with zero interface change. `MessageDeliveryRecord` passes through
-  UNCOLLAPSED — the two facets (delivered/refused/unknown × recorded) are separate fields
-  end-to-end; rendering rule restated for the record: `unknown` is never styled as success.
+- Delivery facets: `delivery(messageId)` on demand + `message.delivery_settled` passthrough keeps
+  `deliveryByMessageId` current. `MessageDeliveryRecord` passes through UNCOLLAPSED — the two facets
+  (delivered/refused/unknown × recorded) are separate fields end-to-end; rendering rule restated for
+  the record: `unknown` is never styled as success.
 - Cross-space badge honesty: only open spaces stream; a slow `inbox()` re-read (60s while the window
   is visible) covers the other spaces. No push infrastructure invented for it.
 
@@ -317,21 +306,7 @@ duplicate through the seam). (3) reducers/journal — pure vitest, no server. (4
 server-owner's Delta 2 implementation. Shared harness/fixtures with server-owner's Delta 3 e2e tests —
 same paths, one truth.
 
-## 12. Known backend defects the seam absorbs as data (W5 forward, measured detail pending)
-
-Master relayed three W5-measured defects that touch this layer. Design stance: each arrives at the
-UI as an honest state, never a surprise or a fake.
-
-| Defect | Seam stance |
-|---|---|
-| `presence.get` returns empty viewers on every node | Already structural: the seam exposes NO presence surface (R8 dormant). This defect is why that exclusion stays hard — an empty-viewers read rendered as "nobody here" would be a lie. |
-| `spaces.home` advertises a next-page token no op accepts | `spaces.home` is not in the seam (not gate-critical). If it is ever added, its `nextCursor` must be treated as dead — never rendered as a load-more affordance until the server fixes the round trip. |
-| Message provenance permanently null through public writes | `MessageView` DTOs pass through verbatim; FE must render null provenance as its designed unknown-author state. The fixture dataset (C-5) must include null-provenance messages so the gate screen proves that rendering. |
-
-Adjust this table to W5's measured detail when it arrives; if any defect is fixed server-side, the
-stance collapses to nothing (DTO passthrough already handles the healthy case).
-
-## 13. Open items
+## 12. Open items
 
 - [ ] server-owner: confirm one-resume sufficiency as written in §6.4 (loop endorsed; single-resume
       relies on the pump walking the backlog) and the `since: 0` first-open bootstrap (§6 algorithm).
