@@ -44,3 +44,19 @@ Source: Round-2 reviewer remark, forwarded by master coordinator.
 Ruling: T5-2 (Board/Feed/Gallery layouts), T5-5/T5-6 (Launch & Authoring flows), and T5-3 (Doc Authoring) are especially tight and are treated as canonical composition references when other canvases are ambiguous.
 
 Rationale: Reviewer's explicit guidance; gives ambiguity-resolution precedence within the canvas suite.
+
+## D5 — Kit keeps canvas-measured literals that sit outside the named token steps (2026-07-28)
+
+Source: A0 foundation worker, extracting kit primitives from T0-1 / T0-3 / T0-4.
+
+Ruling: Colors are ALWAYS tokens (no hex in kit.css beyond what tokens.css defines). Geometry and micro-type literals measured from the canvases are kept verbatim even where they fall between the named token steps: mono micro sizes 9.5px (status pills) / 10px (section eyebrows, filter pills) / 11.5px (edge chips), the 6px radius on edge chips and kbd hints (between --pn-r-xs 5 and --pn-r-sm 7), and the agent-avatar 5px radius at EVERY size including 32px (T0-1 Z4: avR = member ? '50%' : '5px').
+
+Rationale: The charter makes the canvases ground truth and the A0 brief says "match the canvases, do not invent styling". Normalizing these to the token scale would visibly drift from the approved pixels; ATELIER §6's "may not break the radii set" binds the designer's new work, and these values are the approved design's own output.
+
+## D6 — Fixture vocabulary for the stale-session honesty state (2026-07-28)
+
+Source: A0 foundation worker, fixture dataset design.
+
+Ruling: Fixtures model a "stale" work session as `state.status === 'running'` with an activityAt well in the past (sessionStale, last heard 11:05 against FIXTURE_NOW 12:00) — there is no invented `stale` status and no fake liveness field on the contract shape. The honesty derivation ("running per record · unverified", no live dot) belongs to the UI layer once the charter-R3 liveness read exists; until then a running record without liveness proof must never render as live.
+
+Rationale: Charter R3/R8 keep liveness detection out of this program's fixtures; inventing a non-contract field would leak a fake seam. The contract already expresses the honest truth: the record claims running, and recency is the only evidence available.

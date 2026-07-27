@@ -1,0 +1,15 @@
+/* Host-frame reset, mirroring the canvases' helmet rule
+   (html,body{margin:0;padding:0;height:100%;overflow:hidden}).
+   Everything visual lives under .cv2-root via tokens.css — this file must
+   stay this small. */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}

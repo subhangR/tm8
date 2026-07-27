@@ -1,0 +1,180 @@
+/* ==========================================================================
+   tm8-ui KIT — the primitive vocabulary extracted from the design canvases.
+   Colors are ALWAYS tokens. Geometry/type literals (9.5/10/11.5px mono
+   micro sizes, 6px chip radius) are measured from the canvases and kept
+   verbatim per DECISIONS.md D5 — do not "normalize" them to the named
+   token scale.
+   Sources: T0-1 Workspace Hi-Fi (tab bar, Z4 header, edge chips, kbd hint),
+   T0-3 Entity List Panel (filter pills), T0-4 Entity Detail Panels (status
+   pills, icon buttons, avatars). Scoped under .cv2-root like tokens.css.
+   ========================================================================== */
+
+/* Live-pulse used by streaming dots (canvas helmet keyframes, verbatim). */
+@keyframes pnPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* --- Pill — status token: soft fill + colored word (T0-4) ----------------- */
+.cv2-root .kit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  border-radius: var(--pn-r-pill);
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex: none;
+}
+.cv2-root .kit-pill--run    { color: var(--pn-run);    background: var(--pn-run-soft); }
+.cv2-root .kit-pill--wait   { color: var(--pn-wait);   background: var(--pn-wait-soft); }
+.cv2-root .kit-pill--block  { color: var(--pn-block);  background: var(--pn-block-soft); }
+.cv2-root .kit-pill--info   { color: var(--pn-info);   background: var(--pn-info-soft); }
+.cv2-root .kit-pill--idle   { color: var(--pn-idle);   background: var(--pn-idle-soft); }
+.cv2-root .kit-pill--brand  { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+
+/* Outlined variant — the T0-3 list-header filter/sort pills. */
+.cv2-root .kit-pill--outline {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  padding: 2px 9px;
+}
+
+.cv2-root .kit-pill__dot--pulse {
+  animation: pnPulse 1.6s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .kit-pill__dot--pulse {
+    animation: none;
+  }
+}
+
+/* --- Eyebrow — uppercase mono micro-label heading a small section --------- */
+/* Canvas section eyebrows are 10px (SERVER URL, SUBTREE · 2, RUNS · 1 LIVE);
+   the 11px tokens.css .t-eyebrow stays available for larger editorial use. */
+.cv2-root .kit-eyebrow {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.cv2-root .kit-eyebrow--faint {
+  color: var(--pn-ink-4);
+}
+
+/* --- Chip (Z1) — kind glyph + name, bordered, clickable/draggable --------- */
+/* T0-1 detail-panel edge chips: 1px line border, 6px radius, 11.5px UI face. */
+.cv2-root .kit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .kit-chip:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-line-2);
+}
+.cv2-root .kit-chip__glyph {
+  color: var(--pn-ink-3);
+}
+
+/* --- IconBtn — square glyph button, always aria-labeled (T0-4) ------------ */
+.cv2-root .kit-iconbtn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--pn-r-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cv2-root .kit-iconbtn:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .kit-iconbtn--danger:hover {
+  background: var(--pn-hover);
+  color: var(--pn-block);
+}
+.cv2-root .kit-iconbtn:focus-visible {
+  outline: 1px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* --- Kbd — keyboard hint (T0-1 tab bar "/ palette · ⌘K"; bare "esc") ------ */
+.cv2-root .kit-kbd {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 3px 9px;
+  background: var(--pn-card);
+  white-space: nowrap;
+}
+.cv2-root .kit-kbd--bare {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* --- Avatar — shape IS provenance: humans round, agents rounded-square ---- */
+/* Agents keep a 5px radius at every size (T0-1 Z4: avR '50%' vs '5px').
+   Never shape alone — provenance also appears as text/chip where it matters. */
+.cv2-root .kit-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  user-select: none;
+}
+.cv2-root .kit-avatar--human {
+  border-radius: 50%;
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+}
+.cv2-root .kit-avatar--agent {
+  border-radius: 5px;
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand-2);
+}
+.cv2-root .kit-avatar--mono {
+  font-family: var(--pn-mono);
+}
+
+/* --- Hairline discipline — 1px `line` separators, never heavy dividers ---- */
+.cv2-root .kit-hairline-b { border-bottom: 1px solid var(--pn-line); }
+.cv2-root .kit-hairline-t { border-top: 1px solid var(--pn-line); }
+.cv2-root .kit-hairline-b--strong { border-bottom: 1px solid var(--pn-line-2); }
+.cv2-root .kit-vrule {
+  flex: none;
+  width: 1px;
+  background: var(--pn-line);
+}
