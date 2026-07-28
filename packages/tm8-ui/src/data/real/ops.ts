@@ -29,7 +29,6 @@
  */
 import {
   bindPath,
-  isOperationName,
   type ActivityItem,
   type CollectionQuery,
   type CollectionResult,
@@ -55,7 +54,6 @@ import {
   type MessageView,
   type MoveEntityInput,
   type NotificationItem,
-  type OperationName,
   type Page,
   type PatchEntityInput,
   type PatchMessageInput,
@@ -85,22 +83,16 @@ export interface DurableEventPage {
 }
 
 /**
- * `execution.liveness` (LLD C-1) has NO catalog row yet — verified this session
- * against packages/contract/src/catalog.ts, and recorded as an open item at LLD
- * §13. Editing the contract is not this lane's to do (R4 additive-only, and the
- * package is read-only to me), so the path is bound literally to the shape C-1
- * fixed with server-owner.
- *
- * TODO(swap-to-bindPath): delete the literal branch the moment the row lands.
- * The `isOperationName` guard makes that swap automatic and verifiable rather
- * than a diary entry — when the row exists, the catalog wins immediately, and
- * the test in ops.test.ts asserts BOTH branches produce the same path today.
+ * `execution.liveness` — catalog row A21 as of Delta 2 (commit dd41e89; signal
+ * [SO->BRIDGE 32], ACKed [BRIDGE->SO 33]). The literal-path branch that carried
+ * this op while the row was absent died its scheduled death per the disposition
+ * written in liveness-absent.itest.ts the day the suite was born: the catalog
+ * is now the only source of this path.
  */
 export const LIVENESS_OP = 'execution.liveness';
 
 export function livenessPath(spaceId: SpaceId): string {
-  if (isOperationName(LIVENESS_OP)) return bindPath(LIVENESS_OP as OperationName, { spaceId });
-  return `/v2/spaces/${encodeURIComponent(spaceId)}/execution/liveness`;
+  return bindPath(LIVENESS_OP, { spaceId });
 }
 
 /** Cursor-paged reads share one query builder; `undefined` keys are dropped by http.ts. */

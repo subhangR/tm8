@@ -18,30 +18,24 @@ function harness(reply: unknown = {}): { ops: ReturnType<typeof createOps>; f: F
   return { ops, f };
 }
 
-describe('ops: execution.liveness — the uncataloged route (LLD C-1 / §13)', () => {
-  it('records the CURRENT catalog state, so the day the row lands this test says so', () => {
-    // Not an assertion about what should be — an assertion about what IS, dated
-    // by the run. When server-owner lands the row this flips and the TODO in
-    // ops.ts becomes actionable rather than forgettable.
-    expect(isOperationName(LIVENESS_OP)).toBe(false);
-    // Widened deliberately: with the row absent, tsc PROVES the literal types
-    // cannot overlap and rejects the direct comparison — which is itself the
-    // strongest evidence available, and flips to a runtime check on the day the
-    // row lands.
+describe('ops: execution.liveness — catalog row A21 (Delta 2, dd41e89)', () => {
+  it('the canary retired honestly: the row EXISTS and the catalog owns the path', () => {
+    // This test spent its first life asserting the row's ABSENCE (the scheduled
+    // failure that fired on Delta 2's landing, per the disposition written in
+    // liveness-absent.itest.ts). It flips, as planned, to assert presence — and
+    // the literal-path branch it guarded is deleted, so the catalog is now the
+    // ONLY source of this path.
+    expect(isOperationName(LIVENESS_OP)).toBe(true);
     const names: readonly string[] = OPERATIONS.map((op) => op.name);
-    expect(names).not.toContain(LIVENESS_OP);
+    expect(names).toContain(LIVENESS_OP);
   });
 
-  it('binds the C-1 path literally, identical to what bindPath would produce', () => {
+  it('binds via the catalog to the C-1 path shape', () => {
     expect(livenessPath('sp-1')).toBe('/v2/spaces/sp-1/execution/liveness');
-    // The control: the same template, filled by the catalog's own binder using
-    // a row that DOES exist and shares the prefix. If bindPath's substitution
-    // rules ever change, the literal branch must change with them.
-    expect(bindPath('spaces.get', { spaceId: 'sp-1' })).toBe('/v2/spaces/sp-1');
-    expect(livenessPath('sp-1').startsWith(bindPath('spaces.get', { spaceId: 'sp-1' }))).toBe(true);
+    expect(livenessPath('sp-1')).toBe(bindPath(LIVENESS_OP, { spaceId: 'sp-1' }));
   });
 
-  it('percent-encodes the spaceId like bindPath does', () => {
+  it('percent-encodes the spaceId (bindPath property, inherited not reimplemented)', () => {
     expect(livenessPath('a/b')).toBe('/v2/spaces/a%2Fb/execution/liveness');
   });
 
