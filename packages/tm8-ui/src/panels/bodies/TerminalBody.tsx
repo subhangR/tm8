@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { EntityDetail, HandoffView } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { Eyebrow } from '../../kit';
 import {
   ExitedFallback,
+  LiveTerminal,
   NeedsYouBanner,
   ReservedToolbarSeam,
   StaleFallback,
@@ -11,9 +12,11 @@ import {
   TerminalChromeStrip,
   TerminalHost,
   UnverifiedFallback,
+  isLiveTerminalEnabled,
   presentSession,
   presentationStyle,
   toSessionRow,
+  type LiveTerminalHandle,
 } from '../../terminal';
 import { DisabledIconControl, toReason } from '../honesty/DisabledWithReason';
 import { SharedContextSection } from '../share/SharedContextSection';
@@ -89,6 +92,10 @@ export function TerminalBody({
     needsAttention,
   });
   const style = presentationStyle(presentation);
+  // Only ever non-null while isLiveTerminalEnabled() has actually mounted a
+  // LiveTerminal (task P2 §8) — the ref stays null under the Phase-1 default,
+  // so the chip's onClick below is a safe no-op until the flag is on.
+  const liveTerminalRef = useRef<LiveTerminalHandle>(null);
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
@@ -108,15 +115,18 @@ export function TerminalBody({
         statusDetail={livenessReason}
         compact={compact}
         onOpenTranscript={onOpenTranscript}
+        onExitTerminal={() => liveTerminalRef.current?.blur()}
       />
 
       {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
 
       <SessionCanvas
         presentation={presentation}
+        sessionId={detail.id}
         livenessLabel={livenessLabel}
         livenessReason={livenessReason}
         onOpenTranscript={onOpenTranscript}
+        liveTerminalRef={liveTerminalRef}
       />
     </div>
   );
@@ -249,22 +259,32 @@ function SessionContextHeader({
  */
 function SessionCanvas({
   presentation,
+  sessionId,
   livenessLabel,
   livenessReason,
   onOpenTranscript,
+  liveTerminalRef,
 }: {
   presentation: ReturnType<typeof presentSession>;
+  sessionId: string;
   livenessLabel?: string;
   livenessReason?: string;
   onOpenTranscript?: () => void;
+  liveTerminalRef?: React.Ref<LiveTerminalHandle>;
 }) {
   switch (presentation) {
     case 'streaming':
     case 'running':
     case 'needs-you':
-      // Proven alive: reserve the black box. Phase 1 has no bytes to put in
-      // it, and the placeholder says exactly that rather than faking output.
-      return <TerminalHost placeholder={TERMINAL_PLACEHOLDER} />;
+      // Proven alive: mount the real byte stack behind the P2 dev flag
+      // (liveTerminalFlag.ts); off by default this still reserves the black
+      // box with Phase 1's placeholder, since there are no bytes to put in
+      // it without opting in.
+      return isLiveTerminalEnabled() ? (
+        <LiveTerminal ref={liveTerminalRef} sessionId={sessionId} live />
+      ) : (
+        <TerminalHost placeholder={TERMINAL_PLACEHOLDER} />
+      );
 
     case 'stale':
       return <StaleFallback label={livenessLabel} reason={livenessReason} />;

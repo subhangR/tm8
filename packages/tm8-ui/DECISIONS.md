@@ -511,3 +511,233 @@ Source: USER order at R5 review, via master coordinator. Ledgered by fe-coordina
 Ruling: Every task/entity row gets a RUN BUTTON with the launch workflow behind it — launch profile, model selection, agent/teammate selection — in the CURRENT build, fixture-backed (fixture teammates/models/projects; spawn creates a fixture session; real execution.spawn wires at integration). Interaction shape is user-named: the maestro TaskTile expand pattern (row Run → inline quick config with teammate/model → full sheet), as a UX TRANSPLANT REFERENCE (reference paths recorded in the dispatch; R9 does not apply — this is interaction-shape reference, not code harvest). The T5-5 canvas remains the DESIGN authority for the full launch sheet (teammate rows with model+tool+owner, trust-gated M:N projects incl. scratch, profile resolution shown, refusal-card honesty). Registry-driven per-kind wiring via the existing rowActions carrier (B1) — no kind branching.
 
 Rationale: User order supersedes the A2 deferral for this workflow; composition law reconciles the user-required interaction shape with the approved sheet design. Sequencing (fe call): the findings #1–#7 capture ships as R5-closure evidence immediately; the Run-inclusive capture completes the reviewed package in the follow-on window.
+
+## D45 — The launch data layer: five calls, each traceable to the contract or the canvas (2026-07-28)
+
+Source: A1a nav/registry seat, building D44's Run workflow data. Design accepted whole by fe-coordinator ([fe->a1a 38]); the quick-path target ratified in the same message.
+
+The launch configuration is DATA (`src/domain/launch.ts`) — agent tools and models, the contract's own `mode` union, project trust options, the scratch target, profile resolution, capacity, refusals, and one submit builder. It renders nothing and imports no seam. Five calls were made in authoring it; each is recorded with what it was traced to, because "it seemed sensible" is how a fake seam gets built.
+
+1. **Scratch is the ABSENCE of a project, not a flag.** `ExecutionSpawnInput.projectId` omitted/null already means "a projectless scratch session in a server-managed temp dir" — the contract says so in its own comment. So the submit has no scratch special case: the target discriminant picks `projectId: null` + `workdir: {mode:'scratch'}` from ONE narrowing, and the two cannot disagree.
+
+2. **`confirmUntrusted` is carried only when consent was actually given.** The contract types it as literal `true`, not `boolean` — so an absent field and a false one are different statements, and emitting `false` would be inventing a "consent was considered and declined" signal the contract does not have.
+
+3. **`modelsFor()` returns EMPTY for an unknown tool, never a default.** `agentTool` is a free string in the contract, so a node may run tools this UI has not listed. Offering Claude Code's models for an unrecognised tool is a confident guess that surfaces as a spawn-time refusal — the failure lands after commitment rather than before it.
+
+4. **The teammate's RECORDED model wins over the UI's first option.** Opening the quick config must not silently change what has been running. The record is what has been executing; a UI default that overrode it would make merely *looking* at the config a mutation.
+
+5. **ONE builder for both surfaces.** The inline quick config and T5-5's full sheet both call `buildSpawnInput`, so they cannot fork into two spawn semantics. This is the same single-source rule the tier counts got (D43) and the honesty copy got (D15) — two callers of one builder, never two builders agreeing by care.
+
+**QUICK-PATH TARGET — RATIFIED: scratch.** A1c proposed defaulting to the task's own launch provenance, which is better UX if the data exists. Measured: it does not. A task carries no launch provenance in `EntityState`, and any project association would be an `in_project` EDGE read that no current surface makes. Scratch is always valid, needs no trust gate, and is a real contract state — whereas defaulting to a project whose trust we have not checked would put an ENABLED Run over a refusal, the L6 failure. Provenance-defaulting would need a per-expand `connections()` read plus an in_project-edge policy: a refinement for if the user asks, not a default to invent.
+
+**ESCALATED, NOT INVENTED — the session→teammate join.** T5-5 draws "● 1 live session already" per teammate. `work_session` state carries NO `teamMemberId`; the only link is `EntitySummary.createdBy: ActorSummary`, and the contract does not say whether that records the PERSONA or the initiating human. Routed to bridge as the contract-semantics question it is. Interim rule, which is safe under either answer: gate the derivation on `createdBy.kind === 'team_member'`, so a wrong assumption produces ABSENCE (a missing badge) rather than a false count. Choosing the failure mode is available even when choosing the answer is not.
+
+**Registry wiring, no new mechanism:** `task.list.rowActions` gains `'run'` — the existing B1 carrier, no branching. `ActionDef` gains `flow?: 'launch'`, carried by `run`/`coordinate`/`launch-session` and deliberately absent from `complete`/`pull`/`link`/`terminate`: it declares that a verb opens a configuration before dispatch, so no surface can bare-spawn by accident and a verb without it dispatches immediately as before. Both halves asserted.
+
+Rationale: D44 pulled a whole workflow forward under time pressure, which is exactly the condition under which invented data gets written and never noticed. Recording what each call was traced to makes the inventions visible by their absence.
+
+## D46 — Amendment to D45: the session→teammate link is a relates_to EDGE; my interim gate was wrong and its safety property did not hold (2026-07-28)
+
+Source: bridge-coordinator's authoritative, tree-verified answer to the question D45 escalated, relayed by fe-coordinator. Correction written by A1a, the seat that got it wrong.
+
+**What D45 said.** That `work_session` carries no `teamMemberId`, that the only visible link was `EntitySummary.createdBy: ActorSummary`, and that gating a derivation on `createdBy.kind === 'team_member'` was safe because a wrong assumption would yield ABSENCE (a missing badge) rather than a false count — "choosing the failure mode is available even when choosing the answer is not."
+
+**What is actually true.** `createdBy` records the INITIATING ACTOR — in the normal UI flow the HUMAN member who pressed Run, and under `can_act_as` delegation possibly a DIFFERENT team_member than the persona being run. The session-to-persona link is a **`relates_to` edge** (session → team_member), written in the spawn transaction and deliberately not on the state arm.
+
+**So the safety property was false in both directions.** For ordinary human-initiated sessions `createdBy.kind` is `'member'`, the filter matches nothing, and the capacity chip is PERMANENTLY hollow — not a transient absence but a feature that never works. For delegated agent-initiated spawns `createdBy.kind` IS `'team_member'`, so the gate passes and attributes the session to the DELEGATING actor rather than the persona — a false count, precisely the outcome I claimed the gate made impossible.
+
+**The lesson, which is the reason this is its own entry rather than a line edit.** I reasoned about failure modes INSIDE an unknown I had explicitly named. D45 says in terms "the contract does not say whether that records the PERSONA or the initiating human" — and then chose a gate on the basis of how it would fail. Choosing a failure mode requires knowing the failure modes, which requires knowing the mechanism; not knowing the answer and reasoning about consequences anyway produces a confident safety claim resting on nothing. The correct move at that moment was to treat the unknown as BLOCKING for the derivation and ship no gate at all until bridge answered — which was already in flight. An escalation is not a licence to proceed carefully; it is a reason to not proceed.
+
+**Corrected derivation (now encoded in `launch.ts`):** the `relates_to` edge join — the domain store's edge index or `seam.connections()` — INTERSECTED with the liveness verdict. `TeammateLaunchState.liveSessionCount` is `number | null`, where `null` means UNKNOWABLE (edges not hydrated) and renders hollow-with-reason. Zero and unknown are different facts and the chip must not merge them.
+
+**RESERVE OPTION DECLINED.** Bridge offered to co-sponsor an R4-additive first-class `teamMemberId` on the `work_session` state arm. Not taken, for two reasons. (1) The domain store already maintains an edge index, so the join is tractable where edges are hydrated — the amendment would buy convenience, not capability. (2) A scalar beside the edge is a SECOND SOURCE for a relationship that is genuinely delegation-capable, and the whole day's discipline says two sources for one truth eventually disagree; here the edge is authoritative and a scalar could only ever be a projection of it. The honest hollow state is acceptable precisely because it is TRANSIENT — edges hydrate — which is the property my broken gate lacked. Revisit if measurement shows the launch sheet's path rarely hydrates edges; that would be a capability argument rather than a convenience one.
+
+Rationale: recorded in D45's amendment style as fe requested, and as a new entry rather than an edit to D45, per the ledger's append-only rule — the wrong reasoning stays visible next to its correction, because a ledger that hides how a seat got it wrong teaches nothing.
+
+## D47 — The layout A|B|C picker is CANVAS FURNITURE, not product (2026-07-28)
+
+Source: A1c, pre-empting a flagged candidate finding at the R5 review. Ruled by fe-coordinator on the measurement.
+
+Ruling: the `layout A B C` control drawn in the panel header of every T0-1 session frame is **not a product affordance and is not built**. It is the canvas's own variant picker, in the same class as the `#1D1912` demo board we already refuse to ship.
+
+Measured, not inferred: it sits inside `<sc-if value="{{c.hasVars}}" hint-placeholder-val="{{false}}">` — default FALSE — drives `vv.pick` to switch the mock between its own layout variants, and occupies the same header region as the numbered annotation badges.
+
+The finding that settles it, and the form to remember: the task panel body has three variants in the canvas source — `c.tvA` (commented "task · A rich"), `c.tvB`, `c.tvC` — and the picker is what switches between them. **The picker is furniture; the variant it defaults to is the spec.** So the control is not built, and variant A — the rich body measured in D48 — is the anatomy that is.
+
+Recorded because it is visible in every session-panel frame a reviewer will open, and an unledgered false positive costs the same review cycle every time it is re-noticed.
+
+## D48 — R5 #8 three-way split: the composed canvas draws the gate line, and ACCEPTANCE is where A2 begins (2026-07-28)
+
+Source: A1c, measuring T0-1's Z3 in-stack task panel against the build. Split ordered and accepted by fe-coordinator.
+
+Ruling, three parts:
+
+1. **GATE ANATOMY — builds now, regardless of D30.** T0-1's Z3 task Content body (`c.tvA`) draws, in order: a two-column metadata grid (Assignee · Priority tag · Project · ID), the description, `SUBTREE · N` with per-child dot / strikethrough-done / status word and `＋ add child…`, `RUNS · N LIVE` with a bordered live-session row (pulsing dot, agent avatar, name, `running · 2m · claude-sonnet`, trailing `● live`), and `LINKED` chips. The action bar additionally draws `Add child`, conditional on the kind. Whatever the composed canvas draws in the panel is gate anatomy (D42).
+
+2. **T0-4-ONLY DEPTH — stays deferred under D30, and the boundary is MEASURED.** `ACCEPTANCE · {done}/{total}` with ☑/☐ rows is drawn by T0-4 and appears **zero times** in T0-1's Z3 region. So acceptance criteria are T0-4 depth, not composed-canvas anatomy, and remain A2 under D30's citation — returned to the user as *ruled-not-missed*, never silently absent. One canvas draws it in the panel and the other does not: an auditable line rather than a remembered one.
+
+3. **The gate half ships as registry-carried CONTENT BLOCKS, not a hand-built task body.** Building a bespoke task body would deliver the archetype body D30 defers while claiming otherwise. Blocks keep the A2 line honest: A2 delivers the archetypes; this delivers what the composed canvas requires through the existing block mechanism.
+
+Method note worth keeping: the first measurement landed on the `zc.`-prefixed branch, which is the **Z4 full view** (820px reading column, 27px serif title), not the Z3 stack panel the user was looking at. Same class as D38's wrong-canvas error, one prefix down — the walk discipline caught it only because the prefix was checked rather than assumed.
+
+## D49 — `display: contents` is invisible to LAYOUT and fully visible to SELECTORS (2026-07-28)
+
+Source: A1c, from R5 #7's re-opening. The mechanism was my own d806c90.
+
+Ruling: a wrapper element is never "free", and `display: contents` does not make it so. The dark scope for the `terminal` archetype is applied **on the panel element** — `className` gains `cv2-root`, `data-theme="dark"` — rather than by wrapping it. `.cv2-root[data-theme="dark"]` is tokens.css's own selector, so the identical token scope opens with one fewer node and no parent-child relationship for a sibling's CSS to depend on. A regression test asserts the rendered root **is** the panel.
+
+Rationale: D40 wrapped the panel in `<AlwaysDark>`, a `display: contents` element. That generates no box — which is exactly why it read as free to add. But `display: contents` removes an element from the **box tree**, not the **DOM**, so a direct-child selector stops matching through it. The shell's `.shell-stack__col > * { flex: 1 1 auto }` then applied to the wrapper, which has no box and cannot grow, while `.pn-panel` became a grandchild the rule no longer reached. Session panels alone took their content width and left the stage empty — R5 #7, re-opened, mine, and diagnosed only because the flag named my commit.
+
+The transferable form: **I reached for `display: contents` BECAUSE it has no layout effect, and never considered that a sibling's CSS might depend on the DOM relationship rather than the box one.** A mechanism chosen for the property it lacks still carries every property nobody checked. The sibling's selector was correct; my wrapper silently changed what it pointed at.
+
+## D50 — OPEN, NOT CLOSED: a one-time theme/panel-kind reset that four attempts could not reproduce (2026-07-28)
+
+Source: A1b shell worker, observed during the first re-shoot attempt; repro run and disposition approved by fe-coordinator.
+
+Status: **UNREPRODUCED OBSERVATION — deliberately left open.** This entry exists so the next seat starts from "storage works, mechanism unknown, here is what was ruled out" rather than from scratch.
+
+What was observed, once: immediately after A1c's #5 landed and the page was reloaded, BOTH persisted viewer preferences appeared to reset together — theme fell back to light and the left panel reverted from Docs to Tasks — despite both having been verified persisting minutes earlier.
+
+What was then measured, and what it rules out:
+
+- **"Storage was cleared" is DISPROVEN.** Reading `localStorage` directly showed both keys present with correct values, and the DOM matching them (`tm8ui.theme`, `tm8ui.sidePanel.{viewer}.{spaceId}`). That was the leading hypothesis and it is wrong.
+- **Deliberate repro: both values set to non-defaults, then reloaded twice.** Both held, both cycles, DOM matching storage. Plus two independent earlier observations of correct persistence (a set-dark-reload-still-dark check, and the capture itself coming up dark on load). **Four clean counter-observations against one contradicting observation.**
+
+What is explained, and what is not — kept apart on purpose:
+
+- **The KIND half has a plausible cause in the observer's own instrumentation.** During the #7 investigation the author was clicking elements from the console by selector (`.lp__row, .lp__tile, [data-entity-id]`), which plausibly matches kind-dropdown rows. A stray probe click would have called `setLeftKind` and rewritten the key — consistent with the stored value being the DEFAULT pair rather than an arbitrary one, and with the timing.
+- **The THEME half is UNEXPLAINED.** Nothing in that story writes `tm8ui.theme`. React Fast Refresh remounting on the author's own `useTheme.ts` edit is the obvious candidate, but the initialiser reads storage on mount, so a remount should have produced dark, not light.
+
+The two symptoms are NOT attributed to one mechanism. They were observed together and that is all that is established; attaching the unexplained half to the half-explained one would manufacture corroboration, which charter R15's corollary names as the failure that suppresses the scrutiny finding the real cause.
+
+Risk accepted, stated for the gate: an intermittent forget could surface during review. Its consequence is benign — a viewer loses a theme or panel-kind preference and re-sets it in one click. Nothing is corrupted, no honesty state is affected, and no data is lost beyond a preference. It reads as a small annoyance, not a broken screen.
+
+Rationale for leaving it open rather than closing it: a clean bill that the evidence does not support is worse than a recorded unknown. Four passes do not prove absence for an intermittent, and the honest disposition of "could not reproduce" is a finding, not a failure to produce one.
+
+## D51 — USER AMENDMENT to D44: the Run surface carries the COMPLETE launch configuration set (2026-07-28)
+
+Source: USER at R5 review, via master coordinator ("all the configuration flows to run a task... the profiels and all that"). Ledgered by fe-coordinator.
+
+Ruling: The Run workflow's scope is the full set, fixture-backed: (1) teammate/agent selection (provenance shape, model + agentTool per row); (2) model selection (LaunchConfigDropdown pattern); (3) INTERACTION/LAUNCH PROFILE selection with the T2-4 laws VISIBLE at launch — the resolution chain shown (space default → teammate default → explicit pick), the pinned-at-launch immutability caption rendered BEFORE commit, and profile-status honesty (only active selectable; draft/retired disabled-with-reason); (4) project association per T5-5 (trust-gated, M:N multi-select + scratch, first pick = initial cwd); (5) the T5-5 refusal-card honesty (concurrency/trust). Quick-config expand = the fast path (teammate + model + profile line); the full sheet = everything. Fixtures grow accordingly: profiles in the T2-4 vocabulary including non-active statuses, projects with trust states.
+
+Rationale: The user's own statement of D44's intended breadth; the profile laws (WLT RULING L / T2-4) render at the moment they bind rather than being discoverable after commit.
+
+## D52 — T5-5's 420px sheet width is a SPECIMEN measurement, not a binding constraint (2026-07-28)
+
+Source: A1b shell worker, raised during the D44/D51 composition proposal; ruled by fe-coordinator.
+
+Ruling: The launch sheet **fills its stack column, floored at 320px**, exactly like every other panel. T5-5 draws it at `width:420px;flex:none`, and that number is how wide the artifact renders on its standalone presentation board — not a product constraint.
+
+The canvas argues this side itself. Its annotation says the sheet *"rides the panel stack (Z3 width, pop shadow)"*, and **Z3 width IS column-fill** under the R5 #7 law (D-ref: `2077dff`): a stack panel takes its column, and a panel that sizes to itself leaves the stage empty beside it.
+
+Why this needed ruling rather than transcription: building the 420 literally would have re-opened R5 #7 **in the newest surface, after it was closed twice, on the defect the user reported personally twice**. A fixed-420 sheet in a 660px column at 1512, or a ~914px column at the user's viewport class, is the identical symptom — panel left, graphite right.
+
+Rationale: the canvases are pixel ground truth for ANATOMY, and a standalone specimen's own frame width is not anatomy. Where a drawn dimension and a drawn behavioural annotation conflict, the annotation states the intent and the dimension states the exhibit. Flagged for the D10 pixel pass so the divergence reads as ruled, not missed.
+
+## D53 — Brass is the WINNING scope badge; and why this is NOT a D32 case (2026-07-28)
+
+Source: A1b shell worker, contradiction found while extracting T2-4 for the launch sheet; ruled by fe-coordinator.
+
+The contradiction: T2-4's prose says *"the winning badge is brass, the outranked one grey"*, but the frame draws brass on `space default` and **blue** on `scout's default` — i.e. brass sits on the OUTRANKED scope, since teammate default beats space default.
+
+Ruling: **BRASS = THE WINNER.** The resolved scope badge renders brass; superseded scopes render quiet. The prose and the suite-wide convention (brass is the active/current/selected treatment everywhere in this design system) agree against one frame's swap.
+
+**Explicitly distinguished from D32**, so neither entry is miscited later:
+
+- **D32** governs a case where the FRAME IS THE ONLY EVIDENCE of a value — an annotation's summary figure against the frame that annotates it. There, the drawn frame wins, because the annotation is a gloss on the drawing and the drawing is the artifact.
+- **D53** is the opposite shape: the frame contradicts BOTH its own prose AND the suite-wide convention. Two independent sources agree with each other and disagree with one drawn instance, which is the signature of a slip in that instance rather than an intended exception.
+
+The distinguishing question is not "prose or pixels" but **how many independent sources agree** — D32 has one source, D53 has two against one.
+
+Rationale: a rule that reduces to "pixels always win" would have shipped a badge whose colour means the opposite of what it means everywhere else in the suite; a rule that reduces to "prose always wins" would overturn D32. Recording the distinction is what keeps both usable.
+
+## D54 — SUPERSEDES D52's width clause: the launch sheet is an OVERLAY, and 420 is binding (2026-07-28)
+
+Source: A1a's store-side geometry finding, surfaced when A1b requested the shared render-order contract; re-analysed and self-corrected by A1b; ruled by fe-coordinator. Append-only correction per this file's own law — D52 is not edited.
+
+What D52 got right, and keeps: 420 is not a COLUMN width, and the sheet is not a Z4 view.
+
+What D52 got WRONG: it concluded that because 420 is not a column width, the sheet must therefore FILL a column, floored at 320. That clause is withdrawn. The sheet is an **overlay over the centre's stack region**, at ~420px, participating in no track at all — and 420 is therefore a real, binding width rather than a specimen artefact.
+
+**How the error happened, recorded because the shape matters more than the value:** A1b presented a binary — column-fill versus fixed-width-column — that did not contain the answer, and the ruling was made inside it. The third option (overlay) was visible in the same evidence the whole time. A well-argued proposal that omits an option is harder to catch than a badly-argued one, because the reasoning inside the frame is sound.
+
+FIVE INDEPENDENT LINES, each separately checkable, all agreeing on overlay:
+
+1. **The canvas's own stated reason.** "rides the panel stack … so launch never loses the workspace BEHIND it." Behind, not beside. A column displaces the workspace; only an overlay leaves the grid as-is beneath.
+2. **The shadow, measured.** The drawn sheet carries `0 12px 34px` — our `--pn-sh-pop`, elevation over content. Every stack panel (`.pn-panel`) carries `--pn-sh-md`, the resting shadow. The design system already distinguishes floating from seated, and the sheet is drawn floating.
+3. **§5.5 precedent, already in the LLD.** The non-workspace peek is "a ~440px overlay over the view". The sheet is 420 — the same family and the same width class, specified before either of us looked.
+4. **A1a's L4 finding.** `selectVisibleCount` is `pinned + (stack ? 1 : 0)` and is the declared input to `cMin(V)`. A sheet rendered as a real column consumes width the floor law never reserved, squeezing panels under their 320 floor — an L4 violation arriving through a selector that is correctly answering a question nobody asked it.
+5. **No scrim is drawn.** Consistent with a non-modal overlay, and consistent with nothing else.
+
+Consequences, all simplifying: V, `cMin` and `selectVisibleCount` are untouched; no geometry contract exists at any call site; the R5 #7 argument does not apply, because #7 was a panel failing to fill a column it was *inside*, and an overlay is not inside one. Enforced by `src/views/launch-isolation.test.ts`, which fails if `LaunchSheet` ever references the geometry module.
+
+Rationale: two independent accounts of the same thing eventually disagree, and that disagreement is information available no other way. A1b's canvas reading and A1a's store-invariant check reached different conclusions from the same design; the disagreement is what surfaced the option neither had proposed.
+
+## D55 — `prompt-session` is PARKED with a named home, not orphaned (2026-07-28)
+
+Source: A1c measured the divergence; A1a confirmed the provenance and corrected the data; fe-coordinator ruled the parking. Written by A1a as the data owner.
+
+**What happened first.** `work_session.panel.primaries` carried `['prompt-session','terminate']`. The dedicated canvas T0-4 draws `Complete  Terminate` on that panel AND annotates it in words ("Complete / Terminate primaries"); LLD §3.1 names the same pair ("Terminate cascades with blast-radius confirm; complete is intent-only"); and the SAME registry row's `rowActions` already read `['complete','terminate']`, four lines above. So four independent sources agreed and one line disagreed — and that line was authored by me from kind semantics under no ruling at all. Corrected to `['complete','terminate']`, with a test pinning `panel.primaries` and `list.rowActions` to each other and the canvas/LLD citation in the assertion message.
+
+Note the settlement rule this used, which is D53's and not a new one: the question was never prose-versus-pixels, it was HOW MANY INDEPENDENT SOURCES AGREE. Four to one is not a judgement call.
+
+**The consequence, which is what this entry is actually for.** Removing it from primaries left `prompt-session` surfaced NOWHERE, while `execution.prompt` remains a real command in the stamped seam. A capability with no door is the failure mode this package spends its honesty vocabulary avoiding, and "we deleted it from the only place it appeared" is how a capability quietly stops existing.
+
+**Ruling (fe-coordinator): PARKED WITH A NAMED HOME, no build now.**
+- The ActionRef survives in the registry. It is not deleted.
+- **Phase-1 home when wired: the PALETTE** — the `deferredActions()`-derived discovery surface already carries exactly this class, a real capability with no dedicated chrome yet.
+- **Integration-phase home: the terminal chrome's own prompt affordance**, when the live PTY lands. That surface is designed-static in current scope per R9 and the gate boundary, so it cannot host the verb yet.
+- Nothing is built now: the window is closing and the user has not asked for it.
+
+Rationale: the entry exists so the next reader finds a PARKED CAPABILITY WITH A DESIGNATED DOOR rather than a hole. An undrawn verb is not automatically wrong — but an undrawn verb with no recorded home is indistinguishable from an oversight, and six weeks from now nobody can tell which it was. Recording the door is what makes the parking a decision.
+
+
+## D56 — D20 RETIRES: the session-status partition is DELETED, not translated (2026-07-28)
+
+Source: server-owner's Delta 2 landed the contract member (`dd41e89` — `CollectionQuery.filters.sessionStatus?: WorkSessionStatus[]`, verified in the tree, not taken from the relay). Retirement built by A1a per D20's own clause. Ruling to build it now: fe-coordinator.
+
+**This entry CLOSES D20.** D20 was written INTERIM by design, with the exit condition stated in advance: *"This partition retires mechanically if/when the contract gains a session-status filter member (R4-legal, additive, server-owner's queue): the field is deleted, the tabs' `filter` absorbs it."* The member landed. The field is deleted. An interim that names its own exit condition and then actually reaches it is the rare case where a workaround leaves no residue — and the reason it left none is that D20 refused to invent a contract shape at the time, so there was nothing to unwind.
+
+What changed, concretely: `LifecycleTier.statuses` is GONE from the type. `SESSION_TIERS` now reads `{ sessionStatus: ['spawning','running','idle'], deleted: 'exclude' }` — an ordinary contract filter the seam executes untranslated, identical in kind to the task tiers beside it. No client-side partition, no structural `'status' in row.state` read, nothing for a consumer to remember. A test asserts no tier on any row carries `statuses` again: the retirement is a deletion, and a reintroduced field would sit beside the contract member that replaced it and diverge from it silently.
+
+**CORRECTION TO D20's OWN TEXT, which I got wrong.** D20 said the retirement would land with *"no consumer changes."* That was false, and the compiler said so within a minute of the deletion: `EntityListPanel.tsx:275,277` reads `tier.statuses` to apply the partition, so the consuming seat must delete its partition function as part of this retirement. The claim was optimistic in the specific way a data-owner's claim about consumers usually is — I knew what my field was FOR, and inferred from that what removing it would cost someone else, without looking at who read it. The honest version: *the DATA retires mechanically; the CONSUMER of a workaround has to delete the workaround's application, and only they can.*
+
+**Two entries, one number, deliberately.** fe's dispatch asked for an entry "referencing D14/D20" as one closing two. Only D20 is closed: D14 is A1b's pin-refusal copy entry and is unrelated to the partition — the clause fe quoted ("the retirement is a DELETION, not a translation") is D20's own text. Recorded rather than silently corrected, because an entry claiming to close an unrelated decision would corrupt exactly the record a future reader trusts to tell them what is still live.
+
+Rationale: the mechanism the LLD asked for from the start. A gap measured against the contract, declared INTERIM with its exit named, escalated rather than invented around, closed by an additive amendment on the owning lane, and deleted the day it landed — with the one wrong prediction in the original entry corrected here rather than left to be discovered.
+
+
+## D57 — A contract DECLARATION is a promise; an EXECUTOR's implementation is the fact. Workarounds retire on the fact (2026-07-28)
+
+Source: found by A1 Primitives while shooting the moving-live-count frame on `802be66`, one commit after D56 closed. Ruling to FIX rather than name: fe-coordinator.
+
+**THE DEFECT, user-visible on the first screen a reviewer opens.** After D56 retired the client-side session-status partition, the Sessions panel's **Open tab lists exited sessions** — `forge · tokens transplant` and `scout · doomed spike`, both `not running`, sitting in Open. The tier counts give the mechanism away arithmetically: **Open 5 · Done 5 · Archived 5**, with Open and Done *equal because they return the same set* — every non-deleted session — and the panel's "15" total is that set double-counted.
+
+**THE MECHANISM, measured on both sides:**
+
+- `packages/contract/src/contract.ts:242` — `sessionStatus?: WorkSessionStatus[]` — the contract **declares** it.
+- `packages/contract/src/schemas.ts:478` — the schema validates it.
+- `grep -rn "sessionStatus" src/data/` → **ZERO HITS** — the fixture seam, which actually **executes** the query, filters on `deleted` alone (`seam-fixture.ts:489–494`).
+
+So `SESSION_TIERS`' `sessionStatus: ['spawning','running','idle']` and `['exited','failed']` are silently **dropped on the floor**, and the two tiers collapse onto one query. Nothing errors. Nothing warns. An unrecognised filter member is indistinguishable from an absent one.
+
+**HOW TWO SEATS BOTH VERIFIED CORRECTLY AND STILL SHIPPED IT.** This is the entry's real content, and neither verification was sloppy:
+
+- **A1a (registry/type side)** verified the contract gained the member — *in the tree, not from the relay*, explicitly refusing the second-hand report. Correct, and it is the check D20 named as its exit condition.
+- **A1c (consumer side)** verified the deletion compiled and the whole package was green — `tsc app 0 · tsc test 0 · vitest EXIT 0, 34 files, 721 passed`. Correct, and measured at HEAD rather than in a working tree, which was itself a correction made twenty minutes earlier.
+
+**Neither of us asked whether the thing executing the query implements the filter.** D20's exit condition was written as *"the contract gains a session-status filter member"* — and a contract member is a **promise that a filter is legal to send**, not a fact that any executor honours it. We retired a working client-side partition against the promise. Every green either of us quoted was true, and none of them answered this question.
+
+It is A1c's own keeper line from the same evening — *"an exit code that answers a question you did not ask is not evidence for the question you did"* — landing on its author one commit later, which is why it goes in the file rather than in a message.
+
+**Why no test caught it, and where the test belongs.** The consumer suite exercises registry DATA and the PANEL; both are correct as written. The registry suite asserts the tiers carry the right filters; also correct. The assertion that would have caught it — *a session tier's query returns only sessions in that tier's statuses* — must run against the **real seam**, and it exists in neither lane because each lane's tests stop at its own boundary. **A filter's correctness is not testable on either side of the seam alone.**
+
+**RULING: FIXED, NOT NAMED.** One clause in the fixture seam's collection query, beside the `deleted` handling it already has, plus an executor-side test — bridge's lane (`src/data/**` is read-only to both retiring seats). Explicitly **NOT** unwound: reinstating the client partition would restore double-filtering and re-break the moment the seam does implement the member. **The registry data is right, the deletion is right, and the gap is solely that the executor does not honour a filter the contract declares.**
+
+**THE RULE, generalised past this instance.** A workaround may only retire on evidence from the layer that will do the work:
+
+> **A contract declaration is a promise. An executor's implementation is the fact. Workarounds retire on the fact.**
+
+Concretely, an interim's exit condition must name an **executor-side observation** — a passing test against the real implementation, or a measured query result — never merely the appearance of a type. D20's exit condition was written against a type, which is why it fired early. Interims written after this entry should state their exit as *"when `<executor>` demonstrably honours `<member>`"*, and D20's formulation is the counter-example to copy from.
+
+Rationale: this is the third instance today of the same shape — a claim about a shared artifact made from a local one (A1a's doorbell naming a type not yet in HEAD; A1c clearing a landing on a working-tree measurement; and now both of us retiring a partition on a declaration rather than an implementation). The first two were caught before anything landed on them. This one landed, reached HEAD, and was caught only because someone was looking at the actual screen. That is the argument for the rule: the two cheap catches were luck of timing, and the expensive one is what the general form is written to prevent.

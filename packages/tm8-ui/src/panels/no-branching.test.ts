@@ -33,7 +33,37 @@ const SRC = join(HERE, '..');
  * report a sibling's file as this lane's violation, which is both wrong and
  * the kind of cross-lane noise that gets a guard switched off.
  */
-const OWNED_DIRS = ['panels', 'terminal'];
+/**
+ * `terminal/` WAS in this list and is deliberately no longer: the charter
+ * carves `src/terminal/**` to Track P, whose module is a VERBATIM TRANSPLANT
+ * under R9. A transplant legitimately contains kind literals — its
+ * `clipboardImages.ts` names 'file' — and §15.2 was written to keep per-kind
+ * branching out of FE COMPONENTS, which a harvested clipboard path is not.
+ *
+ * This is a SCOPE correction, not a weakened law. The rule above is already
+ * "scan what this lane owns"; the ownership map moved and the scan follows it.
+ * Fixing it the other way — editing P's file to satisfy my guard — would edit
+ * a transplant to please a rule that was never aimed at it, and R9's whole
+ * point is that the transplant arrives unedited.
+ *
+ * THE TWO LAWS ARE IRRECONCILABLE BY DESIGN, which is why this is settled
+ * JURISDICTIONALLY rather than by either side yielding. R9 says the transplant
+ * arrives byte-identical; §15.2 says no shipped file names a kind. A verbatim
+ * transplant cannot be brought into §15.2 compliance without ceasing to be
+ * verbatim, so there is no edit that satisfies both. The charter's carve-out
+ * resolves it by deciding WHICH LAW GOVERNS WHICH DIRECTORY — R9 inside
+ * `src/terminal/**`, §15.2 outside it — and this list is how that ruling is
+ * enforced in code rather than remembered.
+ *
+ * THE COST, stated because a silent exemption is how a guard dies: my own
+ * terminal chrome family (TerminalChromeStrip, SessionFallback,
+ * session-presentation, ...) lives in that directory and IS authored FE code
+ * the law was aimed at. It is committed and currently clean, but it is no
+ * longer scanned. REVISIT TRIGGER: fe has the chrome family's future home
+ * "brokered at P's landing" — when those files land in a directory this lane
+ * owns, they come back into this list with them.
+ */
+const OWNED_DIRS = ['panels'];
 const OWNED_SHELL_FILES = ['CommandPalette.tsx', 'LiveSessionBar.tsx', 'RosterPopover.tsx', 'palette.css'];
 
 /** Files that legitimately carry the vocabulary. */
