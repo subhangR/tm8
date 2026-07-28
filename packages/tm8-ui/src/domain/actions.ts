@@ -1,0 +1,276 @@
+/**
+ * THE ACTION REGISTRY (LLD §2.5) — the single place a verb exists.
+ *
+ * The same `ActionDef` serves the list tile's quick-action, the panel action
+ * bar, ⌘Enter, and the palette row. No verb is wired twice, and no surface
+ * invents its own availability rule.
+ *
+ * Availability composes, in the LLD §10.3 precedence order:
+ *   1. known-at-design-time gates (R7 deferrals, §10.7 seam amendments) —
+ *      authored reason copy, no probe;
+ *   2. facade `CollabError` verdicts the shell has already cached
+ *      (`ctx.opUnavailable`, one probe per op);
+ *   3. server capability truth (`EntityDetail.capabilities`).
+ *
+ * L6 everywhere: an unavailable action is DISABLED WITH A REASON, never hidden
+ * and never silently inert.
+ */
+import type {
+  ActionAvailability,
+  ActionContext,
+  ActionDef,
+  ActionRef,
+  IconRef,
+} from './types';
+
+const AVAILABLE: ActionAvailability = { kind: 'available' };
+
+const disabled = (reason: string): ActionAvailability => ({ kind: 'disabled', reason });
+
+/**
+ * D15 — the authored disabled-with-reason copy. One place, so the honesty
+ * vocabulary cannot drift across surfaces. Each string names the MECHANISM,
+ * not just the refusal (T1-4 honesty vocabulary).
+ */
+export const REASONS = {
+  noEntity: 'Nothing is selected.',
+  unknownCapabilities: 'Waiting for this entity to load — its permissions are not known yet.',
+  cannotEdit: 'You do not have permission to edit this entity.',
+  cannotComplete: 'This entity cannot be completed.',
+  cannotPull: 'This entity cannot be pulled.',
+  cannotLink: 'You do not have permission to link this entity.',
+  cannotAddChild: 'You do not have permission to add children here.',
+  cannotReact: 'Reactions are not available on this entity.',
+  cannotGrantPoints: 'You do not have permission to grant points here.',
+  notLive: 'This session is not live — there is nothing running to act on.',
+  livenessUnknown: 'Liveness is unverified on this node right now — the session cannot be acted on until it is confirmed.',
+  // §10.7 deferred seam amendments (dual re-consensus pending)
+  handoffSendDeferred:
+    'Sharing into a session is not wired yet: handoffs.send is not in the stamped facade seam. The affordance is real; the operation is not available.',
+  handoffWithdrawDeferred:
+    'Withdrawing a handoff is deferred: handoffs.withdraw is not in the stamped facade seam, and withdrawal is not reversible once it is.',
+  // R7 deferred features (never hidden, never built)
+  graphDeferred: 'Graph view isn’t available yet.',
+  undoDeferred: 'Undo isn’t available yet — actions in this build are not reversible.',
+  versionHistoryDeferred: 'Version history isn’t available yet.',
+  leaderboardDeferred: 'The leaderboard isn’t available yet.',
+  awardsDeferred: 'Awards aren’t available yet.',
+  savedViewsDeferred: 'Saved views and axis management aren’t available yet.',
+  searchResultsDeferred: 'A full search results view isn’t available yet — the palette is the search surface.',
+  activityScreenDeferred: 'The activity screen isn’t available yet.',
+  addServerDeferred: 'Remote servers arrive in Phase 2 — this node is the only one wired.',
+} as const;
+
+/** Op-name gate (precedence 2): a facade refusal the shell already cached. */
+function opGate(ctx: ActionContext, op: string): ActionAvailability | null {
+  const reason = ctx.opUnavailable?.[op];
+  return reason ? disabled(reason) : null;
+}
+
+/** Capability gate (precedence 3): SERVER truth decides; absent ⇒ not permitted. */
+function capabilityGate(
+  ctx: ActionContext,
+  flag: 'canEdit' | 'canDelete' | 'canAddChild' | 'canLink' | 'canPull' | 'canReact' | 'canGrantPoints' | 'canComplete',
+  reason: string,
+): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  if (ctx.capabilities == null) return disabled(REASONS.unknownCapabilities);
+  return ctx.capabilities[flag] ? null : disabled(reason);
+}
+
+/** A verdict-gated session verb: only a `live` seam verdict permits it. */
+function livenessGate(ctx: ActionContext): ActionAvailability | null {
+  if (!ctx.entityId) return disabled(REASONS.noEntity);
+  switch (ctx.liveness) {
+    case 'live':
+      return null;
+    case 'unknown':
+    case undefined:
+      return disabled(REASONS.livenessUnknown);
+    default:
+      return disabled(REASONS.notLive);
+  }
+}
+
+function define(
+  id: ActionRef,
+  label: string,
+  icon: IconRef,
+  availability: (ctx: ActionContext) => ActionAvailability,
+  run?: (ctx: ActionContext) => Promise<void> | void,
+): ActionDef {
+  return {
+    id,
+    label,
+    icon,
+    availability,
+    run:
+      run ??
+      ((ctx) => {
+        // The default runner is a pure dispatch: `domain/` never imports the
+        // seam, so the shell's injected dispatcher performs the write.
+        if (availability(ctx).kind !== 'available') return;
+        return ctx.dispatch?.({ action: id, entityId: ctx.entityId });
+      }),
+  };
+}
+
+/** A permanently-unavailable verb: the R7/§10.7 disabled-with-reason home. */
+function deferred(id: ActionRef, label: string, icon: IconRef, reason: string): ActionDef {
+  return {
+    id,
+    label,
+    icon,
+    availability: () => disabled(reason),
+    // Deliberately inert: an affordance may never advertise an action the
+    // facade cannot perform (L6), and calling it is a no-op, not a throw.
+    run: () => undefined,
+  };
+}
+
+const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
+  open: define('open', 'Open', '↗', (ctx) => (ctx.entityId ? AVAILABLE : disabled(REASONS.noEntity))),
+
+  create: define('create', 'Create', '＋', (ctx) => opGate(ctx, 'entities.create') ?? AVAILABLE),
+
+  complete: define(
+    'complete',
+    'Complete',
+    '✓',
+    (ctx) =>
+      opGate(ctx, 'tasks.complete') ?? capabilityGate(ctx, 'canComplete', REASONS.cannotComplete) ?? AVAILABLE,
+  ),
+
+  pull: define(
+    'pull',
+    'Pull',
+    '⇣',
+    (ctx) => opGate(ctx, 'tasks.pull') ?? capabilityGate(ctx, 'canPull', REASONS.cannotPull) ?? AVAILABLE,
+  ),
+
+  link: define(
+    'link',
+    'Link',
+    '⛓',
+    (ctx) => opGate(ctx, 'edges.create') ?? capabilityGate(ctx, 'canLink', REASONS.cannotLink) ?? AVAILABLE,
+  ),
+
+  'add-child': define(
+    'add-child',
+    'Add child',
+    '＋',
+    (ctx) =>
+      opGate(ctx, 'entities.create') ?? capabilityGate(ctx, 'canAddChild', REASONS.cannotAddChild) ?? AVAILABLE,
+  ),
+
+  react: define(
+    'react',
+    'React',
+    '♡',
+    (ctx) => opGate(ctx, 'reactions.set') ?? capabilityGate(ctx, 'canReact', REASONS.cannotReact) ?? AVAILABLE,
+  ),
+
+  'grant-points': define(
+    'grant-points',
+    'Grant points',
+    '◆',
+    (ctx) =>
+      opGate(ctx, 'points.grant') ?? capabilityGate(ctx, 'canGrantPoints', REASONS.cannotGrantPoints) ?? AVAILABLE,
+  ),
+
+  run: define(
+    'run',
+    'Run',
+    '▶',
+    (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+  ),
+
+  coordinate: define(
+    'coordinate',
+    'Coordinate',
+    '⛭',
+    (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+  ),
+
+  'launch-session': define(
+    'launch-session',
+    'Launch session',
+    '⚡',
+    (ctx) => opGate(ctx, 'execution.spawn') ?? AVAILABLE,
+  ),
+
+  terminate: define(
+    'terminate',
+    'Terminate',
+    '⏻',
+    (ctx) => opGate(ctx, 'execution.terminate') ?? livenessGate(ctx) ?? AVAILABLE,
+  ),
+
+  'prompt-session': define(
+    'prompt-session',
+    'Prompt session',
+    '›',
+    (ctx) => opGate(ctx, 'execution.prompt') ?? livenessGate(ctx) ?? AVAILABLE,
+  ),
+
+  // §10.7 register — the seam does not carry these commands yet.
+  'share-into-session': deferred(
+    'share-into-session',
+    'Share into session',
+    '⇥',
+    REASONS.handoffSendDeferred,
+  ),
+  'withdraw-handoff': deferred('withdraw-handoff', 'Withdraw', '↩', REASONS.handoffWithdrawDeferred),
+
+  'toggle-theme': define('toggle-theme', 'Toggle theme', '◐', () => AVAILABLE),
+
+  // R7 disposition table (LLD §4.2) — every deferred member has a home.
+  'graph-view': deferred('graph-view', 'Graph view', '◈', REASONS.graphDeferred),
+  undo: deferred('undo', 'Undo', '↶', REASONS.undoDeferred),
+  'version-history': deferred('version-history', 'Version history', '⟲', REASONS.versionHistoryDeferred),
+  leaderboard: deferred('leaderboard', 'Leaderboard', '☰', REASONS.leaderboardDeferred),
+  awards: deferred('awards', 'Awards', '★', REASONS.awardsDeferred),
+  'saved-views': deferred('saved-views', 'Saved views', '▤', REASONS.savedViewsDeferred),
+  'search-results': deferred('search-results', 'Open full results', '⌕', REASONS.searchResultsDeferred),
+  'activity-screen': deferred('activity-screen', 'Activity', '◷', REASONS.activityScreenDeferred),
+  'add-server': deferred('add-server', 'Add server', '＋', REASONS.addServerDeferred),
+};
+
+/** Resolve a ref to its definition. Total over `ActionRef` — never throws. */
+export function resolveAction(ref: ActionRef): ActionDef {
+  return ACTIONS[ref];
+}
+
+export function allActions(): ActionDef[] {
+  return Object.values(ACTIONS);
+}
+
+/**
+ * The R7 discovery set: the palette renders exactly these as disabled rows.
+ * Derived, not a second list — a deferred action cannot fall out of the
+ * palette by being forgotten.
+ */
+export function deferredActions(): ActionDef[] {
+  const probe = { spaceId: 'probe' } as const;
+  return allActions().filter((a) => a.availability(probe).kind === 'disabled' && isAlwaysDisabled(a));
+}
+
+function isAlwaysDisabled(action: ActionDef): boolean {
+  // An always-disabled action refuses even with every gate satisfied.
+  const permissive = {
+    spaceId: 'probe',
+    entityId: 'probe-entity',
+    liveness: 'live' as const,
+    capabilities: {
+      canEdit: true,
+      canDelete: true,
+      canAddChild: true,
+      canLink: true,
+      canPull: true,
+      canReact: true,
+      canGrantPoints: true,
+      canComplete: true,
+    },
+  };
+  return action.availability(permissive).kind === 'disabled';
+}
