@@ -1,0 +1,181 @@
+/* ==========================================================================
+   THE HONESTY VOCABULARY — T1-4, transcribed.
+
+   "the difference between 'broken' and 'honest'". Three treatments, and a
+   surface may only compose these — inventing a fourth is a design bug (T4's
+   own matrix rule). Shared DNA, quoted from the canvas footer:
+     reason always present · mono voice for the remedy · wait amber for
+     "partial", never block red · reasons name numbers (3 pins, 8 slots) so
+     they read as fact, not apology.
+   ========================================================================== */
+
+/* --- A · DISABLED-WITH-REASON ------------------------------------------- */
+/* An affordance with a dead backend is NEVER hidden and never silently
+   inert (L6). Two forms: a tooltip for icon buttons, an inline caption where
+   there is room. */
+
+.cv2-root .hon-disabled {
+  appearance: none;
+  font-family: inherit;
+  cursor: not-allowed;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Tooltip form — the icon-button case. T1-4 draws .55 light / .7 dark on the
+   CONTROL here, even though the annotation prose says a flat 45%; the 45% is
+   what the inline-caption form actually uses. Drawn beats prose (D-entry). */
+.cv2-root .hon-disabled--tooltip {
+  color: var(--pn-ink-4);
+  font-size: 12px;
+  padding: 3px 6px;
+  border-radius: var(--pn-r-xs);
+  border: 0;
+  background: transparent;
+  opacity: 0.55;
+}
+.cv2-root[data-theme='dark'] .hon-disabled--tooltip,
+[data-theme='dark'] .cv2-root .hon-disabled--tooltip {
+  opacity: 0.7;
+}
+
+/* Inline-caption form — the primary-action case (Run ▸ / Coordinate). Keeps
+   the brass affordance visible at .45 so the user sees the verb exists. */
+.cv2-root .hon-disabled--inline {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.45;
+}
+.cv2-root[data-theme='dark'] .hon-disabled--inline,
+[data-theme='dark'] .cv2-root .hon-disabled--inline {
+  color: var(--pn-brand);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+}
+
+/* The tooltip itself. Present in the DOM ALWAYS — a reason a screen reader
+   cannot reach is not a reason — and revealed visually on hover/focus. */
+.cv2-root .hon-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  box-shadow: 0 12px 34px rgba(40, 34, 24, 0.3);
+  text-align: left;
+  cursor: default;
+  /* hidden without display:none — display:none would drop it from the
+     accessibility tree along with the aria-describedby target. */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root[data-theme='dark'] .hon-tip,
+[data-theme='dark'] .cv2-root .hon-tip {
+  background: var(--pn-x-term-bg);
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line-2);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
+}
+.cv2-root .hon-disabled:hover > .hon-tip,
+.cv2-root .hon-disabled:focus-visible > .hon-tip {
+  opacity: 1;
+  visibility: visible;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .hon-tip {
+    transition: none;
+  }
+}
+
+/* Line 1 = bold cause. Line 2 = mono remedy — the "voice" split is what
+   makes a refusal read as a fact plus a next step. */
+.cv2-root .hon-tip__cause {
+  font-size: 11px;
+  font-weight: 600;
+}
+.cv2-root .hon-tip__remedy {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* Inline caption under an inline-form control. */
+.cv2-root .hon-caption {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .hon-disabled-group {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* --- B · HOLLOW-VALUE ---------------------------------------------------- */
+/* "A permanently-zero stat renders — (never 0) plus the dotted-rule caption.
+   Zero means measured-zero; dash means not-measured." Rendering 0 for absent
+   data is a lie of precision, and it is the specific lie D7.2 exists to
+   forbid for presence. */
+
+.cv2-root .hon-stat {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 110px;
+  padding: 9px 12px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+}
+.cv2-root[data-theme='dark'] .hon-stat,
+[data-theme='dark'] .cv2-root .hon-stat {
+  background: var(--pn-surface);
+}
+.cv2-root .hon-stat__value {
+  font-family: var(--pn-mono);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .hon-stat__value--hollow {
+  color: var(--pn-ink-4);
+}
+.cv2-root .hon-stat__label {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .hon-stat__caption {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-3);
+  border-top: 1px dotted var(--pn-line);
+  padding-top: 3px;
+  margin-top: 4px;
+}
+
+/* Inline hollow — the panel-footer viewers case ("◉ — viewing"), where a
+   stat tile would not fit but the same dash-not-zero law applies. */
+.cv2-root .hon-hollow-inline {
+  color: var(--pn-ink-4);
+  cursor: help;
+  border-bottom: 1px dotted var(--pn-line-2);
+}

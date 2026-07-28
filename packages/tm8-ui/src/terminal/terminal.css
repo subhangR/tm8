@@ -1,0 +1,595 @@
+/* ==========================================================================
+   TERMINAL SURFACES — T0-2 / T0-5, the one pixel-governed region (RULING A).
+
+   SCOPE: chrome only. No transport, no bytes, no xterm — R9 keeps the byte
+   stack a verbatim transplant that arrives at integration. What lives here is
+   the strip, the reserved host box, the exited/stale fallbacks, and the
+   live-session bar + roster. Phase 1 renders the DESIGNED STATIC state.
+
+   THE ALWAYS-DARK LAW. The xterm canvas is near-black in BOTH themes (the
+   established terminal contrast), so the chrome touching it is dark graphite
+   in both themes too — one rendering gets pixel-frozen, not a light twin and
+   a dark twin. Regions that must stay dark are wrapped in <AlwaysDark>, which
+   opens a nested `.cv2-root[data-theme="dark"]` scope. That re-declares the
+   REAL dark tokens through tokens.css's own selector, so this file never
+   restates a dark hex and can never drift from the token file. What follows
+   the theme: the panel header / action bar / tab strip / footer, and the
+   exited fallback — because when the session dies the terminal literally
+   leaves the panel, and the panel rejoins its theme.
+   ========================================================================== */
+
+/* --- The chrome strip ---------------------------------------------------- */
+/* T0-2: "h 34 · pad 0 10 · gap 8 · avatar 18 r5 · name 12.5/600 ·
+   provider mono 10.5 · pill mono 9.5 · chip mono 10, r6, pad 3 9". */
+.cv2-root .term-strip {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+  box-sizing: border-box;
+}
+
+.cv2-root .term-strip__avatar {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px; /* rounded-square = agent, D5 keeps 5px at every size */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+.cv2-root .term-strip__avatar--ended {
+  background: var(--pn-idle-soft);
+  color: var(--pn-idle);
+}
+
+/* Name shrinks to a 56px floor and ellipsizes; it never disappears. */
+.cv2-root .term-strip__name {
+  flex: 0 1 auto;
+  min-width: 56px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .term-strip__name--ended {
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .term-strip__dot-sep {
+  flex: none;
+  font-size: 11px;
+  color: var(--pn-ink-4);
+}
+
+/* The provider is the FIRST element to drop, below ~380px. */
+.cv2-root .term-strip__provider {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .term-strip__provider--ended {
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .term-strip__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The status pill and the exit chip are flex:none and NEVER shrink or hide —
+   see the focus-capture contract below. */
+.cv2-root .term-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  border-radius: var(--pn-r-pill);
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+/* Dot grammar, learned once and read everywhere (strip · bar · roster):
+   pulsing = streaming · solid = alive/running · hollow = exited ·
+   amber pulsing = needs you · amber SOLID = stale.
+   Stale is amber and NEVER green: a record that claims running without live
+   proof must not borrow the color of a proven one. */
+.cv2-root .term-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+.cv2-root .term-dot--live,
+.cv2-root .term-dot--streaming {
+  background: var(--pn-run);
+}
+.cv2-root .term-dot--attention,
+.cv2-root .term-dot--stale {
+  background: var(--pn-wait);
+}
+.cv2-root .term-dot--ended {
+  background: transparent;
+  border: 1.5px solid var(--pn-idle);
+}
+.cv2-root .term-dot--pulse {
+  animation: pnPulse 1.6s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Motion never carries state alone (C8): the word beside the dot already
+     says "streaming", so dropping the animation loses nothing. */
+  .cv2-root .term-dot--pulse {
+    animation: none;
+  }
+}
+
+/*
+ * THE EXIT CHIP — legally load-bearing.
+ * While the canvas holds keyboard focus the terminal owns every shortcut
+ * (C6 layer 3); physical Ctrl+Backquote is the ONE reserved escape. If this
+ * chip can be truncated away, hidden behind overflow, or dropped at a narrow
+ * width, the user loses the only visible instruction for getting their
+ * keyboard back. Hence flex:none and no responsive hiding — at the 320 floor
+ * the LABEL compacts ("exit terminal ⌃`" → "exit ⌃`") but the keystroke
+ * never goes.
+ */
+.cv2-root .term-exit-chip {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .term-exit-chip:hover {
+  border-color: var(--pn-ink-4);
+  color: var(--pn-ink);
+}
+.cv2-root .term-exit-chip:focus-visible {
+  outline: 1px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+.cv2-root .term-exit-chip__key {
+  color: var(--pn-ink-3);
+}
+
+/* --- The host (black box) ------------------------------------------------ */
+/* 160px is the contract floor (L4). The host scrolls INTERNALLY — xterm owns
+   its own scrollback — so it never grows the panel. */
+.cv2-root .term-host {
+  flex: 1 1 auto;
+  min-height: 160px;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--pn-x-term-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.cv2-root .term-host__ghost {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  line-height: 1.9;
+  color: var(--pn-x-term-ghost);
+  text-align: center;
+  white-space: pre-line;
+  padding: 0 12px;
+}
+
+/* --- "⚠ needs you" banner ------------------------------------------------ */
+/* A full-width strip between the chrome and the canvas, not a pill: an agent
+   blocked on the user is the one thing that may interrupt the black box. */
+.cv2-root .term-needs-you {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--pn-wait-soft);
+  border-bottom: 1px solid var(--pn-line);
+  font-size: 12px;
+  color: var(--pn-wait);
+}
+.cv2-root .term-needs-you__label {
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  font-weight: 600;
+  flex: none;
+}
+.cv2-root .term-needs-you__detail {
+  color: var(--pn-ink-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Reserved toolbar seam (RULING K) ------------------------------------ */
+/* Phase 1 is nearly empty ON PURPOSE. Reserving the row now is what lets the
+   Phase-2 [ Terminal | Chat ] switch land with no relayout. The dashed brand
+   border is the anatomy annotation's treatment; in product it renders as a
+   quiet empty row (see ReservedToolbarSeam.tsx). */
+.cv2-root .term-seam {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--pn-line);
+  box-sizing: border-box;
+}
+
+/* --- Exited / stale fallbacks (theme-following) -------------------------- */
+.cv2-root .term-fallback {
+  flex: 1 1 auto;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--pn-paper);
+}
+.cv2-root .term-fallback__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  max-width: 300px;
+  text-align: center;
+}
+.cv2-root .term-fallback__ring {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--pn-idle);
+  box-sizing: border-box;
+}
+.cv2-root .term-fallback__title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .term-fallback__meta {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .term-fallback__caption {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+.cv2-root .term-fallback__action {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-sm);
+  padding: 5px 14px;
+  cursor: pointer;
+}
+.cv2-root .term-fallback__action:hover {
+  background: rgba(var(--pn-brand-rgb), 0.2);
+}
+.cv2-root[data-theme='dark'] .term-fallback__action,
+[data-theme='dark'] .cv2-root .term-fallback__action {
+  color: var(--pn-brand);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+}
+
+/* Stale is its own truth — not a variant of exited. The record says running;
+   nothing proves it. Amber, worded, with a remedy. */
+.cv2-root .term-fallback__stale-pill {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border-radius: var(--pn-r-pill);
+  padding: 3px 10px;
+}
+.cv2-root .term-fallback__stale-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+}
+.cv2-root .term-fallback__chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  padding: 3px 10px;
+  background: var(--pn-card);
+  cursor: pointer;
+}
+
+/* --- LIVE-SESSION BAR (T0-5) — always dark ------------------------------- */
+/* "the app's heartbeat line": never scrolls away, never collapses. A running
+   agent is never invisible. */
+.cv2-root .live-bar {
+  flex: none;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--pn-surface);
+  border-bottom: 1px solid var(--pn-line);
+  box-sizing: border-box;
+  position: relative;
+}
+.cv2-root .live-bar__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+/* "Sessions exist, none focused" — solid grey. Distinct from the hollow ring
+   of "nothing running at all": absence and unfocused-presence are different
+   facts and the bar says which. */
+.cv2-root .live-bar__dot--idle {
+  background: var(--pn-idle);
+}
+.cv2-root .live-bar__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.cv2-root .live-bar__name:hover {
+  color: var(--pn-brand);
+}
+.cv2-root .live-bar__name--ended {
+  color: var(--pn-ink-2);
+}
+/* No focused session / no sessions running: plain text, NOT a click target. */
+.cv2-root .live-bar__idle-text {
+  font-size: 12.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+.cv2-root .live-bar__recency {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-idle);
+  flex: none;
+}
+.cv2-root .live-bar__count {
+  font-size: 12.5px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  white-space: nowrap;
+  flex: none;
+}
+.cv2-root .live-bar__count:hover {
+  color: var(--pn-ink-2);
+  text-decoration: underline;
+}
+/* Attention outranks focus — it appears even while you are deep in another
+   terminal, because an agent waiting on you is the higher-priority fact. */
+.cv2-root .live-bar__attention {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 8px;
+  cursor: pointer;
+  border: 0;
+}
+.cv2-root .live-bar__attention:hover {
+  background: color-mix(in srgb, var(--pn-wait) 28%, transparent);
+}
+.cv2-root .live-bar__roster-btn {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  background: transparent;
+}
+.cv2-root .live-bar__roster-btn:hover {
+  border-color: var(--pn-ink-4);
+  color: var(--pn-ink);
+}
+.cv2-root .live-bar__run-btn {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.cv2-root .live-bar__run-btn:hover {
+  background: rgba(var(--pn-brand-rgb), 0.25);
+}
+
+/* --- Roster popover ------------------------------------------------------ */
+.cv2-root .roster {
+  position: absolute;
+  right: 10px;
+  top: 34px;
+  width: 280px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+  z-index: 60;
+}
+.cv2-root .roster__group {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+  padding: 8px 12px 4px;
+}
+.cv2-root .roster__group--attention {
+  color: var(--pn-wait);
+  padding-top: 9px;
+}
+.cv2-root .roster__group--ended {
+  color: var(--pn-ink-4);
+}
+.cv2-root .roster__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+.cv2-root .roster__row:hover,
+.cv2-root .roster__row:focus-visible {
+  background: var(--pn-hover);
+}
+.cv2-root .roster__row--attention {
+  background: color-mix(in srgb, var(--pn-wait) 7%, transparent);
+}
+.cv2-root .roster__row--ended {
+  opacity: 0.75;
+}
+.cv2-root .roster__avatar {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+}
+.cv2-root .roster__avatar--attention {
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+}
+.cv2-root .roster__avatar--ended {
+  background: var(--pn-idle-soft);
+  color: var(--pn-idle);
+}
+.cv2-root .roster__name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .roster__name--ended {
+  color: var(--pn-ink-2);
+}
+.cv2-root .roster__meta {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  flex: none;
+}
+.cv2-root .roster__spacer {
+  flex: 1;
+  min-width: 0;
+}
+/* Bare word, no pill — the roster is a dense list and the pill chrome would
+   fight the rows. Still word + color, never color alone. */
+.cv2-root .roster__word {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.cv2-root .roster__word--live {
+  color: var(--pn-run);
+}
+.cv2-root .roster__word--attention {
+  color: var(--pn-wait);
+}
+.cv2-root .roster__word--stale {
+  color: var(--pn-wait);
+}
+.cv2-root .roster__word--ended {
+  color: var(--pn-idle);
+}
+/* Coordinator → worker shows ONE guide-line level here; the full tree lives
+   in the Sessions list panel. */
+.cv2-root .roster__row--child {
+  padding-left: 26px;
+  position: relative;
+}
+.cv2-root .roster__row--child::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+  background: var(--pn-line-2);
+}
+.cv2-root .roster__footer {
+  border-top: 1px solid var(--pn-line);
+  padding: 6px 12px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}

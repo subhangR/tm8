@@ -1,0 +1,987 @@
+/* ==========================================================================
+   PANELS — the two universal primitives and their bodies.
+   Sources: T0-3 (EntityListPanel), T0-4 (EntityDetailPanel + archetypes +
+   panel states), T0-2 (the work_session body), T4 (share/handoff family).
+   Colors are always tokens; canvas-measured geometry/micro-type literals are
+   kept verbatim per D5.
+   ========================================================================== */
+
+/* --- shared section furniture -------------------------------------------- */
+.cv2-root .pn-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pn-section__empty {
+  font-size: 11.5px;
+  color: var(--pn-ink-4);
+  line-height: 1.5;
+}
+.cv2-root .pn-chiprow {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* Launch provenance: a FACT about the past, styled as caption not control —
+   it is immutable, so it must not look editable. */
+.cv2-root .pn-provenance {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+  margin: 0;
+}
+
+/* --- work_session body --------------------------------------------------- */
+.cv2-root .pn-terminal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Only the sections scroll. The seam, strip and canvas keep their geometry so
+   nothing below the fold can push the terminal's 160px floor closed. */
+.cv2-root .pn-terminal-body__sections {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* --- handoff rows: two facets, never merged (L7) -------------------------- */
+.cv2-root .pn-handoffs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cv2-root .pn-handoff {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cv2-root .pn-handoff__main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-handoff__label {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.cv2-root .pn-handoff__label:hover {
+  color: var(--pn-ink);
+}
+/* Source gone: dashed like a tombstone, and NOT a button — there is nothing
+   to open, and an affordance that cannot resolve is a lie. */
+.cv2-root .pn-handoff--source-missing {
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 5px 8px;
+}
+.cv2-root .pn-handoff__label--missing {
+  color: var(--pn-ink-3);
+  cursor: default;
+}
+.cv2-root .pn-handoff__spacer {
+  flex: 1;
+  min-width: 0;
+}
+/* The facet pill. Tone classes come from kit.css so the tone→token mapping
+   has exactly one home; only the micro-geometry is local (T0-2: mono 8.5px,
+   radius 999, padding 1px 6px). */
+.cv2-root .pn-facet {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  border-radius: var(--pn-r-pill);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.cv2-root .pn-handoff__note {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+  margin: 0 0 0 2px;
+  line-height: 1.45;
+}
+.cv2-root .pn-handoff__note--warn {
+  color: var(--pn-wait);
+}
+/* The withdrawal audit line decorates; it never replaces the content above. */
+.cv2-root .pn-handoff__note--audit {
+  border-top: 1px dotted var(--pn-line);
+  padding-top: 3px;
+  margin-top: 2px;
+}
+
+/* --- share drop target & ghost ------------------------------------------- */
+.cv2-root .pn-drop {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px dashed rgba(var(--pn-brand-rgb), 0.55);
+  background: rgba(var(--pn-brand-rgb), 0.06);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.cv2-root .pn-drop--over {
+  background: rgba(var(--pn-brand-rgb), 0.13);
+}
+/* Refused: the dashed target still SHOWS (the user learns the gesture) but
+   wears the idle ramp and the not-allowed cursor, and the browser refuses the
+   drop because dragover never calls preventDefault. */
+.cv2-root .pn-drop--refused {
+  border-color: var(--pn-line-2);
+  background: transparent;
+  cursor: not-allowed;
+}
+.cv2-root .pn-drop__label {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-brand);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .pn-drop--refused .pn-drop__label {
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .pn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: rotate(-2deg);
+}
+.cv2-root .pn-ghost__chip {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  box-shadow: var(--pn-sh-pop);
+  white-space: nowrap;
+}
+/* The ghost names RECEIVER + VERB before release — no silent drops. */
+.cv2-root .pn-ghost__verb {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: rgba(var(--pn-brand-rgb), 0.13);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.4);
+  border-radius: 5px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+.cv2-root .pn-ghost__verb--refused {
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+  border-color: color-mix(in srgb, var(--pn-block) 40%, transparent);
+}
+/* Row 8 promises no undo (R7 defers undo entirely) — the ghost says so
+   BEFORE the mouse comes up, not in a toast afterwards. */
+.cv2-root .pn-ghost__warn {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-wait);
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   ENTITY DETAIL PANEL — the shared chrome (T0-4 frame 1).
+   Header · action bar · four tabs · body · footer. Fixed for every kind:
+   only the body varies, and only by ARCHETYPE.
+   ========================================================================== */
+
+.cv2-root .pn-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* The 320px floor is LAW (L4): panels shrink to it and then stop. No
+     minmax(0,…) and no unfloored overflow:hidden anywhere in this file. */
+  min-width: 320px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-md);
+  overflow: hidden;
+}
+.cv2-root .pn-panel--peek { width: 440px; }
+.cv2-root .pn-panel--z4 { border: 0; border-radius: 0; box-shadow: none; background: var(--pn-paper); }
+/* Soft-delete is a RENDERING, not a hole: dashed, unshadowed, still present. */
+.cv2-root .pn-panel--tombstone {
+  background: var(--pn-hover);
+  border-style: dashed;
+  border-color: var(--pn-line-2);
+  box-shadow: none;
+}
+
+.cv2-root .pn-crumb {
+  padding: 8px 12px 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .pn-head {
+  flex: none;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pn-head__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 9px;
+}
+.cv2-root .pn-head__glyph { flex: none; color: var(--pn-ink-3); font-size: 13px; }
+/* The title is the ONLY thing that shrinks: a UUID-length title ellipsizes
+   while the pill and the controls stay put (the 320-floor law). */
+.cv2-root .pn-head__title {
+  flex: 0 1 auto;
+  min-width: 64px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  outline: none;
+}
+/* Dotted underline = editable. Tracked kinds (PR, commit) lock their title
+   because it follows the source and cannot be written back. */
+.cv2-root .pn-head__title--editable {
+  border-bottom: 1px dotted var(--pn-ink-4);
+  cursor: text;
+}
+.cv2-root .pn-head__title--editable:focus-visible { border-bottom-color: var(--pn-brand); }
+.cv2-root .pn-head__title--struck { color: var(--pn-ink-3); text-decoration: line-through; }
+.cv2-root .pn-head__title--absent { color: var(--pn-ink-4); }
+.cv2-root .pn-head__spacer { flex: 1; min-width: 0; }
+
+.cv2-root .pn-actions {
+  flex: none;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--pn-line);
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  overflow: hidden;
+}
+.cv2-root .pn-actions__verb {
+  flex: none;
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .pn-actions__verb:hover { color: var(--pn-ink); }
+
+.cv2-root .pn-btn {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  padding: 2px 9px;
+  background: var(--pn-card);
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.cv2-root .pn-btn:hover { background: var(--pn-hover); }
+.cv2-root .pn-btn--primary {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+}
+.cv2-root .pn-btn--primary:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.cv2-root[data-theme='dark'] .pn-btn--primary,
+[data-theme='dark'] .cv2-root .pn-btn--primary { color: var(--pn-brand); }
+.cv2-root .pn-btn--quiet {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-brand-2);
+  background: transparent;
+  border: 1px dashed rgba(var(--pn-brand-rgb), 0.5);
+  border-radius: 6px;
+  padding: 3px 10px;
+}
+
+.cv2-root .pn-tabs {
+  flex: none;
+  height: 30px;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--pn-line);
+  font-size: 12px;
+  overflow: hidden;
+}
+.cv2-root .pn-tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+.cv2-root .pn-tab:hover { color: var(--pn-ink); }
+.cv2-root .pn-tab--active {
+  font-weight: 600;
+  color: var(--pn-ink);
+  border-bottom-color: var(--pn-brand);
+}
+.cv2-root .pn-tab__count { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-4); }
+
+.cv2-root .pn-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
+
+.cv2-root .pn-foot {
+  flex: none;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cv2-root .pn-foot__sep { color: var(--pn-ink-4); }
+
+/* --- panel states -------------------------------------------------------- */
+.cv2-root .pn-skeleton { gap: 9px; }
+.cv2-root .pn-skel {
+  height: 10px;
+  border-radius: 4px;
+  background: var(--pn-hover);
+  flex: none;
+}
+.cv2-root .pn-skel--pulse { background: var(--pn-active); animation: pnPulse 1.8s infinite; }
+.cv2-root .pn-skel--card { height: 34px; border-radius: 8px; width: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-skel--pulse { animation: none; }
+}
+
+.cv2-root .pn-state {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 18px 26px;
+}
+.cv2-root .pn-state--empty { justify-content: flex-start; padding-top: 34px; }
+.cv2-root .pn-state__icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: var(--pn-active);
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-state__icon--error {
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+}
+.cv2-root .pn-state__icon--dashed {
+  background: transparent;
+  border: 2px dashed var(--pn-line-2);
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-state__title { font-size: 13px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .pn-state__body {
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+  max-width: 300px;
+  text-wrap: pretty;
+}
+.cv2-root .pn-state__caption { font-size: 11px; color: var(--pn-ink-4); max-width: 280px; line-height: 1.5; }
+.cv2-root .pn-state__code {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  padding: 5px 9px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Drift banner: BOTH versions stated, one click reconciles. */
+.cv2-root .pn-drift {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--pn-wait) 9%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--pn-wait) 35%, transparent);
+}
+.cv2-root .pn-drift__badge {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-wait);
+  white-space: nowrap;
+}
+.cv2-root .pn-drift__text { font-size: 11px; color: var(--pn-ink-2); }
+
+/* --- generic body blocks ------------------------------------------------- */
+.cv2-root .pn-prose { font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); margin: 0; text-wrap: pretty; }
+.cv2-root .pn-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--pn-card);
+}
+.cv2-root .pn-fields__row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pn-fields__row:last-child { border-bottom: 0; }
+.cv2-root .pn-fields__key {
+  flex: none;
+  width: 84px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  text-transform: uppercase;
+}
+.cv2-root .pn-fields__value {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  overflow-wrap: anywhere;
+}
+.cv2-root .pn-linkrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.cv2-root .pn-linkrow__ref { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The connector's OWN staleness — a different fact from liveness or delivery,
+   and it gets its own word rather than borrowing either vocabulary. */
+.cv2-root .pn-linkrow__stale { flex: none; color: var(--pn-wait); font-size: 9.5px; font-weight: 600; }
+.cv2-root .pn-linkrow__open { flex: none; margin-left: auto; color: var(--pn-brand-2); text-decoration: none; }
+.cv2-root .pn-preview { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.cv2-root .pn-preview__box {
+  width: 100%;
+  height: 150px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--pn-hover);
+}
+.cv2-root .pn-preview__box--none { border-style: dashed; }
+.cv2-root .pn-preview__label { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-3); }
+.cv2-root .pn-lifecycle,
+.cv2-root .pn-notice {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  line-height: 1.5;
+}
+
+/* --- shared tabs --------------------------------------------------------- */
+.cv2-root .pn-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.cv2-root .pn-msg { display: flex; gap: 9px; }
+.cv2-root .pn-msg__col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cv2-root .pn-msg__byline { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.cv2-root .pn-msg__name { font-size: 12px; font-weight: 600; color: var(--pn-ink); }
+/* Provenance in WORDS as well as avatar shape — shape alone excludes anyone
+   who cannot see a corner radius. */
+.cv2-root .pn-msg__tag {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: rgba(var(--pn-brand-rgb), 0.09);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+/* Hollow provenance (D7.3): the chip's SHAPE is real, its VALUE is honestly
+   empty. Not absent (would hide the gap), not invented (would manufacture one). */
+.cv2-root .pn-msg__provenance-hollow {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-4);
+  border: 1px dashed var(--pn-line-2);
+  border-radius: 3px;
+  padding: 0 4px;
+  cursor: help;
+}
+.cv2-root .pn-msg__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); text-wrap: pretty; }
+.cv2-root .pn-composer {
+  flex: none;
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  border-top: 1px solid var(--pn-line);
+  padding: 9px 12px;
+  margin: auto -12px -12px;
+}
+.cv2-root .pn-composer__input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-composer__send {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  font-size: 13px;
+  cursor: pointer;
+}
+.cv2-root .pn-composer__send:disabled,
+.cv2-root .pn-composer__input:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.cv2-root .pn-activity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cv2-root .pn-activity__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .pn-activity__row:last-child { border-bottom: 0; }
+.cv2-root .pn-activity__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pn-idle); }
+.cv2-root .pn-activity__dot--run { background: var(--pn-run); }
+/* `unknown` is a WARNING here as everywhere — never the green of success. */
+.cv2-root .pn-activity__dot--wait { background: var(--pn-wait); }
+.cv2-root .pn-activity__dot--block { background: var(--pn-block); }
+.cv2-root .pn-activity__dot--info { background: var(--pn-info); }
+.cv2-root .pn-activity__text { flex: 1; min-width: 0; font-size: 12px; color: var(--pn-ink-2); }
+.cv2-root .pn-activity__time { flex: none; font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-4); }
+
+.cv2-root .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   ENTITY LIST PANEL (T0-3) — one primitive, per-kind CONFIGURED.
+   "kind selector · header actions · filter/sort chips · tile list — every
+   kind is a configuration, never a fork."
+   ========================================================================== */
+
+.cv2-root .lp {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* Floors are law (L4 / 02-LAYOUT §6): left 200, right 220. Titles
+     ellipsize; dots, words and actions never collapse to zero. */
+  min-width: 200px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  overflow: hidden;
+}
+
+.cv2-root .lp__selector {
+  flex: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--pn-line);
+  position: relative;
+}
+.cv2-root .lp--compact .lp__selector { height: 34px; }
+.cv2-root .lp__kind {
+  appearance: none;
+  border: 0;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+  padding: 3px 7px;
+  margin-left: -7px;
+  border-radius: 6px;
+}
+.cv2-root .lp__kind:hover { background: var(--pn-hover); }
+.cv2-root .lp__kind-glyph { color: var(--pn-ink-3); }
+.cv2-root .lp__caret { color: var(--pn-ink-4); font-size: 10px; }
+.cv2-root .lp__spacer { flex: 1; min-width: 0; }
+/* '● N live' — rows ∩ the seam live set. Never a count of records that CLAIM
+   to be running, which would silently include every stale session. */
+.cv2-root .lp__livecount {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-run);
+  white-space: nowrap;
+}
+.cv2-root .lp__kindmenu {
+  position: absolute;
+  top: 34px;
+  left: 6px;
+  z-index: 20;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  min-width: 168px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .lp__kindopt {
+  appearance: none;
+  border: 0;
+  background: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 8px;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+.cv2-root .lp__kindopt:hover { background: var(--pn-hover); }
+.cv2-root .lp__kindopt--current { background: var(--pn-hover); font-weight: 600; color: var(--pn-ink); }
+
+.cv2-root .lp__actions {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--pn-line);
+  overflow: hidden;
+}
+.cv2-root .lp__new,
+.cv2-root .lp__quick {
+  flex: none;
+  appearance: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 2px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .lp__new {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+}
+.cv2-root .lp__new:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.cv2-root[data-theme='dark'] .lp__new,
+[data-theme='dark'] .cv2-root .lp__new { color: var(--pn-brand); }
+.cv2-root .lp__quick {
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+}
+.cv2-root .lp__quick:hover { background: var(--pn-hover); }
+
+.cv2-root .lp__filters {
+  flex: none;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--pn-line);
+  overflow: hidden;
+}
+.cv2-root .lp--compact .lp__filters { height: 28px; gap: 4px; padding: 0 8px; }
+.cv2-root .lp__chip {
+  flex: none;
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .lp__chip:hover { background: var(--pn-hover); }
+.cv2-root .lp__chip--active {
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.5);
+}
+.cv2-root[data-theme='dark'] .lp__chip--active,
+[data-theme='dark'] .cv2-root .lp__chip--active { color: var(--pn-brand); }
+
+/* Lifecycle tabs are a segmented control, not chips: they are SHELVES a row
+   moves between by living, not filters a viewer toggles. */
+.cv2-root .lp__tabs {
+  flex: none;
+  display: inline-flex;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--pn-card);
+}
+.cv2-root .lp__tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  padding: 3px 9px;
+  cursor: pointer;
+  border-left: 1px solid var(--pn-line);
+}
+.cv2-root .lp__tab:first-child { border-left: 0; }
+.cv2-root .lp__tab:hover { background: var(--pn-hover); }
+.cv2-root .lp__tab--active { font-weight: 600; color: var(--pn-ink); background: var(--pn-active); }
+
+.cv2-root .lp__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.cv2-root .lp__eyebrow {
+  appearance: none;
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 8px 10px 3px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+/* NEEDS YOU wears the wait ramp: "an agent is blocked on you" is a different
+   class of fact from "here are your open items". */
+.cv2-root .lp__eyebrow--attention { color: var(--pn-wait); }
+.cv2-root .lp__collapsed {
+  appearance: none;
+  border: 0;
+  background: none;
+  text-align: left;
+  margin-top: auto;
+  padding: 7px 10px 3px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .lp__collapsed:hover { color: var(--pn-ink-3); }
+
+/* --- the tile ------------------------------------------------------------ */
+.cv2-root .lp__tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  cursor: pointer;
+  min-height: 28px;
+  box-sizing: border-box;
+}
+.cv2-root .lp__tile:hover { background: var(--pn-hover); }
+.cv2-root .lp__tile:focus-visible { outline: 1px solid var(--pn-brand); outline-offset: -1px; }
+/* Selection needs a treatment DISTINCT from hover, or a keyboard user cannot
+   tell where they are while the mouse sits elsewhere. */
+.cv2-root .lp__tile--selected { background: var(--pn-hover); box-shadow: inset 3px 0 0 var(--pn-brand); }
+.cv2-root .lp__tile--attention { background: color-mix(in srgb, var(--pn-wait) 7%, transparent); }
+
+/* One 1px hairline per ancestor level, stepping 17px per depth. */
+.cv2-root .lp__guide {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pn-line-2);
+}
+
+.cv2-root .lp__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: var(--pn-idle);
+}
+.cv2-root .lp__dot--run { background: var(--pn-run); }
+.cv2-root .lp__dot--wait { background: var(--pn-wait); }
+.cv2-root .lp__dot--block { background: var(--pn-block); }
+.cv2-root .lp__dot--info { background: var(--pn-info); }
+.cv2-root .lp__dot--idle { background: var(--pn-idle); }
+/* Hollow = not alive. The ring is the same geometry as the fill, so the two
+   read as one vocabulary rather than two shapes. */
+.cv2-root .lp__dot--hollow { background: transparent; border: 2px solid var(--pn-idle); }
+.cv2-root .lp__dot--wait.lp__dot--hollow { border-color: var(--pn-wait); }
+/* Pulse comes ONLY from the pool activity signal, never from the verdict. */
+.cv2-root .lp__dot--pulse { animation: pnPulse 1.6s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  /* The word beside the dot already says "streaming" — motion never carries
+     state alone (C8). */
+  .cv2-root .lp__dot--pulse { animation: none; }
+}
+
+/* The title is the ONLY thing that shrinks. Everything else is flex:none. */
+.cv2-root .lp__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .lp--compact .lp__title { font-size: 11.5px; }
+.cv2-root .lp__title--done { color: var(--pn-ink-3); text-decoration: line-through; }
+
+.cv2-root .lp__badges { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.cv2-root .lp__word {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  border-radius: var(--pn-r-pill);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* The badge slot YIELDS to the action cluster on hover — the row never grows,
+   so hovering can never reflow the list under the cursor. */
+.cv2-root .lp__rowactions {
+  flex: none;
+  display: none;
+  align-items: center;
+  gap: 4px;
+}
+.cv2-root .lp__tile:hover .lp__rowactions,
+.cv2-root .lp__tile:focus-within .lp__rowactions { display: inline-flex; }
+.cv2-root .lp__tile:hover .lp__badges,
+.cv2-root .lp__tile:focus-within .lp__badges { display: none; }
+.cv2-root .lp__rowaction {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 5px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+.cv2-root .lp__rowaction:hover { background: var(--pn-hover); }

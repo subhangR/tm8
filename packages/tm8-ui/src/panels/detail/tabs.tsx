@@ -1,0 +1,269 @@
+import type { ActivityItem, Connections, EdgeGroup, EntityDetail, MessageView } from '@tm8/contract';
+import { Avatar, Chip, Eyebrow } from '../../kit';
+import { getKind } from '../../domain';
+import { EmptyBody } from './PanelStates';
+
+/**
+ * THE THREE SHARED TABS — designed once, rendered for every kind.
+ *
+ * Discussion, Connections and Activity are KIND-AGNOSTIC BY CONSTRUCTION:
+ * they render `messages.list`, `EdgeGroup`s and `entities.activity` rows, none
+ * of which vary by kind. That is why the four-tab law (D3) costs nothing —
+ * three of the four tabs are the same component everywhere, so "every kind
+ * gets four tabs" is one implementation, not fifteen.
+ */
+
+// ---------------------------------------------------------------------------
+// Discussion
+// ---------------------------------------------------------------------------
+
+export function DiscussionTab({
+  messages,
+  provenanceHollowReason,
+  authoredFrom,
+  canPost,
+  postDisabledReason,
+}: {
+  messages: readonly MessageView[];
+  /** D7.3 copy for the hollow "from this session" chip. */
+  provenanceHollowReason: string;
+  /** entityId → session it was authored from. Null everywhere until S2 lands. */
+  authoredFrom?: Readonly<Record<string, string | null>>;
+  canPost?: boolean;
+  postDisabledReason?: string;
+}) {
+  return (
+    <div className="pn-body" id="tabpanel-discussion" role="tabpanel" aria-labelledby="tab-discussion">
+      {messages.length === 0 ? (
+        <EmptyBody
+          glyph="❝"
+          sentence="No discussion yet — reply below, or press / and mention someone."
+        />
+      ) : (
+        <ul className="pn-thread">
+          {messages.map((m) => (
+            <MessageRow
+              key={m.id}
+              message={m}
+              provenanceHollowReason={provenanceHollowReason}
+              hasProvenanceSlot={m.id in (authoredFrom ?? {})}
+              provenance={authoredFrom?.[m.id] ?? null}
+            />
+          ))}
+        </ul>
+      )}
+      <div className="pn-composer">
+        <input
+          className="pn-composer__input"
+          placeholder="Reply — @ to mention"
+          disabled={canPost === false}
+          title={canPost === false ? postDisabledReason : undefined}
+          aria-label="Reply"
+        />
+        <button
+          type="button"
+          className="pn-composer__send"
+          aria-label="Send reply"
+          disabled={canPost === false}
+        >
+          ↑
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MessageRow({
+  message,
+  provenanceHollowReason,
+  hasProvenanceSlot,
+  provenance,
+}: {
+  message: MessageView;
+  provenanceHollowReason: string;
+  hasProvenanceSlot: boolean;
+  provenance: string | null;
+}) {
+  // `MessageView.state` is typed as the message state, so the author is always
+  // present — no kind comparison is needed, and §15.2 forbids one anyway.
+  const author = message.state.author ?? message.createdBy;
+  const isAgent = author.isAgent;
+  return (
+    <li className="pn-msg">
+      <Avatar provenance={isAgent ? 'agent' : 'human'} label={author.displayName} size={22} />
+      <div className="pn-msg__col">
+        <div className="pn-msg__byline">
+          <span className="pn-msg__name">{author.displayName}</span>
+          {/* Provenance is never carried by avatar shape alone — the word is
+              there too, for anyone who cannot see the corner radius. */}
+          <span className="pn-msg__tag">{isAgent ? 'agent' : 'human'}</span>
+          {hasProvenanceSlot ? (
+            <ProvenanceChip value={provenance} hollowReason={provenanceHollowReason} />
+          ) : null}
+        </div>
+        <p className="pn-msg__body">{message.content.body}</p>
+      </div>
+    </li>
+  );
+}
+
+/**
+ * D7.3 — "from this session" renders HOLLOW, not absent and not fabricated.
+ * `authored_from` is null through every public write until backend S2 lands,
+ * so the chip's SHAPE is real and its VALUE is honestly empty. Dropping the
+ * chip would hide a gap; inventing a session id would manufacture one.
+ */
+function ProvenanceChip({ value, hollowReason }: { value: string | null; hollowReason: string }) {
+  if (value) return <Chip glyph="▣">{`from ${value}`}</Chip>;
+  return (
+    <span className="pn-msg__provenance-hollow" title={hollowReason}>
+      from — · not recorded
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Connections
+// ---------------------------------------------------------------------------
+
+/**
+ * "two axes: vertical = where it lives · horizontal = what it connects to."
+ * Parent/children come from the hierarchy; LINKED groups come from the edge
+ * groups the seam already returns pre-grouped, so nothing is regrouped here.
+ */
+export function ConnectionsTab({
+  detail,
+  connections,
+  onOpenEntity,
+}: {
+  detail: EntityDetail;
+  connections?: Connections;
+  onOpenEntity?: (id: string) => void;
+}) {
+  const groups: EdgeGroup[] = [
+    ...(connections?.outgoing ?? detail.connections.outgoing),
+    ...(connections?.incoming ?? detail.connections.incoming),
+  ];
+  const parent = detail.hierarchy.parent;
+  const children = detail.hierarchy.children.items;
+  const empty = !parent && children.length === 0 && groups.length === 0;
+
+  return (
+    <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
+      {empty ? (
+        <EmptyBody
+          glyph="⊕"
+          sentence="Nothing linked yet — drag an entity here, or press / and type its name."
+          actionLabel="⊕ link an entity"
+        />
+      ) : null}
+
+      {parent ? (
+        <section className="pn-section">
+          <Eyebrow faint>PARENT</Eyebrow>
+          <div className="pn-chiprow">
+            <Chip glyph={getKind(parent.kind).chip.glyph} onClick={() => onOpenEntity?.(parent.id)}>
+              {parent.title}
+            </Chip>
+          </div>
+        </section>
+      ) : null}
+
+      {groups.map((group) => (
+        <section className="pn-section" key={`${group.direction}:${group.type}`}>
+          <Eyebrow faint>{`${group.label.toUpperCase()} · ${group.edges.length}`}</Eyebrow>
+          <div className="pn-chiprow">
+            {group.edges.map((edge) => {
+              // The far end of the edge relative to THIS entity.
+              const peer = edge.source.id === detail.id ? edge.target : edge.source;
+              return (
+                <Chip
+                  key={edge.id}
+                  glyph={getKind(peer.kind).chip.glyph}
+                  onClick={() => onOpenEntity?.(peer.id)}
+                  /* An unresolved HARD dependency is why something is blocked —
+                     the chip says so rather than looking like any other link. */
+                  title={edge.hard && edge.resolved === false ? 'unresolved hard dependency' : peer.title}
+                >
+                  {peer.title}
+                </Chip>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      {children.length > 0 ? (
+        <section className="pn-section">
+          <Eyebrow faint>{`CHILDREN · ${children.length}`}</Eyebrow>
+          <div className="pn-chiprow">
+            {children.map((c) => (
+              <Chip key={c.id} glyph={getKind(c.kind).chip.glyph} onClick={() => onOpenEntity?.(c.id)}>
+                {c.title}
+              </Chip>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Activity
+// ---------------------------------------------------------------------------
+
+/**
+ * "actor · verb · object — authorship never buried."
+ *
+ * The dot is coloured from the status ramp by event type, and one rule is
+ * absolute here as everywhere: an `unknown` delivery is styled as a WARNING,
+ * never as success.
+ */
+export function ActivityTab({ items }: { items: readonly ActivityItem[] }) {
+  return (
+    <div className="pn-body" id="tabpanel-activity" role="tabpanel" aria-labelledby="tab-activity">
+      {items.length === 0 ? (
+        <EmptyBody glyph="◫" sentence="No activity recorded on this entity yet." />
+      ) : (
+        <ul className="pn-activity">
+          {items.map((item) => (
+            <li className="pn-activity__row" key={item.id}>
+              <span className={`pn-activity__dot pn-activity__dot--${verbTone(item.verb)}`} aria-hidden />
+              <span className="pn-activity__text">
+                {`${item.actor?.displayName ?? 'someone'} ${humanizeVerb(item.verb)}`}
+              </span>
+              <span className="pn-activity__time">{relativeish(item.createdAt)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Verb → ramp tone. Keyed on the VERB vocabulary, not on kind. `unknown`
+ * anywhere in a delivery verb goes amber — the one mapping that is a rule
+ * rather than a preference.
+ */
+function verbTone(verb: string): 'run' | 'wait' | 'info' | 'block' | 'idle' {
+  if (verb.includes('unknown') || verb.includes('stale')) return 'wait';
+  if (verb.includes('fail') || verb.includes('delete') || verb.includes('refus')) return 'block';
+  if (verb.includes('complete') || verb.includes('deliver')) return 'run';
+  if (verb.includes('link') || verb.includes('referenc')) return 'info';
+  return 'idle';
+}
+
+function humanizeVerb(verb: string): string {
+  return verb.replace(/[._]/g, ' ');
+}
+
+/**
+ * Deliberately coarse: exact relative time needs a clock, and a clock in a
+ * render path makes every test time-dependent. The date is shown plainly and
+ * the precise timestamp rides on the element for anyone who needs it.
+ */
+function relativeish(iso: string): string {
+  return iso.slice(0, 10);
+}
