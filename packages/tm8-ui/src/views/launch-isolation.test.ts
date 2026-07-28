@@ -19,6 +19,8 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { fixtureSummaries } from '../fixtures';
+import { LAUNCH_TEAMMATES } from './launch-fixtures';
 
 const raw = readFileSync(fileURLToPath(new URL('./LaunchSheet.tsx', import.meta.url)), 'utf8');
 
@@ -45,5 +47,38 @@ describe('LaunchSheet geometry isolation (D52-as-amended)', () => {
     // read — the file-not-found case would look like a perfect pass.
     expect(source).toContain('export function LaunchSheet');
     expect(source.length).toBeGreaterThan(500);
+  });
+});
+
+
+describe('launch ids are REAL entity ids (the two id spaces must meet)', () => {
+  /**
+   * The defect this pins: `LaunchTeammate.id` is carried by `buildSpawnInput`
+   * into `ExecutionSpawnInput.teamMemberId` and resolved by the seam's
+   * `requireSummary`. It held a view-model id (`tm-forge`) while the fixture
+   * entity is `ent-tm-forge`, so the launch dispatched correctly and the node
+   * refused it — "entity tm-forge not found". Nothing in the launch path was
+   * broken; the two id spaces had never met.
+   *
+   * No unit test of the sheet could see it, because the sheet never resolves
+   * the id — only the seam does, at dispatch. A real click found it. This test
+   * is that click's standing replacement: it checks the id against the DATASET
+   * rather than against my own copy of what the id should be.
+   */
+  const known = new Set(fixtureSummaries.map((s) => s.id));
+
+  it.each(LAUNCH_TEAMMATES.map((t) => [t.name, t.id] as const))(
+    '%s resolves to a real fixture entity (%s)',
+    (_name, id) => {
+      expect(known.has(id), `${id} is not an entity the seam can resolve`).toBe(true);
+    },
+  );
+
+  it('POSITIVE CONTROL: the dataset is loaded and a bogus id would fail', () => {
+    // Without this, an empty `known` set would make every assertion above fail
+    // loudly — but a mis-built set that happened to contain everything would
+    // make them all pass silently.
+    expect(known.size).toBeGreaterThan(5);
+    expect(known.has('tm-forge')).toBe(false); // the OLD view-model id
   });
 });

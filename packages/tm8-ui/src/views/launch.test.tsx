@@ -15,6 +15,7 @@ import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
 import type { NavPort } from '../shell/nav-port';
+import { teamMemberForge } from '../fixtures';
 import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) =>
@@ -234,7 +235,16 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     const { getByText } = renderSheet({ onLaunch });
     fireEvent.click(getByText('Launch ▸'));
     expect(onLaunch).toHaveBeenCalledWith(
-      expect.objectContaining({ subjectId: 'task-1', teammateId: 'tm-forge', projectIds: ['pj-tm8ui'] }),
+      // Asserted against the ENTITY FIXTURE's own id, not a literal (A1c's
+      // stronger version). A literal agrees with whatever the view-model holds
+      // and with the seam never — it pins internal consistency rather than the
+      // thing that has to be true, which is that the id RESOLVES. Coupled this
+      // way, a future rename fails here instead of silently re-breaking spawn.
+      expect.objectContaining({
+        subjectId: 'task-1',
+        teammateId: teamMemberForge.id,
+        projectIds: ['pj-tm8ui'],
+      }),
     );
   });
 

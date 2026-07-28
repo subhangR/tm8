@@ -18,6 +18,18 @@ import type { LaunchCapacity } from '../domain/launch';
  */
 
 export interface LaunchTeammate {
+  /**
+   * THE REAL ENTITY ID, not a view-model id.
+   *
+   * This field is a REFERENCE — it is carried by `buildSpawnInput` into
+   * `ExecutionSpawnInput.teamMemberId` and resolved by the seam's
+   * `requireSummary`. Every other field on this shape is presentation; this
+   * one is not. It read `tm-forge` while the fixture entity is `ent-tm-forge`,
+   * so the launch dispatched correctly and the node refused it: the two id
+   * spaces had simply never met. Prefixing at the mapping site would work
+   * today and would encode a naming convention into a call site, which stays
+   * correct exactly until someone renames an entity.
+   */
   id: string;
   name: string;
   initial: string;
@@ -53,7 +65,7 @@ export interface LaunchProfile {
 
 export const LAUNCH_TEAMMATES: readonly LaunchTeammate[] = [
   {
-    id: 'tm-forge',
+    id: 'ent-tm-forge',
     name: 'forge',
     initial: 'F',
     model: 'claude-sonnet',
@@ -62,7 +74,7 @@ export const LAUNCH_TEAMMATES: readonly LaunchTeammate[] = [
     defaultProfileId: 'pf-standard',
   },
   {
-    id: 'tm-scout',
+    id: 'ent-tm-scout',
     name: 'scout',
     initial: 'S',
     model: 'claude-opus',
