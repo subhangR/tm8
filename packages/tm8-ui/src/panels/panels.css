@@ -558,7 +558,8 @@
   display: flex;
   gap: 8px;
   padding: 6px 10px;
-  border-bottom: 1px solid var(--pn-line);
+  /* T0-1 `padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px`. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
 }
 .cv2-root .pn-fields__row:last-child { border-bottom: 0; }
 .cv2-root .pn-fields__key {
@@ -686,7 +687,8 @@
   align-items: center;
   gap: 9px;
   padding: 7px 0;
-  border-bottom: 1px solid var(--pn-line);
+  /* T0-1 `padding:7px 0;border-bottom:1px solid #F0EDE4`. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
 }
 .cv2-root .pn-activity__row:last-child { border-bottom: 0; }
 .cv2-root .pn-activity__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pn-idle); }
@@ -967,7 +969,9 @@
   gap: 3px;
   padding: 7px 12px;
   border-left: 2px solid transparent;
-  border-bottom: 1px solid var(--pn-line);
+  /* T0-1 sibling divider: the oracle's row site is `border-left:2px solid
+     {{s.bar}};border-bottom:1px solid #F0EDE4` — this exact tile. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
   cursor: pointer;
   box-sizing: border-box;
 }

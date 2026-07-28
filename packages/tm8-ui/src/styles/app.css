@@ -13,3 +13,32 @@ body,
 body {
   overflow: hidden;
 }
+
+/* ---------------------------------------------------------------------------
+   ROOT SCALE — USER-RULED EXPERIMENT, NOT A LAW (2026-07-28).
+
+   The user's bar is pixel-parity with the T0-1 canvas and their report was
+   "letters are too small". Measured first: our font-size value SET is IDENTICAL
+   to the oracle's on every built surface, so nothing is drifting per element —
+   the canvas simply presents fit-to-width on claude.ai while the app renders
+   1:1. The user chose "try 1.1, eyeball it live".
+
+   `zoom` is the whole lever ON PURPOSE. It scales px literals, spacing, radii
+   and borders uniformly, which is exactly the canvas-presentation effect being
+   matched — and it leaves every measured literal in place, so D5's
+   canvas-measured micro sizes (9.5 / 10 / 11.5px) stay verbatim in the source
+   and every future canvas diff still compares like with like. A rem re-basing
+   would rewrite those literals and destroy that, and was explicitly not wanted
+   for an eyeball test.
+
+   Applied to `.cv2-root` rather than a mount wrapper because it is the single
+   element every surface already lives under (GateApp.tsx:145) and it is the
+   theme scope, so nothing can render outside the scaled subtree — verified: no
+   createPortal and no document.body mounting anywhere in src/.
+
+   EXPERIMENTAL: this is a taste test the user asked to see live, not a ruled
+   constant. If it stays, it needs a ledger entry of its own.
+   --------------------------------------------------------------------------- */
+.cv2-root {
+  zoom: 1.1;
+}

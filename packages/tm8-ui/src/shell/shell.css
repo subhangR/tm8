@@ -279,7 +279,8 @@
   top: 8px;
   bottom: 8px;
   width: 3px;
-  border-radius: 2px;
+  /* T0-1 smallest drawn radius is 3px. */
+  border-radius: 3px;
   background: var(--pn-brand);
 }
 .cv2-root .shell-rail--collapsed .shell-rail__icon {
@@ -290,7 +291,8 @@
   top: 4px;
   right: 3px;
   font-family: var(--pn-mono);
-  font-size: 8px;
+  /* T0-1 type floor is 8.5px; the canvas uses 8px nowhere. */
+  font-size: 8.5px;
   font-weight: 600;
   color: var(--pn-surface);
   background: var(--pn-brand);
@@ -313,7 +315,8 @@
   bottom: 3px;
   right: 3px;
   font-family: var(--pn-mono);
-  font-size: 8px;
+  /* T0-1 type floor is 8.5px; the canvas uses 8px nowhere. */
+  font-size: 8.5px;
   font-weight: 600;
   color: var(--pn-surface);
   background: var(--pn-run);
