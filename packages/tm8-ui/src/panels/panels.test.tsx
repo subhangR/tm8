@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { render, within } from '@testing-library/react';
+import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
 import { REASONS as DOMAIN_REASONS } from '../domain';
@@ -323,6 +323,106 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     expect(getAllByTestId('list-tile')[0]!.textContent).toContain('streaming');
+  });
+
+  it('the filter ROW is bounded by construction — one trigger, never one chip per option', () => {
+    // THE REGRESSION THIS GUARDS: the row used to flat-map every option of
+    // every FilterSpec into its own chip. For `task` that is 7 status + 1
+    // ready-to-pull + 2 deleted = TEN chips in a row that is overflow:hidden,
+    // so the surplus was silently clipped and read as a truncated label.
+    // A FilterSpec is ONE chip — its own type says so.
+    const optionCount = getKind('task').list.filters.reduce((n, f) => n + f.options.length, 0);
+    expect(optionCount).toBeGreaterThan(5); // the bound is only meaningful if there ARE many
+
+    const { container, getByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    const chips = container.querySelectorAll('.lp__filters .lp__chip');
+    // Nothing selected: exactly the trigger + the sort chip.
+    expect(chips).toHaveLength(2);
+    expect(chips.length).toBeLessThan(optionCount);
+    expect(getByTestId('filter-trigger').textContent).toBe('filter ▾');
+  });
+
+  it('the unbounded option set lives in the picker, which scrolls', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    expect(queryByTestId('filter-menu')).toBeNull();
+    fireEvent.click(getByTestId('filter-trigger'));
+    const menu = getByTestId('filter-menu');
+    const options = menu.querySelectorAll('[role="menuitemcheckbox"]');
+    const optionCount = getKind('task').list.filters.reduce((n, f) => n + f.options.length, 0);
+    expect(options).toHaveLength(optionCount);
+  });
+
+  it('selecting adds ONE active chip carrying its clear affordance; clearing removes it', () => {
+    const { container, getByTestId, getByRole } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    fireEvent.click(getByTestId('filter-trigger'));
+    fireEvent.click(getByRole('menuitemcheckbox', { name: /Blocked/ }));
+
+    const active = container.querySelectorAll('.lp__chip--active');
+    expect(active).toHaveLength(1);
+    // The word survives with its clear glyph — never truncated to fit.
+    expect(active[0]!.textContent).toBe('Blocked ✕');
+
+    fireEvent.click(active[0]!);
+    expect(container.querySelectorAll('.lp__chip--active')).toHaveLength(0);
+  });
+
+  it('a multi spec combines selections and UNIONS their contract filters', () => {
+    const seen: unknown[] = [];
+    const capturing = (filter: QueryFilter) => {
+      seen.push(filter);
+      return [] as readonly EntitySummary[];
+    };
+    const { getByTestId, getByRole } = render(
+      <EntityListPanel kind="task" rowsFor={capturing} ctx={ctx} />,
+    );
+    fireEvent.click(getByTestId('filter-trigger'));
+    fireEvent.click(getByRole('menuitemcheckbox', { name: /Blocked/ }));
+    fireEvent.click(getByRole('menuitemcheckbox', { name: /^Open$/ }));
+
+    const last = seen[seen.length - 1] as Record<string, unknown>;
+    // `multi: true` means the options COMBINE, so the arrays union rather
+    // than the second selection overwriting the first.
+    expect(last.workStatus).toEqual(expect.arrayContaining(['blocked', 'open']));
+  });
+
+  it('at the floor the sort chip collapses to its glyph and never disappears', () => {
+    const { container } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} compact />,
+    );
+    const chips = [...container.querySelectorAll('.lp__filters .lp__chip')];
+    expect(chips.map((c) => c.textContent)).toContain('↓');
+  });
+
+  it('both popovers dismiss on Escape and on an outside click', () => {
+    // Caught in the real-browser pass, in BOTH the filter picker and the kind
+    // selector: a popover that closes only by re-clicking its own trigger is a
+    // control the user must already know how to escape. Asserted for both,
+    // because fixing only the one I had just built would have left its twin.
+    const { getByTestId, queryByTestId, container } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+
+    fireEvent.click(getByTestId('filter-trigger'));
+    expect(getByTestId('filter-menu')).toBeTruthy();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(queryByTestId('filter-menu')).toBeNull();
+
+    fireEvent.click(getByTestId('filter-trigger'));
+    expect(getByTestId('filter-menu')).toBeTruthy();
+    fireEvent.mouseDown(document.body);
+    expect(queryByTestId('filter-menu')).toBeNull();
+
+    const kindButton = container.querySelector('.lp__kind') as HTMLElement;
+    fireEvent.click(kindButton);
+    expect(container.querySelector('.lp__kindmenu')).not.toBeNull();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(container.querySelector('.lp__kindmenu')).toBeNull();
   });
 
   it('an unknown kind falls back to the c:* row instead of throwing', () => {

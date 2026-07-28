@@ -663,6 +663,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+
   /* Floors are law (L4 / 02-LAYOUT §6): left 200, right 220. Titles
      ellipsize; dots, words and actions never collapse to zero. */
   min-width: 200px;
@@ -783,6 +784,13 @@
 }
 .cv2-root .lp__quick:hover { background: var(--pn-hover); }
 
+/*
+ * `overflow: hidden` is kept deliberately: it is the floor guard that stops a
+ * long chip from pushing the row wider than the panel. It is NOT the thing
+ * that bounds the chip COUNT — the row is bounded by construction now (active
+ * selections + one trigger), because relying on clipping to hide surplus
+ * content is what turned ten chips into a silently truncated row.
+ */
 .cv2-root .lp__filters {
   flex: none;
   height: 32px;
@@ -985,3 +993,33 @@
   cursor: pointer;
 }
 .cv2-root .lp__rowaction:hover { background: var(--pn-hover); }
+
+/* Filter picker — the UNBOUNDED set lives here, where it can scroll, so the
+   row above it stays bounded by construction: active chips + one trigger. */
+.cv2-root .lp__filterbar {
+  flex: none;
+  position: relative;
+}
+.cv2-root .lp__filtermenu {
+  position: absolute;
+  top: 100%;
+  left: 8px;
+  z-index: 20;
+  width: 176px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  box-shadow: var(--pn-sh-pop);
+}
+.cv2-root .lp__filtergroup {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pn-ink-4);
+  padding: 6px 8px 3px;
+}
+.cv2-root .lp__filtercheck { margin-left: auto; color: var(--pn-brand-2); }

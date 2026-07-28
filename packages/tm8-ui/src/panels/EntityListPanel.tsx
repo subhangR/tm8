@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { EntityCapabilities, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type {
@@ -14,6 +14,7 @@ import type {
 import { collectionKinds, getKind, resolveAction } from '../domain';
 import { DisabledAction, DisabledIconControl, toReason } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
+import { useDismissable } from './useDismissable';
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -79,7 +80,12 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set((list.sections ?? []).filter((s) => s.collapsedByDefault).map((s) => s.id)),
   );
-  const [filterId, setFilterId] = useState<string | null>(null);
+  /**
+   * Selected option ids PER FilterSpec. Not a single global id: `status` is
+   * `multi`, so several of its options can be active at once, while a
+   * non-multi spec holds at most one.
+   */
+  const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
 
   const activeTab = list.lifecycleTabs?.find((t) => t.id === tabId) ?? null;
@@ -101,8 +107,19 @@ export function EntityListPanel(props: EntityListPanelProps) {
 
       <FilterRow
         config={config}
-        activeFilterId={filterId}
-        onFilter={setFilterId}
+        selected={selected}
+        onToggleOption={(specId, optionId, multi) =>
+          setSelected((prev) => {
+            const current = prev[specId] ?? [];
+            const on = current.includes(optionId);
+            const next = on
+              ? current.filter((id) => id !== optionId)
+              : multi
+                ? [...current, optionId]
+                : [optionId];
+            return { ...prev, [specId]: next };
+          })
+        }
         sortKey={sortKey}
         onSort={setSortKey}
         tabs={list.lifecycleTabs}
@@ -117,7 +134,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
             <Band
               key={section.id}
               label={section.label}
-              rows={rowsForBand(props, section.filter, activeTab, filterId, config)}
+              rows={rowsForBand(props, section.filter, activeTab, selected, config)}
               collapsed={collapsed.has(section.id)}
               onToggle={() =>
                 setCollapsed((prev) => {
@@ -134,7 +151,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         ) : (
           <Band
             label={null}
-            rows={rowsForBand(props, activeTab?.filter ?? {}, activeTab, filterId, config)}
+            rows={rowsForBand(props, activeTab?.filter ?? {}, activeTab, selected, config)}
             props={props}
             config={config}
           />
@@ -163,14 +180,14 @@ function rowsForBand(
   props: EntityListPanelProps,
   filter: QueryFilter,
   tab: LifecycleTab | null,
-  activeFilterId: string | null,
+  selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
 ): readonly EntitySummary[] {
-  const chipFilter = config.list.filters
-    .flatMap((f) => f.options)
-    .find((o) => o.id === activeFilterId)?.filter;
-
-  const rows = props.rowsFor({ ...filter, ...(tab?.filter ?? {}), ...(chipFilter ?? {}) });
+  const rows = props.rowsFor({
+    ...filter,
+    ...(tab?.filter ?? {}),
+    ...mergeSelectedFilters(config, selected),
+  });
   if (!tab?.statuses) return rows;
 
   const allowed = new Set<string>(tab.statuses);
@@ -207,8 +224,10 @@ function KindSelector({
   onKindChange?: (kind: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useDismissable(open, ref, useCallback(() => setOpen(false), []));
   return (
-    <div className="lp__selector">
+    <div className="lp__selector" ref={ref}>
       <button type="button" className="lp__kind" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className="lp__kind-glyph" aria-hidden>
           {config.chip.glyph}
@@ -298,10 +317,30 @@ function QuickLaunch({
   );
 }
 
+/**
+ * THE FILTER ROW — active chips · one `filter ▾` trigger · sort.
+ *
+ * A `FilterSpec` is ONE CHIP, not one chip per option — the type says so
+ * ("One filter chip in the list/collection filter row") and all three T0-3
+ * frames draw it that way: `mine ✕  filter ▾  ↓ priority` at 280px,
+ * `filter ▾  ↓ edited` with nothing active, `mine ✕  ↓` at the 200 floor.
+ *
+ * This previously flat-mapped every option into its own chip, which put TEN
+ * chips in the task panel's row (7 status + 1 ready-to-pull + 2 deleted) and
+ * overflowed it at every width. That is the D34 floor-inversion class again —
+ * unbounded content in a fixed slot destroying the slot — with a different
+ * root: not a long word, but a misread of what a FilterSpec IS. The row is
+ * `overflow: hidden`, so the excess was silently clipped rather than wrapping,
+ * which is why it read as a truncated chip label instead of as ten chips.
+ *
+ * The row is now bounded BY CONSTRUCTION: one chip per ACTIVE selection (the
+ * user chose each one and can see it), plus exactly one trigger, plus sort.
+ * The unbounded set lives in the popover, which scrolls.
+ */
 function FilterRow({
   config,
-  activeFilterId,
-  onFilter,
+  selected,
+  onToggleOption,
   sortKey,
   onSort,
   tabs,
@@ -310,8 +349,8 @@ function FilterRow({
   compact,
 }: {
   config: KindConfig;
-  activeFilterId: string | null;
-  onFilter: (id: string | null) => void;
+  selected: Readonly<Record<string, readonly string[]>>;
+  onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
   onSort: (key: SortKey) => void;
   tabs?: readonly LifecycleTab[];
@@ -319,10 +358,21 @@ function FilterRow({
   onTab: (id: string) => void;
   compact?: boolean;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const barRef = useRef<HTMLDivElement>(null);
+  useDismissable(pickerOpen, barRef, useCallback(() => setPickerOpen(false), []));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
 
+  const active = config.list.filters.flatMap((spec) =>
+    (selected[spec.id] ?? []).flatMap((optionId) => {
+      const option = spec.options.find((o) => o.id === optionId);
+      return option ? [{ spec, option }] : [];
+    }),
+  );
+
   return (
+    <div className="lp__filterbar" ref={barRef}>
     <div className="lp__filters">
       {/* Lifecycle tabs are SHELVES, not filters: a session leaves "live" by
           exiting, not by the viewer changing their mind. They replace the
@@ -343,23 +393,35 @@ function FilterRow({
           ))}
         </span>
       ) : (
-        config.list.filters.flatMap((spec) =>
-          spec.options.map((option) => {
-            const active = option.id === activeFilterId;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                className={active ? 'lp__chip lp__chip--active' : 'lp__chip'}
-                onClick={() => onFilter(active ? null : option.id)}
-              >
-                {active ? `${option.label} ✕` : option.label}
-              </button>
-            );
-          }),
-        )
+        <>
+          {active.map(({ spec, option }) => (
+            <button
+              key={`${spec.id}:${option.id}`}
+              type="button"
+              className="lp__chip lp__chip--active"
+              onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
+              title={`Clear filter: ${option.label}`}
+            >
+              {`${option.label} ✕`}
+            </button>
+          ))}
+          {config.list.filters.length > 0 ? (
+            <button
+              type="button"
+              className="lp__chip"
+              onClick={() => setPickerOpen((o) => !o)}
+              aria-expanded={pickerOpen}
+              aria-haspopup="menu"
+              data-testid="filter-trigger"
+            >
+              filter ▾
+            </button>
+          ) : null}
+        </>
       )}
+
       <span className="lp__spacer" />
+
       {current ? (
         <button
           type="button"
@@ -371,11 +433,68 @@ function FilterRow({
           }}
           title={`Sort by ${current.label}`}
         >
+          {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
+              draws exactly `↓`. The chip never disappears. */}
           {compact ? '↓' : `↓ ${current.label}`}
         </button>
       ) : null}
+
+    </div>
+      {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
+          keeps `overflow: hidden` as its floor guard, and the picker is still
+          free to overflow it. No hardcoded offset — `top: 100%` of the bar
+          works whether or not this kind renders a header-actions row. */}
+      {pickerOpen ? (
+        <div className="lp__filtermenu" role="menu" data-testid="filter-menu">
+          {config.list.filters.map((spec) => (
+            <div key={spec.id}>
+              <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
+              {spec.options.map((option) => {
+                const on = (selected[spec.id] ?? []).includes(option.id);
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="menuitemcheckbox"
+                    aria-checked={on}
+                    className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                    onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
+                  >
+                    {option.label}
+                    {on ? <span className="lp__filtercheck">✓</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+/**
+ * Merge every selected option's contract-shaped filter. Array members UNION
+ * (several `status` options combine into one `workStatus` list) rather than
+ * overwrite, which is what `multi` means in the data.
+ */
+function mergeSelectedFilters(
+  config: KindConfig,
+  selected: Readonly<Record<string, readonly string[]>>,
+): QueryFilter {
+  const out: Record<string, unknown> = {};
+  for (const spec of config.list.filters) {
+    for (const optionId of selected[spec.id] ?? []) {
+      const option = spec.options.find((o) => o.id === optionId);
+      if (!option) continue;
+      for (const [key, value] of Object.entries(option.filter as Record<string, unknown>)) {
+        const prior = out[key];
+        out[key] =
+          Array.isArray(prior) && Array.isArray(value) ? [...prior, ...value] : value;
+      }
+    }
+  }
+  return out as QueryFilter;
 }
 
 // ---------------------------------------------------------------------------
