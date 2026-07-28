@@ -34,7 +34,9 @@ describe('THE GATE — composed T0-1 master screen', () => {
 
     getByTestId('space-tab-bar');
     getByTestId('menu-rail');
-    getByTestId('panel-stack');
+    // With nothing open the centre hosts the roster, NOT the panel stack —
+    // PanelStack mounts once a panel exists (02-LAYOUT §2.2).
+    getByTestId('empty-center');
     getByTestId('notice-host');
     expect(container.querySelector('.shell-root')).not.toBeNull();
   });
@@ -61,12 +63,43 @@ describe('THE GATE — composed T0-1 master screen', () => {
     within(grid).getByLabelText('Workspace center');
   });
 
-  it('starts with an empty centre that still holds its slot (02-LAYOUT §2.2)', async () => {
+  it('renders the empty centre as the ROSTER plus the grammar lesson (02-LAYOUT §2.2)', async () => {
+    // The spec's own words: "The empty state doubles as the live-session roster
+    // and teaches the grammar." A blank centre would satisfy "nothing is open"
+    // and fail the actual requirement — so assert the CONTENT, not the absence.
+    const { getByTestId, getByText } = renderGate();
+    const empty = await waitFor(() => getByTestId('empty-center'));
+
+    // The roster: sessions named, each with its status WORD (C8/L10).
+    // Scoped to the name/word classes because several fixture personas share a
+    // display name — a bare getByText matches more than one row.
+    const names = [...empty.querySelectorAll('.shell-empty__name')].map((n) => n.textContent);
+    const words = [...empty.querySelectorAll('.shell-empty__word')].map((n) => n.textContent);
+    expect(names).toContain('forge');
+    expect(words).toContain('running');
+    // …and the stale one honestly labelled, never as live (D6).
+    expect(words).toContain('stale — node restarted');
+
+    // The grammar lesson.
+    getByText('Click any task or session to open it here.');
+    within(empty).getByText('Esc');
+    within(empty).getByText('p');
+    within(empty).getByText('/');
+  });
+
+  it('orders the roster LIVE FIRST, from the seam live set (never a summary field)', async () => {
     const { getByTestId } = renderGate();
-    await waitFor(() => getByTestId('workspace-grid'));
-    // V=0 — the stack renders its empty state rather than collapsing, which is
-    // what keeps C_min at one panel column with nothing open.
-    expect(getByTestId('panel-stack').getAttribute('data-slots')).toBe('0');
+    const empty = await waitFor(() => getByTestId('empty-center'));
+    const names = [...empty.querySelectorAll('.shell-empty__name')].map((n) => n.textContent);
+    expect(names[0]).toBe('forge'); // the only id in liveEntityIds
+  });
+
+  it('the empty centre carries NO animated status mark (D31)', async () => {
+    // Liveness-derived marks never move; the class surface is asserted here and
+    // the stylesheet-level guard lives in no-motion-status.test.ts.
+    const { getByTestId } = renderGate();
+    const empty = await waitFor(() => getByTestId('empty-center'));
+    expect(empty.querySelectorAll('[class*="pulse"]')).toHaveLength(0);
   });
 
   it('renders in BOTH themes — dark is a data-theme scope, not a second stylesheet', async () => {
@@ -88,6 +121,7 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(typeof ResizeObserver).toBe('undefined');
     const { getByTestId } = renderGate();
     await waitFor(() => getByTestId('workspace-grid'));
-    expect(getByTestId('panel-stack').getAttribute('data-slots')).toBe('0');
+    // Nothing demoted, nothing opened — the engine stayed inert on `null`.
+    expect(getByTestId('empty-center')).toBeTruthy();
   });
 });

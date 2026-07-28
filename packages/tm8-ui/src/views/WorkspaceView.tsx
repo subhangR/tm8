@@ -26,6 +26,7 @@ import { LiveSessionBar } from '../shell/LiveSessionBar';
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
+import { EmptyCenter } from './EmptyCenter';
 import type { GateData } from './useGateData';
 
 export interface WorkspaceViewProps {
@@ -109,6 +110,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [data, engine, nav, ctx, reasons, props],
   );
 
+  /**
+   * Roster rows for the empty centre, LIVE FIRST. Ordering is presentation, so
+   * it happens here rather than in the component — and it reads the seam's live
+   * set rather than sorting on any summary field, which would be the forbidden
+   * inference (D6).
+   */
+  const rosterRows = useMemo(() => {
+    const rows = data.rowsFor(rightKind)(undefined).map((summary) => toSessionRow(summary));
+    const live = new Set(data.liveIds);
+    return [...rows].sort((a, b) => Number(live.has(b.id)) - Number(live.has(a.id)));
+  }, [data, rightKind]);
+
+  const centreIsEmpty = nav.stack.length === 0 && nav.pinned.length === 0;
+
   const resolveSession = useCallback(
     (id: string) => {
       const summary = data.rowsFor(rightKind)(undefined).find((row) => row.id === id);
@@ -146,7 +161,19 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             activity={data.activity}
             onFocusSession={(id) => nav.push?.(id as EntityId)}
           />
-          <PanelStack nav={nav} renderPanel={renderPanel} />
+          {/* 02-LAYOUT §2.2 — the empty centre is not a blank: it IS the live
+              roster and it teaches the grammar. PanelStack still owns the slot
+              and its C_min floor; this is the content that goes in it. */}
+          {centreIsEmpty ? (
+            <EmptyCenter
+              liveIds={data.liveIds}
+              rows={rosterRows}
+              livenessOf={data.livenessOf}
+              onFocusSession={(id) => nav.push(id as EntityId)}
+            />
+          ) : (
+            <PanelStack nav={nav} renderPanel={renderPanel} />
+          )}
         </>
       }
       right={
