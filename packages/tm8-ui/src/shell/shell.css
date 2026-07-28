@@ -445,6 +445,17 @@
   display: flex;
   min-height: 0;
 }
+/* R5 #7 — THE PANEL FILLS ITS COLUMN.
+   The column always filled the centre correctly; the PANEL inside it did not.
+   `.pn-panel` carries no flex-grow, so as a flex item of this column it took
+   its CONTENT width and left the stage empty beside it — with one panel open
+   that reads as a broken half-width stage (WLT §5.2: V=1 fills the track).
+   Growing the slot's child is this file's business: the column is mine, and
+   the panel keeps its own 320px floor (L4), which is why this is `1 1 auto`
+   and not a width override. */
+.cv2-root .shell-stack__col > * {
+  flex: 1 1 auto;
+}
 
 /* --- Z4 (§5.6) ------------------------------------------------------------ */
 .cv2-root .shell-z4 {
