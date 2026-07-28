@@ -121,6 +121,26 @@ describe('fixture seam — reads', () => {
     expect(paged.page.total).toBeGreaterThan(3);
   });
 
+  it('query implements the sessionStatus filter executor-side (D57: the contract declared it at dd41e89 — this asserts the fixture executor honors it)', async () => {
+    const seam = await openSeam();
+
+    const running = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['work_session'], filters: { sessionStatus: ['running'] },
+    });
+    const runningIds = running.page.items.map((s) => s.id);
+    expect(runningIds).toContain(sessionLive.id);
+    expect(runningIds).toContain(sessionStale.id); // stale is a RECORD 'running' — the filter reads the record, liveness verdicts are the seam's other surface
+    expect(runningIds).not.toContain(sessionExited.id);
+
+    const done = await seam.query({
+      spaceId: FIXTURE_SPACE_ID, kinds: ['work_session'], filters: { sessionStatus: ['exited', 'failed'] },
+    });
+    const doneIds = done.page.items.map((s) => s.id);
+    expect(doneIds).toContain(sessionExited.id);
+    expect(doneIds).not.toContain(sessionLive.id);
+    expect(done.page.items.every((s) => s.state.kind === 'work_session' && s.state.status !== 'running')).toBe(true);
+  });
+
   it('delivery facets pass through UNCOLLAPSED — unknown stays unknown', async () => {
     const seam = await openSeam();
     const view = await seam.delivery(messageAgentNullProvenance.id);

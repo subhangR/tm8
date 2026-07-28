@@ -497,6 +497,8 @@ export function createFixtureSeam(): FixtureSeam {
         if (subtree && !subtree.has(s.id)) return false;
         const f = input.filters;
         if (f?.workStatus && !(s.state.kind === 'task' && f.workStatus.includes(s.state.workStatus))) return false;
+        if (f?.sessionStatus && !(s.state.kind === 'work_session'
+          && f.sessionStatus.includes(s.state.status))) return false;
         if (f?.assigneeIds && !(s.state.kind === 'task'
           && s.state.assignees.some((a) => f.assigneeIds!.includes(a.id)))) return false;
         return true;
