@@ -1118,3 +1118,41 @@
 .cv2-root .lp__view--active { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
 .cv2-root[data-theme='dark'] .lp__view--active,
 [data-theme='dark'] .cv2-root .lp__view--active { color: var(--pn-brand); }
+
+/* T0-1's per-kind footer count line: "9 open · 601 done · 33 archived".
+   Counts come from the same per-tier queries as the tabs — one source. */
+.cv2-root .lp__foot {
+  flex: none;
+  margin-top: auto;
+  border-top: 1px solid var(--pn-line);
+  padding: 7px 10px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Kind-selector total, beside the kind name. */
+.cv2-root .lp__total {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* Lifecycle tier tabs — their OWN row (D41). Tabs are the lifecycle band;
+   the filter chips below narrow within it. T0-1 draws both. */
+.cv2-root .lp__tierrow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px 6px;
+}
+/* An unsupported tier is dimmed but PRESENT — its reason is on the control,
+   and a tab that vanished per-kind would teach nothing about why. */
+.cv2-root .lp__tab[data-unsupported='true'] {
+  opacity: 0.55;
+  cursor: help;
+}

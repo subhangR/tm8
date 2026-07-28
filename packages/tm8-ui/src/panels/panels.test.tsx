@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { ALL_MODES, allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
@@ -20,6 +20,17 @@ import {
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
 import { HANDLED_SOURCES } from './list/tile-badges';
 import type { DetailReasons } from './EntityDetailPanel';
+
+/**
+ * The registry walk renders a full panel per kind. Measured 283ms warm and
+ * alone, but 5781ms (A1b, concurrent browser) and 8976ms (B4, cold package
+ * run) under real load — and the default 5000ms fires exactly when the
+ * important verification runs. Warm-and-alone was the condition where the
+ * problem cannot occur, which is why my first reading was under-powered.
+ * Sized to the cold measurement with headroom; the per-kind split above is a
+ * separate fix for a separate problem (attribution).
+ */
+vi.setConfig({ testTimeout: 20_000 });
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
@@ -58,27 +69,41 @@ function renderBothThemes(node: React.ReactElement) {
 }
 
 describe('EntityDetailPanel — the fixed anatomy', () => {
-  it('D3: renders FOUR tabs in fixed order for EVERY registry kind, no exceptions', () => {
-    // Walks the whole registry, so a future kind that somehow suppressed a tab
-    // fails here rather than shipping a three-tab panel nobody noticed.
-    for (const config of allKinds()) {
-      const detail = Object.values(fixtureDetails).find((d) => d.kind === config.kind);
-      if (!detail) continue;
-      const { getByTestId, unmount } = render(
+  /**
+   * D3: FOUR TABS ALWAYS, every kind, no exceptions — asserted PER KIND rather
+   * than in one loop.
+   *
+   * Split for ATTRIBUTION, not for speed. The single looping version reported
+   * "some kind is wrong" and made you re-run to find which; `it.each` names the
+   * failing kind in the failure itself. It also removes a timeout exposure as a
+   * side effect: the loop measured 283ms in isolation but 5781ms under
+   * concurrent browser load, and a per-kind test carries ~20x headroom against
+   * the same contention. Bumping the limit would have treated a load artifact
+   * as a code cost and kept the poor attribution.
+   */
+  const kindsWithFixtures = allKinds()
+    .map((config) => ({
+      config,
+      detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind),
+    }))
+    .filter((row): row is { config: (typeof row)['config']; detail: EntityDetail } => row.detail != null);
+
+  it('the registry walk covers a meaningful share of kinds (a walk over nothing proves nothing)', () => {
+    expect(kindsWithFixtures.length).toBeGreaterThan(10);
+  });
+
+  it.each(kindsWithFixtures.map((r) => [r.config.kind, r.detail] as const))(
+    'D3: %s renders FOUR tabs in fixed order',
+    (_kind, detail) => {
+      const { getByTestId } = render(
         <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} />,
       );
       const labels = within(getByTestId('panel-tabs'))
         .getAllByRole('tab')
         .map((t) => t.textContent?.replace(/\d+$/, '').trim());
-      expect(labels, `kind ${config.kind}`).toEqual([
-        'Content',
-        'Discussion',
-        'Connections',
-        'Activity',
-      ]);
-      unmount();
-    }
-  });
+      expect(labels).toEqual(['Content', 'Discussion', 'Connections', 'Activity']);
+    },
+  );
 
   it('routes the body by ARCHETYPE, never by kind — work_session gets the terminal body', () => {
     const detail = fixtureDetails[sessionStale.id]!;
@@ -170,16 +195,58 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
   const sessions = fixtureSummaries.filter((s) => s.state.kind === 'work_session');
 
-  it('the same component yields lifecycle TABS for one kind and SECTIONS for another', () => {
-    const sessionPanel = render(
-      <EntityListPanel kind="work_session" rowsFor={rowsFor(sessions)} ctx={ctx} />,
-    );
-    expect(sessionPanel.getAllByRole('tab').length).toBeGreaterThan(0);
-    sessionPanel.unmount();
-
-    const taskPanel = render(<EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />);
-    expect(taskPanel.queryAllByRole('tab')).toHaveLength(0);
+  it('D41: lifecycle tabs are UNIVERSAL, and coexist with sections rather than replacing them', () => {
+    // Pre-ratification this asserted the opposite — that task had NO tabs.
+    // The user ratified the three-tier model as drawn on every collection
+    // kind, and T0-1 draws tabs AND sections together: tabs are the lifecycle
+    // band, sections are triage grouping within it.
+    for (const kind of ['task', 'work_session', 'doc']) {
+      const panel = render(<EntityListPanel kind={kind} rowsFor={rowsFor([])} ctx={ctx} />);
+      expect(panel.getAllByRole('tab'), `${kind} tabs`).toHaveLength(3);
+      panel.unmount();
+    }
+    // and task keeps its sections — the withdrawal of the rename proposal
     expect(getKind('task').list.sections?.length).toBeGreaterThan(0);
+  });
+
+  it('D41: the filter chips SURVIVE alongside the tabs', () => {
+    // Making tiers universal briefly deleted the filter trigger from every
+    // kind, because tabs and chips had been coded as either/or while
+    // work_session was the only kind with tabs. They are different axes.
+    const { getByTestId, getAllByRole } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    expect(getAllByRole('tab')).toHaveLength(3);
+    expect(getByTestId('filter-trigger')).toBeTruthy();
+  });
+
+  it('D41: an unsupported tier renders honestly empty with its reason, never hidden', () => {
+    // A1a measured that most kinds have no completion state the contract can
+    // express, so `done` carries `unsupported`. The tab must still render.
+    const withUnsupported = allKinds().find((k) =>
+      k.list.lifecycle?.some((t) => t.unsupported),
+    );
+    expect(withUnsupported, 'some kind should have an unsupported tier').toBeTruthy();
+    const { container, getAllByRole } = render(
+      <EntityListPanel kind={withUnsupported!.kind} rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    expect(getAllByRole('tab')).toHaveLength(3);
+    const dimmed = container.querySelector('[data-unsupported="true"]');
+    expect(dimmed, 'unsupported tab present').not.toBeNull();
+    expect(dimmed?.getAttribute('title')).toBeTruthy();
+  });
+
+  it('D41: tab counts, footer line and selector total all come from the SAME per-tier query', () => {
+    const { getByTestId, getAllByRole } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle, taskGuideLines])} ctx={ctx} />,
+    );
+    const tabCounts = getAllByRole('tab').map((t) => Number((t.textContent ?? '').match(/\d+$/)?.[0] ?? 0));
+    const total = Number(getByTestId('kind-total').textContent);
+    // The total is the sum of the tiers — not a second source that could
+    // disagree with the tabs it claims to summarise.
+    expect(total).toBe(tabCounts.reduce((a, b) => a + b, 0));
+    const footer = getByTestId('list-footer').textContent ?? '';
+    for (const id of ['open', 'done', 'archived']) expect(footer).toContain(id);
   });
 
   it('THE GATE: activity on a NON-LIVE row never streams and never pulses', () => {
@@ -387,10 +454,18 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     fireEvent.click(getByRole('menuitemcheckbox', { name: /Blocked/ }));
     fireEvent.click(getByRole('menuitemcheckbox', { name: /^Open$/ }));
 
-    const last = seen[seen.length - 1] as Record<string, unknown>;
-    // `multi: true` means the options COMBINE, so the arrays union rather
-    // than the second selection overwriting the first.
-    expect(last.workStatus).toEqual(expect.arrayContaining(['blocked', 'open']));
+    // Assert SOME query carried the union — not "the last one". The last call
+    // is now a tier-count query (D41 counts each tier by querying it), so a
+    // last-call heuristic silently started measuring the wrong call. `multi`
+    // means the options COMBINE, so the arrays union rather than the second
+    // selection overwriting the first.
+    const union = (seen as Record<string, unknown>[]).find(
+      (f) =>
+        Array.isArray(f.workStatus) &&
+        (f.workStatus as string[]).includes('blocked') &&
+        (f.workStatus as string[]).includes('open'),
+    );
+    expect(union, `no query carried the unioned filter; saw ${JSON.stringify(seen)}`).toBeTruthy();
   });
 
   it('at the floor the sort chip collapses to its glyph and never disappears', () => {

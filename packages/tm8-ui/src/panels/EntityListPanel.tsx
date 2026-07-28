@@ -5,7 +5,7 @@ import type {
   ActionContext,
   ActionRef,
   KindConfig,
-  LifecycleTab,
+  LifecycleTier,
   ListRowFacts,
   LiveTreatment,
   QueryFilter,
@@ -85,7 +85,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
 
-  const [tabId, setTabId] = useState<string | null>(list.lifecycleTabs?.[0]?.id ?? null);
+  const [tierId, setTierId] = useState<string | null>(list.lifecycle?.[0]?.id ?? null);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
     () => new Set((list.sections ?? []).filter((s) => s.collapsedByDefault).map((s) => s.id)),
   );
@@ -99,7 +99,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<CollectionMode>(config.defaultMode);
 
-  const activeTab = list.lifecycleTabs?.find((t) => t.id === tabId) ?? null;
+  const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
 
   return (
     <section
@@ -110,6 +110,11 @@ export function EntityListPanel(props: EntityListPanelProps) {
     >
       <KindSelector
         config={config}
+        total={
+          list.lifecycle
+            ? list.lifecycle.reduce((n, tier) => n + tierCount(props, config, tier), 0)
+            : undefined
+        }
         liveCount={liveCountFor(props, config)}
         onKindChange={props.onKindChange}
         mode={mode}
@@ -123,6 +128,13 @@ export function EntityListPanel(props: EntityListPanelProps) {
         query={query}
         onQuery={setQuery}
         inputRef={props.searchInputRef}
+      />
+
+      <TierTabs
+        tiers={list.lifecycle}
+        activeTierId={tierId}
+        onTier={setTierId}
+        tierCount={(tier: LifecycleTier) => tierCount(props, config, tier)}
       />
 
       <FilterRow
@@ -142,9 +154,10 @@ export function EntityListPanel(props: EntityListPanelProps) {
         }
         sortKey={sortKey}
         onSort={setSortKey}
-        tabs={list.lifecycleTabs}
-        activeTabId={tabId}
-        onTab={setTabId}
+        tiers={list.lifecycle}
+        activeTierId={tierId}
+        onTier={setTierId}
+        tierCount={(tier: LifecycleTier) => tierCount(props, config, tier)}
         compact={props.compact}
       />
 
@@ -154,7 +167,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
             <Band
               key={section.id}
               label={section.label}
-              rows={matching(rowsForBand(props, section.filter, activeTab, selected, config), query)}
+              rows={matching(rowsForBand(props, section.filter, activeTier, selected, config), query)}
               collapsed={collapsed.has(section.id)}
               onToggle={() =>
                 setCollapsed((prev) => {
@@ -172,13 +185,24 @@ export function EntityListPanel(props: EntityListPanelProps) {
         ) : (
           <Band
             label={null}
-            rows={matching(rowsForBand(props, activeTab?.filter ?? {}, activeTab, selected, config), query)}
+            rows={matching(rowsForBand(props, activeTier?.filter ?? {}, activeTier, selected, config), query)}
             props={props}
             config={config}
             query={query}
           />
         )}
       </div>
+
+      {/* T0-1 draws a footer count line on every kind: "9 open · 601 done ·
+          33 archived". Same per-tier counts as the tabs above — one source,
+          three surfaces (tabs, footer, selector total). */}
+      {list.lifecycle && list.lifecycle.length > 0 ? (
+        <div className="lp__foot" data-testid="list-footer">
+          {list.lifecycle
+            .map((tier) => `${tierCount(props, config, tier)} ${tier.id}`)
+            .join(' · ')}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -201,22 +225,38 @@ export function EntityListPanel(props: EntityListPanelProps) {
 function rowsForBand(
   props: EntityListPanelProps,
   filter: QueryFilter,
-  tab: LifecycleTab | null,
+  tier: LifecycleTier | null,
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
 ): readonly EntitySummary[] {
   const rows = props.rowsFor({
     ...filter,
-    ...(tab?.filter ?? {}),
+    ...(tier?.filter ?? {}),
     ...mergeSelectedFilters(config, selected),
   });
-  if (!tab?.statuses) return rows;
+  // D20's client partition survives the rename unchanged: read STRUCTURALLY,
+  // never by kind literal.
+  if (!tier?.statuses) return rows;
 
-  const allowed = new Set<string>(tab.statuses);
+  const allowed = new Set<string>(tier.statuses);
   return rows.filter((row) => {
     const state = row.state as unknown as Record<string, unknown>;
     return typeof state.status === 'string' && allowed.has(state.status);
   });
+}
+
+/**
+ * A tier's count is its OWN query's result size — the same source the tab
+ * label, the footer line and the kind-selector total all read. A count FIELD
+ * would be a second source that could disagree with the query it claims to
+ * summarise (A1a's design note, and it is the right one).
+ *
+ * An `unsupported` tier counts ZERO honestly: the kind has no state that can
+ * land there, so the tab renders with its reason rather than being dropped.
+ */
+function tierCount(props: EntityListPanelProps, config: KindConfig, tier: LifecycleTier): number {
+  if (tier.unsupported) return 0;
+  return rowsForBand(props, tier.filter, tier, {}, config).length;
 }
 
 /**
@@ -238,12 +278,15 @@ function liveCountFor(props: EntityListPanelProps, config: KindConfig): string |
 
 function KindSelector({
   config,
+  total,
   liveCount,
   onKindChange,
   mode,
   onMode,
 }: {
   config: KindConfig;
+  /** Sum of the lifecycle tiers — T0-1 draws it beside the kind name. */
+  total?: number;
   liveCount: string | null;
   onKindChange?: (kind: string) => void;
   mode: CollectionMode;
@@ -264,6 +307,11 @@ function KindSelector({
         </span>
       </button>
       <span className="lp__spacer" />
+      {typeof total === 'number' ? (
+        <span className="lp__total" data-testid="kind-total">
+          {total}
+        </span>
+      ) : null}
       {liveCount ? (
         <span className="lp__livecount" data-testid="list-live-count">
           {liveCount}
@@ -485,15 +533,59 @@ function SearchRow({
   );
 }
 
+/**
+ * THE LIFECYCLE TIER TABS — Open / Done / Archived, universal across
+ * collection kinds (D41, user-ratified). Their own row: a tier is the
+ * lifecycle band you are looking at, and the filter chips below narrow WITHIN
+ * it. T0-1 draws both, and the count on each tab comes from that tier's own
+ * query — the same source as the footer line and the kind-selector total.
+ */
+function TierTabs({
+  tiers,
+  activeTierId,
+  onTier,
+  tierCount,
+}: {
+  tiers?: readonly LifecycleTier[];
+  activeTierId: string | null;
+  onTier: (id: string) => void;
+  tierCount: (tier: LifecycleTier) => number;
+}) {
+  if (!tiers || tiers.length === 0) return null;
+  return (
+    <div className="lp__tierrow" role="tablist" aria-label="Lifecycle">
+      {tiers.map((tier) => (
+        <button
+          key={tier.id}
+          type="button"
+          role="tab"
+          aria-selected={tier.id === activeTierId}
+          className={tier.id === activeTierId ? 'lp__tab lp__tab--active' : 'lp__tab'}
+          onClick={() => onTier(tier.id)}
+          /* An unsupported tier still RENDERS — honestly empty, with its
+             reason reachable — rather than being dropped for some kinds and
+             not others. Hidden and empty are different states (L6), and a tab
+             that vanishes per-kind teaches nothing about why. */
+          title={tier.unsupported}
+          data-unsupported={tier.unsupported ? 'true' : undefined}
+        >
+          {`${tier.label} ${tierCount(tier)}`}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function FilterRow({
   config,
   selected,
   onToggleOption,
   sortKey,
   onSort,
-  tabs,
-  activeTabId,
-  onTab,
+  tiers,
+  activeTierId,
+  onTier,
+  tierCount,
   compact,
 }: {
   config: KindConfig;
@@ -501,9 +593,11 @@ function FilterRow({
   onToggleOption: (specId: string, optionId: string, multi: boolean) => void;
   sortKey: SortKey | undefined;
   onSort: (key: SortKey) => void;
-  tabs?: readonly LifecycleTab[];
-  activeTabId: string | null;
-  onTab: (id: string) => void;
+  tiers?: readonly LifecycleTier[];
+  activeTierId: string | null;
+  onTier: (id: string) => void;
+  /** Each tier's own query size — the one source the tabs, footer and total share. */
+  tierCount: (tier: LifecycleTier) => number;
   compact?: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -522,51 +616,35 @@ function FilterRow({
   return (
     <div className="lp__filterbar" ref={barRef}>
     <div className="lp__filters">
-      {/* Lifecycle tabs are SHELVES, not filters: a session leaves "live" by
-          exiting, not by the viewer changing their mind. They replace the
-          filter chips on the kinds that have them. */}
-      {tabs && tabs.length > 0 ? (
-        <span className="lp__tabs" role="tablist" aria-label="Lifecycle">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={tab.id === activeTabId}
-              className={tab.id === activeTabId ? 'lp__tab lp__tab--active' : 'lp__tab'}
-              onClick={() => onTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </span>
-      ) : (
-        <>
-          {active.map(({ spec, option }) => (
-            <button
-              key={`${spec.id}:${option.id}`}
-              type="button"
-              className="lp__chip lp__chip--active"
-              onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
-              title={`Clear filter: ${option.label}`}
-            >
-              {`${option.label} ✕`}
-            </button>
-          ))}
-          {config.list.filters.length > 0 ? (
-            <button
-              type="button"
-              className="lp__chip"
-              onClick={() => setPickerOpen((o) => !o)}
-              aria-expanded={pickerOpen}
-              aria-haspopup="menu"
-              data-testid="filter-trigger"
-            >
-              filter ▾
-            </button>
-          ) : null}
-        </>
-      )}
+      {/* Filter chips and the picker trigger. The lifecycle TABS are a
+          separate row above (TierTabs): tabs are a lifecycle TIER and filters
+          narrow WITHIN it, so they coexist — T0-1 draws both. They were an
+          either/or here only while work_session was the one kind with tabs,
+          and making tiers universal exposed that shortcut by deleting the
+          filter chips from every kind at once. */}
+      {active.map(({ spec, option }) => (
+        <button
+          key={`${spec.id}:${option.id}`}
+          type="button"
+          className="lp__chip lp__chip--active"
+          onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
+          title={`Clear filter: ${option.label}`}
+        >
+          {`${option.label} ✕`}
+        </button>
+      ))}
+      {config.list.filters.length > 0 ? (
+        <button
+          type="button"
+          className="lp__chip"
+          onClick={() => setPickerOpen((o) => !o)}
+          aria-expanded={pickerOpen}
+          aria-haspopup="menu"
+          data-testid="filter-trigger"
+        >
+          filter ▾
+        </button>
+      ) : null}
 
       <span className="lp__spacer" />
 
