@@ -1,0 +1,62 @@
+/* ==========================================================================
+   CANVAS-EXTRA — the four canvas-measured colors that tokens.css does NOT
+   define, declared ONCE as custom properties so no component ever inlines a
+   raw hex.
+
+   WHY THIS FILE EXISTS. tokens.css is a byte-verbatim transplant (A0's
+   byte-equality test guards it), so it cannot grow. But the canvases paint
+   two regions with colors the token ramp has no entry for: the terminal
+   "black box" is darker than any paper token in BOTH themes, and T4's
+   caution fill is warmer than --pn-wait-soft over card. LLD §14 bans raw hex
+   in src/ outside styles/tokens.css because a hundred transcriptions would
+   otherwise drift into a hundred palettes — that is the rule's actual point,
+   and one named, auditable extension file serves it exactly as well as zero
+   would. The §15.2 hex-ban exclusion therefore names TWO files: tokens.css
+   and this one. Nothing else in src/ may carry a color literal.
+
+   WHAT IS *NOT* HERE, deliberately:
+   - Alpha variants of brand: use rgba(var(--pn-brand-rgb), α) — tokens.css
+     ships --pn-brand-rgb for precisely this, and it re-themes for free.
+   - Alpha variants of run/wait/block/idle: use
+     color-mix(in srgb, var(--pn-wait) 40%, transparent) — derived, so it
+     re-themes for free too.
+   - The dark ramp for always-dark regions (terminal strip, live-session bar,
+     roster): NOT duplicated here. Those regions open a nested
+     `.cv2-root[data-theme="dark"]` scope, which re-declares the real dark
+     tokens via tokens.css's own selector. See terminal.css.
+   - The #1D1912 demo "board" behind every canvas frame: presentation
+     scaffolding, not a product surface. Never shipped.
+   ========================================================================== */
+
+.cv2-root {
+  /* The xterm host / black box. Near-black in BOTH themes by design — the
+     established terminal contrast, deliberately outside the paper ramp.
+     T0-2 draws two near-blacks: #0D0B08 for the reserved/placeholder host and
+     #131009 for live scrollback. Phase 1 ships the static host only, so
+     --pn-x-term-bg is the one in use; the live value is declared now so the
+     transport transplant at integration has a name to bind to rather than a
+     fresh literal. (T0-2 spec AMBIGUITY 2: the two values may be drift rather
+     than intent — resolving that is an integration-time question, and keeping
+     both named is what makes it answerable.) */
+  --pn-x-term-bg: #0D0B08;
+  --pn-x-term-live-bg: #131009;
+
+  /* Ghost text inside the empty host ("▉ xterm canvas — verbatim
+     transplant"). Placeholder only: real terminal text color comes from
+     xterm.js, never from CSS. */
+  --pn-x-term-ghost: #4A4334;
+
+  /* T4's caution fill — the OFFLINE banner and the `? unknown` delivery-facet
+     row. Warmer and lighter than color-mix over --pn-card lands, so it is a
+     measured value, not a derivation. This is the fill that keeps `unknown`
+     reading as a warning and never as success. */
+  --pn-x-warn-fill: #FFF8EC;
+}
+
+/* Dark counterparts. The terminal blacks do NOT flip — that is the whole
+   point of the black box. Only the caution fill rejoins the theme, derived
+   from the dark wait ramp so it tracks any future token change. */
+.cv2-root[data-theme='dark'],
+[data-theme='dark'] .cv2-root {
+  --pn-x-warn-fill: color-mix(in srgb, var(--pn-wait) 14%, var(--pn-card));
+}
