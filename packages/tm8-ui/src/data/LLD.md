@@ -242,9 +242,12 @@ this lane's deliverable, shipped as pure framework-free modules FE wires into it
   copy is authoritative; the effectivity MERGED-gate governs all copies identically). Two encoded behavior notes from it:
   (a) off-contract STORED rows of set members are skipped server-side, so seq gaps around them are
   contract-legal — the cursor law (§6) already absorbs this; (b) unknown types never reach a client —
-  the projector still skips unknown event types defensively. **EFFECTIVITY GATE: nothing is treated
-  as flowing until server-owner's Delta 1 MERGED confirmation arrives and is ACKed** (R13
-  safety-critical signal); reducers are event-driven so this is structural, not a flag. The remaining rows are stored as bare flat
+  the projector still skips unknown event types defensively. **EFFECTIVITY GATE: OPEN as of 2026-07-28** —
+  server-owner's ACK-gated MERGED signal received and ACKed ([SO->BRIDGE 21]/[BRIDGE->SO 23];
+  mapper passthrough arm landed as 2fa0733 + unit suite 4a6b46e). The v1 set
+  {menu.updated, space.default_channel.updated} FLOWS; all other families remain dark per the
+  publication's NOT-in-set table until separately published amendments. Reducers were
+  arrive-if-they-arrive by design, so no client code changed at gate-open. The remaining rows are stored as bare flat
   payloads that cannot pass strict verbatim passthrough and stay OFF the wire until write-side
   reshaping is ruled (escalated to master, timing unknown). Their table rows stay — the contract
   types are real and handling is forward-compatible — but the data layer MUST NOT rely on them for
@@ -331,7 +334,15 @@ sequences via WS and via poll from the same cursor; kill the socket mid-stream a
 duplicate through the seam). **Cursor round-trip integrity on every paged read** (W5 cursor-truncation
 class, §12): seed a known count, page to exhaustion, assert the exact set arrives — the seeded count
 is the control beside every page assertion; a short page without `nextCursor: null` is a signal, not
-a pass. (3) reducers/journal — pure vitest, no server. (4) liveness against
+a pass. *Amendment (B4 measurement, 2026-07-28): the null-termination half of that rule applies
+literally to `Page<T>` reads only — `events.poll` NEVER emits a null cursor (it echoes the caller's
+cursor on an empty page, poll.ts:126-135), so that feed has no end-marker; its walkers assert the
+CURRENT contract (no null ever seen, loud tripwire if the server's termination contract changes)
+with the seeded-count + bounded-page guard carrying the control instead.*
+**STATUS: Phase 1 COMPLETE (2026-07-28)** — all six acceptance suites green against a real
+in-process `bootstrap()` node on scratch DBs (B4 lane, independently verified); Delta-1 v1
+confirmed flowing end-to-end into a consumer; liveness suite is the scheduled-failure hook that
+flips on Delta 2. (3) reducers/journal — pure vitest, no server. (4) liveness against
 server-owner's Delta 2 implementation. Shared harness/fixtures with server-owner's Delta 3 e2e tests —
 same paths, one truth.
 
@@ -355,7 +366,8 @@ passthrough already handles it).
 - [x] server-owner: CONFIRMED both halves (verdict 2026-07-28) — one-resume sufficiency
       (control.ts:234-235 re-seed + pump.ts:69-70 backlog walk) and `since: 0` first-open bootstrap;
       accelerate-loop retained for non-trivial first-opens (§6 algorithm).
-- [ ] `execution.liveness` final catalog row + zod schema names once server-owner lands the amendment.
+- [x] `execution.liveness` LANDED: catalog row A21, C-1 shape exact, strict zod, claims-scoped
+      handler (Delta 2, 2026-07-28). Disposition executed; suite renamed `liveness.itest.ts`.
 - [ ] Delta 1 final passthrough membership set (server-owner publishing with leak-safety rationale) —
       §7 table adjusts mechanically if membership differs.
 - [x] FE consensus (verdict 2026-07-28): §4 signatures ACCEPTED; §7 domain-store ADOPTED for the
@@ -407,9 +419,13 @@ a test pins each so a wrong assumption fails at integration rather than silently
 - **`messages.delivery.get`** accepts a cursor but returns no `nextCursor` — not pageable; documented.
 - **`execution.prompt`** is a permanent 403 by design → `CollabError` passthrough,
   disabled-with-reason rendering.
-- **`execution.liveness`** has no catalog row and no server route yet (Delta 2 pending): path bound
-  literally to the C-1 shape behind an `isOperationName` guard with TODO-swap-to-`bindPath`; a test
-  records the current catalog state so the row's landing flips it loudly.
+- **`execution.liveness`**: ~~no catalog row yet~~ **LANDED as row A21 (Delta 2, dd41e89+194c64e;
+  signal [SO->BRIDGE 32] ACKed [BRIDGE->SO 33])** — the literal-path branch died its scheduled
+  death, `bindPath` owns the path, the canary flipped to assert presence, and the integration
+  suite's second life (`liveness.itest.ts`) proves real snapshots + data-backed 'stale' through
+  the seam. 'live'-from-real-data awaits the Phase-2 terminal-attach integration (needs a genuine
+  PTY spawn; a fabricated live set would test the fabrication). Dist serves A21 only after the
+  DIST-CURRENT signal (one signal covers both deltas).
 - **`openSpace` does not await the first liveness read** (against today's node it would reject
   every open); `statusOf` answers `unknown` until the read lands — exactly what R-UI-5 reserves
   `unknown` for.
