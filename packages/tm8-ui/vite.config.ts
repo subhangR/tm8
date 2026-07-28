@@ -32,10 +32,23 @@ export default defineConfig({
     // to its production build and every jsdom render dies inside act().
     env: { NODE_ENV: 'test' },
     // jsdom with NO url runs at an OPAQUE ORIGIN, where localStorage is a
-    // security REFUSAL by design ("blocked origin") — not a missing API. Any
-    // per-file `@vitest-environment jsdom` here inherits this url so storage
-    // exists; found when the real-seam flag tests hit the wall (A1a's
-    // root-cause, 2026-07-28; per-file stubs are the workaround this retires).
+    // security REFUSAL by design ("blocked origin") — not a missing API. This
+    // url removes that hazard, which is real and worth keeping (A1a's
+    // root-cause, 2026-07-28).
+    //
+    // CORRECTED 2026-07-29: it does NOT restore working storage under this
+    // runner, and the original wording here — "per-file stubs are the
+    // workaround this retires" — was a claim this comment made before anyone
+    // tested it. Measured: the url IS in effect (`location.href` is
+    // `http://localhost/`) and `localStorage` is still an object with no
+    // `setItem`/`removeItem`, the SAME object on `window` and `globalThis`,
+    // which is not jsdom's Storage at any origin. PER-FILE STUBS REMAIN
+    // NECESSARY (see `src/views/realSeamFlag.test.ts`).
+    //
+    // KNOWN-OPEN, deliberately not chased: the next probe is whether the runner
+    // can start without the node-level `--localstorage-file` injection it warns
+    // about on every run — the current suspect for shadowing jsdom's Storage.
+    // Suspected, not asserted.
     environmentOptions: { jsdom: { url: 'http://localhost' } },
   },
 });

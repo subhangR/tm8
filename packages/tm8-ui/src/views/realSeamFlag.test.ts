@@ -31,6 +31,27 @@ const KEY = 'tm8-ui:real-seam';
  * Installing a minimal real Storage keeps the test about MY logic. Measured
  * rather than assumed: the methods are genuinely absent, which is why this is a
  * substitution and not a convenience mock of something that already worked.
+ *
+ * === THE jsdom-URL FIX IS LANDED, IN EFFECT, AND DOES NOT RESOLVE THIS ===
+ *
+ * `vite.config.ts` sets `environmentOptions.jsdom.url`, and it works: the probe
+ * below reports a real origin. Storage is broken anyway.
+ *
+ *   {"href":"http://localhost/","globalSetItem":"undefined",
+ *    "windowSetItem":"undefined","sameObject":true}
+ *
+ * An opaque-origin refusal does not look like this. jsdom at a real origin
+ * hands back a working Storage; an object MISSING ITS OWN METHODS, identical on
+ * `window` and `globalThis`, is not jsdom's Storage at any origin. Suspected but
+ * NOT asserted: this runner's node-level `--localstorage-file` injection (it
+ * warns about a missing path on every run) shadowing jsdom's implementation.
+ *
+ * THE STUB IS LOAD-BEARING. Retiring it IS the verification, not the tidy-up —
+ * and it may be retired only by someone who has just watched these tests pass
+ * without it. It was proposed for removal once on the reasoning that a
+ * workaround shadows the fix that replaced it; that reasoning was right and the
+ * conclusion was backwards, because the fix had never worked for this symptom
+ * and the workaround was the only reason nobody knew.
  */
 function installStorage(): void {
   const store = new Map<string, string>();
