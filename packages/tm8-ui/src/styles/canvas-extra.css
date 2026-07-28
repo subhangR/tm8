@@ -1,7 +1,9 @@
 /* ==========================================================================
-   CANVAS-EXTRA — the four canvas-measured colors that tokens.css does NOT
-   define, declared ONCE as custom properties so no component ever inlines a
-   raw hex.
+   CANVAS-EXTRA — canvas-measured colors that tokens.css does NOT define,
+   declared ONCE as custom properties so no component ever inlines a raw hex.
+   Grew past "four" at P2 (live-terminal transplant): xterm needs a full
+   ITheme (fg/cursor/selection/16 ANSI slots), added below as the same
+   `--pn-x-term-*` family rather than a second extension file.
 
    WHY THIS FILE EXISTS. tokens.css is a byte-verbatim transplant (A0's
    byte-equality test guards it), so it cannot grow. But the canvases paint
@@ -51,6 +53,37 @@
      measured value, not a derivation. This is the fill that keeps `unknown`
      reading as a warning and never as success. */
   --pn-x-warn-fill: #FFF8EC;
+
+  /* P2 (live-terminal transplant): xterm's ITheme cannot take a raw hex
+     literal in TS source (§14), and it cannot resolve a `var(...)` string
+     passed to its canvas renderer either — colors are read from these custom
+     properties via getComputedStyle() at mount, against an element inside
+     the always-dark `.cv2-root` scope, and handed to xterm as resolved
+     values. This is the "Warm Atelier" palette (the terminal-family default
+     carried over from packages/ui's useTerminalSettingsStore), tokenized
+     here rather than left as literals in a component. Standard ANSI
+     numbering: 0-7 are the regular 16-color set, 8-15 their bright twins. */
+  --pn-x-term-fg: #D9D2C4;
+  --pn-x-term-cursor: #E0A45A;
+  --pn-x-term-cursor-accent: #131009;
+  --pn-x-term-sel-bg: rgba(224, 164, 90, 0.22);
+  --pn-x-term-sel-fg: #F3EEE2;
+  --pn-x-term-ansi-0: #322D24;
+  --pn-x-term-ansi-1: #CB7059;
+  --pn-x-term-ansi-2: #74B083;
+  --pn-x-term-ansi-3: #D2A24C;
+  --pn-x-term-ansi-4: #6E9BC4;
+  --pn-x-term-ansi-5: #B98BC0;
+  --pn-x-term-ansi-6: #6FB2A8;
+  --pn-x-term-ansi-7: #CFC8BA;
+  --pn-x-term-ansi-8: #6B6453;
+  --pn-x-term-ansi-9: #DC8B73;
+  --pn-x-term-ansi-10: #8FC79C;
+  --pn-x-term-ansi-11: #E6B968;
+  --pn-x-term-ansi-12: #88B0D6;
+  --pn-x-term-ansi-13: #CCA0D2;
+  --pn-x-term-ansi-14: #86C4BA;
+  --pn-x-term-ansi-15: #EFE9DB;
 }
 
 /* Dark counterparts. The terminal blacks do NOT flip — that is the whole
