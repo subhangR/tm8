@@ -19,7 +19,6 @@ import type {
   EntityId,
   EntityKind,
   SpaceId,
-  WorkSessionStatus,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
@@ -353,15 +352,15 @@ export interface ListSection {
  * HONESTLY EMPTY (L6) — never hidden, and never populated by a fabricated
  * partition.
  *
- * D20's mechanism survives underneath: `statuses` is the client-side partition
- * for `work_session`, because `CollectionQuery.filters.workStatus` is the TASK
- * vocabulary and cannot express `WorkSessionStatus`.
+ * D56: the D20 client-side partition is RETIRED. `CollectionQuery.filters`
+ * gained a `sessionStatus` member (contract dd41e89), so every tier now carries
+ * a contract-shaped filter the seam executes untranslated — including
+ * work_session, which was the only kind that ever needed the workaround.
  */
 export interface LifecycleTier {
   id: 'open' | 'done' | 'archived';
   label: string;
   filter: QueryFilter;
-  statuses?: readonly WorkSessionStatus[];
   /**
    * Set when this kind cannot populate this tier. The tab still renders — the
    * count is honestly zero and the reason explains why, rather than the tier

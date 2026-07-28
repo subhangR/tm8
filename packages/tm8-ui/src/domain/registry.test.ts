@@ -188,14 +188,25 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('5. sessions lifecycle → list.lifecycle, D20 partition surviving underneath', () => {
+  it('5. sessions lifecycle → list.lifecycle, D20 partition RETIRED (D56)', () => {
     const tiers = getKind('work_session').list.lifecycle;
     expect(tiers?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
-    // The contract cannot express WorkSessionStatus in CollectionQuery.filters,
-    // so the partition rides alongside a contract-shaped filter (D20).
-    expect(tiers?.[0].statuses).toEqual(['spawning', 'running', 'idle']);
-    expect(tiers?.[1].statuses).toEqual(['exited', 'failed']);
+    // The contract now carries `sessionStatus`, so these are ordinary filters
+    // the seam executes untranslated — no client-side partition anywhere.
+    expect(tiers?.[0].filter.sessionStatus).toEqual(['spawning', 'running', 'idle']);
+    expect(tiers?.[1].filter.sessionStatus).toEqual(['exited', 'failed']);
     for (const tier of tiers ?? []) expect(tier.filter).toBeTruthy();
+  });
+
+  it('D56 — no tier anywhere carries a client-side partition any more', () => {
+    // The retirement is a DELETION, not a translation: if the field comes back
+    // on any row, the workaround has been reintroduced beside the contract
+    // member that replaced it, and the two would diverge silently.
+    for (const row of allKinds()) {
+      for (const tier of row.list.lifecycle ?? []) {
+        expect(tier).not.toHaveProperty('statuses');
+      }
+    }
   });
 
   it('D41 — every COLLECTION kind carries all three tiers, in order', () => {
@@ -222,7 +233,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   });
 
   it('D41 — a tier the contract cannot express is UNSUPPORTED with a reason, never faked', () => {
-    // Only task (workStatus) and work_session (D20 partition) can express
+    // Only task (workStatus) and work_session (sessionStatus, D56) can express
     // completion. Everything else says so out loud rather than inventing one.
     const canExpressDone = ['task', 'work_session'];
     for (const row of allKinds()) {

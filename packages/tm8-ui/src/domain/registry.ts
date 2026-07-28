@@ -119,8 +119,8 @@ function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): Li
  * `archived` is the honest one: `deleted: 'only'` is a real `CollectionQuery`
  * member, so the archive tier is a genuine query for EVERY kind rather than an
  * invention. `open`/`done` are only expressible where the kind carries a state
- * axis the contract knows — task via `workStatus`, work_session via D20's
- * client partition. Everywhere else `done` is declared UNSUPPORTED with its
+ * axis the contract knows — task via `workStatus`, work_session via
+ * `sessionStatus` (D56). Everywhere else `done` is declared UNSUPPORTED with its
  * reason: the tab renders, its count is honestly zero, and nothing fabricates
  * a completion concept the backend cannot answer for.
  */
@@ -148,12 +148,17 @@ const TASK_TIERS: readonly LifecycleTier[] = [
   ARCHIVED_TIER,
 ];
 
-// D20 survives underneath: CollectionQuery.filters.workStatus is the TASK
-// vocabulary and cannot express WorkSessionStatus, so the session tiers carry
-// the client-side partition exactly as the lifecycle tabs did.
+// D56 — the D20 workaround is GONE. `CollectionQuery.filters.sessionStatus`
+// exists now (contract dd41e89), so these are ordinary contract filters the
+// seam executes untranslated, exactly like the task tiers beside them. No
+// client-side partition, no structural read on the row, nothing to remember.
 const SESSION_TIERS: readonly LifecycleTier[] = [
-  { id: 'open', label: 'Open', filter: NOT_DELETED, statuses: ['spawning', 'running', 'idle'] },
-  { id: 'done', label: 'Done', filter: NOT_DELETED, statuses: ['exited', 'failed'] },
+  {
+    id: 'open',
+    label: 'Open',
+    filter: { sessionStatus: ['spawning', 'running', 'idle'], deleted: 'exclude' },
+  },
+  { id: 'done', label: 'Done', filter: { sessionStatus: ['exited', 'failed'], deleted: 'exclude' } },
   ARCHIVED_TIER,
 ];
 
