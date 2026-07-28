@@ -22,6 +22,7 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import { navStore, useNavStore } from '../stores/navStore';
 import { getKind } from '../domain';
+import { buildSpawnInput } from '../domain/launch';
 import type { DetailReasons } from '../panels';
 import {
   authoredFromHollowReason,
@@ -30,6 +31,7 @@ import {
 } from '../fixtures';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
+import { useLaunchSheet } from './useLaunchSheet';
 import { useTheme } from '../theme/useTheme';
 import { WorkspaceView } from './WorkspaceView';
 
@@ -77,6 +79,13 @@ export function GateApp() {
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
+
+  // D44/D51 launch sheet. Transient client state — never the URL (§11), so a
+  // shared link cannot open someone else's half-configured spawn surface.
+  // Obligation 2 rides here: `hostedIds` is what clears the sheet when its
+  // subject stops being hosted, by ANY route out (pop, close, promote, or a
+  // hydration nobody dispatched).
+  const launch = useLaunchSheet({ hostedIds: [...pinned, ...stack] });
 
   // Bind A1a's store to my narrow port. This is the adapter nav-port.ts exists
   // for: shell drives a small, explicit surface rather than the whole store.
@@ -162,6 +171,54 @@ export function GateApp() {
               rightKind={kinds.rightKind}
               onLeftKindChange={kinds.setLeftKind}
               onRightKindChange={kinds.setRightKind}
+              onLaunchOpen={(id) => launch.open(id)}
+              launchSubjectId={launch.subjectId}
+              isModalOpen={launch.isModalOpen}
+              onLaunchCancel={launch.close}
+              // D44: the sheet's Launch PERFORMS. A brass primary that cannot
+              // do its verb reads as working at a glance and only corrects
+              // itself after a click — the same misleading-glance shape as a
+              // transient refusal wearing the permanent form. The honest fix
+              // is to wire it, not to grey it out.
+              onLaunchSubmit={(config) => {
+                launch.close();
+                void data
+                  .spawn(
+                    buildSpawnInput({
+                      clientMutationId: `launch:${config.subjectId}:${config.teammateId}`,
+                      spaceId: data.spaceId,
+                      config: {
+                        teamMemberId: config.teammateId,
+                        target: config.projectIds.length
+                          ? { kind: 'project', projectId: config.projectIds[0] as never }
+                          : { kind: 'scratch' },
+                      } as never,
+                      taskIds: [config.subjectId],
+                    }),
+                  )
+                  .then(() =>
+                    notices.push({
+                      id: 'launch-done',
+                      tone: 'warn',
+                      title: 'Session launched',
+                      body: 'The session is running and appears in the live set.',
+                      ttlMs: 6000,
+                    }),
+                  )
+                  .catch((error: unknown) =>
+                    // A refusal is a FACT about the node, not a UI failure —
+                    // it renders with its own cause rather than a generic
+                    // apology (T5-5's refusal grammar).
+                    notices.push({
+                      id: 'launch-refused',
+                      tone: 'error',
+                      title: 'Launch refused',
+                      body: String((error as { message?: string })?.message ?? error),
+                      ttlMs: 6000,
+                    }),
+                  );
+              }}
+              onSpawn={(input) => data.spawn(input)}
               menuCollapsed={menuCollapsed}
               reasons={reasons}
               onNotice={notices.push}

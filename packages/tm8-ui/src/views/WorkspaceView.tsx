@@ -10,7 +10,7 @@
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
 import { useCallback, useMemo } from 'react';
-import type { EntityId } from '@tm8/contract';
+import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import type { ActionContext } from '../domain/types';
 import {
@@ -27,6 +27,8 @@ import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { EmptyCenter } from './EmptyCenter';
+import { LaunchSheet } from './LaunchSheet';
+import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 import type { GateData } from './useGateData';
 
 export interface WorkspaceViewProps {
@@ -41,6 +43,15 @@ export interface WorkspaceViewProps {
   /** The kind selectors are LIVE: the panel switches kind (T0-1 law). */
   onLeftKindChange?(kind: string): void;
   onRightKindChange?(kind: string): void;
+  /** D44/D51 — the launch sheet's subject, or null when closed. */
+  launchSubjectId?: EntityId | null;
+  onLaunchCancel?(): void;
+  onLaunchSubmit?(config: { subjectId: EntityId; teammateId: string; projectIds: string[]; profileId: string }): void;
+  /** Esc must not pop the panel under an open sheet (A1a finding 1). */
+  isModalOpen?(): boolean;
+  /** THE DOOR: A1c's quick-config "full options ▸" opens the full sheet. */
+  onLaunchOpen?(id: EntityId): void;
+  onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
 }
 
 export function WorkspaceView(props: WorkspaceViewProps) {
@@ -151,6 +162,31 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={(id) => nav.push?.(id as EntityId)}
           onKindChange={props.onLeftKindChange}
+          // Capability truth comes from the DETAIL, not the summary
+          // (EntityCapabilities lives on EntityDetail). A row whose detail is
+          // not hydrated genuinely has unknown capabilities and correctly
+          // stays refused — passing a literal all-true object here would make
+          // the panel claim a permission the shell was never told it has,
+          // which is the optimistic-enable the rule exists to prevent.
+          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          // The quick-config's escape to the full sheet. A1c's
+          // LaunchTeammateOption is deliberately NOT my LaunchTeammate:
+          // panels/ importing views/ would point the dependency backwards,
+          // since views compose panels. One map at the seam, no cast on
+          // either side.
+          launch={{
+            spaceId: ctx.spaceId,
+            teammates: LAUNCH_TEAMMATES.map((t) => ({
+              id: t.id,
+              label: t.name,
+              agentTool: t.agentTool,
+              model: t.model,
+            })),
+            capacity: LAUNCH_CAPACITY,
+            mutationId: (id: string) => `launch:${id}`,
+            onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
+            onSpawn: props.onSpawn,
+          }}
         />
       }
       center={
@@ -168,6 +204,22 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           {/* 02-LAYOUT §2.2 — the empty centre is not a blank: it IS the live
               roster and it teaches the grammar. PanelStack still owns the slot
               and its C_min floor; this is the content that goes in it. */}
+          {/* The launch sheet OVERLAYS the stack region — it is not a column,
+              so it never enters V/cMin. See D52-as-amended and LaunchSheet's
+              docblock for why a column would breach L4. */}
+          {props.launchSubjectId && (
+            <LaunchSheet
+              subjectId={props.launchSubjectId}
+              fromChip="◔ Run ▸"
+              fromCaption="task pre-associated — the session links to it"
+              teammates={LAUNCH_TEAMMATES}
+              projects={LAUNCH_PROJECTS}
+              profiles={LAUNCH_PROFILES}
+              capacity={LAUNCH_CAPACITY}
+              onCancel={() => props.onLaunchCancel?.()}
+              onLaunch={(config) => props.onLaunchSubmit?.(config)}
+            />
+          )}
           {centreIsEmpty ? (
             <EmptyCenter
               liveIds={data.liveIds}
@@ -176,7 +228,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               onFocusSession={(id) => nav.push(id as EntityId)}
             />
           ) : (
-            <PanelStack nav={nav} renderPanel={renderPanel} />
+            <PanelStack nav={nav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />
           )}
         </>
       }

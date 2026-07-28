@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   CollectionQuery,
+  ExecutionSpawnInput,
   EntityDetail,
   EntitySummary,
   MenuConfig,
@@ -50,6 +51,12 @@ export interface GateData {
   activity: Readonly<Record<string, boolean>>;
   /** Hydrate a kind the viewer selected after boot. Idempotent. */
   ensureKind: (kind: string) => void;
+  /**
+   * D44: launch creates a REAL fixture session through the seam's own command
+   * path — patches, echo event, monotonic seq — so the live set moves and the
+   * count updates the way it will with a real node. Not a stub.
+   */
+  spawn: (input: ExecutionSpawnInput) => Promise<void>;
   seam: Seam;
   domain: DomainStoreHandle;
 }
@@ -201,6 +208,17 @@ export function useGateData(options: GateOptions): GateData {
     ensureKind(options.rightKind);
   }, [ready, options.leftKind, options.rightKind, ensureKind]);
 
+  const spawn = useCallback(
+    async (input: ExecutionSpawnInput) => {
+      await seam.commands.spawn(input);
+      // Re-read the reads the new session affects. Hydration is idempotent by
+      // construction (§10.2.5), which is exactly why it is safe to re-run here
+      // rather than hand-patching a row into the cache.
+      if (spaceId) await hydrate(spaceId);
+    },
+    [seam, spaceId, hydrate],
+  );
+
   const rowsFor = useCallback(
     (kind: string) => () => rows[kind] ?? [],
     [rows],
@@ -241,11 +259,12 @@ export function useGateData(options: GateOptions): GateData {
       detailOf,
       activity,
       ensureKind,
+      spawn,
       seam,
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, spawn, seam, domain, pull],
   );
 
   return data;

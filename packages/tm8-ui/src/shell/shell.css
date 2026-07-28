@@ -669,3 +669,145 @@
   color: var(--pn-ink-4);
   margin: 0;
 }
+
+/* --- Launch sheet (D44/D51, T5-5) -----------------------------------------
+   An OVERLAY over the centre's stack region — NOT a column. It touches no
+   geometry: a stack-order column would consume width cMin(V) never reserved
+   (selectVisibleCount knows pinned+stack and nothing else), squeezing panels
+   under their 320 floor. The pop shadow is the canvas's own evidence for
+   elevation: no stack panel carries one. */
+.cv2-root .ls {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 8px;
+  width: 420px;
+  max-width: calc(100% - 16px);
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+  z-index: 30;
+}
+.cv2-root .ls__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px 9px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .ls__title { font-size: 15px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .ls__hint,
+.cv2-root .ls__caption { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+.cv2-root .ls__spacer { flex: 1; }
+.cv2-root .ls__x {
+  background: transparent; border: 0; color: var(--pn-ink-3);
+  font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: var(--pn-r-xs);
+}
+.cv2-root .ls__from {
+  flex: none; display: flex; align-items: center; gap: 7px;
+  padding: 8px 14px; border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-brand-soft);
+}
+.cv2-root .ls__eyebrow {
+  font-family: var(--pn-mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: var(--pn-track-label); color: var(--pn-ink-3);
+}
+.cv2-root .ls__chip {
+  border: 1px solid var(--pn-line); border-radius: 6px; padding: 2px 8px;
+  font-size: 11.5px; color: var(--pn-ink-2); background: var(--pn-card);
+}
+/* The ONLY scrolling region — header, FROM and footer stay pinned so the
+   commit control is reachable however long the project list grows. */
+.cv2-root .ls__body {
+  flex: 1; overflow-y: auto; min-height: 120px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 13px;
+}
+.cv2-root .ls__section { display: flex; flex-direction: column; gap: 5px; }
+.cv2-root .ls__row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; text-align: left;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: 8px; cursor: pointer; font-family: var(--pn-ui);
+}
+.cv2-root .ls__row:hover { border-color: var(--pn-line-2); }
+.cv2-root .ls__row--on {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+.cv2-root .ls__row--inert { background: var(--pn-hover); cursor: default; }
+/* L6/D28: refused rows stay FOCUSABLE — a reason you cannot reach is no
+   reason at all. Never `disabled`. */
+.cv2-root .ls__row--refused { opacity: 0.62; cursor: not-allowed; }
+.cv2-root .ls__avatar {
+  width: 22px; height: 22px; flex: none; border-radius: 6px;
+  background: var(--pn-brand-soft); color: var(--pn-brand-2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600;
+}
+.cv2-root .ls__glyph { color: var(--pn-ink-3); font-size: 12px; flex: none; }
+.cv2-root .ls__rowtext { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cv2-root .ls__rowname { font-size: 12.5px; font-weight: 600; color: var(--pn-ink); }
+.cv2-root .ls__rowname--quiet { font-weight: 400; color: var(--pn-ink-2); font-size: 12px; }
+.cv2-root .ls__rowsub { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
+.cv2-root .ls__rowsub--ok { color: var(--pn-run); }
+.cv2-root .ls__rowsub--bad { color: var(--pn-block); }
+.cv2-root .ls__check {
+  width: 15px; height: 15px; flex: none; display: flex;
+  align-items: center; justify-content: center; font-size: 9px;
+  color: var(--pn-card); background: var(--pn-brand); border-radius: 4px;
+}
+.cv2-root .ls__check--radio { border-radius: 50%; }
+.cv2-root .ls__check--off { background: transparent; border: 1.5px solid var(--pn-line-2); }
+.cv2-root .ls__change {
+  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-brand-2);
+  background: transparent; border: 0; cursor: pointer; flex: none;
+}
+/* The resolution chain (D51). Brass marks the WINNER — D53. */
+.cv2-root .ls__chain { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px; }
+.cv2-root .ls__chainstep { display: inline-flex; align-items: center; gap: 5px; }
+.cv2-root .ls__step { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+.cv2-root .ls__step--won {
+  font-weight: 600; color: var(--pn-brand-2);
+  background: var(--pn-brand-soft); border-radius: var(--pn-r-pill); padding: 1px 7px;
+}
+.cv2-root .ls__arrow { color: var(--pn-line-2); font-size: 9px; }
+.cv2-root .ls__picker { display: flex; flex-direction: column; gap: 4px; }
+.cv2-root .ls__pinned {
+  font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4);
+  line-height: 1.5; padding: 0 2px;
+}
+/* Refusal renders IN the sheet, never as a toast (T5-5). */
+.cv2-root .ls__refusal {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg); padding: 12px 14px;
+}
+.cv2-root .ls__refusalhead {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 600; color: var(--pn-block);
+}
+.cv2-root .ls__refusaldot {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--pn-block); flex: none;
+}
+.cv2-root .ls__refusalbody { font-size: 11.5px; line-height: 1.55; color: var(--pn-ink-2); }
+.cv2-root .ls__foot {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-top: 1px solid var(--pn-line); background: var(--pn-surface);
+}
+.cv2-root .ls__capacity { font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-3); }
+.cv2-root .ls__slots { color: var(--pn-run); font-weight: 600; }
+.cv2-root .ls__cancel {
+  padding: 5px 12px; border: 1px solid var(--pn-line-2); border-radius: 7px;
+  font-size: 12px; font-weight: 600; color: var(--pn-ink-2);
+  background: var(--pn-card); cursor: pointer;
+}
+.cv2-root .ls__launch {
+  padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  background: var(--pn-brand-soft); border: 1px solid var(--pn-brand);
+  color: var(--pn-brand-2); cursor: pointer;
+}

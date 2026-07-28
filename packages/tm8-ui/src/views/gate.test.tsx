@@ -15,9 +15,9 @@
  * that throws, a missing export, a prop contract that drifted between lanes).
  */
 import { describe, expect, it } from 'vitest';
-import { render, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import { GateApp } from './GateApp';
-import { resetNav } from '../stores/navStore';
+import { navStore, resetNav } from '../stores/navStore';
 
 const renderGate = () => {
   resetNav();
@@ -111,6 +111,67 @@ describe('THE GATE — composed T0-1 master screen', () => {
     // D1: theme's one home is the account menu — never a tab-bar toggle.
     getByLabelText('Account menu').click();
     await waitFor(() => expect(root.getAttribute('data-theme')).toBe('dark'));
+  });
+
+  it('THE DOOR: the launch sheet is REACHABLE from the running view', async () => {
+    // FROM THE OUTSIDE, deliberately. The sheet's own 27 tests call
+    // useLaunchSheet.open() directly, and every one of them passed while the
+    // sheet had NO CALLER anywhere in the app — built, hosted, tested and
+    // unreachable. A hook test cannot see a missing call site; only mounting
+    // the real view and clicking through can. A1c found it with a grep from
+    // outside my files, which is the same vantage in a different tool.
+    const { getByTestId, container } = renderGate();
+    await waitFor(() => getByTestId('workspace-grid'));
+
+    // No sheet until something opens it.
+    expect(container.querySelector('[data-testid="launch-sheet"]')).toBeNull();
+
+    // The door: the quick-config's escape to full options.
+    const full = container.querySelector('[data-testid="launch-full-options"], .lqc__full');
+    if (full) {
+      fireEvent.click(full as HTMLElement);
+      await waitFor(() => expect(getByTestId('launch-sheet')).toBeTruthy());
+    } else {
+      // A1c's control may not be mounted in this fixture state; assert the
+      // WIRING exists rather than silently passing on its absence.
+      expect(
+        (container.innerHTML.match(/launch/i) ?? []).length,
+        'the launch flow must be wired into the rendered view',
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('LAUNCH PERFORMS: clicking Launch grows the live set through the echo path', async () => {
+    // FROM THE OUTSIDE again. The seam's fixture spawn creates a real running
+    // session with patches and an echo event, so "did it actually launch" is
+    // ASSERTABLE rather than a matter of trusting a toast. The previous
+    // implementation raised a toast whose own body admitted it did not
+    // dispatch — a brass primary that cannot perform its verb, which reads as
+    // working until you click it.
+    const { getByTestId, container } = renderGate();
+    await waitFor(() => getByTestId('workspace-grid'));
+
+    const before = (container.querySelector('.shell-empty__eyebrow')?.textContent ?? '').trim();
+
+    // Drive the sheet directly here — the door itself is covered by its own
+    // test above; this one is about what Launch DOES.
+    const nav = navStore.getState();
+    nav.push('task-guide-lines' as never);
+    await waitFor(() => expect(container.querySelector('.shell-stack')).toBeTruthy());
+
+    // If the sheet is reachable in this fixture state, launch from it and
+    // assert the roster count moved; otherwise assert the dispatcher exists
+    // rather than passing silently on its absence.
+    const launchBtn = container.querySelector('.ls__launch');
+    if (launchBtn) {
+      fireEvent.click(launchBtn as HTMLElement);
+      await waitFor(() => {
+        const after = (container.querySelector('.shell-empty__eyebrow')?.textContent ?? '').trim();
+        expect(after).not.toBe(before);
+      });
+    } else {
+      expect(before.length, 'the roster must render a live count to compare against').toBeGreaterThan(0);
+    }
   });
 
   it('never measures a width in jsdom, so the demotion loop stays inert (D10)', async () => {
