@@ -349,7 +349,17 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'terminal',
-      primaries: ['prompt-session', 'terminate'],
+      // T0-4's work_session block draws "Complete  Terminate" as the kind
+      // primaries and annotates it in words ("Complete / Terminate primaries").
+      // LLD §3.1 names the same pair ("Terminate cascades with blast-radius
+      // confirm; complete is intent-only"), and this row's own `rowActions`
+      // already said ['complete','terminate'] four lines above. Three
+      // independent sources agreed; the previous value here — 'prompt-session'
+      // — agreed with none of them and was authored from kind semantics by me,
+      // under no ruling. `prompt-session` remains a valid ActionRef for the
+      // terminal's own prompt affordance and the palette; it is simply not a
+      // PANEL PRIMARY.
+      primaries: ['complete', 'terminate'],
       statusPill: {
         source: 'sessionStatus',
         tones: { spawning: 'wait', running: 'run', idle: 'info', exited: 'idle', failed: 'block' },

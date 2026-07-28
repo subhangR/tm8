@@ -166,6 +166,20 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(session.rowActions).toEqual(['complete', 'terminate']);
   });
 
+  it("work_session's panel primaries and row actions name the SAME verb pair", () => {
+    // They disagreed for hours: rowActions said complete+terminate while
+    // primaries said prompt-session+terminate, in one row, four lines apart.
+    // Pinned to each other now — where two fields encode the same fact, a test
+    // between them outlives whatever either comment claims.
+    const session = getKind('work_session');
+    expect(
+      session.panel.primaries,
+      'T0-4 draws "Complete Terminate" and annotates it; LLD §3.1 names the same pair. Change the CANVAS/spec first, then this.',
+    ).toEqual(['complete', 'terminate']);
+    expect(session.list.rowActions).toEqual(['complete', 'terminate']);
+    expect(session.panel.primaries).toEqual(session.list.rowActions);
+  });
+
   it('4. Run / Coordinate primaries are TASK-KIND ONLY', () => {
     expect(getKind('task').list.primaryActions).toEqual(['run', 'coordinate']);
     for (const row of allKinds()) {
