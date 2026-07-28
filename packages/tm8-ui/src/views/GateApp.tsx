@@ -37,6 +37,7 @@ import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { useTheme } from '../theme/useTheme';
+import { AccountMenu, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { GraphScreen } from '../graph';
@@ -57,6 +58,10 @@ const DEFAULT_LEFT_KIND = 'task';
 const DEFAULT_RIGHT_KIND = 'work_session';
 
 export function GateApp() {
+  // null when this GateApp is not inside an <AuthGate> — the shell tests, and
+  // any host that has not mounted the gate.
+  const authAccount = useAuthActions()?.account ?? null;
+
   // Boot hydrates the RULED defaults; the viewer's persisted choice is applied
   // after, because the persistence is scoped per (viewer, space) and the space
   // id only exists once the seam has answered. Passing a placeholder id here
@@ -98,6 +103,11 @@ export function GateApp() {
   // subject stops being hosted, by ANY route out (pop, close, promote, or a
   // hydration nobody dispatched).
   const launch = useLaunchSheet({ hostedIds: [...pinned, ...stack] });
+  /* T5-5 annotation 6 (Surface Audit): a spawn refusal renders IN the sheet,
+     never as a toast. The sheet therefore stays OPEN through the spawn and
+     closes only on success; the refusal state lives here because the sheet
+     is stateless about outcomes by design. */
+  const [launchRefusal, setLaunchRefusal] = useState<{ cause: string; detail: string } | null>(null);
 
   // Bind A1a's store to my narrow port. This is the adapter nav-port.ts exists
   // for: shell drives a small, explicit surface rather than the whole store.
@@ -244,6 +254,12 @@ export function GateApp() {
           onOpenPalette={() => setPaletteOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
           onOpenAccount={toggleTheme}
+          // T3-3, user-ordered 2026-07-29: the real account menu — signed-in
+          // name, theme, sign-out — replaces the avatar ONCE THERE IS AN
+          // ACCOUNT. Undefined otherwise, so a GateApp rendered without an
+          // AuthGate (every existing test) keeps the avatar fallback and its
+          // behaviour is unchanged.
+          accountSlot={authAccount ? <AccountMenu /> : undefined}
         />
 
         <div className="shell-body">
@@ -309,15 +325,19 @@ export function GateApp() {
               onRightKindChange={kinds.setRightKind}
               onLaunchOpen={(id) => launch.open(id)}
               launchSubjectId={launch.subjectId}
+              launchRefusal={launchRefusal}
               isModalOpen={launch.isModalOpen}
-              onLaunchCancel={launch.close}
+              onLaunchCancel={() => {
+                setLaunchRefusal(null);
+                launch.close();
+              }}
               // D44: the sheet's Launch PERFORMS. A brass primary that cannot
               // do its verb reads as working at a glance and only corrects
               // itself after a click — the same misleading-glance shape as a
               // transient refusal wearing the permanent form. The honest fix
               // is to wire it, not to grey it out.
               onLaunchSubmit={(config) => {
-                launch.close();
+                setLaunchRefusal(null);
                 void data
                   .spawn(
                     buildSpawnInput({
@@ -332,25 +352,24 @@ export function GateApp() {
                       taskIds: [config.subjectId],
                     }),
                   )
-                  .then(() =>
+                  .then(() => {
+                    launch.close();
                     notices.push({
                       id: 'launch-done',
-                      tone: 'warn',
+                      tone: 'info',
                       title: 'Session launched',
                       body: 'The session is running and appears in the live set.',
                       ttlMs: 6000,
-                    }),
-                  )
+                    });
+                  })
                   .catch((error: unknown) =>
-                    // A refusal is a FACT about the node, not a UI failure —
-                    // it renders with its own cause rather than a generic
-                    // apology (T5-5's refusal grammar).
-                    notices.push({
-                      id: 'launch-refused',
-                      tone: 'error',
-                      title: 'Launch refused',
-                      body: String((error as { message?: string })?.message ?? error),
-                      ttlMs: 6000,
+                    // A refusal is a FACT about the node and it renders IN
+                    // THE SHEET beside the config that provoked it — the
+                    // sheet stays open, nothing toasts (T5-5 annotation 6;
+                    // the audit found this card built and dead).
+                    setLaunchRefusal({
+                      cause: 'Launch refused',
+                      detail: String((error as { message?: string })?.message ?? error),
                     }),
                   );
               }}

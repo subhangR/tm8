@@ -44,6 +44,8 @@ export interface WorkspaceViewProps {
   onRightKindChange?(kind: string): void;
   /** D44/D51 — the launch sheet's subject, or null when closed. */
   launchSubjectId?: EntityId | null;
+  /** T5-5 annotation 6: a spawn refusal renders IN the sheet, never a toast. */
+  launchRefusal?: { cause: string; detail: string } | null;
   onLaunchCancel?(): void;
   onLaunchSubmit?(config: { subjectId: EntityId; teammateId: string; projectIds: string[]; profileId: string }): void;
   /** Esc must not pop the panel under an open sheet (A1a finding 1). */
@@ -199,6 +201,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               docblock for why a column would breach L4. */}
           {props.launchSubjectId && (
             <LaunchSheet
+              refusal={props.launchRefusal}
               subjectId={props.launchSubjectId}
               fromChip="◔ Run ▸"
               fromCaption="task pre-associated — the session links to it"
