@@ -111,6 +111,7 @@ const DOC_FORMATS = ['markdown', 'mermaid', 'excalidraw'] as const;
 const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
 const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const;
 const WS_SHARE_MODES = ['none', 'space', 'explicit'] as const;
+const IP_STATUSES = ['draft', 'active', 'retired'] as const;
 
 /**
  * Hydrates the entity-shaped payloads an event projection needs.
@@ -218,6 +219,14 @@ interface SummaryRow {
   skill_description: string | null;
   collection_name: string | null;
   collection_type: string | null;
+  ppd_name: string | null;
+  ppd_project_id: string | null;
+  ppd_materialized_version: number | null;
+  ip_status: string | null;
+  ip_current_draft_version: number | null;
+  ip_active_version: number | null;
+  ip_active_hash: string | null;
+  ip_retired_at: Date | string | null;
   custom_fields: Record<string, unknown> | null;
 }
 
@@ -287,6 +296,14 @@ select
   sk.description     as skill_description,
   col.name           as collection_name,
   col.collection_type,
+  ppd.name           as ppd_name,
+  ppd.project_id     as ppd_project_id,
+  ppd.materialized_version as ppd_materialized_version,
+  ip.status          as ip_status,
+  ip.current_draft_version as ip_current_draft_version,
+  ip.active_version  as ip_active_version,
+  ip.active_hash     as ip_active_hash,
+  ip.retired_at      as ip_retired_at,
   cev.fields         as custom_fields
 from public.entities e
 left join public.entity_counters c   on c.entity_id   = e.id
@@ -304,6 +321,8 @@ left join public.commits cm          on cm.entity_id  = e.id
 left join public.spells sp           on sp.entity_id  = e.id
 left join public.skills sk           on sk.entity_id  = e.id
 left join public.collections col     on col.entity_id = e.id
+left join public.project_projection_details ppd on ppd.entity_id = e.id
+left join public.interaction_profiles ip        on ip.entity_id  = e.id
 left join public.custom_entities cev on cev.entity_id = e.id
 where e.id = any($1::uuid[])
 `;
@@ -578,6 +597,12 @@ export class PgEntityProjector implements EntityProjector {
         return r.skill_name ?? '';
       case 'collection':
         return r.collection_name ?? '';
+      case 'project':
+        return r.ppd_name ?? '';
+      case 'interaction_profile':
+        // No name column exists for a profile projection; the empty string is
+        // the honest answer, matching the facade's absence of one.
+        return '';
       case 'message':
         // A message has no title of its own; the first line of the body is what
         // every surface shows. Bounded so a 10k-char message is not a title.
@@ -739,6 +764,32 @@ export class PgEntityProjector implements EntityProjector {
           kind: 'collection',
           collectionType: r.collection_type ?? 'manual',
           itemCount: 0,
+        };
+      // The two arms below were MISSING while their kinds sat in the frozen
+      // contract (CoreEntityKindSchema includes 'project' and
+      // 'interaction_profile'), so a projects.create/link on any space fell
+      // through to the custom-kind guard, raised EntityKindDriftError, and —
+      // because that error is deliberately fatal to the whole page — wedged
+      // the pump's cursor and the space's entire live feed PERMANENTLY.
+      // Found by ws-e2e.pg.test.ts A6c. The drift guard itself is correct and
+      // stays; these arms close the drift it was pointing at.
+      case 'project':
+        return {
+          kind: 'project',
+          // The detail row is written atomically with the projection entity
+          // (021); the fallbacks keep a hypothetical stray row projectable
+          // instead of re-poisoning the feed on a strict-schema refusal.
+          projectId: r.ppd_project_id ?? r.id,
+          materializedVersion: r.ppd_materialized_version ?? 1,
+        };
+      case 'interaction_profile':
+        return {
+          kind: 'interaction_profile',
+          status: oneOf(r.ip_status, IP_STATUSES, 'draft'),
+          currentDraftVersion: r.ip_current_draft_version ?? 1,
+          activeVersion: r.ip_active_version,
+          activeHash: r.ip_active_hash,
+          retiredAt: iso(r.ip_retired_at),
         };
       default: {
         // T-L4: custom c:* kinds carry their schema-validated scalars.
