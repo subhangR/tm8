@@ -73,12 +73,12 @@ export interface SubscriptionAuthorizer {
  * is an authorizer that an attacker only has to break rather than pass.
  */
 export class DbSubscriptionAuthorizer implements SubscriptionAuthorizer {
-  private readonly db: Pick<Db, 'query'>;
+  private readonly db: Pick<Db, 'tx'>;
   private readonly claimsFor: (identity: RequestIdentity) => Promise<DbClaims>;
   private readonly onError: ((message: string) => void) | undefined;
 
   constructor(
-    db: Pick<Db, 'query'>,
+    db: Pick<Db, 'tx'>,
     claimsFor: (identity: RequestIdentity) => Promise<DbClaims>,
     opts: { onError?: (message: string) => void } = {},
   ) {
@@ -89,11 +89,16 @@ export class DbSubscriptionAuthorizer implements SubscriptionAuthorizer {
 
   async canSubscribe(identity: RequestIdentity, spaceId: string): Promise<boolean> {
     try {
-      const rows = await this.db.query(
-        await this.claimsFor(identity),
-        'select 1 from public.spaces where id = $1',
-        [spaceId],
-      );
+      const rows = await this.db.tx(await this.claimsFor(identity), async (q) => {
+        // Drop to tm8_app so the RLS derivation above is REAL on the
+        // production pool: PgDb binds claims but never sets a role, and the
+        // documented deployment user (tm8) is a superuser that BYPASSES row
+        // security — without this line the probe answered the row for every
+        // existing space and this authorizer was allow-all in production.
+        // Same repair as poll.ts:126 and services/w2/execution.ts:394.
+        await q.query('set local role tm8_app');
+        return q.query('select 1 from public.spaces where id = $1', [spaceId]);
+      });
       return rows.length > 0;
     } catch (error) {
       this.onError?.(error instanceof Error ? error.message : String(error));
