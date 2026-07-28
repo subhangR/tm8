@@ -107,6 +107,23 @@ export class PgDurableEventLog implements DurableEventLog {
     const capped = Math.min(Math.max(1, limit), MAX_POLL_LIMIT);
 
     return this.db.tx(claims, async (q) => {
+      // DROP TO tm8_app FOR THE WHOLE READ, page and hydration alike.
+      //
+      // The production pool authenticates as the connection-string user, which
+      // in every documented deployment is `tm8` — the SUPERUSER, and a
+      // superuser BYPASSES row-level security outright (rolbypassrls). Without
+      // this line the two-feed split on `workspace_events` (008:156-161 —
+      // space rows plus rows addressed to YOUR member) is decoration on this
+      // path: the read returns other members' `recipient_member_id` rows and
+      // the pump faithfully delivers them to sockets that must never see them.
+      // Found by the DB→WS e2e suite (ws-e2e.pg.test.ts A3): a recipient-
+      // targeted notification reached the owner's socket.
+      //
+      // `tm8_app` is the role whose grants ARE the server's intended authority
+      // (test/events/pg-harness.ts runs the whole poll suite under it), and
+      // `set local` dies at COMMIT/ROLLBACK with the claims, so nothing leaks
+      // to the pooled connection's next transaction.
+      await q.query('set local role tm8_app');
       const rows = await q.query<WorkspaceEventRow>(
         `select ${WORKSPACE_EVENT_COLUMNS}
            from public.workspace_events
