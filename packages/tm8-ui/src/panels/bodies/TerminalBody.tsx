@@ -97,15 +97,26 @@ export function TerminalBody({
   // so the chip's onClick below is a safe no-op until the flag is on.
   const liveTerminalRef = useRef<LiveTerminalHandle>(null);
 
+  /* USER RULING 2026-07-29 — "the terminal is the main thing of our app":
+   * the canvas starts DIRECTLY under the tab strip and takes every pixel
+   * down to the panel footer. The chrome strip and the context line move
+   * BELOW the canvas — moved, not hidden (R7): every fact and control they
+   * carried is still one glance down, and the drag-share target still
+   * surfaces on dragover exactly as before. The needs-you banner stays above
+   * the canvas: it is conditional, rare, and its whole job is to interrupt.
+   * This supersedes the top-stacked order the T0-2 canvas draws; the
+   * divergence is user-ruled (D63). */
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      <SessionContextHeader
-        detail={detail}
-        handoffs={handoffs}
-        receiverName={row.name}
-        shareUnavailableReason={shareUnavailableReason}
-        withdrawUnavailableReason={withdrawUnavailableReason}
-        onOpenEntity={onOpenEntity}
+      {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
+
+      <SessionCanvas
+        presentation={presentation}
+        sessionId={detail.id}
+        livenessLabel={livenessLabel}
+        livenessReason={livenessReason}
+        onOpenTranscript={onOpenTranscript}
+        liveTerminalRef={liveTerminalRef}
       />
 
       <TerminalChromeStrip
@@ -118,15 +129,13 @@ export function TerminalBody({
         onExitTerminal={() => liveTerminalRef.current?.blur()}
       />
 
-      {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
-
-      <SessionCanvas
-        presentation={presentation}
-        sessionId={detail.id}
-        livenessLabel={livenessLabel}
-        livenessReason={livenessReason}
-        onOpenTranscript={onOpenTranscript}
-        liveTerminalRef={liveTerminalRef}
+      <SessionContextHeader
+        detail={detail}
+        handoffs={handoffs}
+        receiverName={row.name}
+        shareUnavailableReason={shareUnavailableReason}
+        withdrawUnavailableReason={withdrawUnavailableReason}
+        onOpenEntity={onOpenEntity}
       />
     </div>
   );

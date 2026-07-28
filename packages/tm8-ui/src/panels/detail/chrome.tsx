@@ -45,6 +45,7 @@ export function PanelHeader({
   liveness,
   pinned = false,
   pinRefusal,
+  actions,
   onPin,
   onPromote,
   onClose,
@@ -57,6 +58,11 @@ export function PanelHeader({
   pinned?: boolean;
   /** Why pinning is refused right now (floors, 3-pin cap). L6: shown, not hidden. */
   pinRefusal?: string;
+  /** USER RULING 2026-07-29: the action bar rides IN the header row — the
+      panel chrome is two rows (header, tabs), and the vertical the third row
+      spent belongs to the body. Rendered between the status pill and the
+      window controls; `ActionBar inline` is the expected occupant. */
+  actions?: React.ReactNode;
   onPin?: () => void;
   onPromote?: () => void;
   onClose?: () => void;
@@ -94,6 +100,8 @@ export function PanelHeader({
         <StatusPillFor detail={detail} config={config} liveness={liveness} />
 
         <span className="pn-head__spacer" />
+
+        {actions}
 
         <IconBtn label="More actions" onClick={onOverflow}>
           ⋯
@@ -216,18 +224,24 @@ export function ActionBar({
   detail,
   config,
   ctx,
+  inline = false,
   onAction,
 }: {
   detail: EntityDetail;
   config: KindConfig;
   ctx: ActionContext;
+  /** USER RULING 2026-07-29 (two-row chrome): render as a fragment INSIDE the
+      header row — no wrapper, no own spacer (the header's spacer already
+      right-aligns everything after it). The standalone row form is kept for
+      any host that still stacks it. */
+  inline?: boolean;
   onAction?: (ref: ActionRef) => void;
 }) {
   const primaries = config.panel.primaries ?? [];
   const points = detail.counters.points;
 
-  return (
-    <div className="pn-actions" data-testid="panel-action-bar">
+  const content = (
+    <>
       <span className="pn-actions__verb" aria-label="Points">
         ▲ {points}
       </span>
@@ -236,10 +250,23 @@ export function ActionBar({
       {config.list.primaryActions?.includes('run') ? (
         <ActionButton ref_="add-child" ctx={ctx} onAction={onAction} />
       ) : null}
-      <span className="pn-head__spacer" />
+      {inline ? null : <span className="pn-head__spacer" />}
       {primaries.map((ref) => (
         <ActionButton key={ref} ref_={ref} ctx={ctx} onAction={onAction} primary />
       ))}
+    </>
+  );
+
+  if (inline) {
+    return (
+      <span className="pn-actions pn-actions--inline" data-testid="panel-action-bar">
+        {content}
+      </span>
+    );
+  }
+  return (
+    <div className="pn-actions" data-testid="panel-action-bar">
+      {content}
     </div>
   );
 }

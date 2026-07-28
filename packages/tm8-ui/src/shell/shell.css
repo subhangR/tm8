@@ -551,7 +551,14 @@
    Floored per L4 — `min-height: 0` on the body is what lets its children
    scroll internally instead of pushing the frame past the viewport. */
 .cv2-root .shell-root {
-  height: 100vh;
+  /* 100vh DIVIDED BY THE ZOOM (app.css lever, currently 1.1): viewport units
+     do not shrink under CSS zoom, so a plain 100vh renders 1.1x the viewport
+     and the bottom tenth of the app — session footer, context line, panel
+     footer — hangs below the fold. Measured live 2026-07-29: shell-root 844
+     visual px in a 767 viewport before this; exactly 767 after. MUST STAY IN
+     SYNC with app.css's zoom literal and terminal.css's reciprocal — three
+     sites, one number. */
+  height: calc(100vh / 1.1);
   display: flex;
   flex-direction: column;
   background: var(--pn-paper);

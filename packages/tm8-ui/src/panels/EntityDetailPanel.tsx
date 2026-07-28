@@ -203,32 +203,38 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         onPin={props.onPin}
         onPromote={props.onPromote}
         onClose={onClose}
+        /*
+          USER RULING 2026-07-29: two-row chrome — the action bar rides inline
+          in the header row; the standalone 32px row is gone and its height
+          belongs to the body (the terminal, on the session screen).
+
+          THE PANEL HOLDS THESE FACTS AND MUST HAND THEM DOWN. Passing the
+          caller's raw context left the liveness gate reading undefined and the
+          capability gate reading null, so a fully-loaded stale session showed
+          "waiting for this entity to load" and "liveness is unverified" while
+          the chrome strip three lines below rendered the verdict correctly. The
+          two consumers never disagreed — one was simply never wired.
+        */
+        actions={
+          <ActionBar
+            detail={detail}
+            config={config}
+            inline
+            ctx={{
+              ...ctx,
+              entityId: ctx.entityId ?? detail.id,
+              kind: ctx.kind ?? detail.kind,
+              capabilities: ctx.capabilities ?? detail.capabilities,
+              liveness: ctx.liveness ?? props.liveness,
+            }}
+            onAction={props.onAction}
+          />
+        }
       />
 
       {stalePin ? (
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
       ) : null}
-
-      {/*
-        THE PANEL HOLDS THESE FACTS AND MUST HAND THEM DOWN. Passing the
-        caller's raw context left the liveness gate reading undefined and the
-        capability gate reading null, so a fully-loaded stale session showed
-        "waiting for this entity to load" and "liveness is unverified" while
-        the chrome strip three lines below rendered the verdict correctly. The
-        two consumers never disagreed — one was simply never wired.
-      */}
-      <ActionBar
-        detail={detail}
-        config={config}
-        ctx={{
-          ...ctx,
-          entityId: ctx.entityId ?? detail.id,
-          kind: ctx.kind ?? detail.kind,
-          capabilities: ctx.capabilities ?? detail.capabilities,
-          liveness: ctx.liveness ?? props.liveness,
-        }}
-        onAction={props.onAction}
-      />
 
       <TabStrip
         active={tab}

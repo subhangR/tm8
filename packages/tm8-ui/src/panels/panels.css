@@ -46,9 +46,12 @@
    can never grow into the terminal, and when expanded it scrolls INSIDE its
    own cap rather than pushing the canvas down. "An empty state that costs the
    primary surface half its height inverts the honesty economy." */
+/* Sits BELOW the canvas since the 2026-07-29 two-row ruling (D63) — the
+   border flips to the top edge accordingly. Expansion still costs the canvas
+   height only while open (flex shrinks it), never permanently. */
 .cv2-root .pn-ctxhead {
   flex: none;
-  border-bottom: 1px solid var(--pn-line);
+  border-top: 1px solid var(--pn-line);
 }
 /* The expansion cap is in PIXELS, not a percentage. `max-height: 38%` looked
    right and silently did nothing: this element's parent is `flex: none` with
@@ -350,6 +353,16 @@
   font-size: 11.5px;
   color: var(--pn-ink-2);
   overflow: hidden;
+}
+/* USER RULING 2026-07-29 (two-row chrome): the inline form rides in the
+   header row — a run of controls, not a row. AFTER the base rule on purpose:
+   the element carries both classes and these must win. */
+.cv2-root .pn-actions--inline {
+  display: inline-flex;
+  height: auto;
+  padding: 0;
+  border-bottom: none;
+  overflow: visible;
 }
 .cv2-root .pn-actions__verb {
   flex: none;
