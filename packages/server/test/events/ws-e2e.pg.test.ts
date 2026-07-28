@@ -540,9 +540,51 @@ describe('/v2/ws coexistence — events WS and PTY WS on one upgrade path', () =
   });
 });
 
-describe('Delta 1 passthrough (pending TrackS-Mapper — enable when the arm lands)', () => {
-  // Coordinator gate: the generic mapper passthrough arm is being built by a
-  // sibling worker. This case is written but held as .todo until the arm is
-  // confirmed in-tree; flip .todo → it and it must pass unchanged.
-  it.todo('A9: menu.updated (RPC-authored, no entity row) reaches a subscribed socket end-to-end');
+describe('Delta 1 passthrough (the generic mapper arm, live)', () => {
+  /**
+   * menu.updated has NO entity row behind it: the RPC (update_space_menu,
+   * authored contract-shaped at 031:822-830) writes the event payload
+   * directly, and before the Delta 1 passthrough arm the mapper's default
+   * case dropped it — written to the log, invisible on poll and socket
+   * forever. This asserts the whole path: HTTP command → RPC-authored row →
+   * passthrough projection → subscribed socket, envelope stamped and
+   * clientMutationId threaded.
+   */
+  it('A9: menu.updated (RPC-authored, no entity row) reaches a subscribed socket end-to-end', async () => {
+    const ws = await socket();
+    const frames = collect(ws);
+    send(ws, { type: 'subscribe', spaceIds: [spaceId] });
+    await frames.expectQuiet(QUIET_MS);
+
+    // Derive the mutation from the server's own menu — current revision,
+    // its own groups reordered — so the test invents no payload shape.
+    const current = await node.request<{ revision: number; groups: unknown[] }>(
+      'GET',
+      `/v2/spaces/${spaceId}/menu`,
+    );
+    expect(current.status, JSON.stringify(current.error)).toBe(200);
+    const menuCmid = cmid();
+    const updated = await node.request('PUT', `/v2/spaces/${spaceId}/menu`, {
+      clientMutationId: menuCmid,
+      expectedRevision: current.data!.revision,
+      payload: { schemaVersion: 1, groups: [...current.data!.groups].reverse() },
+    });
+    expect(updated.status, JSON.stringify(updated.error)).toBeLessThan(300);
+
+    const frame = await frames.next(
+      (f) => (f as { type?: string }).type === 'menu.updated'
+        && (f as { clientMutationId?: string }).clientMutationId === menuCmid,
+    );
+    // Contract-shaped on the wire, envelope stamped by the log.
+    const parsed = WorkspaceEventSchema.safeParse(frame);
+    expect(parsed.success, 'menu.updated arrived off-contract').toBe(true);
+    expect((frame as { spaceId: string }).spaceId).toBe(spaceId);
+    expect(Number.isInteger((frame as { seq: number }).seq)).toBe(true);
+    expect((frame as { menu: { revision: number } }).menu.revision).toBe(current.data!.revision + 1);
+
+    // And the poll feed agrees: same row, same seq — the passthrough is one
+    // projection serving both delivery paths.
+    const polled = await pollSpine();
+    expect(polled.some(([s, t]) => t === 'menu.updated' && s === (frame as { seq: number }).seq)).toBe(true);
+  });
 });
