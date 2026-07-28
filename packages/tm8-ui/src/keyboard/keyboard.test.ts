@@ -169,6 +169,7 @@ describe('layer 5 — list and panel bindings', () => {
     ['Enter', key({ key: 'Enter', code: 'Enter' }), 'list.open'],
     ['Mod+Enter', key({ key: 'Enter', code: 'Enter', metaKey: true }), 'list.primary'],
     ['c', key({ key: 'c' }), 'list.create'],
+    ['f', key({ key: 'f' }), 'list.search'],
     ['Escape', key({ key: 'Escape', code: 'Escape' }), 'panel.pop'],
     ['p', key({ key: 'p' }), 'panel.pin'],
   ];
@@ -184,6 +185,47 @@ describe('layer 5 — list and panel bindings', () => {
     const { c, commands } = controller({ focusScope: false });
     c.handle(key({ key: 'j' }));
     expect(commands).toEqual([]);
+  });
+});
+
+describe('D36 — in-panel search must not cost the palette its guaranteed path', () => {
+  it('keeps / on the PALETTE even while a list is focused', () => {
+    // This is the whole ruling. A focused list is the workspace's most common
+    // state; if it consumed `/`, the palette's guaranteed path would be gone
+    // exactly there — and ⌘K is browser-owned on Chrome Win/Linux and Firefox,
+    // so on half the matrix the palette would have NO reachable binding.
+    const { c, commands } = controller({ focusScope: true });
+    const result = c.handle(key({ key: '/', code: 'Slash' }));
+    expect(result.layer).toBe('global');
+    expect(commands).toEqual([{ command: 'palette.open', ref: undefined }]);
+  });
+
+  it('gives search its own guaranteed plain key at layer 5', () => {
+    const { c, commands } = controller({ focusScope: true });
+    expect(c.handle(key({ key: 'f' })).consumed).toBe(true);
+    expect(commands).toEqual([{ command: 'list.search', ref: undefined }]);
+  });
+
+  it('never binds Mod+F — every browser owns its find bar (R8-3)', () => {
+    expect(BINDINGS.some((b) => b.match.type === 'mod' && b.match.key === 'f')).toBe(false);
+  });
+
+  it('leaves the terminal layer untouched: a focused terminal still owns f', () => {
+    const { c, commands } = controller({ terminalFocused: true, focusScope: true });
+    const result = c.handle(key({ key: 'f' }));
+    expect(result.reason).toBe('terminal-owns');
+    expect(result.consumed).toBe(false);
+    expect(commands).toEqual([]);
+  });
+
+  it('is dead once the search field itself has focus, and Esc blurs it', () => {
+    // Layer 4 outranks layer 5, so typing `f` into the field types an f, and
+    // Esc blurs the FIELD rather than popping the panel stack.
+    const { c, commands } = controller({ textEntry: true, focusScope: true });
+    expect(c.handle(key({ key: 'f' })).reason).toBe('dead-in-text-entry');
+    expect(commands).toEqual([]);
+    c.handle(key({ key: 'Escape', code: 'Escape' }));
+    expect(commands).toEqual([{ command: 'text.blur', ref: undefined }]);
   });
 });
 

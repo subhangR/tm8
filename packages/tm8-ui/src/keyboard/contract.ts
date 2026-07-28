@@ -53,6 +53,7 @@ export type KeyCommand =
   | 'list.open'
   | 'list.primary'
   | 'list.create'
+  | 'list.search'
   | 'panel.pop'
   | 'panel.pin'
   | 'modal.close'
@@ -195,6 +196,28 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'list.open', layer: 'focus', keys: 'Enter', label: 'Open', command: 'list.open', guaranteed: true, match: { type: 'plain', key: 'Enter' } },
   { id: 'list.primary', layer: 'focus', keys: 'Mod+Enter', label: 'Primary action', command: 'list.primary', guaranteed: false, match: { type: 'mod', key: 'Enter' } },
   { id: 'list.create', layer: 'focus', keys: 'c', label: 'Create in this kind', command: 'list.create', guaranteed: true, match: { type: 'plain', key: 'c' } },
+  /**
+   * D36 — in-panel list search is `f`, NOT `/`.
+   *
+   * T0-3 draws slash-focus on the panel's search field, and the obvious
+   * reading is that layer 5 consumes `/` before layer 6's palette. That
+   * reading breaks C6's load-bearing guarantee: WLT §5.8 publishes `/` as the
+   * palette's GUARANTEED path precisely because ⌘K is browser-owned on Chrome
+   * Windows/Linux and on Firefox everywhere. A focused list is the workspace's
+   * most common focus state, so consuming `/` there would leave the palette
+   * with NO reachable binding on half the supported matrix, in the state users
+   * are in most of the time — and Esc does not rescue it, because at layer 5
+   * Esc pops the panel stack rather than blurring to chrome.
+   *
+   * `f` (find) is a free, browser-proof plain key. The published contract stays
+   * literally true, search gets a guaranteed path of its own, and the canvas
+   * pixel is superseded the way D1 superseded the tab-bar toggle.
+   *
+   * Deliberately NOT bound: Mod+F. It is not on WLT's hard-exclusion list, but
+   * every browser opens its own find bar on it — the contract never advertises
+   * a chord the browser owns (R8-3).
+   */
+  { id: 'list.search', layer: 'focus', keys: 'f', label: 'Search this list', command: 'list.search', guaranteed: true, match: { type: 'plain', key: 'f' } },
 
   // -- Panels ---------------------------------------------------------------
   { id: 'panel.pop', layer: 'focus', keys: 'Esc', label: 'Close panel', command: 'panel.pop', guaranteed: true, match: { type: 'plain', key: 'Escape' } },
