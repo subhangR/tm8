@@ -1,8 +1,10 @@
 # Pixel-parity ledger — build vs T0-1 hi-fi oracle
 
 **Oracle:** `T0-1 workspace structure review (1)/T0-1 Workspace Hi-Fi.dc.html` (171,229 bytes) — the file the user reviews.
-**Method:** source-to-source enumeration, not sampling and not a screenshot diff. **D10's real-browser pixel pass still has not been run and this ledger does not substitute for it.**
-**Status:** pass 1 (colour/type/spacing inventory) + pass 2 (surface-by-surface application) complete. Fixes prepared, uncommitted.
+**Method:** source-to-source enumeration, not sampling and not a screenshot diff. This ledger does not substitute for a real-browser pixel diff (D10).
+**status-as-of:** `64cbf80` — every fix below landed in that commit, together with both user rulings. Passes 1 and 2 complete.
+
+> **Stamp, not a tense.** This line names the sha whose tree it describes, because prose tense rots silently and a sha does not: "prepared, uncommitted" was true when written and false when read, with nothing in the sentence to reveal which. Anyone correcting this document re-stamps it with the sha that verified the correction. The rot this convention exists to prevent is documented in the last section — it was paid for in this file.
 
 ---
 
@@ -21,7 +23,9 @@ Every oracle size ≥15.5px is Newsreader serif on Z4/EntityFullView surfaces (`
 
 So "letters are too small" is a **uniform-scale** question: the canvas presents fit-to-width on claude.ai (`present=1`) while the app renders 1:1, so the same 10px reads larger there.
 
-> **Do not fix this per element.** It would destroy the parity that currently exists and violate **D5**, which rules the canvas-measured micro sizes (9.5 / 10 / 11.5px) as verbatim keepers. And no lever exists today: no root `font-size` is set anywhere, and type is px literals plus `--pn-fs-*` tokens that are themselves px. A uniform scale is a **new root decision**. Escalated to the user.
+> **Do not fix this per element.** It would destroy the parity that currently exists and violate **D5**, which rules the canvas-measured micro sizes (9.5 / 10 / 11.5px) as verbatim keepers. And no lever exists today: no root `font-size` is set anywhere, and type is px literals plus `--pn-fs-*` tokens that are themselves px. A uniform scale was therefore a **new root decision**, not an edit.
+>
+> **RULED by the user: 1.1×**, implemented as a single `zoom: 1.1` on `.cv2-root` (`app.css`, `64cbf80`) and commented as a user-ruled experiment rather than a law. `zoom` was chosen precisely so every measured literal stays put: D5's keepers remain verbatim in source and future canvas diffs still compare like with like.
 
 ### B — dark paper: the oracle never paints our value
 
@@ -37,7 +41,9 @@ The oracle uses `#1D1912` twice, both product surface:
 
 **Why it went uncaught:** `src/styles/canvas-extra.css:29-30` classified it as *"demo 'board' behind every canvas frame: presentation scaffolding, not a product surface. Never shipped."* That is wrong — it is the ink stage. A correct-sounding comment closed the question.
 
-**Not ours to fix.** `tokens.css` is a byte-verbatim transplant under a byte-equality test, so this is a **canvas-versus-token-file conflict between two design sources**. Escalated to the user; the byte-equality test moves only *with* the ruling, in the same commit, as one fact.
+**Was not ours to fix.** `tokens.css` is a byte-verbatim transplant under a byte-equality test, so this was a **canvas-versus-token-file conflict between two design sources**.
+
+**RULED by the user: the canvas wins.** Dark `--pn-paper` is `#1D1912` in `tokens.css` as of `64cbf80`, and the guard moved with the value in the same commit — which turned out to be impossible as originally specified, because the byte test compared against an **untracked** design folder and had therefore only ever run on one machine. It now compares against a tracked twin at `test-references/tokens.reference.css`, with the design-package comparison kept as a second, *visibly skipped* assertion. The out-of-band edit to the untracked design source is recorded in **D60 §4**: it cannot be committed, so a future re-sync will silently revert it and the twin will disagree with a source nobody looks at.
 
 ---
 
@@ -52,7 +58,7 @@ The oracle uses `#1D1912` twice, both product surface:
 | `#0D0B08` | `--pn-x-term-bg` | D23 |
 | `#4A4334` | `--pn-x-term-ghost` | D23 |
 | `#FFF8EC` | `--pn-x-warn-fill` | D23 |
-| `#3A362E` | `--pn-x-btn-ink-hover` | D23 — `.lp__new` application FIXED-IN-FLIGHT (fe) |
+| `#3A362E` | `--pn-x-btn-ink-hover` | D23 — `.lp__new` now ink fill / paper text / r7 / 4px 10px / 12px, hover on the token; landed |
 | always-dark regions | nested dark scope, ramp not restated | D24 |
 | `9.5 / 10 / 11.5px`, 6px chip radius, 5px avatar radius | canvas-measured keepers | D5 |
 | oracle ≥15.5px serif | Z4 surface, unbuilt (A2) | not drift |
@@ -60,11 +66,11 @@ The oracle uses `#1D1912` twice, both product surface:
 ### DRIFT — no ruling covered these
 | oracle | ours | where | disposition |
 |---|---|---|---|
-| `#F0EDE4` ×15, row divider | `--pn-line` `#E7E3D9` | `panels.css` 561 / 689 / 970 | **FIXED (prepared)** |
-| `#1D1912` ink stage | `--pn-paper` dark `#15130E` | `tokens.css` | **user ruling — Finding B** |
-| `#E89A89` Terminate hover | none | — | **FIXED (prepared)** |
-| oracle floor `8.5px` | `8px` | `shell.css` 293, 316 | **FIXED (prepared)** |
-| oracle smallest radius `3px` | `2px` | `shell.css` 282 | **FIXED (prepared)** |
+| `#F0EDE4` ×15, row divider | `--pn-line` `#E7E3D9` | `panels.css` 561 / 689 / 970 | **LANDED `64cbf80`** |
+| `#1D1912` ink stage | was `--pn-paper` dark `#15130E`, now `#1D1912` | `tokens.css` | **RULED + LANDED `64cbf80`** |
+| `#E89A89` Terminate hover | none | `canvas-extra.css` `--pn-x-block-hover` | **LANDED `64cbf80`** |
+| oracle floor `8.5px` | `8px` | `shell.css` 293, 316 | **LANDED `64cbf80`** |
+| oracle smallest radius `3px` | `2px` | `shell.css` 282 | **LANDED `64cbf80`** |
 
 ### OUT OF FE SCOPE — Track P owns `src/terminal/**`
 `#B9B2A0` ×8 and `#7FBF98` ×6 — terminal scrollback text and success-line colours. Listed so they are not re-derived as FE drift.
@@ -107,5 +113,17 @@ Radii match the canvas set apart from the single 2px (fixed). D5 already rules t
 ## Not checked, and saying so
 
 - **`.lq__launch`** (sheet commit, brand amber, `panels.css:1301`) answers to **T5-5**, not this oracle. Not diffed — ruling on a surface against the wrong reference file is worse than not ruling.
-- **Real-browser rendering.** All of the above is source-to-source. D10's pixel pass remains un-run.
+- **Real-browser rendering.** All of the above is source-to-source. As of `64cbf80` no pixel diff against the canvas had been run; captures were taken immediately afterwards, so treat this line as true *of this ledger's method*, not as a standing claim about the project.
 - **Four phantom colours excluded:** `#212`, `#219`, `#217`, `#208` are PR numbers in fixture text, not colours.
+
+---
+
+## Status rot — why this section exists
+
+This document was written during a freeze and shipped in `64cbf80`, the same commit that made its own status lines false. Nothing in the findings or measurements was wrong; the STATUS was, and it was wrong in the direction that understated the work — a reader would have concluded the parity fixes were still pending.
+
+It was caught because the author had written down, twenty minutes earlier, that this was the file nobody would ever diff against its own report. Nobody did. The stake is what prompted the re-read.
+
+The fix is the stamp at the top. A status expressed as a TENSE ("prepared", "pending", "not yet run") is a claim about now, evaluated whenever someone happens to read it, and nothing in the sentence carries when it was true. A status expressed as a SHA is a claim about a tree, and it stays true forever — it can only become INCOMPLETE, never wrong, and a reader can tell the difference by looking.
+
+The general form, kept here because this file is where it was paid for: **a document's status section is always the first thing to rot, because it describes the world rather than the work — and the world moves without touching the file.** A status line is made false by someone else's action, so there is no moment at which its author is doing something wrong, and therefore nothing prompts a re-read.
