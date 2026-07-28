@@ -122,3 +122,56 @@ export function toReason(text: string): UnavailableReason {
   if (!m || !m[1] || !m[2]) return { cause: text };
   return { cause: m[1], remedy: m[2] };
 }
+
+/**
+ * THE ENABLED-INERT REASON (R5 #9, the F6/X4 class).
+ *
+ * A verb whose handler is not wired renders DISABLED-WITH-REASON, never as a
+ * live control that silently does nothing. An enabled button that does not
+ * respond is worse than a disabled one: the user cannot tell a broken app
+ * from an unimplemented feature, and they will click it again.
+ *
+ * This is the same law as L6 — never advertise an action the facade cannot
+ * perform — applied one layer in: never advertise an action THIS BUILD cannot
+ * dispatch. The check is structural (is there a handler?) so it cannot drift
+ * out of sync with what is actually wired.
+ */
+export const NOT_WIRED_REASON: UnavailableReason = {
+  cause: 'This action isn’t connected yet',
+  remedy: 'the verb exists and its screen does not dispatch it in this build',
+};
+
+/**
+ * THE CHECKING STATE — waiting for capabilities is not the same as being
+ * refused them (fe->a1c 63; D6/D39 arriving at the capability layer).
+ *
+ * Capabilities ride on EntityDetail, so a row whose detail has not been pulled
+ * yet has UNKNOWN permissions. Rendering that in the refusal form is a facet
+ * collapse: "we haven't asked yet" and "you may not" are different facts, and
+ * at a glance a transient refusal is indistinguishable from a permanent one —
+ * the viewer concludes they lack a permission they may well have.
+ *
+ * So this is deliberately NOT `DisabledAction`/`DisabledIconControl`. It is
+ * the LOADING vocabulary: hollow treatment, its own copy, and no `role=button`
+ * — because there is no refusal here to announce, only a fact that has not
+ * arrived. It resolves on its own, which is exactly what the copy promises.
+ *
+ * The discrimination is structural, and both halves are available at the prop
+ * boundary: NO capability source at all is a wiring gap (NOT_WIRED_REASON);
+ * a source that returns `undefined` is a row that has not loaded yet (this).
+ */
+export function CheckingPermission({ label, glyph }: { label: string; glyph?: string }) {
+  return (
+    <span
+      className="hon-checking"
+      aria-live="polite"
+      aria-label={`${label} — checking permissions`}
+      data-testid="checking-permission"
+      title={CHECKING_CAPTION}
+    >
+      {glyph ? <span aria-hidden>{glyph}</span> : null}
+    </span>
+  );
+}
+
+export const CHECKING_CAPTION = 'Checking permissions… this entity hasn’t finished loading';

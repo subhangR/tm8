@@ -633,6 +633,49 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(header.querySelector('.kit-pill--run')).toBeNull();
   });
 
+  it('R5 #9: an UNWIRED verb is disabled-with-reason, never enabled-inert', () => {
+    // The user clicked Run and nothing happened. The primaries had landed
+    // ahead of their behaviour and rendered as live buttons that silently did
+    // nothing — the F6/X4 class. An enabled control that does not respond is
+    // worse than a disabled one: the user cannot tell a broken app from an
+    // unimplemented feature, so they click it again.
+    // Structural check (is there a handler?), so it cannot drift from what is
+    // actually wired. Asserted at EVERY action site, not just the one the
+    // user happened to click.
+    const detail = fixtureDetails[taskUuidTitle.id]!;
+
+    // 1. detail action bar — no onAction passed
+    const panel = render(<EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} />);
+    const bar = panel.getByTestId('panel-action-bar');
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
+    expect(bar.querySelectorAll('button.pn-btn--primary')).toHaveLength(0);
+    panel.unmount();
+
+    // 2. list row actions + quick launch — no onAction passed
+    const list = render(
+      <EntityListPanel kind="task" rowsFor={() => [taskUuidTitle]} ctx={ctx} />,
+    );
+    const tile = list.getAllByTestId('list-tile')[0]!;
+    expect(tile.querySelectorAll('.lp__rowaction')).toHaveLength(0);
+    expect(tile.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
+  });
+
+  it('R5 #9: a WIRED verb is live — the guard gates on the handler, not on everything', () => {
+    // Both halves: the check must go green when the handler exists, or it is
+    // a detector that fires on everything and discriminates nothing.
+    const detail = fixtureDetails[taskUuidTitle.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        onAction={() => {}}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    expect(bar.querySelectorAll('button.pn-btn--primary').length).toBeGreaterThan(0);
+  });
+
   it('R5 #4A: the action bar states reasons on the CONTROL, not as stacked sentences', () => {
     const detail = fixtureDetails[sessionStale.id]!;
     const { getByTestId } = render(

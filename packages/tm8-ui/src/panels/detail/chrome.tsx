@@ -3,7 +3,7 @@ import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import { resolveAction } from '../../domain';
 import { IconBtn, Pill, type PillTone } from '../../kit';
-import { DisabledIconControl, toReason } from '../honesty/DisabledWithReason';
+import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 
 /**
@@ -257,6 +257,20 @@ function ActionButton({
 }) {
   const def = resolveAction(ref_);
   const availability = def.availability(ctx);
+
+  /*
+   * R5 #9: an unwired verb is DISABLED-WITH-REASON, not enabled-inert. The
+   * primaries landed ahead of their behaviour and rendered as live buttons
+   * that did nothing when clicked — the user cannot distinguish that from a
+   * broken app. Structural check, so it cannot drift from what is wired.
+   */
+  if (!onAction) {
+    return (
+      <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON}>
+        {primary ? def.label : null}
+      </DisabledIconControl>
+    );
+  }
 
   if (availability.kind === 'disabled') {
     /*

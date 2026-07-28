@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { EntityDetail, HandoffView } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { Eyebrow } from '../../kit';
@@ -91,24 +92,14 @@ export function TerminalBody({
 
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
-      <div className="pn-terminal-body__sections">
-        <AssociatedProjects detail={detail} onOpenEntity={onOpenEntity} />
-        <SharedContextSection
-          handoffs={handoffs}
-          withdrawUnavailableReason={withdrawUnavailableReason}
-          onOpenSource={onOpenEntity}
-        />
-      </div>
-
-      {/* Reserved now so the Phase-2 [ Terminal | Chat ] switch costs no
-          relayout. Its Phase-1 occupant is the toolbar drop target (§8). */}
-      <ReservedToolbarSeam>
-        <ShareDropTarget
-          receiverName={row.name}
-          unavailableReason={shareUnavailableReason}
-          accept={false}
-        />
-      </ReservedToolbarSeam>
+      <SessionContextHeader
+        detail={detail}
+        handoffs={handoffs}
+        receiverName={row.name}
+        shareUnavailableReason={shareUnavailableReason}
+        withdrawUnavailableReason={withdrawUnavailableReason}
+        onOpenEntity={onOpenEntity}
+      />
 
       <TerminalChromeStrip
         persona={row.name}
@@ -127,6 +118,126 @@ export function TerminalBody({
         livenessReason={livenessReason}
         onOpenTranscript={onOpenTranscript}
       />
+    </div>
+  );
+}
+
+/**
+ * THE CONTEXT HEADER — R5 #10, user-ratified default.
+ *
+ * THE LAW, in the user's words: "an empty state that costs the primary surface
+ * half its height inverts the honesty economy." Two always-open sections spent
+ * roughly half this panel's height saying "no project recorded" and "nothing
+ * shared" while the LIVE TERMINAL — the thing users stare at longest — was
+ * squeezed into what remained. Honesty about an absence is cheap to state and
+ * must be cheap to render; it may never outbid the primary surface for space.
+ *
+ * So: ONE compact line, expandable on demand, and the terminal takes every
+ * pixel below the chrome strip. This matches composed T0-1's own default —
+ * terminal dominates — so it is a ratified default, not a divergence.
+ *
+ * THE COLLAPSED LINE STILL CARRIES THE FACTS. It is a summary, not a hiding
+ * place: the project (or its absence) and the share count are both stated, so
+ * collapsing costs the viewer no information they had before — only the
+ * vertical space that information was charging them.
+ *
+ * DROPPING MUST NOT REQUIRE EXPANDING FIRST. A drag entering this region
+ * surfaces the drop target regardless of collapse; if it did not, drag-share
+ * would be dead for every collapsed session, which is all of them by default.
+ */
+function SessionContextHeader({
+  detail,
+  handoffs,
+  receiverName,
+  shareUnavailableReason,
+  withdrawUnavailableReason,
+  onOpenEntity,
+}: {
+  detail: EntityDetail;
+  handoffs: readonly HandoffView[];
+  receiverName: string;
+  shareUnavailableReason: string;
+  withdrawUnavailableReason: string;
+  onOpenEntity?: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  /**
+   * Raised by a drag ENTERING the region. Kept separate from `expanded` so
+   * that releasing the drag returns the header to whatever the viewer chose,
+   * rather than silently leaving it open behind them.
+   */
+  const [dragging, setDragging] = useState(false);
+
+  // Structural read, not a kind comparison (§15.2): ask what the content HAS.
+  const content = detail.content as unknown as Record<string, unknown>;
+  const launchProjectId =
+    typeof content.launchProjectId === 'string' ? content.launchProjectId : null;
+
+  const open = expanded || dragging;
+
+  return (
+    <div
+      className={open ? 'pn-ctxhead pn-ctxhead--open' : 'pn-ctxhead'}
+      data-testid="session-context-header"
+      data-expanded={open ? 'true' : 'false'}
+      onDragEnter={() => setDragging(true)}
+      onDragOver={() => setDragging(true)}
+      onDragLeave={(e) => {
+        // Only when the pointer leaves the REGION, not on every child boundary
+        // crossed on the way in — otherwise the target flickers shut mid-drag.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={() => setDragging(false)}
+    >
+      <button
+        type="button"
+        className="pn-ctxhead__summary"
+        aria-expanded={open}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span aria-hidden className="pn-ctxhead__caret">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="pn-ctxhead__facts">
+          {launchProjectId ? (
+            <span className="pn-ctxhead__fact">{`⬒ ${launchProjectId}`}</span>
+          ) : (
+            <span className="pn-ctxhead__fact pn-ctxhead__fact--empty">no project recorded</span>
+          )}
+          <span aria-hidden className="pn-ctxhead__sep">
+            ·
+          </span>
+          <span
+            className={
+              handoffs.length === 0
+                ? 'pn-ctxhead__fact pn-ctxhead__fact--empty'
+                : 'pn-ctxhead__fact'
+            }
+          >
+            {handoffs.length === 0 ? 'nothing shared' : `⤓ ${handoffs.length} shared`}
+          </span>
+        </span>
+      </button>
+
+      {open ? (
+        <div className="pn-ctxhead__detail">
+          <AssociatedProjects detail={detail} onOpenEntity={onOpenEntity} />
+          <SharedContextSection
+            handoffs={handoffs}
+            withdrawUnavailableReason={withdrawUnavailableReason}
+            onOpenSource={onOpenEntity}
+          />
+          {/* Reserved now so the Phase-2 [ Terminal | Chat ] switch costs no
+              relayout. Its Phase-1 occupant is the toolbar drop target (§8). */}
+          <ReservedToolbarSeam>
+            <ShareDropTarget
+              receiverName={receiverName}
+              unavailableReason={shareUnavailableReason}
+              accept={false}
+            />
+          </ReservedToolbarSeam>
+        </div>
+      ) : null}
     </div>
   );
 }

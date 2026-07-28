@@ -41,12 +41,69 @@
   display: flex;
   flex-direction: column;
 }
-/* Only the sections scroll. The seam, strip and canvas keep their geometry so
-   nothing below the fold can push the terminal's 160px floor closed. */
-.cv2-root .pn-terminal-body__sections {
-  flex: 0 1 auto;
+/* R5 #10 — TERMINAL-DOMINANT. The context header is the only thing above the
+   chrome strip, and it takes its own height and no more: `flex: none` so it
+   can never grow into the terminal, and when expanded it scrolls INSIDE its
+   own cap rather than pushing the canvas down. "An empty state that costs the
+   primary surface half its height inverts the honesty economy." */
+.cv2-root .pn-ctxhead {
+  flex: none;
+  border-bottom: 1px solid var(--pn-line);
+}
+/* The expansion cap is in PIXELS, not a percentage. `max-height: 38%` looked
+   right and silently did nothing: this element's parent is `flex: none` with
+   an auto height, and a percentage max-height against an indefinite height
+   does not resolve — so the region neither capped nor scrolled, it just
+   clipped, and SHARED CONTEXT was in the DOM but off-screen with no scrollbar
+   to reveal it. Caught in the browser; jsdom cannot see it, because the
+   assertion "the element exists" passes either way. */
+.cv2-root .pn-ctxhead__detail {
+  max-height: 190px;
+  overflow-y: auto;
+  padding-bottom: 6px;
+}
+/* The collapsed line: one row, 26px, never wraps. */
+.cv2-root .pn-ctxhead__summary {
+  appearance: none;
+  width: 100%;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+}
+.cv2-root .pn-ctxhead__summary:hover { background: var(--pn-hover); }
+.cv2-root .pn-ctxhead__caret { color: var(--pn-ink-4); }
+.cv2-root .pn-ctxhead__facts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cv2-root .pn-ctxhead__sep { color: var(--pn-ink-4); }
+/* An absence is stated, not shouted — it reads quieter than a present fact,
+   which is the whole point of the ruling. */
+.cv2-root .pn-ctxhead__fact--empty { color: var(--pn-ink-4); font-style: italic; }
+/* A drag surfaces the region even while collapsed: dropping must never
+   require expanding first, or drag-share dies on every default session. */
+.cv2-root .pn-ctxhead--open { background: var(--pn-surface); }
+
+/* The canvas takes ALL remaining height below the strip — every verdict's
+   rendering, not just the live one, so the geometry never jumps when a
+   session ends. */
+.cv2-root .pn-terminal-body > .term-host,
+.cv2-root .pn-terminal-body > .term-fallback {
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
 }
 
 /* --- handoff rows: two facets, never merged (L7) -------------------------- */
@@ -1156,3 +1213,153 @@
   opacity: 0.55;
   cursor: help;
 }
+
+/* ---------------------------------------------------------------------------
+   The inline launch flow (D44)
+   ---------------------------------------------------------------------------
+   The quick config expands INSIDE the tile, so it inherits the row's selection
+   treatment and cannot drift away from the thing being launched. */
+
+/* The row-action cluster is hover-revealed; while its own flow is open the
+   trigger must stay put, or the control the user just pressed vanishes from
+   under the cursor and the expand looks orphaned. */
+.cv2-root .lp__tile[data-flow='open'] .lp__rowactions { display: inline-flex; }
+.cv2-root .lp__tile[data-flow='open'] .lp__badges { display: none; }
+.cv2-root .lp__rowaction--on {
+  background: var(--pn-brand);
+  border-color: var(--pn-brand);
+  color: var(--pn-card);
+}
+
+.cv2-root .lp__flow {
+  margin: 6px 0 2px;
+  padding: 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  background: var(--pn-card);
+  cursor: default;
+}
+
+.cv2-root .lq { display: flex; flex-direction: column; gap: 7px; }
+.cv2-root .lq__row { display: flex; gap: 8px; }
+/* min-width:0 so a long teammate name shrinks the select instead of forcing
+   the row wider than the panel — the 200px floor is real. */
+.cv2-root .lq__field { display: flex; flex-direction: column; gap: 3px; flex: 1 1 0; min-width: 0; }
+.cv2-root .lq__label {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+.cv2-root .lq__select {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--pn-sans);
+  font-size: 11.5px;
+  color: var(--pn-ink-1);
+  background: var(--pn-bg);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+.cv2-root .lq__profile,
+.cv2-root .lq__capacity,
+.cv2-root .lq__load {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+}
+/* Hollow, not zero: the D7 treatment, so an unknown count never reads as a
+   confident one. */
+.cv2-root .lq__load--hollow { font-style: italic; opacity: 0.75; }
+
+.cv2-root .lq__actions { display: flex; align-items: flex-start; gap: 8px; }
+.cv2-root .lq__spacer { flex: 1 1 auto; }
+.cv2-root .lq__more {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cv2-root .lq__more:hover { color: var(--pn-ink-1); }
+.cv2-root .lq__launch {
+  appearance: none;
+  font-family: var(--pn-sans);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-card);
+  background: var(--pn-brand);
+  border: 1px solid var(--pn-brand);
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.cv2-root .lq__launch:hover { filter: brightness(1.06); }
+
+/* The actions row must survive the 200px floor. `full options` never wraps
+   mid-phrase; when Launch carries an inline reason caption, the pair takes its
+   own full-width line rather than crushing the escape into a column of one
+   word per line. */
+.cv2-root .lq__actions { flex-wrap: wrap; }
+.cv2-root .lq__more { flex: none; white-space: nowrap; }
+.cv2-root .lq__actions .hon-disabled-group {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+/* CHECKING — the loading vocabulary, deliberately NOT the refusal form.
+   Hollow and quiet: nothing is being refused here, a fact simply has not
+   arrived yet, and it resolves on its own. */
+.cv2-root .hon-checking {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  padding: 1px 6px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: 5px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  opacity: 0.7;
+  cursor: default;
+  animation: hon-checking-breathe 1.6s ease-in-out infinite;
+}
+@keyframes hon-checking-breathe {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+/* Respect a reduced-motion preference: the state must still read as pending
+   without the pulse, so the dashed border carries it on its own. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .hon-checking { animation: none; }
+}
+
+/* The inline refusal. Block-toned and bordered so it reads as a state of the
+   launch, not as chrome — and it persists until the next attempt rather than
+   auto-dismissing, because the viewer needs it while they fix the config. */
+.cv2-root .lq__refusal {
+  margin: 0;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--pn-block) 40%, transparent);
+  border-radius: 5px;
+  background: var(--pn-block-soft);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--pn-ink-1);
+}
+.cv2-root .lq__refusal-label { font-weight: 600; color: var(--pn-block); }
+.cv2-root .lq__launch:disabled { opacity: 0.6; cursor: default; }

@@ -1,23 +1,33 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { EntityCapabilities, EntitySummary } from '@tm8/contract';
+import type { EntityCapabilities, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type {
   ActionContext,
   ActionRef,
   KindConfig,
+  LaunchCapacity,
   LifecycleTier,
   ListRowFacts,
   LiveTreatment,
+  ProfileResolution,
   QueryFilter,
   SortKey,
+  TeammateLaunchState,
   CollectionMode,
 } from '../domain';
 import { ALL_MODES, collectionKinds, getKind, resolveAction } from '../domain';
 import { Avatar } from '../kit';
-import { DisabledAction, DisabledIconControl, toReason } from './honesty/DisabledWithReason';
+import {
+  CheckingPermission,
+  DisabledAction,
+  DisabledIconControl,
+  NOT_WIRED_REASON,
+  toReason,
+} from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
+import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -79,6 +89,32 @@ export interface EntityListPanelProps {
   onAction?: (ref: ActionRef, entityId: string) => void;
   onCreate?: () => void;
   onKindChange?: (kind: string) => void;
+
+  /**
+   * D44 — the launch flow. A verb carrying `flow: 'launch'` does NOT dispatch
+   * on click; it expands the quick config beneath its row, and `Launch ▸`
+   * inside that config is what commits. The marker lives in registry DATA, so
+   * this panel never asks which verb or which kind — it asks the resolved
+   * ActionDef whether it opens a flow.
+   *
+   * These props supply that config. Absent ⇒ the expand still opens and states
+   * what it cannot do; a Run that silently does nothing is the failure R5 #9
+   * closed everywhere else.
+   */
+  launch?: LaunchSources;
+}
+
+/** Everything the inline launch config needs, supplied by the shell. */
+export interface LaunchSources {
+  spaceId: string;
+  teammates: readonly LaunchTeammateOption[];
+  loadFor?: (teamMemberId: string) => TeammateLaunchState;
+  capacity?: LaunchCapacity;
+  profileFor?: (teamMemberId: string | null) => ProfileResolution | undefined;
+  onSpawn?: (input: ExecutionSpawnInput) => void | Promise<void>;
+  onFullOptions?: (entityId: string) => void;
+  /** Caller owns uniqueness of the optimistic-journal id. */
+  mutationId: (entityId: string) => string;
 }
 
 export function EntityListPanel(props: EntityListPanelProps) {
@@ -229,19 +265,21 @@ function rowsForBand(
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
 ): readonly EntitySummary[] {
-  const rows = props.rowsFor({
+  /**
+   * D20 RETIRED (D56). The client-side status partition that used to run here
+   * is DELETED, not translated: the contract gained
+   * `CollectionQuery.filters.sessionStatus`, so the tier's own `filter` is an
+   * ordinary filter the SEAM executes, exactly like the task tiers beside it.
+   *
+   * Deliberately not re-implemented against `filter.sessionStatus` — that
+   * would put server-side filtering on the client as well, and the two would
+   * disagree the moment a status is added. One filter, executed once, at the
+   * seam.
+   */
+  return props.rowsFor({
     ...filter,
     ...(tier?.filter ?? {}),
     ...mergeSelectedFilters(config, selected),
-  });
-  // D20's client partition survives the rename unchanged: read STRUCTURALLY,
-  // never by kind literal.
-  if (!tier?.statuses) return rows;
-
-  const allowed = new Set<string>(tier.statuses);
-  return rows.filter((row) => {
-    const state = row.state as unknown as Record<string, unknown>;
-    return typeof state.status === 'string' && allowed.has(state.status);
   });
 }
 
@@ -454,6 +492,8 @@ function QuickLaunch({
   onAction?: (ref: ActionRef, entityId: string) => void;
 }) {
   const def = resolveAction(ref_);
+  // R5 #9: unwired renders disabled-with-reason, never enabled-inert.
+  if (!onAction) return <DisabledAction reason={NOT_WIRED_REASON}>{`${def.label} ▸`}</DisabledAction>;
   const availability = def.availability(ctx);
   if (availability.kind === 'disabled') {
     return <DisabledAction reason={toReason(availability.reason)}>{`${def.label} ▸`}</DisabledAction>;
@@ -898,6 +938,15 @@ function Tile({
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
 
+  /**
+   * Which flow verb this row has expanded, if any. Row-local on purpose: the
+   * config dismisses on outside click, so opening one row's closes another's
+   * without a shared "only one open" register to keep in sync.
+   */
+  const [flowRef, setFlowRef] = useState<ActionRef | null>(null);
+  /** Bounds for the expand's outside-click dismissal — the trigger lives here too. */
+  const tileRef = useRef<HTMLDivElement>(null);
+
   const streaming = Boolean(
     list.tile.pulse && props.activity?.[row.id] && treatment?.streamingLabel,
   );
@@ -937,6 +986,7 @@ function Tile({
 
   return (
     <div
+      ref={tileRef}
       className={[
         'lp__tile',
         selected ? 'lp__tile--selected' : '',
@@ -947,6 +997,7 @@ function Tile({
       style={depth > 0 ? { paddingLeft: 10 + depth * 17 } : undefined}
       data-testid="list-tile"
       data-depth={depth}
+      data-flow={flowRef ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
       onClick={() => props.onSelect?.(row.id)}
       role="button"
@@ -998,7 +1049,14 @@ function Tile({
 
         <span className="lp__rowactions">
           {(list.rowActions ?? []).map((ref) => (
-            <RowAction key={ref} ref_={ref} row={row} props={props} />
+            <RowAction
+              key={ref}
+              ref_={ref}
+              row={row}
+              props={props}
+              openFlow={flowRef}
+              onFlow={setFlowRef}
+            />
           ))}
         </span>
       </div>
@@ -1016,6 +1074,31 @@ function Tile({
           ) : null}
         </div>
       ) : null}
+
+      {/* The flow expand. Inside the row so it stays visually attached to the
+          thing being launched; clicks are stopped so configuring never reads
+          as selecting. */}
+      {flowRef ? (
+        <div className="lp__flow" onClick={(e) => e.stopPropagation()}>
+          <LaunchQuickConfig
+            subject={row}
+            spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
+            teammates={props.launch?.teammates ?? []}
+            loadFor={props.launch?.loadFor}
+            capacity={props.launch?.capacity}
+            profileFor={props.launch?.profileFor}
+            onSpawn={props.launch?.onSpawn}
+            onFullOptions={
+              props.launch?.onFullOptions
+                ? () => props.launch?.onFullOptions?.(row.id)
+                : undefined
+            }
+            onDismiss={() => setFlowRef(null)}
+            boundsRef={tileRef}
+            clientMutationId={props.launch?.mutationId(row.id) ?? `launch:${row.id}`}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1030,10 +1113,14 @@ function RowAction({
   ref_,
   row,
   props,
+  openFlow,
+  onFlow,
 }: {
   ref_: ActionRef;
   row: EntitySummary;
   props: EntityListPanelProps;
+  openFlow?: ActionRef | null;
+  onFlow?: (ref: ActionRef | null) => void;
 }) {
   const def = resolveAction(ref_);
   const ctx: ActionContext = {
@@ -1043,6 +1130,30 @@ function RowAction({
     capabilities: props.capabilitiesOf?.(row.id) ?? null,
     liveness: props.livenessOf?.(row.id),
   };
+
+  /**
+   * D44 — a flow verb opens its config instead of dispatching, so it is NOT
+   * enabled-inert without `onAction`: clicking genuinely does something, and
+   * the config states for itself whether it can commit. Asking the resolved
+   * def for `flow` keeps this free of both kind and action-id literals.
+   */
+  const opensFlow = def.flow === 'launch' && onFlow != null;
+
+  if (!props.onAction && !opensFlow) {
+    return <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON} />;
+  }
+
+  /**
+   * Not-yet-loaded is not not-permitted. A capability SOURCE that has not
+   * answered for this row yet renders in the loading vocabulary; only a
+   * source that answered "no" renders the refusal. Without this split both
+   * land on the same disabled button and a transient state reads as a
+   * permanent one.
+   */
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label={def.label} glyph={def.icon} />;
+  }
+
   const availability = def.availability(ctx);
 
   if (availability.kind === 'disabled') {
@@ -1054,14 +1165,20 @@ function RowAction({
       />
     );
   }
+  const expanded = openFlow === ref_;
   return (
     <button
       type="button"
-      className="lp__rowaction"
+      className={expanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'}
       title={def.label}
       aria-label={def.label}
+      aria-expanded={opensFlow ? expanded : undefined}
       onClick={(e) => {
         e.stopPropagation();
+        if (opensFlow) {
+          onFlow?.(expanded ? null : ref_);
+          return;
+        }
         props.onAction?.(ref_, row.id);
       }}
     >
