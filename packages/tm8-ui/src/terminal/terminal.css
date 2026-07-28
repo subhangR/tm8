@@ -12,10 +12,16 @@
    a dark twin. Regions that must stay dark are wrapped in <AlwaysDark>, which
    opens a nested `.cv2-root[data-theme="dark"]` scope. That re-declares the
    REAL dark tokens through tokens.css's own selector, so this file never
-   restates a dark hex and can never drift from the token file. What follows
-   the theme: the panel header / action bar / tab strip / footer, and the
-   exited fallback — because when the session dies the terminal literally
-   leaves the panel, and the panel rejoins its theme.
+   restates a dark hex and can never drift from the token file.
+
+   THE SCOPE IS THE WHOLE work_session PANEL — crumb, header, action bar, tab
+   strip, body, canvas, fallbacks and footer. NOT just the strip and host, as
+   this comment used to claim: T0-1's in-situ session panel draws every
+   hairline at the dark line token, the title at dark ink, and the EXITED
+   fallback on dark surface rather than paper. The earlier reading came from
+   T0-2's standalone #exited frame, which draws a light exited panel — a
+   component frame generalised to the composed canvas, which is the D38 error.
+   Only the scope BOUNDARY changed; the mechanism is untouched.
    ========================================================================== */
 
 /* --- The chrome strip ---------------------------------------------------- */
@@ -233,9 +239,11 @@
    Phase-2 [ Terminal | Chat ] switch land with no relayout. The dashed brand
    border is the anatomy annotation's treatment; in product it renders as a
    quiet empty row (see ReservedToolbarSeam.tsx). */
+/* T0-1 draws this at 24px in situ; the 34px I first built came from T0-4
+   anatomy prose, and the composed canvas wins (D38). */
 .cv2-root .term-seam {
   flex: none;
-  height: 34px;
+  height: 24px;
   display: flex;
   align-items: center;
   gap: 8px;

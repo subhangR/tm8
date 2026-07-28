@@ -14,6 +14,7 @@ import {
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { GenericBody } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
+import { AlwaysDark } from '../terminal';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -139,7 +140,32 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const config = getKind(detail.kind);
   const isTombstone = detail.deletedAt != null;
 
-  return (
+  /**
+   * THE DARK-SHELL LAW (T0-1, in situ). The work_session panel is dark in its
+   * ENTIRETY — crumb, header, action bar, tab strip, body and footer — not
+   * just the strip and the canvas. Measured off T0-1's Z3 session markup:
+   * every hairline is #2C2719, the title is #EFE9DB, the controls are #8C8470
+   * hovering to #302A1D, and the exited fallback sits on #1B1810 rather than
+   * paper.
+   *
+   * WHY IT WAS WRONG BEFORE, recorded because the provenance matters: D24
+   * ruled that panel chrome follows the theme and only the strip and host stay
+   * dark, citing T0-2's #exited frame, which draws a LIGHT exited session
+   * panel. That is a standalone COMPONENT frame; the COMPOSED canvas draws the
+   * same state dark. Generalising from the component canvas to the composed
+   * one is exactly the error D38 names — made before D38 was written, and not
+   * caught when it was.
+   *
+   * The mechanism is unchanged (D16/D24): a nested `.cv2-root[data-theme=
+   * "dark"]` scope re-declares the real dark tokens through tokens.css's own
+   * selector. Only the BOUNDARY moves — from strip+host to the whole panel —
+   * so there is still zero duplicated hex and it still cannot drift.
+   *
+   * Keyed on the ARCHETYPE, a registry field: no kind literal (§15.2).
+   */
+  const alwaysDark = config.panel.archetype === 'terminal';
+
+  const panel = (
     <section
       className={`pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
       data-testid="entity-detail-panel"
@@ -212,6 +238,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       />
     </section>
   );
+
+  return alwaysDark ? <AlwaysDark>{panel}</AlwaysDark> : panel;
 }
 
 function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: PanelTab }) {
