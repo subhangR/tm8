@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   EdgeViewSchema,
+  EntitySummarySchema,
   WorkspaceEventSchema,
   getOperation,
   type ActorSummary,
@@ -299,6 +300,65 @@ describe('W1 contract-to-Server DTO compatibility', () => {
       launchProjectId: PROJECT,
     });
     expect(sessionContent).not.toHaveProperty('projectId');
+  });
+
+  /**
+   * The read-side halves of the projector parity arms (378e167): before them,
+   * a `project` or `interaction_profile` row fell through to the custom-kind
+   * default and came back titled by its kind string with a `c:*`-shaped empty
+   * state — off-contract for a core kind. Titles and states here must MIRROR
+   * projector.ts titleOf/stateOf exactly; parity between the event feed and
+   * the read path is the assertion, not just schema validity.
+   */
+  it('reads project and interaction_profile rows with real state and title (projector parity)', () => {
+    const project = toEntitySummary(
+      row({
+        id: PROJECT,
+        kind: 'project',
+        ppd_name: 'Alpha',
+        ppd_project_id: 'proj-alpha-1',
+        ppd_materialized_version: 3,
+      }),
+      assembly,
+    );
+    expect(project.title).toBe('Alpha');
+    expect(project.state).toEqual({
+      kind: 'project',
+      projectId: 'proj-alpha-1',
+      materializedVersion: 3,
+    });
+    expect(EntitySummarySchema.safeParse(project).success).toBe(true);
+
+    const profile = toEntitySummary(
+      row({
+        id: PROFILE,
+        kind: 'interaction_profile',
+        ip_status: 'active',
+        ip_current_draft_version: 2,
+        ip_active_version: 2,
+        ip_active_hash: 'hash-v2',
+        ip_retired_at: null,
+      }),
+      assembly,
+    );
+    // The projector's honest answer for a nameless projection, mirrored.
+    expect(profile.title).toBe('');
+    expect(profile.state).toEqual({
+      kind: 'interaction_profile',
+      status: 'active',
+      currentDraftVersion: 2,
+      activeVersion: 2,
+      activeHash: 'hash-v2',
+      retiredAt: null,
+    });
+    expect(EntitySummarySchema.safeParse(profile).success).toBe(true);
+
+    // An unknown status is defaulted, not trusted (projector's oneOf).
+    const drifted = toEntitySummary(
+      row({ id: PROFILE, kind: 'interaction_profile', ip_status: 'bogus' }),
+      assembly,
+    );
+    expect(drifted.state).toMatchObject({ kind: 'interaction_profile', status: 'draft' });
   });
 
   it('projects nullable messageBatchId through the event-side database projector', async () => {

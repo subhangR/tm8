@@ -80,7 +80,12 @@ export const ENTITY_COLUMNS = `
   msg.message_batch_id,
   msg.mentions as message_mentions, msg.attachments as message_attachments,
   msg.edited_at as message_edited_at, msg.redacted_at as message_redacted_at,
-  f.name as file_name, f.mime_type as file_mime, f.size_bytes as file_size
+  f.name as file_name, f.mime_type as file_mime, f.size_bytes as file_size,
+  ppd.name as ppd_name, ppd.project_id as ppd_project_id,
+  ppd.materialized_version as ppd_materialized_version,
+  ip.status as ip_status, ip.current_draft_version as ip_current_draft_version,
+  ip.active_version as ip_active_version, ip.active_hash as ip_active_hash,
+  ip.retired_at as ip_retired_at
 `;
 
 /**
@@ -101,6 +106,8 @@ export const ENTITY_FROM = `
   left join public.work_sessions ws   on ws.entity_id = e.id
   left join public.messages msg       on msg.entity_id = e.id
   left join public.files f            on f.entity_id  = e.id
+  left join public.project_projection_details ppd on ppd.entity_id = e.id
+  left join public.interaction_profiles ip        on ip.entity_id  = e.id
 `;
 
 export interface EntityRow {
@@ -170,6 +177,14 @@ export interface EntityRow {
   file_name: string | null;
   file_mime: string | null;
   file_size: string | number | null;
+  ppd_name: string | null;
+  ppd_project_id: string | null;
+  ppd_materialized_version: number | null;
+  ip_status: string | null;
+  ip_current_draft_version: number | null;
+  ip_active_version: number | null;
+  ip_active_hash: string | null;
+  ip_retired_at: Date | string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -534,6 +549,15 @@ export function titleOf(row: EntityRow): string {
       return row.file_name ?? 'File';
     case 'message':
       return excerpt(row.message_body) ?? 'Message';
+    // The two arms below MIRROR the landed projector twins (projector.ts
+    // titleOf, commit 378e167). Parity is the point: a title that differs
+    // between the event feed and the read path is drift a client can see.
+    case 'project':
+      return row.ppd_name ?? '';
+    case 'interaction_profile':
+      // No name column exists for a profile; the empty string is the honest
+      // answer, matching the projector's.
+      return '';
     default:
       return row.kind;
   }
@@ -571,6 +595,11 @@ export interface AssemblyContext {
   viewerReactions: Map<string, EntityCounters['viewerReaction']>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
+}
+
+/** The profile status enum, defaulted rather than trusted (projector's oneOf). */
+function ipStatusOf(raw: string | null): 'draft' | 'active' | 'retired' {
+  return raw === 'active' || raw === 'retired' ? raw : 'draft';
 }
 
 function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
@@ -647,6 +676,28 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         name: row.file_name ?? '',
         mimeType: row.file_mime ?? 'application/octet-stream',
         sizeBytes: Number(row.file_size ?? 0),
+      };
+    // The two arms below MIRROR the landed projector twins (projector.ts
+    // stateOf, commit 378e167) — the facade's side of the same defect: both
+    // kinds sat in the frozen contract while falling through to the custom
+    // arm, whose `c:*`-shaped state fails the strict schema for a core kind.
+    case 'project':
+      return {
+        kind: 'project',
+        // The detail row is written atomically with the projection entity
+        // (021); the fallbacks keep a hypothetical stray row readable
+        // instead of failing the strict schema on a null.
+        projectId: row.ppd_project_id ?? row.id,
+        materializedVersion: row.ppd_materialized_version ?? 1,
+      };
+    case 'interaction_profile':
+      return {
+        kind: 'interaction_profile',
+        status: ipStatusOf(row.ip_status),
+        currentDraftVersion: row.ip_current_draft_version ?? 1,
+        activeVersion: row.ip_active_version,
+        activeHash: row.ip_active_hash,
+        retiredAt: isoOrNull(row.ip_retired_at),
       };
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
