@@ -21,7 +21,7 @@
 // never gain one; the port is implemented over `Db` in the server package at
 // src/facade/execution-handlers.ts.
 
-export { PtyHostService, stripScrollbackDeviceQueries } from './pty/PtyHostService.js';
+export { NODE_BOOT_ID, PtyHostService, stripScrollbackDeviceQueries } from './pty/PtyHostService.js';
 export { OutputBuffer, type ReplaySlice } from './pty/OutputBuffer.js';
 export { TerminalStateMirror } from './pty/TerminalStateMirror.js';
 // W2 B2: the pre-reserved delivery adapter. Exported (additively) because the

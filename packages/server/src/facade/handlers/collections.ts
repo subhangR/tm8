@@ -280,6 +280,13 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(`t.work_status = any(${p.add(f.workStatus)}::text[])`);
   }
 
+  // A22: same kind-narrowing semantics as workStatus — ws.status is NULL for
+  // every non-work_session row, and NULL = any(...) is never true, so the
+  // filter's presence restricts the result to work_sessions in these statuses.
+  if (f.sessionStatus && f.sessionStatus.length > 0) {
+    where.push(`ws.status = any(${p.add(f.sessionStatus)}::text[])`);
+  }
+
   if (f.axes) {
     for (const [axis, values] of Object.entries(f.axes)) {
       if (!values || values.length === 0) continue;

@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   EdgeViewSchema,
   EntitySummarySchema,
+  ExecutionLivenessSchema,
   WorkspaceEventSchema,
   getOperation,
+  isCollabError,
   type ActorSummary,
   type EntitySummary,
   type OperationName,
@@ -466,7 +468,9 @@ describe('W1 honest W2-only skeletons', () => {
     const registry = new HandlerRegistry();
     const runtime = registerExecutionHandlers(registry, {
       db,
-      pty: {} as never,
+      // liveSessionIds is the A21 liveness seam; the second id is live on the
+      // node but must never surface for a space that cannot read it.
+      pty: { liveSessionIds: () => [SOURCE, 'ffffffff-ffff-4fff-8fff-ffffffffffff'] } as never,
       config: {
         host: '127.0.0.1',
         port: 4610,
@@ -477,8 +481,51 @@ describe('W1 honest W2-only skeletons', () => {
       owner,
     });
     const spawn = vi.spyOn(runtime.spawnService, 'spawn').mockResolvedValue({ commandResult: {} } as never);
-    return { registry, owner, spawn, tx };
+    return { registry, owner, spawn, tx, db };
   }
+
+  /**
+   * A21 — execution.liveness. Unit-level: the handler's three properties are
+   * (1) the answer is the PTY map scoped to the SPACE's readable
+   * work_sessions — a live id the caller cannot read stays invisible;
+   * (2) an unreadable/missing space is not_found (RLS decides, nothing leaks);
+   * (3) the result parses the strict contract schema, nodeBootId stable
+   * within a process. The DB→WS e2e proof rides the Delta 3 harness.
+   */
+  it('A21: execution.liveness scopes the PTY map to the readable space and answers strict-contract', async () => {
+    const { registry, db } = (() => {
+      const fixture = executionFixture();
+      return { registry: fixture.registry, db: fixture.db };
+    })();
+    const handler = registry.get('execution.liveness');
+    if (!handler) throw new Error('execution.liveness was not registered');
+
+    const query = db.query as ReturnType<typeof vi.fn>;
+    query
+      .mockResolvedValueOnce([{ id: SPACE }])              // space readable
+      .mockResolvedValueOnce([{ id: SOURCE }]);            // one live id is ours
+    const ctx = { ...context('execution.liveness', undefined), params: { spaceId: SPACE } };
+    const result = (await handler(ctx)) as { kind: string; data: unknown };
+    expect(result.kind).toBe('json');
+    const parsed = ExecutionLivenessSchema.safeParse(result.data);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.liveEntityIds).toEqual([SOURCE]);
+      expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
+    }
+    // The intersection query received the FULL live-pty id set (scoping is
+    // the database's under the caller's claims, not a pre-filter here).
+    const intersectArgs = query.mock.calls[1] as unknown[];
+    expect(intersectArgs[2]).toEqual([SPACE, [SOURCE, 'ffffffff-ffff-4fff-8fff-ffffffffffff']]);
+
+    // Unreadable space: not_found, and the PTY map is never consulted further.
+    query.mockReset();
+    query.mockResolvedValueOnce([]);
+    const error = await rejection(
+      Promise.resolve(handler({ ...context('execution.liveness', undefined), params: { spaceId: SPACE } })),
+    );
+    expect(isCollabError(error) && error.code === 'not_found').toBe(true);
+  });
 
   it.each([
     ['scratch workdir', { workdir: { mode: 'scratch' as const } }],

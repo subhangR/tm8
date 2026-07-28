@@ -202,6 +202,14 @@ function shouldStripCsi(finalByte: number, params: Buffer): boolean {
  * behavioral reference); this service is transport-agnostic beyond writing raw
  * bytes to sinks and exposes {@link attach} as the composed offset-replay seam.
  */
+/**
+ * A21: stable for the life of THIS process, rotated by restart. Minted at
+ * module load so every reader in the process reports the same boot — a client
+ * comparing it across `execution.liveness` reads distinguishes "same node,
+ * session genuinely gone" from "node restarted, recorded statuses stale".
+ */
+export const NODE_BOOT_ID: string = randomUUID();
+
 export class PtyHostService {
   private readonly sessions = new Map<string, PtyEntry>();
   private readonly pendingPrompts = new Map<string, PendingPromptQueue>();
@@ -394,6 +402,19 @@ export class PtyHostService {
   /** Whether a live PTY exists for the session. */
   hasSession(sessionId: string): boolean {
     return this.sessions.has(sessionId);
+  }
+
+  /**
+   * A21 liveness seam: the session ids with a genuinely live PTY right now.
+   *
+   * `exited` entries are excluded — a PTY that has exited but not yet been
+   * cleaned up is not a live terminal, and reporting it live is the exact
+   * ghost `execution.liveness` exists to dispel.
+   */
+  liveSessionIds(): string[] {
+    return [...this.sessions.entries()]
+      .filter(([, entry]) => !entry.exited)
+      .map(([sessionId]) => sessionId);
   }
 
   /** Current dimensions of a session's PTY, or null if no such session. */

@@ -19,6 +19,7 @@
  */
 
 import {
+  NODE_BOOT_ID,
   SpawnError,
   SpawnService,
   PtyHostService,
@@ -35,7 +36,9 @@ import {
   type TransitionInput,
   type WorkSessionStatus,
 } from '@tm8/execution';
+import { CollabError } from '@tm8/contract';
 import type {
+  ExecutionLiveness,
   ExecutionPromptInput,
   ExecutionSpawnInput,
   ExecutionStreamsAttachInput,
@@ -405,7 +408,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     pty,
     spawnService,
     graph,
-    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner),
+    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner, pty),
     reconcileGhosts: async () => {
       // Runs as the loopback OWNER. `work_session_transition` goes through
       // `require_space_member` → `require_identity` with no node-admin bypass,
@@ -461,7 +464,7 @@ export function registerExecutionHandlers(
     ...(deps.logger ? { logger: deps.logger } : {}),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
-  registerHandlers(registry, spawnService, graph, deps.db, owner);
+  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty);
   return {
     pty: deps.pty,
     spawnService,
@@ -549,7 +552,47 @@ function registerHandlers(
   graph: DbGraphPort,
   db: Db,
   resolveOwner: () => Promise<LoopbackOwner>,
+  pty: PtyHostService,
 ): void {
+  /**
+   * A21 — execution.liveness (C-1). The ONE authority on "is there a live
+   * terminal" is this process's PTY map; recorded work_sessions.status can be
+   * stale between boots (ghost reconciliation runs at startup only). Answered
+   * point-in-time, never cached.
+   */
+  registry.register('execution.liveness', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    // Authorization IS the space read under the caller's claims: RLS answers
+    // membership, and an unreadable space is indistinguishable from a missing
+    // one — the spaces.get precedent, leaking nothing about foreign spaces.
+    const spaces = await db.query<{ id: string }>(
+      claims,
+      'select s.id from public.spaces s where s.id = $1',
+      [spaceId],
+    );
+    if (!spaces[0]) throw new CollabError('not_found', `no such space: ${spaceId}`);
+    // Scope the process-wide PTY map to THIS space's work_sessions, still
+    // under the caller's claims — a live id the caller cannot read stays
+    // invisible rather than leaking another space's session id.
+    const live = pty.liveSessionIds();
+    const rows = live.length === 0
+      ? []
+      : await db.query<{ id: string }>(
+          claims,
+          `select e.id from public.entities e
+            where e.space_id = $1 and e.kind = 'work_session'
+              and e.deleted_at is null and e.id = any($2::uuid[])`,
+          [spaceId, live],
+        );
+    const result: ExecutionLiveness = {
+      liveEntityIds: rows.map((r) => r.id),
+      nodeBootId: NODE_BOOT_ID,
+      checkedAt: new Date().toISOString(),
+    };
+    return json(result);
+  });
   registry.register('execution.spawn', async (ctx) => {
     const input = ctx.body as ExecutionSpawnInput;
     if (input.workdir?.mode === 'scratch') {
