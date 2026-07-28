@@ -1,8 +1,9 @@
 import type { EntityDetail, EntityState } from '@tm8/contract';
+import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import { resolveAction } from '../../domain';
 import { IconBtn, Pill, type PillTone } from '../../kit';
-import { DisabledAction, DisabledIconControl, toReason } from '../honesty/DisabledWithReason';
+import { DisabledIconControl, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 
 /**
@@ -41,6 +42,7 @@ export function PanelHeader({
   detail,
   config,
   breadcrumb,
+  liveness,
   pinned = false,
   pinRefusal,
   onPin,
@@ -51,6 +53,7 @@ export function PanelHeader({
   detail: EntityDetail;
   config: KindConfig;
   breadcrumb?: string;
+  liveness?: SessionLiveness;
   pinned?: boolean;
   /** Why pinning is refused right now (floors, 3-pin cap). L6: shown, not hidden. */
   pinRefusal?: string;
@@ -88,7 +91,7 @@ export function PanelHeader({
           {detail.title}
         </span>
 
-        <StatusPillFor detail={detail} config={config} />
+        <StatusPillFor detail={detail} config={config} liveness={liveness} />
 
         <span className="pn-head__spacer" />
 
@@ -121,7 +124,16 @@ export function PanelHeader({
  * no status axis (`source: 'none'`, or no spec) renders NO pill — honest,
  * because inventing "active" for a file would be a status it does not have.
  */
-export function StatusPillFor({ detail, config }: { detail: EntityDetail; config: KindConfig }) {
+export function StatusPillFor({
+  detail,
+  config,
+  liveness,
+}: {
+  detail: EntityDetail;
+  config: KindConfig;
+  /** The seam verdict, when this kind has one. */
+  liveness?: SessionLiveness;
+}) {
   if (detail.deletedAt) {
     return (
       <Pill tone="idle" title="This entity is deleted">
@@ -129,6 +141,29 @@ export function StatusPillFor({ detail, config }: { detail: EntityDetail; config
       </Pill>
     );
   }
+  /**
+   * PRECEDENCE: THE VERDICT OUTRANKS THE RECORD (D6, R-UI-5, D22).
+   *
+   * A work_session's statusPill reads state.status, which says "running" even
+   * when the node reports the session stale. Rendering that in live green
+   * above a stale session is precisely the lie D6 forbids — and it reached the
+   * user's screen at the R5 gate because this consumer was never given the
+   * verdict the panel was already holding.
+   *
+   * Where a liveTreatment exists, it owns the pill. The record's claim is not
+   * discarded — the registry's authored label states and withdraws it in one
+   * breath ("running per record · unverified") — but it never wears the live
+   * treatment on its own.
+   */
+  const treatment = liveness && config.list.liveTreatment ? config.list.liveTreatment(liveness) : null;
+  if (treatment) {
+    return (
+      <Pill tone={treatment.tone} title={treatment.reason ?? treatment.label}>
+        {treatment.label}
+      </Pill>
+    );
+  }
+
   const spec = config.panel.statusPill;
   if (!spec || spec.source === 'none') return null;
   const value = statusValue(spec.source, detail.state);
@@ -224,7 +259,19 @@ function ActionButton({
   const availability = def.availability(ctx);
 
   if (availability.kind === 'disabled') {
-    return <DisabledAction reason={toReason(availability.reason)}>{def.label}</DisabledAction>;
+    /*
+     * TOOLTIP form, not the inline-caption form. The action bar is a fixed
+     * 32px overflow-hidden row; the caption variant stacks a control plus a
+     * full sentence, so three disabled verbs emitted three sentences that
+     * clipped mid-word across the bar at the R5 gate. T0-4 2.2 draws disabled
+     * action-bar verbs as a dimmed control carrying its reason on hover and
+     * focus — the reason stays reachable, the row keeps its height.
+     */
+    return (
+      <DisabledIconControl label={def.label} glyph={def.icon} reason={toReason(availability.reason)}>
+        {primary ? def.label : null}
+      </DisabledIconControl>
+    );
   }
   return (
     <button

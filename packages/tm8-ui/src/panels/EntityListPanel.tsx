@@ -10,11 +10,14 @@ import type {
   LiveTreatment,
   QueryFilter,
   SortKey,
+  CollectionMode,
 } from '../domain';
-import { collectionKinds, getKind, resolveAction } from '../domain';
+import { ALL_MODES, collectionKinds, getKind, resolveAction } from '../domain';
+import { Avatar } from '../kit';
 import { DisabledAction, DisabledIconControl, toReason } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
+import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -66,6 +69,12 @@ export interface EntityListPanelProps {
   /** True at the 200/220px floors: metas drop, badges abbreviate. */
   compact?: boolean;
 
+  /**
+   * Focus handle for the D36 `list.search` command (`f`). The keyboard
+   * controller emits the command and consumes the event; it never touches the
+   * DOM — the shell calls this on the FOCUSED panel.
+   */
+  searchInputRef?: React.Ref<HTMLInputElement>;
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   onCreate?: () => void;
@@ -87,6 +96,8 @@ export function EntityListPanel(props: EntityListPanelProps) {
    */
   const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
+  const [query, setQuery] = useState('');
+  const [mode, setMode] = useState<CollectionMode>(config.defaultMode);
 
   const activeTab = list.lifecycleTabs?.find((t) => t.id === tabId) ?? null;
 
@@ -101,9 +112,18 @@ export function EntityListPanel(props: EntityListPanelProps) {
         config={config}
         liveCount={liveCountFor(props, config)}
         onKindChange={props.onKindChange}
+        mode={mode}
+        onMode={setMode}
       />
 
       <HeaderActions config={config} ctx={props.ctx} onCreate={props.onCreate} onAction={props.onAction} />
+
+      <SearchRow
+        config={config}
+        query={query}
+        onQuery={setQuery}
+        inputRef={props.searchInputRef}
+      />
 
       <FilterRow
         config={config}
@@ -134,7 +154,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
             <Band
               key={section.id}
               label={section.label}
-              rows={rowsForBand(props, section.filter, activeTab, selected, config)}
+              rows={matching(rowsForBand(props, section.filter, activeTab, selected, config), query)}
               collapsed={collapsed.has(section.id)}
               onToggle={() =>
                 setCollapsed((prev) => {
@@ -146,14 +166,16 @@ export function EntityListPanel(props: EntityListPanelProps) {
               }
               props={props}
               config={config}
+              query={query}
             />
           ))
         ) : (
           <Band
             label={null}
-            rows={rowsForBand(props, activeTab?.filter ?? {}, activeTab, selected, config)}
+            rows={matching(rowsForBand(props, activeTab?.filter ?? {}, activeTab, selected, config), query)}
             props={props}
             config={config}
+            query={query}
           />
         )}
       </div>
@@ -218,10 +240,14 @@ function KindSelector({
   config,
   liveCount,
   onKindChange,
+  mode,
+  onMode,
 }: {
   config: KindConfig;
   liveCount: string | null;
   onKindChange?: (kind: string) => void;
+  mode: CollectionMode;
+  onMode: (mode: CollectionMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -243,6 +269,7 @@ function KindSelector({
           {liveCount}
         </span>
       ) : null}
+      <ViewSwitcher config={config} mode={mode} onMode={onMode} />
       {open ? (
         <ul className="lp__kindmenu" role="menu">
           {/* Only `strategy: 'collection'` kinds can BE a list: channel is a
@@ -267,6 +294,79 @@ function KindSelector({
         </ul>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * THE VIEW SWITCHER — one control everywhere (C5), positions from registry DATA.
+ *
+ * `hiddenModes` hides by config; `graph` is NEVER a member of it, because R7
+ * requires graph VISIBLE-labelled-unclickable rather than absent — hidden and
+ * disabled are different states and only one of them teaches the user the
+ * feature exists.
+ *
+ * In A1 only `list` has a body. The other positions render
+ * disabled-with-reason rather than switching to a blank region: a switcher
+ * that moves you to nothing is worse than one that says why it cannot yet.
+ * The layout bodies are A2 (LLD §3.3); this control is the gate deliverable.
+ */
+/**
+ * T0-1's own switcher set, verbatim from the canvas support code:
+ *   views = [['≡','List'], ['⑂','Tree'], ['▥','Board'], ['◉','Graph']]
+ * FOUR positions, not the registry's six modes — feed and gallery are
+ * CollectionView layouts (k/{slug}, A2) and the composed workspace canvas
+ * does not offer them in a side panel. Per-kind visibility still comes from
+ * `hiddenModes`, so a kind may show fewer; none may show more.
+ */
+const SWITCHER_MODES: readonly CollectionMode[] = ['list', 'tree', 'board', 'graph'];
+const MODE_GLYPH: Record<CollectionMode, string> = {
+  list: '≡',
+  tree: '⑂',
+  board: '▥',
+  graph: '◉',
+  feed: '≡',
+  gallery: '▩',
+};
+
+function ViewSwitcher({
+  config,
+  mode,
+  onMode,
+}: {
+  config: KindConfig;
+  mode: CollectionMode;
+  onMode: (mode: CollectionMode) => void;
+}) {
+  const positions = SWITCHER_MODES.filter((m) => !config.hiddenModes.includes(m));
+  if (positions.length <= 1) return null;
+  return (
+    <span className="lp__views" role="group" aria-label="Layout" data-testid="view-switcher">
+      {positions.map((m) => {
+        const built = m === 'list';
+        const reason =
+          m === 'graph'
+            ? 'Graph view isn’t available yet.'
+            : `The ${m} layout arrives with A2 — the switcher position is real, the body is not built yet.`;
+        if (!built) {
+          return (
+            <DisabledIconControl key={m} label={`${m} layout`} glyph={MODE_GLYPH[m]} reason={toReason(reason)} />
+          );
+        }
+        return (
+          <button
+            key={m}
+            type="button"
+            className={m === mode ? 'lp__view lp__view--active' : 'lp__view'}
+            aria-pressed={m === mode}
+            aria-label={`${m} layout`}
+            title={`${m} layout`}
+            onClick={() => onMode(m)}
+          >
+            {MODE_GLYPH[m]}
+          </button>
+        );
+      })}
+    </span>
   );
 }
 
@@ -337,6 +437,54 @@ function QuickLaunch({
  * user chose each one and can see it), plus exactly one trigger, plus sort.
  * The unbounded set lives in the popover, which scrolls.
  */
+/**
+ * THE SEARCH ROW — T0-1 draws it as its OWN 28px bordered row between the
+ * create row and the tabs: `⌕ {placeholder}` … kbd hint. Not a pill in the
+ * filter row, which is where I first put it.
+ *
+ * THE HINT READS `f`, NOT `/`. The canvas pixel says `/`; D36 supersedes it,
+ * and the reasoning is worth keeping next to the code: `/` is the palette's
+ * GUARANTEED path because ⌘K is browser-owned on Chrome Win/Linux and Firefox
+ * everywhere. A focused list is the most common focus state, so spending `/`
+ * here would leave the palette unreachable exactly where users spend their
+ * time. Search gets its own guaranteed key rather than borrowing a committed
+ * one.
+ *
+ * The keyboard controller focuses this input on the `list.search` command and
+ * never touches the DOM itself; layer 4 then makes every plain key type
+ * normally and Esc blur the field, so this component needs no key guards.
+ */
+function SearchRow({
+  config,
+  query,
+  onQuery,
+  inputRef,
+}: {
+  config: KindConfig;
+  query: string;
+  onQuery: (q: string) => void;
+  inputRef?: React.Ref<HTMLInputElement>;
+}) {
+  return (
+    <div className="lp__searchrow">
+      <span className="lp__searchrow-glyph" aria-hidden>
+        ⌕
+      </span>
+      <input
+        ref={inputRef}
+        className="lp__searchinput"
+        type="search"
+        value={query}
+        placeholder={`Search ${config.labelPlural.toLowerCase()}`}
+        aria-label={`Search ${config.labelPlural.toLowerCase()}`}
+        onChange={(e) => onQuery(e.target.value)}
+        data-testid="list-search"
+      />
+      <kbd className="lp__searchrow-key">f</kbd>
+    </div>
+  );
+}
+
 function FilterRow({
   config,
   selected,
@@ -508,6 +656,7 @@ function Band({
   onToggle,
   props,
   config,
+  query,
 }: {
   label: string | null;
   rows: readonly EntitySummary[];
@@ -515,6 +664,8 @@ function Band({
   onToggle?: () => void;
   props: EntityListPanelProps;
   config: KindConfig;
+  /** Present ⇒ an empty band means "no matches", not "nothing here". */
+  query?: string;
 }) {
   const { attention, rest } = splitAttention(rows, props, config);
 
@@ -549,10 +700,23 @@ function Band({
       ) : null}
 
       {rest.length === 0 && attention.length === 0 ? (
-        <EmptyBody
-          glyph={config.chip.glyph}
-          sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
-        />
+        /*
+         * A filter that hides every row and says nothing looks identical to a
+         * list that failed to load (A1a's ask). The two states get different
+         * sentences: one names the query and offers the way back, the other
+         * teaches the gesture that fills the list.
+         */
+        query && query.trim().length > 0 ? (
+          <EmptyBody
+            glyph={config.chip.glyph}
+            sentence={`No ${config.labelPlural.toLowerCase()} match “${query.trim()}”. Clear the search to see them all.`}
+          />
+        ) : (
+          <EmptyBody
+            glyph={config.chip.glyph}
+            sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
+          />
+        )
       ) : (
         <TreeRows rows={rest} props={props} config={config} />
       )}
@@ -656,41 +820,39 @@ function Tile({
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
 
-  /**
-   * THE GATE, in one expression. All three must hold: the registry declares
-   * the pulse binding, the pool reports activity, and the verdict's treatment
-   * actually carries a `streamingLabel`.
-   *
-   * That third term is the load-bearing one, and it is a SHAPE rather than a
-   * rule I have to remember: the registry emits `streamingLabel` only for the
-   * `live` verdict — stale, not-running and unknown deliberately carry none —
-   * so there is no streaming word for this code to reach for on a non-live
-   * row even if activity were somehow attributed to it. "Activity may refine a
-   * live verdict but never promote a non-live one" is therefore enforced by
-   * the data, not by this expression's good behaviour.
-   */
   const streaming = Boolean(
     list.tile.pulse && props.activity?.[row.id] && treatment?.streamingLabel,
   );
 
-  // The canvases word a live-and-moving session "streaming" and a live-and-
-  // quiet one "running". The verdict alone cannot tell them apart, so the
-  // registry supplies both words and the pulse binding picks between them.
-  const fullWord = treatment ? (streaming ? treatment.streamingLabel : treatment.label) : null;
+  // ---- the Z1 badge vocabulary, from registry DATA ------------------------
+  const slots = list.tile.badges
+    .map((spec) => renderBadge(spec.source, row))
+    .filter((slot): slot is TileSlot => slot != null);
+
+  const badgeStatus = slots.find((s) => s.slot === 'status');
+  const tag = slots.find((s) => s.slot === 'tag');
+  const avatar = slots.find((s) => s.slot === 'avatar');
+  const metas = slots.filter((s) => s.slot === 'meta').map((s) => s.text);
+
   /**
-   * At the floors the SHORT word survives and the long form moves to detail —
-   * T0-3 frame 4 draws exactly this ("stale", not "stale — node restarted",
-   * captioned 'state word survives; "node restarted" moves to detail').
-   * Without it a 31-character label sits in a nowrap flex:none slot wider than
-   * the whole 200px row, and the title — the one element that is supposed to
-   * absorb the loss — collapses to nothing instead (D34).
+   * PRECEDENCE: the seam VERDICT outranks the record's own status badge.
    *
-   * `shortLabel ?? label` is the whole rule: a verdict whose label already
-   * fits carries no shortLabel, so this is one expression rather than a table.
-   * Streaming keeps its own word at any width — "streaming" is 9 characters.
+   * A work_session declares a `sessionStatus` badge AND has a `liveTreatment`.
+   * If the badge won, a session whose record says "running" would print
+   * "running" while the node reports it stale — the precise lie D6 exists to
+   * forbid. So liveness, where it exists, owns the status slot; the record
+   * badge fills it only for kinds with no verdict to consult.
    */
-  const word =
-    props.compact && treatment && !streaming ? (treatment.shortLabel ?? treatment.label) : fullWord;
+  const statusWord = treatment
+    ? streaming
+      ? treatment.streamingLabel
+      : props.compact
+        ? (treatment.shortLabel ?? treatment.label)
+        : treatment.label
+    : badgeStatus?.word;
+  const statusTone = treatment ? treatment.tone : (badgeStatus?.tone ?? 'idle');
+  const statusHollow = treatment ? treatment.dot === null : badgeStatus?.dot === 'hollow';
+  const statusTitle = treatment?.reason ?? treatment?.label ?? badgeStatus?.word;
 
   const selected = props.selectedId === row.id;
   const done = row.deletedAt != null;
@@ -722,41 +884,60 @@ function Tile({
         <span className="lp__guide" style={{ left: 4 + depth * 17 }} aria-hidden />
       ) : null}
 
-      {treatment ? (
-        <span
-          className={[
-            'lp__dot',
-            `lp__dot--${treatment.tone}`,
-            treatment.dot === null ? 'lp__dot--hollow' : '',
-            streaming ? 'lp__dot--pulse' : '',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-          aria-hidden
-        />
-      ) : null}
-
-      <span className={done ? 'lp__title lp__title--done' : 'lp__title'} title={row.title}>
-        {row.title}
-      </span>
-
-      {/* The badge slot YIELDS to the hover action cluster — the row never
-          grows, so a hover cannot reflow the list under the cursor. */}
-      <span className="lp__badges">
-        {word ? (
-          /* The full sentence never disappears — it stays on `title` for the
-             pointer and on the reason for anyone reading the row aloud. */
-          <span className={`lp__word kit-pill--${treatment?.tone}`} title={treatment?.reason ?? fullWord ?? word}>
-            {word}
-          </span>
+      {/* Line 1 — dot · avatar · title · status word (T0-1 1e). */}
+      <div className="lp__row1">
+        {statusWord ? (
+          <span
+            className={[
+              'lp__dot',
+              `lp__dot--${statusTone}`,
+              statusHollow ? 'lp__dot--hollow' : '',
+              streaming ? 'lp__dot--pulse' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-hidden
+          />
         ) : null}
-      </span>
 
-      <span className="lp__rowactions">
-        {(list.rowActions ?? []).map((ref) => (
-          <RowAction key={ref} ref_={ref} row={row} props={props} />
-        ))}
-      </span>
+        {avatar ? (
+          <Avatar provenance={avatar.provenance} label={avatar.label} size={15} />
+        ) : null}
+
+        <span className={done ? 'lp__title lp__title--done' : 'lp__title'} title={row.title}>
+          {row.title}
+        </span>
+
+        {/* The badge slot YIELDS to the action cluster on hover — the row never
+            grows, so hovering cannot reflow the list under the cursor. */}
+        <span className="lp__badges">
+          {statusWord ? (
+            <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
+              {statusWord}
+            </span>
+          ) : null}
+        </span>
+
+        <span className="lp__rowactions">
+          {(list.rowActions ?? []).map((ref) => (
+            <RowAction key={ref} ref_={ref} row={row} props={props} />
+          ))}
+        </span>
+      </div>
+
+      {/* Line 2 — mono meta, then the priority tag. Rendered only when the
+          row actually has something to say; an empty second line would be
+          chrome pretending to be content. */}
+      {metas.length > 0 || tag ? (
+        <div className="lp__row2">
+          <span className="lp__meta">{metas.join(' · ')}</span>
+          {tag ? (
+            <span className={`lp__tag kit-pill--${tag.tone}`}>
+              {props.compact ? tag.label.slice(0, 2) : tag.label}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -811,3 +992,18 @@ function RowAction({
   );
 }
 
+
+/**
+ * Client-side row match for the in-panel search (finding #2).
+ *
+ * Deliberately NOT a `search.query` seam call: that op is reserved in the
+ * catalog and the full results VIEW is deferred under R7. This narrows rows
+ * the seam has already delivered — the same shape as the D20 lifecycle
+ * partition — so the panel gains search without inventing a seam surface.
+ * Case-insensitive over the title, which is the only field every kind has.
+ */
+function matching(rows: readonly EntitySummary[], query: string): readonly EntitySummary[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((r) => r.title.toLowerCase().includes(q));
+}

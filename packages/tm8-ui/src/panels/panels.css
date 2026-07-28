@@ -892,23 +892,50 @@
 }
 .cv2-root .lp__collapsed:hover { color: var(--pn-ink-3); }
 
-/* --- the tile ------------------------------------------------------------ */
+/* --- the tile — T0-1 1e two-line anatomy ---------------------------------- */
+/* Line 1: dot · avatar · title · status word.  Line 2: mono meta · tag.
+   Measured from the T0-1 row template: dot 8, avatar 17, title 13/600,
+   word pill mono 9 r999 pad 1/6, meta 10.5, tag mono 9 r4 pad 1/5. */
 .cv2-root .lp__tile {
   position: relative;
   display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 12px;
+  border-left: 2px solid transparent;
+  border-bottom: 1px solid var(--pn-line);
   cursor: pointer;
-  min-height: 28px;
   box-sizing: border-box;
 }
 .cv2-root .lp__tile:hover { background: var(--pn-hover); }
 .cv2-root .lp__tile:focus-visible { outline: 1px solid var(--pn-brand); outline-offset: -1px; }
 /* Selection needs a treatment DISTINCT from hover, or a keyboard user cannot
    tell where they are while the mouse sits elsewhere. */
-.cv2-root .lp__tile--selected { background: var(--pn-hover); box-shadow: inset 3px 0 0 var(--pn-brand); }
+.cv2-root .lp__tile--selected { background: var(--pn-hover); border-left-color: var(--pn-brand); }
 .cv2-root .lp__tile--attention { background: color-mix(in srgb, var(--pn-wait) 7%, transparent); }
+
+.cv2-root .lp__row1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.cv2-root .lp__row2 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cv2-root .lp__meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Priority sits at radius 4 rather than the pill radius — the canvas draws a
+   TAG, visually distinct from a status pill, because it is a different axis. */
+.cv2-root .lp__tag {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
 
 /* One 1px hairline per ancestor level, stepping 17px per depth. */
 .cv2-root .lp__guide {
@@ -921,8 +948,8 @@
 
 .cv2-root .lp__dot {
   flex: none;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   box-sizing: border-box;
   background: var(--pn-idle);
@@ -932,10 +959,13 @@
 .cv2-root .lp__dot--block { background: var(--pn-block); }
 .cv2-root .lp__dot--info { background: var(--pn-info); }
 .cv2-root .lp__dot--idle { background: var(--pn-idle); }
-/* Hollow = not alive. The ring is the same geometry as the fill, so the two
+.cv2-root .lp__dot--brand { background: var(--pn-brand); }
+/* Hollow = not started / not alive. Same geometry as the fill, so the two
    read as one vocabulary rather than two shapes. */
 .cv2-root .lp__dot--hollow { background: transparent; border: 2px solid var(--pn-idle); }
 .cv2-root .lp__dot--wait.lp__dot--hollow { border-color: var(--pn-wait); }
+.cv2-root .lp__dot--run.lp__dot--hollow { border-color: var(--pn-run); }
+.cv2-root .lp__dot--info.lp__dot--hollow { border-color: var(--pn-info); }
 /* Pulse comes ONLY from the pool activity signal, never from the verdict. */
 .cv2-root .lp__dot--pulse { animation: pnPulse 1.6s infinite; }
 @media (prefers-reduced-motion: reduce) {
@@ -948,20 +978,20 @@
 .cv2-root .lp__title {
   flex: 1;
   min-width: 0;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--pn-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cv2-root .lp--compact .lp__title { font-size: 11.5px; }
+.cv2-root .lp--compact .lp__title { font-size: 12px; }
 .cv2-root .lp__title--done { color: var(--pn-ink-3); text-decoration: line-through; }
 
 .cv2-root .lp__badges { flex: none; display: inline-flex; align-items: center; gap: 5px; }
 .cv2-root .lp__word {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 600;
   border-radius: var(--pn-r-pill);
   padding: 1px 6px;
@@ -1023,3 +1053,68 @@
   padding: 6px 8px 3px;
 }
 .cv2-root .lp__filtercheck { margin-left: auto; color: var(--pn-brand-2); }
+
+/* --- in-panel search — T0-1's own bordered row (D36: focused by `f`) ------ */
+/* T0-1 draws this as a 28px bordered row of its own between the create row
+   and the tabs: `⌕ {placeholder}` … kbd hint. My first attempt put it in the
+   filter row; the composed canvas gives it its own. */
+.cv2-root .lp__searchrow {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  margin: 6px 10px;
+  padding: 0 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  box-sizing: border-box;
+}
+.cv2-root .lp__searchrow-glyph { flex: none; font-size: 12.5px; color: var(--pn-ink-4); }
+.cv2-root .lp__searchinput {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink);
+  outline: none;
+}
+.cv2-root .lp__searchinput::placeholder { color: var(--pn-ink-4); }
+/* The hint says `f`, not the canvas's `/` — D36 supersedes that pixel. */
+.cv2-root .lp__searchrow-key {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* --- view switcher -------------------------------------------------------- */
+/* One control everywhere (C5). Unbuilt positions are disabled-with-reason,
+   never hidden — hidden and disabled are different states, and only one of
+   them teaches that the feature exists (R7). */
+.cv2-root .lp__views {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.cv2-root .lp__view {
+  appearance: none;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--pn-r-xs);
+  line-height: 1;
+}
+.cv2-root .lp__view:hover { background: var(--pn-hover); }
+.cv2-root .lp__view--active { color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+.cv2-root[data-theme='dark'] .lp__view--active,
+[data-theme='dark'] .cv2-root .lp__view--active { color: var(--pn-brand); }

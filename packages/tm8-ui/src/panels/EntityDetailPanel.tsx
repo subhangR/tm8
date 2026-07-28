@@ -153,6 +153,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         detail={detail}
         config={config}
         breadcrumb={breadcrumb}
+        liveness={props.liveness}
         pinned={props.pinned}
         pinRefusal={props.pinRefusal}
         onPin={props.onPin}
@@ -164,7 +165,26 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
       ) : null}
 
-      <ActionBar detail={detail} config={config} ctx={ctx} onAction={props.onAction} />
+      {/*
+        THE PANEL HOLDS THESE FACTS AND MUST HAND THEM DOWN. Passing the
+        caller's raw context left the liveness gate reading undefined and the
+        capability gate reading null, so a fully-loaded stale session showed
+        "waiting for this entity to load" and "liveness is unverified" while
+        the chrome strip three lines below rendered the verdict correctly. The
+        two consumers never disagreed — one was simply never wired.
+      */}
+      <ActionBar
+        detail={detail}
+        config={config}
+        ctx={{
+          ...ctx,
+          entityId: ctx.entityId ?? detail.id,
+          kind: ctx.kind ?? detail.kind,
+          capabilities: ctx.capabilities ?? detail.capabilities,
+          liveness: ctx.liveness ?? props.liveness,
+        }}
+        onAction={props.onAction}
+      />
 
       <TabStrip
         active={tab}

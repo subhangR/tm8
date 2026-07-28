@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
-import { allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
+import { ALL_MODES, allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
 import { REASONS as DOMAIN_REASONS } from '../domain';
 import {
   FIXTURE_SPACE_ID,
@@ -12,11 +12,13 @@ import {
   presenceHollowReason,
   sessionLive,
   sessionStale,
+  docLayoutSpec,
   taskGuideLines,
   taskTombstone,
   taskUuidTitle,
 } from '../fixtures';
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
+import { HANDLED_SOURCES } from './list/tile-badges';
 import type { DetailReasons } from './EntityDetailPanel';
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
@@ -423,6 +425,146 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(container.querySelector('.lp__kindmenu')).not.toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(container.querySelector('.lp__kindmenu')).toBeNull();
+  });
+
+  it('CONSUMER COVERAGE: every TileBadgeSource the registry emits has a renderer', () => {
+    // THE GUARD THAT WOULD HAVE CAUGHT THE R5 FINDING AT AUTHORING TIME.
+    // `tile.badges` had no consumer at all: the renderer read only
+    // `tile.pulse`, so all 35 declared sources rendered nothing and every
+    // kind but work_session showed a bare title. work_session looked correct
+    // only because it owns `liveTreatment` — a different field on a different
+    // path — which is what disguised a universal break as a task-specific one.
+    //
+    // A registry-side test asserting `tile.badges` is POPULATED passes over
+    // dead data (A1a's own finding about their suite). The assertion that
+    // bites is this one: the two sides must MEET.
+    const declared = new Set(allKinds().flatMap((k) => k.list.tile.badges.map((b) => b.source)));
+    expect(declared.size).toBeGreaterThan(20); // meaningful only if the registry really declares many
+    const unhandled = [...declared].filter((s) => !HANDLED_SOURCES.has(s));
+    expect(unhandled, `TileBadgeSource with no renderer: ${unhandled.join(', ')}`).toEqual([]);
+  });
+
+  it('R5 #1: a task row renders its full anatomy — dot, status word, priority tag, meta', () => {
+    const { getAllByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle])} ctx={ctx} />,
+    );
+    const tile = getAllByTestId('list-tile')[0]!;
+    expect(tile.querySelector('.lp__dot'), 'status dot').not.toBeNull();
+    expect(tile.querySelector('.lp__word')?.textContent, 'status word').toBe('in review');
+    expect(tile.querySelector('.lp__tag')?.textContent, 'priority tag').toBe('URGENT');
+    // The second line carries the mono facts: assignees, acceptance, pulls.
+    const meta = tile.querySelector('.lp__meta')?.textContent ?? '';
+    expect(meta, 'meta line').toContain('4/6');
+    expect(meta).toContain('Ada');
+  });
+
+  it('R5 #1 is a CLASS: a non-session, non-task kind renders anatomy too', () => {
+    // The finding was seen on tasks but the mechanism silenced every kind.
+    // Docs prove the fix is general rather than task-shaped.
+    const { getAllByTestId } = render(
+      <EntityListPanel kind="doc" rowsFor={rowsFor([docLayoutSpec])} ctx={ctx} />,
+    );
+    const tile = getAllByTestId('list-tile')[0]!;
+    expect(tile.querySelector('.lp__meta')?.textContent).toContain('markdown');
+  });
+
+  it('the seam VERDICT outranks the record status badge on a session row', () => {
+    // work_session declares a sessionStatus badge AND has a liveTreatment.
+    // The record says 'running'; the seam says stale. If the badge won, the
+    // row would print "running" — the exact lie D6 forbids.
+    const { getAllByTestId } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor([sessionStale])}
+        ctx={ctx}
+        livenessOf={() => 'stale'}
+      />,
+    );
+    const word = getAllByTestId('list-tile')[0]!.querySelector('.lp__word')?.textContent ?? '';
+    expect(word).toContain('stale');
+    expect(word).not.toBe('running');
+  });
+
+  it('R5 #2: in-panel search narrows rows client-side, and says WHY when nothing matches', () => {
+    const { getByTestId, queryAllByTestId, container } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle, taskGuideLines])} ctx={ctx} />,
+    );
+    expect(queryAllByTestId('list-tile')).toHaveLength(2);
+
+    fireEvent.change(getByTestId('list-search'), { target: { value: 'guide' } });
+    expect(queryAllByTestId('list-tile')).toHaveLength(1);
+
+    // A filter that hides every row and says nothing is indistinguishable
+    // from a list that failed to load.
+    fireEvent.change(getByTestId('list-search'), { target: { value: 'zzzz-no-match' } });
+    expect(queryAllByTestId('list-tile')).toHaveLength(0);
+    const empty = container.querySelector('[data-testid="panel-empty"]')?.textContent ?? '';
+    expect(empty).toContain('zzzz-no-match');
+    expect(empty).toMatch(/clear the search/i);
+  });
+
+  it('R5 #3: the view switcher shows every non-hidden position; unbuilt ones are disabled-with-reason', () => {
+    const { getByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    // T0-1's switcher is FOUR positions — List, Tree, Board, Graph — not the
+    // registry's six modes; feed and gallery are CollectionView layouts the
+    // composed workspace canvas does not offer in a side panel.
+    const sw = getByTestId('view-switcher');
+    const controls = sw.querySelectorAll('button, [role="button"]');
+    expect(controls).toHaveLength(4);
+    // Exactly one is live in A1: list. The rest are visible and labelled.
+    expect(sw.querySelectorAll('.lp__view')).toHaveLength(1);
+    expect(sw.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(3);
+  });
+
+  it('R7: graph is never HIDDEN — visible, labelled, unclickable', () => {
+    // hidden and disabled are different states; only one teaches that the
+    // feature exists. A registry that hid graph would silently satisfy a
+    // test that only counted positions, so assert the mode itself.
+    for (const k of allKinds()) {
+      expect(k.hiddenModes, `${k.kind} hides graph`).not.toContain('graph');
+    }
+  });
+
+  it('R5 #4B: the header pill obeys the VERDICT, never the record, on a stale session', () => {
+    // The record says running; the seam says stale. Rendering live green here
+    // is the D6 lie that reached the user's screen at the gate.
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+    );
+    const header = getByTestId('panel-header');
+    expect(header.textContent).toContain('stale');
+    expect(header.querySelector('.kit-pill--run')).toBeNull();
+  });
+
+  it('R5 #4A: the action bar states reasons on the CONTROL, not as stacked sentences', () => {
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    // The caption form stacks a full sentence per disabled verb and clipped
+    // three of them across a 32px overflow-hidden row.
+    expect(bar.querySelectorAll('.hon-caption')).toHaveLength(0);
+    // The reasons are still reachable — on the controls.
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
+  });
+
+  it('R5 #4A: the panel injects the verdict it holds — no consumer reports "unknown"', () => {
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    const tips = [...bar.querySelectorAll('.hon-tip__cause, .hon-tip__remedy')]
+      .map((n) => n.textContent ?? '')
+      .join(' ');
+    // The panel HAS the verdict and the capabilities; handing them down is
+    // what stops the bar reporting a state the strip below contradicts.
+    expect(tips).not.toMatch(/unverified/i);
+    expect(tips).not.toMatch(/waiting for this entity to load/i);
   });
 
   it('an unknown kind falls back to the c:* row instead of throwing', () => {
