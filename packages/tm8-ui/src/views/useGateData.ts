@@ -29,7 +29,8 @@ import type {
   SpaceSummary,
 } from '@tm8/contract';
 import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
-import { createFixtureSeam } from '../data';
+import { browserWebSocketFactory, createFixtureSeam, createRealSeam } from '../data';
+import { isRealSeamEnabled } from './realSeamFlag';
 import { createDomainStore, type DomainStoreHandle } from '../data/project/domain-store';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
@@ -53,6 +54,8 @@ export interface GateData {
   spaces: SpaceSummary[];
   menu: ResolvedMenu;
   connection: ConnectionState;
+  /** Set when the first read failed — an unreachable node, honestly held. */
+  bootError: string | null;
   /** Live set, verbatim from the seam snapshot. The ONLY source for `● N live`. */
   liveIds: readonly string[];
   /** THE verdict. Never computed in the UI. */
@@ -84,8 +87,31 @@ export function useGateData(options: GateOptions): GateData {
   // One seam and one domain store for the app's lifetime. `useRef` rather than
   // `useMemo` because StrictMode may discard a memo, and a second seam would
   // mean a second event stream and a silently divided cache.
+  /**
+   * ONE SEAM FOR THE APP'S LIFETIME, and the flag is read ONCE at first render.
+   *
+   * `useRef` rather than `useMemo` because StrictMode may discard a memo, and a
+   * second seam would mean a second event stream and a silently divided cache.
+   * The flag read is inside the same guard for the same reason: swapping seams
+   * mid-session would leave one stream still delivering into a store the other
+   * is reconciling, so the flag is deliberately NOT reactive. CHANGING IT
+   * REQUIRES A RELOAD — that is the contract, not an oversight.
+   *
+   * OFF by default: an un-opted session constructs exactly the fixture seam it
+   * always did.
+   */
   const seamRef = useRef<Seam | null>(null);
-  if (seamRef.current === null) seamRef.current = createFixtureSeam();
+  if (seamRef.current === null) {
+    seamRef.current = isRealSeamEnabled()
+      ? createRealSeam({
+          // baseUrl stays default-relative: the vite proxy carries /v2, so a
+          // hardcoded origin here would bypass it and break same-origin.
+          fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
+          webSocketFactory: browserWebSocketFactory(WebSocket),
+          origin: location.origin,
+        })
+      : createFixtureSeam();
+  }
   const seam = seamRef.current;
 
   const domainRef = useRef<DomainStoreHandle | null>(null);
@@ -133,18 +159,38 @@ export function useGateData(options: GateOptions): GateData {
     [seam, options.leftKind, options.rightKind],
   );
 
+  const [bootError, setBootError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const list = await seam.spaces();
-      if (cancelled) return;
-      const first = list[0];
-      if (!first) return;
-      setSpaces(list);
-      setSpaceId(first.id);
-      await seam.openSpace(first.id);
-      await hydrate(first.id);
-      if (!cancelled) setReady(true);
+      try {
+        const list = await seam.spaces();
+        if (cancelled) return;
+        const first = list[0];
+        if (!first) return;
+        setSpaces(list);
+        setSpaceId(first.id);
+        await seam.openSpace(first.id);
+        await hydrate(first.id);
+        if (!cancelled) setReady(true);
+      } catch (error: unknown) {
+        // AN UNREACHABLE NODE IS A NORMAL STATE, not a crash.
+        //
+        // With the fixture seam this could never happen, so boot had no catch
+        // and the rejection was invisible. Point the real-seam flag at a node
+        // that is down — the case that flag exists to exercise — and the boot
+        // promise rejects UNHANDLED: an uncaught rejection in the browser, and
+        // a runner exit code of 1 with every test still reporting green, which
+        // is how it was found.
+        //
+        // `ready` stays false and the failure is HELD rather than swallowed:
+        // the shell keeps its loading state and the reason is available, which
+        // is the honest rendering of "we could not reach the node" — never an
+        // empty workspace that looks like a space with nothing in it.
+        if (cancelled) return;
+        setBootError(String((error as { message?: string })?.message ?? error));
+      }
     })();
     return () => {
       cancelled = true;
@@ -323,6 +369,7 @@ export function useGateData(options: GateOptions): GateData {
       spaces,
       menu,
       connection,
+      bootError,
       liveIds,
       livenessOf,
       rowsFor,
@@ -334,7 +381,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, spawn, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, spawn, seam, domain, pull],
   );
 
   return data;

@@ -31,5 +31,11 @@ export default defineConfig({
     // Same trap the old UI documented: without NODE_ENV=test React resolves
     // to its production build and every jsdom render dies inside act().
     env: { NODE_ENV: 'test' },
+    // jsdom with NO url runs at an OPAQUE ORIGIN, where localStorage is a
+    // security REFUSAL by design ("blocked origin") — not a missing API. Any
+    // per-file `@vitest-environment jsdom` here inherits this url so storage
+    // exists; found when the real-seam flag tests hit the wall (A1a's
+    // root-cause, 2026-07-28; per-file stubs are the workaround this retires).
+    environmentOptions: { jsdom: { url: 'http://localhost' } },
   },
 });

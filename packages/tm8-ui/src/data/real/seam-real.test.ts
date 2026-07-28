@@ -221,9 +221,23 @@ describe('seam-real: wsUrl derivation refuses to guess', () => {
 });
 
 describe('seam-real: prepare-not-wire is a type-level property', () => {
-  it('is NOT exported from the data-layer index', async () => {
+  /* AMENDED 2026-07-29 (brokered: bridge lane closed by user; FE-authored
+   * under master endorsement [master->fe 45], the flag-gated last-mile).
+   * The ORIGINAL assertion here was the inverse — `createRealSeam` NOT
+   * exported — encoding Phase-1's "prepared, not wired" decision. That
+   * decision was REOPENED by the endorsement: the index now exports the
+   * constructor, and the flag-gated selection (off by default) lives in
+   * views/, outside this lane. What this suite actually guards is UNCHANGED
+   * and stated by the header above: nothing in src/data can reach the
+   * network ALONE — construction requires explicitly injected fetch and
+   * WebSocket factories with no defaults. The export moved; the property
+   * did not. (The original assertion broke in-tree when the export landed
+   * without this amendment — the guard and the value must move as one
+   * commit, and this text is the record that they now do.) */
+  it('IS exported from the data-layer index — wire-behind-flag per [master->fe 45]', async () => {
     const index = await import('../index');
-    expect(Object.keys(index)).not.toContain('createRealSeam');
+    expect(Object.keys(index)).toContain('createRealSeam');
+    expect(Object.keys(index)).toContain('browserWebSocketFactory');
   });
 
   it('the seam surface matches the locked interface, method for method', () => {
