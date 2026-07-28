@@ -38,7 +38,7 @@ import type {
 } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
-import { assertWorkspaceEvent } from './emitter.js';
+import { OffContractEventError, assertWorkspaceEvent } from './emitter.js';
 import type { EntityProjector } from './projector.js';
 
 /**
@@ -65,6 +65,51 @@ export interface WorkspaceEventRow {
 /** The columns `mapRows` needs, in the order the poll query selects them. */
 export const WORKSPACE_EVENT_COLUMNS =
   'id, space_id, seq, event_type, payload, client_mutation_id, recipient_member_id, occurred_at, schema_version';
+
+/**
+ * RPC-authored event types projected by PASSTHROUGH: the stored payload IS the
+ * contract event body, verbatim.
+ *
+ * Unlike every arm in `bodyOf`, these rows are not trigger captures of a table
+ * row (003's trigger covers only entities / edges / messages / entity_counters /
+ * activity / notifications). Their authoring RPC builds the payload
+ * contract-shaped at write time, `type` discriminant included, so projection is
+ * identity and validation is the shared `assertWorkspaceEvent` tripwire in
+ * `mapRow` — no parallel validator.
+ *
+ * Membership rules — every entry must satisfy ALL of:
+ *  - the stored payload validates against its STRICT contract arm (checked at
+ *    runtime on every row; an off-contract stored row is skipped and reported,
+ *    see `mapRow`);
+ *  - leak-safe for the space-wide feed: written with `recipient_member_id`
+ *    NULL and containing only data every member of the space may read.
+ *    Recipient-targeted rows keep their targeted semantics regardless — RLS
+ *    (008:156-161) and the pump's per-connection claims decide visibility;
+ *    passthrough changes projection, never routing;
+ *  - the authoring mutation is NOT captured by the 003 trigger, so membership
+ *    cannot double-deliver an entity-backed change.
+ *
+ * Members:
+ *  - 'menu.updated' (author 031_w2_sec1_replay_principal_resource_binding.sql:822):
+ *    payload {type, menu, clientMutationId?}. The menu is space-level config
+ *    every member already reads via the menu read path; mutation table
+ *    space_menu_configs is not trigger-covered. Space-wide safe.
+ *  - 'space.default_channel.updated' (author 031:665): payload
+ *    {type, channelId|null, settingsRevision, clientMutationId?}. Space-level
+ *    setting; mutation table public.spaces is not trigger-covered. Space-wide
+ *    safe.
+ *
+ * NOT members (verified against every insert site, 2026-07-28 — do not add
+ * without a write-side fix): handoff.*, message.delivery_reserved/_settled,
+ * message.attachments.updated, interaction_profile.*,
+ * project.association.corrected, work_session.profile_* — their authors store
+ * bare off-contract payloads (no `type`, fields not nested per the contract
+ * arm), so passthrough would validate-fail every row.
+ */
+export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
+  'menu.updated',
+  'space.default_channel.updated',
+]);
 
 function str(v: unknown): string | null {
   return typeof v === 'string' && v !== '' ? v : null;
@@ -305,7 +350,24 @@ export class WorkspaceEventMapper {
       ...(row.client_mutation_id === null ? {} : { clientMutationId: row.client_mutation_id }),
     };
 
-    const event = assertWorkspaceEvent(candidate, `'${row.event_type}' on space ${row.space_id} (seq ${String(seq)})`);
+    let event: WorkspaceEvent;
+    try {
+      event = assertWorkspaceEvent(candidate, `'${row.event_type}' on space ${row.space_id} (seq ${String(seq)})`);
+    } catch (err) {
+      // A passthrough row's shape is STORED data, not something this file
+      // built. An off-contract payload (e.g. a surviving 015-era
+      // 'menu.updated' row with no `type` key) is a bad row, not a mapper
+      // bug: skip and report it (mapRows policy) rather than 500 every
+      // replay page containing it, forever. Bespoke arms keep throwing
+      // OffContractEventError — there, an invalid event IS a mapper bug.
+      if (err instanceof OffContractEventError && RPC_AUTHORED_PASSTHROUGH.has(row.event_type)) {
+        throw new UnprojectableEventError(
+          seq,
+          `stored payload for '${row.event_type}' is off-contract — ${err.message}`,
+        );
+      }
+      throw err;
+    }
     return event as Exclude<WorkspaceEvent, { type: 'presence.changed' | 'typing.changed' }>;
   }
 
@@ -532,6 +594,12 @@ export class WorkspaceEventMapper {
       }
 
       default:
+        // RPC-authored rows: the payload already is the contract body,
+        // discriminant included (see RPC_AUTHORED_PASSTHROUGH). Copied, not
+        // aliased, so envelope assembly cannot reach back into the row.
+        if (RPC_AUTHORED_PASSTHROUGH.has(row.event_type)) {
+          return { ...p };
+        }
         // The trigger emits a closed set of event_type values. A new one means
         // a migration added a capture case without a projection — fail loudly
         // rather than dropping a whole class of events silently.
