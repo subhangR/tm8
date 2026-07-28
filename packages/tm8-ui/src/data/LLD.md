@@ -1,9 +1,12 @@
 # tm8-ui Data Layer — Low-Level Design (Phase 0)
 
 Owner: bridge-coordinator. Consensus reviewers: fe-coordinator (the seam serves the UI),
-server-owner (the transport matches server reality). Status: **DRAFT v1 — awaiting dual consensus.**
+server-owner (the transport matches server reality). Status: **DUAL CONSENSUS — APPROVED by
+server-owner (full tree-verified review) and fe-coordinator (with recorded attachments, §14),
+2026-07-28. seam.ts changes from here require re-consensus (C-2).**
 
-Binding law: `packages/contract` (81-op catalog, `WorkspaceEvent` union, `WorkspaceControlFrame`,
+Binding law: `packages/contract` (101-row catalog / 98 v1 operations, all measured reaching real
+handlers — W5-corrected count, `WorkspaceEvent` union, `WorkspaceControlFrame`,
 `CommandResult`, `CollabError`). Rulings R2 (WS-first), R3 (minimal server deltas), R4 (additive-only
 contract), R9 (PTY byte stream is NOT this layer), R-UI-5 (liveness honesty). Design instruction from
 the user: **simple, core use cases only, no overcomplication.**
@@ -197,10 +200,12 @@ reads and subscribes from NOW — no cross-reload persistence in v1).
 - **Connect**: open WS → send `subscribe {spaceIds: [...open]}` → **always** send
   `resume {spaceId, since: lastApplied ?? 0}` per space (fact 2: subscribe may be silently unseeded;
   resume is the only self-owned seed) → phase `live`. First-ever open of a space has no cursor, so
-  `since: 0` replays the retained log through the pump — idempotent upserts + seq dedupe make this
-  harmless, and dev-scale volume makes it cheap. (Open item: if 7-day retained logs grow hot enough
-  to make from-0 bootstrap slow, ask server-owner for a cheap high-water read — additive, deferred
-  until proven needed.)
+  `since: 0` replays the retained log — schema-legal (ControlSinceSchema, schemas.ts:747) and
+  behaviorally sound (server-owner verified): resume(0) replays up to 500 directly, the pump
+  delivers the remainder at ~200/s. **Accelerate-loop for first-open** (server-owner throughput
+  note: a 10k-event retained log takes ~50s pump-only): re-send `resume` from the advancing cursor
+  on a short cadence until the cursor stops advancing between rounds — the loop is pure throughput,
+  the pump remains the correctness backstop, and `lastApplied` dedupe keeps the client view exact.
 - **Frame in**: `control.refused` → see below. Event frame → if `e.seq <= lastApplied[e.spaceId]` drop,
   else set cursor and dispatch to `onEvent` subscribers. This single rule is the whole dedupe/order
   discipline (seq authoritative, gaps legal — old EventPoller's proven cursor law).
@@ -227,17 +232,35 @@ this lane's deliverable, shipped as pure framework-free modules FE wires into it
   entity upsert/delete (+ counter fold-in), edge upsert/delete (+ per-entity index), message
   upsert-by-anchor (sorted, capped, tombstones stay), activity prepend (capped), notification upsert.
   Inputs/outputs are plain immutable records — usable inside any `set()`.
-- **Passthrough route** (Delta 1 consumers) — one small table, no generic magic:
+- **Passthrough route** (Delta 1 consumers) — one small table, no generic magic. **Delta 1 v1
+  scope (server-owner, verified at write sites): only `menu.updated` and
+  `space.default_channel.updated` actually flow.** Authoritative membership source: server-owner's
+  publication "Delta 1 membership set publication (forwardable)" (canonical durable copy:
+  `/Users/subhang/.tm8-trackS-mapper/delta1-membership-set-publication.md`, per [SO->BRIDGE 3],
+  with a second durable home under `~/Desktop/tm8-delta1-staging/`; ACKed [BRIDGE->SO 1]; verbatim
+  citation snapshot with provenance header at `./delta1-membership-snapshot.md`. The server-owner
+  copy is authoritative; the effectivity MERGED-gate governs all copies identically). Two encoded behavior notes from it:
+  (a) off-contract STORED rows of set members are skipped server-side, so seq gaps around them are
+  contract-legal — the cursor law (§6) already absorbs this; (b) unknown types never reach a client —
+  the projector still skips unknown event types defensively. **EFFECTIVITY GATE: nothing is treated
+  as flowing until server-owner's Delta 1 MERGED confirmation arrives and is ACKed** (R13
+  safety-critical signal); reducers are event-driven so this is structural, not a flag. The remaining rows are stored as bare flat
+  payloads that cannot pass strict verbatim passthrough and stay OFF the wire until write-side
+  reshaping is ruled (escalated to master, timing unknown). Their table rows stay — the contract
+  types are real and handling is forward-compatible — but the data layer MUST NOT rely on them for
+  correctness. Source of truth for handoff/session state transitions is entity-backed:
+  `entity.upsert`/`edge.upsert` from the trigger, which flow today (work_session status changes
+  included).
 
-  | event type | handling |
-  |---|---|
-  | `menu.updated` | apply (full `MenuConfig` in payload) |
-  | `space.default_channel.updated` | apply to space-settings slice |
-  | `message.delivery_reserved` / `message.delivery_settled` | apply to `deliveryByMessageId` |
-  | `message.attachments.updated` | apply (full `MessageView`) |
-  | `handoff.prepared/…/withdrawn` | apply to `handoffsByWorkSession` (full `HandoffView`) |
-  | `project.association.corrected` | invalidate `connections(entityId)` — refetch on demand |
-  | `interaction_profile.*` | invalidate profile slice (Phase-2 surface; no eager handling) |
+  | event type | handling | Delta 1 v1 |
+  |---|---|---|
+  | `menu.updated` | apply (full `MenuConfig` in payload) | **flows** |
+  | `space.default_channel.updated` | apply to space-settings slice | **flows** |
+  | `message.delivery_reserved` / `message.delivery_settled` | apply to `deliveryByMessageId` | dormant |
+  | `message.attachments.updated` | apply (full `MessageView`) | dormant |
+  | `handoff.prepared/…/withdrawn` | apply to `handoffsByWorkSession` (full `HandoffView`) | dormant |
+  | `project.association.corrected` | invalidate `connections(entityId)` — refetch on demand | dormant |
+  | `interaction_profile.*` | invalidate profile slice (Phase-2 surface; no eager handling) | dormant + **blocked**: contract-vs-migration event-name drift (027 authors `teammate_default_updated`/`space_default_updated`; contract declares only `default_updated`) — build against neither until master rules |
 
 - **`journal.ts`** — `createJournal()`: `applyOptimistic(cmid, patches)` captures prior summaries,
   `reconcile(cmid)` drops the entry (called on event echo OR CommandResult success — first wins),
@@ -260,10 +283,13 @@ same `clientMutationId` also reconciles (idempotent; seq-dedupe makes double-app
   (recipient-private rows on the same spine, §6.6). Badge = `readAt == null` count; toast on
   `notification.created` newer than hydration point.
 - `markRead` is optimistic (set `readAt` locally, rollback on failure).
-- Delivery facets: `delivery(messageId)` on demand + `message.delivery_settled` passthrough keeps
-  `deliveryByMessageId` current. `MessageDeliveryRecord` passes through UNCOLLAPSED — the two facets
-  (delivered/refused/unknown × recorded) are separate fields end-to-end; rendering rule restated for
-  the record: `unknown` is never styled as success.
+- Delivery facets: `delivery(messageId)` **on demand is the correctness path** — the
+  `message.delivery_settled` passthrough is Delta-1-dormant (§7), so live push of facet changes
+  does not exist in v1. Facets refresh on read: when a message's delivery detail is opened, and on
+  a visible-row refetch when its anchor's messages are re-read. When the passthrough later flows,
+  it upgrades freshness with zero interface change. `MessageDeliveryRecord` passes through
+  UNCOLLAPSED — the two facets (delivered/refused/unknown × recorded) are separate fields
+  end-to-end; rendering rule restated for the record: `unknown` is never styled as success.
 - Cross-space badge honesty: only open spaces stream; a slow `inbox()` re-read (60s while the window
   is visible) covers the other spaces. No push infrastructure invented for it.
 
@@ -302,18 +328,63 @@ retires live running sessions); tests use a scratch DB + their own node on a spa
 HOW-TO-TEST.md and server-owner's Delta 3 bootstrap helper; (2) socket+connection+catch-up —
 acceptance: **WS and poll agree on the seq spine** (drive mutations via HTTP, assert identical event
 sequences via WS and via poll from the same cursor; kill the socket mid-stream and assert no loss, no
-duplicate through the seam). (3) reducers/journal — pure vitest, no server. (4) liveness against
+duplicate through the seam). **Cursor round-trip integrity on every paged read** (W5 cursor-truncation
+class, §12): seed a known count, page to exhaustion, assert the exact set arrives — the seeded count
+is the control beside every page assertion; a short page without `nextCursor: null` is a signal, not
+a pass. (3) reducers/journal — pure vitest, no server. (4) liveness against
 server-owner's Delta 2 implementation. Shared harness/fixtures with server-owner's Delta 3 e2e tests —
 same paths, one truth.
 
-## 12. Open items
+## 12. Known backend gaps the seam absorbs as data (W5-measured, relayed by master)
 
-- [ ] server-owner: confirm one-resume sufficiency as written in §6.4 (loop endorsed; single-resume
-      relies on the pump walking the backlog) and the `since: 0` first-open bootstrap (§6 algorithm).
+Source: the W5 backend program's measured findings. Design stance: each arrives at the UI as an
+honest state, never a surprise or a fake.
+
+| Finding (W5, measured) | Seam stance |
+|---|---|
+| **Presence**: `presence.get` returns empty viewers with `updatedAt` pinned at epoch on every node; there is NO production publisher, the control channel carries no publisher field, and the durable projector excludes presence — watch channels get zero bytes. A contract contradiction (client-synthesized vs server-written) is under full-program arbitration. | Presence is a **dormant capability**: the seam exposes NO presence surface (R8), viewers/typing render hollow-value, and the client **never synthesizes** presence. An empty-viewers read rendered as "nobody here" would be a lie. |
+| **`spaces.home`**: its advertised next-page token is TRUNCATED (measured) and no operation accepts it. Fix ownership decided post-landing. | `spaces.home` is not in the seam (not gate-critical). Home paging is modeled **capability-gated** — disabled-with-reason, never a load-more wired to the dead token — until a fix lands. |
+| **Provenance**: `authored_from` is permanently null through public writes — a **declared gap** (G2, TM8-CHAT-SYSTEM-DESIGN.md:240, build step S2 assigned), not a surprise defect. | Message provenance is **optional in the model**; "from this session" renders hollow until S2 lands. `MessageView` DTOs pass through verbatim; the fixture dataset (C-5) must include null-provenance messages so the gate screen proves the rendering. |
+| **Cursor-truncation class**: W5 executed a live instance — 9 rows seeded, 3 returned, 6 silently dropped, no error. Latent on an unconsumed cursor today, but this layer's paging lives in the same class. | Adopted as a seam **acceptance rule**, §11: every paged read in Phase 1 tests carries a seeded-count control beside the page assertion; a short page without a terminal marker (`nextCursor: null`) is a signal to investigate, never a pass. |
+
+Adjust rows as W5 fixes land; each stance collapses to nothing once the healthy case exists (DTO
+passthrough already handles it).
+
+## 13. Open items
+
+- [x] server-owner: CONFIRMED both halves (verdict 2026-07-28) — one-resume sufficiency
+      (control.ts:234-235 re-seed + pump.ts:69-70 backlog walk) and `since: 0` first-open bootstrap;
+      accelerate-loop retained for non-trivial first-opens (§6 algorithm).
 - [ ] `execution.liveness` final catalog row + zod schema names once server-owner lands the amendment.
 - [ ] Delta 1 final passthrough membership set (server-owner publishing with leak-safety rationale) —
       §7 table adjusts mechanically if membership differs.
-- [ ] FE consensus on §4 signatures, §7 domain-store adoption, fixture controls surface (§10).
-- [ ] `IdentityView` / capability-flags shape for boot (FE item 1) — align with whatever
-      `identity.get` returns today; if capability flags are missing there, FE and I escalate before
-      inventing one (R4: additive ask to server-owner).
+- [x] FE consensus (verdict 2026-07-28): §4 signatures ACCEPTED; §7 domain-store ADOPTED for the
+      domain slice (FE stores keep nav/UI/selection state); §10 controls accepted +
+      `triggerResync(spaceId)` added.
+- [x] Identity/capability flags: type the field as `identity.get` returns it today; if capability
+      flags are missing, FE and I escalate JOINTLY to master before inventing a shape (R4).
+      seam.ts is not blocked on it.
+
+## 14. FE consensus attachments (recorded verbatim rulings, 2026-07-28)
+
+- **entityKinds scope ruling** (recorded in seam.ts docs too): `entityKinds(spaceId)` is the
+  CUSTOM-KIND (`c:*`) extension source ONLY — existence + naming metadata. The FE domain registry
+  (TM8-UI-SPEC-FINAL §4.5) remains the sole behavior authority for ALL kinds; server kind metadata
+  never carries behavior config.
+- **Fixture controls surface**: `setConnection`, `setLiveness`, `triggerResync(spaceId)` (proves the
+  hydration-replay path in the gate demo); scenario presets optional.
+- **C-5 dataset final state list**: stale session, NEEDS-YOU, delivery facets, tombstone,
+  UUID-length titles, empty collections, null-provenance messages.
+- **Sequencing**: seam.ts + fixture impl skeleton land FIRST (working tree, git freeze respected) —
+  they are FE's Phase-2 shell's first dependency, independent of real/ transport work.
+
+## 15. Seam amendments ledger (C-2 re-consensus records)
+
+- **Amendment 1** (2026-07-28, [bridge->FE 1] proposed / [fe->bridge 1] granted, FE-verified against
+  schemas.ts:93/:96): `liveness.statusOf` param widened `WorkStatus` →
+  `WorkStatus | WorkSessionStatus` — task vocabulary cannot express the session `running` literal
+  the R-UI-5 predicate compares against. Additive, zero caller churn. Applied; package tsc exit 0.
+- **Scope ruling** (same exchange, FE adversarial round-1 outcome): `handoffs.send` and
+  `spaces.menu.update` stay OUT of the seam — gate screen needs drag-share visuals with the live
+  command disabled-with-reason, and menu editing is a post-gate settings surface. Adding either
+  later is a deferred amendment requiring dual re-consensus.
