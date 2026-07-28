@@ -11,6 +11,14 @@ Every capture: real Chrome ("Browser 2"), `http://127.0.0.1:4612/`, viewport 149
 
 Capture record for the final pair: Browser 2, 1492×812, HEAD = db18c95, FE-scope 444 tests exit 0 + both tsc lanes 0 at shoot time (package app-lane red only on bridge's in-flight itest files, known and theirs). Superseded intermediates from the R5 iteration (the 16:57 pair, the r5-findings-1-4 light, the session-dark-shell detail) remain as history rows below. Light and dark are from two loads, not one (a pre-hydration toggle click forced a re-navigation); fixture time is deterministic so the frames differ only by theme — verified by a differ-hash control (identical hashes would have exposed a silently failed toggle). The capturer's pre-committed served-state check ("Blocked" renders unclipped) was INAPPLICABLE to the remedy actually shipped (the row collapses to one trigger; the word no longer appears) — the real requirement (nothing overflows the column) was verified by direct observation instead, and this note records that the check that ran is not the check that was specified.
 
+## SECOND ITERATION (R5 continued — findings #8–#10, the Run workflow, and the fifth layer)
+
+| File | Taken | Shows |
+|---|---|---|
+| `sessions-corrected-feea2f6.jpg` | 2026-07-28 23:19, HEAD `feea2f6` | The corrected lifecycle tiers after the D57 fifth-layer fix (rowsFor binds its filter): Open lists ONLY the two live-ish sessions, Done holds the two exited ones — disjoint sets, header total 4, sums honestly. Also documents (free evidence) the pre-parity brand-outline `+ New` chip, dated BEFORE for the ink-chip fix at d877d83. Dark theme, A1c certified, sha256 `a88f09ec…7df53` |
+
+**FIGURE QUARANTINE.** The session total in `T0-1-r5-7-session-path-verified.jpg` (the "12 → 15" movement) is an artifact of the fifth-layer defect — every lifecycle-tiered kind was triple-counted by a discarded filter (all three tiers received the same array). The true movement is **4 → 5 sessions**. The LIVE-set movement 1 → 2 in the same frame is real and stands: liveIds is seam-sourced and never passed through the defective path (verified, not assumed, by A1c before certifying). Do not cite that frame's totals; cite its live-set movement only.
+
 ## SUPERSEDED (kept as history; do not review against these)
 
 | File | Taken | Shows | Superseded by |
