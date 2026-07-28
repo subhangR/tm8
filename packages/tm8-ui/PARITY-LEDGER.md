@@ -2,7 +2,7 @@
 
 **Oracle:** `T0-1 workspace structure review (1)/T0-1 Workspace Hi-Fi.dc.html` (171,229 bytes) — the file the user reviews.
 **Method:** source-to-source enumeration, not sampling and not a screenshot diff. This ledger does not substitute for a real-browser pixel diff (D10).
-**status-as-of:** `64cbf80` — every fix below landed in that commit, together with both user rulings. Passes 1 and 2 complete.
+**status-as-of:** `a8e9549` — every fix below landed in `64cbf80`, together with both user rulings; this document was then verified cold against the tree through `a8e9549` (the post-ceremony correction pair). Passes 1 and 2 complete.
 
 > **Stamp, not a tense.** This line names the sha whose tree it describes, because prose tense rots silently and a sha does not: "prepared, uncommitted" was true when written and false when read, with nothing in the sentence to reveal which. Anyone correcting this document re-stamps it with the sha that verified the correction. The rot this convention exists to prevent is documented in the last section — it was paid for in this file.
 

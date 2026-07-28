@@ -17,6 +17,15 @@ Capture record for the final pair: Browser 2, 1492×812, HEAD = db18c95, FE-scop
 |---|---|---|
 | `sessions-corrected-feea2f6.jpg` | 2026-07-28 23:19, HEAD `feea2f6` | The corrected lifecycle tiers after the D57 fifth-layer fix (rowsFor binds its filter): Open lists ONLY the two live-ish sessions, Done holds the two exited ones — disjoint sets, header total 4, sums honestly. Also documents (free evidence) the pre-parity brand-outline `+ New` chip, dated BEFORE for the ink-chip fix at d877d83. Dark theme, A1c certified, sha256 `a88f09ec…7df53` |
 
+## PARITY CYCLE (user-ruled, D58/D60 — the current visual state)
+
+| File | Taken | Shows |
+|---|---|---|
+| `parity-dark-3ae3aa0.jpg` | 2026-07-29 00:14, HEAD `3ae3aa0`, hard reload | THE parity headline: dark paper on the canvas's #1D1912 (was #15130E), 1.1× user-ruled scale, ink create chips. sha256 `e27e3e31…6774` |
+| `parity-light-3ae3aa0.jpg` | 2026-07-29 00:14, HEAD `3ae3aa0`, hard reload | Light: ink `+ New`/`+ Launch` chips (BEFORE is the brand-outline in `sessions-corrected-feea2f6.jpg`), soft sibling-row hairlines, 1.1× scale. sha256 `5da2ad78…28fe` |
+
+Differ-hash: distinct (asserted from comparison, not from having clicked a toggle). Framing document: `PARITY-LEDGER.md` at `18886c2`+ — read it WITH these; the pre-correction copy in `64cbf80` understates what these frames show (status rot, corrected with provenance).
+
 **FIGURE QUARANTINE.** The session total in `T0-1-r5-7-session-path-verified.jpg` (the "12 → 15" movement) is an artifact of the fifth-layer defect — every lifecycle-tiered kind was triple-counted by a discarded filter (all three tiers received the same array). The true movement is **4 → 5 sessions**. The LIVE-set movement 1 → 2 in the same frame is real and stands: liveIds is seam-sourced and never passed through the defective path (verified, not assumed, by A1c before certifying). Do not cite that frame's totals; cite its live-set movement only.
 
 ## SUPERSEDED (kept as history; do not review against these)
