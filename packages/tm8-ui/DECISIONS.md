@@ -345,3 +345,19 @@ Ruling, three parts:
 3. **One sentence per state.** Review found TWO authored explanations of the `unknown` verdict: the registry's `liveTreatment('unknown').reason` and a near-identical `??` default inside `UnverifiedFallback`. The default is DELETED rather than replaced — when no reason is passed the component renders no explanatory sentence at all, since the title and pill still identify the state completely. `session-presentation.ts` likewise stops restating the registry's long form; the strip takes an optional `statusDetail` and `panels/` threads the registry sentence in. `src/terminal/` cannot import the registry to fetch it itself — that would mean naming `work_session`, the §15.2 build failure — so passing it down is structural, not incidental.
 
 Rationale: a near-duplicate sentence is worse than no sentence, because it reads as authored copy and diverges silently; only a line-by-line review finds it. The corrective also caught a test that had pinned the duplication in place (it required the presentation layer's `full` to contain "record") — worth naming, because a test can lock in a defect exactly as firmly as it locks in a requirement, and a passing suite is not evidence that what it asserts is right.
+
+## D35 — A `FilterSpec` renders as ONE chip; the filter row is bounded by construction, not by clipping (2026-07-28)
+
+Source: A1c, from a gate-screen defect A1b found in a real-browser pass and handed over with a repro rather than a fix (the file is A1c's). Ruled and fixed in A1c's lane per fe-coordinator routing.
+
+Ruling: the list panel's filter row renders **one chip per ACTIVE selection**, exactly **one `filter ▾` trigger**, then the sort chip. It does NOT render one chip per option. The unbounded option set lives in a picker popover that scrolls. A `multi` spec's selected options UNION their contract filters rather than overwrite. At the floor the sort chip collapses to `↓` and never disappears.
+
+Rationale, and the reason this is a ledger entry rather than a bug fix: the row had been flat-mapping every option of every `FilterSpec` into its own chip, so `task` emitted ten chips (7 status + 1 ready-to-pull + 2 deleted) into a row that is `overflow: hidden`. Three things make it worth recording.
+
+1. **The type already said so** — "One filter chip in the list/collection filter row" — and all three T0-3 frames draw it that way (`mine ✕ · filter ▾ · ↓ priority`). This was a misread of the data shape, not a missing decision, and the registry data was correct throughout.
+2. **`overflow: hidden` hid the evidence.** Ten chips presented as one truncated label, which is why it read as cosmetic. Clipping is a legitimate floor guard against one over-long chip; it is NOT a bound on chip COUNT, and using it as one converts a structural error into a visual smudge. The row is now bounded by what it renders.
+3. **A second affordance was lost and nobody had named it.** The sort chip is absent entirely from the before-state screenshot — pushed out of the clipped row. A truncated `Blo…` is not merely ugly: it is an affordance the viewer cannot know exists, which is the quiet cousin of the disabled-with-reason problem (D28) — a control the user cannot reach cannot tell them anything. That framing is A1b's and is adopted here.
+
+Same floor-inversion class as D34 (unbounded content in a fixed slot destroying the slot), different root: a misread data shape rather than a long word.
+
+**Corollary, from the same pass:** popovers dismiss on Escape (consumed per C6 layer 2, so dismissing a picker never also pops the panel stack) and on outside pointer-down. The real-browser pass caught this in the new filter picker AND in the kind selector written hours earlier; both were fixed through one shared `useDismissable` rather than patching the instance under review. Jsdom could not have found it — nothing in a unit test notices that a popover has no way out.
