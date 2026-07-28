@@ -30,16 +30,17 @@ describe.sequential('W3 production-Server public harness', () => {
     expect(body).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 100,
+      operations: 101,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
     // Re-pinned at tranche-v3 + 035: 62 -> 73 -> 98. Exact literal by design.
-    // 98 is PRODUCTION's number: main.ts always constructs an
+    // Re-pinned at A21 (D2, execution.liveness): 98 -> 99.
+    // 99 is PRODUCTION's number: main.ts always constructs an
     // InMemoryPresenceStore and passes it, so `presence.get` is mounted here.
-    // A registry built WITHOUT a presence source reports 97, which is a real
+    // A registry built WITHOUT a presence source reports 98, which is a real
     // number about a configuration production does not use.
-    expect(body.implemented).toBe(98);
+    expect(body.implemented).toBe(99);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

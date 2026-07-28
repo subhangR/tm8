@@ -114,20 +114,21 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 101 = 99 v1 + 2 reserved, 100 HTTP + 1 WS boundary', () => {
-    expect(OPERATIONS).toHaveLength(101);
-    expect(V1_OPERATIONS).toHaveLength(99);
+  it('keeps the exact 102 = 100 v1 + 2 reserved, 101 HTTP + 1 WS boundary', () => {
+    // A21 (execution.liveness) is the +1 on every axis it touches.
+    expect(OPERATIONS).toHaveLength(102);
+    expect(V1_OPERATIONS).toHaveLength(100);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(100);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(101);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(98);
+    )).toHaveLength(99);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

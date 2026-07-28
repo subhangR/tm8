@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:df96ff5a4c2d11e41ec1d7b9c5e460bdcb8ae8d9c2c99b140f59e08305f8d604",
+  "catalogDigest": "sha256:35c9c744360e7935bebbadfb30b94181cca922abf30f53f19deb6815b0699b76",
   "catalog": {
-    "total": 101,
-    "v1": 99,
+    "total": 102,
+    "v1": 100,
     "reserved": 2,
-    "http": 100,
+    "http": 101,
     "ws": 1,
-    "registerableV1Http": 98,
+    "registerableV1Http": 99,
     "methods": {
-      "GET": 36,
+      "GET": 37,
       "POST": 41,
       "PATCH": 9,
       "DELETE": 7,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 39,
+      "read": 40,
       "command": 61,
       "stream": 1
     },
-    "uniqueNames": 101,
-    "uniqueBindings": 101
+    "uniqueNames": 102,
+    "uniqueBindings": 102
   },
   "reservedOperations": [
     "search.query",
@@ -186,6 +186,14 @@
       "method": "PUT",
       "path": "/v2/spaces/:spaceId/interaction-profile-default",
       "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "execution.liveness",
+      "method": "GET",
+      "path": "/v2/spaces/:spaceId/execution/liveness",
+      "kind": "read",
       "status": "v1",
       "semanticStatus": "unimplemented"
     }
@@ -891,6 +899,13 @@
         "path": "/v2/spaces/:spaceId/interaction-profile-default",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "execution.liveness",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/execution/liveness",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1103,7 +1118,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 70
+    "unimplementedV1Http": 71
   },
   "schemas": {
     "additive": {
@@ -1186,6 +1201,10 @@
       "spaces.interactionProfile.setDefault": {
         "requestSchema": "SetSpaceProfileDefaultInputSchema",
         "resultSchema": "SpaceProfileDefaultViewSchema"
+      },
+      "execution.liveness": {
+        "requestSchema": null,
+        "resultSchema": "ExecutionLivenessSchema"
       }
     },
     "frozenAmendments": {
@@ -2918,6 +2937,22 @@
         ],
         "inputSchemaRef": "SetSpaceProfileDefaultInputSchema",
         "resultSchemaRef": "SpaceProfileDefaultViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.liveness",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.liveness",
+        "intentTags": [
+          "execution",
+          "liveness"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": "ExecutionLivenessSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,

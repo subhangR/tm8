@@ -6,14 +6,18 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
   it('validates the live catalog digest and exposes only bounded noun summaries at root', async () => {
     const response = await queryW3Discovery({ kind: 'root' });
     expect(response.catalogDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    // GENERATIONS, kept with cause: {101/99/100/98} (as authored, the
+    // A01-A20 catalog) -> {102/100/101/99} (Delta 2 / A21:
+    // `execution.liveness` joined `OPERATIONS`, +1 on total, v1, http and
+    // registerableV1Http; reserved and ws unmoved).
     expect(response.result).toMatchObject({
       catalog: {
-        total: 101,
-        v1: 99,
+        total: 102,
+        v1: 100,
         reserved: 2,
-        http: 100,
+        http: 101,
         ws: 1,
-        registerableV1Http: 98,
+        registerableV1Http: 99,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

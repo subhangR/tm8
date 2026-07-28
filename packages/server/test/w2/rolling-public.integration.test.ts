@@ -562,7 +562,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     await harness?.close();
   }, 30_000);
 
-  it('reports the exact 98-handler production composition and preserves 501/404 honesty', async () => {
+  it('reports the exact 99-handler production composition and preserves 501/404 honesty', async () => {
     const healthResponse = await fetch(`${harness.baseUrl}/health`);
     const health = await healthResponse.json() as {
       ok: boolean;
@@ -570,15 +570,16 @@ describe.sequential('W2.I02 real production public surface', () => {
       implemented: number;
     };
     expect(healthResponse.status).toBe(200);
-    // 92 facade + the four execution handlers + `events.poll` + `presence.get`.
+    // 92 facade + the FIVE execution handlers (A21 execution.liveness joined
+    // spawn/prompt/terminate/streams-attach) + `events.poll` + `presence.get`.
     // `presence.get` mounts ONLY when bootstrap() supplies a presence source, so
     // this number is reachable exclusively through the real composition root —
-    // a hand-rolled registry that omits the presence store measures 97 and is
+    // a hand-rolled registry that omits the presence store measures 98 and is
     // not measuring production. `implemented` is `registry.size`, the count of
     // MOUNTED handlers: the honest answer to "what is registered on this node",
     // which is not the same claim as "what is behaviourally complete".
-    expect(health).toMatchObject({ ok: true, operations: 100, implemented: 98 });
-    expect(harness.production.server.registry.size).toBe(98);
+    expect(health).toMatchObject({ ok: true, operations: 101, implemented: 99 });
+    expect(harness.production.server.registry.size).toBe(99);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -590,7 +591,7 @@ describe.sequential('W2.I02 real production public surface', () => {
       .filter((op) => op.method !== 'WS' && !registered.has(op.name))
       .map((op) => op.name);
     expect(residual).toEqual([]);
-    expect(registered.size + residual.length).toBe(98);
+    expect(registered.size + residual.length).toBe(99);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

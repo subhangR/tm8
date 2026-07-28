@@ -13,6 +13,7 @@ import {
   EntityContextViewSchema,
   EntityFeedPageSchema,
   EntityFeedQuerySchema,
+  ExecutionLivenessSchema,
   ExecutionPromptInputSchema,
   ExecutionSpawnInputSchema,
   FileUploadCompleteInputSchema,
@@ -72,6 +73,7 @@ export const SCHEMA_REGISTRY = {
   EntityContextViewSchema,
   EntityFeedPageSchema,
   EntityFeedQuerySchema,
+  ExecutionLivenessSchema,
   ExecutionPromptInputSchema,
   ExecutionSpawnInputSchema,
   FileUploadCompleteInputSchema,
@@ -140,6 +142,7 @@ export const ADDITIVE_SCHEMA_DISPOSITIONS = {
   'interactionProfiles.retire': { requestSchema: 'RetireInteractionProfileInputSchema', resultSchema: 'InteractionProfileViewSchema' },
   'teamMembers.interactionProfile.setDefault': { requestSchema: 'SetTeammateProfileDefaultInputSchema', resultSchema: 'TeammateProfileDefaultViewSchema' },
   'spaces.interactionProfile.setDefault': { requestSchema: 'SetSpaceProfileDefaultInputSchema', resultSchema: 'SpaceProfileDefaultViewSchema' },
+  'execution.liveness': { requestSchema: null, resultSchema: 'ExecutionLivenessSchema' },
 } as const satisfies Readonly<Partial<Record<OperationName, OperationSchemaDisposition>>>;
 
 export const FROZEN_SCHEMA_DISPOSITIONS = {

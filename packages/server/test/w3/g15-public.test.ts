@@ -60,13 +60,13 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operations: number;
       implemented: number;
     };
-    expect(OPERATIONS).toHaveLength(101);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(100);
+    expect(OPERATIONS).toHaveLength(102);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(101);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 100,
-      implemented: 98,
+      operations: 101,
+      implemented: 99,
     });
   });
 
@@ -98,8 +98,10 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operation.method !== 'WS'
       && operation.status === 'v1'
       && responses.get(operation.name)?.status !== 501);
-    // 98 = 100 non-WS catalog operations minus the 2 permanently reserved.
-    expect(implemented).toHaveLength(98);
+    // GENERATIONS, kept with cause: 98 (as authored — 100 non-WS rows minus
+    // the 2 permanently reserved, 101-row catalog era) -> 99 (Delta 2 / A21:
+    // `execution.liveness` joined `OPERATIONS`, the 101->102 family).
+    expect(implemented).toHaveLength(99);
   });
 
   /**
@@ -173,7 +175,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       // every valid request, which is what made health-implemented and
       // behaviourally-implemented two different sets of coincidentally equal
       // size 73. Composition dissolved that coincidence rather than answering it,
-      // and the two figures now denote the SAME set at 98.
+      // and the two figures now denote the SAME set (99 as of A21).
       messagesPostStatus: 200,
       entitiesCreateSupportedKind: 201,
     });
