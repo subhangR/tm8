@@ -372,6 +372,27 @@ export const teamMemberForge = summary({
   },
 });
 
+/**
+ * scout's persona entity. Needed as the SUBJECT of the T5-5 capacity line
+ * ("scout — 1 live session already"): a capacity statement needs a teammate
+ * to be about, and forge alone cannot exercise the has-sessions/has-none
+ * split.
+ */
+export const teamMemberScout = summary({
+  id: 'ent-tm-scout',
+  kind: 'team_member',
+  title: 'scout',
+  excerpt: 'Fixture sweep and review agent.',
+  createdBy: noor,
+  state: {
+    kind: 'team_member',
+    owner: noor,
+    model: 'claude-sonnet-5',
+    agentTool: 'claude-code',
+    liveWork: null,
+  },
+});
+
 /** PR marked stale by the connector — its own honesty flag, distinct from delivery facets. */
 export const prTransplant = summary({
   id: 'pr-212',
@@ -478,6 +499,7 @@ export const fixtureSummaries: EntitySummary[] = [
   taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed,
   docLayoutSpec, messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
+  teamMemberScout,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual,
@@ -500,6 +522,31 @@ function detail(base: EntitySummary, rest: Pick<EntityDetail, 'content'> & Parti
     ...rest,
   };
 }
+
+/**
+ * SESSION → TEAM_MEMBER `relates_to` edges — the capacity source.
+ *
+ * Per bridge: launch capacity derives from these EDGES, not from
+ * `createdBy` (which the contract never states records the persona rather
+ * than the initiating human — so joining on it would be a guess). An edge is
+ * an explicit statement of the relationship, which is why capacity reads it.
+ *
+ * Deliberately covering BOTH halves of the honest split: forge's edge points
+ * at a session the liveness snapshot lists as LIVE, scout's at one that is
+ * STALE. A capacity line that counted record-running sessions would report
+ * scout busy; counting the liveness intersection reports it free. The fixture
+ * exists so that difference is observable rather than assumed — same law as
+ * the '● N live' count.
+ *
+ * D9: endpoints are serialized SNAPSHOTS with badges stripped, never
+ * back-references into the graph.
+ */
+const snap = (e: EntitySummary): EntitySummary => ({ ...e, badges: {} });
+
+export const sessionTeammateEdges = {
+  forge: edge('edge-ran-forge', 'relates_to', snap(sessionLive), snap(teamMemberForge), ada),
+  scout: edge('edge-ran-scout', 'relates_to', snap(sessionStale), snap(teamMemberScout), noor),
+};
 
 export const fixtureDetails: Record<string, EntityDetail> = {
   [channelDesign.id]: detail(channelDesign, {
@@ -573,6 +620,13 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       equipped: [spellDeploy, skillReview],
       work: [taskGuideLines],
     },
+    connections: {
+      incoming: [
+        { type: 'relates_to', direction: 'incoming', label: 'sessions', edges: [sessionTeammateEdges.forge] },
+      ],
+      outgoing: [],
+      unresolvedHardDependencyCount: 0,
+    },
   }),
 
   [prTransplant.id]: detail(prTransplant, {
@@ -604,6 +658,33 @@ export const fixtureDetails: Record<string, EntityDetail> = {
       transcriptDoc: null,
     },
     hierarchy: hierarchy(taskUuidTitle, [], [channelDesign, taskUuidTitle]),
+    connections: {
+      outgoing: [
+        { type: 'relates_to', direction: 'outgoing', label: 'ran as', edges: [sessionTeammateEdges.scout] },
+      ],
+      incoming: [],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [teamMemberScout.id]: detail(teamMemberScout, {
+    content: {
+      kind: 'team_member',
+      identity: 'You sweep fixtures and review diffs.',
+      memories: [],
+      capabilities: { canSpawnSessions: true },
+      commandPermissions: { bash: 'ask' },
+      equipped: [skillReview],
+      work: [],
+    },
+    connections: {
+      // The capacity read from the teammate's side: which sessions ran as it.
+      incoming: [
+        { type: 'relates_to', direction: 'incoming', label: 'sessions', edges: [sessionTeammateEdges.scout] },
+      ],
+      outgoing: [],
+      unresolvedHardDependencyCount: 0,
+    },
   }),
 
   [messageAgentNullProvenance.id]: detail(messageAgentNullProvenance, {

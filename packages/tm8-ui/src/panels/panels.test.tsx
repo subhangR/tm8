@@ -602,6 +602,25 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     }
   });
 
+  it('R5 #7: the dark scope adds NO dom level — a wrapper breaks the shell\'s direct-child rule', () => {
+    // d806c90 wrapped the panel in a display:contents element. That generates
+    // no box, so it looked free — but display:contents removes an element
+    // from the BOX tree, NOT the DOM, so the shell's `.shell-stack__col > *`
+    // flex-grow rule matched the wrapper (which cannot grow) instead of the
+    // panel. Session panels alone took content width. The scope now lives ON
+    // the panel element, so the shell's child relationship is preserved.
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { container, getByTestId } = render(
+      <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} liveness="stale" />,
+    );
+    const panel = getByTestId('entity-detail-panel');
+    // The rendered root IS the panel — nothing wraps it.
+    expect(container.firstElementChild).toBe(panel);
+    // and it still opens the dark token scope
+    expect(panel.classList.contains('cv2-root')).toBe(true);
+    expect(panel.getAttribute('data-theme')).toBe('dark');
+  });
+
   it('R5 #4B: the header pill obeys the VERDICT, never the record, on a stale session', () => {
     // The record says running; the seam says stale. Rendering live green here
     // is the D6 lie that reached the user's screen at the gate.

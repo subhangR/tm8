@@ -12,6 +12,10 @@ import {
   sessionStale,
   taskTombstone,
   taskUuidTitle,
+  teamMemberForge,
+  teamMemberScout,
+  sessionLive,
+  sessionTeammateEdges,
 } from './index';
 
 const CORE_KINDS: CoreEntityKind[] = [
@@ -98,6 +102,41 @@ describe('fixture dataset', () => {
     expect(messageAgentNullProvenance.kind).toBe('message');
     expect(authoredFromSessionByEntity[messageAgentNullProvenance.id]).toBeNull();
     expect(messageAgentNullProvenance.id in authoredFromSessionByEntity).toBe(true);
+  });
+
+  it('capacity edges: session → team_member relates_to exists on BOTH sides', () => {
+    // Launch capacity derives from these EDGES, not from `createdBy` — the
+    // contract never states whether createdBy records the persona or the
+    // initiating human, so joining on it would be a guess. An edge is an
+    // explicit statement of the relationship.
+    for (const [who, tmId] of [['forge', teamMemberForge.id], ['scout', teamMemberScout.id]] as const) {
+      const tm = fixtureDetails[tmId];
+      const incoming = tm?.connections.incoming.flatMap((g) => g.edges) ?? [];
+      const ran = incoming.filter((e) => e.type === 'relates_to');
+      expect(ran.length, `${who} has a session edge`).toBeGreaterThan(0);
+      expect(ran[0]!.target.id, `${who} edge points at the teammate`).toBe(tmId);
+    }
+  });
+
+  it('capacity counts LIVE sessions, not record-running ones — both halves present', () => {
+    // THE POINT OF THE FIXTURE. forge's edge points at a session the liveness
+    // snapshot lists as live; scout's points at one whose RECORD says running
+    // but which is stale. A capacity line counting record-running sessions
+    // would report scout busy; counting the liveness intersection reports it
+    // free. Without both halves in the data, the two implementations are
+    // indistinguishable — which is exactly the bug class this suite exists for.
+    expect(sessionLive.state.kind === 'work_session' && sessionLive.state.status).toBe('running');
+    expect(sessionStale.state.kind === 'work_session' && sessionStale.state.status).toBe('running');
+    // identical records; only the seam verdict separates them
+    expect(sessionTeammateEdges.forge.source.id).toBe(sessionLive.id);
+    expect(sessionTeammateEdges.scout.source.id).toBe(sessionStale.id);
+  });
+
+  it('D9 — the new edges are wire-shaped: endpoints are snapshots, not back-references', () => {
+    for (const e of Object.values(sessionTeammateEdges)) {
+      expect(Object.keys(e.source.badges)).toHaveLength(0);
+      expect(Object.keys(e.target.badges)).toHaveLength(0);
+    }
   });
 
   it('C-5 — empty collection: itemCount 0 and detail items []', () => {

@@ -14,7 +14,6 @@ import {
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { GenericBody } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
-import { AlwaysDark } from '../terminal';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -165,9 +164,28 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    */
   const alwaysDark = config.panel.archetype === 'terminal';
 
-  const panel = (
+  return (
     <section
-      className={`pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
+      /*
+       * The dark scope is applied to the PANEL ITSELF, not by wrapping it.
+       *
+       * d806c90 wrapped this section in <AlwaysDark>, which is a
+       * `display: contents` element — no box, so no layout impact, which is
+       * why it looked free. It is not free: `display: contents` removes the
+       * element from the BOX tree but NOT from the DOM, so a direct-child
+       * selector stops matching. The shell's `.shell-stack__col > *`
+       * flex-grow rule then applied to the wrapper (which generates no box
+       * and cannot grow) instead of the panel, and session panels alone took
+       * their content width and left the stage empty. That is R5 #7's
+       * re-opening, and it was mine.
+       *
+       * `.cv2-root[data-theme="dark"]` is tokens.css's own selector, so
+       * putting both on this element opens exactly the same token scope with
+       * one fewer node and no relationship for a sibling's CSS to lose.
+       */
+      className={`${alwaysDark ? 'cv2-root ' : ''}pn-panel pn-panel--${host}${isTombstone ? ' pn-panel--tombstone' : ''}`}
+      data-theme={alwaysDark ? 'dark' : undefined}
+      data-always-dark={alwaysDark ? 'true' : undefined}
       data-testid="entity-detail-panel"
       data-host={host}
       data-archetype={config.panel.archetype}
@@ -239,7 +257,6 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     </section>
   );
 
-  return alwaysDark ? <AlwaysDark>{panel}</AlwaysDark> : panel;
 }
 
 function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: PanelTab }) {
