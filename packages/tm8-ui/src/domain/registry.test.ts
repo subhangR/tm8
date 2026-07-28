@@ -27,6 +27,12 @@ import {
   describeTeammateLoad,
   modelsFor,
   EDGES_NOT_HYDRATED_REASON,
+  ADDITIONAL_PROJECTS_UNAVAILABLE_REASON,
+  PROFILE_PINNED_CAPTION,
+  describeProfile,
+  profileRefusal,
+  profileSelectable,
+  resolveProfileChain,
 } from './index';
 import type { ListConfig } from './types';
 
@@ -355,6 +361,67 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     expect(describeTeammateLoad({ teamMemberId: 'tm-1', liveSessionCount: 3 })).toBe(
       '● 3 live sessions already',
     );
+  });
+
+  it('D51.3 — only ACTIVE profiles are selectable; draft and retired refuse WITH reasons', () => {
+    const opts = [
+      { profileId: 'p-a', label: 'Reviewer', status: 'active' as const },
+      { profileId: 'p-d', label: 'Draft one', status: 'draft' as const },
+      { profileId: 'p-r', label: 'Old one', status: 'retired' as const },
+    ];
+    expect(opts.filter(profileSelectable).map((o) => o.profileId)).toEqual(['p-a']);
+    // Visible and refused, never hidden — the same rows appear in the profiles
+    // view, so hiding them here would make two surfaces disagree.
+    expect(profileRefusal(opts[0])).toBeNull();
+    expect(profileRefusal(opts[1])).toContain('not activated yet');
+    expect(profileRefusal(opts[2])).toContain('already pinned it');
+  });
+
+  it('D51.3 — the resolution CHAIN is returned, not just its winner', () => {
+    // An inherited default and a deliberate pick look identical once resolved.
+    const chain = [
+      { source: 'space-default' as const, profileId: 'p-space', label: 'Space default' },
+      { source: 'teammate-default' as const, profileId: 'p-tm', label: "Scout's default" },
+      { source: 'explicit' as const, profileId: null, label: '' },
+    ];
+    const out = resolveProfileChain(chain);
+    expect(out.resolution).toEqual({ profileId: 'p-tm', label: "Scout's default", source: 'teammate-default' });
+    expect(out.effectiveIndex).toBe(1);
+    expect(out.chain).toHaveLength(3);
+
+    // An explicit pick wins over both defaults.
+    const explicit = resolveProfileChain([...chain.slice(0, 2), { source: 'explicit' as const, profileId: 'p-x', label: 'Picked' }]);
+    expect(explicit.resolution.source).toBe('explicit');
+
+    // Nothing anywhere is a real state, not an error.
+    const none = resolveProfileChain([{ source: 'space-default' as const, profileId: null, label: '' }]);
+    expect(none.effectiveIndex).toBe(-1);
+    expect(none.resolution.source).toBe('none');
+    expect(describeProfile(none.resolution)).toContain('no interaction profile');
+  });
+
+  it('D51.3 — the immutability caption exists to be shown BEFORE commit', () => {
+    expect(PROFILE_PINNED_CAPTION).toContain('Pinned at launch');
+    expect(PROFILE_PINNED_CAPTION).toContain('even if the profile is edited or retired later');
+  });
+
+  it('D51.4 — extra projects are ADDITIVE and never silently accepted', () => {
+    // The launch root is genuinely performable; the extras are in_project edges
+    // the stamped seam cannot write, so they are refused with the mechanism.
+    const config = {
+      ...defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: null }),
+      target: { kind: 'project' as const, projectId: 'p-root' },
+      additionalProjectIds: ['p-two', 'p-three'],
+    };
+    const input = buildSpawnInput({ clientMutationId: 'c', spaceId: 's', config });
+    // Only the ROOT reaches spawn — the contract's projectId is singular.
+    expect(input.projectId).toBe('p-root');
+    expect(input).not.toHaveProperty('additionalProjectIds');
+    expect(ADDITIONAL_PROJECTS_UNAVAILABLE_REASON).toContain('in_project edges');
+    // And the shape is additive: a config without extras is unchanged, so the
+    // skeleton built against the doorbelled sha keeps working.
+    const plain = defaultConfigFor({ id: 'tm-1' });
+    expect(plain.additionalProjectIds).toBeUndefined();
   });
 
   it('offers no models for a tool it does not know, rather than guessing', () => {

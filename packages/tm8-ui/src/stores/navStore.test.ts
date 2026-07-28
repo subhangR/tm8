@@ -21,6 +21,7 @@ import {
   selectIsCentreEmpty,
   selectIsPinned,
   selectPanelIds,
+  selectOpenPanelIds,
   selectStackTop,
   selectSurface,
   selectTab,
@@ -204,10 +205,43 @@ describe('selectors', () => {
     expect(selectVisibleCount(nav())).toBe(2);
   });
 
-  it('renders pinned columns before the stack', () => {
+  it('renders pinned columns then the stack TOP — not the whole stack', () => {
     nav().push(A);
-    nav().pin(B);
-    expect(selectPanelIds(nav())).toEqual([B, A]);
+    nav().push(B);
+    nav().pin(C);
+    // Only the top of the stack occupies a column; A is behind B, not beside it.
+    expect(selectPanelIds(nav())).toEqual([C, B]);
+    // Membership is a different question and has its own selector.
+    expect(selectOpenPanelIds(nav())).toEqual([C, A, B]);
+  });
+
+  it('panel-render-order: the column list and V can never disagree', () => {
+    // THE invariant. selectVisibleCount is A1b's cMin(V) input; if these two
+    // drift, the geometry reserves width for a different number of columns
+    // than the shell draws, and every panel is squeezed below its floor.
+    const cases: (() => void)[] = [
+      () => {},
+      () => nav().push(A),
+      () => {
+        nav().push(A);
+        nav().push(B);
+      },
+      () => {
+        nav().push(A);
+        nav().pin(B);
+      },
+      () => {
+        nav().push(A);
+        nav().push(B);
+        nav().pin(C);
+        nav().pin(D);
+      },
+    ];
+    for (const setup of cases) {
+      resetNav(SPACE, { view: 'workspace' });
+      setup();
+      expect(selectPanelIds(nav())).toHaveLength(selectVisibleCount(nav()));
+    }
   });
 
   it('defaults an unrecorded tab to content and an unrecorded surface to null', () => {

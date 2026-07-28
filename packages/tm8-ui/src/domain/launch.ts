@@ -16,7 +16,13 @@
  * L6 runs through the whole file: a launch that cannot proceed says WHY, with
  * the mechanism named, and never renders an enabled control over a refusal.
  */
-import type { EntityId, ExecutionSpawnInput, ProjectId, SpawnWorkdir } from '@tm8/contract';
+import type {
+  EntityId,
+  ExecutionSpawnInput,
+  InteractionProfileStatus,
+  ProjectId,
+  SpawnWorkdir,
+} from '@tm8/contract';
 
 // ---------------------------------------------------------------------------
 // Agent tools and models
@@ -115,6 +121,9 @@ export interface LaunchProjectOption {
   untrustedReason?: string;
 }
 
+export const ADDITIONAL_PROJECTS_UNAVAILABLE_REASON =
+  'Extra project associations are not wired yet: they are in_project edges, and the facade seam has no edge-creating command. The first project is the launch root and DOES take effect.';
+
 export const UNTRUSTED_REASON =
   "untrusted — can't host sessions · trust it in Node settings";
 
@@ -146,6 +155,83 @@ export interface ProfileResolution {
   label: string;
   /** How this profile was arrived at — the provenance, not just the value. */
   source: 'explicit' | 'teammate-default' | 'space-default' | 'none';
+}
+
+/**
+ * A profile the launch may pin (D51.3 / T2-4 status honesty).
+ *
+ * Only `active` profiles are SELECTABLE. `draft` and `retired` still RENDER,
+ * disabled-with-reason — a profile that exists and cannot be used is a fact the
+ * viewer needs, and hiding it makes the list silently disagree with the
+ * Interaction Profiles view where the same rows are visible.
+ */
+export interface LaunchProfileOption {
+  profileId: EntityId;
+  label: string;
+  status: InteractionProfileStatus;
+  /** The version that would be pinned, shown because pinning is immutable. */
+  version?: number | null;
+  /** Why it cannot be picked, when it cannot. */
+  unavailableReason?: string;
+}
+
+export const PROFILE_STATUS_REASON: Readonly<Record<InteractionProfileStatus, string | null>> = {
+  active: null,
+  draft: 'draft — not activated yet, so it cannot govern a session',
+  retired: 'retired — kept for the sessions that already pinned it, not available for new ones',
+};
+
+/** Only `active` may be pinned. The other two are visible and refused. */
+export function profileSelectable(option: LaunchProfileOption): boolean {
+  return option.status === 'active';
+}
+
+export function profileRefusal(option: LaunchProfileOption): string | null {
+  return option.unavailableReason ?? PROFILE_STATUS_REASON[option.status];
+}
+
+/**
+ * T2-4's immutability law, rendered BEFORE commit rather than discovered after.
+ * A profile pinned at launch governs the session for its whole life even if the
+ * profile is edited or retired later — which is exactly the kind of consequence
+ * that must be visible at the moment it binds, not in a changelog.
+ */
+export const PROFILE_PINNED_CAPTION =
+  'Pinned at launch: this session keeps this profile version for its whole life, even if the profile is edited or retired later.';
+
+/**
+ * One step of the resolution chain. D51.3 requires the CHAIN to be shown, not
+ * just its winner — an inherited default and a deliberate pick look identical
+ * once resolved, and only the chain distinguishes them.
+ */
+export interface ProfileChainStep {
+  source: Exclude<ProfileResolution['source'], 'none'>;
+  profileId: EntityId | null;
+  label: string;
+}
+
+/**
+ * Resolve space → teammate → explicit, later steps winning. Returns the whole
+ * chain alongside the outcome so a surface can render both; `effectiveIndex` is
+ * -1 when nothing in the chain supplied a profile.
+ */
+export function resolveProfileChain(chain: readonly ProfileChainStep[]): {
+  resolution: ProfileResolution;
+  chain: readonly ProfileChainStep[];
+  effectiveIndex: number;
+} {
+  let index = -1;
+  for (let i = 0; i < chain.length; i += 1) {
+    if (chain[i].profileId !== null) index = i;
+  }
+  const winner = index === -1 ? null : chain[index];
+  return {
+    chain,
+    effectiveIndex: index,
+    resolution: winner
+      ? { profileId: winner.profileId, label: winner.label, source: winner.source }
+      : { profileId: null, label: '', source: 'none' },
+  };
 }
 
 export function describeProfile(resolution: ProfileResolution): string {
@@ -233,6 +319,16 @@ export interface LaunchConfig {
   model: string | null;
   mode: LaunchMode;
   target: LaunchTarget;
+  /**
+   * D51.4 — additional project associations beyond the launch root.
+   *
+   * ADDITIVE on purpose: `target` remains the first pick / launch root / initial
+   * cwd, which spawn genuinely performs via `projectId`. These extras are
+   * `in_project` EDGES, and the stamped seam has no edge-creating command — so
+   * they are collected, rendered, and REFUSED with the reason, never silently
+   * accepted as if they would take effect. §10.7 register class.
+   */
+  additionalProjectIds?: readonly ProjectId[];
   /** Set only when the viewer has explicitly consented to an untrusted root. */
   confirmUntrusted?: true;
   interactionProfileId?: EntityId;

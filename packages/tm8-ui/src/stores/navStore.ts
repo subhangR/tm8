@@ -267,8 +267,35 @@ export function useNavStore<T>(selector: (state: NavStore) => T): T {
 // Selectors (pure functions of NavState)
 // ---------------------------------------------------------------------------
 
-/** Render order: pinned columns first, then the stack. */
+/**
+ * The panels that RENDER AS COLUMNS, in order: pinned first, then the stack
+ * TOP — because the stack is a stack, and only its top occupies a column.
+ *
+ * This used to return `[...pinned, ...stack]` while its docblock said "render
+ * order", which put it in direct disagreement with `selectVisibleCount` two
+ * functions below: one said N stack entries were columns, the other reserved
+ * width for exactly one. A consumer rendering this list would have drawn more
+ * columns than `cMin(V)` had reserved and squeezed every panel below its 320
+ * floor — an L4 violation delivered by a selector whose NAME was right and
+ * whose BODY was not. A1b read the docblock, reported what it implied, and was
+ * reading it correctly; the body was the lie.
+ *
+ * The two are now derived from the same rule, and `panel-render-order` in the
+ * test suite asserts `selectPanelIds(s).length === selectVisibleCount(s)` so
+ * they cannot drift apart again.
+ */
 export function selectPanelIds(s: NavState): EntityId[] {
+  const top = selectStackTop(s);
+  return top === null ? [...s.pinned] : [...s.pinned, top];
+}
+
+/**
+ * EVERY open panel id, pins and the whole stack — for membership questions
+ * ("is this entity open?", pruning per-panel state), NOT for rendering. Named
+ * apart from `selectPanelIds` on purpose: the two answer different questions
+ * and conflating them is what produced the defect above.
+ */
+export function selectOpenPanelIds(s: NavState): EntityId[] {
   return [...s.pinned, ...s.stack];
 }
 

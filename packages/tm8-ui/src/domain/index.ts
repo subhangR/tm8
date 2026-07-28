@@ -68,6 +68,12 @@ export {
   LAUNCH_MODES,
   SCRATCH_OPTION,
   UNTRUSTED_REASON,
+  ADDITIONAL_PROJECTS_UNAVAILABLE_REASON,
+  PROFILE_PINNED_CAPTION,
+  PROFILE_STATUS_REASON,
+  profileRefusal,
+  profileSelectable,
+  resolveProfileChain,
   agentTool,
   buildSpawnInput,
   canLaunch,
@@ -88,7 +94,9 @@ export type {
   LaunchRefusal,
   LaunchTarget,
   ModelDef,
+  ProfileChainStep,
   ProfileResolution,
+  LaunchProfileOption,
   TeammateLaunchState,
 } from './launch';
 
