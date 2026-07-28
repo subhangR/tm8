@@ -1,0 +1,141 @@
+/* ==========================================================================
+   READER BODY — the reader archetype's interior.
+   Source: T0-4 "DOC" frame 2 (oracle lines 325-361); Z4 "READER (doc)"
+   (984-1027) and "DARK DOC" (1321-1352) cross-read for the same anatomy at
+   full width and for the dark pairing.
+
+   Colours are tokens (§14 — `src/hex-ban.test.ts` and
+   `panels/no-branching.test.ts` both scan this file). Canvas-measured
+   geometry and micro-type literals are kept verbatim per D5, each citing the
+   oracle declaration it came from.
+
+   The body ROOT is `.pn-body` (panels.css), not a class of this file's: the
+   oracle's body div is `padding:12px;display:flex;flex-direction:column;
+   gap:12px;overflow:auto` and `.pn-body` already is exactly that. Restating
+   it here would be a second source for one geometry.
+   ========================================================================== */
+
+/* --- outline (the TOC chip row) ------------------------------------------- */
+/* Oracle: `display:flex;gap:5px;flex-wrap:wrap` (line 346). */
+.cv2-root .rd-outline {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Oracle chip: `font-family:'JetBrains Mono';font-size:10px;color:#8E897B;
+   border:1px solid #E7E3D9;border-radius:999px;padding:2px 9px;
+   background:#FFFFFF` (line 347) — ink-3 / line / card, all tokens.
+
+   BACKGROUND, and the one place the dark canvas is not restated: the oracle's
+   dark chip is #1B1810 on a #221E15 panel (recessed), while our panel body is
+   `--pn-surface` in BOTH themes (panels.css `.pn-panel`), so `--pn-card`
+   keeps the LIGHT relationship — chip one step off the panel — in both. Same
+   token the kit chip uses. Reported as a noted divergence rather than fixed
+   with a per-theme override, which L8 says is the mis-tokenisation smell. */
+.cv2-root .rd-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 9px;
+}
+
+/* Oracle hover: `color:#9A581F;border-color:rgba(178,106,43,.4)` (line 347) —
+   brand-2 and the brand rgb triple, so it re-themes without a dark rule. */
+.cv2-root button.rd-chip {
+  appearance: none;
+  cursor: pointer;
+  font-family: var(--pn-mono);
+}
+.cv2-root button.rd-chip:hover {
+  color: var(--pn-brand-2);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+}
+
+/* The heading-derived entry: a caption, not a control, so it takes no pointer
+   and no hover — see the component docblock. */
+.cv2-root .rd-chip--static {
+  cursor: default;
+}
+
+/* The honest absence when the record claims chapters the outline does not
+   hold. Mono micro, ink-4 — the same quiet register as the facts line below
+   it, deliberately NOT the reading column's voice. */
+.cv2-root .rd-absent {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+/* --- the reading column ---------------------------------------------------- */
+/* Oracle prose: `font-family:'Newsreader',Georgia,serif;font-size:15px;
+   line-height:1.7;color:#3A362E;text-wrap:pretty` (line 349). The Z4 frame
+   draws the same column at 16.5px/1.75 (line 1007) — that is the full-view
+   measure and belongs to a Z4 variant nobody has built yet, so the panel
+   values ship and the Z4 pair is recorded here rather than guessed at.
+
+   COLOUR — PENDING TOKEN, stated as a fallback rather than a hex. #3A362E
+   (light) / #D8D0BE (dark, line 1345) is a MEASURED pair that no token
+   carries: it is neither --pn-ink (#23201B / #EFE9DB) nor --pn-ink-2
+   (#5B564C / #BDB5A2), and it does not fall out of a color-mix of ink and
+   paper at any single ratio in both themes (checked: 88-89% lands 2-7 units
+   off per channel). `--pn-x-btn-ink-hover` happens to be the same light byte
+   for an unrelated reason (the ink-chip hover) — borrowing it would be the
+   mis-tokenisation that guard was built to prevent.
+
+   So: `--pn-x-prose-ink` is a COLOUR NEED reported to the coordinator, and
+   until it lands in canvas-extra.css this falls back to --pn-ink, which is
+   one step too strong in both themes. This comment states what was measured,
+   not what will happen. */
+.cv2-root .rd-prose {
+  margin: 0;
+  font-family: var(--pn-serif);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--pn-x-prose-ink, var(--pn-ink));
+  text-wrap: pretty;
+}
+
+/* Oracle quote: `border-left:2px solid #E7E3D9;padding:2px 0 2px 12px;
+   font-family:'JetBrains Mono';font-size:11px;color:#8E897B` (line 350).
+   The rule BOUNDS the quote block — --pn-line, not the soft row hairline,
+   per the hairline rule. No line-height: the oracle declares none, and an
+   invented one is exactly the eyeballed value D5 bans. */
+.cv2-root .rd-quote {
+  margin: 0;
+  border-left: 2px solid var(--pn-line);
+  padding: 2px 0 2px 12px;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+
+/* --- the facts line -------------------------------------------------------- */
+/* Oracle: `display:flex;align-items:center;gap:8px;border-top:1px solid
+   #E7E3D9;padding-top:9px;font-family:'JetBrains Mono';font-size:10px;
+   color:#B7B2A4` (line 352). The rule separates the facts row from the
+   reading column — a region boundary inside the body, so --pn-line. */
+.cv2-root .rd-facts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--pn-line);
+  padding-top: 9px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .rd-facts__spacer {
+  flex: 1;
+}

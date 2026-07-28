@@ -1,0 +1,266 @@
+/* ==========================================================================
+   PROFILE ARCHETYPE BODY — T0-4 "Entity Detail Panels Hi-Fi", frames MEMBER
+   (oracle lines 400–448) and AGENT (lines 452–496).
+
+   Every value below is EXTRACTED from those frames' inline styles and cites
+   its line. Colors resolve through tokens only (§14 / D23 / D61): the two
+   frames introduce no color the ramp lacks — #ECE8DF is --pn-active, #E7E3D9
+   --pn-line, #D8D3C6 --pn-line-2, #FFFFFF --pn-card, #F2EFE8 --pn-hover,
+   #23201B/#5B564C/#8E897B/#B7B2A4 the ink ramp — so nothing was added to
+   canvas-extra.css and nothing needed to be.
+
+   NO DIVIDERS BETWEEN BLOCKS. The oracle draws the profile body as plain
+   gap-separated regions (line 418: `gap:12px`, no borders), and the hairline
+   rule agrees: --pn-line BOUNDS a component, --pn-x-hairline-soft SEPARATES
+   repeated siblings inside one. These regions are neither, so `.pn-section`'s
+   bottom rule would be a hairline the canvas does not draw.
+   ========================================================================== */
+
+/* The body itself is `.pn-body` (padding 12px, column, gap 12px) — oracle
+   line 418 exactly, already in panels.css. */
+.cv2-root .pn-profile__block {
+  display: flex;
+  flex-direction: column;
+  /* T0-4 433: the section label carries `padding-bottom:5px`. */
+  gap: 5px;
+}
+
+/* --- identity header (member frame, T0-4 419–426) ------------------------ */
+.cv2-root .pn-profile__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cv2-root .pn-profile__identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cv2-root .pn-profile__name {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  /* T0-4 423: `font-size:14px;font-weight:600`. */
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-profile__name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* T0-4 423 (inner span): mono 9.5px/600, #5B564C on #ECE8DF, r4, 1px 5px. */
+.cv2-root .pn-profile__tag {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-active);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+/* T0-4 424: mono 10.5px #8E897B. */
+.cv2-root .pn-profile__caption {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+/* --- stat tiles (member frame, T0-4 427–431) ----------------------------- */
+.cv2-root .pn-profile__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+/*
+ * The tiles ARE `HollowStat` — the dash-not-zero law lives in that component
+ * and is not worth re-implementing for a size change. What differs here is
+ * only geometry: T1-4's stat (its home surface) is a 17px value in a 9px 12px
+ * box, and T0-4's panel tile at line 428 is `padding:8px 10px` with a 15px
+ * value and a 9px label. Scoped to this grid, so nothing else moves.
+ */
+.cv2-root .pn-profile__stats .hon-stat {
+  min-width: 0;
+  padding: 8px 10px;
+  overflow: hidden;
+}
+.cv2-root .pn-profile__stats .hon-stat__value {
+  font-size: 15px;
+}
+.cv2-root .pn-profile__stats .hon-stat__label {
+  font-size: 9px;
+}
+
+/* --- field grid (agent frame, T0-4 474–478) ------------------------------ */
+.cv2-root .pn-profile__grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+.cv2-root .pn-profile__cell {
+  min-width: 0;
+}
+/* dt/dd inline so the separator is the literal space the oracle draws. */
+.cv2-root .pn-profile__cell-key {
+  display: inline;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__cell-value {
+  display: inline;
+  margin: 0;
+}
+/* T0-4 475: mono 10.5px #5B564C. */
+.cv2-root .pn-profile__mono {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+/* T0-4 476: `color:#23201B;font-weight:500` — the owner reads as a person. */
+.cv2-root .pn-profile__actor {
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+
+/* --- working-on row (agent frame, T0-4 479) ------------------------------ */
+.cv2-root .pn-profile__livework {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+}
+.cv2-root .pn-profile__livework:hover {
+  border-color: var(--pn-line-2);
+}
+/*
+ * THE DOT IS A RING, NOT A GREEN FILL. The oracle paints it #3E8E5A with
+ * `animation:pnPulse` — a live claim. No verdict is obtainable for this row
+ * (see LiveWorkBlock's docblock: the record names no session), so it renders
+ * the not-live geometry the terminal family already uses for an unverified
+ * state: hollow, unanimated, ink-4.
+ */
+.cv2-root .pn-profile__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--pn-ink-4);
+}
+.cv2-root .pn-profile__livework-label {
+  font-size: 12px;
+  color: var(--pn-ink-2);
+}
+/* T0-4 479: `font-size:12px;font-weight:600` — bare text, not a chip. */
+.cv2-root .pn-profile__task {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  cursor: pointer;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cv2-root .pn-profile__task:hover {
+  color: var(--pn-brand-2);
+}
+/* T0-4 479: `font-size:11px;color:#8E897B`. */
+.cv2-root .pn-profile__since {
+  flex: none;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__spacer {
+  flex: 1;
+}
+/* T0-4 479 draws the verdict slot as mono 9.5px; ours is the hollow form. */
+.cv2-root .pn-profile__livework .hon-hollow-inline {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+/* --- session rows (agent frame, T0-4 487–492) ---------------------------- */
+.cv2-root .pn-profile__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* T0-4 490: `gap:7px;padding:6px 9px;background:#FFFFFF;border:1px solid
+   #E7E3D9;border-radius:7px;font-size:11.5px;color:#5B564C`,
+   `style-hover="background:#F2EFE8"`. */
+.cv2-root .pn-profile__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.cv2-root .pn-profile__row:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .pn-profile__row-glyph {
+  flex: none;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-profile__row-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .pn-profile__sep {
+  flex: none;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-profile__ago {
+  flex: none;
+}
+/*
+ * THE VERDICT WORD IS TINTED. The oracle draws this row monochrome (#5B564C
+ * throughout, line 490), so this is a DELIBERATE DIVERGENCE, flagged for
+ * ratification: everywhere else in this app a status is color + word (L10,
+ * D22), and a monochrome row makes `exited` and `running` read identically on
+ * the one surface where confusing them is the named defect (D39). The word is
+ * always present, so color is never the only carrier.
+ */
+.cv2-root .pn-profile__word {
+  flex: none;
+  font-weight: 600;
+}
+.cv2-root .pn-profile__word[data-tone='run'] {
+  color: var(--pn-run);
+}
+.cv2-root .pn-profile__word[data-tone='wait'] {
+  color: var(--pn-wait);
+}
+.cv2-root .pn-profile__word[data-tone='block'] {
+  color: var(--pn-block);
+}
+.cv2-root .pn-profile__word[data-tone='idle'] {
+  color: var(--pn-ink-3);
+}

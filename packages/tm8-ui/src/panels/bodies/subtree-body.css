@@ -1,0 +1,282 @@
+/* ==========================================================================
+   SUBTREE ARCHETYPE BODY — the T0-4 `task` Content region.
+
+   ORACLE: `T0-1 workspace structure review (1)/T0-4 Entity Detail Panels
+   Hi-Fi.dc.html`. Every geometry and micro-type literal below is EXTRACTED
+   from that file's inline styles and cites its line; nothing is eyeballed
+   (brief §2.1). Line references are to the anatomy frame's task panel
+   (L60–L76) unless noted, with the 12-kinds task card (L163–L181) and the Z4
+   subtree map (L950–L975) named where they are the source.
+
+   COLORS ARE TOKENS, always (§14, guarded by src/hex-ban.test.ts). The
+   oracle's bytes map one-for-one onto existing tokens — nothing here needed a
+   new canvas colour:
+     #B7B2A4 --pn-ink-4 · #8E897B --pn-ink-3 · #23201B --pn-ink ·
+     #5B564C --pn-ink-2 · #3E8E5A --pn-run · #FFFFFF --pn-card ·
+     #E7E3D9 --pn-line · #D8D3C6 --pn-line-2 · #9A581F --pn-brand-2 ·
+     rgba(162,156,142,.16) --pn-idle-soft · #F0EDE4 --pn-x-hairline-soft.
+
+   THE HAIRLINE RULE (brief §2.4): the run CARD is bounded by `--pn-line`;
+   the subtree ROWS are repeated siblings inside one region and separate on
+   `--pn-x-hairline-soft`. The oracle draws exactly that pairing — #E7E3D9 on
+   the card, #F0EDE4 between the rows — which is where the rule came from.
+   ========================================================================== */
+
+/* A body section. NOT `.pn-section`: that class carries a `--pn-line`
+   bottom border, and the oracle draws NO rule between these regions — the
+   12px `.pn-body` gap (L59 `gap:12px`) is the whole separation. */
+.cv2-root .sb-section {
+  display: flex;
+  flex-direction: column;
+  /* L67 eyebrow `padding-bottom:5px` — carried as the section gap so the
+     eyebrow keeps its own box clean. */
+  gap: 5px;
+}
+
+/* --- the composed metadata grid (L60 / L163) ------------------------------ */
+.cv2-root .sb-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+}
+.cv2-root .sb-grid__cell {
+  min-width: 0;
+  /* L61 `color:#8E897B` — the LABEL colour is the cell's own; values raise
+     themselves out of it. */
+  color: var(--pn-ink-3);
+  overflow-wrap: anywhere;
+}
+.cv2-root .sb-grid__label {
+  color: var(--pn-ink-3);
+}
+/* L61 value span: `color:#23201B;font-weight:500`. */
+.cv2-root .sb-grid__strong {
+  color: var(--pn-ink);
+  font-weight: 500;
+}
+/* L64 ID / L167 Due: `font-family:mono;font-size:10.5px;color:#5B564C`. */
+.cv2-root .sb-grid__mono {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-2);
+}
+/* L63 project value, rendered as a real control because it opens a panel. */
+.cv2-root .sb-grid__link {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--pn-ink);
+  font-weight: 500;
+  cursor: pointer;
+}
+.cv2-root .sb-grid__link:hover {
+  color: var(--pn-brand-2);
+}
+/* L62 priority tag: mono 10px/600, `rgba(162,156,142,.16)`, r4, 1px 5px. */
+.cv2-root .sb-tag {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+  background: var(--pn-idle-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.cv2-root .sb-actors {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  vertical-align: middle;
+}
+.cv2-root .sb-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- SUBTREE rows (L68–L70) ---------------------------------------------- */
+.cv2-root .sb-rows {
+  display: flex;
+  flex-direction: column;
+}
+/* L69 `display:flex;align-items:center;gap:7px;padding:5px 0;
+   border-bottom:1px solid #F0EDE4;font-size:12px`. A button, not a div: the
+   row opens a panel, so it must be reachable by keyboard. */
+.cv2-root .sb-row {
+  appearance: none;
+  border: 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-row:last-of-type {
+  border-bottom: 0;
+}
+.cv2-root .sb-row:hover .sb-row__title {
+  color: var(--pn-brand-2);
+}
+.cv2-root .sb-row__title {
+  flex: 1;
+  min-width: 0;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* L69 done child: `color:#8E897B;text-decoration:line-through`. */
+.cv2-root .sb-row__title--done {
+  color: var(--pn-ink-3);
+  text-decoration: line-through;
+}
+.cv2-root .sb-row:hover .sb-row__title--done {
+  color: var(--pn-ink-3);
+}
+
+/* L69/L70 status dot: 10px circle, FILLED when done, a 2px RING while open. */
+.cv2-root .sb-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+  border: 2px solid var(--pn-idle);
+}
+.cv2-root .sb-dot--filled {
+  border: 0;
+  background: var(--pn-idle);
+}
+.cv2-root .sb-dot--run { border-color: var(--pn-run); }
+.cv2-root .sb-dot--wait { border-color: var(--pn-wait); }
+.cv2-root .sb-dot--block { border-color: var(--pn-block); }
+.cv2-root .sb-dot--info { border-color: var(--pn-info); }
+.cv2-root .sb-dot--idle { border-color: var(--pn-idle); }
+.cv2-root .sb-dot--brand { border-color: var(--pn-brand); }
+.cv2-root .sb-dot--run.sb-dot--filled { background: var(--pn-run); }
+.cv2-root .sb-dot--wait.sb-dot--filled { background: var(--pn-wait); }
+.cv2-root .sb-dot--block.sb-dot--filled { background: var(--pn-block); }
+.cv2-root .sb-dot--info.sb-dot--filled { background: var(--pn-info); }
+.cv2-root .sb-dot--idle.sb-dot--filled { background: var(--pn-idle); }
+.cv2-root .sb-dot--brand.sb-dot--filled { background: var(--pn-brand); }
+
+/* L69 trailing status word: `mono;font-size:9.5px;color:#3E8E5A` — the colour
+   is the TONE's, so a blocked child reads in block ink rather than green. */
+.cv2-root .sb-word {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+.cv2-root .sb-word--run { color: var(--pn-run); }
+.cv2-root .sb-word--wait { color: var(--pn-wait); }
+.cv2-root .sb-word--block { color: var(--pn-block); }
+.cv2-root .sb-word--info { color: var(--pn-info); }
+.cv2-root .sb-word--idle { color: var(--pn-idle); }
+.cv2-root .sb-word--brand { color: var(--pn-brand-2); }
+
+/* Z4 L955 `＋ add child…`: `padding:7px 0;font-size:12.5px;color:#B7B2A4`,
+   hovering to #9A581F. The T0-4 Z3 frames do not draw it; D48.1 rules it
+   gate anatomy off T0-1's Z3, so it renders here — disabled-with-reason
+   until a dispatch exists (R7), which is the `.hon-disabled` form. */
+.cv2-root .sb-addchild {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  align-self: flex-start;
+  padding: 7px 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .sb-addchild:hover {
+  color: var(--pn-brand-2);
+}
+.cv2-root .sb-section > .hon-disabled {
+  align-self: flex-start;
+  padding: 7px 0;
+  font-size: 12.5px;
+}
+
+/* --- RUNS card (L75 / Z4 L972) ------------------------------------------- */
+/* `display:flex;align-items:center;gap:8px;padding:7px 9px;background:#FFFFFF;
+   border:1px solid #E7E3D9;border-radius:8px;cursor:pointer`, hover
+   `border-color:#D8D3C6`. */
+.cv2-root .sb-run {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .sb-run + .sb-run {
+  margin-top: 5px;
+}
+.cv2-root .sb-run:hover {
+  border-color: var(--pn-line-2);
+}
+/* L75 `width:8px;height:8px;border-radius:50%;background:#3E8E5A`. SOLID, not
+   pulsing: pulse is the activity signal's, not the verdict's (F1/D6). */
+.cv2-root .sb-run__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+}
+.cv2-root .sb-run__dot--none {
+  border: 1px solid var(--pn-line-2);
+}
+.cv2-root .sb-run__dot--run { background: var(--pn-run); }
+.cv2-root .sb-run__dot--wait { background: var(--pn-wait); }
+.cv2-root .sb-run__dot--block { background: var(--pn-block); }
+.cv2-root .sb-run__dot--info { background: var(--pn-info); }
+.cv2-root .sb-run__dot--idle { background: var(--pn-idle); }
+.cv2-root .sb-run__dot--brand { background: var(--pn-brand); }
+/* L75 `font-size:12px;font-weight:600`. */
+.cv2-root .sb-run__name {
+  min-width: 0;
+  color: var(--pn-ink);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* L75 `font-size:11px;color:#8E897B`. */
+.cv2-root .sb-run__meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .sb-run__spacer {
+  flex: 1;
+}
+
+.cv2-root .sb-notices {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}

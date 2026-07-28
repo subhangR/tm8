@@ -1,0 +1,141 @@
+/* ==========================================================================
+   SESSION ANATOMY — the terminal archetype's facts beside the canvas.
+
+   SOURCES, per rule: every literal below is transcribed from an oracle inline
+   style with its line cited; nothing is eyeballed.
+     · T0-4 Entity Detail Panels Hi-Fi.dc.html : 1224–1234  (Z4 TERMINAL —
+       the provenance strip: ASSOCIATED PROJECTS | SHARED CONTEXT)
+     · T0-2 T0-5 Terminal & Live Session Hi-Fi.dc.html : 225–231  (the exited
+       canvas interior — the fact line under the title)
+
+   COLOURS ARE TOKENS, and this screen needed no new one. The oracle paints
+   this strip in the dark ramp and every value it uses is already declared:
+   #2C2719 = --pn-line, #3B3524 = --pn-line-2, #665E4C = --pn-ink-4,
+   #BDB5A2 = --pn-ink-2, #8C8470 = --pn-ink-3, #1B1810 = --pn-surface. So the
+   dark theme is free here in the way D-law 8 predicts, and there is nothing
+   for `src/hex-ban.test.ts` (which scans this file) to find.
+
+   THE HAIRLINE RULE, applied: the strip's own edges BOUND a component region,
+   so they are --pn-line. The share rows are repeated siblings inside one
+   region and are separated by GAP, not by a rule at all — the oracle draws
+   `gap:3px` with no divider (T0-4:1231), so --pn-x-hairline-soft has no site
+   here. Named rather than silently absent, so the next reader knows the rule
+   was consulted.
+
+   SCOPE NOTE: geometry is transcribed from the Z4 frame, which is the only
+   place the oracle draws this strip. Where the Z4 host's own padding differs
+   from the stacked panel's (20px vs 12px gutters), the STACKED value wins —
+   these blocks land in a stacked/pinned panel first, and `.pn-section`
+   already carries that gutter. The divergence is recorded in the handover
+   rather than hidden here.
+   ========================================================================== */
+
+/* The block list itself adds no box of its own beyond stacking — each block
+   is a `.pn-section`, which already owns its gutter and bounding hairline. */
+.cv2-root .pn-anatomy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* --- provenance strip (T0-4:1224) ---------------------------------------- */
+/* `display:flex;gap:24px;flex-wrap:wrap` — verbatim. Wrapping is load-bearing:
+   at a narrow panel the two columns stack instead of crushing the share rows,
+   which is why the oracle sets it rather than a two-track grid. */
+.cv2-root .pn-anatomy__strip {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* T0-4:1225 — `display:flex;flex-direction:column;gap:5px` */
+.cv2-root .pn-anatomy__col {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+/* T0-4:1229 — `flex:1;min-width:260px`. The floor is the oracle's, and it is
+   a FLOOR, not a `minmax(0,…)`: below it the column wraps to its own line
+   rather than collapsing the share rows to nothing (L4). */
+.cv2-root .pn-anatomy__col--share {
+  flex: 1;
+  min-width: 260px;
+}
+
+/* --- compact share rows (T0-4:1231–1233) --------------------------------- */
+/* `display:flex;flex-direction:column;gap:3px` */
+.cv2-root .pn-anatomy__shares {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+/* `display:flex;align-items:center;gap:6px;font-size:11px;color:#BDB5A2` */
+.cv2-root .pn-anatomy__share-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--pn-ink-2);
+  min-width: 0;
+}
+/* Source gone: dashed like a tombstone (T4's share family), and NOT a button —
+   there is nothing to open. Same treatment as `.pn-handoff--source-missing`,
+   at the strip's smaller grain. */
+.cv2-root .pn-anatomy__share-row--missing {
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 2px 6px;
+}
+.cv2-root .pn-anatomy__share-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.cv2-root .pn-anatomy__share-label--link {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.cv2-root .pn-anatomy__share-label--link:hover {
+  color: var(--pn-ink);
+}
+.cv2-root .pn-anatomy__spacer {
+  flex: 1;
+  min-width: 0;
+}
+/* The bare amber word. Warning tone, no fill: it is a state of the ROW, and
+   giving it a pill would make three pills on a two-facet row. */
+.cv2-root .pn-anatomy__missing {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pn-wait);
+  white-space: nowrap;
+}
+
+/* --- exit facts (T0-2:228) ----------------------------------------------- */
+/* `font-family:'JetBrains Mono';font-size:10.5px;color:#8E897B` — the mono
+   fact line under the exit title. Wraps rather than clipping: three facts at
+   10.5px fit a 426px canvas frame and not a 320px floor panel. */
+.cv2-root .pn-anatomy__facts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-anatomy__sep {
+  color: var(--pn-ink-4);
+}
