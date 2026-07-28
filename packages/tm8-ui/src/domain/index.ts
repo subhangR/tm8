@@ -64,6 +64,35 @@ export {
 export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 
 export {
+  AGENT_TOOLS,
+  LAUNCH_MODES,
+  SCRATCH_OPTION,
+  UNTRUSTED_REASON,
+  agentTool,
+  buildSpawnInput,
+  canLaunch,
+  defaultConfigFor,
+  describeCapacity,
+  describeTeammateLoad,
+  describeProfile,
+  modelsFor,
+  EDGES_NOT_HYDRATED_REASON,
+} from './launch';
+export type {
+  AgentToolDef,
+  LaunchCapacity,
+  LaunchConfig,
+  LaunchMode,
+  LaunchModeDef,
+  LaunchProjectOption,
+  LaunchRefusal,
+  LaunchTarget,
+  ModelDef,
+  ProfileResolution,
+  TeammateLaunchState,
+} from './launch';
+
+export {
   SHIPPED_DEFAULT_MENU,
   SHIPPED_DEFAULT_MENU_REVISION,
   isMenuEligibleKind,

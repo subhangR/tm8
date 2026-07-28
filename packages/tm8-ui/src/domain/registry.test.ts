@@ -20,6 +20,13 @@ import {
   kindOfSlug,
   resolveAction,
   slugOfKind,
+  UNTRUSTED_REASON,
+  buildSpawnInput,
+  canLaunch,
+  defaultConfigFor,
+  describeTeammateLoad,
+  modelsFor,
+  EDGES_NOT_HYDRATED_REASON,
 } from './index';
 import type { ListConfig } from './types';
 
@@ -145,6 +152,8 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     const task = getKind('task').list;
     expect(task.inlineEdit).toEqual({ status: true, title: true });
     expect(task.rowActions).toContain('complete');
+    // D44: Run rides the same rowActions carrier — no new field, no branching.
+    expect(task.rowActions).toContain('run');
 
     const session = getKind('work_session').list;
     expect(session.inlineEdit?.title).toBe(true);
@@ -257,6 +266,100 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
         expect(CLOSED).toContain(key as keyof ListConfig);
       }
     }
+  });
+});
+
+describe('D44 — the launch flow is declared as DATA on the verb', () => {
+  it('marks run / coordinate / launch-session as opening a config, not bare-spawning', () => {
+    for (const ref of ['run', 'coordinate', 'launch-session'] as const) {
+      expect(resolveAction(ref).flow).toBe('launch');
+    }
+  });
+
+  it('leaves immediate verbs unmarked, so a flow cannot be assumed', () => {
+    for (const ref of ['complete', 'pull', 'link', 'terminate'] as const) {
+      expect(resolveAction(ref).flow).toBeUndefined();
+    }
+  });
+
+  it('builds a contract-shaped SpawnInput — scratch is the ABSENCE of a project', () => {
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    // The teammate's RECORDED model wins over this UI's first option: opening
+    // the config must not silently change what has been running.
+    expect(config.model).toBe('claude-opus-5');
+    const input = buildSpawnInput({
+      clientMutationId: 'cmid-1',
+      spaceId: 'space-1',
+      config,
+      taskIds: ['task-1'],
+    });
+    expect(input).toMatchObject({
+      clientMutationId: 'cmid-1',
+      spaceId: 'space-1',
+      teamMemberId: 'tm-1',
+      projectId: null,
+      workdir: { mode: 'scratch' },
+      model: 'claude-opus-5',
+      agentTool: 'claude-code',
+      taskIds: ['task-1'],
+    });
+    // Consent is only carried when actually given — absent and false are not
+    // the same statement, and the contract types it as literal `true`.
+    expect(input).not.toHaveProperty('confirmUntrusted');
+  });
+
+  it('refuses an untrusted project WITH the mechanism, until consent is explicit', () => {
+    const projects = [
+      { projectId: 'p-1', name: 'vendor-import', trusted: false, untrustedReason: UNTRUSTED_REASON },
+    ];
+    const base = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: null });
+    const onUntrusted = { ...base, target: { kind: 'project' as const, projectId: 'p-1' } };
+    const refusal = canLaunch(onUntrusted, { projects });
+    expect(refusal).toEqual({ ok: false, reason: UNTRUSTED_REASON });
+    // Explicit consent is what unlocks it — never a silent default.
+    expect(canLaunch({ ...onUntrusted, confirmUntrusted: true }, { projects })).toEqual({ ok: true });
+  });
+
+  it('refuses on exhausted capacity and names the numbers', () => {
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: null });
+    const verdict = canLaunch(config, { projects: [], capacity: { slotsFree: 0, slotsTotal: 4 } });
+    expect(verdict.ok).toBe(false);
+    if (!verdict.ok) expect(verdict.reason).toContain('0 of 4');
+  });
+
+  it('never launches anonymously', () => {
+    const config = { ...defaultConfigFor({ id: 'tm-1' }), teamMemberId: null };
+    expect(canLaunch(config, { projects: [] }).ok).toBe(false);
+  });
+
+  it('D46 — a teammate load of NULL and a load of ZERO are different renderings', () => {
+    // The property A1c's capacity chip depends on, and the one my own broken
+    // createdBy gate would have violated: unknown is not zero. A consumer that
+    // merged them would report every teammate free while the edges were still
+    // loading, which is a false "go ahead" at the moment of launch.
+    const unknown = describeTeammateLoad({ teamMemberId: 'tm-1', liveSessionCount: null });
+    const measuredZero = describeTeammateLoad({ teamMemberId: 'tm-1', liveSessionCount: 0 });
+    expect(unknown).not.toBe(measuredZero);
+    expect(unknown).toBe(EDGES_NOT_HYDRATED_REASON);
+    expect(measuredZero).toBe('no live sessions');
+    // A caller-supplied reason wins, so a different hollow cause can say so.
+    expect(
+      describeTeammateLoad({ teamMemberId: 'tm-1', liveSessionCount: null, hollowReason: 'edges refused' }),
+    ).toBe('edges refused');
+  });
+
+  it('D46 — counts read as the canvas draws them, singular and plural', () => {
+    expect(describeTeammateLoad({ teamMemberId: 'tm-1', liveSessionCount: 1 })).toBe(
+      '● 1 live session already',
+    );
+    expect(describeTeammateLoad({ teamMemberId: 'tm-1', liveSessionCount: 3 })).toBe(
+      '● 3 live sessions already',
+    );
+  });
+
+  it('offers no models for a tool it does not know, rather than guessing', () => {
+    expect(modelsFor('some-future-tool')).toEqual([]);
+    expect(modelsFor('claude-code').length).toBeGreaterThan(0);
   });
 });
 
@@ -545,6 +648,35 @@ describe('the ActionRef registry (§2.5)', () => {
       },
     });
     expect(calls).toEqual([]);
+  });
+
+  it('FINDING #9 — an AVAILABLE action with no dispatcher fails LOUDLY, never inertly', () => {
+    // Enabled-inert is the failure the user reported: click, nothing happens,
+    // no signal to anyone. A missing dispatcher is a wiring defect that cannot
+    // be fixed by the user, so it must not be absorbed. Disabled-with-reason
+    // is the honest state; silence is not.
+    expect(() =>
+      resolveAction('run').run({
+        spaceId: 's',
+        entityId: 'e1',
+        capabilities: {
+          canEdit: true,
+          canDelete: true,
+          canAddChild: true,
+          canLink: true,
+          canPull: true,
+          canReact: true,
+          canGrantPoints: true,
+          canComplete: true,
+        },
+      }),
+    ).toThrow(/no dispatcher is wired/);
+  });
+
+  it('stays silent for a DISABLED action even with no dispatcher', () => {
+    // The refusal is the answer there — availability already told the truth,
+    // so there is nothing inert about declining to act.
+    expect(() => resolveAction('complete').run({ spaceId: 's', entityId: 'e1', capabilities: null })).not.toThrow();
   });
 
   it('dispatches an available action through the injected executor', async () => {

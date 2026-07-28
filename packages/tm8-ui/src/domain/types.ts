@@ -316,6 +316,14 @@ export interface ActionDef {
   icon: IconRef;
   availability(ctx: ActionContext): ActionAvailability;
   run(ctx: ActionContext): Promise<void> | void;
+  /**
+   * D44: this verb opens a CONFIGURATION FLOW before it dispatches. `run` is
+   * still the single entry point — surfaces call it and the shell opens the
+   * flow — so the tile button, the panel primary, ⌘Enter and the palette row
+   * all reach the same launch config rather than one of them firing a bare
+   * spawn. A verb without `flow` dispatches immediately, as before.
+   */
+  flow?: 'launch';
 }
 
 // ---------------------------------------------------------------------------

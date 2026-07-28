@@ -284,7 +284,10 @@ const ROWS: readonly KindConfig[] = [
       filters: [statusFilter, readyToPullFilter, deletedFilter],
       sort: [BY_ACTIVITY, BY_PRIORITY, BY_DUE, BY_POSITION, BY_CREATED],
       inlineEdit: { status: true, title: true },
-      rowActions: ['complete'],
+      // D44: every task ROW gets Run, not just the panel primary. It resolves
+      // to the same ActionRef the panel and palette use, and its `flow:'launch'`
+      // marker means the row opens the launch config rather than bare-spawning.
+      rowActions: ['run', 'complete'],
     }),
     panel: {
       archetype: 'subtree',

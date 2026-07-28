@@ -110,7 +110,24 @@ function define(
         // The default runner is a pure dispatch: `domain/` never imports the
         // seam, so the shell's injected dispatcher performs the write.
         if (availability(ctx).kind !== 'available') return;
-        return ctx.dispatch?.({ action: id, entityId: ctx.entityId });
+        if (!ctx.dispatch) {
+          // FINDING #9 (enabled-inert) MADE STRUCTURAL. This used to be
+          // `ctx.dispatch?.(…)` — an optional call, so an action the UI had
+          // rendered ENABLED did nothing at all when no dispatcher was wired.
+          // The user clicks, nothing happens, and no signal reaches anyone:
+          // exactly the F6/X4 class this package renders disabled-with-reason
+          // to avoid. An affordance that is enabled and inert is a worse lie
+          // than one that is disabled with a reason, because the disabled one
+          // at least tells the truth about what it can do.
+          //
+          // A missing dispatcher is a WIRING DEFECT, not a runtime condition —
+          // it cannot be fixed by the user and must not be absorbed silently.
+          throw new Error(
+            `Action "${id}" is available but no dispatcher is wired: the surface rendered it enabled and cannot perform it. ` +
+              `Pass ActionContext.dispatch, or gate the affordance through availability() so it renders disabled-with-reason instead.`,
+          );
+        }
+        return ctx.dispatch({ action: id, entityId: ctx.entityId });
       }),
   };
 }
@@ -126,6 +143,11 @@ function deferred(id: ActionRef, label: string, icon: IconRef, reason: string): 
     // facade cannot perform (L6), and calling it is a no-op, not a throw.
     run: () => undefined,
   };
+}
+
+/** Mark a verb as opening the D44 launch configuration before dispatch. */
+function launching(action: ActionDef): ActionDef {
+  return { ...action, flow: 'launch' };
 }
 
 const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
@@ -178,25 +200,34 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
       opGate(ctx, 'points.grant') ?? capabilityGate(ctx, 'canGrantPoints', REASONS.cannotGrantPoints) ?? AVAILABLE,
   ),
 
-  run: define(
-    'run',
-    'Run',
-    '▶',
-    (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+  // D44: Run and Coordinate open the launch configuration (teammate, model,
+  // project, mode) rather than firing a bare spawn. The flow marker is DATA —
+  // every surface reads it, so none of them can skip the config by accident.
+  run: launching(
+    define(
+      'run',
+      'Run',
+      '▶',
+      (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+    ),
   ),
 
-  coordinate: define(
-    'coordinate',
-    'Coordinate',
-    '⛭',
-    (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+  coordinate: launching(
+    define(
+      'coordinate',
+      'Coordinate',
+      '⛭',
+      (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+    ),
   ),
 
-  'launch-session': define(
-    'launch-session',
-    'Launch session',
-    '⚡',
-    (ctx) => opGate(ctx, 'execution.spawn') ?? AVAILABLE,
+  'launch-session': launching(
+    define(
+      'launch-session',
+      'Launch session',
+      '⚡',
+      (ctx) => opGate(ctx, 'execution.spawn') ?? AVAILABLE,
+    ),
   ),
 
   terminate: define(
