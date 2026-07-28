@@ -38,6 +38,9 @@ export interface WorkspaceViewProps {
   reasons: DetailReasons;
   onNotice(notice: Notice): void;
   onPinRefusal?(id: EntityId, refusal: string): void;
+  /** The kind selectors are LIVE: the panel switches kind (T0-1 law). */
+  onLeftKindChange?(kind: string): void;
+  onRightKindChange?(kind: string): void;
 }
 
 export function WorkspaceView(props: WorkspaceViewProps) {
@@ -147,6 +150,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={(id) => nav.push?.(id as EntityId)}
+          onKindChange={props.onLeftKindChange}
         />
       }
       center={
@@ -187,6 +191,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={(id) => nav.push?.(id as EntityId)}
+          onKindChange={props.onRightKindChange}
         />
       }
     />

@@ -48,6 +48,8 @@ export interface GateData {
   detailOf: (id: string) => EntityDetail | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
+  /** Hydrate a kind the viewer selected after boot. Idempotent. */
+  ensureKind: (kind: string) => void;
   seam: Seam;
   domain: DomainStoreHandle;
 }
@@ -168,6 +170,37 @@ export function useGateData(options: GateOptions): GateData {
     [seam, rows],
   );
 
+  /**
+   * Hydrate a kind the viewer has just selected. The side-panel selectors are
+   * live (LLD §3.1), so a kind can be asked for that boot never loaded — this
+   * fetches it once and leaves it cached. Re-entrant by the `rows` guard, so a
+   * re-render mid-flight does not issue a second query.
+   */
+  const inFlight = useRef(new Set<string>());
+  const ensureKind = useCallback(
+    (kind: string) => {
+      if (!spaceId || rows[kind] || inFlight.current.has(kind)) return;
+      inFlight.current.add(kind);
+      const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
+      void seam
+        .query(query)
+        .then((result) => setRows((current) => ({ ...current, [kind]: result.page.items })))
+        .catch(() => {
+          // A kind that will not load renders as an honestly empty panel
+          // rather than a spinner that never resolves.
+          setRows((current) => ({ ...current, [kind]: [] }));
+        })
+        .finally(() => inFlight.current.delete(kind));
+    },
+    [seam, spaceId, rows],
+  );
+
+  useEffect(() => {
+    if (!ready) return;
+    ensureKind(options.leftKind);
+    ensureKind(options.rightKind);
+  }, [ready, options.leftKind, options.rightKind, ensureKind]);
+
   const rowsFor = useCallback(
     (kind: string) => () => rows[kind] ?? [],
     [rows],
@@ -207,11 +240,12 @@ export function useGateData(options: GateOptions): GateData {
       rowsFor,
       detailOf,
       activity,
+      ensureKind,
       seam,
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, liveIds, livenessOf, rowsFor, detailOf, activity, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, seam, domain, pull],
   );
 
   return data;

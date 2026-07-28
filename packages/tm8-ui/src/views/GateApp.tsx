@@ -29,19 +29,46 @@ import {
   presenceHollowReason,
 } from '../fixtures';
 import { useGateData } from './useGateData';
+import { useSidePanelKinds } from './useSidePanelKinds';
+import { useTheme } from '../theme/useTheme';
 import { WorkspaceView } from './WorkspaceView';
 
-/** The two workspace side panels (§5.1 defaults). Registry slugs, not literals. */
-const LEFT_KIND = 'task';
-const RIGHT_KIND = 'work_session';
+/**
+ * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
+ * only kind names in the shell layer; §15.2 wants them in `domain/` beside the
+ * registry (the D18 precedent for SHIPPED_DEFAULT_MENU) — flagged to
+ * fe-coordinator for routing rather than moved across a lane boundary here.
+ */
+const DEFAULT_LEFT_KIND = 'task';
+const DEFAULT_RIGHT_KIND = 'work_session';
 
 export function GateApp() {
-  const data = useGateData({ leftKind: LEFT_KIND, rightKind: RIGHT_KIND });
+  // Boot hydrates the RULED defaults; the viewer's persisted choice is applied
+  // after, because the persistence is scoped per (viewer, space) and the space
+  // id only exists once the seam has answered. Passing a placeholder id here
+  // would silently disable persistence altogether — the storage key would never
+  // match the one the next session reads.
+  const data = useGateData({ leftKind: DEFAULT_LEFT_KIND, rightKind: DEFAULT_RIGHT_KIND });
+  const kinds = useSidePanelKinds({
+    viewerId: 'viewer',
+    spaceId: data.spaceId,
+    defaultLeft: DEFAULT_LEFT_KIND,
+    defaultRight: DEFAULT_RIGHT_KIND,
+  });
+
+  // A kind chosen after boot (or restored from storage) may never have been
+  // queried — hydrate it on demand rather than rendering an empty panel that
+  // looks like "this kind has no rows".
+  useEffect(() => {
+    data.ensureKind(kinds.leftKind);
+    data.ensureKind(kinds.rightKind);
+  }, [data, kinds.leftKind, kinds.rightKind]);
   const notices = useNotices();
 
-  // Theme: both themes are acceptance criteria from day one (§12). The toggle
-  // lives in the account menu (D1) — never in the tab bar.
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  // Theme: PERSISTED, with a prefers-color-scheme default (LLD §11). It was an
+  // unpersisted useState seeded to light, so every reload discarded the
+  // viewer's choice. The control's home is still the account menu (D1).
+  const { theme, toggle: toggleTheme } = useTheme();
   const [menuCollapsed, setMenuCollapsed] = useState(false);
   const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
     type: 'view',
@@ -89,7 +116,7 @@ export function GateApp() {
   const presentKind = useCallback<KindPresenter>((ref) => {
     const row = getKind(ref);
     if (row.kind !== ref) return null;
-    const live = ref === RIGHT_KIND ? data.liveIds.length : undefined;
+    const live = ref === DEFAULT_RIGHT_KIND ? data.liveIds.length : undefined;
     return { label: row.labelPlural, icon: row.icon as unknown as string, live };
   }, [data.liveIds.length]);
 
@@ -114,7 +141,7 @@ export function GateApp() {
           onSelectSpace={(id: SpaceId) => void id}
           accountInitial="A"
           // D1: theme's one home is the account menu. No tab-bar toggle.
-          onOpenAccount={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+          onOpenAccount={toggleTheme}
         />
 
         <div className="shell-body">
@@ -131,8 +158,10 @@ export function GateApp() {
             <WorkspaceView
               data={data}
               nav={nav}
-              leftKind={LEFT_KIND}
-              rightKind={RIGHT_KIND}
+              leftKind={kinds.leftKind}
+              rightKind={kinds.rightKind}
+              onLeftKindChange={kinds.setLeftKind}
+              onRightKindChange={kinds.setRightKind}
               menuCollapsed={menuCollapsed}
               reasons={reasons}
               onNotice={notices.push}
