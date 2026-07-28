@@ -2,26 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { Querier } from '../../src/db/types.js';
 import { queryEdges } from '../../src/facade/services/w2/edges-placements.js';
-import { createW1ScratchDatabase, type W1ScratchDatabase } from './w1-pg.js';
+import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
-const MIGRATIONS = [
-  '001_core_graph.sql',
-  '002_identity.sql',
-  '003_read_model.sql',
-  '004_ledgers.sql',
-  '005_custom_kinds.sql',
-  '006_execution_side.sql',
-  '007_rpc_catalog.sql',
-  '008_rls_policies.sql',
-  '009_claim_accessor_grants.sql',
-  '010_fix_mark_read_ambiguity.sql',
-  '011_entity_content_missing_kinds.sql',
-  '012_ledger_reserve_cmid.sql',
-  '013_next_event_seq_warning.sql',
-  '014_assert_version_locks.sql',
-  '015_w1_foundations.sql',
-  '018_w2_edges_placements.sql',
-] as const;
+// The WHOLE applied chain, not a hand-listed slice: this suite runs CURRENT
+// src, whose shared read SQL references columns born in later migrations
+// (ppd.name: 021, interaction_profiles' full set: 027) — a pinned slice
+// re-breaks on every schema-coupled src change.
+const MIGRATIONS = migrationFiles();
 
 interface Fixture {
   identityId: string;

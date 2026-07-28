@@ -10,24 +10,12 @@ import { W2EntitiesCommandsTrackingService } from '../../src/facade/services/w2/
 import type { RequestContext } from '../../src/http/types.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
-const MIGRATIONS = [
-  '001_core_graph.sql',
-  '002_identity.sql',
-  '003_read_model.sql',
-  '004_ledgers.sql',
-  '005_custom_kinds.sql',
-  '006_execution_side.sql',
-  '007_rpc_catalog.sql',
-  '008_rls_policies.sql',
-  '009_claim_accessor_grants.sql',
-  '010_fix_mark_read_ambiguity.sql',
-  '011_entity_content_missing_kinds.sql',
-  '012_ledger_reserve_cmid.sql',
-  '013_next_event_seq_warning.sql',
-  '014_assert_version_locks.sql',
-  '015_w1_foundations.sql',
-  '017_w2_entities_commands_tracking.sql',
-] as const;
+// The WHOLE applied chain, not a hand-listed slice: this suite runs CURRENT
+// src, and src's shared read SQL references columns born in later migrations
+// (ppd.name: 021, interaction_profiles' full set: 027) — a pinned slice
+// re-breaks on every schema-coupled src change. Matches this file's own :577
+// rationale and the :703 usage.
+const MIGRATIONS = migrationFiles();
 
 interface Fixture {
   identityId: string;
