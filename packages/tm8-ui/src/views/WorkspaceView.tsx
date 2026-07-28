@@ -22,7 +22,6 @@ import {
   useMeasuredWidth,
   usePanelEngine,
 } from '../shell';
-import { LiveSessionBar } from '../shell/LiveSessionBar';
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
@@ -138,14 +137,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
 
   const centreIsEmpty = nav.stack.length === 0 && nav.pinned.length === 0;
 
-  const resolveSession = useCallback(
-    (id: string) => {
-      const summary = data.rowsFor(rightKind)(undefined).find((row) => row.id === id);
-      return summary ? toSessionRow(summary) : undefined;
-    },
-    [data, rightKind],
-  );
-
   return (
     <WorkspaceGrid
       layout={layout}
@@ -191,16 +182,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       }
       center={
         <>
-          {/* Fixed ~30px row: never scrolls, never collapses (§5.4). Its live
-              set is the seam snapshot's, so no kind literal enters shell. */}
-          <LiveSessionBar
-            liveIds={data.liveIds}
-            focusedId={nav.stack[nav.stack.length - 1] ?? null}
-            resolve={resolveSession}
-            livenessOf={data.livenessOf}
-            activity={data.activity}
-            onFocusSession={(id) => nav.push?.(id as EntityId)}
-          />
+          {/* USER RULING 2026-07-29 (D64): the live-session bar is UNMOUNTED —
+              the strip above the terminal duplicated the panel header one row
+              below it and taxed the canvas. Its facts survive elsewhere: the
+              live count in the rail + list panels, focus via the lists. The
+              component stays in-tree for any future non-center home; §5.4's
+              never-scrolls clause retires with the mount. */}
           {/* 02-LAYOUT §2.2 — the empty centre is not a blank: it IS the live
               roster and it teaches the grammar. PanelStack still owns the slot
               and its C_min floor; this is the content that goes in it. */}
