@@ -159,15 +159,64 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     }
   });
 
-  it('5. sessions lifecycle tabs → list.lifecycleTabs (D14 interim partition)', () => {
-    const tabs = getKind('work_session').list.lifecycleTabs;
-    expect(tabs?.map((t) => t.id)).toEqual(['live', 'exited', 'all']);
+  it('5. sessions lifecycle → list.lifecycle, D20 partition surviving underneath', () => {
+    const tiers = getKind('work_session').list.lifecycle;
+    expect(tiers?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
     // The contract cannot express WorkSessionStatus in CollectionQuery.filters,
-    // so the partition rides alongside a contract-shaped filter (D14).
-    expect(tabs?.[0].statuses).toEqual(['spawning', 'running', 'idle']);
-    expect(tabs?.[1].statuses).toEqual(['exited', 'failed']);
-    expect(tabs?.[2].statuses).toBeUndefined();
-    for (const tab of tabs ?? []) expect(tab.filter).toBeTruthy();
+    // so the partition rides alongside a contract-shaped filter (D20).
+    expect(tiers?.[0].statuses).toEqual(['spawning', 'running', 'idle']);
+    expect(tiers?.[1].statuses).toEqual(['exited', 'failed']);
+    for (const tier of tiers ?? []) expect(tier.filter).toBeTruthy();
+  });
+
+  it('D41 — every COLLECTION kind carries all three tiers, in order', () => {
+    // Universal by ruling. A kind that forgot them would silently lose its
+    // tabs, so the test asserts presence rather than trusting each row.
+    for (const row of collectionKinds()) {
+      expect(row.list.lifecycle?.map((t) => t.id)).toEqual(['open', 'done', 'archived']);
+    }
+    expect(getKind(CUSTOM_KIND_FALLBACK).list.lifecycle?.map((t) => t.id)).toEqual([
+      'open',
+      'done',
+      'archived',
+    ]);
+  });
+
+  it('D41 — archived is a REAL query for every kind, never an invention', () => {
+    // `deleted: 'only'` is a genuine CollectionQuery member, which is why the
+    // archive tier is honest universally where `done` is not.
+    for (const row of allKinds()) {
+      const archived = row.list.lifecycle?.find((t) => t.id === 'archived');
+      expect(archived?.filter).toEqual({ deleted: 'only' });
+      expect(archived?.unsupported).toBeUndefined();
+    }
+  });
+
+  it('D41 — a tier the contract cannot express is UNSUPPORTED with a reason, never faked', () => {
+    // Only task (workStatus) and work_session (D20 partition) can express
+    // completion. Everything else says so out loud rather than inventing one.
+    const canExpressDone = ['task', 'work_session'];
+    for (const row of allKinds()) {
+      const done = row.list.lifecycle?.find((t) => t.id === 'done');
+      if (canExpressDone.includes(row.kind)) {
+        expect(done?.unsupported).toBeUndefined();
+      } else {
+        expect(done?.unsupported).toBeTruthy();
+        // The tab still exists — honest-empty, never hidden (L6).
+        expect(done?.label).toBe('Done');
+      }
+    }
+  });
+
+  it('D41 — carries NO count field: counts come from each tier query total', () => {
+    // One source, three surfaces (tab label, footer line, selector total). A
+    // count field would be a second source that could disagree with the query.
+    for (const row of allKinds()) {
+      for (const tier of row.list.lifecycle ?? []) {
+        expect(tier).not.toHaveProperty('count');
+        expect(tier).not.toHaveProperty('total');
+      }
+    }
   });
 
   it('6. live count → list.liveCount', () => {
@@ -189,7 +238,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
   it('uses only the CLOSED §2.2 field vocabulary', () => {
     const CLOSED: readonly (keyof ListConfig)[] = [
       'sections',
-      'lifecycleTabs',
+      'lifecycle',
       'tree',
       'tile',
       'liveCount',

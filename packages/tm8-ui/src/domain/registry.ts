@@ -25,6 +25,7 @@ import type {
   FilterSpec,
   KindConfig,
   ListConfig,
+  LifecycleTier,
   ListRowFacts,
   LiveTreatment,
   QueryFilter,
@@ -101,9 +102,60 @@ function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): Li
     quickCreate: true,
     filters: [deletedFilter],
     sort: DEFAULT_SORT,
+    // Universal by DEFAULT (D41): a kind opts into a richer partition, never
+    // out of having tiers at all. A row that forgot them would silently lose
+    // its tabs, so absence is not an available state.
+    lifecycle: statelessTiers(),
     ...overrides,
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// Lifecycle tiers (D41) — Open / Done / Archived, universal on collection kinds
+// ---------------------------------------------------------------------------
+
+/**
+ * `archived` is the honest one: `deleted: 'only'` is a real `CollectionQuery`
+ * member, so the archive tier is a genuine query for EVERY kind rather than an
+ * invention. `open`/`done` are only expressible where the kind carries a state
+ * axis the contract knows — task via `workStatus`, work_session via D20's
+ * client partition. Everywhere else `done` is declared UNSUPPORTED with its
+ * reason: the tab renders, its count is honestly zero, and nothing fabricates
+ * a completion concept the backend cannot answer for.
+ */
+const ARCHIVED_TIER: LifecycleTier = {
+  id: 'archived',
+  label: 'Archived',
+  filter: { deleted: 'only' },
+};
+
+const NO_DONE_REASON =
+  'This kind has no completion state on this node — the contract records no done/closed concept for it, so nothing can honestly land here.';
+
+/** The default tiers for a kind with no state axis: open, an honest-empty done, archived. */
+function statelessTiers(): readonly LifecycleTier[] {
+  return [
+    { id: 'open', label: 'Open', filter: NOT_DELETED },
+    { id: 'done', label: 'Done', filter: NOT_DELETED, unsupported: NO_DONE_REASON },
+    ARCHIVED_TIER,
+  ];
+}
+
+const TASK_TIERS: readonly LifecycleTier[] = [
+  { id: 'open', label: 'Open', filter: { workStatus: [...TASK_OPEN_STATUSES], deleted: 'exclude' } },
+  { id: 'done', label: 'Done', filter: { workStatus: [...TASK_CLOSED_STATUSES], deleted: 'exclude' } },
+  ARCHIVED_TIER,
+];
+
+// D20 survives underneath: CollectionQuery.filters.workStatus is the TASK
+// vocabulary and cannot express WorkSessionStatus, so the session tiers carry
+// the client-side partition exactly as the lifecycle tabs did.
+const SESSION_TIERS: readonly LifecycleTier[] = [
+  { id: 'open', label: 'Open', filter: NOT_DELETED, statuses: ['spawning', 'running', 'idle'] },
+  { id: 'done', label: 'Done', filter: NOT_DELETED, statuses: ['exited', 'failed'] },
+  ARCHIVED_TIER,
+];
 
 // ---------------------------------------------------------------------------
 // work_session liveness presentation (R-UI-5: PRESENTS the seam verdict,
@@ -227,6 +279,7 @@ const ROWS: readonly KindConfig[] = [
           { source: 'workingActors' },
         ],
       },
+      lifecycle: TASK_TIERS,
       primaryActions: ['run', 'coordinate'],
       filters: [statusFilter, readyToPullFilter, deletedFilter],
       sort: [BY_ACTIVITY, BY_PRIORITY, BY_DUE, BY_POSITION, BY_CREATED],
@@ -270,14 +323,7 @@ const ROWS: readonly KindConfig[] = [
     },
     card: { fields: ['sessionStatus', 'agentTool', 'model', 'activityAt'] },
     list: baseList({
-      // D14 (INTERIM): `filter` stays contract-shaped; `statuses` is the
-      // client-side partition, because CollectionQuery cannot express
-      // WorkSessionStatus. Retires mechanically if the contract member lands.
-      lifecycleTabs: [
-        { id: 'live', label: 'Live', filter: NOT_DELETED, statuses: ['spawning', 'running', 'idle'] },
-        { id: 'exited', label: 'Exited', filter: NOT_DELETED, statuses: ['exited', 'failed'] },
-        { id: 'all', label: 'All', filter: NOT_DELETED },
-      ],
+      lifecycle: SESSION_TIERS,
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
         badges: [

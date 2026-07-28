@@ -330,29 +330,51 @@ export interface ListSection {
 }
 
 /**
- * A lifecycle tab (work_session live/exited/…).
+ * A lifecycle TIER — the Open / Done / Archived tabs the composed T0-1 canvas
+ * draws on EVERY collection kind (user-ratified 2026-07-28, D41).
  *
- * D14: `filter` stays contract-shaped per LLD §2.2, but `CollectionQuery`
- * has NO member that filters work_sessions by `WorkSessionStatus` (measured
- * against `packages/contract/src/contract.ts`: its `filters.workStatus` is the
- * TASK vocabulary). Rather than invent a contract shape, the partition is
- * declared as `statuses` and applied by the list panel to rows the seam already
- * delivered — a presentation-side grouping over `EntitySummary.state.status`,
- * never a synthesized query. The panel reads it structurally (`'status' in
- * row.state`), never by kind literal.
+ * A tier is a different axis from a `ListSection`: the tier is the lifecycle
+ * band you are looking at, the sections are triage grouping WITHIN it. T0-1
+ * draws both at once — tabs above, `NEEDS ATTENTION` / `IN PROGRESS` group
+ * headers below — so neither supersedes the other.
+ *
+ * `filter` stays contract-shaped, and `archived` is honestly expressible:
+ * `deleted: 'only'` is a real `CollectionQuery` member, so the archive tier is
+ * a genuine query rather than an invention. Where a kind has no state that can
+ * land in a tier, `unsupported` carries the reason and the tab renders
+ * HONESTLY EMPTY (L6) — never hidden, and never populated by a fabricated
+ * partition.
+ *
+ * D20's mechanism survives underneath: `statuses` is the client-side partition
+ * for `work_session`, because `CollectionQuery.filters.workStatus` is the TASK
+ * vocabulary and cannot express `WorkSessionStatus`.
  */
-export interface LifecycleTab {
-  id: string;
+export interface LifecycleTier {
+  id: 'open' | 'done' | 'archived';
   label: string;
   filter: QueryFilter;
   statuses?: readonly WorkSessionStatus[];
+  /**
+   * Set when this kind cannot populate this tier. The tab still renders — the
+   * count is honestly zero and the reason explains why, rather than the tier
+   * being silently dropped for some kinds and not others.
+   */
+  unsupported?: string;
 }
 
 export interface ListConfig {
   /** task: current / completed. */
   sections?: readonly ListSection[];
-  /** work_session: live / exited / … (D14). */
-  lifecycleTabs?: readonly LifecycleTab[];
+  /**
+   * Open / Done / Archived — universal across collection kinds (D41).
+   *
+   * Counts are NOT a field here. Each tier's count is its own query's
+   * `CollectionResult.page.total`, which feeds the tab label, the footer line
+   * ("9 open · 601 done · 33 archived") and the kind-selector total from ONE
+   * source. A count field would be a second source that could disagree with
+   * the query it claims to summarise.
+   */
+  lifecycle?: readonly LifecycleTier[];
   /** task subtree; session coordinator→worker. */
   tree?: { by: 'hierarchy'; guideLines: boolean };
   tile: {

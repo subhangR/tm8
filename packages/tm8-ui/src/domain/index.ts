@@ -30,7 +30,7 @@ export type {
   Hash,
   IconRef,
   KindConfig,
-  LifecycleTab,
+  LifecycleTier,
   ListConfig,
   ListRowFacts,
   ListSection,
