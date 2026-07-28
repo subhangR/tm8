@@ -434,7 +434,17 @@ export interface ListRowFacts {
 // PanelConfig (§2.3) + generic content blocks (§2.4)
 // ---------------------------------------------------------------------------
 
-export type BodyArchetype = 'subtree' | 'reader' | 'hub' | 'profile' | 'generic' | 'terminal';
+export type BodyArchetype =
+  | 'subtree'
+  | 'reader'
+  | 'hub'
+  | 'profile'
+  | 'generic'
+  | 'terminal'
+  // Surface wave (kind-bodies-2): project's governed body and
+  // interaction_profile's restricted body.
+  | 'governed'
+  | 'restricted';
 
 export type ContentBlockKind =
   | 'fields'
@@ -442,7 +452,18 @@ export type ContentBlockKind =
   | 'file-preview'
   | 'items'
   | 'lifecycle'
-  | 'notice';
+  | 'notice'
+  // Surface wave (kind-bodies-2): the governed body's four blocks…
+  | 'path-row'
+  | 'trust-card'
+  | 'live-sessions'
+  | 'unlink-footer'
+  // …and the restricted body's five.
+  | 'status-banner'
+  | 'preview'
+  | 'field-rows'
+  | 'restrictions'
+  | 'pin-provenance';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;

@@ -19,6 +19,8 @@ import { SubtreeBody } from './bodies/SubtreeBody';
 import { ReaderBody } from './bodies/ReaderBody';
 import { HubBody } from './bodies/HubBody';
 import { ProfileBody } from './bodies/ProfileBody';
+import { GovernedBody } from './bodies/GovernedBody';
+import { RestrictedBody } from './bodies/RestrictedBody';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -378,6 +380,26 @@ function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: 
         detail={detail}
         blocks={config.panel.blocks ?? []}
         livenessOf={props.livenessOf}
+        onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+
+  if (config.panel.archetype === 'governed') {
+    return (
+      <GovernedBody
+        detail={detail}
+        blocks={config.panel.blocks ?? []}
+        livenessOf={props.livenessOf}
+        onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+  if (config.panel.archetype === 'restricted') {
+    return (
+      <RestrictedBody
+        detail={detail}
+        blocks={config.panel.blocks ?? []}
         onOpenEntity={onOpenEntity}
       />
     );

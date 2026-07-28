@@ -40,6 +40,7 @@ import { useTheme } from '../theme/useTheme';
 import { AccountMenu, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
+import { HomeScreen } from '../home';
 import { GraphScreen } from '../graph';
 import {
   GRAPH_FIXTURE_NOW,
@@ -303,6 +304,15 @@ export function GateApp() {
               reasons={reasons}
               onNotice={notices.push}
               onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
+            /* T5-1 Home — the first void route dispatching to a real screen
+               (surface wave, home lane). Above the unbuilt-view branch, whose
+               placeholder stopped being true the moment this landed. */
+            <HomeScreen
+              data={data}
+              spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
+              onOpenEntity={(id) => nav.push?.(id as EntityId)}
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

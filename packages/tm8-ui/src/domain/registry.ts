@@ -669,10 +669,13 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [{ source: 'projectVersion' }] },
     }),
     panel: {
-      archetype: 'generic',
+      /* kind-bodies-2 handover, applied verbatim: the GOVERNED body. */
+      archetype: 'governed',
       blocks: [
-        { block: 'fields', label: 'PROJECT' },
-        { block: 'items', label: 'LINKED SESSIONS' },
+        { block: 'path-row' },
+        { block: 'trust-card', params: { action: 'untrust' } },
+        { block: 'live-sessions' },
+        { block: 'unlink-footer', params: { action: 'unlink' } },
         {
           block: 'notice',
           params: {
@@ -708,10 +711,19 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [{ source: 'profileStatus' }, { source: 'profileVersions' }] },
     }),
     panel: {
-      archetype: 'generic',
+      /* kind-bodies-2 handover, applied verbatim: the RESTRICTED body. */
+      archetype: 'restricted',
       blocks: [
-        { block: 'lifecycle', label: 'LIFECYCLE' },
-        { block: 'fields', label: 'TEMPLATE' },
+        { block: 'status-banner', params: {
+            source: 'status',
+            draft: 'preview only — activate to offer it at launch.',
+            retired: 'sessions pinned to it keep running — new launches can’t pick it.',
+          } },
+        { block: 'preview', label: 'PREVIEW' },
+        { block: 'field-rows', params: { fields: 'voice=VOICE,risk=RISK,tools=TOOLS' } },
+        { block: 'items', label: 'DEFAULT FOR', params: { source: 'defaultFor' } },
+        { block: 'restrictions' },
+        { block: 'pin-provenance', params: { countSource: 'pinnedBy' } },
       ],
       statusPill: {
         source: 'profileStatus',
