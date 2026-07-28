@@ -34,6 +34,19 @@ import { createDomainStore, type DomainStoreHandle } from '../data/project/domai
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 
+/** Frozen so an empty result keeps referential identity across renders. */
+const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
+
+/** Order-independent key: two equal filters must not produce two cache rows. */
+function stableKey(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(stableKey).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableKey(v)}`).join(',')}}`;
+}
+
 export interface GateData {
   ready: boolean;
   spaceId: SpaceId;
@@ -45,7 +58,7 @@ export interface GateData {
   /** THE verdict. Never computed in the UI. */
   livenessOf: (id: string) => SessionLiveness;
   /** Rows for a (kind, filter) pair — hydrated once, then served from memory. */
-  rowsFor: (kind: string) => (filter: unknown) => readonly EntitySummary[];
+  rowsFor: (kind: string) => (filter?: unknown) => readonly EntitySummary[];
   detailOf: (id: string) => EntityDetail | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
@@ -112,7 +125,8 @@ export function useGateData(options: GateOptions): GateData {
       const load = async (kind: string) => {
         const query = { spaceId: space, kinds: [kind] } as unknown as CollectionQuery;
         const result = await seam.query(query);
-        setRows((current) => ({ ...current, [kind]: result.page.items }));
+        // Same key shape rowsFor reads: an unfiltered read is the '*' key.
+        setRows((current) => ({ ...current, [`${kind}::*`]: result.page.items }));
       };
       await Promise.all([load(options.leftKind), load(options.rightKind)]);
     },
@@ -186,16 +200,16 @@ export function useGateData(options: GateOptions): GateData {
   const inFlight = useRef(new Set<string>());
   const ensureKind = useCallback(
     (kind: string) => {
-      if (!spaceId || rows[kind] || inFlight.current.has(kind)) return;
+      if (!spaceId || rows[`${kind}::*`] || inFlight.current.has(kind)) return;
       inFlight.current.add(kind);
       const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
       void seam
         .query(query)
-        .then((result) => setRows((current) => ({ ...current, [kind]: result.page.items })))
+        .then((result) => setRows((current) => ({ ...current, [`${kind}::*`]: result.page.items })))
         .catch(() => {
           // A kind that will not load renders as an honestly empty panel
           // rather than a spinner that never resolves.
-          setRows((current) => ({ ...current, [kind]: [] }));
+          setRows((current) => ({ ...current, [`${kind}::*`]: [] }));
         })
         .finally(() => inFlight.current.delete(kind));
     },
@@ -219,10 +233,66 @@ export function useGateData(options: GateOptions): GateData {
     [seam, spaceId, hydrate],
   );
 
+  /**
+   * THE FILTER REACHES THE SEAM (D57's fifth layer).
+   *
+   * This previously read `(kind) => () => rows[kind] ?? []`: the type promised
+   * a filter parameter and the implementation never bound it, so every tier —
+   * Open, Done, Archived — received the SAME pre-hydrated array. Four sessions
+   * rendered as twelve, one set counted three times, and the seam's executor
+   * clause could not run because nothing ever called it with a filter.
+   *
+   * Nothing could see it. `(filter: unknown)` is a signature that PROMISES
+   * acceptance, and an implementation ignoring its argument is type-legal, so
+   * tsc is structurally blind to it. Panel tests inject their own `rowsFor`;
+   * executor tests call the seam directly. The gap sat exactly between two
+   * suites that were both green.
+   *
+   * Now keyed per (kind, filter) — the hydration key LLD §3.1 specifies — and
+   * an unseen key hydrates on demand. It returns [] until that resolves, which
+   * is honest: not-yet-loaded is a real state and it is not the same as empty.
+   */
+  const cacheKey = (kind: string, filter: unknown): string =>
+    `${kind}::${filter === undefined ? '*' : stableKey(filter)}`;
+
+  const pending = useRef(new Set<string>());
+  const [pendingTick, setPendingTick] = useState(0);
+
   const rowsFor = useCallback(
-    (kind: string) => () => rows[kind] ?? [],
+    (kind: string) =>
+      (filter?: unknown): readonly EntitySummary[] => {
+        const key = cacheKey(kind, filter);
+        if (rows[key] !== undefined) return rows[key];
+        // Record the miss; the effect below performs the read. Requesting from
+        // inside render must never dispatch, so this only marks intent.
+        if (!pending.current.has(key)) {
+          pending.current.add(key);
+          queueMicrotask(() => setPendingTick((n) => n + 1));
+        }
+        return EMPTY_ROWS;
+      },
     [rows],
   );
+
+  // Drains the misses recorded during render. Each (kind, filter) key is read
+  // once and cached; `onResync` clearing `rows` re-arms every key naturally.
+  useEffect(() => {
+    if (!ready || !spaceId || pending.current.size === 0) return;
+    const keys = [...pending.current];
+    pending.current.clear();
+    for (const key of keys) {
+      const [kind, filterPart] = key.split('::');
+      const query = {
+        spaceId,
+        kinds: [kind],
+        ...(filterPart && filterPart !== '*' ? { filters: JSON.parse(filterPart) } : {}),
+      } as unknown as CollectionQuery;
+      void seam
+        .query(query)
+        .then((result) => setRows((current) => ({ ...current, [key]: result.page.items })))
+        .catch(() => setRows((current) => ({ ...current, [key]: [] })));
+    }
+  }, [ready, spaceId, seam, pendingTick]);
 
   const detailOf = useCallback((id: string) => details[id], [details]);
 
