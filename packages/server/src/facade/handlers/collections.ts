@@ -19,6 +19,7 @@
  * The `query` echoed back in the result is the query as RESOLVED, so a client
  * (or a channel auto-tab) can re-run it verbatim and get the same rows.
  */
+import { createHash } from 'node:crypto';
 import {
   CollabError,
   decodeCursor,
@@ -33,7 +34,9 @@ import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, limitOf, MAX_LIMIT } from '../context.js';
-import { assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, type EntityRow } from '../entity-read.js';
+import {
+  assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
+} from '../entity-read.js';
 
 // ---------------------------------------------------------------------------
 // Sorting
@@ -47,6 +50,19 @@ interface SortSpec {
   readonly dir: 'asc' | 'desc';
   /** Cast applied to the cursor's sort value so the row comparison type-checks. */
   readonly cast: string;
+  /**
+   * The SAME value rendered so the cursor can carry it EXACTLY.
+   *
+   * Never let a temporal sort key reach the cursor as a JavaScript `Date`.
+   * `timestamptz` carries MICROSECONDS and a `Date` keeps only milliseconds, so
+   * the encoded key lands strictly before the row it came from; both temporal
+   * sorts here are DESC, where that does not loop but SILENTLY SKIPS every row
+   * sharing the lost millisecond — and `activityAt_desc` is the DEFAULT sort.
+   * `date` is worse in a quieter way: node-pg parses it at LOCAL midnight, so
+   * `toISOString()` can move a due date to the previous day west of UTC.
+   * Rendering in SQL removes both hazards; numeric sorts need no rendering.
+   */
+  readonly cursorExpr: string;
 }
 
 /**
@@ -56,18 +72,66 @@ interface SortSpec {
  * rows at a page boundary. A sentinel makes the column total-ordered.
  */
 const SORTS: Record<SortName, SortSpec> = {
-  activityAt_desc: { expr: 'e.activity_at', dir: 'desc', cast: 'timestamptz' },
-  createdAt_desc: { expr: 'e.created_at', dir: 'desc', cast: 'timestamptz' },
-  position: { expr: 'e.position', dir: 'asc', cast: 'double precision' },
-  dueDate: { expr: "coalesce(t.due_date, '9999-12-31'::date)", dir: 'asc', cast: 'date' },
+  activityAt_desc: {
+    expr: 'e.activity_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.activity_at'),
+  },
+  createdAt_desc: {
+    expr: 'e.created_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.created_at'),
+  },
+  position: {
+    expr: 'e.position', dir: 'asc', cast: 'double precision', cursorExpr: 'e.position',
+  },
+  dueDate: {
+    expr: "coalesce(t.due_date, '9999-12-31'::date)",
+    dir: 'asc',
+    cast: 'date',
+    cursorExpr: "to_char(coalesce(t.due_date, '9999-12-31'::date), 'YYYY-MM-DD')",
+  },
   priority: {
     expr: "case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end",
     dir: 'asc',
     cast: 'integer',
+    cursorExpr: "case t.priority when 'urgent' then 0 when 'high' then 1 when 'medium' then 2 else 3 end",
   },
 };
 
 const DEFAULT_SORT: SortName = 'activityAt_desc';
+
+/**
+ * Bind an opaque keyset to the complete semantic query that minted it.
+ *
+ * A syntactically valid `(sortValue,id)` from another filter is more dangerous
+ * than a malformed cursor: Postgres can execute it and return a plausible but
+ * incorrect page. The first cursor key is therefore a stable digest of the
+ * normalized query plus the operation scope. `cursor` and `limit` are excluded
+ * because they control traversal rather than membership/order; changing any
+ * filter, hierarchy, grouping, layout, graph lens, or sort invalidates it.
+ */
+function cursorFingerprint(
+  query: CollectionQuery,
+  sort: SortName,
+  scope: string,
+): string {
+  const { cursor: _cursor, limit: _limit, ...shape } = query;
+
+  const stable = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      return value.map(stable).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .filter(([, child]) => child !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, child]) => [key, stable(child)]),
+      );
+    }
+    return value;
+  };
+
+  const canonical = JSON.stringify(stable({ ...shape, sort, scope }));
+  return createHash('sha256').update(canonical).digest('base64url').slice(0, 22);
+}
 
 /**
  * A cursor must fail CLOSED.
@@ -119,14 +183,23 @@ function assertCursorId(value: unknown): string {
 }
 
 /** The raw sort value for the last row of a page, as it goes into the cursor. */
-function sortKeyOf(row: { __sort?: unknown }, sort: SortName): string | number {
-  const raw = row.__sort;
-  if (raw instanceof Date) return raw.toISOString();
+/**
+ * The cursor's sort key, taken from `__sort_cursor` — rendered by Postgres, so
+ * it is already exact. A `Date` reaching here at all means some sort forgot its
+ * `cursorExpr`, which is the truncation bug returning; it is refused rather
+ * than silently converted.
+ */
+function sortKeyOf(row: { __sort_cursor?: unknown }, sort: SortName): string | number {
+  const raw = row.__sort_cursor;
   if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string') return raw;
   if (raw === null || raw === undefined) {
     throw new CollabError('upstream_unavailable', `sort key missing for ${sort}`);
   }
-  return String(raw);
+  throw new CollabError(
+    'upstream_unavailable',
+    `sort key for ${sort} is not exact text — a Date here would truncate the cursor`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +442,7 @@ export async function queryCollection(
   q: Querier,
   query: CollectionQuery,
   viewerIdentityId: string,
+  cursorScope = 'collections.query',
 ): Promise<CollectionResult> {
   const sortName: SortName = query.sort ?? DEFAULT_SORT;
   const sort = SORTS[sortName];
@@ -379,17 +453,21 @@ export async function queryCollection(
   }
 
   const limit = limitOf(query.limit);
+  const fingerprint = cursorFingerprint(query, sortName, cursorScope);
   const p = new Params();
   const where = buildWhere(query, p);
 
   if (query.cursor) {
     const { k } = decodeCursor(query.cursor);
-    if (k.length !== 2) {
-      throw new CollabError('invalid_cursor', 'invalid cursor: expected [sortValue, id]');
+    if (k.length !== 3) {
+      throw new CollabError('invalid_cursor', 'invalid cursor: expected [fingerprint, sortValue, id]');
+    }
+    if (k[0] !== fingerprint) {
+      throw new CollabError('invalid_cursor', 'invalid cursor: query fingerprint does not match');
     }
     // Validated against THIS sort's type before binding — see assertCursorKey.
-    const sortValue = assertCursorKey(k[0], sort.cast);
-    const lastId = assertCursorId(k[1]);
+    const sortValue = assertCursorKey(k[1], sort.cast);
+    const lastId = assertCursorId(k[2]);
     // A row comparison, not two ORed predicates: `(a, b) < (x, y)` is exactly
     // the "everything after this row in this ordering" the keyset needs, and
     // Postgres can use the composite index for it.
@@ -402,8 +480,8 @@ export async function queryCollection(
   // Fetch one extra row: its existence is what says "there is another page",
   // without a second COUNT query that could disagree with the page itself.
   const fetchLimit = Math.min(limit, MAX_LIMIT) + 1;
-  const rows = await q.query<EntityRow & { __sort: unknown }>(
-    `select ${ENTITY_COLUMNS}, ${sort.expr} as __sort
+  const rows = await q.query<EntityRow & { __sort: unknown; __sort_cursor: string | number }>(
+    `select ${ENTITY_COLUMNS}, ${sort.expr} as __sort, ${sort.cursorExpr} as __sort_cursor
      ${ENTITY_FROM}
       where ${where.join('\n        and ')}
       order by ${sort.expr} ${sort.dir}, e.id ${sort.dir}
@@ -418,7 +496,9 @@ export async function queryCollection(
   const last = pageRows[pageRows.length - 1];
   const page: Page<EntitySummary> = {
     items,
-    nextCursor: hasMore && last ? encodeCursor([sortKeyOf(last, sortName), last.id]) : null,
+    nextCursor: hasMore && last
+      ? encodeCursor([fingerprint, sortKeyOf(last, sortName), last.id])
+      : null,
   };
 
   // The query as resolved, so re-running it is reproducible.

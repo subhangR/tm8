@@ -1,0 +1,79 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/w2/execution.test.ts (17 tests | 4 failed) 15ms
+   × B2 — the delivery path, over a fake RPC port > reserves, claims, WRITES and settles — the seam actually carries traffic 7ms
+     → a valid system delivery principal is required
+   × B2 — the delivery path, over a fake RPC port > holds NO wake state: a rebuilt service does not mint a fresh allowance 0ms
+     → a valid system delivery principal is required
+   × B2 — the delivery path, over a fake RPC port > a refusal settles failed_retryable and writes no bytes 0ms
+     → a valid system delivery principal is required
+   × B2 — the delivery path, over a fake RPC port > joins duplicate in-flight dispatches into ONE write 0ms
+     → a valid system delivery principal is required
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w2/execution.test.ts > B2 — the delivery path, over a fake RPC port > reserves, claims, WRITES and settles — the seam actually carries traffic
+TypeError: a valid system delivery principal is required
+ ❯ W2MessageDeliveryAdapter.dispatch ../execution/src/pty/w2-message-delivery.ts:132:29
+ ❯ W2ExecutionDeliveryService.dispatch src/facade/services/w2/execution.ts:557:34
+    555|     this.inFlight.set(attempt.deliveryId, { lease, principal: attempt.…
+    556|     try {
+    557|       return await this.delivery.dispatch({
+       |                                  ^
+    558|         deliveryId: attempt.deliveryId,
+    559|         requestId: attempt.requestId,
+ ❯ deliver test/w2/execution.test.ts:479:30
+ ❯ test/w2/execution.test.ts:491:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/w2/execution.test.ts > B2 — the delivery path, over a fake RPC port > holds NO wake state: a rebuilt service does not mint a fresh allowance
+TypeError: a valid system delivery principal is required
+ ❯ W2MessageDeliveryAdapter.dispatch ../execution/src/pty/w2-message-delivery.ts:132:29
+ ❯ W2ExecutionDeliveryService.dispatch src/facade/services/w2/execution.ts:557:34
+    555|     this.inFlight.set(attempt.deliveryId, { lease, principal: attempt.…
+    556|     try {
+    557|       return await this.delivery.dispatch({
+       |                                  ^
+    558|         deliveryId: attempt.deliveryId,
+    559|         requestId: attempt.requestId,
+ ❯ deliver test/w2/execution.test.ts:479:30
+ ❯ test/w2/execution.test.ts:503:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/w2/execution.test.ts > B2 — the delivery path, over a fake RPC port > a refusal settles failed_retryable and writes no bytes
+TypeError: a valid system delivery principal is required
+ ❯ W2MessageDeliveryAdapter.dispatch ../execution/src/pty/w2-message-delivery.ts:132:29
+ ❯ W2ExecutionDeliveryService.dispatch src/facade/services/w2/execution.ts:557:34
+    555|     this.inFlight.set(attempt.deliveryId, { lease, principal: attempt.…
+    556|     try {
+    557|       return await this.delivery.dispatch({
+       |                                  ^
+    558|         deliveryId: attempt.deliveryId,
+    559|         requestId: attempt.requestId,
+ ❯ deliver test/w2/execution.test.ts:479:30
+ ❯ test/w2/execution.test.ts:527:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/w2/execution.test.ts > B2 — the delivery path, over a fake RPC port > joins duplicate in-flight dispatches into ONE write
+TypeError: a valid system delivery principal is required
+ ❯ W2MessageDeliveryAdapter.dispatch ../execution/src/pty/w2-message-delivery.ts:132:29
+ ❯ W2ExecutionDeliveryService.dispatch src/facade/services/w2/execution.ts:557:34
+    555|     this.inFlight.set(attempt.deliveryId, { lease, principal: attempt.…
+    556|     try {
+    557|       return await this.delivery.dispatch({
+       |                                  ^
+    558|         deliveryId: attempt.deliveryId,
+    559|         requestId: attempt.requestId,
+ ❯ test/w2/execution.test.ts:550:43
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 13 passed (17)
+   Start at  11:44:04
+   Duration  1.94s (transform 681ms, setup 0ms, collect 1.17s, tests 15ms, environment 0ms, prepare 140ms)
+

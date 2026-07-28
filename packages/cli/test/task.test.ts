@@ -1,0 +1,426 @@
+/**
+ * `tm8 task …` and `tm8 tracking refresh` — the closed kind-command namespace
+ * (W4 group 3).
+ *
+ * FIVE command paths over five catalog rows: `entities.commands.complete`,
+ * `entities.commands.work`, `entities.commands.linkPr`,
+ * `entities.commands.linkCommit`, and `tracking.refresh`.
+ *
+ * WHAT THIS FILE EXISTS TO PIN DOWN, beyond binding:
+ *
+ *  - THE RETIRED `report` VOCABULARY POINTS HERE. `src/run.ts` answers
+ *    `tm8 … report` with "state changes are explicit domain commands …
+ *    `tm8 task transition <task-id> working`". Until this module is wired, that
+ *    pointer names a command that exits 8 — a live coherence gap where the CLI
+ *    tells a caller to run something it does not have. The registration test
+ *    below is what closes it.
+ *  - `done` IS NOT THIS COMMAND'S TO REFUSE. `complete` alone may write done,
+ *    and the authority that says so is the SERVER: `set_work_state` raises on
+ *    `done`, which surfaces as `invariant_violation`. A CLI that refused it
+ *    locally would have to fabricate a `details.reason` it is forbidden to
+ *    invent, and would make the frozen row's own note false for CLI callers.
+ *    So `done` is forwarded and the Server's refusal is rendered.
+ *  - `tracking.refresh` ANSWERS 202, AND 202 IS A SUCCESS. A naive client that
+ *    allowlists 200 turns an accepted async refresh into a failure.
+ */
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { bindPath, type OperationName } from '@tm8/contract';
+import { parseInvocation, splitCommandPath } from '../src/args.js';
+import { loadLocalConfig, resolveContext, sessionContextFromEnv } from '../src/context.js';
+import { errorLines, exitCodeFor } from '../src/errors.js';
+import { CliError, EXIT_USAGE } from '../src/exit.js';
+import { createOutput } from '../src/output.js';
+import { UUID_PATTERN } from '../src/mutation.js';
+import { isCommandPath } from '../src/discovery/operations.js';
+import { ledger } from '../src/discovery/availability.js';
+import type { CommandModule } from '../src/run.js';
+
+/** Imported lazily so a missing module fails each TEST, not only the FILE. */
+async function taskCommands(): Promise<CommandModule[]> {
+  return (await import('../src/commands/task.js')).TASK_COMMANDS;
+}
+async function trackingCommands(): Promise<CommandModule[]> {
+  return (await import('../src/commands/tracking.js')).TRACKING_COMMANDS;
+}
+
+interface Seen {
+  method: string;
+  pathname: string;
+  query: string;
+  body: unknown;
+}
+
+let server: Server;
+let baseUrl: string;
+let seen: Seen[] = [];
+let reply: { status: number; body: unknown } = { status: 200, body: { data: {}, requestId: 'req_t' } };
+let scratchHome: string;
+
+beforeAll(async () => {
+  server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', () => {
+      const url = new URL(req.url ?? '/', 'http://x');
+      const raw = Buffer.concat(chunks).toString('utf8');
+      seen.push({
+        method: req.method ?? '',
+        pathname: url.pathname,
+        query: url.search,
+        body: raw ? (JSON.parse(raw) as unknown) : undefined,
+      });
+      res.setHeader('content-type', 'application/json');
+      res.statusCode = reply.status;
+      res.end(JSON.stringify(reply.body));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const addr = server.address();
+  if (addr === null || typeof addr === 'string') throw new Error('no address');
+  baseUrl = `http://127.0.0.1:${addr.port}`;
+});
+
+afterAll(async () => {
+  await new Promise<void>((resolve, reject) => server.close((e) => (e ? reject(e) : resolve())));
+  if (scratchHome) rmSync(scratchHome, { recursive: true, force: true });
+});
+
+const SPACE = '11111111-1111-7111-8111-111111111111';
+const TASK = '55555555-5555-7555-8555-555555555555';
+const OTHER = '66666666-6666-7666-8666-666666666666';
+const ACTOR = '77777777-7777-7777-8777-777777777777';
+
+beforeEach(() => {
+  seen = [];
+  reply = { status: 200, body: { data: {}, requestId: 'req_t' } };
+  ledger.clear();
+  scratchHome ??= mkdtempSync(join(tmpdir(), 'tm8-w4-g3-task-'));
+  process.env.TM8_BASE_URL = baseUrl;
+  process.env.TM8_SPACE_ID = SPACE;
+  process.env.XDG_CONFIG_HOME = scratchHome;
+  delete process.env.TM8_CONFIG_PATH;
+  delete process.env.TM8_ACTOR_ID;
+});
+
+afterEach(() => {
+  delete process.env.TM8_SPACE_ID;
+  delete process.env.TM8_ACTOR_ID;
+  delete process.env.TM8_BASE_URL;
+});
+
+interface Ran {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+async function driveWith(modules: CommandModule[], argv: readonly string[]): Promise<Ran> {
+  let stdout = '';
+  let stderr = '';
+  const streams = {
+    stdout: (c: string | Uint8Array) => {
+      stdout += typeof c === 'string' ? c : Buffer.from(c).toString('utf8');
+    },
+    stderr: (c: string) => {
+      stderr += c;
+    },
+  };
+  let out = createOutput({ format: 'human', streams });
+  try {
+    const inv = parseInvocation(argv);
+    out = createOutput({
+      format: inv.globals.format,
+      color: inv.globals.color,
+      quiet: inv.globals.quiet,
+      streams,
+    });
+    const known = new Set(modules.map((m) => m.path.join(' ')));
+    const match = splitCommandPath(inv.positionals, (p) => known.has(p.join(' ')));
+    if (!match) throw new CliError(`unknown command: ${inv.positionals.join(' ')}`, EXIT_USAGE);
+    const mod = modules.find((m) => m.path.join(' ') === match.path.join(' '));
+    /* c8 ignore next */
+    if (!mod) throw new CliError('no module', EXIT_USAGE);
+    const ctx = resolveContext({
+      globals: inv.globals,
+      session: sessionContextFromEnv(),
+      config: loadLocalConfig(),
+    });
+    const code = await mod.run({
+      path: match.path,
+      args: match.args,
+      options: inv.options,
+      passthrough: inv.passthrough,
+      ctx,
+      out,
+    });
+    return { code, stdout, stderr };
+  } catch (err) {
+    out.error(errorLines(err));
+    return { code: exitCodeFor(err), stdout, stderr };
+  }
+}
+
+async function drive(argv: readonly string[]): Promise<Ran> {
+  return driveWith([...(await taskCommands()), ...(await trackingCommands())], argv);
+}
+
+// ── registration ────────────────────────────────────────────────────────────
+
+describe('the five rows this slot owns here', () => {
+  it('task.ts registers exactly the four task commands', async () => {
+    const paths = (await taskCommands()).map((m) => m.path.join(' ')).sort();
+    expect(paths).toEqual(['task complete', 'task link-commit', 'task link-pr', 'task transition']);
+  });
+
+  it('tracking.ts registers exactly `tracking refresh`', async () => {
+    const paths = (await trackingCommands()).map((m) => m.path.join(' '));
+    expect(paths).toEqual(['tracking refresh']);
+  });
+
+  it('every registered path is in the frozen grammar projection', async () => {
+    for (const m of [...(await taskCommands()), ...(await trackingCommands())]) {
+      expect(isCommandPath(m.path)).toBe(true);
+    }
+  });
+
+  /**
+   * The live coherence gap this slot closes: `run.ts` retires `report` and
+   * points the caller at `tm8 task transition`. That pointer is only honest
+   * once the command it names exists.
+   */
+  it('`task transition` — the command the retired `report` vocabulary points at — exists', async () => {
+    const paths = (await taskCommands()).map((m) => m.path.join(' '));
+    expect(paths).toContain('task transition');
+  });
+});
+
+interface RowCase {
+  op: OperationName;
+  argv: string[];
+  method: string;
+  params?: Record<string, string>;
+}
+
+const ROWS: readonly RowCase[] = [
+  {
+    op: 'entities.commands.complete',
+    argv: ['task', 'complete', TASK, '--expect-version', '7', '--by', ACTOR],
+    method: 'POST',
+    params: { id: TASK },
+  },
+  {
+    op: 'entities.commands.work',
+    argv: ['task', 'transition', TASK, 'working'],
+    method: 'POST',
+    params: { id: TASK },
+  },
+  {
+    op: 'entities.commands.linkPr',
+    argv: ['task', 'link-pr', TASK, 'https://example.invalid/pr/1'],
+    method: 'POST',
+    params: { id: TASK },
+  },
+  {
+    op: 'entities.commands.linkCommit',
+    argv: ['task', 'link-commit', TASK, 'https://example.invalid/c/abc'],
+    method: 'POST',
+    params: { id: TASK },
+  },
+  { op: 'tracking.refresh', argv: ['tracking', 'refresh'], method: 'POST' },
+];
+
+describe('binding', () => {
+  for (const row of ROWS) {
+    it(`${row.argv.slice(0, 2).join(' ')} binds ${row.op} through bindPath`, async () => {
+      const r = await drive(row.argv);
+      expect({ op: row.op, code: r.code, stderr: r.stderr }).toEqual({ op: row.op, code: 0, stderr: '' });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.method).toBe(row.method);
+      expect(seen[0]?.pathname).toBe(bindPath(row.op, row.params ?? {}));
+    });
+
+    it(`${row.argv.slice(0, 2).join(' ')} generates a UUIDv7 mutation id and passes a supplied one verbatim`, async () => {
+      await drive(row.argv);
+      const generated = (seen[0]?.body as { clientMutationId?: string })?.clientMutationId;
+      expect(generated).toMatch(UUID_PATTERN);
+      expect(generated?.[14]).toBe('7');
+      seen = [];
+      await drive([...row.argv, '--mutation-id', 'MINE-verbatim']);
+      expect((seen[0]?.body as { clientMutationId?: string })?.clientMutationId).toBe('MINE-verbatim');
+    });
+  }
+});
+
+// ── task transition ─────────────────────────────────────────────────────────
+
+describe('task transition', () => {
+  for (const status of ['open', 'pulled', 'working', 'in_review', 'blocked', 'cancelled']) {
+    it(`accepts the exact contract spelling \`${status}\``, async () => {
+      const r = await drive(['task', 'transition', TASK, status]);
+      expect(r.code).toBe(0);
+      expect(seen[0]?.body).toMatchObject({ status });
+    });
+  }
+
+  it('refuses a status outside the closed set locally, listing what it accepts', async () => {
+    const r = await drive(['task', 'transition', TASK, 'in-review']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('in_review');
+    expect(seen).toHaveLength(0);
+  });
+
+  /**
+   * `done` is FORWARDED. Only `entities.commands.complete` may write done, and
+   * the Server owns that refusal — `invariant_violation` with
+   * `details.reason='use_complete_command'`. Refusing it in the CLI would mean
+   * fabricating a reason code this package is forbidden to invent.
+   */
+  it('forwards `done` and renders the Server\'s own invariant_violation', async () => {
+    reply = {
+      status: 409,
+      body: {
+        error: {
+          code: 'invariant_violation',
+          message: 'completion goes through complete_task',
+          requestId: 'req_t',
+          retryable: false,
+          details: { reason: 'use_complete_command' },
+        },
+      },
+    };
+    const r = await drive(['task', 'transition', TASK, 'done']);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.body).toMatchObject({ status: 'done' });
+    expect(r.code).toBe(6);
+    expect(r.stderr).toContain('use_complete_command');
+    expect(r.stdout).toBe('');
+  });
+
+  it('requires the task id and the status', async () => {
+    expect((await drive(['task', 'transition'])).code).toBe(2);
+    expect((await drive(['task', 'transition', TASK])).code).toBe(2);
+    expect(seen).toHaveLength(0);
+  });
+});
+
+// ── task complete ───────────────────────────────────────────────────────────
+
+describe('task complete', () => {
+  it('requires --expect-version and at least one --by', async () => {
+    expect((await drive(['task', 'complete', TASK, '--by', ACTOR])).code).toBe(2);
+    expect((await drive(['task', 'complete', TASK, '--expect-version', '7'])).code).toBe(2);
+    expect(seen).toHaveLength(0);
+  });
+
+  it('sends expectedVersion as a number and every --by as a completerId', async () => {
+    await drive(['task', 'complete', TASK, '--expect-version', '7', '--by', ACTOR, '--by', OTHER]);
+    expect(seen[0]?.body).toMatchObject({ expectedVersion: 7, completerIds: [ACTOR, OTHER] });
+  });
+
+  it('carries --as as the acting actorId, distinct from the completers', async () => {
+    await drive(['task', 'complete', TASK, '--expect-version', '7', '--by', OTHER, '--as', ACTOR]);
+    expect(seen[0]?.body).toMatchObject({ actorId: ACTOR, completerIds: [OTHER] });
+  });
+});
+
+// ── task link-pr / link-commit ──────────────────────────────────────────────
+
+describe('task link-pr and link-commit', () => {
+  it('send the url and the optional projectId', async () => {
+    await drive(['task', 'link-pr', TASK, 'https://example.invalid/pr/1', '--project', OTHER]);
+    expect(seen[0]?.body).toMatchObject({ url: 'https://example.invalid/pr/1', projectId: OTHER });
+    seen = [];
+    await drive(['task', 'link-commit', TASK, 'https://example.invalid/c/abc']);
+    expect(seen[0]?.body).toMatchObject({ url: 'https://example.invalid/c/abc' });
+    expect(seen[0]?.body).not.toHaveProperty('projectId');
+  });
+
+  it('require both the task id and the url', async () => {
+    expect((await drive(['task', 'link-pr', TASK])).code).toBe(2);
+    expect((await drive(['task', 'link-commit', TASK])).code).toBe(2);
+    expect(seen).toHaveLength(0);
+  });
+});
+
+// ── tracking refresh ────────────────────────────────────────────────────────
+
+describe('tracking refresh', () => {
+  /**
+   * 202 IS A SUCCESS. The refresh is accepted for asynchronous work; a client
+   * that allowlists 200 reports an accepted refresh as a failure.
+   */
+  it('treats 202 Accepted as success, not as an error', async () => {
+    reply = { status: 202, body: { data: { accepted: 2 }, requestId: 'req_t' } };
+    const r = await drive(['tracking', 'refresh']);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+  });
+
+  it('sends entityIds only when ids are given', async () => {
+    await drive(['tracking', 'refresh']);
+    expect(seen[0]?.body).not.toHaveProperty('entityIds');
+    seen = [];
+    await drive(['tracking', 'refresh', TASK, OTHER]);
+    expect(seen[0]?.body).toMatchObject({ entityIds: [TASK, OTHER] });
+  });
+
+  /**
+   * THE KNOWN LIVE 403 IS NOT WORKED AROUND AND NOT HIDDEN. A multi-Space
+   * fan-out currently answers `forbidden`; the fix is open with another wave.
+   * The CLI's duty is to render it faithfully and exit 4 — a client-side
+   * retry, fallback, or softened message would make a live server defect
+   * invisible to the gate that must see it.
+   */
+  it('renders the known multi-Space 403 faithfully and exits 4', async () => {
+    reply = {
+      status: 403,
+      body: {
+        error: {
+          code: 'forbidden',
+          message: 'actor is not bound in this space',
+          requestId: 'req_t',
+          retryable: false,
+        },
+      },
+    };
+    const r = await drive(['tracking', 'refresh', TASK, OTHER]);
+    expect(r.code).toBe(4);
+    expect(r.stderr).toContain('actor is not bound in this space');
+    expect(r.stdout).toBe('');
+    // Exactly one attempt: no client-side retry papering over the defect.
+    expect(seen).toHaveLength(1);
+  });
+});
+
+// ── option discipline and output law ────────────────────────────────────────
+
+describe('option discipline', () => {
+  it('an option outside the frozen syntax is a usage error, never a silent drop', async () => {
+    const r = await drive(['task', 'transition', TASK, 'working', '--note', 'hi']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('--note');
+    expect(seen).toHaveLength(0);
+  });
+});
+
+describe('output law', () => {
+  it('--format json emits the contract DTO with nothing added', async () => {
+    reply = { status: 200, body: { data: { patches: [{ id: TASK }] }, requestId: 'req_t' } };
+    const r = await drive(['task', 'transition', TASK, 'working', '--format', 'json']);
+    expect(JSON.parse(r.stdout)).toEqual({ patches: [{ id: TASK }] });
+    expect(r.stderr).toBe('');
+  });
+
+  it('human output names the entity a follow-up command needs', async () => {
+    reply = {
+      status: 200,
+      body: { data: { entity: { id: TASK, kind: 'task', title: 'Ship', version: 8 } }, requestId: 'req_t' },
+    };
+    const r = await drive(['task', 'transition', TASK, 'working']);
+    expect(r.stdout).toContain(TASK);
+  });
+});

@@ -7,13 +7,14 @@
  *   2. transport checks (./security.ts — S1 aside, deferred no-ops today)
  *   3. `/health` — the liveness probe, deliberately OUTSIDE the catalog and
  *      outside the envelope: it is infrastructure, not an operation
- *   4. read + JSON-parse the body → `payload_too_large` / `invalid_input`
- *   5. route against the catalog → `not_found`
- *   6. resolve identity (S5 auto-owner today)
- *   7. handler lookup → `not_implemented` when unbuilt (DEV-13)
- *   8. zod-validate the input → `invalid_input`
- *   9. run the handler, wrap in the DEV-6 envelope
- *  10. anything thrown → the single DEV-8 error writer
+ *   4. narrowly matched support transports (raw FileUploadGrant PUT)
+ *   5. read + JSON-parse the body → `payload_too_large` / `invalid_input`
+ *   6. route against the catalog → `not_found`
+ *   7. resolve identity (S5 auto-owner today)
+ *   8. handler lookup → `not_implemented` when unbuilt (DEV-13)
+ *   9. zod-validate the input → `invalid_input`
+ *  10. run the handler, wrap in the DEV-6 envelope
+ *  11. anything thrown → the single DEV-8 error writer
  *
  * Two orderings are worth defending because they look arbitrary and are not:
  *
@@ -39,7 +40,15 @@ import { nextRequestId } from './request-id.js';
 import { Router } from './router.js';
 import { autoOwnerResolver, BASE_SECURITY_HEADERS, checkTransport } from './security.js';
 import type { StaticHandler } from './static.js';
-import { isHandlerResult, type HandlerResult, type IdentityResolver, type RequestContext } from './types.js';
+import type { W2FileUploadRoute } from './w2-file-upload.js';
+import {
+  isHandlerResult,
+  type HandlerResult,
+  type IdentityResolver,
+  type RequestContext,
+} from './types.js';
+
+const FILE_UPLOAD_SUPPORT_PATH = /^\/v2\/files\/uploads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/content$/;
 
 /**
  * The WS side of the frame, kept behind a structural type so the HTTP
@@ -58,6 +67,8 @@ export interface FacadeServerOptions {
   readonly identityResolver?: IdentityResolver;
   readonly upgrades?: UpgradeTarget;
   readonly staticHandler?: StaticHandler;
+  /** The sole non-catalog support transport: FileUploadGrant raw-byte PUT. */
+  readonly fileUploadRoute?: W2FileUploadRoute;
 }
 
 export interface FacadeServer {
@@ -135,6 +146,11 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       // `/v2/...` path is an honest `not_found`, never an index.html with a 200.
       if (!isApiPath && staticHandler && method === 'GET') {
         if (await staticHandler.serve(pathname, res)) return;
+      }
+
+      if (method === 'PUT' && FILE_UPLOAD_SUPPORT_PATH.test(pathname) && opts.fileUploadRoute) {
+        const identity = await resolveIdentity(req.headers);
+        if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
       }
 
       const { value: body } = await readJsonBody(req, config.maxBodyBytes);

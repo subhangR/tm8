@@ -15,27 +15,27 @@ import {
   encodeCursor,
   type MessageView,
   type Page,
-  type PostMessageInput,
 } from '@tm8/contract';
+import { createHash } from 'node:crypto';
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
-import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../context.js';
+import { claimsFor, limitOf, requireUuidParam } from '../context.js';
 import {
   assembleSummaries,
   contentOf,
   ENTITY_COLUMNS,
   ENTITY_FROM,
+  MICROS,
   type EntityRow,
 } from '../entity-read.js';
-import { toCommandResult, type RpcCommandResult } from './entities.js';
 
 /**
  * A `MessageView` is an `EntitySummary` plus the message-specific content and
  * a reply count — so it comes out of the same assembler as everything else and
  * then gains its message parts. Nothing about a message is derived twice.
  */
-async function toMessageViews(
+export async function toMessageViews(
   q: Querier,
   rows: readonly EntityRow[],
   viewerIdentityId: string,
@@ -70,16 +70,56 @@ async function toMessageViews(
   return views;
 }
 
+export async function loadMessageViewsByIds(
+  q: Querier,
+  ids: readonly string[],
+  viewerIdentityId: string,
+): Promise<MessageView[]> {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (unique.length === 0) return [];
+  const rows = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
+      where e.id = any($1::uuid[]) and e.kind = 'message'`,
+    [unique],
+  );
+  const views = await toMessageViews(q, rows, viewerIdentityId);
+  const byId = new Map(views.map((view) => [view.id, view]));
+  return unique.map((id) => byId.get(id)).filter((view): view is MessageView => view !== undefined);
+}
+
+function cursorFingerprint(anchorId: string, rootMessageId: string | null): string {
+  return createHash('sha256')
+    .update(JSON.stringify({ operation: 'messages.list', anchorId, rootMessageId }))
+    .digest('hex');
+}
+
 export function messagesList(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
     const owner = await deps.owner();
+    if (ctx.identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    const viewerIdentityId = ctx.identity.kind === 'auto-owner'
+      ? owner.identityId
+      : ctx.identity.identityId;
+    if (!viewerIdentityId) {
+      throw new CollabError('unauthenticated', 'bearer identity is unresolved');
+    }
     const anchorId = requireUuidParam(ctx, 'anchorId');
     const limit = limitOf(ctx.query.get('limit'));
     const cursor = ctx.query.get('cursor');
     // `?rootMessageId=` switches from "thread roots" to "replies under a root".
     const rootMessageId = ctx.query.get('rootMessageId');
+    if (rootMessageId && !/^[0-9a-f-]{36}$/i.test(rootMessageId)) {
+      throw new CollabError('not_found', `no such rootMessageId: ${rootMessageId}`);
+    }
+    const fingerprint = cursorFingerprint(anchorId, rootMessageId);
 
-    return deps.db.tx(claimsFor(owner, ctx), async (q) => {
+    return deps.db.tx({
+      ...claimsFor(owner, ctx),
+      identityId: viewerIdentityId,
+      nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
+    }, async (q) => {
       const params: unknown[] = [anchorId];
       let scope: string;
       if (rootMessageId) {
@@ -93,17 +133,35 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
       let keyset = '';
       if (cursor) {
         const { k } = decodeCursor(cursor);
-        if (k.length !== 2) {
-          throw new CollabError('invalid_cursor', 'invalid cursor: expected [createdAt, id]');
+        if (k.length !== 3 || k[0] !== fingerprint) {
+          throw new CollabError('invalid_cursor', 'cursor does not match this message thread');
         }
-        params.push(String(k[0]), String(k[1]));
+        params.push(String(k[1]), String(k[2]));
         keyset = `and (msg.created_at, e.id) > ($${params.length - 1}::timestamptz, $${params.length}::uuid)`;
       }
 
       // Threads read oldest-first: a conversation is read in the order it
       // happened, unlike a feed.
-      const rows = await q.query<EntityRow>(
-        `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
+      //
+      // `msg.created_at` is carried as TEXT deliberately, and it is
+      // load-bearing for pagination in two independent ways. ENTITY_COLUMNS selects
+      // `e.created_at` — the ENVELOPE's timestamp — and never this column, so a
+      // cursor built from an `EntityRow` compares the wrong clock against the
+      // keyset below. And a `timestamptz` handed back as a JavaScript `Date`
+      // keeps only MILLISECONDS, while Postgres stores MICROSECONDS, so the
+      // encoded value lands strictly BEFORE the row it came from. Either one
+      // alone makes `(msg.created_at, e.id) > (cursor…)` re-admit that row and
+      // the thread never advances past its first page.
+      //
+      // `MICROS` rather than `::text`: both keep the microseconds and both cast
+      // back to the identical instant, but `::text` renders in the SESSION's
+      // timezone and strips trailing zeros, so the same instant spells
+      // differently depending on server config and carries a variable number of
+      // fractional digits. This is now the one idiom every cursor in the
+      // codebase uses, which is what lets the truncation detector stay simple.
+      type MessageKeysetRow = EntityRow & { message_created_at: string };
+      const rows = await q.query<MessageKeysetRow>(
+        `select ${ENTITY_COLUMNS}, ${MICROS('msg.created_at')} as message_created_at ${ENTITY_FROM}
           where msg.anchor_id = $1 and ${scope} ${keyset}
           order by msg.created_at asc, e.id asc
           limit ${limit + 1}`,
@@ -112,44 +170,20 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
 
       const hasMore = rows.length > limit;
       const pageRows = hasMore ? rows.slice(0, limit) : rows;
-      const items = await toMessageViews(q, pageRows, owner.identityId);
+      const items = await toMessageViews(q, pageRows, viewerIdentityId);
       const last = pageRows[pageRows.length - 1];
 
       const page: Page<MessageView> = {
         items,
         nextCursor:
           hasMore && last
-            ? encodeCursor([
-                last.created_at instanceof Date
-                  ? last.created_at.toISOString()
-                  : new Date(last.created_at).toISOString(),
-                last.id,
-              ])
+            // Encoded verbatim: this is already the exact text of the column
+            // the keyset compares. Routing it through a `Date` is what
+            // truncated it to milliseconds and stalled the walk.
+            ? encodeCursor([fingerprint, last.message_created_at, last.id])
             : null,
       };
       return page;
-    });
-  };
-}
-
-export function messagesPost(deps: FacadeDeps): OperationHandler {
-  return async (ctx) => {
-    const owner = await deps.owner();
-    const envelope = commandEnvelope(ctx);
-    const input = ctx.body as PostMessageInput;
-
-    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
-      const raw = await q.rpc<RpcCommandResult>('post_message', [
-        input.anchorId,
-        input.body,
-        envelope.actorId ?? null,
-        input.parentMessageId ?? null,
-        JSON.stringify(input.mentions ?? []),
-        JSON.stringify(input.attachments ?? []),
-        envelope.clientMutationId ?? null,
-      ]);
-      const result = await toCommandResult(q, raw, owner.identityId);
-      return { kind: 'json' as const, status: 201, data: result };
     });
   };
 }

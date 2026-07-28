@@ -1,0 +1,15 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ✓ test/w5/cursors/inbox-teammate-cursor.pg.test.ts (6 tests) 2036ms
+ ✓ test/w5/cursors/home-activity-cursor.pg.test.ts (4 tests) 1777ms
+ ✓ test/w5/cursors/activity-roundtrip.pg.test.ts (4 tests) 1695ms
+ ✓ test/w5/cursors/decode-refusal.pg.test.ts (3 tests) 1795ms
+ ✓ test/w5/cursors/mint-refusal-contract.test.ts (6 tests) 6ms
+ ✓ test/w5/cursors/keyset-absent-slot.test.ts (4 tests) 3ms
+
+ Test Files  6 passed (6)
+      Tests  27 passed (27)
+   Start at  19:06:21
+   Duration  9.56s (transform 286ms, setup 0ms, collect 675ms, tests 7.31s, environment 1ms, prepare 348ms)
+

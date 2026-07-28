@@ -1,0 +1,46 @@
+{
+  "manifestVersion": "2",
+  "server": {
+    "id": "srv_01HZTM8",
+    "baseUrl": "http://127.0.0.1:4610",
+    "catalogDigest": "sha256:5f2b9c1d",
+    "grammarVersion": "2",
+    "capabilityEpoch": "cap_01HZEPOCH"
+  },
+  "credential": { "bearerEnv": "TM8_AGENT_TOKEN" },
+  "identity": {
+    "actorId": "ent_01HZACTOR",
+    "teamMemberId": "ent_01HZPHOENIX",
+    "displayName": "Phoenix",
+    "mode": "worker"
+  },
+  "session": {
+    "id": "ses_01HZPHOENIXSESSION",
+    "spaceId": "spc_01HZDEMOSPACE",
+    "cwd": "/Users/subhang/Desktop/Projects/tm8",
+    "workdirMode": "project",
+    "runtimeMode": "native-interactive-pty",
+    "launchProjectId": "prj_01HZTM8",
+    "trust": "trusted",
+    "coordinatorSessionId": "ses_01HZORION"
+  },
+  "interactionProfile": {
+    "entityId": "ent_01HZPROFILE",
+    "version": 7,
+    "source": "teammate_default",
+    "pinRevision": 1,
+    "resolvedHash": "sha256:7c1e4a90",
+    "providerCaptureMode": "explicit-only",
+    "pinRef": "tm8://work-session/ses_01HZPHOENIXSESSION/interaction-profile-pin"
+  },
+  "assignment": {
+    "primaryTaskId": "tsk_01HZTASKONE",
+    "taskIds": ["tsk_01HZTASKONE", "tsk_01HZTASKTWO"]
+  },
+  "routing": { "inboxOwnerId": "ent_01HZPHOENIX", "eventAfterSeq": 1482 },
+  "discovery": {
+    "root": ["tm8", "help", "--format", "json"],
+    "actions": ["tm8", "action", "list", "--for", "{entityId}", "--format", "json"],
+    "context": ["tm8", "entity", "context", "{entityId}", "--format", "json"]
+  }
+}

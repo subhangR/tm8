@@ -177,6 +177,7 @@ interface SummaryRow {
   msg_anchor_id: string | null;
   msg_root_id: string | null;
   msg_author_id: string | null;
+  msg_batch_id: string | null;
   msg_body: string | null;
   msg_edited_at: Date | string | null;
   msg_redacted_at: Date | string | null;
@@ -245,6 +246,7 @@ select
   msg.anchor_id      as msg_anchor_id,
   msg.root_message_id as msg_root_id,
   msg.author_id      as msg_author_id,
+  msg.message_batch_id as msg_batch_id,
   msg.body           as msg_body,
   msg.edited_at      as msg_edited_at,
   msg.redacted_at    as msg_redacted_at,
@@ -663,6 +665,7 @@ export class PgEntityProjector implements EntityProjector {
             r.msg_author_id === null
               ? this.unknownActor(r.id)
               : (actors.get(r.msg_author_id) ?? this.unknownActor(r.msg_author_id)),
+          messageBatchId: r.msg_batch_id,
           editedAt: iso(r.msg_edited_at),
         };
       case 'member':

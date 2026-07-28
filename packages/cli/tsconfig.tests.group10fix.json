@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": [
+    "test/discovery-operations.test.ts",
+    "test/discovery-commands.test.ts",
+    "test/help.test.ts",
+    "test/catalog-exhaustiveness.test.ts"
+  ]
+}

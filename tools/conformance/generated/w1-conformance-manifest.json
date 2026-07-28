@@ -1,0 +1,4222 @@
+{
+  "schemaVersion": "tm8.conformance.w1.v1",
+  "catalogDigest": "sha256:df96ff5a4c2d11e41ec1d7b9c5e460bdcb8ae8d9c2c99b140f59e08305f8d604",
+  "catalog": {
+    "total": 101,
+    "v1": 99,
+    "reserved": 2,
+    "http": 100,
+    "ws": 1,
+    "registerableV1Http": 98,
+    "methods": {
+      "GET": 36,
+      "POST": 41,
+      "PATCH": 9,
+      "DELETE": 7,
+      "PUT": 7,
+      "WS": 1
+    },
+    "kinds": {
+      "read": 39,
+      "command": 61,
+      "stream": 1
+    },
+    "uniqueNames": 101,
+    "uniqueBindings": 101
+  },
+  "reservedOperations": [
+    "search.query",
+    "bridge.fetchBlob"
+  ],
+  "additiveOperations": [
+    {
+      "name": "spaces.menu.get",
+      "method": "GET",
+      "path": "/v2/spaces/:spaceId/menu",
+      "kind": "read",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "spaces.menu.update",
+      "method": "PUT",
+      "path": "/v2/spaces/:spaceId/menu",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "spaces.defaultChannel.set",
+      "method": "PUT",
+      "path": "/v2/spaces/:spaceId/default-channel",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "projects.associations.correct",
+      "method": "POST",
+      "path": "/v2/entities/:artifactId/commands/correct-project-association",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "handoffs.send",
+      "method": "POST",
+      "path": "/v2/work-sessions/:workSessionId/handoffs",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "handoffs.list",
+      "method": "GET",
+      "path": "/v2/work-sessions/:workSessionId/handoffs",
+      "kind": "read",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "handoffs.withdraw",
+      "method": "POST",
+      "path": "/v2/handoffs/:handoffId/withdraw",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "messages.attachments.add",
+      "method": "POST",
+      "path": "/v2/messages/:messageId/attachments",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "messages.attachments.remove",
+      "method": "DELETE",
+      "path": "/v2/messages/:messageId/attachments",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "messages.delivery.get",
+      "method": "GET",
+      "path": "/v2/messages/:messageId/delivery",
+      "kind": "read",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "entities.feed",
+      "method": "GET",
+      "path": "/v2/entities/:id/feed",
+      "kind": "read",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "entities.context",
+      "method": "GET",
+      "path": "/v2/entities/:id/context",
+      "kind": "read",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "interactionProfiles.propose",
+      "method": "POST",
+      "path": "/v2/spaces/:spaceId/interaction-profiles",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "interactionProfiles.updateDraft",
+      "method": "PATCH",
+      "path": "/v2/interaction-profiles/:profileId/draft",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "interactionProfiles.validate",
+      "method": "POST",
+      "path": "/v2/interaction-profiles/:profileId/validate",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "interactionProfiles.preview",
+      "method": "POST",
+      "path": "/v2/interaction-profiles/:profileId/preview",
+      "kind": "read",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "interactionProfiles.activate",
+      "method": "POST",
+      "path": "/v2/interaction-profiles/:profileId/activate",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "interactionProfiles.retire",
+      "method": "POST",
+      "path": "/v2/interaction-profiles/:profileId/retire",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "teamMembers.interactionProfile.setDefault",
+      "method": "PUT",
+      "path": "/v2/team-members/:teamMemberId/interaction-profile-default",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    },
+    {
+      "name": "spaces.interactionProfile.setDefault",
+      "method": "PUT",
+      "path": "/v2/spaces/:spaceId/interaction-profile-default",
+      "kind": "command",
+      "status": "v1",
+      "semanticStatus": "unimplemented"
+    }
+  ],
+  "routes": {
+    "http": [
+      {
+        "operation": "identity.get",
+        "method": "GET",
+        "path": "/v2/identity",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.list",
+        "method": "GET",
+        "path": "/v2/spaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.create",
+        "method": "POST",
+        "path": "/v2/spaces",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.update",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.navigation",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/navigation",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.home",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/home",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.settings",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/settings",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.members.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/members",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.invites.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/invites",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.invites.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/invites",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.invites.revoke",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/invites/:inviteId/revoke",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.invites.redeem",
+        "method": "POST",
+        "path": "/v2/invites/redeem",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskAxes.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/task-axes",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskAxes.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/task-axes",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskAxes.update",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId/task-axes/:axisId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.taskAxes.delete",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/task-axes/:axisId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.leaderboard",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/leaderboard",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.awards",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/awards",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.get",
+        "method": "GET",
+        "path": "/v2/entities/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.create",
+        "method": "POST",
+        "path": "/v2/entities",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.patch",
+        "method": "PATCH",
+        "path": "/v2/entities/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.move",
+        "method": "POST",
+        "path": "/v2/entities/:id/move",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.delete",
+        "method": "DELETE",
+        "path": "/v2/entities/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.restore",
+        "method": "POST",
+        "path": "/v2/entities/:id/restore",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.children",
+        "method": "GET",
+        "path": "/v2/entities/:id/children",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.hierarchy",
+        "method": "GET",
+        "path": "/v2/entities/:id/hierarchy",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.connections",
+        "method": "GET",
+        "path": "/v2/entities/:id/connections",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.versions",
+        "method": "GET",
+        "path": "/v2/entities/:id/versions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.activity",
+        "method": "GET",
+        "path": "/v2/entities/:id/activity",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.react",
+        "method": "PUT",
+        "path": "/v2/entities/:id/reaction",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.points.add",
+        "method": "POST",
+        "path": "/v2/entities/:id/points",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.commands.complete",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/complete",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.commands.work",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/work",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.commands.pull",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/pull",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.commands.linkPr",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/link-pr",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.commands.linkCommit",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/link-commit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "tracking.refresh",
+        "method": "POST",
+        "path": "/v2/tracking/refresh",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "edges.list",
+        "method": "GET",
+        "path": "/v2/edges",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "edges.create",
+        "method": "POST",
+        "path": "/v2/edges",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "edges.patch",
+        "method": "PATCH",
+        "path": "/v2/edges/:edgeId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "edges.delete",
+        "method": "DELETE",
+        "path": "/v2/edges/:edgeId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "edgeTypes.list",
+        "method": "GET",
+        "path": "/v2/edge-types",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.list",
+        "method": "GET",
+        "path": "/v2/entities/:anchorId/messages",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.post",
+        "method": "POST",
+        "path": "/v2/messages",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.edit",
+        "method": "PATCH",
+        "path": "/v2/messages/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.delete",
+        "method": "DELETE",
+        "path": "/v2/messages/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "collections.query",
+        "method": "POST",
+        "path": "/v2/collections/query",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "graph.query",
+        "method": "POST",
+        "path": "/v2/graph/query",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "placements.apply",
+        "method": "POST",
+        "path": "/v2/placements",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "commands.undo",
+        "method": "POST",
+        "path": "/v2/undo",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "search.query",
+        "method": "GET",
+        "path": "/v2/search",
+        "status": "reserved",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.list",
+        "method": "GET",
+        "path": "/v2/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.create",
+        "method": "POST",
+        "path": "/v2/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.get",
+        "method": "GET",
+        "path": "/v2/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.update",
+        "method": "PATCH",
+        "path": "/v2/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.link",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.unlink",
+        "method": "DELETE",
+        "path": "/v2/spaces/:spaceId/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "files.uploadInit",
+        "method": "POST",
+        "path": "/v2/files/uploads",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "files.uploadComplete",
+        "method": "POST",
+        "path": "/v2/files/uploads/:uploadId/complete",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "files.uploadAbort",
+        "method": "POST",
+        "path": "/v2/files/uploads/:uploadId/abort",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "files.download",
+        "method": "GET",
+        "path": "/v2/files/:fileEntityId/download",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "bridge.fetchBlob",
+        "method": "GET",
+        "path": "/v2/bridge/blobs/:fileEntityId",
+        "status": "reserved",
+        "source": "server-router"
+      },
+      {
+        "operation": "inbox.list",
+        "method": "GET",
+        "path": "/v2/inbox",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "inbox.markRead",
+        "method": "PUT",
+        "path": "/v2/inbox/:notificationId/read",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "readMarks.upsert",
+        "method": "PUT",
+        "path": "/v2/read-marks/:anchorId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "savedViews.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/saved-views",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "savedViews.create",
+        "method": "POST",
+        "path": "/v2/saved-views",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "savedViews.update",
+        "method": "PATCH",
+        "path": "/v2/saved-views/:viewId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "savedViews.delete",
+        "method": "DELETE",
+        "path": "/v2/saved-views/:viewId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "actions.list",
+        "method": "GET",
+        "path": "/v2/actions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "events.poll",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/events",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "presence.get",
+        "method": "GET",
+        "path": "/v2/entities/:id/presence",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.spawn",
+        "method": "POST",
+        "path": "/v2/execution/spawn",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.prompt",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/prompt",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.terminate",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/terminate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.streams.attach",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/streams-attach",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entityKinds.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/entity-kinds",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entityKinds.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/entity-kinds",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entityKinds.update",
+        "method": "PATCH",
+        "path": "/v2/spaces/:spaceId/entity-kinds/:kind",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.menu.get",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/menu",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.menu.update",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/menu",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.defaultChannel.set",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/default-channel",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.associations.correct",
+        "method": "POST",
+        "path": "/v2/entities/:artifactId/commands/correct-project-association",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "handoffs.send",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/handoffs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "handoffs.list",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/handoffs",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "handoffs.withdraw",
+        "method": "POST",
+        "path": "/v2/handoffs/:handoffId/withdraw",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.attachments.add",
+        "method": "POST",
+        "path": "/v2/messages/:messageId/attachments",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.attachments.remove",
+        "method": "DELETE",
+        "path": "/v2/messages/:messageId/attachments",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "messages.delivery.get",
+        "method": "GET",
+        "path": "/v2/messages/:messageId/delivery",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.feed",
+        "method": "GET",
+        "path": "/v2/entities/:id/feed",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "entities.context",
+        "method": "GET",
+        "path": "/v2/entities/:id/context",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "interactionProfiles.propose",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/interaction-profiles",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "interactionProfiles.updateDraft",
+        "method": "PATCH",
+        "path": "/v2/interaction-profiles/:profileId/draft",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "interactionProfiles.validate",
+        "method": "POST",
+        "path": "/v2/interaction-profiles/:profileId/validate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "interactionProfiles.preview",
+        "method": "POST",
+        "path": "/v2/interaction-profiles/:profileId/preview",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "interactionProfiles.activate",
+        "method": "POST",
+        "path": "/v2/interaction-profiles/:profileId/activate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "interactionProfiles.retire",
+        "method": "POST",
+        "path": "/v2/interaction-profiles/:profileId/retire",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "teamMembers.interactionProfile.setDefault",
+        "method": "PUT",
+        "path": "/v2/team-members/:teamMemberId/interaction-profile-default",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaces.interactionProfile.setDefault",
+        "method": "PUT",
+        "path": "/v2/spaces/:spaceId/interaction-profile-default",
+        "status": "registered",
+        "source": "server-router"
+      }
+    ],
+    "ws": [
+      {
+        "operation": "events.subscribe",
+        "method": "WS",
+        "path": "/v2/ws",
+        "status": "skeleton",
+        "durabilityClaim": false
+      }
+    ]
+  },
+  "serverRegistries": {
+    "handlers": {
+      "total": 28,
+      "facade": 23,
+      "execution": 4,
+      "events": 1,
+      "operations": [
+        "collections.query",
+        "edges.create",
+        "entities.activity",
+        "entities.children",
+        "entities.commands.complete",
+        "entities.commands.work",
+        "entities.create",
+        "entities.get",
+        "entities.patch",
+        "entities.points.add",
+        "events.poll",
+        "execution.prompt",
+        "execution.spawn",
+        "execution.streams.attach",
+        "execution.terminate",
+        "identity.get",
+        "messages.list",
+        "messages.post",
+        "projects.create",
+        "projects.get",
+        "projects.link",
+        "projects.list",
+        "projects.update",
+        "spaces.create",
+        "spaces.get",
+        "spaces.home",
+        "spaces.list",
+        "spaces.navigation"
+      ]
+    },
+    "inputSchemas": {
+      "bound": [
+        {
+          "operation": "spaces.create",
+          "schema": "CreateSpaceInputSchema"
+        },
+        {
+          "operation": "spaces.update",
+          "schema": "UpdateSpaceInputSchema"
+        },
+        {
+          "operation": "spaces.taskAxes.create",
+          "schema": "TaskAxisInputSchema"
+        },
+        {
+          "operation": "spaces.taskAxes.update",
+          "schema": "TaskAxisInputSchema"
+        },
+        {
+          "operation": "entities.create",
+          "schema": "CreateEntityInputSchema"
+        },
+        {
+          "operation": "entities.patch",
+          "schema": "PatchEntityInputSchema"
+        },
+        {
+          "operation": "entities.move",
+          "schema": "MoveEntityInputSchema"
+        },
+        {
+          "operation": "entities.react",
+          "schema": "ReactionInputSchema"
+        },
+        {
+          "operation": "entities.points.add",
+          "schema": "GrantPointsInputSchema"
+        },
+        {
+          "operation": "entities.commands.complete",
+          "schema": "CompleteTaskInputSchema"
+        },
+        {
+          "operation": "entities.commands.work",
+          "schema": "WorkInputSchema"
+        },
+        {
+          "operation": "entities.commands.pull",
+          "schema": "PullInputSchema"
+        },
+        {
+          "operation": "entities.commands.linkPr",
+          "schema": "LinkPrInputSchema"
+        },
+        {
+          "operation": "entities.commands.linkCommit",
+          "schema": "LinkCommitInputSchema"
+        },
+        {
+          "operation": "tracking.refresh",
+          "schema": "TrackingRefreshInputSchema"
+        },
+        {
+          "operation": "edges.create",
+          "schema": "CreateEdgeInputSchema"
+        },
+        {
+          "operation": "edges.patch",
+          "schema": "PatchEdgeInputSchema"
+        },
+        {
+          "operation": "messages.post",
+          "schema": "PostMessageInputSchema"
+        },
+        {
+          "operation": "messages.edit",
+          "schema": "PatchMessageInputSchema"
+        },
+        {
+          "operation": "collections.query",
+          "schema": "CollectionQuerySchema"
+        },
+        {
+          "operation": "graph.query",
+          "schema": "GraphQuerySchema"
+        },
+        {
+          "operation": "placements.apply",
+          "schema": "PlacementInputSchema"
+        },
+        {
+          "operation": "projects.create",
+          "schema": "ProjectCreateInputSchema"
+        },
+        {
+          "operation": "projects.update",
+          "schema": "ProjectUpdateInputSchema"
+        },
+        {
+          "operation": "projects.link",
+          "schema": "ProjectLinkInputSchema"
+        },
+        {
+          "operation": "files.uploadInit",
+          "schema": "FileUploadInitInputSchema"
+        },
+        {
+          "operation": "files.uploadComplete",
+          "schema": "FileUploadCompleteInputSchema"
+        },
+        {
+          "operation": "files.uploadAbort",
+          "schema": "FileUploadAbortInputSchema"
+        },
+        {
+          "operation": "savedViews.create",
+          "schema": "SavedViewInputSchema"
+        },
+        {
+          "operation": "savedViews.update",
+          "schema": "SavedViewInputSchema"
+        },
+        {
+          "operation": "execution.spawn",
+          "schema": "ExecutionSpawnInputSchema"
+        },
+        {
+          "operation": "execution.prompt",
+          "schema": "ExecutionPromptInputSchema"
+        },
+        {
+          "operation": "execution.terminate",
+          "schema": "ExecutionTerminateInputSchema"
+        },
+        {
+          "operation": "execution.streams.attach",
+          "schema": "ExecutionStreamsAttachInputSchema"
+        },
+        {
+          "operation": "entityKinds.create",
+          "schema": "EntityKindCreateInputSchema"
+        },
+        {
+          "operation": "entityKinds.update",
+          "schema": "EntityKindUpdateInputSchema"
+        }
+      ],
+      "unboundCommands": [
+        "entities.delete",
+        "entities.restore",
+        "edges.delete",
+        "messages.delete",
+        "commands.undo",
+        "inbox.markRead",
+        "readMarks.upsert",
+        "savedViews.delete",
+        "spaces.invites.create",
+        "spaces.invites.revoke",
+        "spaces.invites.redeem",
+        "spaces.taskAxes.delete",
+        "projects.unlink"
+      ]
+    },
+    "unimplementedV1Http": 70
+  },
+  "schemas": {
+    "additive": {
+      "spaces.menu.get": {
+        "requestSchema": null,
+        "resultSchema": "MenuConfigSchema"
+      },
+      "spaces.menu.update": {
+        "requestSchema": "UpdateMenuInputSchema",
+        "resultSchema": "MenuConfigSchema"
+      },
+      "spaces.defaultChannel.set": {
+        "requestSchema": "SetDefaultChannelInputSchema",
+        "resultSchema": "SpaceSettingsViewSchema"
+      },
+      "projects.associations.correct": {
+        "requestSchema": "CorrectProjectAssociationInputSchema",
+        "resultSchema": "EdgeCorrectionResultSchema"
+      },
+      "handoffs.send": {
+        "requestSchema": "SendHandoffInputSchema",
+        "resultSchema": "HandoffViewSchema"
+      },
+      "handoffs.list": {
+        "requestSchema": "HandoffListQuerySchema",
+        "resultSchema": "PageOfHandoffViewSchema"
+      },
+      "handoffs.withdraw": {
+        "requestSchema": "WithdrawHandoffInputSchema",
+        "resultSchema": "HandoffViewSchema"
+      },
+      "messages.attachments.add": {
+        "requestSchema": "AddMessageAttachmentsInputSchema",
+        "resultSchema": "MessageViewSchema"
+      },
+      "messages.attachments.remove": {
+        "requestSchema": "RemoveMessageAttachmentsInputSchema",
+        "resultSchema": "MessageViewSchema"
+      },
+      "messages.delivery.get": {
+        "requestSchema": "MessageDeliveryQuerySchema",
+        "resultSchema": "MessageDeliveryViewSchema"
+      },
+      "entities.feed": {
+        "requestSchema": "EntityFeedQuerySchema",
+        "resultSchema": "EntityFeedPageSchema"
+      },
+      "entities.context": {
+        "requestSchema": "EntityContextQuerySchema",
+        "resultSchema": "EntityContextViewSchema"
+      },
+      "interactionProfiles.propose": {
+        "requestSchema": "ProposeInteractionProfileInputSchema",
+        "resultSchema": "InteractionProfileViewSchema"
+      },
+      "interactionProfiles.updateDraft": {
+        "requestSchema": "UpdateInteractionProfileDraftInputSchema",
+        "resultSchema": "InteractionProfileViewSchema"
+      },
+      "interactionProfiles.validate": {
+        "requestSchema": "ValidateInteractionProfileInputSchema",
+        "resultSchema": "ProfileValidationViewSchema"
+      },
+      "interactionProfiles.preview": {
+        "requestSchema": "PreviewInteractionProfileInputSchema",
+        "resultSchema": "InteractionProfilePreviewSchema"
+      },
+      "interactionProfiles.activate": {
+        "requestSchema": "ActivateInteractionProfileInputSchema",
+        "resultSchema": "InteractionProfileViewSchema"
+      },
+      "interactionProfiles.retire": {
+        "requestSchema": "RetireInteractionProfileInputSchema",
+        "resultSchema": "InteractionProfileViewSchema"
+      },
+      "teamMembers.interactionProfile.setDefault": {
+        "requestSchema": "SetTeammateProfileDefaultInputSchema",
+        "resultSchema": "TeammateProfileDefaultViewSchema"
+      },
+      "spaces.interactionProfile.setDefault": {
+        "requestSchema": "SetSpaceProfileDefaultInputSchema",
+        "resultSchema": "SpaceProfileDefaultViewSchema"
+      }
+    },
+    "frozenAmendments": {
+      "messages.post": {
+        "requestSchema": "PostMessageInputSchema",
+        "resultSchema": "MessageBatchResultSchema"
+      },
+      "messages.edit": {
+        "requestSchema": "PatchMessageInputSchema",
+        "resultSchema": "MessageViewSchema"
+      },
+      "messages.delete": {
+        "requestSchema": "DeleteMessageInputSchema",
+        "resultSchema": "MessageViewSchema"
+      },
+      "entities.create": {
+        "requestSchema": "CreateEntityInputSchema",
+        "resultSchema": "CommandResultSchema"
+      },
+      "entities.connections": {
+        "requestSchema": "EntityConnectionsQuerySchema",
+        "resultSchema": "EntityConnectionsPageSchema"
+      },
+      "files.uploadComplete": {
+        "requestSchema": "FileUploadCompleteInputSchema",
+        "resultSchema": "CommandResultSchema"
+      },
+      "execution.spawn": {
+        "requestSchema": "ExecutionSpawnInputSchema",
+        "resultSchema": "CommandResultSchema"
+      },
+      "execution.prompt": {
+        "requestSchema": "ExecutionPromptInputSchema",
+        "resultSchema": "CommandResultSchema"
+      },
+      "entities.commands.linkPr": {
+        "requestSchema": "LinkPrInputSchema",
+        "resultSchema": "CommandResultSchema"
+      },
+      "entities.commands.linkCommit": {
+        "requestSchema": "LinkCommitInputSchema",
+        "resultSchema": "CommandResultSchema"
+      },
+      "inbox.list": {
+        "requestSchema": "InboxListQuerySchema",
+        "resultSchema": "PageOfNotificationItemSchema"
+      },
+      "inbox.markRead": {
+        "requestSchema": "InboxMarkReadInputSchema",
+        "resultSchema": "NotificationItemSchema"
+      },
+      "actions.list": {
+        "requestSchema": null,
+        "resultSchema": "ActionDiscoveryResultSchema"
+      },
+      "events.subscribe": {
+        "requestSchema": null,
+        "resultSchema": "WorkspaceEventSchema"
+      }
+    }
+  },
+  "help": {
+    "operations": [
+      {
+        "operation": "identity.get",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.get",
+        "intentTags": [
+          "identity",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.list",
+        "intentTags": [
+          "spaces",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.create",
+        "intentTags": [
+          "spaces",
+          "create"
+        ],
+        "inputSchemaRef": "CreateSpaceInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.get",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.get",
+        "intentTags": [
+          "spaces",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.update",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.update",
+        "intentTags": [
+          "spaces",
+          "update"
+        ],
+        "inputSchemaRef": "UpdateSpaceInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.navigation",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.navigation",
+        "intentTags": [
+          "spaces",
+          "navigation"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.home",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.home",
+        "intentTags": [
+          "spaces",
+          "home"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.settings",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.settings",
+        "intentTags": [
+          "spaces",
+          "settings"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.members.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.members.list",
+        "intentTags": [
+          "spaces",
+          "members",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.invites.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.invites.list",
+        "intentTags": [
+          "spaces",
+          "invites",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.invites.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.invites.create",
+        "intentTags": [
+          "spaces",
+          "invites",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.invites.revoke",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.invites.revoke",
+        "intentTags": [
+          "spaces",
+          "invites",
+          "revoke"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.invites.redeem",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.invites.redeem",
+        "intentTags": [
+          "spaces",
+          "invites",
+          "redeem"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskAxes.list",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskAxes.list",
+        "intentTags": [
+          "spaces",
+          "task",
+          "axes",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskAxes.create",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskAxes.create",
+        "intentTags": [
+          "spaces",
+          "task",
+          "axes",
+          "create"
+        ],
+        "inputSchemaRef": "TaskAxisInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskAxes.update",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskAxes.update",
+        "intentTags": [
+          "spaces",
+          "task",
+          "axes",
+          "update"
+        ],
+        "inputSchemaRef": "TaskAxisInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.taskAxes.delete",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.taskAxes.delete",
+        "intentTags": [
+          "spaces",
+          "task",
+          "axes",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.leaderboard",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.leaderboard",
+        "intentTags": [
+          "spaces",
+          "leaderboard"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.awards",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.awards",
+        "intentTags": [
+          "spaces",
+          "awards"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.get",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.get",
+        "intentTags": [
+          "entities",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.create",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.create",
+        "intentTags": [
+          "entities",
+          "create"
+        ],
+        "inputSchemaRef": "CreateEntityInputSchema",
+        "resultSchemaRef": "CommandResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.patch",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.patch",
+        "intentTags": [
+          "entities",
+          "patch"
+        ],
+        "inputSchemaRef": "PatchEntityInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.move",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.move",
+        "intentTags": [
+          "entities",
+          "move"
+        ],
+        "inputSchemaRef": "MoveEntityInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.delete",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.delete",
+        "intentTags": [
+          "entities",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.restore",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.restore",
+        "intentTags": [
+          "entities",
+          "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.children",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.children",
+        "intentTags": [
+          "entities",
+          "children"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.hierarchy",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.hierarchy",
+        "intentTags": [
+          "entities",
+          "hierarchy"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.connections",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.connections",
+        "intentTags": [
+          "entities",
+          "connections"
+        ],
+        "inputSchemaRef": "EntityConnectionsQuerySchema",
+        "resultSchemaRef": "EntityConnectionsPageSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.versions",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.versions",
+        "intentTags": [
+          "entities",
+          "versions"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.activity",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.activity",
+        "intentTags": [
+          "entities",
+          "activity"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.react",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.react",
+        "intentTags": [
+          "entities",
+          "react"
+        ],
+        "inputSchemaRef": "ReactionInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.points.add",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.points.add",
+        "intentTags": [
+          "entities",
+          "points",
+          "add"
+        ],
+        "inputSchemaRef": "GrantPointsInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.commands.complete",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.complete",
+        "intentTags": [
+          "entities",
+          "commands",
+          "complete"
+        ],
+        "inputSchemaRef": "CompleteTaskInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.commands.work",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.work",
+        "intentTags": [
+          "entities",
+          "commands",
+          "work"
+        ],
+        "inputSchemaRef": "WorkInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.commands.pull",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.pull",
+        "intentTags": [
+          "entities",
+          "commands",
+          "pull"
+        ],
+        "inputSchemaRef": "PullInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.commands.linkPr",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.linkPr",
+        "intentTags": [
+          "entities",
+          "commands",
+          "link",
+          "pr"
+        ],
+        "inputSchemaRef": "LinkPrInputSchema",
+        "resultSchemaRef": "CommandResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.commands.linkCommit",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.linkCommit",
+        "intentTags": [
+          "entities",
+          "commands",
+          "link",
+          "commit"
+        ],
+        "inputSchemaRef": "LinkCommitInputSchema",
+        "resultSchemaRef": "CommandResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "tracking.refresh",
+        "noun": "tracking",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/tracking.refresh",
+        "intentTags": [
+          "tracking",
+          "refresh"
+        ],
+        "inputSchemaRef": "TrackingRefreshInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "edges.list",
+        "noun": "edge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/edges.list",
+        "intentTags": [
+          "edges",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "edges.create",
+        "noun": "edge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/edges.create",
+        "intentTags": [
+          "edges",
+          "create"
+        ],
+        "inputSchemaRef": "CreateEdgeInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "edges.patch",
+        "noun": "edge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/edges.patch",
+        "intentTags": [
+          "edges",
+          "patch"
+        ],
+        "inputSchemaRef": "PatchEdgeInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "edges.delete",
+        "noun": "edge",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/edges.delete",
+        "intentTags": [
+          "edges",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "edgeTypes.list",
+        "noun": "edge-type",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/edgeTypes.list",
+        "intentTags": [
+          "edge",
+          "types",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.list",
+        "noun": "message",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/messages.list",
+        "intentTags": [
+          "messages",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.post",
+        "noun": "message",
+        "exposure": "composite",
+        "helpRef": "tm8://help/operation/messages.post",
+        "intentTags": [
+          "messages",
+          "post"
+        ],
+        "inputSchemaRef": "PostMessageInputSchema",
+        "resultSchemaRef": "MessageBatchResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.edit",
+        "noun": "message",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/messages.edit",
+        "intentTags": [
+          "messages",
+          "edit"
+        ],
+        "inputSchemaRef": "PatchMessageInputSchema",
+        "resultSchemaRef": "MessageViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.delete",
+        "noun": "message",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/messages.delete",
+        "intentTags": [
+          "messages",
+          "delete"
+        ],
+        "inputSchemaRef": "DeleteMessageInputSchema",
+        "resultSchemaRef": "MessageViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "collections.query",
+        "noun": "collection",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/collections.query",
+        "intentTags": [
+          "collections",
+          "query"
+        ],
+        "inputSchemaRef": "CollectionQuerySchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "graph.query",
+        "noun": "graph",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/graph.query",
+        "intentTags": [
+          "graph",
+          "query"
+        ],
+        "inputSchemaRef": "GraphQuerySchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "placements.apply",
+        "noun": "placement",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/placements.apply",
+        "intentTags": [
+          "placements",
+          "apply"
+        ],
+        "inputSchemaRef": "PlacementInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "commands.undo",
+        "noun": "undo",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/commands.undo",
+        "intentTags": [
+          "commands",
+          "undo"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "search.query",
+        "noun": "search",
+        "exposure": "reserved",
+        "helpRef": "tm8://help/operation/search.query",
+        "intentTags": [
+          "search",
+          "query"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": false,
+        "reason": "not_implemented",
+        "publicComposite": "actions.list"
+      },
+      {
+        "operation": "projects.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.list",
+        "intentTags": [
+          "projects",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.create",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.create",
+        "intentTags": [
+          "projects",
+          "create"
+        ],
+        "inputSchemaRef": "ProjectCreateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.get",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.get",
+        "intentTags": [
+          "projects",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.update",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.update",
+        "intentTags": [
+          "projects",
+          "update"
+        ],
+        "inputSchemaRef": "ProjectUpdateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.link",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.link",
+        "intentTags": [
+          "projects",
+          "link"
+        ],
+        "inputSchemaRef": "ProjectLinkInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.unlink",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.unlink",
+        "intentTags": [
+          "projects",
+          "unlink"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "files.uploadInit",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/files.uploadInit",
+        "intentTags": [
+          "files",
+          "upload",
+          "init"
+        ],
+        "inputSchemaRef": "FileUploadInitInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "files.uploadComplete",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/files.uploadComplete",
+        "intentTags": [
+          "files",
+          "upload",
+          "complete"
+        ],
+        "inputSchemaRef": "FileUploadCompleteInputSchema",
+        "resultSchemaRef": "CommandResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "files.uploadAbort",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/files.uploadAbort",
+        "intentTags": [
+          "files",
+          "upload",
+          "abort"
+        ],
+        "inputSchemaRef": "FileUploadAbortInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "files.download",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/files.download",
+        "intentTags": [
+          "files",
+          "download"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "bridge.fetchBlob",
+        "noun": "bridge",
+        "exposure": "reserved",
+        "helpRef": "tm8://help/operation/bridge.fetchBlob",
+        "intentTags": [
+          "bridge",
+          "fetch",
+          "blob"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": false,
+        "reason": "not_implemented",
+        "publicComposite": null
+      },
+      {
+        "operation": "inbox.list",
+        "noun": "inbox",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/inbox.list",
+        "intentTags": [
+          "inbox",
+          "list"
+        ],
+        "inputSchemaRef": "InboxListQuerySchema",
+        "resultSchemaRef": "PageOfNotificationItemSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "inbox.markRead",
+        "noun": "inbox",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/inbox.markRead",
+        "intentTags": [
+          "inbox",
+          "mark",
+          "read"
+        ],
+        "inputSchemaRef": "InboxMarkReadInputSchema",
+        "resultSchemaRef": "NotificationItemSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "readMarks.upsert",
+        "noun": "read-mark",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/readMarks.upsert",
+        "intentTags": [
+          "read",
+          "marks",
+          "upsert"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "savedViews.list",
+        "noun": "saved-view",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/savedViews.list",
+        "intentTags": [
+          "saved",
+          "views",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "savedViews.create",
+        "noun": "saved-view",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/savedViews.create",
+        "intentTags": [
+          "saved",
+          "views",
+          "create"
+        ],
+        "inputSchemaRef": "SavedViewInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "savedViews.update",
+        "noun": "saved-view",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/savedViews.update",
+        "intentTags": [
+          "saved",
+          "views",
+          "update"
+        ],
+        "inputSchemaRef": "SavedViewInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "savedViews.delete",
+        "noun": "saved-view",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/savedViews.delete",
+        "intentTags": [
+          "saved",
+          "views",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "actions.list",
+        "noun": "action",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/actions.list",
+        "intentTags": [
+          "actions",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": "ActionDiscoveryResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "events.subscribe",
+        "noun": "event",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/events.subscribe",
+        "intentTags": [
+          "events",
+          "subscribe"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": "WorkspaceEventSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "events.poll",
+        "noun": "event",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/events.poll",
+        "intentTags": [
+          "events",
+          "poll"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "presence.get",
+        "noun": "presence",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/presence.get",
+        "intentTags": [
+          "presence",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.spawn",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.spawn",
+        "intentTags": [
+          "execution",
+          "spawn"
+        ],
+        "inputSchemaRef": "ExecutionSpawnInputSchema",
+        "resultSchemaRef": "CommandResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.prompt",
+        "noun": "session",
+        "exposure": "internal",
+        "helpRef": "tm8://help/operation/execution.prompt",
+        "intentTags": [
+          "execution",
+          "prompt"
+        ],
+        "inputSchemaRef": "ExecutionPromptInputSchema",
+        "resultSchemaRef": "CommandResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": false,
+        "reason": "use_message_send",
+        "publicComposite": "messages.post"
+      },
+      {
+        "operation": "execution.terminate",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.terminate",
+        "intentTags": [
+          "execution",
+          "terminate"
+        ],
+        "inputSchemaRef": "ExecutionTerminateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.streams.attach",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.streams.attach",
+        "intentTags": [
+          "execution",
+          "streams",
+          "attach"
+        ],
+        "inputSchemaRef": "ExecutionStreamsAttachInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entityKinds.list",
+        "noun": "kind",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entityKinds.list",
+        "intentTags": [
+          "entity",
+          "kinds",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entityKinds.create",
+        "noun": "kind",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entityKinds.create",
+        "intentTags": [
+          "entity",
+          "kinds",
+          "create"
+        ],
+        "inputSchemaRef": "EntityKindCreateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entityKinds.update",
+        "noun": "kind",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entityKinds.update",
+        "intentTags": [
+          "entity",
+          "kinds",
+          "update"
+        ],
+        "inputSchemaRef": "EntityKindUpdateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.menu.get",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.menu.get",
+        "intentTags": [
+          "spaces",
+          "menu",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": "MenuConfigSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.menu.update",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.menu.update",
+        "intentTags": [
+          "spaces",
+          "menu",
+          "update"
+        ],
+        "inputSchemaRef": "UpdateMenuInputSchema",
+        "resultSchemaRef": "MenuConfigSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.defaultChannel.set",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.defaultChannel.set",
+        "intentTags": [
+          "spaces",
+          "default",
+          "channel",
+          "set"
+        ],
+        "inputSchemaRef": "SetDefaultChannelInputSchema",
+        "resultSchemaRef": "SpaceSettingsViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.associations.correct",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.associations.correct",
+        "intentTags": [
+          "projects",
+          "associations",
+          "correct"
+        ],
+        "inputSchemaRef": "CorrectProjectAssociationInputSchema",
+        "resultSchemaRef": "EdgeCorrectionResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "handoffs.send",
+        "noun": "handoff",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/handoffs.send",
+        "intentTags": [
+          "handoffs",
+          "send"
+        ],
+        "inputSchemaRef": "SendHandoffInputSchema",
+        "resultSchemaRef": "HandoffViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "handoffs.list",
+        "noun": "handoff",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/handoffs.list",
+        "intentTags": [
+          "handoffs",
+          "list"
+        ],
+        "inputSchemaRef": "HandoffListQuerySchema",
+        "resultSchemaRef": "PageOfHandoffViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "handoffs.withdraw",
+        "noun": "handoff",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/handoffs.withdraw",
+        "intentTags": [
+          "handoffs",
+          "withdraw"
+        ],
+        "inputSchemaRef": "WithdrawHandoffInputSchema",
+        "resultSchemaRef": "HandoffViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.attachments.add",
+        "noun": "message",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/messages.attachments.add",
+        "intentTags": [
+          "messages",
+          "attachments",
+          "add"
+        ],
+        "inputSchemaRef": "AddMessageAttachmentsInputSchema",
+        "resultSchemaRef": "MessageViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.attachments.remove",
+        "noun": "message",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/messages.attachments.remove",
+        "intentTags": [
+          "messages",
+          "attachments",
+          "remove"
+        ],
+        "inputSchemaRef": "RemoveMessageAttachmentsInputSchema",
+        "resultSchemaRef": "MessageViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "messages.delivery.get",
+        "noun": "message",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/messages.delivery.get",
+        "intentTags": [
+          "messages",
+          "delivery",
+          "get"
+        ],
+        "inputSchemaRef": "MessageDeliveryQuerySchema",
+        "resultSchemaRef": "MessageDeliveryViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.feed",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.feed",
+        "intentTags": [
+          "entities",
+          "feed"
+        ],
+        "inputSchemaRef": "EntityFeedQuerySchema",
+        "resultSchemaRef": "EntityFeedPageSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "entities.context",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.context",
+        "intentTags": [
+          "entities",
+          "context"
+        ],
+        "inputSchemaRef": "EntityContextQuerySchema",
+        "resultSchemaRef": "EntityContextViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "interactionProfiles.propose",
+        "noun": "interaction-profile",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/interactionProfiles.propose",
+        "intentTags": [
+          "interaction",
+          "profiles",
+          "propose"
+        ],
+        "inputSchemaRef": "ProposeInteractionProfileInputSchema",
+        "resultSchemaRef": "InteractionProfileViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "interactionProfiles.updateDraft",
+        "noun": "interaction-profile",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/interactionProfiles.updateDraft",
+        "intentTags": [
+          "interaction",
+          "profiles",
+          "update",
+          "draft"
+        ],
+        "inputSchemaRef": "UpdateInteractionProfileDraftInputSchema",
+        "resultSchemaRef": "InteractionProfileViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "interactionProfiles.validate",
+        "noun": "interaction-profile",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/interactionProfiles.validate",
+        "intentTags": [
+          "interaction",
+          "profiles",
+          "validate"
+        ],
+        "inputSchemaRef": "ValidateInteractionProfileInputSchema",
+        "resultSchemaRef": "ProfileValidationViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "interactionProfiles.preview",
+        "noun": "interaction-profile",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/interactionProfiles.preview",
+        "intentTags": [
+          "interaction",
+          "profiles",
+          "preview"
+        ],
+        "inputSchemaRef": "PreviewInteractionProfileInputSchema",
+        "resultSchemaRef": "InteractionProfilePreviewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "interactionProfiles.activate",
+        "noun": "interaction-profile",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/interactionProfiles.activate",
+        "intentTags": [
+          "interaction",
+          "profiles",
+          "activate"
+        ],
+        "inputSchemaRef": "ActivateInteractionProfileInputSchema",
+        "resultSchemaRef": "InteractionProfileViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "interactionProfiles.retire",
+        "noun": "interaction-profile",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/interactionProfiles.retire",
+        "intentTags": [
+          "interaction",
+          "profiles",
+          "retire"
+        ],
+        "inputSchemaRef": "RetireInteractionProfileInputSchema",
+        "resultSchemaRef": "InteractionProfileViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "teamMembers.interactionProfile.setDefault",
+        "noun": "teammate",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/teamMembers.interactionProfile.setDefault",
+        "intentTags": [
+          "team",
+          "members",
+          "interaction",
+          "profile",
+          "set",
+          "default"
+        ],
+        "inputSchemaRef": "SetTeammateProfileDefaultInputSchema",
+        "resultSchemaRef": "TeammateProfileDefaultViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.interactionProfile.setDefault",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.interactionProfile.setDefault",
+        "intentTags": [
+          "spaces",
+          "interaction",
+          "profile",
+          "set",
+          "default"
+        ],
+        "inputSchemaRef": "SetSpaceProfileDefaultInputSchema",
+        "resultSchemaRef": "SpaceProfileDefaultViewSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      }
+    ],
+    "rejectedLegacyAliases": [
+      "whoami",
+      "report",
+      "progress",
+      "session prompt"
+    ],
+    "cliGrammarStatus": "metadata-only-w1"
+  },
+  "kinds": {
+    "core": {
+      "channel": {
+        "kind": "channel",
+        "entityKind": true,
+        "route": {
+          "strategy": "channel-special",
+          "slug": "channels"
+        },
+        "collection": {
+          "strategy": "channel-view"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "task": {
+        "kind": "task",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "tasks"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "message": {
+        "kind": "message",
+        "entityKind": true,
+        "route": {
+          "strategy": "anchored-message",
+          "slug": "messages"
+        },
+        "collection": {
+          "strategy": "not-addressable"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "message-owned",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "messages.post",
+            "messages.edit",
+            "messages.delete"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "baseline-message-plus-w1"
+        }
+      },
+      "member": {
+        "kind": "member",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "members"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-identity"
+        }
+      },
+      "team_member": {
+        "kind": "team_member",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "teammates"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-identity"
+        }
+      },
+      "doc": {
+        "kind": "doc",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "docs"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "file": {
+        "kind": "file",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "files"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "spell": {
+        "kind": "spell",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "spells"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "skill": {
+        "kind": "skill",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "skills"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "pull_request": {
+        "kind": "pull_request",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "pulls"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "commit": {
+        "kind": "commit",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "commits"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "work_session": {
+        "kind": "work_session",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "sessions"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "work-session-execution",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "execution.spawn",
+            "execution.terminate",
+            "execution.streams.attach"
+          ]
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "baseline-session-plus-w1"
+        }
+      },
+      "collection": {
+        "kind": "collection",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "collections"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "baseline-core"
+        }
+      },
+      "project": {
+        "kind": "project",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "projects"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "project-materialized"
+        },
+        "capabilities": {
+          "profile": "project-restricted",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "projects.link",
+            "projects.unlink",
+            "projects.associations.correct"
+          ]
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "w1-project-projection"
+        }
+      },
+      "interaction_profile": {
+        "kind": "interaction_profile",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "interaction-profiles"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "interaction-profile-sanitized"
+        },
+        "capabilities": {
+          "profile": "interaction-profile-lifecycle",
+          "genericCreate": false,
+          "genericPatch": false,
+          "genericMove": false,
+          "genericHierarchy": false,
+          "genericDeleteRestore": false,
+          "genericPoints": false,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "interactionProfiles.propose",
+            "interactionProfiles.updateDraft",
+            "interactionProfiles.validate",
+            "interactionProfiles.preview",
+            "interactionProfiles.activate",
+            "interactionProfiles.retire"
+          ]
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "w1-interaction-profile"
+        }
+      }
+    },
+    "custom": {
+      "kind": "c:*",
+      "entityKind": true,
+      "route": {
+        "strategy": "custom-collection",
+        "slug": "c-{name}"
+      },
+      "collection": {
+        "strategy": "custom-registry"
+      },
+      "projection": {
+        "strategy": "custom-scalar"
+      },
+      "capabilities": {
+        "profile": "custom-scalar",
+        "genericCreate": true,
+        "genericPatch": true,
+        "genericMove": true,
+        "genericHierarchy": true,
+        "genericDeleteRestore": true,
+        "genericPoints": true,
+        "messages": true,
+        "reactions": true,
+        "connections": true,
+        "lifecycleOperations": []
+      },
+      "menu": {
+        "strategy": "config-addable"
+      },
+      "migration": {
+        "strategy": "custom-registry"
+      }
+    },
+    "negativeSentinel": {
+      "kind": "ui_template",
+      "entityKind": false,
+      "route": {
+        "strategy": "none"
+      },
+      "collection": {
+        "strategy": "none"
+      },
+      "projection": {
+        "strategy": "static-registry-only"
+      },
+      "capabilities": {
+        "profile": "static-no-authority",
+        "genericCreate": false,
+        "genericPatch": false,
+        "genericMove": false,
+        "genericHierarchy": false,
+        "genericDeleteRestore": false,
+        "genericPoints": false,
+        "messages": false,
+        "reactions": false,
+        "connections": false,
+        "lifecycleOperations": []
+      },
+      "menu": {
+        "strategy": "not-kind"
+      },
+      "migration": {
+        "strategy": "none"
+      }
+    }
+  },
+  "migration": {
+    "status": "finalized",
+    "source": "db/migrations/015_w1_foundations.sql",
+    "finalized": true,
+    "sha256": "9f3258054fb1a0a3cbc80928edcea87760715f2402671534bd32a232773b5ee7",
+    "objects": {
+      "tables": [
+        "project_links",
+        "project_projection_details",
+        "space_menu_configs",
+        "interaction_profiles",
+        "interaction_profile_versions",
+        "work_session_interaction_pins",
+        "work_session_view_preferences",
+        "session_wake_budgets",
+        "session_message_deliveries",
+        "session_handoffs"
+      ],
+      "entityKindSeeds": [
+        "project",
+        "interaction_profile"
+      ],
+      "edgeTypeSeeds": [
+        "in_project",
+        "shared_into",
+        "participates_in",
+        "authored_from",
+        "defaults_to_profile",
+        "selected_profile"
+      ],
+      "indexes": 24,
+      "triggers": 27,
+      "rlsTables": [
+        "project_links",
+        "project_projection_details",
+        "space_menu_configs",
+        "interaction_profiles",
+        "interaction_profile_versions",
+        "work_session_interaction_pins",
+        "work_session_view_preferences",
+        "session_wake_budgets",
+        "session_message_deliveries",
+        "session_handoffs"
+      ],
+      "policies": 11,
+      "publicAppRpcs": [
+        "set_space_default_channel",
+        "set_space_profile_default",
+        "set_space_menu_config",
+        "reset_session_wake_budget_for_member_reply",
+        "set_teammate_profile_default",
+        "inspect_owned_teammate_inbox",
+        "repair_w1_foundations",
+        "compensate_w1_foundations"
+      ],
+      "deliveryRpcs": [
+        "reserve_session_message_delivery",
+        "claim_session_message_delivery",
+        "settle_session_message_delivery"
+      ],
+      "replacedRpcs": [
+        "create_space",
+        "mark_read",
+        "mark_notification_read"
+      ]
+    }
+  },
+  "conformanceCases": {
+    "D1": {
+      "owner": "W4-W5",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "At the W1 target, parse the catalog and assert 101 unique operations, 99 v1 and 2 reserved; retain the 81-row pre-amendment count as historical baseline evidence.",
+      "operations": []
+    },
+    "D2": {
+      "owner": "W4-W5",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Exact-operation help succeeds for every catalog operation and returns one catalog digest.",
+      "operations": []
+    },
+    "D3": {
+      "owner": "W4-W5",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Every public/composite operation has a noun shard and every operation has intent tags.",
+      "operations": []
+    },
+    "D4": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case D4; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "D5": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case D5; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "D6": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case D6; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "D7": {
+      "owner": "W4-W5",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Reserved/internal help explains exposure and owner without executable public syntax.",
+      "operations": []
+    },
+    "B1": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B1; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "B2": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B2; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "B3": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B3; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "B4": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B4; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "B5": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B5; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "B6": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B6; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "B7": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case B7; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P1": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P1; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P2": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P2; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P3": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P3; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P4": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P4; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P5": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P5; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P6": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P6; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P7": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P7; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P8": {
+      "owner": "W2-W5",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "No ui-template command, operation, graph entity kind, or agent-generated template exists.",
+      "operations": []
+    },
+    "P9": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P9; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "P10": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case P10; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "C1": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case C1; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "C2": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case C2; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "C3": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case C3; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "C4": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case C4; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "C5": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case C5; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M1": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M1; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M2": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M2; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M3": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M3; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M4": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M4; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M5": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M5; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M6": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M6; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M7": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M7; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M8": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M8; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M9": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case M9; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "M10": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Four cross-root Teammate reservations consume the unordered-pair allowance; the fifth fails permanently, falls back, and writes zero bytes.",
+      "operations": []
+    },
+    "M11": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "execution.prompt exact help is internal/use_message_send and public principals are rejected before queue admission.",
+      "operations": []
+    },
+    "M12": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "canMessage, canContactSession, and canHandoffEntity vary independently; none implies another.",
+      "operations": []
+    },
+    "R1": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R1; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R2": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R2; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R3": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R3; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R4": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R4; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R5": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R5; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R6": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R6; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R7": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R7; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "R8": {
+      "owner": "W4-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case R8; semantic execution remains with W4-W5.",
+      "operations": []
+    },
+    "S1": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case S1; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "S2": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case S2; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "S3": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case S3; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "S4": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case S4; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "S5": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Named harness conformance case S5; semantic execution remains with W2-W5.",
+      "operations": []
+    },
+    "S6": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "assertion": "Bootstrap uses TM8_AGENT_TOKEN and never the retired TM8_AUTH_TOKEN literal.",
+      "operations": []
+    },
+    "W0-ACTIONS": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-ACTIONS is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-AUTH": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-AUTH is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-B1": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-B1 is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-B2": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-B2 is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-BATCH": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-BATCH is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-CONN": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-CONN is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-CONTEXT": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-CONTEXT is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-CURSOR": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-CURSOR is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-DEFAULT": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-DEFAULT is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-EVENT": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-EVENT is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-FEED": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-FEED is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-HANDOFF": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-HANDOFF is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-INBOX": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-INBOX is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-MENU": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-MENU is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-OWNED": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-OWNED is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-PROFILE": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-PROFILE is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-PROJ": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-PROJ is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-SPAWN": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-SPAWN is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W0-VERSION": {
+      "owner": "W2-W5",
+      "status": "semantic-pending",
+      "executableHere": false,
+      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "assertion": "Dossier suite W0-VERSION is catalogued for later public-boundary execution.",
+      "operations": []
+    },
+    "W1-A03-A20-SHARED-SETTINGS-REVISION": {
+      "owner": "W1.B",
+      "status": "foundation",
+      "executableHere": false,
+      "source": "TM8-W1-PREFLIGHT-AND-INTEGRATION-EVIDENCE.md §8.3",
+      "assertion": "A03 and A20 share one Space settings revision; concurrent writes using one expected revision cannot both commit.",
+      "operations": [
+        "spaces.defaultChannel.set",
+        "spaces.interactionProfile.setDefault"
+      ]
+    },
+    "W1-PROMPT-HELP-INTERNAL": {
+      "owner": "W1.C",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-W0-AMENDMENT-DOSSIER.md §§5.1,6.5",
+      "assertion": "execution.prompt exact help is internal/use_message_send, has no invocation syntax, and points to messages.post.",
+      "operations": [
+        "execution.prompt",
+        "messages.post"
+      ]
+    },
+    "W1-RESERVED-HONESTY": {
+      "owner": "W1.C",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-W0-AMENDMENT-DOSSIER.md §10",
+      "assertion": "Both reserved operations are route-reachable and return honest 501/not_implemented rather than 404.",
+      "operations": [
+        "search.query",
+        "bridge.fetchBlob"
+      ]
+    },
+    "W1-WS-SKELETON": {
+      "owner": "W1.C",
+      "status": "foundation",
+      "executableHere": true,
+      "source": "TM8-W0-AMENDMENT-DOSSIER.md §§3,9,10",
+      "assertion": "events.subscribe is one WS skeleton and makes no semantic durability claim.",
+      "operations": [
+        "events.subscribe"
+      ]
+    }
+  }
+}

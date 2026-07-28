@@ -155,25 +155,18 @@ export function fanOutPresence(registry: SubscriptionRegistry, spaceId: string, 
   return delivered;
 }
 
-/**
- * SEAM: who may subscribe to a space.
- *
- * The skeleton has no membership table, so it cannot answer this honestly.
- * At W2 this is a `space_members` lookup under the caller's identity (the same
- * RLS predicate that guards `spaces.get`) — subscription must not be a side
- * channel around read authorization. Declared here so the check has a home to
- * land in rather than being retrofitted into ws-server.
- */
-export interface SubscriptionAuthorizer {
-  canSubscribe(connId: string, spaceId: string): boolean | Promise<boolean>;
-}
-
-/**
- * Skeleton authorizer. Allows everything, because the skeleton binds loopback
- * and auto-authenticates the owner (T-L7 / S5). It MUST NOT ship past W2.
- */
-export class AllowAllSubscriptionAuthorizer implements SubscriptionAuthorizer {
-  canSubscribe(): boolean {
-    return true;
-  }
-}
+// `SubscriptionAuthorizer` USED TO BE DECLARED HERE, alongside an
+// `AllowAllSubscriptionAuthorizer` that returned true unconditionally and whose
+// own docstring said it "MUST NOT ship past W2". Both are gone, deliberately.
+//
+// The interface had ZERO call sites anywhere in the repository — it was a
+// declared seam that nothing ever invoked, which is a comment rather than a
+// defence, and the allow-all implementation was the only thing that satisfied
+// it. Deleting the permissive implementation outright, rather than leaving it
+// for a caller to pick up "temporarily", is the point: it cannot be wired in by
+// accident if it does not exist.
+//
+// The live seam is now `SubscriptionAuthorizer` in control.ts, which is keyed
+// on IDENTITY rather than connection id and IS invoked on every subscribe and
+// every resume. Its production implementation, `DbSubscriptionAuthorizer`,
+// answers from the same RLS predicate that guards `spaces.get`.

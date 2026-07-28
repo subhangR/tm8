@@ -13,7 +13,10 @@ describe('composePrompt', () => {
     });
     expect(system).toContain('<name>Phoenix</name>');
     expect(system).toContain('You own packages/cli');
-    expect(system).toContain('tm8 task report progress');
+    // "How to report" is a durable message on an anchor. It used to assert
+    // `tm8 task report progress` — rejected vocabulary that `run.ts` now
+    // answers with a discovery hint and a non-zero exit.
+    expect(system).toContain('tm8 message send --to');
     expect(task).toContain('Wire the CLI worker-init boot path');
   });
 
@@ -31,10 +34,12 @@ describe('composePrompt', () => {
     expect(metadata.commandCount).toBe(commandSurface(true).length);
   });
 
-  it('drops the session verbs when there is no session to anchor them to', () => {
+  it('drops the session-anchored path when there is no session to anchor it to', () => {
     const { system } = composePrompt({ mode: 'worker' });
-    expect(system).toContain('tm8 task report progress');
-    expect(system).not.toContain('tm8 session report progress');
+    // The always-available path is a message on the assignment anchor; the
+    // work-session anchor only makes sense once this process IS a session.
+    expect(system).toContain('tm8 message send --to &lt;anchor-entity-id&gt;');
+    expect(system).not.toContain('tm8 message send --to &lt;work-session-id&gt;');
   });
 
   it('tells a task-less session to wait rather than invent work', () => {
@@ -47,10 +52,18 @@ describe('composePrompt', () => {
     expect(composePrompt({}).metadata.mode).toBe('worker');
   });
 
-  it('gives coordinators an honest surface — it does not promise spawn verbs that do not exist', () => {
+  it('gives coordinators the REAL delegation path and no private channel', () => {
+    // This assertion was inverted, and it was asserting something FALSE. The
+    // old prompt told coordinators "the tm8 CLI does not yet carry spawn or
+    // session-prompt verbs, so you cannot delegate" — but `execution.spawn` is
+    // `tm8 session spawn` (grammar row 75), and `session prompt` is not a verb
+    // that is missing, it is one that was rejected outright. A coordinator that
+    // believes it cannot delegate will silently do all the work itself.
     const { system } = composePrompt({ mode: 'coordinator', sessionId: 'ws_1' });
-    expect(system).toContain('does not yet carry spawn or session-prompt verbs');
-    expect(system).not.toContain('tm8 session spawn');
+    expect(system).toContain('tm8 session spawn');
+    expect(system).toContain('no private child-result channel');
+    expect(system).not.toContain('cannot delegate');
+    expect(system).not.toContain('tm8 session prompt');
   });
 
   it('surfaces the coordinator return path when one spawned this session', () => {

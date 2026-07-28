@@ -1,0 +1,425 @@
+import { createHash } from 'node:crypto';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  CoreEntityKindSchema,
+  OPERATIONS,
+  RESERVED_OPERATIONS,
+  V1_OPERATIONS,
+  isOperationName,
+  type OperationBinding,
+  type OperationName,
+} from '@tm8/contract';
+import { CONFORMANCE_CASES, type ConformanceCase } from './conformance-cases.js';
+import {
+  CORE_KIND_DISPOSITIONS,
+  CUSTOM_KIND_DISPOSITION,
+  UI_TEMPLATE_SENTINEL,
+  assertKindDispositionTotality,
+} from './kind-dispositions.js';
+import {
+  readW1MigrationInventory,
+  type W1MigrationObjectInventory,
+} from './migration-inventory.js';
+import {
+  ADDITIVE_SCHEMA_DISPOSITIONS,
+  FROZEN_SCHEMA_DISPOSITIONS,
+  resolveSchema,
+  schemaDispositionFor,
+} from './schema-dispositions.js';
+import {
+  readRouterSourceInventory,
+  repositoryRoot,
+} from './source-inventory.js';
+import { readHistoricalW1RegistrySnapshot } from './w1-registry-snapshot.js';
+
+export const ADDITIVE_OPERATION_NAMES = [
+  'spaces.menu.get',
+  'spaces.menu.update',
+  'spaces.defaultChannel.set',
+  'projects.associations.correct',
+  'handoffs.send',
+  'handoffs.list',
+  'handoffs.withdraw',
+  'messages.attachments.add',
+  'messages.attachments.remove',
+  'messages.delivery.get',
+  'entities.feed',
+  'entities.context',
+  'interactionProfiles.propose',
+  'interactionProfiles.updateDraft',
+  'interactionProfiles.validate',
+  'interactionProfiles.preview',
+  'interactionProfiles.activate',
+  'interactionProfiles.retire',
+  'teamMembers.interactionProfile.setDefault',
+  'spaces.interactionProfile.setDefault',
+] as const satisfies readonly OperationName[];
+
+export const FROZEN_SCHEMA_OPERATION_NAMES = [
+  'messages.post',
+  'messages.edit',
+  'messages.delete',
+  'entities.create',
+  'entities.connections',
+  'files.uploadComplete',
+  'execution.spawn',
+  'execution.prompt',
+  'entities.commands.linkPr',
+  'entities.commands.linkCommit',
+  'inbox.list',
+  'inbox.markRead',
+  'actions.list',
+  'events.subscribe',
+] as const satisfies readonly OperationName[];
+
+type HttpMethod = Exclude<OperationBinding['method'], 'WS'>;
+type HelpExposure = 'public' | 'composite' | 'internal' | 'reserved';
+
+export interface OperationHelpFoundation {
+  readonly operation: OperationName;
+  readonly noun: string;
+  readonly exposure: HelpExposure;
+  readonly helpRef: string;
+  readonly intentTags: readonly string[];
+  readonly inputSchemaRef: string | null;
+  readonly resultSchemaRef: string | null;
+  readonly invocationSyntax: null;
+  readonly actionDiscoverable: boolean;
+  readonly reason: string | null;
+  readonly publicComposite: OperationName | null;
+}
+
+export interface W1ConformanceManifest {
+  readonly schemaVersion: 'tm8.conformance.w1.v1';
+  readonly catalogDigest: string;
+  readonly catalog: {
+    readonly total: number;
+    readonly v1: number;
+    readonly reserved: number;
+    readonly http: number;
+    readonly ws: number;
+    readonly registerableV1Http: number;
+    readonly methods: Record<OperationBinding['method'], number>;
+    readonly kinds: Record<OperationBinding['kind'], number>;
+    readonly uniqueNames: number;
+    readonly uniqueBindings: number;
+  };
+  readonly reservedOperations: readonly OperationName[];
+  readonly additiveOperations: readonly (OperationBinding & { semanticStatus: 'unimplemented' | 'registered' })[];
+  readonly routes: {
+    readonly http: readonly {
+      operation: OperationName;
+      method: HttpMethod;
+      path: string;
+      status: 'registered' | 'reserved';
+      source: 'server-router';
+    }[];
+    readonly ws: readonly {
+      operation: OperationName;
+      method: 'WS';
+      path: string;
+      status: 'skeleton';
+      durabilityClaim: false;
+    }[];
+  };
+  readonly serverRegistries: {
+    readonly handlers: {
+      readonly total: number;
+      readonly facade: number;
+      readonly execution: number;
+      readonly events: number;
+      readonly operations: readonly OperationName[];
+    };
+    readonly inputSchemas: {
+      readonly bound: readonly { operation: OperationName; schema: string }[];
+      readonly unboundCommands: readonly OperationName[];
+    };
+    readonly unimplementedV1Http: number;
+  };
+  readonly schemas: {
+    readonly additive: typeof ADDITIVE_SCHEMA_DISPOSITIONS;
+    readonly frozenAmendments: typeof FROZEN_SCHEMA_DISPOSITIONS;
+  };
+  readonly help: {
+    readonly operations: readonly OperationHelpFoundation[];
+    readonly rejectedLegacyAliases: readonly ['whoami', 'report', 'progress', 'session prompt'];
+    readonly cliGrammarStatus: 'metadata-only-w1';
+  };
+  readonly kinds: {
+    readonly core: typeof CORE_KIND_DISPOSITIONS;
+    readonly custom: typeof CUSTOM_KIND_DISPOSITION;
+    readonly negativeSentinel: typeof UI_TEMPLATE_SENTINEL;
+  };
+  readonly migration: {
+    readonly status: 'finalized';
+    readonly source: 'db/migrations/015_w1_foundations.sql';
+    readonly finalized: true;
+    readonly sha256: string;
+    readonly objects: W1MigrationObjectInventory;
+  };
+  readonly conformanceCases: Readonly<Record<string, ConformanceCase>>;
+}
+
+const generatedDirectory = join(repositoryRoot, 'tools/conformance/generated');
+export const generatedManifestPath = join(generatedDirectory, 'w1-conformance-manifest.json');
+
+function countBy<T extends string>(values: readonly T[], expected: readonly T[]): Record<T, number> {
+  const counts = Object.fromEntries(expected.map((value) => [value, 0])) as Record<T, number>;
+  for (const value of values) {
+    if (!(value in counts)) throw new Error(`unknown generated accounting value: ${value}`);
+    counts[value] += 1;
+  }
+  return counts;
+}
+
+function assertEqual<T>(actual: T, expected: T, label: string): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${label} drift: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
+function nounForOperation(operation: OperationName): string {
+  const family = operation.split('.')[0];
+  switch (family) {
+    case 'identity': return 'identity';
+    case 'spaces': return 'space';
+    case 'entities': return 'entity';
+    case 'tracking': return 'tracking';
+    case 'edges': return 'edge';
+    case 'edgeTypes': return 'edge-type';
+    case 'messages': return 'message';
+    case 'collections': return 'collection';
+    case 'graph': return 'graph';
+    case 'placements': return 'placement';
+    case 'commands': return 'undo';
+    case 'search': return 'search';
+    case 'projects': return 'project';
+    case 'files': return 'file';
+    case 'bridge': return 'bridge';
+    case 'inbox': return 'inbox';
+    case 'readMarks': return 'read-mark';
+    case 'savedViews': return 'saved-view';
+    case 'actions': return 'action';
+    case 'events': return 'event';
+    case 'presence': return 'presence';
+    case 'execution': return 'session';
+    case 'entityKinds': return 'kind';
+    case 'handoffs': return 'handoff';
+    case 'interactionProfiles': return 'interaction-profile';
+    case 'teamMembers': return 'teammate';
+    default: throw new Error(`operation ${operation} has no noun/help disposition`);
+  }
+}
+
+function intentTags(operation: OperationName): string[] {
+  const words = operation
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(/[.\s]+/)
+    .map((word) => word.toLowerCase());
+  return [...new Set(words)];
+}
+
+function helpExposure(operation: OperationBinding): HelpExposure {
+  switch (operation.status) {
+    case 'reserved': return 'reserved';
+    case 'v1':
+      if (operation.name === 'execution.prompt') return 'internal';
+      if (operation.name === 'messages.post') return 'composite';
+      return 'public';
+    default: throw new Error(`operation ${operation.name} has unknown status ${String(operation.status)}`);
+  }
+}
+
+function helpForOperation(
+  operation: OperationBinding,
+  actualInputSchemas: ReadonlyMap<OperationName, string>,
+): OperationHelpFoundation {
+  const name = operation.name as OperationName;
+  const exposure = helpExposure(operation);
+  const schemaDisposition = schemaDispositionFor(name);
+  const publicComposite = name === 'execution.prompt'
+    ? 'messages.post'
+    : name === 'search.query'
+      ? 'actions.list'
+      : null;
+  return {
+    operation: name,
+    noun: nounForOperation(name),
+    exposure,
+    helpRef: `tm8://help/operation/${name}`,
+    intentTags: intentTags(name),
+    inputSchemaRef: schemaDisposition?.requestSchema
+      ?? actualInputSchemas.get(name)
+      ?? null,
+    resultSchemaRef: schemaDisposition?.resultSchema ?? null,
+    invocationSyntax: null,
+    actionDiscoverable: exposure === 'public' || exposure === 'composite',
+    reason: name === 'execution.prompt'
+      ? 'use_message_send'
+      : exposure === 'reserved'
+        ? 'not_implemented'
+        : null,
+    publicComposite,
+  };
+}
+
+function verifySchemaReachability(): void {
+  assertEqual(Object.keys(ADDITIVE_SCHEMA_DISPOSITIONS), [...ADDITIVE_OPERATION_NAMES], 'A01-A20 schema order');
+  assertEqual(Object.keys(FROZEN_SCHEMA_DISPOSITIONS), [...FROZEN_SCHEMA_OPERATION_NAMES], 'frozen-row schema order');
+  for (const disposition of [
+    ...Object.values(ADDITIVE_SCHEMA_DISPOSITIONS),
+    ...Object.values(FROZEN_SCHEMA_DISPOSITIONS),
+  ]) {
+    if (disposition.requestSchema !== null) resolveSchema(disposition.requestSchema);
+    resolveSchema(disposition.resultSchema);
+  }
+}
+
+export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifest> {
+  const [router, migration] = await Promise.all([
+    readRouterSourceInventory(),
+    readW1MigrationInventory(),
+  ]);
+  const { handlers, inputSchemas } = readHistoricalW1RegistrySnapshot();
+
+  const names = OPERATIONS.map(({ name }) => name);
+  const bindings = OPERATIONS.map(({ method, path }) => `${method} ${path}`);
+  const methods = countBy(
+    OPERATIONS.map(({ method }) => method),
+    ['GET', 'POST', 'PATCH', 'DELETE', 'PUT', 'WS'],
+  );
+  const kinds = countBy(
+    OPERATIONS.map(({ kind }) => kind),
+    ['read', 'command', 'stream'],
+  );
+  const additive = OPERATIONS.slice(-ADDITIVE_OPERATION_NAMES.length);
+
+  assertEqual(names.length, 101, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 99, 'v1 total');
+  assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
+  assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A20 order');
+  assertEqual(new Set(names).size, names.length, 'unique operation names');
+  assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
+  assertEqual(methods, { GET: 36, POST: 41, PATCH: 9, DELETE: 7, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 39, command: 61, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 100, 'server router HTTP total');
+  assertEqual(router.ws.length, 1, 'server router WS total');
+  assertEqual(handlers.facade, 23, 'facade handler total');
+  assertEqual(handlers.execution, 4, 'execution handler total');
+  assertEqual(handlers.events, 1, 'event handler total');
+  assertEqual(handlers.total, 28, 'semantic handler total');
+  assertEqual(inputSchemas.bound.length, 36, 'actual input-schema binding total');
+  assertEqual(inputSchemas.unboundCommands.length, 13, 'actual unbound-command total');
+  assertKindDispositionTotality(CoreEntityKindSchema.options);
+  assertEqual(
+    Object.values(CORE_KIND_DISPOSITIONS)
+      .filter(({ migration: disposition }) => disposition.strategy.startsWith('w1-'))
+      .map(({ kind }) => kind),
+    migration.objects.entityKindSeeds,
+    'W1 kind migration dispositions',
+  );
+  verifySchemaReachability();
+
+  const implemented = new Set<OperationName>(handlers.operations);
+  const actualInputSchemas = new Map(inputSchemas.bound.map(({ operation, schema }) => [operation, schema]));
+  const registerableV1Http = OPERATIONS.filter(({ method, status }) => method !== 'WS' && status === 'v1');
+
+  return {
+    schemaVersion: 'tm8.conformance.w1.v1',
+    catalogDigest: `sha256:${createHash('sha256').update(JSON.stringify(OPERATIONS)).digest('hex')}`,
+    catalog: {
+      total: OPERATIONS.length,
+      v1: V1_OPERATIONS.length,
+      reserved: RESERVED_OPERATIONS.length,
+      http: router.http.length,
+      ws: router.ws.length,
+      registerableV1Http: registerableV1Http.length,
+      methods,
+      kinds,
+      uniqueNames: new Set(names).size,
+      uniqueBindings: new Set(bindings).size,
+    },
+    reservedOperations: RESERVED_OPERATIONS.map(({ name }) => name as OperationName),
+    additiveOperations: additive.map((operation) => ({
+      ...operation,
+      semanticStatus: implemented.has(operation.name as OperationName) ? 'registered' : 'unimplemented',
+    })),
+    routes: {
+      http: router.http.map((operation) => ({
+        operation: operation.name as OperationName,
+        method: operation.method as HttpMethod,
+        path: operation.path,
+        status: operation.status === 'reserved' ? 'reserved' : 'registered',
+        source: 'server-router',
+      })),
+      ws: router.ws.map((operation) => ({
+        operation: operation.name as OperationName,
+        method: 'WS',
+        path: operation.path,
+        status: 'skeleton',
+        durabilityClaim: false,
+      })),
+    },
+    serverRegistries: {
+      handlers,
+      inputSchemas,
+      unimplementedV1Http: registerableV1Http.filter(({ name }) => !implemented.has(name as OperationName)).length,
+    },
+    schemas: {
+      additive: ADDITIVE_SCHEMA_DISPOSITIONS,
+      frozenAmendments: FROZEN_SCHEMA_DISPOSITIONS,
+    },
+    help: {
+      operations: OPERATIONS.map((operation) => helpForOperation(operation, actualInputSchemas)),
+      rejectedLegacyAliases: ['whoami', 'report', 'progress', 'session prompt'],
+      cliGrammarStatus: 'metadata-only-w1',
+    },
+    kinds: {
+      core: CORE_KIND_DISPOSITIONS,
+      custom: CUSTOM_KIND_DISPOSITION,
+      negativeSentinel: UI_TEMPLATE_SENTINEL,
+    },
+    migration: {
+      status: 'finalized',
+      source: migration.source,
+      finalized: true,
+      sha256: migration.sha256,
+      objects: migration.objects,
+    },
+    conformanceCases: CONFORMANCE_CASES,
+  };
+}
+
+export function renderW1ConformanceManifest(manifest: W1ConformanceManifest): string {
+  return `${JSON.stringify(manifest, null, 2)}\n`;
+}
+
+export function exactOperationHelp(
+  manifest: W1ConformanceManifest,
+  operation: string,
+): OperationHelpFoundation {
+  if (!isOperationName(operation)) throw new Error(`unknown catalog operation: ${operation}`);
+  const help = manifest.help.operations.find((entry) => entry.operation === operation);
+  if (!help) throw new Error(`missing exact-operation help: ${operation}`);
+  return help;
+}
+
+export async function writeW1ConformanceManifest(): Promise<void> {
+  await mkdir(generatedDirectory, { recursive: true });
+  await writeFile(
+    generatedManifestPath,
+    renderW1ConformanceManifest(await buildW1ConformanceManifest()),
+    'utf8',
+  );
+}
+
+export async function checkW1ConformanceManifest(): Promise<void> {
+  const expected = renderW1ConformanceManifest(await buildW1ConformanceManifest());
+  const actual = await readFile(generatedManifestPath, 'utf8');
+  if (actual !== expected) {
+    throw new Error(
+      `generated conformance evidence is stale: run bun run generate (${generatedManifestPath})`,
+    );
+  }
+}

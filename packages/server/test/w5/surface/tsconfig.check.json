@@ -1,0 +1,25 @@
+{
+  // W5 Duo C — a SEPARATE typecheck of this duo's own test files.
+  //
+  // WHY THIS FILE EXISTS: `bun run typecheck` type-checks NO TEST FILE
+  // ANYWHERE. `packages/server/tsconfig.json` includes `src` only, so every
+  // "root typecheck green" claim in this program was silently mute about tests.
+  // This config is the narrowest thing that closes that hole for this duo's
+  // paths, and it is named `.check.json` so no build ever picks it up
+  // incidentally — it is run explicitly or not at all.
+  //
+  // PROBE THE PROBE: exit 0 with zero diagnostics is indistinguishable from
+  // "your file was never compiled". Run with `--listFiles` and confirm this
+  // duo's files appear in the program, and inject a deliberate error to confirm
+  // the config reports one. Both halves are recorded in the duo's report.
+  "extends": "../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["./**/*.ts"]
+}

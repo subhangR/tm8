@@ -14,4 +14,7 @@ export * from './emitter.js';
 export * from './projector.js';
 export * from './mapper.js';
 export * from './poll.js';
+export * from './control.js';
+export * from './presence.js';
+export * from './pump.js';
 export * from './handlers.js';

@@ -28,6 +28,47 @@ export type TeamMemberId = string;
 export type SpaceId = string;
 
 /**
+ * W0 B1: the closed claim set for one delivery-adapter execution.
+ *
+ * This is deliberately unrelated to Account/AuthSession/ClaimSet. In
+ * particular it carries no actor, membership, role, act-as, bearer-session, or
+ * ambient spawner authority.
+ */
+export interface SystemDeliveryPrincipalClaims {
+  readonly deliveryId: string;
+  readonly messageId: string;
+  readonly targetWorkSessionId: string;
+  readonly reservationVersion: number;
+  readonly expiresAt: string;
+}
+
+/** The stored reservation coordinates a consumer must bind before use. */
+export interface SystemDeliveryPrincipalBinding {
+  readonly deliveryId: string;
+  readonly messageId: string;
+  readonly targetWorkSessionId: string;
+  readonly reservationVersion: number;
+}
+
+/*
+ * Compile-time opacity complements the runtime mint registry in
+ * system-delivery-principal.ts. The symbol is intentionally not exported, so
+ * an object literal cannot structurally implement this interface.
+ */
+declare const systemDeliveryPrincipalBrand: unique symbol;
+
+/**
+ * Server-internal authority for exactly one governed delivery-adapter write.
+ * Possessing a structurally identical record is insufficient; consumers must
+ * validate the value through `isSystemDeliveryPrincipalFor`.
+ */
+export interface SystemDeliveryPrincipal {
+  readonly principalType: 'system_delivery_adapter';
+  readonly claims: Readonly<SystemDeliveryPrincipalClaims>;
+  readonly [systemDeliveryPrincipalBrand]: true;
+}
+
+/**
  * R6 revocation: disabling an account kills its sessions. The member entity and
  * all authored history survive — the graph is a historical record of who acted.
  */

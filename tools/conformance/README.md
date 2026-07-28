@@ -1,43 +1,85 @@
-# @tm8/conformance — the contract conformance suite
+# @tm8/conformance
 
-Black-box HTTP suite that runs against ANY base URL. It is the M1 gate
-artifact (G1: "conformance green headless") and runs RED today by design
-(G0: harness executes against a stub).
+W1 contract-generation and exhaustiveness evidence, plus a separately invoked
+black-box HTTP semantic suite for W2/W3.
 
-## Running
+## Historical W1 green gate
 
 ```sh
-bun run test                                    # default target http://localhost:4610
-TM8_CONFORMANCE_BASE_URL=http://host:port bun run test   # any deployment
-bun run stub                                    # standalone stub on :4610
+bun run generate          # refresh deterministic generated evidence
+bun run check:generated   # fail when committed evidence is stale
+bun run build
+bun run test              # generated/foundation/honesty tests only
 ```
 
-If nothing is listening on the default target, the vitest global setup starts
-the in-package stub automatically — the suite always executes end-to-end.
+`bun run test` is the command behind root `bun run test:conformance`. It does
+not require a Server and does not claim API semantics exist. It verifies:
 
-## What the stub is (and is not)
+- exact catalog accounting: 101 total, 99 v1, 2 reserved, 100 HTTP, 1 WS;
+- actual catalog-derived Router accounting and stub route reachability;
+- the immutable checked-in W1 handler/input-schema snapshot (28 handlers,
+  36 bindings, 13 explicitly unbound commands), with every operation and
+  contract schema entry validated before generation;
+- A01–A20 order/bindings, A16 POST/read metadata, strict additive and frozen
+  schema reachability;
+- exact-operation help/exposure foundations, including internal-only
+  `execution.prompt`, honest reserved operations, and WS-skeleton status;
+- total 15-core-kind + `c:*` route/collection/projection/capability/menu/
+  migration dispositions and the `ui_template` negative sentinel;
+- stable W0/harness case IDs for later W2–W5 execution.
 
-`src/stub-server.ts` answers every catalog operation with an honest,
-contract-shaped `501 not_implemented` (unknown routes 404, malformed JSON
-400). It proves the wire-error envelope and 501-honesty rules and makes every
-semantic suite fail red. It is NOT `packages/server` and must never grow
-semantics.
+The generated manifest is
+`generated/w1-conformance-manifest.json`. It contains no timestamp and is
+checked byte-for-byte for staleness. Its migration section is bound to the
+coordinator-frozen `db/migrations/015_w1_foundations.sql`, verifies that file's
+SHA-256 before generation, and derives its tables, registry seeds, indexes,
+triggers, RLS coverage, policies, and closed RPC allowlists from the SQL.
 
-## Suites
+The W1 registry snapshot is historical gate evidence, not a claim that current
+Server composition remains at the W1 boundary. Generation never reads the
+generated manifest as input.
 
-| File | Covers |
-|---|---|
-| `envelope.test.ts` | DEV-6 `{data, requestId}`; wire error body shape |
-| `taxonomy.test.ts` | DEV-8 closed codes + status mapping; reserved ops 501; v1 ops never 501 |
-| `cursors.test.ts` | DEV-5 keyset cursors: opacity, no overlap/skip, `invalid_cursor` |
-| `idempotency.test.ts` | DEV-9 command-ledger replay; cross-op id reuse → `invariant_violation` |
-| `events.test.ts` | WorkspaceEvent envelope `{spaceId, seq, occurredAt, schemaVersion}` (AM-2 §3: `eventId` is REMOVED — the dedupe/ordering key is `(spaceId, seq)`), `clientMutationId` threading, `since` catch-up (ported: reconciliation/stores-replay core) |
-| `reads.test.ts` | ported UI foundation `contract-reads` (world built via the API) |
-| `commands.test.ts` | ported `commands` + `validation` (versions, conflicts, edges, placements/undo, completion→award→unblock, DEF-1/2/3) |
-| `execution.test.ts` | R16 family: honest gating pre-M3, work_session shapes, spawn-only creation |
-| `projects.test.ts` | AM-2 §1 `projects.*`: resource DTO, trust defaults to `untrusted`, space↔project M2M link/unlink |
-| `files.test.ts` | AM-2 §2 `files.*`: upload grant → PUT → complete → authorized download; `bridge.fetchBlob` reserved-501 |
+## Current W2 source inventory — I01 tranche only
 
-`src/world.ts` replaces the UI's seeded MockFacade: each suite builds its
-narrative through the public API in `beforeAll` — on a non-conformant server
-the build itself fails red.
+The foundation test separately parses current Server source. For the facade it
+follows only local exported `register*` seams that are imported and invoked by
+`packages/server/src/facade/index.ts`, then parses literal registrations in
+those directly mounted modules. Execution/events retain their direct source
+inventory. Unknown, duplicate, computed, or otherwise nonliteral operation
+registrations fail closed.
+
+This current-source check proves the frozen I01 tranche-v1 boundary only:
+57 facade + 4 execution + 1 event handler = 62, 47 input-schema bindings,
+exactly three unfinished unbound commands, 36 unimplemented registerable v1
+HTTP operations, and neither reserved operation mounted. It does not rewrite
+the W1 manifest, claim all W2 semantics, or add a discovery surface.
+
+## W2/W3 live semantic gate — pending
+
+```sh
+TM8_CONFORMANCE_BASE_URL=http://host:port bun run test:live
+```
+
+`test:live` runs the unchanged black-box suites in `test/*.test.ts` against a
+real Server. They cover envelopes, taxonomy, cursors, idempotency, reads,
+commands, events, execution, projects, and files. These suites are not part of
+the historical W1 green gate. The W1 manifest records its frozen 28-handler
+boundary, while the separate current-source I01 inventory records 62 mounted
+handlers; remaining W2 groups and public semantic verification are still
+outside this tool-only check.
+
+If no Server is reachable, the live command starts `src/stub-server.ts`. The
+stub returns contract-shaped `501 not_implemented` for every known HTTP route,
+`404 not_found` for unknown routes, and implements no semantics. Consequently
+the live suite fails loudly against it. The command never skips, weakens an
+assertion, or reports semantic verification from the stub.
+
+## Stub oracle
+
+```sh
+bun run stub
+```
+
+The stub is only a route/error-honesty oracle. Do not add domain behavior to
+it; production semantics belong to W2 and public-boundary verification to
+W3.

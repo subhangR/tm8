@@ -169,7 +169,12 @@ describe('the pipeline, end to end', () => {
     const res = await fetch(`${base}/v2/entities`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ spaceId: 's', kind: 'task', title: 'x' }),
+      body: JSON.stringify({
+        clientMutationId: 'frame-handler-status-201',
+        spaceId: 's',
+        kind: 'task',
+        title: 'x',
+      }),
     });
     expect(res.status).toBe(201);
   });

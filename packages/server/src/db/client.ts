@@ -1,5 +1,12 @@
 /**
- * `Db` over a `pg` Pool — the one place in the server that opens a connection.
+ * `Db` over a `pg` Pool — the only pool that BINDS CALLER CLAIMS.
+ *
+ * Not the only pool in the server: `facade/services/w2/execution.ts` opens a
+ * second one authenticating as `tm8_delivery_worker`, which runs as a different
+ * role and carries no caller identity. The invariant worth holding is the claim
+ * binding, not a count — a count goes stale on the next pool, and
+ * `test/one-identity-path.test.ts` already enforces this file as the sole binder
+ * by path.
  *
  * Two rules govern everything in this file, and both exist because a pool
  * reuses connections between unrelated requests:

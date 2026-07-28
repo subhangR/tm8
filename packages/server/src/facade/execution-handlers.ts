@@ -43,13 +43,14 @@ import type {
 } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
-import { fail } from '../http/errors.js';
+import { fail, notImplemented } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
+import { refusePublicExecutionPrompt } from './services/w2/execution.js';
 
 // Claims come from ./context.ts, deliberately NOT from a local helper.
 //
@@ -550,16 +551,28 @@ function registerHandlers(
   resolveOwner: () => Promise<LoopbackOwner>,
 ): void {
   registry.register('execution.spawn', async (ctx) => {
+    const input = ctx.body as ExecutionSpawnInput;
+    if (input.workdir?.mode === 'scratch') {
+      throw notImplemented('execution.spawn workdir.mode=scratch');
+    }
+    if (input.interactionProfileId !== undefined) {
+      throw notImplemented('execution.spawn interactionProfileId');
+    }
+
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    const input = ctx.body as ExecutionSpawnInput;
+    const supportedWorkdir =
+      input.workdir?.mode === 'project' || input.workdir?.mode === 'worktree'
+        ? input.workdir
+        : undefined;
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
       ...(input.taskIds ? { taskIds: input.taskIds } : {}),
       projectId: input.projectId ?? null,
-      ...(input.workdir ? { workdir: input.workdir } : {}),
+      ...(supportedWorkdir ? { workdir: supportedWorkdir } : {}),
+      ...(input.confirmUntrusted ? { confirmUntrusted: true } : {}),
       mode: input.mode ?? null,
       model: input.model ?? null,
       agentTool: input.agentTool ?? null,
@@ -577,18 +590,28 @@ function registerHandlers(
     );
   });
 
-  registry.register('execution.prompt', async (ctx) => {
-    const owner = await resolveOwner();
-    const envelope = commandEnvelope(ctx);
-    const claims = claimsFor(owner, ctx, envelope);
-    const input = ctx.body as ExecutionPromptInput;
-    const result = await rethrowing(() =>
-      spawnService.prompt(claims, requireUuidParam(ctx, 'id'), input.message, {
-        clientMutationId: envelope.clientMutationId ?? null,
-      }),
-    );
-    return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
-  });
+  /**
+   * B1 — `execution.prompt` is Server-internal-only, so the PUBLIC route is a
+   * refusal and nothing else.
+   *
+   * Read what is NOT here, because that is the assertion. No `resolveOwner()`
+   * (a database round trip), no `commandEnvelope`, no `requireUuidParam`, no
+   * `ctx.body`. The refusal is the first and only statement, so there is no
+   * early return, no branch and no ordering for a later edit to get wrong —
+   * the failure this program keeps finding is an authorization check that some
+   * other path steps around, and a handler with one statement has no other
+   * path. Zero queue (no `record_execution_command`) and zero bytes (no
+   * `deliverPrompt`) are consequences of that, not extra guards.
+   *
+   * It stays REGISTERED. `execution.prompt` is a v1 catalog operation; leaving
+   * it unregistered would answer 501 and tell the client the node has not built
+   * an operation it has in fact closed on purpose.
+   *
+   * The real write lives in `promptInternal` (facade/services/w2/execution.ts),
+   * reachable only with an object `mintSystemDeliveryPrincipal` produced — a
+   * thing no request body can be.
+   */
+  registry.register('execution.prompt', async () => refusePublicExecutionPrompt());
 
   registry.register('execution.terminate', async (ctx) => {
     const owner = await resolveOwner();

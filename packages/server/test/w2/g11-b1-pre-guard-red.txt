@@ -1,0 +1,100 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/w2/execution.test.ts (12 tests | 11 failed) 1217ms
+   × B1 — execution.prompt is Server-internal-only > refuses a Member with forbidden/use_message_send and writes nothing 427ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses a Teammate with forbidden/use_message_send and writes nothing 11ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses a node owner with forbidden/use_message_send and writes nothing 11ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses a node admin with forbidden/use_message_send and writes nothing 10ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses a spawned session with forbidden/use_message_send and writes nothing 10ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses a act-as with forbidden/use_message_send and writes nothing 132ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses a anonymous with forbidden/use_message_send and writes nothing 151ms
+     → promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+   × B1 — execution.prompt is Server-internal-only > refuses before reading the message, so no body shape unlocks the route 39ms
+     → expected CollabError: prompt message must not be e… { …(6) } to match object { code: 'forbidden', …(1) }
+(5 matching properties omitted from actual)
+   × B1 — the internal delivery seam still works > delivers for a minted principal bound to the reserved delivery 325ms
+     → Failed to load url ../../src/facade/services/w2/execution.js (resolved id: ../../src/facade/services/w2/execution.js) in /Users/subhang/Desktop/Projects/tm8/packages/server/test/w2/execution.test.ts. Does the file exist?
+   × B1 — the internal delivery seam still works > refuses a structurally identical principal that this process never minted 42ms
+     → Failed to load url ../../src/facade/services/w2/execution.js (resolved id: ../../src/facade/services/w2/execution.js) in /Users/subhang/Desktop/Projects/tm8/packages/server/test/w2/execution.test.ts. Does the file exist?
+   × B1 — the internal delivery seam still works > refuses a minted principal bound to a DIFFERENT session 50ms
+     → Failed to load url ../../src/facade/services/w2/execution.js (resolved id: ../../src/facade/services/w2/execution.js) in /Users/subhang/Desktop/Projects/tm8/packages/server/test/w2/execution.test.ts. Does the file exist?
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a Member with forbidden/use_message_send and writes nothing
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a Teammate with forbidden/use_message_send and writes nothing
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a node owner with forbidden/use_message_send and writes nothing
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a node admin with forbidden/use_message_send and writes nothing
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a spawned session with forbidden/use_message_send and writes nothing
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a act-as with forbidden/use_message_send and writes nothing
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses a anonymous with forbidden/use_message_send and writes nothing
+AssertionError: promise resolved "{ kind: 'json', data: { patches: [] } }" instead of rejecting
+
+- Expected
++ Received
+
+- [Error: rejected promise]
++ Object {
++   "data": Object {
++     "patches": Array [],
++   },
++   "kind": "json",
++ }
+
+ ❯ test/w2/execution.test.ts:203:68
+    201|       const handler = h.registry.get('execution.prompt' as OperationNa…
+    202| 
+    203|       await expect(handler(promptCtx(caller.identity, caller.body))).r…
+       |                                                                    ^
+    204|         code: 'forbidden',
+    205|         details: { reason: 'use_message_send' },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  test/w2/execution.test.ts > B1 — execution.prompt is Server-internal-only > refuses before reading the message, so no body shape unlocks the route
+AssertionError: expected CollabError: prompt message must not be e… { …(6) } to match object { code: 'forbidden', …(1) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+- Object {
+-   "code": "forbidden",
+-   "details": Object {
+-     "reason": "use_message_send",
+-   },
++ CollabError {
++   "code": "invalid_input",
++   "details": undefined,
+  }
+
+ ❯ test/w2/execution.test.ts:223:7
+    221|     for (const body of [{}, { message: '' }, { message: 'x'.repeat(409…
+    222|       const ctx = { ...promptCtx({ kind: 'auto-owner', identityId: OWN…
+    223|       await expect(handler(ctx)).rejects.toMatchObject({
+       |       ^
+    224|         code: 'forbidden',
+    225|         details: { reason: 'use_message_send' },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  test/w2/execution.test.ts > B1 — the internal delivery seam still works > delivers for a minted principal bound to the reserved delivery
+ FAIL  test/w2/execution.test.ts > B1 — the internal delivery seam still works > refuses a structurally identical principal that this process never minted
+ FAIL  test/w2/execution.test.ts > B1 — the internal delivery seam still works > refuses a minted principal bound to a DIFFERENT session
+Error: Failed to load url ../../src/facade/services/w2/execution.js (resolved id: ../../src/facade/services/w2/execution.js) in /Users/subhang/Desktop/Projects/tm8/packages/server/test/w2/execution.test.ts. Does the file exist?
+ ❯ loadAndTransform ../../node_modules/.bun/vite@5.4.21+e9a214ecb8383d02/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51969:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ Test Files  1 failed (1)
+      Tests  11 failed | 1 passed (12)
+   Start at  06:42:10
+   Duration  11.39s (transform 4.47s, setup 0ms, collect 6.81s, tests 1.22s, environment 0ms, prepare 625ms)
+

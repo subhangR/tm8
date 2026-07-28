@@ -1,0 +1,568 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  CollabError,
+  decodeCursor,
+  LeaderboardRowSchema,
+  PointEventViewSchema,
+  SpaceSettingsViewSchema,
+  TaskAxisSchema,
+} from '@tm8/contract';
+import type { Db, DbClaims, Querier } from '../../src/db/types.js';
+import type { FacadeDeps } from '../../src/facade/deps.js';
+import { HandlerRegistry } from '../../src/facade/registry.js';
+import { registerW2IdentitySpacesHandlers } from '../../src/facade/handlers/w2/identity-spaces.js';
+import type { RequestContext } from '../../src/http/types.js';
+
+const SPACE_ID = '00000000-0000-7000-8000-000000000001';
+const MEMBER_ID = '00000000-0000-7000-8000-000000000002';
+const CHANNEL_ID = '00000000-0000-7000-8000-000000000003';
+const AXIS_ID = '00000000-0000-7000-8000-000000000004';
+
+const G01_OPERATIONS = [
+  'identity.get',
+  'spaces.list',
+  'spaces.create',
+  'spaces.get',
+  'spaces.update',
+  'spaces.navigation',
+  'spaces.home',
+  'spaces.settings',
+  'spaces.members.list',
+  'spaces.invites.list',
+  'spaces.invites.create',
+  'spaces.invites.revoke',
+  'spaces.invites.redeem',
+  'spaces.taskAxes.list',
+  'spaces.taskAxes.create',
+  'spaces.taskAxes.update',
+  'spaces.taskAxes.delete',
+  'spaces.leaderboard',
+  'spaces.awards',
+] as const;
+
+type QueryHandler = (sql: string, params: readonly unknown[]) => Promise<unknown[]>;
+type RpcHandler = (fn: string, args: readonly unknown[]) => Promise<unknown>;
+
+class FakeDb implements Db {
+  readonly queryCalls: Array<{ sql: string; params: readonly unknown[] }> = [];
+  readonly rpcCalls: Array<{ fn: string; args: readonly unknown[] }> = [];
+
+  constructor(
+    private readonly onQuery: QueryHandler = async () => [],
+    private readonly onRpc: RpcHandler = async () => ({}),
+  ) {}
+
+  private readonly querier: Querier = {
+    query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => {
+      this.queryCalls.push({ sql, params });
+      return (await this.onQuery(sql, params)) as R[];
+    },
+    rpc: async <T>(fn: string, args: readonly unknown[] = []): Promise<T> => {
+      this.rpcCalls.push({ fn, args });
+      return (await this.onRpc(fn, args)) as T;
+    },
+  };
+
+  async tx<T>(_claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
+    return fn(this.querier);
+  }
+
+  async query<R>(
+    _claims: DbClaims,
+    sql: string,
+    params: readonly unknown[] = [],
+  ): Promise<R[]> {
+    return this.querier.query<R>(sql, params);
+  }
+
+  async rpc<T>(
+    _claims: DbClaims,
+    fn: string,
+    args: readonly unknown[] = [],
+  ): Promise<T> {
+    return this.querier.rpc<T>(fn, args);
+  }
+
+  async end(): Promise<void> {}
+}
+
+function deps(db: Db): FacadeDeps {
+  return {
+    db,
+    config: {
+      host: '127.0.0.1',
+      port: 0,
+      uiDir: undefined,
+      maxBodyBytes: 1024,
+      databaseUrl: undefined,
+    },
+    owner: async () => ({
+      identityId: 'identity-owner',
+      accountId: '00000000-0000-7000-8000-000000000099',
+      username: 'owner',
+      isNodeAdmin: true,
+      isOwner: true,
+    }),
+  };
+}
+
+function context(
+  opName: (typeof G01_OPERATIONS)[number],
+  options: {
+    params?: Record<string, string>;
+    body?: unknown;
+    query?: Record<string, string>;
+  } = {},
+): RequestContext {
+  return {
+    op: { name: opName, method: 'GET', path: '/test', kind: 'read', status: 'v1' },
+    opName,
+    params: options.params ?? {},
+    query: new URLSearchParams(options.query),
+    body: options.body,
+    requestId: 'req-g01',
+    identity: { kind: 'auto-owner', identityId: 'identity-owner' },
+    headers: {},
+    method: 'GET',
+    path: '/test',
+  } as RequestContext;
+}
+
+function registryFor(db: Db): HandlerRegistry {
+  const registry = new HandlerRegistry();
+  registerW2IdentitySpacesHandlers(registry, deps(db));
+  return registry;
+}
+
+describe('W2.G01 identity and Spaces handler seam', () => {
+  it('registers the complete frozen 19-operation group and nothing else', () => {
+    const registry = registryFor(new FakeDb());
+    expect(registry.implemented()).toEqual([...G01_OPERATIONS].sort());
+  });
+
+  it('requires clientMutationId before every G01 command reaches an RPC', async () => {
+    const db = new FakeDb();
+    const registry = registryFor(db);
+    const commandCases = [
+      ['spaces.create', {}, { name: 'No mutation id' }],
+      ['spaces.update', { spaceId: SPACE_ID }, { name: 'No mutation id' }],
+      ['spaces.invites.create', { spaceId: SPACE_ID }, { maxUses: 1 }],
+      ['spaces.invites.revoke', { spaceId: SPACE_ID, inviteId: MEMBER_ID }, {}],
+      ['spaces.invites.redeem', {}, { code: 'invite-code' }],
+      ['spaces.taskAxes.create', { spaceId: SPACE_ID }, {
+        name: 'platform', axisValues: ['web'], kind: 'manual', position: 1,
+      }],
+      ['spaces.taskAxes.update', { spaceId: SPACE_ID, axisId: AXIS_ID }, {
+        name: 'platform', axisValues: ['web'], kind: 'manual', position: 1,
+      }],
+      ['spaces.taskAxes.delete', { spaceId: SPACE_ID, axisId: AXIS_ID }, {}],
+    ] as const;
+
+    for (const [opName, params, body] of commandCases) {
+      const handler = registry.get(opName);
+      expect(handler, opName).toBeDefined();
+      await expect(handler!(context(opName, { params, body }))).rejects.toMatchObject({
+        code: 'invalid_input',
+      });
+    }
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it('updates Space metadata through one typed RPC and preserves an explicit null repo', async () => {
+    const db = new FakeDb(
+      async () => [],
+      async (fn, args) => {
+        expect(fn).toBe('w2_update_space');
+        expect(args).toEqual([
+          SPACE_ID,
+          { name: 'Renamed', githubRepo: null },
+          'cmid-space-update',
+        ]);
+        return {
+          space: {
+            id: SPACE_ID,
+            name: 'Renamed',
+            description: 'Description',
+            github_repo: null,
+            created_at: '2026-07-26T10:00:00.000Z',
+            member_count: '1',
+            unread_total: '0',
+          },
+        };
+      },
+    );
+    const handler = registryFor(db).get('spaces.update')!;
+
+    const result = await handler(context('spaces.update', {
+      params: { spaceId: SPACE_ID },
+      body: {
+        clientMutationId: 'cmid-space-update',
+        name: 'Renamed',
+        githubRepo: null,
+      },
+    }));
+
+    expect(result).toEqual({
+      id: SPACE_ID,
+      name: 'Renamed',
+      description: 'Description',
+      memberCount: 1,
+      unreadTotal: 0,
+      githubRepo: null,
+      createdAt: '2026-07-26T10:00:00.000Z',
+    });
+  });
+
+  it('returns the strict amended settings projection from one RLS snapshot', async () => {
+    const db = new FakeDb(async (sql) => {
+      if (sql.includes('from public.members membership')) {
+        return [{ entity_id: MEMBER_ID, role: 'owner' }];
+      }
+      if (sql.includes('from public.spaces s')) {
+        return [{
+          id: SPACE_ID,
+          name: 'G01',
+          description: 'Identity and Spaces',
+          github_repo: null,
+          created_at: '2026-07-26T10:00:00.000Z',
+          member_count: '1',
+          unread_total: '0',
+          default_channel_id: CHANNEL_ID,
+          default_interaction_profile_id: null,
+          settings_revision: 3,
+        }];
+      }
+      if (sql.includes('from public.members member_row')) {
+        return [{ entity_id: MEMBER_ID, role: 'owner', joined_at: '2026-07-26T10:00:00.000Z' }];
+      }
+      if (sql.includes('from public.entities e') && sql.includes('left join public.members mem')) {
+        return [{
+          id: MEMBER_ID,
+          kind: 'member',
+          space_id: SPACE_ID,
+          member_display_name: 'Owner',
+          member_role: 'owner',
+          team_member_name: null,
+          team_member_avatar: null,
+          team_member_owner_id: null,
+          profile_display_name: 'Owner',
+          profile_avatar: null,
+        }];
+      }
+      if (sql.includes('from public.space_invites')) return [];
+      if (sql.includes('from public.task_axes')) {
+        return [{
+          id: AXIS_ID,
+          space_id: SPACE_ID,
+          name: 'type',
+          axis_values: ['default', 'code'],
+          kind: 'default',
+          position: 0,
+        }];
+      }
+      if (sql.includes('from public.space_menu_configs')) {
+        return [{
+          schema_version: 1,
+          revision: 2,
+          payload: {
+            schemaVersion: 1,
+            groups: [{ id: 'main', label: 'Main', items: [{ type: 'view', ref: 'settings' }] }],
+          },
+        }];
+      }
+      throw new Error(`unexpected settings query: ${sql}`);
+    });
+    const handler = registryFor(db).get('spaces.settings')!;
+
+    const result = await handler(context('spaces.settings', { params: { spaceId: SPACE_ID } }));
+    expect(SpaceSettingsViewSchema.parse(result)).toMatchObject({
+      space: { id: SPACE_ID, name: 'G01' },
+      defaultChannelId: CHANNEL_ID,
+      defaultInteractionProfileId: null,
+      settingsRevision: 3,
+      menu: { revision: 2, schemaVersion: 1 },
+      taskAxes: [{ id: AXIS_ID, axisValues: ['default', 'code'] }],
+    });
+  });
+
+  it('returns task-axis mutations as the frozen TaskAxis DTO and binds the route Space', async () => {
+    const db = new FakeDb(async () => [], async (fn, args) => {
+      expect(fn).toBe('w2_update_task_axis');
+      expect(args).toEqual([
+        SPACE_ID,
+        AXIS_ID,
+        'platform',
+        ['web', 'cli'],
+        'manual',
+        2,
+        'cmid-axis-update',
+      ]);
+      return {
+        axis: {
+          id: AXIS_ID,
+          space_id: SPACE_ID,
+          name: 'platform',
+          axis_values: ['web', 'cli'],
+          kind: 'manual',
+          position: 2,
+        },
+      };
+    });
+    const handler = registryFor(db).get('spaces.taskAxes.update')!;
+
+    const result = await handler(context('spaces.taskAxes.update', {
+      params: { spaceId: SPACE_ID, axisId: AXIS_ID },
+      body: {
+        clientMutationId: 'cmid-axis-update',
+        name: 'platform',
+        axisValues: ['web', 'cli'],
+        kind: 'manual',
+        position: 2,
+      },
+    }));
+
+    expect(TaskAxisSchema.parse(result)).toEqual({
+      id: AXIS_ID,
+      spaceId: SPACE_ID,
+      name: 'platform',
+      axisValues: ['web', 'cli'],
+      kind: 'manual',
+      position: 2,
+    });
+  });
+
+  it('creates task axes through the route-bound G01 RPC', async () => {
+    const db = new FakeDb(async () => [], async (fn, args) => {
+      expect(fn).toBe('w2_create_task_axis');
+      expect(args).toEqual([
+        SPACE_ID,
+        'platform',
+        ['web'],
+        'manual',
+        1,
+        null,
+        'cmid-axis-create',
+      ]);
+      return {
+        axis: {
+          id: AXIS_ID,
+          space_id: SPACE_ID,
+          name: 'platform',
+          axis_values: ['web'],
+          kind: 'manual',
+          position: 1,
+        },
+      };
+    });
+    const handler = registryFor(db).get('spaces.taskAxes.create')!;
+
+    const result = await handler(context('spaces.taskAxes.create', {
+      params: { spaceId: SPACE_ID },
+      body: {
+        clientMutationId: 'cmid-axis-create',
+        name: 'platform',
+        axisValues: ['web'],
+        kind: 'manual',
+        position: 1,
+      },
+    }));
+
+    expect(result).toMatchObject({
+      kind: 'json',
+      status: 201,
+      data: { id: AXIS_ID, spaceId: SPACE_ID, name: 'platform' },
+    });
+  });
+
+  it('rejects unknown keys on catalogued invite commands before the database', async () => {
+    const db = new FakeDb();
+    const handler = registryFor(db).get('spaces.invites.create')!;
+
+    await expect(handler(context('spaces.invites.create', {
+      params: { spaceId: SPACE_ID },
+      body: {
+        clientMutationId: 'cmid-invite',
+        maxUses: 1,
+        hiddenPrivilege: true,
+      },
+    }))).rejects.toEqual(expect.objectContaining<Partial<CollabError>>({ code: 'invalid_input' }));
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it('rejects a malformed acting actor before any G01 mutation RPC', async () => {
+    const db = new FakeDb();
+    const handler = registryFor(db).get('spaces.update')!;
+
+    await expect(handler(context('spaces.update', {
+      params: { spaceId: SPACE_ID },
+      body: {
+        actorId: 'not-a-uuid',
+        clientMutationId: 'cmid-invalid-actor',
+        name: 'must not write',
+      },
+    }))).rejects.toMatchObject({ code: 'invalid_input' });
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it('normalizes bounded invite creation and returns the frozen settings invite projection', async () => {
+    const db = new FakeDb(async () => [], async (fn, args) => {
+      expect(fn).toBe('create_invite');
+      expect(args).toEqual([
+        SPACE_ID,
+        2,
+        '2026-07-27T10:00:00.000Z',
+        null,
+        'cmid-invite-create',
+      ]);
+      return {
+        invite: {
+          id: MEMBER_ID,
+          code: 'inv_12345678',
+          max_uses: 2,
+          use_count: 0,
+          expires_at: '2026-07-27T10:00:00.000Z',
+          revoked_at: null,
+        },
+      };
+    });
+    const handler = registryFor(db).get('spaces.invites.create')!;
+
+    const result = await handler(context('spaces.invites.create', {
+      params: { spaceId: SPACE_ID },
+      body: {
+        clientMutationId: 'cmid-invite-create',
+        maxUses: 2,
+        expiresAt: '2026-07-27T10:00:00.000Z',
+      },
+    }));
+
+    expect(result).toEqual({
+      kind: 'json',
+      status: 201,
+      data: {
+        id: MEMBER_ID,
+        code: 'inv_12345678',
+        maxUses: 2,
+        uses: 0,
+        expiresAt: '2026-07-27T10:00:00.000Z',
+        revoked: false,
+      },
+    });
+  });
+
+  it('keyset-pages leaderboard scores with stable ranks and actor DTOs', async () => {
+    const secondActorId = '00000000-0000-7000-8000-000000000005';
+    const db = new FakeDb(async (sql) => {
+      if (sql.includes('from public.members membership')) {
+        return [{ entity_id: MEMBER_ID, role: 'owner' }];
+      }
+      if (sql.includes('with scores as')) {
+        return [
+          { actor_id: MEMBER_ID, score: '8', rank: '1' },
+          { actor_id: secondActorId, score: '5', rank: '2' },
+        ];
+      }
+      if (sql.includes('left join public.user_profiles up')) {
+        return [{
+          id: MEMBER_ID,
+          kind: 'member',
+          space_id: SPACE_ID,
+          member_display_name: 'Owner',
+          member_role: 'owner',
+          team_member_name: null,
+          team_member_avatar: null,
+          team_member_owner_id: null,
+          profile_display_name: 'Owner',
+          profile_avatar: null,
+        }];
+      }
+      throw new Error(`unexpected leaderboard query: ${sql}`);
+    });
+    const handler = registryFor(db).get('spaces.leaderboard')!;
+
+    const result = await handler(context('spaces.leaderboard', {
+      params: { spaceId: SPACE_ID },
+      query: { limit: '1' },
+    })) as { items: unknown[]; nextCursor: string | null };
+
+    expect(result.items).toHaveLength(1);
+    expect(LeaderboardRowSchema.parse(result.items[0])).toMatchObject({ score: 8, rank: 1 });
+    expect(decodeCursor(result.nextCursor!).k).toEqual([8, MEMBER_ID]);
+  });
+
+  it('keyset-pages award history and keeps unreadable entity references nullable', async () => {
+    const secondAwardId = '00000000-0000-7000-8000-000000000006';
+    const db = new FakeDb(async (sql) => {
+      if (sql.includes('from public.members membership')) {
+        return [{ entity_id: MEMBER_ID, role: 'owner' }];
+      }
+      if (sql.includes('from public.point_events point_row')) {
+        return [
+          {
+            id: AXIS_ID,
+            recipient_id: MEMBER_ID,
+            actor_id: MEMBER_ID,
+            amount: 5,
+            reason: 'award',
+            ref_id: CHANNEL_ID,
+            created_at: '2026-07-26T12:00:00.000Z',
+            // The keyset value now comes from to_char, not from created_at —
+            // the cursor must never round-trip through a JS Date.
+            cursor_created_at: '2026-07-26T12:00:00.000000Z',
+          },
+          {
+            id: secondAwardId,
+            recipient_id: MEMBER_ID,
+            actor_id: MEMBER_ID,
+            amount: 1,
+            reason: 'award',
+            ref_id: null,
+            created_at: '2026-07-26T11:00:00.000Z',
+            cursor_created_at: '2026-07-26T11:00:00.000000Z',
+          },
+        ];
+      }
+      if (sql.includes('select e.id, e.kind, e.space_id') && sql.includes('profile_display_name')) {
+        return [{
+          id: MEMBER_ID,
+          kind: 'member',
+          space_id: SPACE_ID,
+          member_display_name: 'Owner',
+          member_role: 'owner',
+          team_member_name: null,
+          team_member_avatar: null,
+          team_member_owner_id: null,
+          profile_display_name: 'Owner',
+          profile_avatar: null,
+        }];
+      }
+      if (sql.includes('t.title as task_title')) return [];
+      throw new Error(`unexpected awards query: ${sql}`);
+    });
+    const handler = registryFor(db).get('spaces.awards')!;
+
+    const result = await handler(context('spaces.awards', {
+      params: { spaceId: SPACE_ID },
+      query: { limit: '1' },
+    })) as { items: unknown[]; nextCursor: string | null };
+
+    expect(result.items).toHaveLength(1);
+    expect(PointEventViewSchema.parse(result.items[0])).toMatchObject({
+      id: AXIS_ID,
+      amount: 5,
+      reason: 'award',
+      onEntity: null,
+      ref: null,
+    });
+    // Six fractional digits, taken from the row's `cursor_created_at` (to_char)
+    // rather than from `created_at` via a JS Date. `spaces.awards` is a DESC
+    // keyset, where a millisecond-truncated cursor does not loop — it SILENTLY
+    // SKIPS every award sharing the lost millisecond. The old expectation here
+    // was the truncated value, so this assertion moving IS the fix.
+    expect(decodeCursor(result.nextCursor!).k).toEqual([
+      '2026-07-26T12:00:00.000000Z',
+      AXIS_ID,
+    ]);
+  });
+});

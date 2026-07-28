@@ -1,8 +1,7 @@
 /**
- * Vitest global setup: point the suite at TM8_CONFORMANCE_BASE_URL if set;
- * otherwise probe the default target (http://localhost:4610) and, when nothing
- * is listening there, start the in-package stub so the suite always executes
- * end-to-end (red against the stub — the G0 posture).
+ * Live semantic-suite setup: point the W2/W3 gate at
+ * TM8_CONFORMANCE_BASE_URL if set. With no reachable default Server, start the
+ * honest 501 stub so `test:live` fails loudly instead of being skipped.
  */
 import type { Server } from 'node:http';
 import { startStubServer, stopStubServer } from './stub-server.js';
@@ -24,7 +23,7 @@ export async function setup(): Promise<void> {
     }
   }
   stub = await startStubServer(4610);
-  console.log('[conformance] no server at :4610 — started the in-package stub (expect a red run)');
+  console.log('[conformance:live] no server at :4610 — started the honest 501 stub; semantic run must stay red');
 }
 
 export async function teardown(): Promise<void> {

@@ -124,6 +124,7 @@ interface EdgeRow {
   props: Record<string, unknown>;
   created_by: string;
   created_at: Date | string;
+  updated_at: Date | string;
   dst_resolved: boolean | null;
 }
 
@@ -133,7 +134,7 @@ async function loadConnections(
   viewerIdentityId: string,
 ): Promise<Connections> {
   const edgeRows = await q.query<EdgeRow>(
-    `select g.id, g.src_id, g.dst_id, g.type, g.props, g.created_by, g.created_at,
+    `select g.id, g.src_id, g.dst_id, g.type, g.props, g.created_by, g.created_at, g.updated_at,
             case when g.type = 'depends_on' then internal.is_resolved(g.dst_id) else null end as dst_resolved
        from public.edges g
       where g.src_id = $1 or g.dst_id = $1
@@ -177,6 +178,7 @@ async function loadConnections(
       props: edge.props ?? {},
       createdBy: actorOf(actors, edge.created_by),
       createdAt: iso(edge.created_at),
+      updatedAt: iso(edge.updated_at),
       ...(edge.dst_resolved === null ? {} : { resolved: edge.dst_resolved }),
       ...(hard === undefined ? {} : { hard }),
     };
@@ -408,6 +410,7 @@ interface RpcCommandResult {
     props: Record<string, unknown>;
     created_by: string;
     created_at: string;
+    updated_at: string;
   };
   activity?: string | null;
   patches?: Array<{ id: string }>;
@@ -457,6 +460,7 @@ async function toCommandResult(
         props: raw.edge.props ?? {},
         createdBy: actorOf(actors, raw.edge.created_by),
         createdAt: new Date(raw.edge.created_at).toISOString(),
+        updatedAt: new Date(raw.edge.updated_at).toISOString(),
       };
     }
   }

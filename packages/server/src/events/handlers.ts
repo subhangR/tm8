@@ -11,15 +11,17 @@
  * ws-server.ts, not by an HTTP handler — which is also why /health reports 80
  * mounted HTTP routes for an 81-entry catalog.
  */
-import { CollabError } from '@tm8/contract';
+import { CollabError, type ActorSummary, type PresenceSnapshot } from '@tm8/contract';
 
-import type { Db } from '../db/types.js';
+import type { Db, DbClaims } from '../db/types.js';
 import { claimsFor } from '../facade/context.js';
+import { loadActors } from '../facade/entity-read.js';
 import type { HandlerRegistry } from '../facade/index.js';
 import type { ServerConfig } from '../http/config.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import { json } from '../http/types.js';
 import { DEFAULT_POLL_LIMIT, PgDurableEventLog, type DurableEventLog } from './poll.js';
+import { emptyPresence, type PresenceStore } from './presence.js';
 
 export interface EventHandlerDeps {
   readonly db: Db;
@@ -31,6 +33,11 @@ export interface EventHandlerDeps {
    * undefined and gets `PgDurableEventLog` over `deps.db`.
    */
   readonly log?: DurableEventLog;
+  /**
+   * The ephemeral presence source (DEV-4). ABSENT MEANS `presence.get` IS NOT
+   * MOUNTED, and the router keeps answering 501 — see the registration below.
+   */
+  readonly presence?: PresenceStore;
 }
 
 /**
@@ -98,5 +105,90 @@ export function registerEventHandlers(registry: HandlerRegistry, deps: EventHand
     );
 
     return json(page);
+  });
+
+  // `presence.get` is only mounted when this node actually has a presence
+  // source. Without one the honest answer is the 501 the router already gives,
+  // NOT an empty snapshot: a client cannot tell "nobody is viewing" from "we do
+  // not track viewing", and the second dressed as the first is the same
+  // green-badge-over-an-absence this file's `NotImplementedEventLog` exists to
+  // refuse for `events.poll`.
+  const presence = deps.presence;
+  if (presence !== undefined) {
+    registry.register('presence.get', async (ctx) => {
+      const entityId = ctx.params['id'];
+      if (entityId === undefined || entityId === '') {
+        throw new CollabError('invalid_input', 'entity id is required');
+      }
+      return json(await readPresence(deps.db, presence, entityId, claimsFor(await owner(), ctx)));
+    });
+  }
+}
+
+/** Postgres raises 22P02 on a non-uuid; a bad id is `not_found`, not a 500. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Read one entity's ephemeral presence.
+ *
+ * ORDER IS THE WHOLE POINT. The entity is resolved under the CALLER's claims
+ * first, and the presence store is not touched until that read has returned a
+ * row. Consulting the store first — even to decide whether to bother with the
+ * database — would disclose who is viewing an entity to a caller who may not
+ * see the entity at all, and no RLS policy would catch it because the leak
+ * happens outside the database entirely.
+ *
+ * It also means the store is keyed by the entity's REAL `space_id`, taken from
+ * the row, never from anything the presence writer claimed. A `presence.set`
+ * that named the wrong Space wrote into a bucket this read never looks in.
+ *
+ * One transaction for the whole read, as `events.poll` does: hydrating actors
+ * in a second, separately-authorized read is how a name leaks past a policy
+ * that already ran.
+ */
+async function readPresence(
+  db: Db,
+  store: PresenceStore,
+  entityId: string,
+  claims: DbClaims,
+): Promise<PresenceSnapshot> {
+  if (!UUID_RE.test(entityId)) throw new CollabError('not_found', `no entity ${entityId}`);
+
+  return db.tx(claims, async (q) => {
+    const rows = await q.query<{ space_id: string }>(
+      'select space_id from public.entities where id = $1',
+      [entityId],
+    );
+    const entity = rows[0];
+    // RLS already filtered this. An entity the caller may not read is reported
+    // exactly as one that does not exist — anything else confirms it exists.
+    if (entity === undefined) throw new CollabError('not_found', `no entity ${entityId}`);
+
+    const at = store.at(entity.space_id, entityId);
+    const identityIds = [...new Set([...at.viewerIdentityIds, ...at.typingIdentityIds])];
+    if (identityIds.length === 0) return emptyPresence(at.updatedAt);
+
+    // identity → the member row for THIS Space. A member row belongs to one
+    // Space, so this cannot pull in an actor from somewhere the caller cannot
+    // see, and RLS filters it again anyway.
+    const members = await q.query<{ entity_id: string; identity_id: string }>(
+      `select entity_id, identity_id from public.members
+        where space_id = $1 and identity_id = any($2::text[])`,
+      [entity.space_id, identityIds],
+    );
+    const memberOf = new Map(members.map((m) => [m.identity_id, m.entity_id]));
+    const actors = await loadActors(q, members.map((m) => m.entity_id));
+
+    const viewers = at.viewerIdentityIds
+      .map((id) => memberOf.get(id))
+      .filter((id): id is string => id !== undefined)
+      .map((id) => actors.get(id))
+      .filter((a): a is ActorSummary => a !== undefined);
+
+    const typingActorIds = at.typingIdentityIds
+      .map((id) => memberOf.get(id))
+      .filter((id): id is string => id !== undefined);
+
+    return { viewers, typingActorIds, updatedAt: at.updatedAt };
   });
 }

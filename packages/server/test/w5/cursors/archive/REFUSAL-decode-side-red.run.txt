@@ -1,0 +1,33 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+stderr | test/w5/cursors/decode-refusal.pg.test.ts > W5 Duo B — decode-side cursor refusal > a non-date cursor is refused as invalid_cursor, not passed to the database
+[db] unmapped SQLSTATE 22007: invalid input syntax for type timestamp with time zone: "definitely-not-a-timestamp"
+
+ ❯ test/w5/cursors/decode-refusal.pg.test.ts (3 tests | 1 failed) 1469ms
+   × W5 Duo B — decode-side cursor refusal > a non-date cursor is refused as invalid_cursor, not passed to the database 25ms
+     → expected 'upstream_unavailable' to be 'invalid_cursor' // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w5/cursors/decode-refusal.pg.test.ts > W5 Duo B — decode-side cursor refusal > a non-date cursor is refused as invalid_cursor, not passed to the database
+AssertionError: expected 'upstream_unavailable' to be 'invalid_cursor' // Object.is equality
+
+Expected: "invalid_cursor"
+Received: "upstream_unavailable"
+
+ ❯ test/w5/cursors/decode-refusal.pg.test.ts:174:25
+    172|     // database syntax error by fixing its cursor, because nothing tel…
+    173|     // cursor was the problem.
+    174|     expect(thrown.code).toBe('invalid_cursor');
+       |                         ^
+    175|   });
+    176| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  19:03:33
+   Duration  1.91s (transform 131ms, setup 0ms, collect 195ms, tests 1.47s, environment 0ms, prepare 55ms)
+

@@ -1,0 +1,1495 @@
+/**
+ * The CLI-owned `OperationDiscovery` projection — harness §7.1.
+ *
+ * One row per catalog operation, TOTAL over all 101 including internal and
+ * reserved. Everything the CLI knows about a command — its noun, its verb, its
+ * exposure, its side effect, whether it needs a mutation id or a version guard,
+ * and whether this node can actually run it — is derived from here, so help,
+ * completion, and search are three renderings of ONE table rather than three
+ * hand-maintained lists that drift.
+ *
+ * WHERE THIS SHOULD EVENTUALLY LIVE. §7.1 calls this table "contract data", and
+ * it belongs in `@tm8/contract` beside the catalog it projects. It is here
+ * because `packages/contract` is frozen for this wave; relocation is a
+ * post-gate item and NOT a licence to fork the catalog. Note the direction of
+ * the dependency: this file derives from `OPERATIONS` and adds nothing the
+ * catalog could have answered itself.
+ *
+ * EXHAUSTIVENESS IS A TYPE, NOT A TEST. `ROWS` is `Record<OperationName, Row>`,
+ * so a row added to `@tm8/contract` fails THIS build rather than silently
+ * having no CLI disposition. The runtime sweep in the test proves the same
+ * thing for the fields a type cannot check (prose, command paths).
+ *
+ * HONESTY RULES ENCODED HERE, each of them a gate item:
+ *  - `execution.prompt` is internal, names `messages.post` as its public
+ *    composite, and has NO command — it must never render invocation syntax.
+ *  - the two reserved rows are handled ASYMMETRICALLY on purpose:
+ *    `search.query` gets a command that answers honestly, `bridge.fetchBlob`
+ *    gets no command at all yet stays fully discoverable by exact lookup.
+ *  - `events.subscribe` describes the contract's client→server control protocol
+ *    and makes no claim about what THIS node currently serves — that is the
+ *    `availability` axis, which is measured rather than narrated.
+ *  - `commands.undo` is not universally applicable, and redeeming the
+ *    `messages.delete`-inverse token REDACTS a message rather than restoring one.
+ *
+ * NOTES ASSERT CONTRACT FACTS, NEVER THE STATE OF THE WORLD. Two notes here
+ * shipped false because their subject was fixed underneath them, which is the
+ * "assertion whose subject gets fixed" class living in prose — and prose has
+ * nothing that goes red. Anything phrased "not yet", "until X lands", or "still
+ * only Y" is a roadmap, and a shipped roadmap becomes a lie the moment the
+ * roadmap moves. Help, completion and search are three renderings of this one
+ * table, so every string here is operator-facing text an agent reads in a PTY.
+ *
+ * Sources, all frozen: TM8-CLI-GRAMMAR-REDESIGN §4 (syntax) and §8 (the 81-row
+ * disposition table), and TM8-W0-CONSISTENCY-MATRICES §3 (the CLI column,
+ * including A01-A20). Where the two agree they agree exactly; nothing here is
+ * invented.
+ */
+import { createHash } from 'node:crypto';
+import { OPERATIONS, getOperation, isOperationName, type OperationName } from '@tm8/contract';
+import {
+  ledger,
+  resolveAvailability,
+  type Availability,
+  type AvailabilityLedger,
+  type AvailabilityReason,
+  type AvailabilitySource,
+} from './availability.js';
+
+// The availability vocabulary is part of this projection's public surface —
+// every row carries it — so it is re-exported here rather than making each
+// consumer import from two modules to describe one row.
+export type { Availability, AvailabilityReason, AvailabilitySource, AvailabilityLedger };
+
+export const EXPOSURES = ['public', 'composite', 'internal', 'reserved'] as const;
+export type Exposure = (typeof EXPOSURES)[number];
+
+export const SIDE_EFFECTS = ['none', 'local', 'durable', 'execution'] as const;
+export type SideEffect = (typeof SIDE_EFFECTS)[number];
+
+export const AUTHZ_TARGETS = ['server', 'space', 'project', 'entity', 'session'] as const;
+export type AuthzTarget = (typeof AUTHZ_TARGETS)[number];
+
+export const IDEMPOTENCIES = ['none', 'optional', 'required'] as const;
+export type Idempotency = (typeof IDEMPOTENCIES)[number];
+
+export const VERSIONINGS = ['none', 'expectedVersion'] as const;
+export type Versioning = (typeof VERSIONINGS)[number];
+
+/** §7.1, plus the CLI-projection fields the doc's own examples require. */
+export interface OperationDiscovery {
+  operation: OperationName;
+  noun: string;
+  verb: string;
+  exposure: Exposure;
+  summary: string;
+  intentTags: readonly string[];
+  /** Null when the operation carries no request payload at all. */
+  inputSchemaRef: string | null;
+  outputSchemaRef: string;
+  sideEffect: SideEffect;
+  authzTarget: AuthzTarget;
+  idempotency: Idempotency;
+  versioning: Versioning;
+  helpRef: string;
+
+  /** The CLI command path, or NULL when no public invocation exists. */
+  command: readonly string[] | null;
+  /** Exact syntax. Null exactly when `command` is null — never a fabricated form. */
+  syntax: string | null;
+  /**
+   * False when the operation takes a request body but has no frozen input
+   * schema binding yet (the W0 matrix's `unbound`). Saying so is the point:
+   * `inputSchemaRef` naming a slot nobody has filled would be a promise.
+   */
+  inputSchemaBound: boolean;
+  notes: readonly string[];
+  /** Why there is no public invocation, in the Server's own reason vocabulary. */
+  reason: string | null;
+  /** The public composite or lifecycle that owns this operation, when one does. */
+  publicComposite: OperationName | null;
+  examples: readonly string[];
+
+  availability: Availability;
+  availabilityReason: AvailabilityReason;
+  availabilitySource: AvailabilitySource;
+}
+
+interface Row {
+  /** null = deliberately no public CLI invocation. */
+  cmd: readonly string[] | null;
+  /** Exact §4 syntax. Omitted only when `cmd` is null. */
+  syn?: string;
+  sum: string;
+  authz: AuthzTarget;
+  /** `none` = no request payload; `unbound` = payload, no frozen schema; `bound` = frozen schema. */
+  input: 'none' | 'unbound' | 'bound';
+  side?: SideEffect;
+  ver?: Versioning;
+  tags?: readonly string[];
+  notes?: readonly string[];
+  reason?: string;
+  composite?: OperationName;
+  examples?: readonly string[];
+}
+
+/**
+ * THE UNBOUND FACT — one source, two renderings, and they may not disagree.
+ *
+ * A row with `input: 'unbound'` carries a request body and has no frozen input
+ * schema. That is a CONTRACT FACT: true, checkable, and stable. Both of these
+ * strings used to end in "yet", which is not a fact but a PREDICTION — it
+ * promised a binding that may never land, and on a reserved row it promised one
+ * that certainly never will.
+ *
+ * `UNBOUND_MARKER` is exported because `src/commands/help.ts` renders the same
+ * fact on the `input:` schema line. It USED to hold its own hand-written
+ * literal, so the two could drift apart silently — one author fixing the note
+ * and not the marker would leave help contradicting itself on adjacent lines.
+ * There is now one constant and two consumers of it, and the pin in
+ * `test/discovery-operations.test.ts` fails if a second literal reappears.
+ */
+export const UNBOUND_MARKER = '(not bound)';
+export const UNBOUND_NOTE =
+  'this operation carries a request body and has no frozen input schema binding';
+
+/**
+ * The disposition table. Exhaustive by type over `OperationName`.
+ *
+ * `authz` answers "what does the Server authorize this against?", which is the
+ * question an agent actually has before it calls: a `space`-targeted operation
+ * needs a Space in context, an `entity`-targeted one needs a readable/writable
+ * target, and a `server`-targeted one is about the caller themself.
+ */
+const ROWS: Record<OperationName, Row> = {
+  // ── identity & spaces ────────────────────────────────────────────────────
+  'identity.get': {
+    cmd: ['identity', 'get'],
+    syn: 'tm8 identity get',
+    sum: 'Read who this process is calling as, and the actor identity the Server resolved',
+    authz: 'server',
+    input: 'none',
+    tags: ['whoami', 'me', 'actor', 'principal'],
+  },
+  'spaces.list': {
+    cmd: ['space', 'list'],
+    syn: 'tm8 space list [--limit <count>] [--cursor <cursor>]',
+    sum: 'List the Spaces this actor can see',
+    authz: 'server',
+    input: 'none',
+  },
+  'spaces.create': {
+    cmd: ['space', 'create'],
+    syn: 'tm8 space create <name> [--description <text-source>] [--visibility private|public] [--mutation-id <id>]',
+    sum: 'Create a Space — the authorization and event boundary everything else lives in',
+    authz: 'server',
+    input: 'bound',
+  },
+  'spaces.get': {
+    cmd: ['space', 'get'],
+    syn: 'tm8 space get [<space-id>]',
+    sum: 'Read one Space',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.update': {
+    cmd: ['space', 'update'],
+    syn: 'tm8 space update [<space-id>] [--name <name>] [--description <text-source>] [--github-repo <url|none>] [--mutation-id <id>]',
+    sum: 'Change a Space name, description, or deprecated repository field',
+    authz: 'space',
+    input: 'bound',
+    notes: ['`--github-repo` is deprecated in favour of linked ProjectResources'],
+  },
+  'spaces.navigation': {
+    cmd: ['space', 'navigation', 'get'],
+    syn: 'tm8 space navigation get [<space-id>]',
+    sum: 'Read the navigation projection for a Space',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.home': {
+    cmd: ['space', 'home', 'get'],
+    syn: 'tm8 space home get [<space-id>]',
+    sum: 'Read the Space home projection',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.settings': {
+    cmd: ['space', 'settings', 'get'],
+    syn: 'tm8 space settings get [<space-id>]',
+    sum: 'Read the settings projection for a Space',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.members.list': {
+    cmd: ['space', 'member', 'list'],
+    syn: 'tm8 space member list [<space-id>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'List the human Members of a Space',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.invites.list': {
+    cmd: ['space', 'invite', 'list'],
+    syn: 'tm8 space invite list [<space-id>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'List outstanding invitations to a Space',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.invites.create': {
+    cmd: ['space', 'invite', 'create'],
+    syn: 'tm8 space invite create [<space-id>] [--max-uses <count>] [--expires-at <iso-time|none>] [--mutation-id <id>]',
+    sum: 'Mint an invitation code for a Space',
+    authz: 'space',
+    input: 'unbound',
+  },
+  'spaces.invites.revoke': {
+    cmd: ['space', 'invite', 'revoke'],
+    syn: 'tm8 space invite revoke <invite-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Revoke an outstanding Space invitation',
+    authz: 'space',
+    input: 'unbound',
+  },
+  'spaces.invites.redeem': {
+    cmd: ['space', 'invite', 'redeem'],
+    syn: 'tm8 space invite redeem <code> [--mutation-id <id>]',
+    sum: 'Redeem an invitation code and join its Space',
+    authz: 'server',
+    input: 'unbound',
+    tags: ['join', 'accept'],
+  },
+  'spaces.taskAxes.list': {
+    cmd: ['space', 'task-axis', 'list'],
+    syn: 'tm8 space task-axis list [<space-id>]',
+    sum: 'List the task axes a Space classifies work along',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.taskAxes.create': {
+    cmd: ['space', 'task-axis', 'create'],
+    syn: 'tm8 space task-axis create <name> [--space <space-id>] --value <value>... --kind default|manual --position <n> [--mutation-id <id>]',
+    sum: 'Add a task axis to a Space',
+    authz: 'space',
+    input: 'bound',
+  },
+  'spaces.taskAxes.update': {
+    cmd: ['space', 'task-axis', 'update'],
+    syn: 'tm8 space task-axis update <axis-id> [--space <space-id>] --name <name> --value <value>... --kind default|manual --position <n> [--mutation-id <id>]',
+    sum: 'Redefine a task axis',
+    authz: 'space',
+    input: 'bound',
+  },
+  'spaces.taskAxes.delete': {
+    cmd: ['space', 'task-axis', 'delete'],
+    syn: 'tm8 space task-axis delete <axis-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Remove a task axis from a Space',
+    authz: 'space',
+    input: 'unbound',
+  },
+  'spaces.leaderboard': {
+    cmd: ['space', 'leaderboard', 'get'],
+    syn: 'tm8 space leaderboard get [<space-id>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Read the points leaderboard for a Space',
+    authz: 'space',
+    input: 'none',
+  },
+  'spaces.awards': {
+    cmd: ['space', 'award', 'list'],
+    syn: 'tm8 space award list [<space-id>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'List awards granted in a Space',
+    authz: 'space',
+    input: 'none',
+  },
+
+  // ── universal entities ───────────────────────────────────────────────────
+  'entities.get': {
+    cmd: ['entity', 'get'],
+    syn: 'tm8 entity get <entity-id>',
+    sum: 'Read one entity of any kind, with its current version',
+    authz: 'entity',
+    input: 'none',
+    tags: ['read', 'show', 'task', 'doc', 'session'],
+  },
+  'entities.create': {
+    cmd: ['entity', 'create'],
+    syn: 'tm8 entity create <kind> <title> [--space <space-id>] [--parent <entity-id|none>] [--position <n>] [--content <json-source>] [--attach-to <entity-id>...] [--relate-to <entity-id>...] [--connect <edge-type>=<target-entity-id>...] [--mutation-id <id>]',
+    sum: 'Create an entity of any unrestricted kind, optionally with its initial edges',
+    authz: 'space',
+    input: 'bound',
+    tags: ['new', 'add', 'task', 'doc'],
+    notes: [
+      'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
+      'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
+    ],
+    examples: ['tm8 entity create task "<title>" --space <space-id> --parent <entity-id>'],
+  },
+  'entities.patch': {
+    cmd: ['entity', 'update'],
+    syn: 'tm8 entity update <entity-id> --expect-version <n> [--title <title>] [--content <json-source>] [--mutation-id <id>]',
+    sum: 'Change an entity title or content under an optimistic version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['edit', 'rename', 'patch'],
+  },
+  'entities.move': {
+    cmd: ['entity', 'move'],
+    syn: 'tm8 entity move <entity-id> --parent <entity-id|none> --position <n> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Reparent or reorder an entity within its homogeneous hierarchy',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['reparent', 'reorder', 'position'],
+  },
+  'entities.delete': {
+    cmd: ['entity', 'delete'],
+    syn: 'tm8 entity delete <entity-id> --yes [--mutation-id <id>]',
+    sum: 'Soft-delete an entity; `entity restore` is its inverse',
+    authz: 'entity',
+    input: 'unbound',
+    tags: ['remove', 'trash'],
+  },
+  'entities.restore': {
+    cmd: ['entity', 'restore'],
+    syn: 'tm8 entity restore <entity-id> [--mutation-id <id>]',
+    sum: 'Restore a soft-deleted entity',
+    authz: 'entity',
+    input: 'unbound',
+    tags: ['undelete', 'recover'],
+  },
+  'entities.children': {
+    cmd: ['entity', 'children'],
+    syn: 'tm8 entity children <entity-id> [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the direct children of an entity',
+    authz: 'entity',
+    input: 'none',
+    notes: ['there is no `--kind` filter: children always share the parent kind'],
+  },
+  'entities.hierarchy': {
+    cmd: ['entity', 'hierarchy'],
+    syn: 'tm8 entity hierarchy <entity-id> [--depth <n>]',
+    sum: 'Read the ancestor/descendant hierarchy around an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['tree', 'ancestors', 'subtree'],
+  },
+  'entities.connections': {
+    cmd: ['entity', 'connections'],
+    syn: 'tm8 entity connections <entity-id> [--type <edge-type>...] [--direction incoming|outgoing|both] [--peer <entity-id>...] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the edges attached to an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['edges', 'links', 'related'],
+    notes: ['the flat filter/sort/page shape is amendment-dependent; the frozen row still returns grouped connections'],
+  },
+  'entities.versions': {
+    cmd: ['entity', 'versions'],
+    syn: 'tm8 entity versions <entity-id> [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the version history of an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['history', 'revisions'],
+  },
+  'entities.activity': {
+    cmd: ['entity', 'activity'],
+    syn: 'tm8 entity activity <entity-id> [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the activity record for an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['audit', 'log', 'events'],
+  },
+  'entities.react': {
+    cmd: ['entity', 'react'],
+    syn: 'tm8 entity react <entity-id> like|dislike|star [--off] [--mutation-id <id>]',
+    sum: 'Set or clear this actor reaction on an entity',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['like', 'star', 'emoji'],
+  },
+  'entities.points.add': {
+    cmd: ['entity', 'point', 'grant'],
+    syn: 'tm8 entity point grant <entity-id> <amount> --reason grant|award|seed [--reference <entity-id>] [--mutation-id <id>]',
+    sum: 'Grant points to an entity',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['score', 'award', 'reward'],
+  },
+
+  // ── closed kind-command namespace ────────────────────────────────────────
+  'entities.commands.complete': {
+    cmd: ['task', 'complete'],
+    syn: 'tm8 task complete <task-id> --expect-version <n> --by <actor-id>... [--mutation-id <id>]',
+    sum: 'Complete a task — the ONLY operation that may write status done',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['done', 'finish', 'close'],
+    notes: [
+      'it alone checks acceptance criteria and writes completer relationships, activity, and awards',
+      '`task transition <id> done` is refused with invariant_violation / use_complete_command',
+    ],
+    examples: ['tm8 task complete <task-id> --expect-version <n> --by <actor-id>'],
+  },
+  'entities.commands.work': {
+    cmd: ['task', 'transition'],
+    syn: 'tm8 task transition <task-id> open|pulled|working|in_review|blocked|cancelled [--mutation-id <id>]',
+    sum: 'Move a task through its work lifecycle, short of completion',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['status', 'working', 'blocked', 'progress', 'start'],
+    notes: [
+      'enum values use their exact contract spelling, including `in_review`',
+      'transition time is Server-owned; a client cannot backdate lifecycle history',
+    ],
+  },
+  'entities.commands.pull': {
+    cmd: ['entity', 'pull'],
+    syn: 'tm8 entity pull <entity-id> --pinned-version <n> [--local-id <id|none>] [--mutation-id <id>]',
+    sum: 'Pin an entity version into a local working copy',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['claim', 'checkout', 'pin'],
+  },
+  'entities.commands.linkPr': {
+    cmd: ['task', 'link-pr'],
+    syn: 'tm8 task link-pr <task-id> <url> [--project <project-resource-id>] [--mutation-id <id>]',
+    sum: 'Link a pull request to a task',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['pr', 'pull-request', 'github'],
+  },
+  'entities.commands.linkCommit': {
+    cmd: ['task', 'link-commit'],
+    syn: 'tm8 task link-commit <task-id> <url> [--project <project-resource-id>] [--mutation-id <id>]',
+    sum: 'Link a commit to a task',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['commit', 'sha', 'git'],
+  },
+  'tracking.refresh': {
+    cmd: ['tracking', 'refresh'],
+    syn: 'tm8 tracking refresh [<pull-request-or-commit-entity-id>...] [--mutation-id <id>]',
+    sum: 'Re-poll external tracking state for linked pull requests and commits',
+    authz: 'space',
+    input: 'bound',
+    tags: ['sync', 'github', 'poll'],
+  },
+
+  // ── edges ────────────────────────────────────────────────────────────────
+  'edges.list': {
+    cmd: ['edge', 'list'],
+    syn: 'tm8 edge list [--source <entity-id>] [--target <entity-id>] [--type <edge-type>] [--direction incoming|outgoing] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page edges by source, target, type, or direction',
+    authz: 'space',
+    input: 'none',
+    tags: ['links', 'relationships'],
+  },
+  'edges.create': {
+    cmd: ['edge', 'create'],
+    syn: 'tm8 edge create <source-entity-id> <edge-type> <target-entity-id> [--props <json-source>] [--mutation-id <id>]',
+    sum: 'Create one registered edge between two entities',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['link', 'relate', 'connect'],
+    notes: ['`props.origin` is Server-owned and never accepted from a client'],
+  },
+  'edges.patch': {
+    cmd: ['edge', 'update'],
+    syn: 'tm8 edge update <edge-id> --props <json-source> [--mutation-id <id>]',
+    sum: 'Change the properties of an edge',
+    authz: 'entity',
+    input: 'bound',
+  },
+  'edges.delete': {
+    cmd: ['edge', 'delete'],
+    syn: 'tm8 edge delete <edge-id> --yes [--mutation-id <id>]',
+    sum: 'Delete an edge',
+    authz: 'entity',
+    input: 'unbound',
+    notes: [
+      'message-owned attachment edges and materialized profile edges refuse generic edge mutation; use their owner commands',
+    ],
+  },
+  'edgeTypes.list': {
+    cmd: ['edge', 'type', 'list'],
+    syn: 'tm8 edge type list',
+    sum: 'List the registered edge types and their endpoint rules',
+    authz: 'server',
+    input: 'none',
+    tags: ['schema', 'registry', 'relationships'],
+  },
+
+  // ── messages ─────────────────────────────────────────────────────────────
+  'messages.list': {
+    cmd: ['message', 'list'],
+    syn: 'tm8 message list <anchor-entity-id> [--root <message-id>] [--order oldest|newest] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the durable messages anchored to an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['read', 'thread', 'chat', 'conversation', 'inbox'],
+  },
+  'messages.post': {
+    cmd: ['message', 'send'],
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    sum: 'Create one durable message per anchor and attempt delivery',
+    authz: 'entity',
+    input: 'bound',
+    // `session` and `work-session` are deliberate: addressing a live session is
+    // what this operation IS, and an agent reaching for the retired `session
+    // prompt` must land here rather than on a generic entity read.
+    tags: [
+      'reply', 'say', 'tell', 'notify', 'communicate', 'report', 'progress',
+      'prompt', 'ask', 'session', 'work-session', 'coordinator',
+    ],
+    notes: [
+      'this is the ONLY public communication action for text; there is no prompt, report, or progress command',
+      'a work session is addressed like any other anchor — the message is stored first and delivered second',
+      '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
+      '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
+    ],
+    examples: [
+      "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
+      "tm8 message reply <message-id> '<body>' --mutation-id <uuid>",
+    ],
+  },
+  'messages.edit': {
+    cmd: ['message', 'update'],
+    syn: 'tm8 message update <message-id> [<body>|-] [--body <text-source>] [--mention <actor-id>...] --expect-version <n> [--mutation-id <id>]',
+    sum: 'Edit a stored message body or mentions under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+  },
+  'messages.delete': {
+    cmd: ['message', 'delete'],
+    syn: 'tm8 message delete <message-id> --expect-version <n> --yes [--mutation-id <id>]',
+    sum: 'Redact a stored message: the body becomes [redacted] and the row remains in the thread',
+    authz: 'entity',
+    // `bound`, not `unbound`: `DeleteMessageInput` is a real frozen DTO
+    // (clientMutationId + required expectedVersion) and the Server binds it
+    // 1:1. Matrices row 47 marks it amended-with-`expectedVersion`; row 51
+    // (`commands.undo`) is what an actually-unbound row looks like. Claiming
+    // `unbound` here also auto-appended a note saying no frozen binding
+    // existed, which was simply false.
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['remove', 'redact', 'retract'],
+    notes: [
+      'this is a REDACTION and a state transition, not a row deletion: mentions and attachments are cleared, redacted_at is set, and pending deliveries are cancelled',
+      'thread history survives — replies, ordering, and cursors are unaffected',
+    ],
+  },
+
+  // ── collections / graph / placements / undo ──────────────────────────────
+  'collections.query': {
+    cmd: ['entity', 'query'],
+    syn: 'tm8 entity query [--space <space-id>] [--kind <kind>...] [--subtree <entity-id>] [--work-status <status>...] [--assignee <actor-id>...] [--ready] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Query entities across a Space by kind, hierarchy, status, axis, assignee, or edge',
+    authz: 'space',
+    input: 'bound',
+    tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
+    examples: ['tm8 entity query --kind task --assignee <actor-id> --work-status working'],
+  },
+  'graph.query': {
+    cmd: ['graph', 'query'],
+    syn: 'tm8 graph query [--space <space-id>] [--focus <entity-id>] [--hops <n>] [--edge-type <type>...] [--mode free|dependency] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Traverse the entity graph outward from a focus entity',
+    authz: 'space',
+    input: 'bound',
+    tags: ['traverse', 'neighbours', 'dependencies'],
+  },
+  'placements.apply': {
+    cmd: ['placement', 'apply'],
+    syn: 'tm8 placement apply <source-entity-id> attach|assign|depend|subtask|embed|reparent <target-entity-id> [--mutation-id <id>]',
+    sum: 'Apply one intent-level placement between two entities',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['drop', 'assign', 'attach', 'depend'],
+  },
+  'commands.undo': {
+    cmd: ['undo', 'apply'],
+    syn: 'tm8 undo apply <undo-token> [--mutation-id <id>]',
+    sum: 'Redeem an undo token that a previous mutation returned',
+    authz: 'space',
+    input: 'unbound',
+    tags: ['revert', 'rollback'],
+    // The third note was INVERTED and is corrected here. Traced to source:
+    // `undo_tokens.operation` (004:168) is the INVERSE to run, not the operation
+    // that issued the token — `edges.create` issues one whose operation is
+    // `edges.delete`, labelled "Undo link". The only issuer of a
+    // `messages.delete`-inverse token is `placements.apply` with intent `embed`
+    // (018:387, "Undo embed"); redemption dispatches it to
+    // `w2_tombstone_message` (020:128), which sets body='[redacted]' (019:627).
+    // The old text said redemption "restores a REDACTED message to visible" —
+    // backwards, and it told an operator that history was recoverable when
+    // redemption destroys more of it, inviting a destructive recovery against
+    // data that was never lost.
+    notes: [
+      UNBOUND_NOTE,
+      'not every mutation is undoable: a token is redeemable only when the operation that returned one issued it, and only while it is unspent',
+      'a token names the INVERSE it will run, not the operation that issued it — the `messages.delete` inverse is the token an `embed` placement returns, and redeeming it REDACTS the message that placement posted',
+      'no registered inverse un-redacts a message, and `message delete` returns no undo token at all: a redaction is not recovered by undoing anything',
+    ],
+  },
+
+  // ── search — reserved ────────────────────────────────────────────────────
+  'search.query': {
+    cmd: ['search', 'query'],
+    syn: 'tm8 search query <text> [--space <space-id>] [--kind <kind>...] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Full-text search across a Space — RESERVED in the frozen catalog and unavailable on every node',
+    authz: 'space',
+    input: 'none',
+    tags: ['find', 'lookup', 'text'],
+    reason: 'not_implemented',
+    composite: 'collections.query',
+    // The second note used to open "until it is built", which contradicted the
+    // row it describes: this is one of the two PERMANENTLY reserved rows,
+    // resolved by the `contract` source in the availability precedence and never
+    // by observation. It is reserved rather than pending, so a roadmap here was
+    // never a fact about anything. The alternatives stay — naming them is
+    // genuinely useful and is not a roadmap — but they are what exists INSTEAD,
+    // not what to use MEANWHILE.
+    notes: [
+      'the command exists so the capability is discoverable and answers honestly; it is never silently absent',
+      'this row is reserved in the frozen catalog, not pending: `entity query` and `graph query` are the structural alternatives that exist instead',
+    ],
+  },
+
+  // ── projects ─────────────────────────────────────────────────────────────
+  'projects.list': {
+    cmd: ['project', 'list'],
+    syn: 'tm8 project list [--limit <count>] [--cursor <cursor>]',
+    sum: 'List ProjectResources — the configuration truth behind working directories',
+    authz: 'server',
+    input: 'none',
+    tags: ['repo', 'workdir'],
+  },
+  'projects.create': {
+    cmd: ['project', 'create'],
+    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
+    sum: 'Register a ProjectResource',
+    authz: 'server',
+    input: 'bound',
+  },
+  'projects.get': {
+    cmd: ['project', 'get'],
+    syn: 'tm8 project get <project-resource-id>',
+    sum: 'Read one ProjectResource',
+    authz: 'project',
+    input: 'none',
+  },
+  'projects.update': {
+    cmd: ['project', 'update'],
+    syn: 'tm8 project update <project-resource-id> [--name <name>] [--working-dir <absolute-path>] [--trust trusted|untrusted] [--yes] [--mutation-id <id>]',
+    sum: 'Change ProjectResource configuration',
+    authz: 'project',
+    input: 'bound',
+  },
+  'projects.link': {
+    cmd: ['project', 'link'],
+    syn: 'tm8 project link <project-resource-id> [--space <space-id>] [--mutation-id <id>]',
+    sum: 'Link a ProjectResource into a Space and materialize its restricted projection',
+    authz: 'space',
+    input: 'bound',
+    notes: [
+      'the result carries BOTH identities: the ProjectResource id and the per-Space projection entity id — they are never interchangeable',
+    ],
+  },
+  'projects.unlink': {
+    cmd: ['project', 'unlink'],
+    syn: 'tm8 project unlink <project-resource-id> [--space <space-id>] --yes [--mutation-id <id>]',
+    sum: 'Unlink a ProjectResource from a Space',
+    authz: 'space',
+    input: 'unbound',
+  },
+
+  // ── files ────────────────────────────────────────────────────────────────
+  'files.uploadInit': {
+    cmd: ['file', 'upload'],
+    syn: 'tm8 file upload <path|-> [--space <space-id>] [--name <name>] [--mime <mime-type>] [--attach-to <entity-id>...] [--size <bytes>] [--sha256 <lowercase-hex>] [--mutation-id <id>]',
+    sum: 'Begin a blob upload — the first stage of the `file upload` composition',
+    authz: 'space',
+    input: 'bound',
+    tags: ['attach', 'blob'],
+    notes: [
+      '`file upload` is an explicit composition over init, transfer, and complete; each stage derives its OWN mutation id from the caller root',
+    ],
+  },
+  'files.uploadComplete': {
+    cmd: ['file', 'upload'],
+    syn: 'tm8 file upload <path|-> [--attach-to <entity-id>...] [--mutation-id <id>]',
+    sum: 'Finalize a blob upload and atomically create its requested attachment edges',
+    authz: 'space',
+    input: 'bound',
+  },
+  'files.uploadAbort': {
+    cmd: ['file', 'upload', 'abort'],
+    syn: 'tm8 file upload abort <upload-id> --yes [--mutation-id <id>]',
+    sum: 'Abandon an in-flight upload; also invoked automatically on recoverable failure',
+    authz: 'space',
+    input: 'bound',
+    tags: ['cancel', 'cleanup'],
+  },
+  'files.download': {
+    cmd: ['file', 'download'],
+    syn: 'tm8 file download <file-entity-id> --output <path|-> [--overwrite]',
+    sum: 'Download file bytes',
+    authz: 'entity',
+    input: 'none',
+    tags: ['fetch', 'blob', 'get'],
+    notes: ['answers with raw bytes, so it is mutually exclusive with structured output'],
+  },
+  'bridge.fetchBlob': {
+    cmd: null,
+    sum: 'Cross-node blob fetch over the asymmetric Phase-2 bridge — RESERVED, and deliberately never a public command',
+    authz: 'entity',
+    input: 'none',
+    tags: ['blob', 'bridge', 'remote', 'phase2'],
+    reason: 'not_implemented',
+    notes: [
+      'this row has NO CLI command and will not grow one: it is an internal Server-to-Server path, not a caller-facing capability',
+      'it stays in the catalog, and in this help, so it is discoverable rather than hidden',
+      'the caller-facing way to read file bytes is `file download`',
+    ],
+    composite: 'files.download',
+  },
+
+  // ── per-member read state ────────────────────────────────────────────────
+  'inbox.list': {
+    cmd: ['inbox', 'list'],
+    syn: 'tm8 inbox list [--for <team-member-id>] [--space <space-id>] [--unread] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page this actor notifications',
+    authz: 'server',
+    input: 'none',
+    tags: ['notifications', 'unread', 'mentions'],
+    notes: ['a Member personal inbox excludes rows owned by their Teammates; `--for` inspects a Teammate feed separately'],
+  },
+  'inbox.markRead': {
+    cmd: ['inbox', 'mark-read'],
+    syn: 'tm8 inbox mark-read <notification-id> [--mutation-id <id>]',
+    sum: 'Mark one notification read',
+    authz: 'server',
+    input: 'unbound',
+    notes: ['`inbox mark-read` owns notification state; `message mark-read` owns an anchor read cursor'],
+  },
+  'readMarks.upsert': {
+    cmd: ['message', 'mark-read'],
+    syn: 'tm8 message mark-read <anchor-entity-id> --through <message-id> [--mutation-id <id>]',
+    sum: 'Advance the read cursor on a message anchor',
+    authz: 'entity',
+    input: 'unbound',
+    tags: ['seen', 'read-through', 'cursor'],
+  },
+
+  // ── saved views ──────────────────────────────────────────────────────────
+  'savedViews.list': {
+    cmd: ['saved-view', 'list'],
+    syn: 'tm8 saved-view list [--space <space-id>]',
+    sum: 'List every saved query in a Space, unpaginated',
+    authz: 'space',
+    input: 'none',
+    tags: ['views', 'filters', 'bookmarks'],
+    notes: [
+      'this list is NOT paginated: the frozen contract defines no cursor and no limit for it, and the read returns a bare array rather than a page',
+    ],
+  },
+  'savedViews.create': {
+    cmd: ['saved-view', 'create'],
+    syn: 'tm8 saved-view create <name> [--space <space-id>] --share private|space --query <json-source> [--graph-layout <json-source>] [--mutation-id <id>]',
+    sum: 'Save a query as a reusable view',
+    authz: 'space',
+    input: 'bound',
+  },
+  'savedViews.update': {
+    cmd: ['saved-view', 'update'],
+    syn: 'tm8 saved-view update <saved-view-id> --name <name> --share private|space --query <json-source> [--graph-layout <json-source>] [--mutation-id <id>]',
+    sum: 'Replace the name, sharing, and query of a saved view',
+    authz: 'entity',
+    input: 'bound',
+    // NO version guard, at any layer: `SavedViewInput` is `.strict()` with no
+    // `expectedVersion`, and the `SavedView` read DTO publishes no version a
+    // caller could guard against even if it had one. Advertising the flag made
+    // the CLI demand a value the Server would reject.
+  },
+  'savedViews.delete': {
+    cmd: ['saved-view', 'delete'],
+    syn: 'tm8 saved-view delete <saved-view-id> --yes [--mutation-id <id>]',
+    sum: 'Delete a saved view',
+    authz: 'entity',
+    input: 'unbound',
+  },
+
+  // ── capability discovery ─────────────────────────────────────────────────
+  'actions.list': {
+    cmd: ['action', 'list'],
+    syn: 'tm8 action list [--for <entity-id>]',
+    sum: 'Ask what THIS actor may actually do on a target right now',
+    authz: 'entity',
+    input: 'none',
+    tags: ['permissions', 'can-i', 'allowed', 'capabilities', 'palette'],
+    notes: [
+      'static help answers "what can tm8 express?"; this answers "what may I do here now?" — they are different questions',
+      'results are bound to an actor, a Space, a target version, and a capabilityEpoch, and go stale in 30 seconds',
+    ],
+  },
+
+  // ── events & presence ────────────────────────────────────────────────────
+  'events.subscribe': {
+    cmd: ['event', 'watch'],
+    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence]',
+    sum: 'Stream Space events over the WebSocket',
+    authz: 'space',
+    input: 'none',
+    side: 'none',
+    tags: ['stream', 'follow', 'tail', 'live', 'realtime'],
+    // These notes state CONTRACT facts, not the state of this node. The row
+    // previously said the socket was "an upgrade SKELETON … do not depend on it
+    // for durable ordering yet", which was true when it was written and stopped
+    // being true when `WorkspaceControlFrame`/`WorkspaceControlAck` landed. That
+    // is the whole hazard: prose asserting a CURRENT state of the world has
+    // nothing that goes red when the world moves. Whether THIS node serves the
+    // socket is the `availability` axis's question, and it is measured, not
+    // narrated; whether a roadmap lands is nobody's question here.
+    notes: [
+      'the contract defines a client→server control protocol on this socket: `subscribe`/`unsubscribe` are fan-out membership, `resume` is replay, `presence`/`presence.set` are the ephemeral channel, and a refused frame answers `control.refused` rather than going quiet',
+      'a gap is repaired by re-watching with `--after <space-seq>`, which sends a `resume` frame replaying stored events over the socket; `event list` is the repair when no socket can be opened at all',
+      'presence signals never advance the durable cursor',
+    ],
+  },
+  'events.poll': {
+    cmd: ['event', 'list'],
+    syn: 'tm8 event list [--space <space-id>] [--after <space-seq>] [--limit <count>]',
+    // NOT "the reconnect stage" any more: `resume` repairs a gap over a socket
+    // that is up, so the definite article claimed an exclusivity this row lost.
+    // It is still exactly right for the socket-down case, which is why the
+    // fix narrows the claim rather than dropping it.
+    sum: 'Page durable Space events after a sequence — also the socket-down catch-up path for `event watch`',
+    authz: 'space',
+    input: 'none',
+    tags: ['catch-up', 'replay', 'seq'],
+  },
+  'presence.get': {
+    cmd: ['presence', 'get'],
+    syn: 'tm8 presence get <entity-id>',
+    sum: 'Read who is present on an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['online', 'who', 'typing'],
+  },
+
+  // ── execution ────────────────────────────────────────────────────────────
+  'execution.spawn': {
+    cmd: ['session', 'spawn'],
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|worktree|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    sum: 'Start a server-hosted work session for a Teammate',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['launch', 'start', 'agent', 'delegate', 'pty', 'terminal'],
+    notes: [
+      'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
+      '`--context` is launch-manifest context, NOT a runtime prompt',
+      '`--workdir worktree` is discoverable reserved syntax and answers not_implemented until its gate closes',
+    ],
+  },
+  'execution.prompt': {
+    cmd: null,
+    sum: 'INTERNAL: the audited Server-side delivery of an already-stored message into a live session',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['delivery', 'internal'],
+    reason: 'use_message_send',
+    composite: 'messages.post',
+    notes: [
+      'there is no caller-facing form of this operation, and no flag, alias, or debug path enables one',
+      'only the audited Server delivery principal may invoke it, and only for a delivery already reserved against a stored message',
+      'to reach a live session, store a durable message addressed to it — persistence first, delivery second',
+    ],
+  },
+  'execution.terminate': {
+    cmd: ['session', 'terminate'],
+    syn: 'tm8 session terminate <work-session-id> [--force] --yes [--mutation-id <id>]',
+    sum: 'End a work session; `--force` requests hard process termination after the same checks',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['kill', 'stop', 'end'],
+    notes: ['`--force` never broadens WHO may terminate a session; it only changes how the process is stopped'],
+  },
+  'execution.streams.attach': {
+    cmd: ['session', 'attach'],
+    syn: 'tm8 session attach <work-session-id> --mode view|drive [--grant-only] [--mutation-id <id>]',
+    sum: 'Attach to a work session terminal stream in view or drive mode',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['terminal', 'pty', 'watch', 'drive'],
+    notes: ['`--format json` implies `--grant-only`: interactive terminal bytes are not DTO output'],
+  },
+
+  // ── custom entity kinds ──────────────────────────────────────────────────
+  'entityKinds.list': {
+    cmd: ['kind', 'list'],
+    syn: 'tm8 kind list [--space <space-id>]',
+    sum: 'List the entity kinds registered in a Space, core and custom',
+    authz: 'space',
+    input: 'none',
+    tags: ['schema', 'types', 'registry', 'custom'],
+  },
+  'entityKinds.create': {
+    cmd: ['kind', 'create'],
+    syn: 'tm8 kind create <c:name> [--space <space-id>] --schema <json-source> [--icon <value|none>] [--capabilities <json-source>] [--mutation-id <id>]',
+    sum: 'Register a custom entity kind in the `c:` namespace',
+    authz: 'space',
+    input: 'bound',
+    tags: ['schema', 'custom', 'define'],
+    notes: ['custom kinds are scalar-only and always live under the literal `c:` prefix'],
+  },
+  'entityKinds.update': {
+    cmd: ['kind', 'update'],
+    syn: 'tm8 kind update <c:name> [--space <space-id>] [--schema <json-source>] [--icon <value|none>] [--capabilities <json-source>] [--allow-tightening] [--yes] [--mutation-id <id>]',
+    sum: 'Change a custom entity kind schema, icon, or capabilities',
+    authz: 'space',
+    input: 'bound',
+    tags: ['schema', 'custom', 'migrate'],
+    notes: [
+      'a tightening change can invalidate existing rows, so it requires `--allow-tightening`',
+      'there is deliberately no custom-kind delete command',
+    ],
+  },
+
+  // ── W0 adopted additive rows A01-A20 ─────────────────────────────────────
+  'spaces.menu.get': {
+    cmd: ['space', 'menu', 'get'],
+    syn: 'tm8 space menu get [<space-id>]',
+    sum: 'Read the configured Space menu',
+    authz: 'space',
+    input: 'none',
+    tags: ['navigation', 'sidebar'],
+  },
+  'spaces.menu.update': {
+    cmd: ['space', 'menu', 'update'],
+    syn: 'tm8 space menu update [<space-id>] --expect-revision <n> --data <json-source> [--mutation-id <id>]',
+    sum: 'Replace the Space menu under a revision guard',
+    authz: 'space',
+    input: 'bound',
+    ver: 'expectedVersion',
+    notes: ['the guard is spelled `--expect-revision` here because the menu carries a revision, not an entity version'],
+  },
+  'spaces.defaultChannel.set': {
+    cmd: ['space', 'default-channel', 'set'],
+    syn: 'tm8 space default-channel set <channel-id|none> [--space <space-id>] --expect-revision <n> [--mutation-id <id>]',
+    sum: 'Choose the channel a Space opens into, under a revision guard',
+    authz: 'space',
+    input: 'bound',
+    ver: 'expectedVersion',
+    notes: [
+      'the guard is spelled `--expect-revision` here because it guards the Space settings revision, not an entity version',
+    ],
+  },
+  'projects.associations.correct': {
+    cmd: ['project', 'association', 'correct'],
+    syn: 'tm8 project association correct <artifact-entity-id> --project <project-resource-id|none> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Correct the ProjectResource a pull request or commit was attributed to, under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['reattribute', 'fix', 'pr', 'commit'],
+    notes: [
+      'the guard is spelled `--expect-version` per the dossier grammar; it carries the DTO field `expectedArtifactVersion`, which guards the ARTIFACT version, not the ProjectResource',
+    ],
+  },
+  'handoffs.send': {
+    cmd: ['handoff', 'send'],
+    syn: 'tm8 handoff send <work-session-id> --entity <source-entity-id> [--mutation-id <handoff-id>]',
+    sum: 'Project a bounded entity snapshot into a work session',
+    authz: 'session',
+    input: 'bound',
+    tags: ['share', 'context', 'projection'],
+    notes: [
+      'entity projection is a handoff, NOT a message attachment',
+      'the envelope is capped at exactly 32,768 bytes',
+    ],
+    // The `[--expect-source-version <n>]` this row used to advertise appears in
+    // the grammar doc §4 but in neither higher authority: `SendHandoffInput` is
+    // `{clientMutationId, sourceEntityId}` in the dossier §4 AND in the frozen
+    // `.strict()` schema, and dossier §7 spells the command without it. The
+    // snapshot is taken as-of send; there is no moved-target refusal to opt in
+    // to, so the note promising one has gone with the flag.
+  },
+  'handoffs.list': {
+    cmd: ['handoff', 'list'],
+    syn: 'tm8 handoff list <work-session-id> [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page the handoffs sent into a work session',
+    authz: 'session',
+    input: 'none',
+  },
+  'handoffs.withdraw': {
+    cmd: ['handoff', 'withdraw'],
+    syn: 'tm8 handoff withdraw <handoff-id> [--reason <text-source>] --expect-record-version <n> --yes [--mutation-id <id>]',
+    sum: 'Withdraw a handoff that has not been consumed, under a record-version guard',
+    authz: 'session',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['revoke', 'cancel'],
+    notes: [
+      'the guard is spelled `--expect-record-version` because `WithdrawHandoffInput` requires `expectedRecordVersion` — it guards the HANDOFF RECORD, not the projected entity',
+    ],
+  },
+  'messages.attachments.add': {
+    cmd: ['message', 'attachment', 'add'],
+    syn: 'tm8 message attachment add <message-id> <file-entity-id>... --expect-version <n> [--mutation-id <id>]',
+    sum: 'Attach finalized files to a stored message under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    notes: [
+      'message-owned attachment edges have no generic edge surface: this command and its remove twin are their only mutation path',
+      'each target audience must be a subset of the file audience, or the Server refuses with attachment_audience_widening',
+    ],
+  },
+  'messages.attachments.remove': {
+    cmd: ['message', 'attachment', 'remove'],
+    syn: 'tm8 message attachment remove <message-id> <file-entity-id>... --expect-version <n> [--mutation-id <id>]',
+    sum: 'Detach files from a stored message under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+  },
+  'messages.delivery.get': {
+    cmd: ['message', 'delivery'],
+    syn: 'tm8 message delivery <message-id>',
+    sum: 'Read the delivery outcome of a stored message',
+    authz: 'entity',
+    input: 'none',
+    tags: ['status', 'delivered', 'pending', 'settled'],
+    notes: ['storage and delivery are different facts: a stored message with a pending delivery was NOT lost'],
+  },
+  'entities.feed': {
+    cmd: ['entity', 'feed'],
+    syn: 'tm8 entity feed <entity-id> [--scope direct_v1|session_chat_v1] [--order newest|oldest] [--around <feed-item-ref>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'Page one merged message-and-activity timeline for an entity',
+    authz: 'entity',
+    input: 'none',
+    tags: ['timeline', 'history', 'chat', 'activity'],
+  },
+  'entities.context': {
+    cmd: ['entity', 'context'],
+    syn: 'tm8 entity context <entity-id> [--depth 0|1|2|3] [--messages <0..50>] [--children <0..200>] [--edge-type <type>...]',
+    sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
+    authz: 'entity',
+    input: 'none',
+    tags: ['snapshot', 'around', 'brief', 'orient'],
+    notes: [
+      'bounded by design: 32 KiB default and 128 KiB hard, with explicit per-section cursors and truncation flags',
+    ],
+  },
+  'interactionProfiles.propose': {
+    cmd: ['interaction-profile', 'propose'],
+    syn: 'tm8 interaction-profile propose --data <json-source> [--mutation-id <id>]',
+    sum: 'Propose a draft Interaction Profile',
+    authz: 'space',
+    input: 'bound',
+    tags: ['profile', 'policy', 'draft'],
+  },
+  'interactionProfiles.updateDraft': {
+    cmd: ['interaction-profile', 'update'],
+    syn: 'tm8 interaction-profile update <id> --expect-version <n> --data <json-source> [--mutation-id <id>]',
+    sum: 'Edit an Interaction Profile draft',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    notes: ['a Teammate may edit only a draft it proposed; a human Space owner or admin may edit any accessible draft'],
+  },
+  'interactionProfiles.validate': {
+    cmd: ['interaction-profile', 'validate'],
+    syn: 'tm8 interaction-profile validate <id> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Validate a draft and record the validated artifact and its hash',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+  },
+  'interactionProfiles.preview': {
+    cmd: ['interaction-profile', 'preview'],
+    syn: 'tm8 interaction-profile preview <id> --version <n>',
+    sum: 'Preview the sanitized effect of a profile version',
+    authz: 'entity',
+    input: 'bound',
+    notes: ['preview is a READ and deliberately takes no mutation id'],
+  },
+  'interactionProfiles.activate': {
+    cmd: ['interaction-profile', 'activate'],
+    syn: 'tm8 interaction-profile activate <id> --validated-version <n> --validation-hash <hash> --yes [--mutation-id <id>]',
+    sum: 'Activate an exact validated profile version',
+    authz: 'entity',
+    input: 'bound',
+    notes: [
+      '`--validated-version` selects the recorded validated artifact; it is NOT an optimistic guard on the latest draft',
+      'activation cannot set a default — a separate human default-setting command is required',
+      'an agent token or `--as <team-member-id>` is refused here',
+    ],
+  },
+  'interactionProfiles.retire': {
+    cmd: ['interaction-profile', 'retire'],
+    syn: 'tm8 interaction-profile retire <id> --expect-version <n> --yes [--mutation-id <id>]',
+    sum: 'Retire an Interaction Profile, under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    notes: ['refused while any Teammate or Space default still targets it (profile_default_in_use)'],
+  },
+  'teamMembers.interactionProfile.setDefault': {
+    cmd: ['teammate', 'interaction-profile', 'set-default'],
+    syn: 'tm8 teammate interaction-profile set-default <team-member-id> <interaction-profile-id|none> --expect-version <n> --yes [--mutation-id <id>]',
+    sum: 'Set the default Interaction Profile for a Teammate, under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+  },
+  'spaces.interactionProfile.setDefault': {
+    cmd: ['space', 'interaction-profile', 'set-default'],
+    syn: 'tm8 space interaction-profile set-default <interaction-profile-id|none> [--space <space-id>] --expect-settings-revision <n> --yes [--mutation-id <id>]',
+    sum: 'Set the default Interaction Profile for a Space, under a settings-revision guard',
+    authz: 'space',
+    input: 'bound',
+    ver: 'expectedVersion',
+    notes: [
+      'requires an authenticated human Member with the Space owner/admin capability',
+      'the guard is spelled `--expect-settings-revision` because `SetSpaceProfileDefaultInput` requires `expectedSettingsRevision` — the Space settings row carries the revision',
+    ],
+  },
+};
+
+/**
+ * Operation family → noun. Identical to the conformance generator's mapping by
+ * construction: the cross-check test asserts agreement row by row, so a
+ * divergence here is a test failure rather than a silent second vocabulary.
+ *
+ * The family noun is NOT always the command noun. `collections.query` is family
+ * `collection` and command `entity query`; `entities.commands.complete` is
+ * family `entity` and command `task complete`. Both are indexed, so `tm8 help
+ * collection` and `tm8 help task` both resolve.
+ */
+const NOUN_BY_FAMILY: Record<string, string> = {
+  identity: 'identity',
+  spaces: 'space',
+  entities: 'entity',
+  tracking: 'tracking',
+  edges: 'edge',
+  edgeTypes: 'edge-type',
+  messages: 'message',
+  collections: 'collection',
+  graph: 'graph',
+  placements: 'placement',
+  commands: 'undo',
+  search: 'search',
+  projects: 'project',
+  files: 'file',
+  bridge: 'bridge',
+  inbox: 'inbox',
+  readMarks: 'read-mark',
+  savedViews: 'saved-view',
+  actions: 'action',
+  events: 'event',
+  presence: 'presence',
+  execution: 'session',
+  entityKinds: 'kind',
+  handoffs: 'handoff',
+  interactionProfiles: 'interaction-profile',
+  teamMembers: 'teammate',
+};
+
+function nounFor(operation: OperationName): string {
+  const family = operation.split('.')[0] as string;
+  const noun = NOUN_BY_FAMILY[family];
+  if (noun === undefined) throw new Error(`operation ${operation} has no noun disposition`);
+  return noun;
+}
+
+const kebab = (s: string): string => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+
+/**
+ * Tokens the operation name itself yields — identical to the conformance
+ * generator's algorithm, so every tag the manifest promised is present.
+ */
+function catalogTags(operation: OperationName): string[] {
+  return [
+    ...new Set(
+      operation
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .split(/[.\s]+/)
+        .map((w) => w.toLowerCase()),
+    ),
+  ];
+}
+
+function exposureFor(operation: OperationName): Exposure {
+  const op = getOperation(operation);
+  if (op.status === 'reserved') return 'reserved';
+  if (operation === 'execution.prompt') return 'internal';
+  if (operation === 'messages.post') return 'composite';
+  return 'public';
+}
+
+/** The digest every help shard carries, computed from the catalog it describes. */
+export const CATALOG_DIGEST = `sha256:${createHash('sha256')
+  .update(JSON.stringify(OPERATIONS))
+  .digest('hex')}`;
+
+export const GRAMMAR_VERSION = '2';
+
+interface BaseRow extends Omit<OperationDiscovery, 'availability' | 'availabilityReason' | 'availabilitySource'> {
+  status: 'v1' | 'reserved';
+}
+
+function build(operation: OperationName): BaseRow {
+  const row = ROWS[operation];
+  const op = getOperation(operation);
+  const noun = nounFor(operation);
+  const verb = row.cmd === null ? kebab(operation.split('.').slice(-1)[0] as string) : (row.cmd[row.cmd.length - 1] as string);
+  const notes = [...(row.notes ?? [])];
+  if (row.input === 'unbound' && !notes.includes(UNBOUND_NOTE)) notes.push(UNBOUND_NOTE);
+
+  return {
+    operation,
+    noun,
+    verb,
+    exposure: exposureFor(operation),
+    summary: row.sum,
+    intentTags: [
+      ...new Set([...catalogTags(operation), noun, verb, ...(row.cmd ?? []), ...(row.tags ?? [])]),
+    ],
+    inputSchemaRef: row.input === 'none' ? null : `tm8://schema/${operation}/input`,
+    outputSchemaRef: `tm8://schema/${operation}/output`,
+    sideEffect: row.side ?? (op.kind === 'command' ? 'durable' : 'none'),
+    authzTarget: row.authz,
+    idempotency: op.kind === 'command' ? 'required' : 'none',
+    versioning: row.ver ?? 'none',
+    helpRef: `tm8://help/operation/${operation}`,
+    command: row.cmd,
+    syntax: row.cmd === null ? null : (row.syn as string),
+    inputSchemaBound: row.input === 'bound',
+    notes,
+    reason: row.reason ?? null,
+    publicComposite: row.composite ?? null,
+    examples: row.examples ?? [],
+    status: op.status,
+  };
+}
+
+const BASE: readonly BaseRow[] = OPERATIONS.map((op) => build(op.name));
+const BY_NAME = new Map<OperationName, BaseRow>(BASE.map((r) => [r.operation, r]));
+
+function withAvailability(row: BaseRow, from?: AvailabilityLedger): OperationDiscovery {
+  const { status, ...rest } = row;
+  return { ...rest, ...resolveAvailability(row.operation, status, from) };
+}
+
+/**
+ * Every row, in catalog order, with availability resolved against the ledger.
+ *
+ * Memoized against the DEFAULT ledger's revision only. An explicitly passed
+ * ledger is always re-resolved, because a cache keyed on the wrong ledger is
+ * how a projection starts answering for a node the caller is no longer talking
+ * to — and a stale availability claim is worse than recomputing 101 rows.
+ */
+let cached: { rev: number; rows: readonly OperationDiscovery[] } | undefined;
+
+export function discovery(from?: AvailabilityLedger): readonly OperationDiscovery[] {
+  if (from !== undefined) return BASE.map((r) => withAvailability(r, from));
+  const rev = ledger.revision();
+  if (cached === undefined || cached.rev !== rev) {
+    cached = { rev, rows: BASE.map((r) => withAvailability(r)) };
+  }
+  return cached.rows;
+}
+
+/**
+ * The default projection. A getter-backed array so a caller reading
+ * `DISCOVERY` after an observation sees the updated availability rather than a
+ * frozen snapshot taken at import time.
+ */
+export const DISCOVERY: readonly OperationDiscovery[] = new Proxy([] as OperationDiscovery[], {
+  get(_target, prop, receiver) {
+    return Reflect.get(discovery(), prop, receiver) as unknown;
+  },
+  has: (_t, prop) => Reflect.has(discovery(), prop),
+  ownKeys: () => Reflect.ownKeys(discovery()),
+  getOwnPropertyDescriptor: (_t, prop) =>
+    Reflect.getOwnPropertyDescriptor(discovery(), prop),
+}) as readonly OperationDiscovery[];
+
+/** Exact-operation lookup. TOTAL over all 101 rows, internal and reserved included. */
+export function discoveryFor(operation: OperationName, from?: AvailabilityLedger): OperationDiscovery {
+  const row = BY_NAME.get(operation);
+  /* c8 ignore next */
+  if (row === undefined) throw new Error(`no CLI disposition for operation ${operation}`);
+  return withAvailability(row, from);
+}
+
+/** `--operation <name>` from an untrusted string. */
+export function lookupOperation(raw: string, from?: AvailabilityLedger): OperationDiscovery | undefined {
+  return isOperationName(raw) ? discoveryFor(raw, from) : undefined;
+}
+
+// ── the command index ──────────────────────────────────────────────────────
+
+export interface CommandDiscovery {
+  /** `message send` — the space-joined path, as a caller types it. */
+  command: string;
+  path: readonly string[];
+  noun: string;
+  verb: string;
+  /** Every operation this one command projects. `file upload` maps two. */
+  operations: readonly OperationName[];
+  exposure: Exposure;
+  summary: string;
+  syntax: string;
+  sideEffect: SideEffect;
+  idempotency: Idempotency;
+  versioning: Versioning;
+  notes: readonly string[];
+  examples: readonly string[];
+  helpRef: string;
+  availability: Availability;
+  availabilityReason: AvailabilityReason;
+}
+
+const COMMAND_ORDER: string[] = [];
+const COMMAND_OPS = new Map<string, OperationName[]>();
+for (const row of BASE) {
+  if (row.command === null) continue;
+  const key = row.command.join(' ');
+  const existing = COMMAND_OPS.get(key);
+  if (existing) existing.push(row.operation);
+  else {
+    COMMAND_OPS.set(key, [row.operation]);
+    COMMAND_ORDER.push(key);
+  }
+}
+
+/**
+ * A command is as available as its LEAST available stage. `file upload` that
+ * can initialize but not complete is not an available command, and saying it is
+ * would be the optimistic answer this whole field exists to refuse.
+ */
+function weakest(rows: readonly OperationDiscovery[]): Pick<CommandDiscovery, 'availability' | 'availabilityReason'> {
+  const rank: Record<Availability, number> = { unavailable: 0, unknown: 1, available: 2 };
+  let worst = rows[0] as OperationDiscovery;
+  for (const r of rows) if (rank[r.availability] < rank[worst.availability]) worst = r;
+  return { availability: worst.availability, availabilityReason: worst.availabilityReason };
+}
+
+function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
+  const operations = COMMAND_OPS.get(key) as OperationName[];
+  const rows = operations.map((o) => discoveryFor(o, from));
+  const head = rows[0] as OperationDiscovery;
+  const path = head.command as readonly string[];
+  return {
+    command: key,
+    path,
+    noun: path[0] as string,
+    verb: path[path.length - 1] as string,
+    operations,
+    exposure: head.exposure,
+    summary: head.summary,
+    syntax: head.syntax as string,
+    sideEffect: head.sideEffect,
+    idempotency: head.idempotency,
+    versioning: head.versioning,
+    notes: [...new Set(rows.flatMap((r) => r.notes))],
+    examples: head.examples,
+    helpRef: `tm8://help/${path.join('/')}`,
+    ...weakest(rows),
+  };
+}
+
+export function commands(from?: AvailabilityLedger): readonly CommandDiscovery[] {
+  return COMMAND_ORDER.map((key) => commandFrom(key, from));
+}
+
+export function commandDiscovery(
+  path: readonly string[],
+  from?: AvailabilityLedger,
+): CommandDiscovery | undefined {
+  const key = path.join(' ');
+  return COMMAND_OPS.has(key) ? commandFrom(key, from) : undefined;
+}
+
+/** Every registered command path — the closed set the router and completion share. */
+export const COMMAND_PATHS: readonly (readonly string[])[] = COMMAND_ORDER.map((k) => k.split(' '));
+
+export function isCommandPath(path: readonly string[]): boolean {
+  return COMMAND_OPS.has(path.join(' '));
+}
+
+// ── the noun index ─────────────────────────────────────────────────────────
+
+/**
+ * One-line noun summaries. Root help is capped at 8 KiB and must still name
+ * EVERY public noun, so these are deliberately short.
+ */
+const NOUN_SUMMARY: Record<string, string> = {
+  identity: 'Who this process is calling as',
+  space: 'Spaces — the authorization and event boundary, and their members, invites, axes, and menus',
+  entity: 'Every entity kind: read, create, update, move, query, and relate',
+  task: 'Task lifecycle: transition, complete, and link pull requests or commits',
+  tracking: 'Refresh external pull-request and commit tracking state',
+  edge: 'Typed relationships between entities, and the edge-type registry',
+  'edge-type': 'The registered edge types and their endpoint rules',
+  collection: 'Structured entity queries across a Space (invoked as `entity query`)',
+  message: 'Durable messages — the only public communication action for text',
+  'read-mark': 'Per-anchor read cursors (invoked as `message mark-read`)',
+  graph: 'Graph traversal outward from a focus entity',
+  placement: 'Intent-level placements between two entities',
+  undo: 'Redeem an undo token a previous mutation returned',
+  search: 'Full-text search — reserved, and honestly unavailable',
+  project: 'ProjectResources, their Space links, and artifact attribution',
+  file: 'Blob upload and download',
+  bridge: 'Reserved Phase-2 cross-node blob path — no public command',
+  inbox: 'Notifications and their read state',
+  'saved-view': 'Reusable saved queries',
+  action: 'What THIS actor may actually do on a target right now',
+  event: 'Durable Space events, by poll or live stream',
+  presence: 'Who is present on an entity',
+  session: 'Work sessions: spawn, attach, terminate',
+  kind: 'The entity-kind registry, core and custom',
+  handoff: 'Project a bounded entity snapshot into a work session',
+  'interaction-profile': 'Interaction Profile lifecycle and defaults',
+  teammate: 'Teammate-scoped configuration',
+};
+
+/** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */
+export const NOUNS: readonly string[] = [
+  ...new Set([...BASE.map((r) => r.noun), ...BASE.flatMap((r) => (r.command ? [r.command[0] as string] : []))]),
+].sort();
+
+export function isNoun(noun: string): boolean {
+  return NOUNS.includes(noun);
+}
+
+export function nounSummary(noun: string): string {
+  return NOUN_SUMMARY[noun] ?? `Operations in the ${noun} family`;
+}
+
+/** The commands a noun owns, whether it is the family noun or the command noun. */
+export function commandsForNoun(noun: string, from?: AvailabilityLedger): readonly CommandDiscovery[] {
+  const wanted = new Set(
+    BASE.filter((r) => r.noun === noun || r.command?.[0] === noun)
+      .filter((r) => r.command !== null)
+      .map((r) => (r.command as readonly string[]).join(' ')),
+  );
+  return COMMAND_ORDER.filter((k) => wanted.has(k)).map((k) => commandFrom(k, from));
+}
+
+/** Rows in a noun that have NO command — reserved and internal facts, still named. */
+export function commandlessForNoun(noun: string, from?: AvailabilityLedger): readonly OperationDiscovery[] {
+  return BASE.filter((r) => r.noun === noun && r.command === null).map((r) =>
+    discoveryFor(r.operation, from),
+  );
+}
+
+/** Nouns a caller can type at the top level, in root-help order. */
+export const PUBLIC_NOUNS: readonly string[] = NOUNS.filter(
+  (n) => commandsForNoun(n).length > 0 || commandlessForNoun(n).length > 0,
+);

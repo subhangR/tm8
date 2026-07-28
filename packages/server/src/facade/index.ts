@@ -45,26 +45,49 @@ import type { Db } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
 import { createLoopbackOwnerResolver } from '../identity/loopback.js';
 import type { FacadeDeps } from './deps.js';
+import type { W2FilesServiceOptions } from './services/w2/files.js';
 
-import { identityGet } from './handlers/identity.js';
-import { spacesCreate, spacesGet, spacesHome, spacesList, spacesNavigation } from './handlers/spaces.js';
+import { registerW2EdgesPlacementsHandlers } from './handlers/w2/edges-placements.js';
+import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entities-commands-tracking.js';
+import { registerW2EntityKindsProfileHandlers } from './handlers/w2/entity-kinds-profiles.js';
+import { registerW2FeedContextHandlers } from './handlers/w2/feed-context.js';
+import { registerW2FileHandlers } from './handlers/w2/files.js';
+import { registerW2CollectionsGraphUndoHandlers } from './handlers/w2/graph-undo.js';
+import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.js';
+import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
+import { registerW2MenuDefaultChannelHandlers } from './handlers/w2/menu-default-channel.js';
 import {
-  projectsCreate,
-  projectsGet,
-  projectsLink,
-  projectsList,
-  projectsUpdate,
-} from './handlers/projects.js';
-import { entitiesChildren, entitiesCreate, entitiesGet, entitiesPatch } from './handlers/entities.js';
-import { collectionsQuery } from './handlers/collections.js';
-import { messagesList, messagesPost } from './handlers/messages.js';
-import { edgesCreate } from './handlers/edges.js';
-import {
-  commandsComplete,
-  commandsWork,
-  entitiesActivity,
-  entitiesPointsAdd,
-} from './handlers/commands.js';
+  registerW2MessagesHandoffsHandlers,
+  type W2MessagesHandoffsServiceOptions,
+} from './handlers/w2/messages-handoffs.js';
+import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
+import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
+
+export interface RegisterFacadeHandlersDeps {
+  readonly db: Db;
+  readonly config: ServerConfig;
+  readonly owner?: FacadeDeps['owner'];
+  readonly files?: W2FilesServiceOptions;
+  /**
+   * W2 B2's live-delivery seam, and the ONE deliberate exception to the rule
+   * `deps.ts` states in its own header.
+   *
+   * It is a parameter HERE and not a field on `FacadeDeps` on purpose, and the
+   * distinction is the whole safeguard. `FacadeDeps` reaches every handler; a
+   * field on it would turn one reviewed decision into a permanently open door
+   * for every seam that comes after. This parameter reaches exactly one call —
+   * `registerW2MessagesHandoffsHandlers` below — so the blast radius is visible
+   * in the signature and cannot widen without another edit here.
+   *
+   * What it carries is a SECOND DATABASE IDENTITY: a pool authenticating as
+   * `tm8_delivery_worker`, which `internal.require_delivery_principal` demands
+   * and which `tm8_app` provably cannot assume (pg_catalog: no membership, no
+   * EXECUTE on any of the three delivery RPCs). That is precisely what the
+   * narrow shape exists to make expensive, and it stayed expensive: it could
+   * not be reached from inside the tree, so it had to be decided here.
+   */
+  readonly messageDelivery?: W2MessagesHandoffsServiceOptions['messageDelivery'];
+}
 
 /**
  * Mount the built operations onto the registry.
@@ -75,52 +98,67 @@ import {
  */
 export function registerFacadeHandlers(
   registry: HandlerRegistry,
-  deps: { db: Db; config: ServerConfig },
+  deps: RegisterFacadeHandlersDeps,
 ): void {
   const facade: FacadeDeps = {
     db: deps.db,
     config: deps.config,
-    owner: createLoopbackOwnerResolver(deps.db),
+    owner: deps.owner ?? createLoopbackOwnerResolver(deps.db),
   };
 
-  registry.registerAll({
-    // identity — proves claims + identity end to end
-    'identity.get': identityGet(facade),
+  /**
+   * G02 is registered FIRST among the W2 seams, and it is the only owner of the
+   * universal entity surface.
+   *
+   * The eight operations it shares with the pre-W2 wrappers — `entities.get`,
+   * `create`, `patch`, `children`, `activity`, `points.add`, and the two
+   * `entities.commands.*` transitions — are REPLACED here, not merged: they were
+   * deleted from the inline block rather than left in place. `register()` throws
+   * on a duplicate name, so there is no version of this file where both are
+   * mounted and the difference goes unnoticed; and two entity readers would let
+   * `entities.get` and `entities.children` disagree about the same row.
+   */
+  registerW2EntitiesCommandsTrackingHandlers(registry, facade);
+  registerW2IdentitySpacesHandlers(registry, facade);
+  registerW2EdgesPlacementsHandlers(registry, facade);
+  registerW2CollectionsGraphUndoHandlers(registry, facade);
+  registerW2ProjectsAssociationsHandlers(registry, facade);
+  if (deps.files) registerW2FileHandlers(registry, facade, deps.files);
+  registerW2InboxReadMarksHandlers(registry, facade);
+  registerW2SavedViewsActionsHandlers(registry, deps);
 
-    // spaces — the loop's entry point; create mints the caller's member row
-    'spaces.list': spacesList(facade),
-    'spaces.create': spacesCreate(facade),
-    'spaces.get': spacesGet(facade),
-    'spaces.home': spacesHome(facade),
-    'spaces.navigation': spacesNavigation(facade),
+  /**
+   * G04 is the second seam to REPLACE rather than only add. It owns
+   * `messages.list` and `messages.post`, both of which this function used to
+   * register inline from `./handlers/messages.js` — the second of them as an
+   * unconditional `501 not_implemented` stub, which is why nobody could send a
+   * message on this node. Those two lines were DELETED above, not left beside
+   * this call: `register()` throws on a duplicate name, so a build that kept
+   * both would not boot rather than silently prefer one.
+   *
+   * `messages.list` is the same `messagesList(deps)` reader in both places, so
+   * the swap is behaviour-preserving there. `messages.post` is the one operation
+   * in this tranche whose behaviour changes rather than begins.
+   *
+   * G04's service casts `ctx.body` straight to its contract DTO instead of
+   * parsing it, so composing it also required binding its five remaining
+   * commands in `./input-schemas.ts`. Mounting it without them would put
+   * unvalidated input in front of a handler that assumes the contract shape.
+   */
+  registerW2MessagesHandoffsHandlers(registry, facade,
+    deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {});
 
-    // projects — execution.spawn needs a real projectId
-    'projects.list': projectsList(facade),
-    'projects.create': projectsCreate(facade),
-    'projects.get': projectsGet(facade),
-    'projects.update': projectsUpdate(facade),
-    'projects.link': projectsLink(facade),
-
-    // entities — task/doc/team_member/channel; other kinds answer an honest 501
-    'entities.get': entitiesGet(facade),
-    'entities.create': entitiesCreate(facade),
-    'entities.patch': entitiesPatch(facade),
-    'entities.children': entitiesChildren(facade),
-    'entities.activity': entitiesActivity(facade),
-    'entities.points.add': entitiesPointsAdd(facade),
-
-    // edges — the write side of the relationship seam the reads already render
-    'edges.create': edgesCreate(facade),
-
-    // collections — the query executor behind every list
-    'collections.query': collectionsQuery(facade),
-
-    // messages — the task thread the user watches
-    'messages.list': messagesList(facade),
-    'messages.post': messagesPost(facade),
-
-    // the closed command namespace
-    'entities.commands.work': commandsWork(facade),
-    'entities.commands.complete': commandsComplete(facade),
-  });
+  /**
+   * G12, G13 and G14 are pure additions — no operation below was registered by
+   * any seam above, so nothing here replaces anything. Each parses its own
+   * request bodies, which is why none of them appear in `INPUT_SCHEMAS`.
+   *
+   * G13 is registered AFTER G09 (`registerW2SavedViewsActionsHandlers`) on
+   * purpose: `entities.context` serves its `actions` section through G09's
+   * discoverer, so that seam must already be on the registry when the feed
+   * service is constructed.
+   */
+  registerW2EntityKindsProfileHandlers(registry, facade);
+  registerW2FeedContextHandlers(registry, facade);
+  registerW2MenuDefaultChannelHandlers(registry, facade);
 }

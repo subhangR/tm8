@@ -1,0 +1,58 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/w5/cursors/inbox-teammate-cursor.pg.test.ts (6 tests | 3 failed) 1420ms
+   × W5 Duo B — inbox.list teammate-inspection cursor > the teammate-inspection branch emits a cursor whose timestamp slot is present 10ms
+     → expected null not to be null
+   × W5 Duo B — inbox.list teammate-inspection cursor > the cursor the teammate branch emits is accepted by the server that emitted it 6ms
+     → invalid inbox cursor keyset
+   × W5 Duo B — inbox.list teammate-inspection cursor > walks the teammate inbox exactly once, end to end 2ms
+     → invalid inbox cursor keyset
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w5/cursors/inbox-teammate-cursor.pg.test.ts > W5 Duo B — inbox.list teammate-inspection cursor > the teammate-inspection branch emits a cursor whose timestamp slot is present
+AssertionError: expected null not to be null
+ ❯ test/w5/cursors/inbox-teammate-cursor.pg.test.ts:268:27
+    266|     //   JSON.stringify({v:2,k:['fp',undefined,'id']}) === '{"v":2,"k"…
+    267|     // so a missing `cursor_created_at` reaches the wire as a null slo…
+    268|     expect(keyset[1]).not.toBeNull();
+       |                           ^
+    269| 
+    270|     const check = await database.query<{ same: boolean }>(
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  test/w5/cursors/inbox-teammate-cursor.pg.test.ts > W5 Duo B — inbox.list teammate-inspection cursor > the cursor the teammate branch emits is accepted by the server that emitted it
+CollabError: invalid inbox cursor keyset
+ ❯ decodeListCursor src/facade/services/w2/inbox-read-marks.ts:174:11
+    172|   const id = String(decoded.k[2] ?? '');
+    173|   if (Number.isNaN(Date.parse(createdAt)) || !UUID_RE.test(id)) {
+    174|     throw new CollabError('invalid_cursor', 'invalid inbox cursor keys…
+       |           ^
+    175|   }
+    176|   return { createdAt, id };
+ ❯ W2InboxReadMarksService.list src/facade/services/w2/inbox-read-marks.ts:333:20
+ ❯ test/w5/cursors/inbox-teammate-cursor.pg.test.ts:286:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  test/w5/cursors/inbox-teammate-cursor.pg.test.ts > W5 Duo B — inbox.list teammate-inspection cursor > walks the teammate inbox exactly once, end to end
+CollabError: invalid inbox cursor keyset
+ ❯ decodeListCursor src/facade/services/w2/inbox-read-marks.ts:174:11
+    172|   const id = String(decoded.k[2] ?? '');
+    173|   if (Number.isNaN(Date.parse(createdAt)) || !UUID_RE.test(id)) {
+    174|     throw new CollabError('invalid_cursor', 'invalid inbox cursor keys…
+       |           ^
+    175|   }
+    176|   return { createdAt, id };
+ ❯ W2InboxReadMarksService.list src/facade/services/w2/inbox-read-marks.ts:333:20
+ ❯ test/w5/cursors/inbox-teammate-cursor.pg.test.ts:305:30
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 3 passed (6)
+   Start at  15:37:00
+   Duration  1.87s (transform 143ms, setup 0ms, collect 194ms, tests 1.42s, environment 0ms, prepare 60ms)
+

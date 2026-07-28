@@ -149,7 +149,12 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
       return [str(p['actor_id'])].filter((v): v is string => v !== null);
     case 'notification.created':
     case 'notification.read':
-      return [str(p['target_entity_id']), str(p['actor_id'])].filter((v): v is string => v !== null);
+      return [
+        str(p['target_entity_id']),
+        str(p['actor_id']),
+        str(p['recipient_team_member_id']),
+        str(p['recipient_member_id']),
+      ].filter((v): v is string => v !== null);
     default:
       return [];
   }
@@ -380,6 +385,11 @@ export class WorkspaceEventMapper {
       case 'edge.deleted': {
         const source = this.need(entities, str(p['src_id']), seq, 'edge source');
         const target = this.need(entities, str(p['dst_id']), seq, 'edge target');
+        const createdAt = iso(p['created_at']);
+        const updatedAt = iso(p['updated_at']);
+        if (createdAt === null || updatedAt === null) {
+          throw new UnprojectableEventError(seq, 'edge timestamps are missing from the captured payload');
+        }
         const edge: EdgeView = {
           id: str(p['id']) ?? '',
           type: str(p['type']) ?? '',
@@ -398,7 +408,8 @@ export class WorkspaceEventMapper {
                 `edge author ${String(p['created_by'])} is not a readable actor`,
               );
             })(),
-          createdAt: iso(p['created_at']) ?? source.createdAt,
+          createdAt,
+          updatedAt,
         };
         return { type: row.event_type, edge };
       }
@@ -426,9 +437,21 @@ export class WorkspaceEventMapper {
             `message ${summary.id} has no readable live row — refusing to serve its captured payload`,
           );
         }
+        const legacyCompatibleState = summary.state as Omit<MessageView['state'], 'messageBatchId'> & {
+          messageBatchId?: string | null;
+        };
+        const messageState: MessageView['state'] = Object.prototype.hasOwnProperty.call(
+          legacyCompatibleState,
+          'messageBatchId',
+        )
+          ? (legacyCompatibleState as MessageView['state'])
+          : { ...legacyCompatibleState, messageBatchId: str(p['message_batch_id']) };
         const message: MessageView = {
           ...summary,
-          state: summary.state,
+          // A pre-W1 projector/row has no correlation field. `null` is the
+          // migration's truthful backfill for those messages; a captured value
+          // is used only when the injected summary predates the contract field.
+          state: messageState,
           content: {
             kind: 'message',
             body: live.body,
@@ -483,12 +506,21 @@ export class WorkspaceEventMapper {
       case 'notification.created':
       case 'notification.read': {
         const target = entities.get(str(p['target_entity_id']) ?? '') ?? null;
+        const recipientId = str(p['recipient_team_member_id']) ?? str(p['recipient_member_id']);
+        const recipient = this.actorOf(recipientId, entities, actors);
+        if (recipient === null) {
+          throw new UnprojectableEventError(
+            seq,
+            `notification recipient ${String(recipientId)} is not a readable actor`,
+          );
+        }
         const notification: NotificationItem = {
           id: str(p['id']) ?? '',
           spaceId: row.space_id,
           kind: str(p['kind']) ?? 'mention',
           actor: this.actorOf(str(p['actor_id']), entities, actors),
           target,
+          recipient,
           readAt: iso(p['read_at']),
           createdAt: iso(p['created_at']) ?? new Date(0).toISOString(),
         };

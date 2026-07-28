@@ -24,6 +24,19 @@
 export { PtyHostService, stripScrollbackDeviceQueries } from './pty/PtyHostService.js';
 export { OutputBuffer, type ReplaySlice } from './pty/OutputBuffer.js';
 export { TerminalStateMirror } from './pty/TerminalStateMirror.js';
+// W2 B2: the pre-reserved delivery adapter. Exported (additively) because the
+// server package is the only place that can supply its `authorize` guard, and
+// the package `exports` map has no subpath — without this line the seam G04 cut
+// for G11 is unreachable from the only code that can close it.
+export {
+  W2MessageDeliveryAdapter,
+  type W2DeliveryAttempt,
+  type W2DeliveryBinding,
+  type W2DeliveryClaim,
+  type W2DeliveryOutcome,
+  type W2MessageDeliveryAdapterOptions,
+  type W2PtyWriteAttempt,
+} from './pty/w2-message-delivery.js';
 export type {
   AttachResult,
   FrameSink,

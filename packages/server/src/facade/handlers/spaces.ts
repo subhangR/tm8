@@ -29,33 +29,51 @@ import {
   type EntityRow,
 } from '../entity-read.js';
 
-interface SpaceRow {
+export interface SpaceRow {
   id: string;
   name: string;
   description: string;
   github_repo: string | null;
   created_at: Date | string;
   member_count: string;
+  unread_total: string;
 }
 
-function toSpaceSummary(row: SpaceRow): SpaceSummary {
+export function toSpaceSummary(row: SpaceRow): SpaceSummary {
   return {
     id: row.id,
     name: row.name,
     description: row.description,
     memberCount: Number(row.member_count),
-    // Per-member unread rollup is `unread_counts` (007:1986), outside the G1A
-    // slice. 0 is honest for a field that is required and not yet computed.
-    unreadTotal: 0,
+    unreadTotal: Number(row.unread_total),
     githubRepo: row.github_repo,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : new Date(row.created_at).toISOString(),
   };
 }
 
-const SPACE_SELECT = `
-  select s.id, s.name, s.description, s.github_repo, s.created_at,
-         (select count(*)::text from public.members m where m.space_id = s.id) as member_count
-    from public.spaces s`;
+export const SPACE_COLUMNS = `
+  s.id, s.name, s.description, s.github_repo, s.created_at,
+  (select count(*)::text from public.members member_count_row
+    where member_count_row.space_id = s.id) as member_count,
+  coalesce((
+    select count(*)::text
+      from public.messages message_row
+      join public.entities message_entity
+        on message_entity.id = message_row.entity_id and message_entity.deleted_at is null
+      join public.entities anchor_entity
+        on anchor_entity.id = message_row.anchor_id and anchor_entity.space_id = s.id
+      join public.members viewer
+        on viewer.space_id = s.id and viewer.identity_id = internal.identity_id()
+      left join public.read_marks mark_row
+        on mark_row.anchor_id = message_row.anchor_id and mark_row.member_id = viewer.entity_id
+     where message_row.author_id is distinct from viewer.entity_id
+       and (mark_row.last_read_at is null
+         or message_row.entity_id > internal.uuid_at(mark_row.last_read_at))
+  ), '0') as unread_total`;
+
+export const SPACE_FROM = `from public.spaces s`;
+
+export const SPACE_SELECT = `select ${SPACE_COLUMNS} ${SPACE_FROM}`;
 
 export function spacesList(deps: FacadeDeps): OperationHandler {
   return async (ctx) => {
@@ -107,7 +125,10 @@ export function spacesCreate(deps: FacadeDeps): OperationHandler {
     };
 
     const result = await deps.db.rpc<CreateSpaceResult>(
-      claimsFor(owner, ctx, envelope),
+      // A new Space has no actor namespace to act as yet. Preserve the
+      // authenticated identity and mutation id, but never bind a caller-picked
+      // actor from some unrelated existing Space into this command's ledger.
+      claimsFor(owner, ctx, { clientMutationId: envelope.clientMutationId }),
       'create_space',
       [
         body.name,
@@ -176,16 +197,33 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
         [spaceId],
       );
       const summaries = await assembleSummaries(q, rows, owner.identityId);
+      const unreadRows = await q.rpc<Array<{ anchor_id: string; unread: number }>>(
+        'unread_counts',
+        [spaceId],
+      );
+      const unreadByAnchor = new Map(
+        unreadRows.map((row) => [row.anchor_id, Number(row.unread)]),
+      );
+      const navigableSummaries = summaries.map((summary) => {
+        if (summary.state.kind !== 'channel') return summary;
+        return {
+          ...summary,
+          state: {
+            ...summary.state,
+            unreadCount: unreadByAnchor.get(summary.id) ?? 0,
+          },
+        };
+      });
 
       // Build the tree in one pass, then attach. A channel whose parent is
       // outside this result set (deleted, or not readable) is surfaced at the
       // root rather than dropped — losing a channel from the nav would hide
       // real content.
       const nodes = new Map<string, NavChannelNode>(
-        summaries.map((entity) => [entity.id, { entity, childCount: 0, children: [] }]),
+        navigableSummaries.map((entity) => [entity.id, { entity, childCount: 0, children: [] }]),
       );
       const roots: NavChannelNode[] = [];
-      for (const summary of summaries) {
+      for (const summary of navigableSummaries) {
         const node = nodes.get(summary.id);
         if (!node) continue;
         const parent = summary.parentId ? nodes.get(summary.parentId) : undefined;
@@ -200,9 +238,7 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
       const navigation: SpaceNavigation = {
         spaceId,
         viewer,
-        // Per-member unread rollup is `unread_counts` (007:1986), outside the
-        // G1A slice — 0 is honest for a required, uncomputed field.
-        unreadTotal: 0,
+        unreadTotal: [...unreadByAnchor.values()].reduce((total, unread) => total + unread, 0),
         channels: roots,
       };
       return navigation;
@@ -252,13 +288,26 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         { spaceId, kinds: ['task'], filters: { needsActorId: actorId } },
         owner.identityId,
       );
-      const activity = await loadActivity(q, { spaceId, limit: 20 });
+      const activityPage = await loadActivity(q, { spaceId, limit: 20 });
 
       const home: HomeSnapshot = {
         readyToPull: readyToPull as CollectionResult,
         inFlight: inFlight as CollectionResult,
         needsMe: needsMe as CollectionResult,
-        activity,
+        // The compact home preview is NOT a paginable list, so it does not
+        // advertise a continuation. `loadActivity` mints a two-part
+        // `(createdAt, id)` keyset, and the only operation that pages activity
+        // — `entities.activity` (catalog.ts:63) — is ENTITY-scoped and demands
+        // a three-part fingerprinted cursor, which it would reject. Nothing in
+        // the catalog accepts a SPACE-scoped activity cursor.
+        //
+        // Passing the token through would advertise "there is more, here is
+        // your handle" and hand over a handle no operation will take. `null`
+        // is the honest answer, and `Page.nextCursor` is nullable for it.
+        // If space-activity paging is ever added, drop this and pass the page
+        // through — the cursor itself is microsecond-exact as of the fix to
+        // ActivityRow.cursor_created_at.
+        activity: { items: activityPage.items, nextCursor: null },
       };
       return home;
     });

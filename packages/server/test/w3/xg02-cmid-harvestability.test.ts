@@ -1,0 +1,187 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { startW3PublicServer, successData, type W3PublicServer } from './public-harness.js';
+
+/**
+ * W3.XG02 — IS A clientMutationId HARVESTABLE NOW THAT messages.post IS LIVE?
+ *
+ * WHY THIS FILE EXISTS. §8.3 reduced the severity of the ledger-replay bypass on
+ * the ground that a cmid is NOT harvestable, and the evidence document calls that
+ * finding "load-bearing". That result was measured when `messages.post` was an
+ * unconditional 501 stub, so no message could carry a batch id.
+ *
+ * `xg01` anticipated this and armed a branch for it — but in its ACTIVATED state
+ * its assertion is
+ *     toMatchObject({ cmidExposedInReads: batchRows[0]?.n === 0 ? [] : exposures })
+ * which, once any message carries the cmid, compares `exposures` TO ITSELF. It is
+ * a tautology in exactly the condition it was written to detect. The foresight was
+ * real; the assertion does not survive its own trigger. This file supplies the
+ * assertion that does.
+ *
+ * THE PUBLICATION CHAIN, read in source before being measured here:
+ *   019:5-6    "A batch is correlation only (messages.message_batch_id = clientMutationId)"
+ *   019:491    result carries 'messageBatchId', p_client_mutation_id
+ *   contract.ts:93 / schemas.ts:164   messageBatchId is a PUBLISHED field on message state
+ *   entity-read.ts:80   msg.message_batch_id is selected into ENTITY_COLUMNS
+ *   entity-read.ts:583  it is projected into every composed message read
+ *
+ * WHAT A RED HERE MEANS. Not a new defect — a SEVERITY INPUT. If a cmid is
+ * readable, the replay bypass stops requiring out-of-band knowledge, and §8.3's
+ * "reachable, but not self-serving" framing no longer holds.
+ */
+describe.sequential('W3.XG02 clientMutationId harvestability through composed reads', () => {
+  let harness: W3PublicServer;
+  let spaceId = '';
+  let anchorId = '';
+  let messageId = '';
+
+  /** Distinctive enough that a substring hit cannot be a coincidence. */
+  const SECRET_CMID = 'w3-xg02-harvestable-secret-cmid-marker';
+
+  beforeAll(async () => {
+    harness = await startW3PublicServer('xg02');
+    const space = successData<{ space: { id: string } }>(
+      await harness.request('POST', '/v2/spaces', {
+        clientMutationId: 'w3-xg02-space',
+        name: 'W3 XG02 Space',
+      }),
+    );
+    spaceId = space.space.id;
+
+    const anchor = successData<{ entity: { id: string } }>(
+      await harness.request('POST', '/v2/entities', {
+        clientMutationId: 'w3-xg02-anchor',
+        spaceId,
+        kind: 'task',
+        title: 'XG02 harvest anchor',
+        content: { priority: 'medium' },
+      }),
+    );
+    anchorId = anchor.entity.id;
+
+    const posted = await harness.request<{ messages: Array<{ id: string }> }>(
+      'POST',
+      '/v2/messages',
+      { clientMutationId: SECRET_CMID, anchorIds: [anchorId], body: 'XG02 harvest probe body' },
+    );
+    messageId = posted.body.data?.messages?.[0]?.id ?? '';
+  }, 180_000);
+
+  afterAll(async () => {
+    await harness?.close();
+  }, 30_000);
+
+  it('CONTROL: the message path is live and the cmid really is stored against the message', async () => {
+    // Without this, an empty exposure list below would be indistinguishable from
+    // "nothing was ever posted".
+    expect(messageId, 'messages.post did not return a message — every probe below is vacuous').toBeTruthy();
+    const rows = await harness.rows<{ n: number }>(
+      'select count(*)::integer n from public.messages where message_batch_id = $1',
+      [SECRET_CMID],
+    );
+    expect(rows[0]?.n, 'no stored message carries the cmid — the probe would be vacuous').toBe(1);
+  });
+
+  it('measures whether composed READ projections publish the recorded clientMutationId', async () => {
+    const probes: Array<[string, string, unknown?]> = [
+      ['GET', `/v2/entities/${messageId}`],
+      ['GET', `/v2/entities/${anchorId}/messages`],
+      ['GET', `/v2/entities/${anchorId}`],
+      ['GET', `/v2/entities/${anchorId}/children`],
+      ['GET', `/v2/entities/${anchorId}/activity`],
+      ['GET', `/v2/entities/${anchorId}/feed`],
+      ['GET', `/v2/entities/${anchorId}/context`],
+      ['GET', '/v2/inbox'],
+      ['POST', '/v2/collections/query', { spaceId, kinds: ['message'], limit: 20 }],
+    ];
+
+    const exposures: string[] = [];
+    const statuses: Record<string, number> = {};
+    for (const [method, path, body] of probes) {
+      const res = await harness.request(method, path, body);
+      statuses[`${method} ${path}`] = res.status;
+      if (res.status < 400 && JSON.stringify(res.body).includes(SECRET_CMID)) {
+        exposures.push(`${method} ${path}`);
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[W3.XG02 harvestability]', JSON.stringify({ statuses, exposures }, null, 2));
+
+    // THE ASSERTION xg01 LOST WHEN IT ARMED. Stated as a law, not compared to
+    // itself: a cmid recorded by one principal must not be readable back out of
+    // any composed projection, or it becomes harvestable material for the replay
+    // bypass and §8.3's severity reduction no longer holds.
+    expect(
+      exposures,
+      'a recorded clientMutationId is READABLE through composed reads — §8.3 non-harvestability '
+        + 'is superseded and the replay bypass no longer requires out-of-band knowledge',
+    ).toEqual([]);
+  }, 120_000);
+
+  /**
+   * NEGATIVE CONTROL — the green half, without which the red above is half a proof.
+   *
+   * A detector that fires on everything passes a mutation test exactly as well as
+   * a correct one: firing proves it RESPONDS, never that it DISCRIMINATES. This
+   * case runs the IDENTICAL sweep over the IDENTICAL routes with a cmid recorded
+   * by `entities.create` instead of `messages.post`. That cmid is stored in
+   * `public.command_ledger` just as the other one is, but it is not published on
+   * any DTO — so a correct probe must return an EMPTY exposure list here while
+   * returning five for the message cmid.
+   *
+   * If this case ever goes red alongside the one above, the probe is matching
+   * something incidental (an echoed request field, a log line, a debug envelope)
+   * and the harvestability finding must be withdrawn until it is re-derived.
+   */
+  it('CONTROL: the same sweep finds NOTHING for a cmid that is not published', async () => {
+    const unpublished = 'w3-xg02-control-unpublished-cmid-marker';
+    const created = successData<{ entity: { id: string } }>(
+      await harness.request('POST', '/v2/entities', {
+        clientMutationId: unpublished,
+        spaceId,
+        kind: 'task',
+        title: 'XG02 control entity',
+        content: { priority: 'medium' },
+      }),
+    );
+
+    // Same storage-side control as the positive case: the cmid really was
+    // recorded, so an empty sweep means "absent from projections" rather than
+    // "nothing was ever created".
+    const ledger = await harness.rows<{ n: number }>(
+      'select count(*)::integer n from public.command_ledger where client_mutation_id = $1',
+      [unpublished],
+    );
+    expect(ledger[0]?.n, 'the control cmid was never recorded — this control is vacuous').toBe(1);
+
+    const probes: Array<[string, string, unknown?]> = [
+      ['GET', `/v2/entities/${created.entity.id}`],
+      ['GET', `/v2/entities/${anchorId}/messages`],
+      ['GET', `/v2/entities/${anchorId}`],
+      ['GET', `/v2/entities/${anchorId}/children`],
+      ['GET', `/v2/entities/${anchorId}/activity`],
+      ['GET', `/v2/entities/${anchorId}/feed`],
+      ['GET', `/v2/entities/${anchorId}/context`],
+      ['GET', '/v2/inbox'],
+      ['POST', '/v2/collections/query', { spaceId, kinds: ['message', 'task'], limit: 20 }],
+    ];
+
+    const controlExposures: string[] = [];
+    for (const [method, path, body] of probes) {
+      const res = await harness.request(method, path, body);
+      if (res.status < 400 && JSON.stringify(res.body).includes(unpublished)) {
+        controlExposures.push(`${method} ${path}`);
+      }
+    }
+
+    // eslint-disable-next-line no-console
+    console.log('[W3.XG02 negative control]', JSON.stringify({ controlExposures }, null, 2));
+
+    expect(
+      controlExposures,
+      'the probe reported an exposure for a cmid that is NOT published — it is matching '
+        + 'something incidental and the harvestability finding must be re-derived',
+    ).toEqual([]);
+  }, 120_000);
+});

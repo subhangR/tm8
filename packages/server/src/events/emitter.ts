@@ -40,6 +40,7 @@ import {
 
 import type { SeqSource } from './seq.js';
 import { SubscriptionRegistry, fanOutDurable, fanOutPresence } from './subscriptions.js';
+import type { EventSink } from './ws-connection.js';
 
 /** `Omit` that distributes over a union instead of collapsing it to its common keys. */
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
@@ -180,6 +181,41 @@ export class WorkspaceEventPublisher {
   publishDurable(event: DurableWorkspaceEvent): PublishResult {
     const validated = assertWorkspaceEvent(event, `'${event.type}' on space ${event.spaceId} (seq ${event.seq})`);
     return { event: validated, delivered: fanOutDurable(this.registry, event.spaceId, JSON.stringify(validated)) };
+  }
+
+  /**
+   * Deliver an already-sequenced durable event to ONE sink.
+   *
+   * ## Why live delivery cannot use `publishDurable`
+   *
+   * `workspace_events` carries TWO interleaved feeds, split by
+   * `recipient_member_id` (003:277): NULL is the Space feed every member sees,
+   * non-NULL is one member's personal notification feed. The RLS policy
+   * enforces exactly that (008:156-161 — a member reads Space events plus the
+   * events addressed to them).
+   *
+   * So a live publisher that read the log under ONE subscriber's claims and
+   * then fanned the result out to every subscriber of the Space would deliver
+   * that subscriber's private notifications to everyone else. The read would be
+   * correctly authorized and the leak would happen after it, in the fan-out —
+   * a shared routine returning caller-influenced data to callers it was not
+   * authorized for.
+   *
+   * The pump therefore polls per-connection under each connection's own claims
+   * and delivers through THIS method. `publishDurable` remains correct for a
+   * genuinely Space-wide event the server already holds, and is what the
+   * cross-group publisher hookup uses; it is simply not sound over a log read.
+   */
+  publishDurableTo(sink: EventSink, event: DurableWorkspaceEvent): PublishResult {
+    const validated = assertWorkspaceEvent(event, `'${event.type}' on space ${event.spaceId} (seq ${event.seq})`);
+    if (!sink.isOpen) return { event: validated, delivered: 0 };
+    try {
+      sink.send(JSON.stringify(validated));
+      return { event: validated, delivered: 1 };
+    } catch {
+      // The connection's own close path evicts it.
+      return { event: validated, delivered: 0 };
+    }
   }
 
   /**

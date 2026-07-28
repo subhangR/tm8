@@ -47,22 +47,26 @@ describe('four-mode identity', () => {
     expect(instructionFor('worker')).not.toMatch(/coordinator/i);
   });
 
-  it('NEVER advertises a verb the CLI does not implement', () => {
-    // The instructions were ported from old maestro, which tells agents to run
-    // `session spawn`, `session siblings`, `session logs` and `task create`.
-    // None of those exist in this CLI. Shipping them would make the agent look
-    // broken the first time it tried one, so the port rewrote them — this test
-    // is what stops a future "port the rest of maestro's identity.ts" from
-    // silently reintroducing them.
-    const implemented = new Set(
-      commandSurface(true).map((c) => c.usage.replace(/^tm8 /, '').split(' <')[0]?.trim()),
-    );
+  it('NEVER advertises a verb outside the frozen grammar', () => {
+    // THIS TEST'S PREMISE CHANGED, on purpose. It used to forbid `session
+    // spawn` and `session siblings` on the argument that the CLI did not
+    // implement them — and it asserted `whoami` WAS implemented. Both halves
+    // expired when the noun-first grammar froze: `execution.spawn` is
+    // `tm8 session spawn` (grammar row 75), while `whoami`, `report`,
+    // `progress` and public `session prompt` became rejected vocabulary that
+    // `run.ts` answers with a discovery hint.
+    //
+    // So the durable invariant is not "only what is built today" — that would
+    // re-fail every time a slot lands a verb. It is: only the FROZEN grammar,
+    // and never a retired form. maestro's own vocabulary stays out either way.
     const forbidden = [
-      'tm8 session spawn',
-      'tm8 session siblings',
+      'tm8 whoami',
       'tm8 session prompt',
+      'tm8 session siblings',
       'tm8 session logs',
       'tm8 task create',
+      'tm8 task report',
+      'tm8 session report',
       'maestro ',
     ];
     for (const mode of AGENT_MODES) {
@@ -71,7 +75,15 @@ describe('four-mode identity', () => {
         expect(text, `${mode} advertises "${verb}"`).not.toContain(verb);
       }
     }
-    expect(implemented.has('whoami')).toBe(true);
+    // Every advertised usage names a frozen-grammar command path.
+    const grammar = ['help', 'action list', 'entity context', 'message send', 'session spawn'];
+    for (const { usage } of commandSurface(true)) {
+      const path = usage.replace(/^tm8 /, '');
+      expect(
+        grammar.some((g) => path.startsWith(g)),
+        `advertised "${usage}" is not in the frozen grammar`,
+      ).toBe(true);
+    }
   });
 });
 

@@ -77,6 +77,7 @@ export const ENTITY_COLUMNS = `
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id,
   msg.anchor_id, msg.root_message_id, msg.author_id, msg.body as message_body,
+  msg.message_batch_id,
   msg.mentions as message_mentions, msg.attachments as message_attachments,
   msg.edited_at as message_edited_at, msg.redacted_at as message_redacted_at,
   f.name as file_name, f.mime_type as file_mime, f.size_bytes as file_size
@@ -160,6 +161,7 @@ export interface EntityRow {
   anchor_id: string | null;
   root_message_id: string | null;
   author_id: string | null;
+  message_batch_id: string | null;
   message_body: string | null;
   message_mentions: unknown[] | null;
   message_attachments: unknown[] | null;
@@ -174,6 +176,33 @@ export interface EntityRow {
 // Scalars
 // ---------------------------------------------------------------------------
 
+/**
+ * Render a `timestamptz` as microsecond-exact, UTC-normalised text, in SQL.
+ *
+ * USE THIS FOR EVERY KEYSET CURSOR VALUE. Never `iso()` — see its warning
+ * below — and never a bare `::text`, which renders in the SESSION's timezone
+ * and strips trailing zeros, so the same instant spells differently depending
+ * on server config and carries a variable number of fractional digits.
+ *
+ * One definition rather than a format string copied to each call site: `US` is
+ * the 6-digit microsecond field, and a single wrong letter there (`MS`, or a
+ * dropped `U`) silently reduces precision with no error anywhere. That is the
+ * failure this helper exists to make unrepeatable.
+ */
+export const MICROS = (expr: string): string =>
+  `to_char(${expr} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+
+/**
+ * ISO text for a DISPLAY field.
+ *
+ * NOT FOR CURSORS. This truncates on BOTH branches — a `Date` holds only
+ * milliseconds, and the string branch re-parses through `new Date(...)`, so a
+ * value that arrived from SQL already correct is destroyed just the same.
+ * Postgres stores MICROSECONDS, so a cursor built through here lands strictly
+ * BEFORE the row it came from: on an ASC keyset that re-admits the row and
+ * loops, and on a DESC keyset it SILENTLY SKIPS every row sharing the lost
+ * millisecond. Use `MICROS` in the query instead.
+ */
 export function iso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
@@ -578,6 +607,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         anchorId: row.anchor_id ?? '',
         rootMessageId: row.root_message_id,
         author: actorOf(ctx.actors, row.author_id),
+        messageBatchId: row.message_batch_id,
         editedAt: isoOrNull(row.message_edited_at),
       };
     case 'member':
@@ -809,7 +839,7 @@ export function contentOf(row: EntityRow): EntityContent {
       return {
         kind: 'work_session',
         nodeId: row.ws_node_id,
-        projectId: row.ws_project_id,
+        launchProjectId: row.ws_project_id,
         workingOn: [],
         transcriptDoc: null,
       };

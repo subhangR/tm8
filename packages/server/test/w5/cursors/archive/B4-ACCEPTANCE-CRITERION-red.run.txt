@@ -1,0 +1,54 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/w5/cursors/home-activity-cursor.pg.test.ts (4 tests | 2 failed) 16897ms
+   × W5 Duo B — spaces.home activity cursor honesty > home advertises an activity nextCursor that is either absent or usable 103ms
+     → expected [ '2026-07-25T14:59:01.891Z', …(1) ] to have a length of 3 but got 2
+   × W5 Duo B — spaces.home activity cursor honesty > the minted activity cursor, if present, carries microsecond precision 25ms
+     → expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w5/cursors/home-activity-cursor.pg.test.ts > W5 Duo B — spaces.home activity cursor honesty > home advertises an activity nextCursor that is either absent or usable
+AssertionError: expected [ '2026-07-25T14:59:01.891Z', …(1) ] to have a length of 3 but got 2
+
+- Expected
++ Received
+
+- 3
++ 2
+
+ ❯ test/w5/cursors/home-activity-cursor.pg.test.ts:212:20
+    210|     // The current mint is [iso(created_at), id]: two slots, no finger…
+    211|     const keyset = decodeCursor(home.activity.nextCursor).k;
+    212|     expect(keyset).toHaveLength(3);
+       |                    ^
+    213|   });
+    214| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/w5/cursors/home-activity-cursor.pg.test.ts > W5 Duo B — spaces.home activity cursor honesty > the minted activity cursor, if present, carries microsecond precision
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/w5/cursors/home-activity-cursor.pg.test.ts:233:28
+    231|       [candidate!, fixture.spaceId],
+    232|     );
+    233|     expect(check[0]!.same).toBe(true);
+       |                            ^
+    234|   });
+    235| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  18:17:08
+   Duration  28.15s (transform 3.74s, setup 0ms, collect 5.93s, tests 16.90s, environment 1ms, prepare 1.79s)
+

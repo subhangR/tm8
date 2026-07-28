@@ -96,11 +96,30 @@ export type InMemorySeqSource = PresenceSeqSource;
  */
 export interface DurableSeqSource {
   /**
-   * The highest seq assigned in `spaceId` so far, or 0 if the space has never
-   * had an event. This is the high-water mark a poller has caught up TO, not a
-   * number to put in a new envelope.
+   * The highest seq assigned in `spaceId`, or `null` when the mark CANNOT BE
+   * ESTABLISHED — the row is not visible to this caller, or the space has no
+   * counter row at all.
+   *
+   * ## Why this is `number | null` and not `number`
+   *
+   * It used to return 0 for "no row", documented as "the space has never had an
+   * event". Those are not the same fact, and collapsing them produced a
+   * confident wrong answer at the one place that most needs a right one.
+   *
+   * Concretely: `space_event_seq` is read under the caller's own claims, and
+   * `internal.is_space_member(space_id)` is FALSE for an unbound identity. So a
+   * caller without a bound identity got no row, which became 0, which reads as
+   * "this space has never had an event" — for a space with thousands. A
+   * consumer seeding a live cursor from that would silently replay the entire
+   * retained log; a consumer reporting it would tell a caught-up client it was
+   * at the beginning.
+   *
+   * `null` makes that answer UNREPRESENTABLE rather than merely unreached.
+   * Every caller must now decide what "I cannot establish the mark" means for
+   * it, and the correct decision is never "assume zero" — it is to refuse and
+   * fall back to an explicit, cursor-carrying replay.
    */
-  latest(spaceId: string): Promise<number>;
+  latest(spaceId: string): Promise<number | null>;
 }
 
 /**
@@ -121,13 +140,19 @@ export class PgDurableSeqSource implements DurableSeqSource {
     this.q = q;
   }
 
-  async latest(spaceId: string): Promise<number> {
+  async latest(spaceId: string): Promise<number | null> {
     const rows = await this.q.query<{ last_seq: string | number }>(
       'select last_seq from public.space_event_seq where space_id = $1',
       [spaceId],
     );
     const row = rows[0];
-    if (row === undefined) return 0;
+    // NO ROW IS NOT ZERO. Since db/migrations/035 this table is readable by a
+    // MEMBER of the space (grant AND policy — a bare grant would have left RLS
+    // enabled with no policy, i.e. silently zero rows). So "no row" now means
+    // one of: the caller is not a member, the caller has no bound identity, or
+    // the space has genuinely never had an event. This method cannot tell those
+    // apart and must not pretend to.
+    if (row === undefined) return null;
     // bigint arrives from node-postgres as a string; Number() is safe well past
     // any plausible event count (2^53 events in one space is not a scenario).
     return Number(row.last_seq);

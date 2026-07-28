@@ -25,6 +25,7 @@ import { CliError, EXIT_USAGE } from './exit.js';
 // Re-exported here so this module stays the CLI's manifest surface.
 export { AGENT_MODES, type AgentMode } from '@tm8/prompt';
 import { AGENT_MODES, type AgentMode } from '@tm8/prompt';
+import { parseBootstrapManifest, type BootstrapManifestV2 } from './harness/bootstrap-manifest.js';
 
 /** The persona this process is running as — a `team_member` entity (T-L7). */
 export interface ManifestAgent {
@@ -82,6 +83,17 @@ export interface ManifestSkill {
 
 export interface Tm8Manifest {
   manifestVersion?: string;
+  /**
+   * The §5.1 bootstrap projection, present only for `manifestVersion: "2"`.
+   *
+   * Kept ALONGSIDE the v1 view rather than replacing it: the prompt composer
+   * reads the v1 fields, so projecting a v2 manifest onto them means nothing
+   * downstream has to branch on version, while `bootstrap` carries the facts
+   * (actor, trust, profile pin, capability epoch) that v1 never had.
+   */
+  bootstrap?: BootstrapManifestV2;
+  /** Where `readManifest` read a v2 manifest from — the kernel names it. */
+  bootstrapPath?: string;
   /** work_session entity id. Falls back to TM8_SESSION_ID when absent. */
   sessionId?: string;
   /** Pinned space — every graph command the agent runs is scoped to it. */
@@ -126,7 +138,60 @@ function defined<T extends object>(o: T): T {
  * Coerce arbitrary JSON into the manifest view. Never throws on shape — a
  * malformed sub-object degrades to `undefined` rather than killing the boot.
  */
+/**
+ * Project a v2 bootstrap manifest onto the v1 view.
+ *
+ * The two mode vocabularies are NOT the same list and must not be conflated:
+ * the manifest's `identity.mode` is `human-directed | worker | coordinator |
+ * background` (who the session is for), while `AgentMode` is
+ * `worker | coordinator | coordinated-*` (whether something is waiting on a
+ * report). The bridge is the coordinator relationship: a worker WITH a
+ * server-authoritative `coordinatorSessionId` is a coordinated worker.
+ * `human-directed` and `background` map to worker because neither delegates.
+ */
+function projectBootstrap(bootstrap: BootstrapManifestV2): Tm8Manifest {
+  const { identity, session, assignment } = bootstrap;
+  const coordinated = session.coordinatorSessionId !== undefined;
+  const agentMode: AgentMode =
+    identity.mode === 'coordinator'
+      ? coordinated
+        ? 'coordinated-coordinator'
+        : 'coordinator'
+      : coordinated
+        ? 'coordinated-worker'
+        : 'worker';
+
+  const taskIds = assignment.taskIds ?? (assignment.primaryTaskId ? [assignment.primaryTaskId] : []);
+
+  return defined<Tm8Manifest>({
+    manifestVersion: bootstrap.manifestVersion,
+    bootstrap,
+    sessionId: session.id,
+    spaceId: session.spaceId,
+    mode: agentMode,
+    agent: defined<ManifestAgent>({
+      teamMemberId: identity.teamMemberId,
+      name: identity.displayName,
+    }),
+    // No project NAME: §5.1 forbids repo-name-derived identifiers, and the
+    // manifest carries the resource id and the server-computed cwd only.
+    project: defined<ManifestProject>({
+      id: session.launchProjectId ?? undefined,
+      workingDir: session.cwd,
+    }),
+    tasks: taskIds.length > 0 ? taskIds.map((id) => ({ id })) : undefined,
+    coordinator: coordinated
+      ? { sessionId: session.coordinatorSessionId as string }
+      : undefined,
+  });
+}
+
 export function parseManifest(raw: unknown): Tm8Manifest {
+  // A v2 bootstrap manifest is a different document, not a superset — it
+  // carries no persona, memory, skills or task bodies by design (§5.1).
+  const bootstrap = parseBootstrapManifest(raw);
+  if (bootstrap) return projectBootstrap(bootstrap);
+
   if (!isRecord(raw)) return {};
 
   const agentRaw = isRecord(raw.agent) ? raw.agent : undefined;
@@ -227,5 +292,10 @@ export function readManifest(path: string): Tm8Manifest {
       EXIT_USAGE,
     );
   }
-  return parseManifest(json);
+  const manifest = parseManifest(json);
+  // The kernel names the manifest it was composed with (§5.2's closing line),
+  // and only the reader knows the path — `parseManifest` is given the parsed
+  // JSON, not the file. Recording it here keeps that fact from being guessed
+  // downstream from an environment variable that may point somewhere else.
+  return manifest.bootstrap ? { ...manifest, bootstrapPath: path } : manifest;
 }

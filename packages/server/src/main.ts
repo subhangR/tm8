@@ -9,22 +9,33 @@
  * W2 changes one line here — the registry gains handlers — and nothing else
  * about the frame moves.
  */
+import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+
 import { createDb } from './db/index.js';
-import type { Db } from './db/types.js';
+import type { Db, DbClaims } from './db/types.js';
 import {
+  createControlChannel,
+  createDurableEventPump,
   createWsServer,
+  DbSubscriptionAuthorizer,
+  InMemoryPresenceStore,
   InMemorySeqSource,
+  PgDurableEventLog,
+  PgDurableSeqSource,
   registerEventHandlers,
   SubscriptionRegistry,
   WorkspaceEventPublisher,
 } from './events/index.js';
 import { createExecutionRuntime } from './facade/execution-handlers.js';
+import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
-import { resolveLoopbackOwner } from './identity/loopback.js';
-import { loadConfig, type ServerConfig } from './http/config.js';
+import { createW2BlobStore } from './files/w2-blob-store.js';
+import { createLoopbackOwnerResolver } from './identity/loopback.js';
+import { loadConfig, resolveServerDataDir, type ServerConfig } from './http/config.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
-import type { IdentityResolver } from './http/types.js';
+import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { createStaticHandler } from './http/static.js';
+import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createPtyWsServer, isPtyUpgrade } from './pty/index.js';
 
 export interface BootstrapOptions {
@@ -47,6 +58,17 @@ export interface BootstrappedServer {
    * process lifetime must `await db.end()` at shutdown.
    */
   readonly db: Db | undefined;
+  /**
+   * Shutdown handle for the W2 B2 delivery pool, when one was configured.
+   *
+   * Deliberately narrowed to `close` alone. The wiring object also carries
+   * `messageDelivery`, and exposing that here would make the delivery identity
+   * reachable from anything holding a `BootstrappedServer` — which is every
+   * test that boots a node. The pool, the port and the principal stay private
+   * to the delivery service; this hands out the ability to CLOSE it and
+   * nothing else.
+   */
+  readonly delivery: { close(): Promise<void> } | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -68,6 +90,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * connection error that looks like an outage.
    */
   const db = config.databaseUrl ? createDb(config.databaseUrl) : undefined;
+  const dataDir = config.dataDir ?? resolveServerDataDir();
+  const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
+  const owner = db ? createLoopbackOwnerResolver(db) : undefined;
+  const blobStore = db ? createW2BlobStore({ dataDir, maxSizeBytes: fileMaxSizeBytes }) : undefined;
 
   /**
    * The execution block builds its OWN PtyHostService and hands it back.
@@ -83,20 +109,116 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * compounds. Hence `createExecutionRuntime` rather than a symmetrical
    * `registerExecutionHandlers` here.
    */
-  const execution = db ? createExecutionRuntime({ db, config }) : undefined;
+  const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+
+  // Ephemeral presence (DEV-4): in-process, no table, dies with the process.
+  // Declared before the registration block because `presence.get` is only
+  // mounted when a presence source exists — see registerEventHandlers.
+  const presence = new InMemoryPresenceStore();
+
+  /**
+   * W2 B2's live delivery, and THE ONE PLACE A SECOND DATABASE IDENTITY IS
+   * DECIDED ON.
+   *
+   * `TM8_DELIVERY_DATABASE_URL` must authenticate as `tm8_delivery_worker`.
+   * Absent it, delivery is simply not wired and the node behaves exactly as it
+   * did before — a stored message is still stored, it is just never pushed at a
+   * live terminal. That is the honest degraded mode: `tm8_app` provably cannot
+   * assume this role, so there is no fallback to invent.
+   */
+  const deliveryUrl = process.env['TM8_DELIVERY_DATABASE_URL'];
+  // Fails the BOOT on a wrong-role URL — above the deliberately empty catch at
+  // messages-handoffs.ts:351 that swallows delivery failures. A lazy check would
+  // be discarded there and the node would boot clean while silently delivering
+  // nothing. This runs before `server.listen()`, so the node never serves.
+  if (execution && deliveryUrl) await verifyDeliveryPrincipal(deliveryUrl);
+  const delivery =
+    execution && deliveryUrl
+      ? createW2ExecutionDelivery({ connectionString: deliveryUrl, pty: execution.pty })
+      : undefined;
 
   if (db) {
-    registerFacadeHandlers(registry, { db, config });
-    registerEventHandlers(registry, { db, config });
+    registerFacadeHandlers(registry, {
+      db,
+      config,
+      owner,
+      files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
+      ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
+    });
+    registerEventHandlers(registry, { db, config, presence });
     execution?.register(registry);
   }
 
   const subscriptions = new SubscriptionRegistry();
-  // The in-memory seq source is a SKELETON stand-in. At W2 it is replaced by
-  // the per-space monotonic counter on `workspace_events` (AM-2 §3) — one
-  // interface, one file, no reshaping of anything downstream.
+  // NOT a stand-in for the durable sequence — that misreading is why this
+  // comment was rewritten. The durable per-Space seq is a committed table row
+  // (`public.space_event_seq`, 003:282) minted by the capture trigger inside
+  // the mutating transaction, and the server only ever READS it. What the
+  // publisher needs an in-memory counter for is the EPHEMERAL presence channel,
+  // whose seq is channel-local by contract (DEV-4, contract §5) and is required
+  // to reset on restart. `InMemorySeqSource` is an alias for `PresenceSeqSource`
+  // (seq.ts:82); the old text told the next implementer to replace exactly the
+  // thing that is already correct.
   const events = new WorkspaceEventPublisher(new InMemorySeqSource(), subscriptions);
-  const ws = createWsServer({ registry: subscriptions });
+
+  // The live event path. Before this, `publishDurable` had no production caller
+  // at all, so no durable event reached a socket however well the log worked.
+  const eventLog = db ? new PgDurableEventLog(db) : undefined;
+  const wsClaimsFor = async (identity: RequestIdentity): Promise<DbClaims> => {
+    const resolved = await owner!();
+    return { identityId: identity.identityId ?? resolved.identityId, nodeAdmin: false };
+  };
+
+  const pump = db && eventLog
+    ? createDurableEventPump({
+        registry: subscriptions,
+        publisher: events,
+        log: eventLog,
+        claimsFor: wsClaimsFor,
+        onError: (message) => console.warn(`event pump: ${message}`),
+      })
+    : undefined;
+
+  /**
+   * The durable high-water mark, read AS THE CALLER.
+   *
+   * This is `PgDurableSeqSource`'s first production caller. It is what lets a
+   * fresh `subscribe` start at NOW instead of replaying the retained log, and
+   * it is deliberately a per-request bound read: `space_event_seq` became
+   * member-readable in db/migrations/035 (grant AND policy), so there is no
+   * privileged or identity-less path here. `latest` returns null when the mark
+   * cannot be established, and the control channel leaves such a subscription
+   * unseeded rather than guessing zero.
+   */
+  const highWaterMark = db
+    ? async (identity: RequestIdentity, spaceId: string): Promise<number | null> =>
+        db.tx(await wsClaimsFor(identity), (q) => new PgDurableSeqSource(q).latest(spaceId))
+    : undefined;
+
+  const control = db && eventLog
+    ? createControlChannel({
+        registry: subscriptions,
+        // The REAL authorizer, invoked on every subscribe and every resume.
+        // There is no allow-all implementation left in the tree to fall back to.
+        authorizer: new DbSubscriptionAuthorizer(db, wsClaimsFor),
+        log: eventLog,
+        claimsFor: wsClaimsFor,
+        presence,
+        ...(pump ? { cursors: pump } : {}),
+        ...(highWaterMark ? { highWaterMark } : {}),
+        onError: (message) => console.warn(`ws control frame: ${message}`),
+      })
+    : undefined;
+
+  const ws = createWsServer({
+    registry: subscriptions,
+    ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
+    onDisconnect: (connId) => {
+      presence.dropConnection(connId);
+      pump?.forget(connId);
+    },
+  });
+  pump?.start();
 
   /**
    * The LIVE terminal socket, sharing the WS path with the event stream.
@@ -143,9 +265,13 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   const identityResolver: IdentityResolver | undefined = db
     ? async () => {
-        const owner = await resolveLoopbackOwner(db);
-        return { kind: 'auto-owner', identityId: owner.identityId };
+        const resolved = await owner!();
+        return { kind: 'auto-owner', identityId: resolved.identityId };
       }
+    : undefined;
+
+  const rawUpload = db && blobStore
+    ? createW2FileUploadRoute({ deps: { db, config, owner: owner! }, blobStore })
     : undefined;
 
   const server = createFacadeServer({
@@ -153,6 +279,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     registry,
     upgrades,
     ...(identityResolver ? { identityResolver } : {}),
+    ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
@@ -179,12 +306,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
-  return { server, subscriptions, events, url, db };
+  return { server, subscriptions, events, url, db, delivery };
 }
 
 export async function main(): Promise<void> {
   try {
-    const { server, url, db } = await bootstrap();
+    const { server, url, db, delivery } = await bootstrap();
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
     console.log(
@@ -192,6 +319,7 @@ export async function main(): Promise<void> {
         `${registry.size} implemented · the rest answer 501 not_implemented (DEV-13)`,
     );
     console.log(`  graph: ${db ? 'connected' : 'NOT CONFIGURED (set TM8_DATABASE_URL) — all operations answer 501'}`);
+    console.log(`  delivery: ${delivery ? 'wired' : 'NOT CONFIGURED (set TM8_DELIVERY_DATABASE_URL) — messages are stored but never pushed to a live terminal'}`);
     console.log(`  ws: /v2/ws  ·  health: ${url}/health`);
 
     // Close the pool as well as the listener. A pool left open holds the
@@ -201,6 +329,7 @@ export async function main(): Promise<void> {
       console.log(`\n${signal} — shutting down`);
       void server
         .close()
+        .then(() => delivery?.close())
         .then(() => db?.end())
         .then(
           () => process.exit(0),

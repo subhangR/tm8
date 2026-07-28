@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+
+import { queryW3Discovery } from './discovery-adapter.js';
+
+describe('W3 evaluator-owned generated discovery adapter', () => {
+  it('validates the live catalog digest and exposes only bounded noun summaries at root', async () => {
+    const response = await queryW3Discovery({ kind: 'root' });
+    expect(response.catalogDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(response.result).toMatchObject({
+      catalog: {
+        total: 101,
+        v1: 99,
+        reserved: 2,
+        http: 100,
+        ws: 1,
+        registerableV1Http: 98,
+      },
+      nouns: expect.arrayContaining([
+        { noun: 'edge', operationCount: 4 },
+        { noun: 'project', operationCount: 7 },
+        { noun: 'space', operationCount: 22 },
+      ]),
+    });
+    expect(JSON.stringify(response.result)).not.toContain('/v2/');
+    expect(JSON.stringify(response.result)).not.toContain('packages/server/src');
+  });
+
+  it('pages one exact noun and requires a lazy exact-operation lookup for transport details', async () => {
+    const noun = await queryW3Discovery({ kind: 'noun', noun: 'edge' });
+    expect(noun.result).toEqual({
+      noun: 'edge',
+      items: [
+        expect.objectContaining({ operation: 'edges.create' }),
+        expect.objectContaining({ operation: 'edges.delete' }),
+        expect.objectContaining({ operation: 'edges.list' }),
+        expect.objectContaining({ operation: 'edges.patch' }),
+      ],
+      nextCursor: null,
+    });
+    expect(JSON.stringify(noun.result)).not.toContain('/v2/');
+
+    const operation = await queryW3Discovery({ kind: 'operation', operation: 'edges.create' });
+    expect(operation.result).toEqual(expect.objectContaining({
+      operation: 'edges.create',
+      noun: 'edge',
+      exposure: 'public',
+      inputSchemaRef: 'CreateEdgeInputSchema',
+      transport: {
+        method: 'POST',
+        path: '/v2/edges',
+        catalogStatus: 'registered',
+      },
+    }));
+    expect(JSON.stringify(operation.result)).not.toContain('packages/server/src');
+  });
+
+  it('refuses unknown nouns, unknown operations, and malformed cursor reuse', async () => {
+    await expect(queryW3Discovery({ kind: 'noun', noun: 'not-a-noun' }))
+      .rejects.toThrow('unknown discovery noun');
+    await expect(queryW3Discovery({ kind: 'operation', operation: 'not.an.operation' }))
+      .rejects.toThrow('unknown discovery operation');
+    await expect(queryW3Discovery({ kind: 'noun', noun: 'edge', cursor: 'not-a-cursor' }))
+      .rejects.toThrow('invalid noun discovery cursor');
+  });
+});

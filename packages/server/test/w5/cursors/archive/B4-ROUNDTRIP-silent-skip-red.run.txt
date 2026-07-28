@@ -1,0 +1,47 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/w5/cursors/activity-roundtrip.pg.test.ts (4 tests | 2 failed) 2028ms
+   × W5 Duo B — loadActivity cursor round trip > the minted cursor is the stored instant, not a millisecond-truncated copy 13ms
+     → expected false to be true // Object.is equality
+   × W5 Duo B — loadActivity cursor round trip > page 2 begins exactly where page 1 ended, losing no row to the boundary 3ms
+     → expected 0 to be greater than 0
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/w5/cursors/activity-roundtrip.pg.test.ts > W5 Duo B — loadActivity cursor round trip > the minted cursor is the stored instant, not a millisecond-truncated copy
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ test/w5/cursors/activity-roundtrip.pg.test.ts:188:28
+    186|       [carried!, first.items.at(-1)!.id],
+    187|     );
+    188|     expect(check[0]!.same).toBe(true);
+       |                            ^
+    189|   });
+    190| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  test/w5/cursors/activity-roundtrip.pg.test.ts > W5 Duo B — loadActivity cursor round trip > page 2 begins exactly where page 1 ended, losing no row to the boundary
+AssertionError: expected 0 to be greater than 0
+ ❯ test/w5/cursors/activity-roundtrip.pg.test.ts:214:33
+    212|     // Asserted as non-empty first so the failure names the cause rath…
+    213|     // dying on an undefined index.
+    214|     expect(second.items.length).toBeGreaterThan(0);
+       |                                 ^
+    215|     expect(second.items[0]!.id).toBe(expected[PAGE_LIMIT]);
+    216|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 2 passed (4)
+   Start at  18:20:56
+   Duration  2.52s (transform 129ms, setup 0ms, collect 203ms, tests 2.03s, environment 0ms, prepare 76ms)
+

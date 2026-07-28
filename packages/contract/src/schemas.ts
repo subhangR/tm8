@@ -11,29 +11,50 @@
  * conventions, DEF-1/2/3).
  */
 import { z } from 'zod';
-import { SHA256_HEX_RE } from './contract.js';
+import { isOperationName } from './catalog.js';
+import type { OperationName } from './catalog.js';
+import { MAX_CONTROL_FRAME_SPACES, SHA256_HEX_RE } from './contract.js';
 import type {
-  AcceptanceCriterion, ActivityItem, ActorSummary, ChannelTab, CollectionGroup,
-  CollectionQuery, CollectionResult, CommandContext, CommandErrorCode,
-  CommandResult, CompleteTaskInput, Connections, CreateEdgeInput,
-  CreateEntityInput, CreateSpaceInput, CreateTaskInput, CustomEntityKind, CustomFieldDef,
-  CustomFieldValue, EdgeGroup, EdgeView, EntityBadges, EntityCapabilities,
-  EntityContent, EntityCounters, EntityDetail, EntityKind, EntityKindCreateInput,
-  EntityKindDef, EntityKindUpdateInput, EntityState, EntitySummary,
-  ExecutionPromptInput, ExecutionSpawnInput, ExecutionStreamsAttachInput,
-  ExecutionTerminateInput, FileAttachment, FileUploadGrant, FileUploadInitInput,
-  GraphQuery, GraphResult,
-  GrantPointsInput, Hierarchy, HomeSnapshot, LeaderboardRow, LinkCommitInput,
-  LinkPrInput, LiveWork, Mention, MessageView, MoveEntityInput,
-  NavChannelNode, NotificationItem, Page, PaletteAction, PatchEdgeInput,
-  PatchEntityInput, PatchMessageInput, PatchTaskInput, PlacementInput,
-  PointEventView, PostMessageInput, PresenceSnapshot, ProjectCreateInput,
-  ProjectDefaults, ProjectLinkInput, ProjectResource, ProjectTrustLevel,
-  ProjectUpdateInput, PullInput, PullState,
-  ReactionInput, SavedView, SavedViewInput, SpaceNavigation, SpaceSettings,
-  SpaceSummary, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
-  TrackingRefreshInput, UndoToken, UpdateSpaceInput, WorkInput, WorkSessionShareMode,
-  WorkSessionStatus, WorkspaceEvent,
+  AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
+  AmendmentErrorReason,
+  ActivityItem, ActorSummary, AddMessageAttachmentsInput, ChannelTab,
+  ClosedPromptPolicy, CollectionGroup, CollectionQuery, CollectionResult,
+  CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
+  ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
+  CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput,
+  CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
+  DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
+  EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
+  EntityContextQuery, EntityContextView, EntityCounters, EntityDetail,
+  EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
+  EntityKindDef, EntityKindUpdateInput, EntityState, EntitySummary, ErrorCode,
+  ErrorDetails, ExecutionPromptInput, ExecutionSpawnInput,
+  ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
+  FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
+  GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
+  Hierarchy, HomeSnapshot, InboxListQuery, InboxMarkReadInput, InboxRecipient,
+  InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
+  InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkPrInput,
+  LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
+  Mention, MessageBatchResult, MessageDeliveryQuery, MessageDeliveryRecord,
+  MessageDeliveryView, MessageView, MoveEntityInput, NavChannelNode,
+  NotificationItem, Page, PaletteAction, PatchEdgeInput, PatchEntityInput,
+  PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
+  PostMessageInput, PostMessageWireInput, PresenceSnapshot,
+  PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
+  ProjectCreateInput, ProjectDefaults, ProjectLinkInput, ProjectResource,
+  ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
+  PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
+  RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
+  SetDefaultChannelInput, SetSpaceProfileDefaultInput,
+  SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
+  SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
+  SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
+  UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
+  UpdateSpaceInput, ValidateInteractionProfileInput, WithdrawHandoffInput,
+  WorkInput, WorkSessionShareMode, WorkSessionStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
 
@@ -48,10 +69,17 @@ export const EntityIdSchema = z.string().min(1);
 export const SpaceIdSchema = z.string().min(1);
 export const CursorSchema = z.string().min(1);
 
+function uniqueArray<T extends z.ZodTypeAny>(item: T, minimum = 0, maximum?: number) {
+  let schema = z.array(item).min(minimum);
+  if (maximum !== undefined) schema = schema.max(maximum);
+  return schema.refine((values) => new Set(values.map((value) => JSON.stringify(value))).size === values.length,
+    'items must be unique');
+}
+
 export const CoreEntityKindSchema = z.enum([
   'channel', 'task', 'message', 'member', 'team_member',
   'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
-  'work_session', 'collection',
+  'work_session', 'collection', 'project', 'interaction_profile',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -134,6 +162,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     anchorId: EntityIdSchema,
     rootMessageId: EntityIdSchema.nullable(),
     author: ActorSummarySchema,
+    messageBatchId: z.string().nullable(),
     editedAt: z.string().nullable().optional(),
   }).strict(),
   z.object({
@@ -189,6 +218,19 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     kind: z.literal('collection'),
     collectionType: z.string(),
     itemCount: z.number().int().nonnegative(),
+  }).strict(),
+  z.object({
+    kind: z.literal('project'),
+    projectId: z.string().min(1),
+    materializedVersion: z.number().int().positive(),
+  }).strict(),
+  z.object({
+    kind: z.literal('interaction_profile'),
+    status: z.enum(['draft', 'active', 'retired']),
+    currentDraftVersion: z.number().int().positive(),
+    activeVersion: z.number().int().positive().nullable(),
+    activeHash: z.string().nullable(),
+    retiredAt: IsoTimestamp.nullable(),
   }).strict(),
   z.object({
     kind: CustomEntityKindSchema,
@@ -257,9 +299,26 @@ export const EdgeViewSchema: z.ZodType<EdgeView> = z.lazy(() => z.object({
   props: z.record(z.unknown()),
   createdBy: ActorSummarySchema,
   createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
   resolved: z.boolean().optional(),
   hard: z.boolean().optional(),
 }).strict());
+
+export const EntityConnectionsQuerySchema: z.ZodType<EntityConnectionsQuery> = z.object({
+  types: uniqueArray(z.string().min(1)).optional(),
+  direction: z.enum(['incoming', 'outgoing', 'both']).optional(),
+  peerIds: uniqueArray(EntityIdSchema).optional(),
+  peerKinds: uniqueArray(EntityKindSchema).optional(),
+  createdByIds: uniqueArray(EntityIdSchema).optional(),
+  createdAfter: IsoTimestamp.optional(),
+  createdBefore: IsoTimestamp.optional(),
+  sort: z.enum(['createdAt', 'updatedAt', 'type']).optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+  cursor: CursorSchema.optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+}).strict();
+
+export const EntityConnectionsPageSchema = pageOf(EdgeViewSchema);
 
 export const EdgeGroupSchema: z.ZodType<EdgeGroup> = z.lazy(() => z.object({
   type: z.string(),
@@ -338,7 +397,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
   z.object({
     kind: z.literal('work_session'),
     nodeId: z.string().nullable(),
-    projectId: z.string().nullable(),
+    launchProjectId: z.string().nullable(),
     workingOn: z.array(EntitySummarySchema),
     transcriptDoc: EntitySummarySchema.nullable(),
   }).strict(),
@@ -346,6 +405,20 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     kind: z.literal('collection'),
     description: z.string(),
     items: z.array(EntitySummarySchema),
+  }).strict(),
+  z.object({
+    kind: z.literal('project'),
+    projectId: z.string().min(1),
+    repoUrl: z.string().nullable().optional(),
+    materializedVersion: z.number().int().positive(),
+  }).strict(),
+  z.object({
+    kind: z.literal('interaction_profile'),
+    status: z.enum(['draft', 'active', 'retired']),
+    templateKey: z.string().min(1),
+    templateVersion: z.number().int().positive(),
+    resolvedHash: z.string().nullable(),
+    generatedByTeamMemberId: EntityIdSchema.nullable(),
   }).strict(),
   z.object({
     kind: CustomEntityKindSchema,
@@ -467,6 +540,7 @@ const MessageStateSchema = z.object({
   anchorId: EntityIdSchema,
   rootMessageId: EntityIdSchema.nullable(),
   author: ActorSummarySchema,
+  messageBatchId: z.string().nullable(),
   editedAt: z.string().nullable().optional(),
 }).strict();
 
@@ -486,6 +560,11 @@ export const MessageViewSchema: z.ZodType<MessageView> = z.lazy(() => z.object({
   pending: z.boolean().optional(),
 }).strict());
 
+export const MessageBatchResultSchema: z.ZodType<MessageBatchResult> = z.lazy(() => z.object({
+  messageBatchId: z.string().min(1),
+  messages: z.array(MessageViewSchema).min(1).max(16),
+}).strict());
+
 export const ActivityItemSchema: z.ZodType<ActivityItem> = z.lazy(() => z.object({
   id: z.string(),
   entityId: EntityIdSchema.nullable().optional(),
@@ -494,6 +573,7 @@ export const ActivityItemSchema: z.ZodType<ActivityItem> = z.lazy(() => z.object
   summary: z.record(z.unknown()),
   createdAt: IsoTimestamp,
   refId: z.string().nullable().optional(),
+  workSessionId: EntityIdSchema.nullable().optional(),
 }).strict());
 
 export const PresenceSnapshotSchema: z.ZodType<PresenceSnapshot> = z.object({
@@ -509,6 +589,7 @@ export const NotificationItemSchema: z.ZodType<NotificationItem> = z.lazy(() => 
   actor: ActorSummarySchema.nullable().optional(),
   target: EntitySummarySchema.nullable().optional(),
   message: z.string().optional(),
+  recipient: ActorSummarySchema,
   readAt: IsoTimestamp.nullable(),
   createdAt: IsoTimestamp,
 }).strict());
@@ -566,6 +647,73 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
   }).strict(),
   z.object({
     ...workspaceEventEnvelopeShape,
+    type: z.literal('menu.updated'),
+    menu: MenuConfigSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('space.default_channel.updated'),
+    channelId: EntityIdSchema.nullable(),
+    settingsRevision: z.number().int().positive(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('project.association.corrected'),
+    result: EdgeCorrectionResultSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.enum(['handoff.prepared', 'handoff.delivery_settled', 'handoff.recorded', 'handoff.withdrawn']),
+    handoff: HandoffViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.enum(['message.delivery_reserved', 'message.delivery_settled']),
+    delivery: MessageDeliveryRecordSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('message.attachments.updated'),
+    message: MessageViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.enum([
+      'interaction_profile.proposed', 'interaction_profile.updated',
+      'interaction_profile.activated', 'interaction_profile.retired',
+    ]),
+    profile: InteractionProfileViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('interaction_profile.validated'),
+    validation: ProfileValidationViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('interaction_profile.default_updated'),
+    target: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('team_member'), value: TeammateProfileDefaultViewSchema }).strict(),
+      z.object({ type: z.literal('space'), value: SpaceProfileDefaultViewSchema }).strict(),
+    ]),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.enum(['work_session.profile_pinned', 'work_session.profile_repinned']),
+    pin: InteractionProfilePinViewSchema,
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
     type: z.literal('presence.changed'),
     entityId: EntityIdSchema,
     presence: PresenceSnapshotSchema,
@@ -577,6 +725,50 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     typingActorIds: z.array(EntityIdSchema),
   }).strict(),
 ]));
+
+// ---------------------------------------------------------------------------
+// The client→server control channel (§5)
+//
+// `.strict()` like every other input schema: an unknown key is `invalid_input`,
+// not a silently ignored field. This matters more here than on an HTTP body,
+// because a mistyped control frame that parsed leniently would leave a client
+// believing it is subscribed to a Space the server never added it to — the
+// failure mode is silence, which reads exactly like "this Space is quiet".
+// ---------------------------------------------------------------------------
+
+/**
+ * A `since` cursor: a non-negative safe integer per-Space `seq` (AM-2 §3).
+ *
+ * Validated rather than coerced, for the same reason `events.poll` validates
+ * its `?since=`: `Number('abc')` is `NaN`, and `seq > NaN` is false for every
+ * row, so a malformed cursor would return an empty replay that a client reads
+ * as "you have missed nothing".
+ */
+const ControlSinceSchema = z.number().int().nonnegative().safe();
+
+const ControlSpaceIdsSchema = z.array(SpaceIdSchema).min(1).max(MAX_CONTROL_FRAME_SPACES);
+
+export const WorkspaceControlFrameSchema: z.ZodType<WorkspaceControlFrame> =
+  z.discriminatedUnion('type', [
+    z.object({ type: z.literal('subscribe'), spaceIds: ControlSpaceIdsSchema }).strict(),
+    z.object({ type: z.literal('unsubscribe'), spaceIds: ControlSpaceIdsSchema }).strict(),
+    z.object({ type: z.literal('presence'), on: z.boolean() }).strict(),
+    z.object({ type: z.literal('resume'), spaceId: SpaceIdSchema, since: ControlSinceSchema }).strict(),
+    z.object({
+      type: z.literal('presence.set'),
+      spaceId: SpaceIdSchema,
+      entityId: EntityIdSchema,
+      viewing: z.boolean(),
+      typing: z.boolean(),
+    }).strict(),
+  ]);
+
+export const WorkspaceControlAckSchema: z.ZodType<WorkspaceControlAck> = z.object({
+  type: z.literal('control.refused'),
+  frame: z.enum(['subscribe', 'unsubscribe', 'presence', 'resume', 'presence.set']),
+  spaceId: SpaceIdSchema.optional(),
+  reason: z.enum(['forbidden', 'malformed']),
+}).strict();
 
 // ---------------------------------------------------------------------------
 // Commands: shared envelope, results, undo
@@ -611,6 +803,12 @@ export const CommandResultSchema: z.ZodType<CommandResult> = z.lazy(() => z.obje
 const attachToSchema = z.object({
   entityId: EntityIdSchema,
   edgeType: z.enum(['attached_to', 'relates_to']),
+}).strict();
+
+export const InitialConnectionInputSchema = z.object({
+  type: z.string().min(1),
+  targetId: EntityIdSchema,
+  props: z.record(z.unknown()).optional(),
 }).strict();
 
 export const CreateTaskInputSchema: z.ZodType<CreateTaskInput> = z.object({
@@ -649,9 +847,10 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
 
 export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   ...commandContextShape,
+  clientMutationId: z.string().min(1),
   spaceId: SpaceIdSchema,
   kind: z.union([
-    CoreEntityKindSchema.exclude(['message', 'member', 'work_session']),
+    CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile']),
     CustomEntityKindSchema,
   ]),
   title: z.string().min(1),
@@ -659,6 +858,7 @@ export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   position: z.number().optional(),
   content: z.record(z.unknown()).optional(),
   attachTo: attachToSchema.optional(),
+  connections: uniqueArray(InitialConnectionInputSchema).optional(),
 }).strict() as z.ZodType<CreateEntityInput>;
 
 export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
@@ -696,19 +896,52 @@ export const PlacementInputSchema: z.ZodType<PlacementInput> = z.object({
   embedMessage: z.string().optional(),
 }).strict();
 
-export const PostMessageInputSchema: z.ZodType<PostMessageInput> = z.object({
+const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   ...commandContextShape,
-  anchorId: EntityIdSchema,
+  clientMutationId: z.string().min(1),
+  anchorIds: uniqueArray(EntityIdSchema, 1, 16).optional(),
+  anchorId: EntityIdSchema.optional(),
   body: z.string().min(1).max(10_000),
   parentMessageId: EntityIdSchema.nullable().optional(),
-  mentions: z.array(MentionSchema).optional(),
-  attachments: z.array(FileAttachmentSchema).optional(),
+  mentionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
+  attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
 }).strict();
+
+export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
+  PostMessageWireInputSchema.superRefine((value, context) => {
+    if ((value.anchorIds === undefined) === (value.anchorId === undefined)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'provide exactly one of anchorIds or deprecated anchorId' });
+    }
+    const anchorCount = value.anchorIds?.length ?? (value.anchorId ? 1 : 0);
+    const attachmentCount = value.attachmentIds?.length ?? 0;
+    if (anchorCount * attachmentCount > 64) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'anchor × attachment pairs must not exceed 64' });
+    }
+    if (value.parentMessageId != null && anchorCount !== 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'a reply must resolve to exactly one anchor' });
+    }
+    const { anchorId, ...rest } = value;
+    const canonical = { ...rest, anchorIds: value.anchorIds ?? (anchorId ? [anchorId] : []) };
+    if (Buffer.byteLength(JSON.stringify(canonical), 'utf8') > 256 * 1024) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'canonical request JSON must not exceed 256 KiB' });
+    }
+  }).transform(({ anchorId, ...value }): PostMessageInput => ({
+    ...value,
+    anchorIds: value.anchorIds ?? [anchorId!],
+  }));
 
 export const PatchMessageInputSchema: z.ZodType<PatchMessageInput> = z.object({
   ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
   body: z.string().min(1).max(10_000),
   mentions: z.array(MentionSchema).optional(),
+}).strict();
+
+export const DeleteMessageInputSchema: z.ZodType<DeleteMessageInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
 }).strict();
 
 export const ReactionInputSchema: z.ZodType<ReactionInput> = z.object({
@@ -750,12 +983,16 @@ export const TrackingRefreshInputSchema: z.ZodType<TrackingRefreshInput> = z.obj
 
 export const LinkPrInputSchema: z.ZodType<LinkPrInput> = z.object({
   ...commandContextShape,
+  clientMutationId: z.string().min(1),
   url: z.string().url(),
+  projectId: z.string().min(1).optional(),
 }).strict();
 
 export const LinkCommitInputSchema: z.ZodType<LinkCommitInput> = z.object({
   ...commandContextShape,
+  clientMutationId: z.string().min(1),
   url: z.string().url(),
+  projectId: z.string().min(1).optional(),
 }).strict();
 
 export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
@@ -790,6 +1027,76 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 }).strict();
 
 // ---------------------------------------------------------------------------
+// Space menu and shared settings revision (W0 dossier A01-A03/A20)
+// ---------------------------------------------------------------------------
+
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'channels', 'settings']);
+export const MenuKindRefSchema = z.union([
+  CoreEntityKindSchema.exclude(['channel', 'message']),
+  CustomEntityKindSchema,
+]);
+
+export const MenuLeafSchema: z.ZodType<MenuLeaf> = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('view'), ref: MenuViewRefSchema }).strict(),
+  z.object({ type: z.literal('kind'), ref: MenuKindRefSchema }).strict(),
+]);
+
+export const MenuItemSchema: z.ZodType<MenuItem> = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('view'),
+    ref: MenuViewRefSchema,
+    children: z.array(MenuLeafSchema).max(8).optional(),
+  }).strict(),
+  z.object({ type: z.literal('kind'), ref: MenuKindRefSchema }).strict(),
+]);
+
+export const MenuGroupSchema: z.ZodType<MenuGroup> = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/),
+  label: z.string().min(1).max(32),
+  items: z.array(MenuItemSchema).max(12),
+}).strict();
+
+function validateMenu(groups: MenuGroup[], context: z.RefinementCtx): void {
+  const groupIds = groups.map((group) => group.id);
+  if (new Set(groupIds).size !== groupIds.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'menu group ids must be globally unique' });
+  }
+  const refs = groups.flatMap((group) => group.items.flatMap((item) => [
+    item.ref,
+    ...(item.type === 'view' ? (item.children ?? []).map((child) => child.ref) : []),
+  ]));
+  if (new Set(refs).size !== refs.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'menu refs must be globally unique' });
+  }
+  if (!refs.includes('settings')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'the required settings view must be present' });
+  }
+}
+
+export const MenuConfigPayloadSchema: z.ZodType<MenuConfigPayload> = z.object({
+  schemaVersion: z.literal(1),
+  groups: z.array(MenuGroupSchema).max(8),
+}).strict().superRefine((value, context) => validateMenu(value.groups, context));
+
+export const MenuConfigSchema: z.ZodType<MenuConfig> = z.object({
+  schemaVersion: z.literal(1),
+  revision: z.number().int().positive(),
+  groups: z.array(MenuGroupSchema).max(8),
+}).strict().superRefine((value, context) => validateMenu(value.groups, context));
+
+export const UpdateMenuInputSchema: z.ZodType<UpdateMenuInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative(),
+  payload: MenuConfigPayloadSchema,
+}).strict();
+
+export const SetDefaultChannelInputSchema: z.ZodType<SetDefaultChannelInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedSettingsRevision: z.number().int().positive(),
+  channelId: EntityIdSchema.nullable(),
+}).strict();
+
+// ---------------------------------------------------------------------------
 // Projects — linked resources (AM-2 §1, T-D17)
 // ---------------------------------------------------------------------------
 
@@ -811,6 +1118,8 @@ export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
   workingDir: z.string(),
   trust: ProjectTrustLevelSchema,
   defaults: ProjectDefaultsSchema,
+  linkFrozen: z.boolean().optional(),
+  activeLinkCount: z.number().int().nonnegative().optional(),
   createdAt: IsoTimestamp,
   updatedAt: IsoTimestamp,
 }).strict();
@@ -838,6 +1147,19 @@ export const ProjectLinkInputSchema: z.ZodType<ProjectLinkInput> = z.object({
   projectId: ProjectIdSchema,
 }).strict();
 
+export const CorrectProjectAssociationInputSchema: z.ZodType<CorrectProjectAssociationInput> = z.object({
+  clientMutationId: z.string().min(1),
+  projectId: ProjectIdSchema,
+  expectedArtifactVersion: z.number().int().positive(),
+}).strict();
+
+export const EdgeCorrectionResultSchema: z.ZodType<EdgeCorrectionResult> = z.lazy(() => z.object({
+  artifactId: EntityIdSchema,
+  projectId: ProjectIdSchema,
+  outcome: z.enum(['removed', 'demoted', 'unchanged']),
+  edge: EdgeViewSchema.nullable(),
+}).strict());
+
 // ---------------------------------------------------------------------------
 // files.* blob lifecycle (AM-2 §2)
 // ---------------------------------------------------------------------------
@@ -862,26 +1184,34 @@ export const FileUploadGrantSchema: z.ZodType<FileUploadGrant> = z.object({
   maxSizeBytes: z.number().int().positive(),
 }).strict();
 
-/** Complete/abort carry only the command context; ids travel in the path. */
-export const FileUploadCompleteInputSchema = CommandContextSchema;
+/** Complete finalizes the file plus its explicitly requested attachment edges. */
+export const FileUploadCompleteInputSchema: z.ZodType<FileUploadCompleteInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  targets: uniqueArray(EntityIdSchema, 0, 16).optional(),
+}).strict();
 export const FileUploadAbortInputSchema = CommandContextSchema;
 
 // ---------------------------------------------------------------------------
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
 
-export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.object({
-  mode: z.enum(['project', 'worktree']),
-  baseRef: z.string().nullable().optional(),
-}).strict();
+export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('project') }).strict(),
+  z.object({ mode: z.literal('worktree'), baseRef: z.string().nullable().optional() }).strict(),
+  z.object({ mode: z.literal('scratch') }).strict(),
+]);
 
 export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.object({
   ...commandContextShape,
+  clientMutationId: z.string().min(1),
   spaceId: SpaceIdSchema,
   teamMemberId: EntityIdSchema,
   taskIds: z.array(EntityIdSchema).optional(),
   projectId: ProjectIdSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
+  confirmUntrusted: z.literal(true).optional(),
+  interactionProfileId: EntityIdSchema.optional(),
   mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
@@ -911,6 +1241,371 @@ export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({
   mode: z.enum(['view', 'drive']),
   token: z.string().nullable().optional(),
   expiresAt: IsoTimestamp,
+}).strict();
+
+// ---------------------------------------------------------------------------
+// W0 adopted amendment DTOs (A05-A20 and frozen-row shapes)
+// ---------------------------------------------------------------------------
+
+export const AddMessageAttachmentsInputSchema: z.ZodType<AddMessageAttachmentsInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  fileEntityIds: uniqueArray(EntityIdSchema, 1, 16),
+}).strict();
+export const RemoveMessageAttachmentsInputSchema: z.ZodType<RemoveMessageAttachmentsInput> =
+  AddMessageAttachmentsInputSchema;
+
+export const MessageDeliveryStatusSchema = z.enum([
+  'pending', 'dispatching', 'delivered', 'failed_retryable',
+  'failed_permanent', 'unknown', 'expired', 'cancelled',
+]);
+
+export const MessageDeliveryQuerySchema: z.ZodType<MessageDeliveryQuery> = z.object({
+  cursor: CursorSchema.optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+}).strict();
+
+export const MessageDeliveryRecordSchema: z.ZodType<MessageDeliveryRecord> = z.object({
+  deliveryId: z.string().min(1),
+  messageId: EntityIdSchema,
+  sourceWorkSessionId: EntityIdSchema.nullable(),
+  targetWorkSessionId: EntityIdSchema,
+  status: MessageDeliveryStatusSchema,
+  attemptNo: z.number().int().positive(),
+  failureReason: z.string().nullable(),
+  reservedAt: IsoTimestamp,
+  claimedAt: IsoTimestamp.nullable(),
+  settledAt: IsoTimestamp.nullable(),
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const MessageDeliveryViewSchema: z.ZodType<MessageDeliveryView> = z.lazy(() => z.object({
+  message: MessageViewSchema,
+  deliveries: z.array(MessageDeliveryRecordSchema),
+}).strict());
+
+export const HandoffDeliveryStatusSchema = z.enum(['prepared', 'dispatching', 'delivered', 'refused', 'unknown']);
+export const HandoffRecordStatusSchema = z.enum(['pending', 'recorded', 'failed', 'withdrawn']);
+
+export const ShareProjectionEnvelopeSchema: z.ZodType<ShareProjectionEnvelope> = z.object({
+  entityId: EntityIdSchema,
+  kind: EntityKindSchema,
+  title: z.string(),
+  contentVersion: z.number().int().positive(),
+  sourceSpaceId: SpaceIdSchema,
+  body: z.string(),
+  bodyBytes: z.number().int().min(0).max(32_768),
+  truncated: z.boolean(),
+  omittedFields: z.array(z.string()),
+}).strict().superRefine((value, context) => {
+  if (Buffer.byteLength(value.body, 'utf8') !== value.bodyBytes) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['bodyBytes'], message: 'bodyBytes must equal the UTF-8 body length' });
+  }
+});
+
+export const SendHandoffInputSchema: z.ZodType<SendHandoffInput> = z.object({
+  clientMutationId: z.string().min(1),
+  sourceEntityId: EntityIdSchema,
+}).strict();
+
+export const HandoffListQuerySchema: z.ZodType<HandoffListQuery> = z.object({
+  deliveryStatus: uniqueArray(HandoffDeliveryStatusSchema).optional(),
+  recordStatus: uniqueArray(HandoffRecordStatusSchema).optional(),
+  cursor: CursorSchema.optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+}).strict();
+
+export const WithdrawHandoffInputSchema: z.ZodType<WithdrawHandoffInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedRecordVersion: z.number().int().positive(),
+  reason: z.string().min(1).max(256).optional(),
+}).strict();
+
+export const HandoffViewSchema: z.ZodType<HandoffView> = z.object({
+  handoffId: z.string().min(1),
+  sourceEntityId: EntityIdSchema,
+  targetWorkSessionId: EntityIdSchema,
+  deliveryStatus: HandoffDeliveryStatusSchema,
+  recordStatus: HandoffRecordStatusSchema,
+  sourceSnapshot: ShareProjectionEnvelopeSchema,
+  envelopeHash: z.string().min(1),
+  sourceMissing: z.boolean(),
+  recordVersion: z.number().int().positive(),
+  withdrawnBy: ActorSummarySchema.nullable(),
+  withdrawnAt: IsoTimestamp.nullable(),
+  withdrawReason: z.string().min(1).max(256).nullable(),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict().superRefine((value, context) => {
+  const terminalDelivery = ['delivered', 'refused', 'unknown'].includes(value.deliveryStatus);
+  if (!terminalDelivery && value.recordStatus !== 'pending') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['recordStatus'], message: 'prepared/dispatching handoffs must remain pending' });
+  }
+  const withdrawn = value.recordStatus === 'withdrawn';
+  if (withdrawn !== (value.withdrawnAt !== null && value.withdrawnBy !== null)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'withdrawn handoffs require withdrawnAt and withdrawnBy only together' });
+  }
+});
+
+export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
+  scope: z.enum(['default', 'direct_v1', 'session_chat_v1']).optional(),
+  order: z.enum(['newest', 'oldest']).optional(),
+  around: z.string().regex(/^(message|activity):[^:]+$/).optional() as z.ZodType<`message:${string}` | `activity:${string}` | undefined>,
+  cursor: CursorSchema.optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+}).strict().superRefine((value, context) => {
+  if (value.around !== undefined && value.cursor !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'around and cursor are mutually exclusive' });
+  }
+});
+
+export const DeliverySummarySchema: z.ZodType<DeliverySummary> = z.object({
+  deliveryId: z.string().min(1),
+  targetWorkSessionId: EntityIdSchema,
+  status: MessageDeliveryStatusSchema,
+  attemptNo: z.number().int().positive(),
+  failureReason: z.string().nullable(),
+  updatedAt: IsoTimestamp,
+}).strict();
+
+const feedItemBaseShape = {
+  itemId: z.string().min(1),
+  createdAt: IsoTimestamp,
+  sortId: z.string().min(1),
+  via: uniqueArray(z.enum(['subject', 'anchored', 'authored', 'replies', 'caused']), 1),
+  actor: ActorSummarySchema.nullable(),
+  sourceWorkSessionId: EntityIdSchema.nullable(),
+  anchor: EntitySummarySchema.nullable(),
+  logicalOperationId: z.string().nullable(),
+};
+
+export const FeedItemSchema: z.ZodType<FeedItem> = z.lazy(() => z.discriminatedUnion('itemKind', [
+  z.object({
+    ...feedItemBaseShape,
+    itemKind: z.literal('message'),
+    message: MessageViewSchema,
+    delivery: z.array(DeliverySummarySchema),
+  }).strict(),
+  z.object({
+    ...feedItemBaseShape,
+    itemKind: z.literal('activity'),
+    activity: ActivityItemSchema,
+  }).strict(),
+]));
+
+export const EntityFeedPageSchema: z.ZodType<EntityFeedPage> = z.lazy(() => z.object({
+  resolvedScope: z.enum(['direct_v1', 'session_chat_v1']),
+  predicates: uniqueArray(z.enum(['subject', 'anchored', 'authored', 'replies', 'caused']), 1),
+  items: z.array(FeedItemSchema),
+  nextCursor: CursorSchema.nullable(),
+  previousCursor: CursorSchema.nullable().optional(),
+}).strict());
+
+export const EntityContextQuerySchema: z.ZodType<EntityContextQuery> = z.object({
+  sections: uniqueArray(z.enum(['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'])).optional(),
+  totalBytes: z.number().int().min(1024).max(32_768).optional(),
+  sectionBytes: z.number().int().min(512).max(8192).optional(),
+}).strict();
+
+export const EntityContextViewSchema: z.ZodType<EntityContextView> = z.lazy(() => z.object({
+  schemaVersion: z.literal('tm8.entity-context.v1'),
+  root: EntitySummarySchema,
+  content: z.object({
+    excerpt: z.string(),
+    source: z.enum(['entity', 'message', 'file']),
+    truncated: z.boolean(),
+  }).strict().optional(),
+  parents: z.array(EntitySummarySchema),
+  children: z.array(EntitySummarySchema),
+  edges: z.array(EdgeViewSchema),
+  messages: z.array(MessageViewSchema),
+  actions: z.array(PaletteActionSchema),
+  provenance: z.object({
+    operation: z.custom<OperationName>(isOperationName),
+    fetchedAt: IsoTimestamp,
+    eventSeq: z.number().int().nonnegative(),
+  }).strict(),
+  cursors: z.record(CursorSchema.nullable()),
+  byteSize: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+}).strict());
+
+const OperationNameSchema = z.custom<OperationName>(isOperationName, 'must be a catalogued operation name');
+
+export const ClosedPromptPolicySchema: z.ZodType<ClosedPromptPolicy> = z.object({
+  kernelTemplate: z.string().min(1),
+  manifestMaxBytes: z.number().int().min(1).max(4096),
+  kernelMaxBytes: z.number().int().min(1).max(6144),
+  initialContextMaxBytes: z.number().int().min(1).max(32_768),
+  rollingControlMaxBytes: z.number().int().min(1).max(32_768),
+  allowedInjectionKinds: uniqueArray(z.string().min(1)),
+  untrustedEncoding: z.literal('escaped-xml'),
+}).strict();
+
+export const ToolDiscoveryPolicySchema: z.ZodType<ToolDiscoveryPolicy> = z.object({
+  rootHelpRef: z.literal('tm8://help'),
+  preloadNouns: uniqueArray(z.string().min(1)),
+  semanticSearchEnabled: z.boolean(),
+  semanticMaxMatches: z.number().int().min(0).max(5),
+  nounShardMaxBytes: z.number().int().min(1).max(32_768),
+  commandShardMaxBytes: z.number().int().min(1).max(32_768),
+  entityContextDefaultBytes: z.number().int().min(1024).max(32_768),
+  providerToolRegistrationAllowlist: uniqueArray(OperationNameSchema).optional(),
+}).strict();
+
+export const FeedPolicySchema: z.ZodType<FeedPolicy> = z.object({
+  scope: z.enum(['direct_v1', 'session_chat_v1']),
+  pageSize: z.number().int().min(1).max(100),
+  bodyExcerptBytes: z.number().int().min(0).max(4096),
+}).strict();
+
+export const ComposerInteractionPolicySchema: z.ZodType<ComposerInteractionPolicy> = z.object({
+  schemaRef: z.string().min(1),
+  supportsReply: z.boolean(),
+  supportsAttachments: z.boolean(),
+  allowedAttachmentKinds: uniqueArray(z.string().min(1)),
+  operationBindings: uniqueArray(OperationNameSchema),
+}).strict();
+
+export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> = z.object({
+  name: z.string().min(1).max(80),
+  templateKey: z.string().min(1),
+  templateVersion: z.number().int().positive(),
+  promptPolicy: ClosedPromptPolicySchema,
+  toolDiscoveryPolicy: ToolDiscoveryPolicySchema,
+  feedPolicy: FeedPolicySchema,
+  providerCaptureMode: z.literal('explicit-only'),
+  composerPolicy: ComposerInteractionPolicySchema,
+}).strict();
+
+export const ProposeInteractionProfileInputSchema: z.ZodType<ProposeInteractionProfileInput> = z.object({
+  clientMutationId: z.string().min(1),
+  spaceId: SpaceIdSchema,
+  draft: InteractionProfileDraftSchema,
+}).strict();
+
+export const UpdateInteractionProfileDraftInputSchema: z.ZodType<UpdateInteractionProfileDraftInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  draft: InteractionProfileDraftSchema,
+}).strict();
+
+export const ValidateInteractionProfileInputSchema: z.ZodType<ValidateInteractionProfileInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+}).strict();
+
+export const PreviewInteractionProfileInputSchema: z.ZodType<PreviewInteractionProfileInput> = z.object({
+  profileVersion: z.number().int().positive(),
+}).strict();
+
+export const ActivateInteractionProfileInputSchema: z.ZodType<ActivateInteractionProfileInput> = z.object({
+  clientMutationId: z.string().min(1),
+  validatedVersion: z.number().int().positive(),
+  validatedHash: z.string().min(1),
+  confirm: z.literal(true),
+}).strict();
+
+export const RetireInteractionProfileInputSchema: z.ZodType<RetireInteractionProfileInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  confirm: z.literal(true),
+}).strict();
+
+export const SetTeammateProfileDefaultInputSchema: z.ZodType<SetTeammateProfileDefaultInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  profileId: EntityIdSchema.nullable(),
+}).strict();
+
+export const SetSpaceProfileDefaultInputSchema: z.ZodType<SetSpaceProfileDefaultInput> = z.object({
+  clientMutationId: z.string().min(1),
+  expectedSettingsRevision: z.number().int().positive(),
+  profileId: EntityIdSchema.nullable(),
+  confirmAgentGenerated: z.literal(true).optional(),
+}).strict();
+
+export const InteractionProfileViewSchema: z.ZodType<InteractionProfileView> = z.object({
+  profileId: EntityIdSchema,
+  spaceId: SpaceIdSchema,
+  status: z.enum(['draft', 'active', 'retired']),
+  currentDraftVersion: z.number().int().positive(),
+  validatedVersion: z.number().int().positive().nullable(),
+  validatedHash: z.string().nullable(),
+  activeVersion: z.number().int().positive().nullable(),
+  activeHash: z.string().nullable(),
+  generatedByTeamMemberId: EntityIdSchema.nullable(),
+  retiredAt: IsoTimestamp.nullable(),
+  version: z.number().int().positive(),
+  draft: InteractionProfileDraftSchema,
+}).strict();
+
+export const ProfileValidationIssueSchema: z.ZodType<ProfileValidationIssue> = z.object({
+  path: z.string(),
+  code: z.string().min(1),
+  message: z.string().min(1),
+}).strict();
+
+export const ProfileValidationViewSchema: z.ZodType<ProfileValidationView> = z.object({
+  profileId: EntityIdSchema,
+  profileVersion: z.number().int().positive(),
+  status: z.enum(['valid', 'invalid']),
+  validatedHash: z.string().nullable(),
+  issues: z.array(ProfileValidationIssueSchema),
+}).strict();
+
+export const InteractionProfilePreviewSchema: z.ZodType<InteractionProfilePreview> = z.object({
+  profileId: EntityIdSchema,
+  profileVersion: z.number().int().positive(),
+  name: z.string().min(1).max(80),
+  templateKey: z.string().min(1),
+  templateVersion: z.number().int().positive(),
+  feedPolicy: FeedPolicySchema,
+  composerPolicy: ComposerInteractionPolicySchema,
+  validatedHash: z.string().nullable(),
+  generatedByTeamMemberId: EntityIdSchema.nullable(),
+}).strict();
+
+export const TeammateProfileDefaultViewSchema: z.ZodType<TeammateProfileDefaultView> = z.object({
+  teamMemberId: EntityIdSchema,
+  defaultInteractionProfileId: EntityIdSchema.nullable(),
+  version: z.number().int().positive(),
+}).strict();
+
+export const SpaceProfileDefaultViewSchema: z.ZodType<SpaceProfileDefaultView> = z.object({
+  spaceId: SpaceIdSchema,
+  defaultInteractionProfileId: EntityIdSchema.nullable(),
+  settingsRevision: z.number().int().positive(),
+}).strict();
+
+export const InteractionProfilePinViewSchema: z.ZodType<InteractionProfilePinView> = z.object({
+  workSessionId: EntityIdSchema,
+  pinRevision: z.number().int().positive(),
+  profileId: EntityIdSchema.nullable(),
+  profileVersion: z.number().int().positive().nullable(),
+  templateKey: z.string().min(1),
+  templateVersion: z.number().int().positive(),
+  resolvedHash: z.string().min(1),
+  source: z.enum(['spawn_override', 'teammate_default', 'space_default', 'core_default']),
+  createdAt: IsoTimestamp,
+}).strict();
+
+export const InboxRecipientSchema: z.ZodType<InboxRecipient> = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('member'), memberId: EntityIdSchema }).strict(),
+  z.object({ type: z.literal('team_member'), teamMemberId: EntityIdSchema }).strict(),
+]);
+
+export const InboxListQuerySchema: z.ZodType<InboxListQuery> = z.object({
+  recipient: InboxRecipientSchema.optional(),
+  spaceId: SpaceIdSchema.optional(),
+  unread: z.boolean().optional(),
+  cursor: CursorSchema.optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+}).strict();
+
+export const InboxMarkReadInputSchema: z.ZodType<InboxMarkReadInput> = z.object({
+  clientMutationId: z.string().min(1),
+  recipient: InboxRecipientSchema.optional(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1725,28 @@ export const SpaceSettingsSchema: z.ZodType<SpaceSettings> = z.lazy(() => z.obje
   taskAxes: z.array(TaskAxisSchema),
 }).strict());
 
+export const SpaceSettingsViewSchema: z.ZodType<SpaceSettingsView> = z.lazy(() => z.object({
+  space: SpaceSummarySchema,
+  members: z.array(z.object({
+    actor: ActorSummarySchema,
+    role: z.enum(['owner', 'admin', 'member']),
+    joinedAt: IsoTimestamp,
+  }).strict()),
+  invites: z.array(z.object({
+    id: z.string(),
+    code: z.string(),
+    maxUses: z.number().int(),
+    uses: z.number().int().nonnegative(),
+    expiresAt: IsoTimestamp.nullable(),
+    revoked: z.boolean(),
+  }).strict()),
+  taskAxes: z.array(TaskAxisSchema),
+  menu: MenuConfigSchema,
+  defaultChannelId: EntityIdSchema.nullable(),
+  defaultInteractionProfileId: EntityIdSchema.nullable(),
+  settingsRevision: z.number().int().positive(),
+}).strict());
+
 export const SavedViewSchema: z.ZodType<SavedView> = z.lazy(() => z.object({
   id: z.string(),
   spaceId: SpaceIdSchema,
@@ -1045,7 +1762,21 @@ export const PaletteActionSchema: z.ZodType<PaletteAction> = z.object({
   id: z.string(),
   label: z.string(),
   kind: z.string(),
+  operation: OperationNameSchema,
   targetEntityId: EntityIdSchema.optional(),
+  targetVersion: z.number().int().positive().optional(),
+  capabilityEpoch: z.string().min(1),
+  authzTarget: z.enum(['server', 'space', 'project', 'entity', 'session']),
+  exposure: z.enum(['public', 'composite', 'internal', 'reserved']),
+  helpRef: z.string().min(1),
+}).strict();
+
+export const ActionDiscoveryResultSchema: z.ZodType<ActionDiscoveryResult> = z.object({
+  actorId: EntityIdSchema,
+  targetEntityId: EntityIdSchema.optional(),
+  targetVersion: z.number().int().positive().optional(),
+  capabilityEpoch: z.string().min(1),
+  actions: z.array(PaletteActionSchema),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -1055,10 +1786,35 @@ export const PaletteActionSchema: z.ZodType<PaletteAction> = z.object({
 export const CommandErrorCodeSchema: z.ZodType<CommandErrorCode> = z.enum([
   'invalid_input', 'invalid_cursor',
   'unauthenticated', 'forbidden', 'not_found',
-  'version_conflict', 'invariant_violation',
+  'version_conflict', 'conflict', 'invariant_violation',
   'payload_too_large', 'rate_limited', 'limit_exceeded',
   'not_implemented', 'upstream_unavailable',
 ]);
+
+export const ErrorCodeSchema: z.ZodType<ErrorCode> = z.enum([
+  'invalid_input', 'forbidden', 'not_found', 'conflict',
+  'invariant_violation', 'limit_exceeded', 'not_implemented',
+]);
+
+export const AmendmentErrorReasonSchema: z.ZodType<AmendmentErrorReason> = z.enum([
+  'use_message_send', 'automated_wake_limit', 'session_contact_forbidden',
+  'handoff_forbidden', 'message_batch_identity_mismatch',
+  'feed_scope_not_applicable', 'feed_item_not_in_scope',
+  'project_not_linked', 'project_association_cap', 'project_over_cap',
+  'menu_revision_conflict', 'menu_upgrade_required',
+  'profile_not_validated', 'profile_referenced_default', 'profile_retired',
+  'profile_principal_required', 'profile_capture_mode_reserved',
+  'attachment_edge_owned',
+]);
+
+export const ErrorDetailsSchema: z.ZodType<ErrorDetails> = z.object({
+  reason: z.string().min(1),
+  currentVersion: z.number().int().positive().optional(),
+  currentRevision: z.number().int().positive().optional(),
+  currentMenu: MenuConfigSchema.optional(),
+  activeLinks: z.number().int().nonnegative().optional(),
+  deliveryId: z.string().min(1).optional(),
+}).strict();
 
 export const WireErrorBodySchema: z.ZodType<WireErrorBody> = z.object({
   error: z.object({

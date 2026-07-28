@@ -28,9 +28,17 @@ export type {
   PasswordAlgorithm,
   SpaceId,
   StoredCredential,
+  SystemDeliveryPrincipal,
+  SystemDeliveryPrincipalBinding,
+  SystemDeliveryPrincipalClaims,
   TeamMemberId,
   TeamMemberRecord,
 } from './types.js';
+
+export {
+  isSystemDeliveryPrincipalFor,
+  mintSystemDeliveryPrincipal,
+} from './system-delivery-principal.js';
 
 export type {
   AccountCredentialRow,

@@ -12,6 +12,11 @@
  * ./security.ts.
  */
 
+import { homedir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
+
+import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+
 export interface ServerConfig {
   /** Bind address. Loopback only — see S1 above. */
   readonly host: string;
@@ -31,6 +36,17 @@ export interface ServerConfig {
    * database, not boot and then fail at the first query.
    */
   readonly databaseUrl: string | undefined;
+  /**
+   * Absolute Server-owned state root. `loadConfig` always resolves it; the
+   * optional marker preserves compatibility for narrow tests that construct a
+   * frame-only config and never compose filesystem-backed services.
+   */
+  readonly dataDir?: string;
+  /**
+   * One effective per-blob ceiling shared by file grants, the file service,
+   * and the blob store. `loadConfig` always supplies a positive safe integer.
+   */
+  readonly fileMaxSizeBytes?: number;
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -44,6 +60,24 @@ export class ConfigError extends Error {
     super(message);
     this.name = 'ConfigError';
   }
+}
+
+function expandHome(path: string): string {
+  if (path === '~') return homedir();
+  if (path.startsWith('~/')) return join(homedir(), path.slice(2));
+  return path;
+}
+
+/** Resolve the shared tm8 state root without reading any unrelated config. */
+export function resolveServerDataDir(env: NodeJS.ProcessEnv = process.env): string {
+  const mode = env.TM8_ENV === 'prod' ? 'prod' : 'dev';
+  const configured = env.TM8_DATA_DIR?.trim()
+    || join(homedir(), mode === 'prod' ? '.tm8' : '.tm8-dev');
+  const dataDir = resolve(expandHome(configured));
+  if (!isAbsolute(dataDir)) {
+    throw new ConfigError(`TM8_DATA_DIR must resolve to an absolute path, got ${JSON.stringify(configured)}`);
+  }
+  return dataDir;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -68,11 +102,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     throw new ConfigError(`TM8_MAX_BODY_BYTES must be a positive integer, got ${JSON.stringify(maxBodyRaw)}`);
   }
 
+  const fileMaxRaw = env.TM8_FILE_MAX_SIZE_BYTES?.trim();
+  const fileMaxSizeBytes = fileMaxRaw === undefined || fileMaxRaw === ''
+    ? FILE_MAX_SIZE_BYTES_DEFAULT
+    : Number(fileMaxRaw);
+  if (!Number.isSafeInteger(fileMaxSizeBytes) || fileMaxSizeBytes <= 0) {
+    throw new ConfigError(
+      `TM8_FILE_MAX_SIZE_BYTES must be a positive safe integer, got ${JSON.stringify(fileMaxRaw)}`,
+    );
+  }
+
   return {
     host,
     port,
     uiDir: env.TM8_UI_DIR?.trim() || undefined,
     maxBodyBytes,
     databaseUrl: env.TM8_DATABASE_URL?.trim() || undefined,
+    dataDir: resolveServerDataDir(env),
+    fileMaxSizeBytes,
   };
 }

@@ -1,0 +1,31 @@
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/db/w2-execution.pg.test.ts (9 tests | 1 failed) 3692ms
+   × W2 G11 — B2 durable unordered pair budget, over the real delivery RPCs > cleanup runs on the existing owner path — no fourth delivery RPC 33ms
+     → new row for relation "session_message_deliveries" violates check constraint "session_message_deliveries_pair_shape"
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/db/w2-execution.pg.test.ts > W2 G11 — B2 durable unordered pair budget, over the real delivery RPCs > cleanup runs on the existing owner path — no fourth delivery RPC
+error: new row for relation "session_message_deliveries" violates check constraint "session_message_deliveries_pair_shape"
+ ❯ ../../node_modules/.bun/pg@8.22.0+51226add061828f6/node_modules/pg/lib/client.js:652:17
+ ❯ src/facade/services/w2/execution.ts:360:22
+    358|   async reserve(lease: DeliveryPrincipalLease, attemptNo: number): Pro…
+    359|     return this.withPrincipal(lease, async (client) => {
+    360|       const result = await client.query<{ row: DeliveryRowJson }>(
+       |                      ^
+    361|         `select public.reserve_session_message_delivery($1, $2, $3, $4…
+    362|         [lease.deliveryId, lease.messageId, lease.targetWorkSessionId,…
+ ❯ PgW2DeliveryRpcPort.withPrincipal src/facade/services/w2/execution.ts:342:22
+ ❯ W2ExecutionDeliveryService.reserve src/facade/services/w2/execution.ts:517:20
+ ❯ deliver test/db/w2-execution.pg.test.ts:270:23
+ ❯ test/db/w2-execution.pg.test.ts:591:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+   Start at  11:48:36
+   Duration  5.34s (transform 562ms, setup 0ms, collect 857ms, tests 3.69s, environment 0ms, prepare 72ms)
+

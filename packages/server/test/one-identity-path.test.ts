@@ -54,24 +54,173 @@ describe('one identity path (R2 / claims contract)', () => {
     expect(definers, `claimsFor must be defined only in ${OWNER}`).toEqual([OWNER]);
   });
 
-  it('claims are bound to a transaction in exactly one file', () => {
-    // Naming a claim is fine — types and docs do it. BINDING one via
-    // set_config is the privileged act, and a second binder would drift from
-    // the canonical one, showing up as a 42501 that looks like a policy bug.
-    const binder = join(SRC, 'db', 'client.ts');
+  // ---------------------------------------------------------------------------
+  // THE CALLER-IDENTITY CLAIMS, BY NAME.
+  //
+  // WHY BY NAME AND NOT BY PATTERN. The previous form of this guard matched
+  // "code contains set_config AND contains tm8." — a TEXTUAL PROXY for "binds
+  // caller identity". The proxy drifted from the property the day a delivery
+  // service began binding tm8.principal_type and five tm8.delivery_* claims, and
+  // the guard reported a violation of a rule nobody had broken. MATCHING A PREFIX
+  // IS WHAT PRODUCED THAT FALSE RED, so the sharpened form enumerates.
+  //
+  // THE SHARPENING KEEPS THE PROPERTY THAT CREATED THE GUARD. Both founding
+  // defects in the header above are still caught: the second one bound `actorId`
+  // GLOBALLY from a second file, and actor_id is a NAMED claim below, so a second
+  // file binding it is still red. Removing a proxy is not the same as removing
+  // rigour.
+  //
+  // acting_as and client_mutation_id are bound today only from SQL
+  // (internal.bind_actor, internal.bind_cmid) and by nothing in src. They are
+  // named anyway: the cost of naming a claim that is not yet bound in TypeScript
+  // is zero, and it is the difference between this guard noticing a future
+  // binding and being surprised by it.
+  // ---------------------------------------------------------------------------
+  const CALLER_IDENTITY_CLAIMS = [
+    'identity_id',
+    'actor_id',
+    'node_admin',
+    'request_id',
+    'acting_as',
+    'client_mutation_id',
+  ] as const;
 
-    // Strip comments first. Files that DOCUMENT the binding — claims.ts
-    // explains the SET LOCAL contract in prose, db/types.ts in doc comments —
-    // are not binders, and flagging them would train people to ignore this
-    // test, which is worse than not having it.
-    const stripComments = (src: string): string =>
-      src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const CLAIMS_BINDER = join(SRC, 'db', 'client.ts');
 
-    const binders = sourceFiles(SRC).filter((file) => {
+  /**
+   * Namespaces OTHER than the caller-identity claims may be bound elsewhere only
+   * from this list. EACH ENTRY IS A RECORDED DECISION WITH ITS REASON, not a
+   * suppression: adding one should cost a decision, not a keystroke.
+   */
+  const ALLOWED_NON_CALLER_BINDERS = [
+    {
+      file: join(SRC, 'facade', 'services', 'w2', 'execution.ts'),
+      claims: [
+        'principal_type',
+        'delivery_id',
+        'delivery_message_id',
+        'delivery_target_work_session_id',
+        'delivery_expires_at',
+        'delivery_pair_budget_version',
+      ],
+      reason:
+        'The system delivery adapter. Permitted on four facts, each checkable: ' +
+        '(1) the namespaces are DISJOINT from the caller-identity claims — this file ' +
+        'binds none of identity_id/actor_id/node_admin/request_id, and db/client.ts ' +
+        'binds none of the delivery claims; (2) they are ACTIVELY EXCLUSIVE, because ' +
+        'internal.require_delivery_principal (015:1348-1355) raises 42501 unless the ' +
+        'role is the delivery worker AND principal_type is system_delivery_adapter, so ' +
+        'a delivery transaction carrying caller claims is refused BY THE DATABASE; ' +
+        '(3) assuming the delivery role fails LOUDLY from tm8_app rather than falling ' +
+        'back silently; (4) no request-controlled value is bound — the delivery tuple ' +
+        'comes from the stored message, never from whoever is connected.',
+    },
+  ] as const;
+
+  /**
+   * Strip comments first. Files that DOCUMENT the binding — claims.ts explains
+   * the SET LOCAL contract in prose, db/types.ts in doc comments — are not
+   * binders, and flagging them would train people to ignore this test, which is
+   * worse than not having it. Kept deliberately from the original guard.
+   */
+  const stripComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  interface Binding {
+    readonly file: string;
+    readonly claim: string;
+    readonly localScope: string;
+  }
+
+  /** Every set_config('tm8.X', …) call in src, with its third argument. */
+  function bindings(): Binding[] {
+    const found: Binding[] = [];
+    for (const file of sourceFiles(SRC)) {
       const code = stripComments(readFileSync(file, 'utf8'));
-      return code.includes('set_config') && code.includes('tm8.');
-    });
+      for (const match of code.matchAll(/set_config\(([^)]*)\)/g)) {
+        const args = match[1]!.split(',').map((a) => a.trim());
+        // A set_config whose arguments cannot be read as exactly three is not
+        // silently skipped — it is surfaced, because a mis-parse here would make
+        // the local-scope assertion below vacuous for that call.
+        expect(
+          args.length,
+          `${file}: could not read set_config(${match[1]}) as three arguments; ` +
+            `the local-scope check cannot be applied to it`,
+        ).toBe(3);
+        const claim = /^['"`]tm8\.([a-z_]+)['"`]$/.exec(args[0]!)?.[1];
+        if (claim) found.push({ file, claim, localScope: args[2]! });
+      }
+    }
+    return found;
+  }
 
-    expect(binders, `only ${binder} may bind claims with set_config`).toEqual([binder]);
+  it('each named caller-identity claim is bound in exactly one file', () => {
+    const all = bindings();
+    for (const claim of CALLER_IDENTITY_CLAIMS) {
+      const files = [...new Set(all.filter((b) => b.claim === claim).map((b) => b.file))].sort();
+      // A claim bound nowhere in src is fine (SQL may bind it); a claim bound in
+      // a second file is the defect this guard was built for.
+      expect(
+        files.length <= 1,
+        `tm8.${claim} is bound in ${files.length} files: ${files.join(', ')} — ` +
+          `only ${CLAIMS_BINDER} may bind caller-identity claims. Import claimsFor ` +
+          `from facade/context.ts rather than binding it a second time.`,
+      ).toBe(true);
+      if (files.length === 1) {
+        expect(
+          files[0],
+          `tm8.${claim} is bound in ${files[0]} — only ${CLAIMS_BINDER} may bind it`,
+        ).toBe(CLAIMS_BINDER);
+      }
+    }
+  });
+
+  it('any other claim namespace is bound only from the allowlist', () => {
+    const named = new Set<string>(CALLER_IDENTITY_CLAIMS);
+    const offenders: string[] = [];
+    for (const binding of bindings()) {
+      if (named.has(binding.claim)) continue;
+      const entry = ALLOWED_NON_CALLER_BINDERS.find((e) => e.file === binding.file);
+      if (!entry) {
+        offenders.push(`${binding.file} binds tm8.${binding.claim} and is not on the allowlist`);
+      } else if (!(entry.claims as readonly string[]).includes(binding.claim)) {
+        offenders.push(
+          `${binding.file} is allowlisted but binds tm8.${binding.claim}, which its entry does not cover`,
+        );
+      }
+    }
+    expect(
+      offenders,
+      `a claim namespace was bound outside the allowlist:\n  ${offenders.join('\n  ')}\n` +
+        'Adding an entry is a RECORDED DECISION and must carry its reason — do not ' +
+        'add a bare file path, and do not add an exemption comment.',
+    ).toEqual([]);
+  });
+
+  // ---------------------------------------------------------------------------
+  // THE COMPANION, AND THE SHARPENING DOES NOT STAND WITHOUT IT.
+  //
+  // db/client.ts carries a long header on why every claim must be bound
+  // LOCAL-SCOPE: a claim that survives commit hands the NEXT request someone
+  // else's identity. The delivery file independently re-implements that same
+  // discipline — and until now NOTHING IN THE TREE CHECKED THE SECOND
+  // IMPLEMENTATION. Narrowing the binder rule without adding this would answer
+  // drift and leave duplicated discipline unguarded, which is the worse trade.
+  //
+  // This assertion is textual and admits no judgement: every set_config anywhere
+  // in src passes `true` as its third argument. It applies to binders that exist
+  // and to every binder that will ever exist, allowlisted or not.
+  // ---------------------------------------------------------------------------
+  it('every set_config in every binder passes true as its third argument', () => {
+    const nonLocal = bindings()
+      .filter((b) => b.localScope !== 'true')
+      .map((b) => `${b.file}: set_config('tm8.${b.claim}', …, ${b.localScope}) is not local-scope`);
+    expect(
+      nonLocal,
+      `a claim is bound with a NON-LOCAL scope:\n  ${nonLocal.join('\n  ')}\n` +
+        'A claim that survives commit is handed to the NEXT request on that ' +
+        "connection — someone else's identity, silently. The third argument must be " +
+        'literally `true`.',
+    ).toEqual([]);
   });
 });

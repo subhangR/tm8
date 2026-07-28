@@ -139,6 +139,28 @@ export const OPERATIONS = [
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },
   { name: 'entityKinds.create',      method: 'POST',   path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'command', status: 'v1' },
   { name: 'entityKinds.update',      method: 'PATCH',  path: '/v2/spaces/:spaceId/entity-kinds/:kind',      kind: 'command', status: 'v1' },
+
+  // W0 dossier A01-A20 — adopted additive rows, exact frozen order
+  { name: 'spaces.menu.get',                              method: 'GET',    path: '/v2/spaces/:spaceId/menu',                                           kind: 'read',    status: 'v1' },
+  { name: 'spaces.menu.update',                           method: 'PUT',    path: '/v2/spaces/:spaceId/menu',                                           kind: 'command', status: 'v1' },
+  { name: 'spaces.defaultChannel.set',                    method: 'PUT',    path: '/v2/spaces/:spaceId/default-channel',                                kind: 'command', status: 'v1' },
+  { name: 'projects.associations.correct',                method: 'POST',   path: '/v2/entities/:artifactId/commands/correct-project-association',        kind: 'command', status: 'v1' },
+  { name: 'handoffs.send',                                method: 'POST',   path: '/v2/work-sessions/:workSessionId/handoffs',                           kind: 'command', status: 'v1' },
+  { name: 'handoffs.list',                                method: 'GET',    path: '/v2/work-sessions/:workSessionId/handoffs',                           kind: 'read',    status: 'v1' },
+  { name: 'handoffs.withdraw',                            method: 'POST',   path: '/v2/handoffs/:handoffId/withdraw',                                   kind: 'command', status: 'v1' },
+  { name: 'messages.attachments.add',                     method: 'POST',   path: '/v2/messages/:messageId/attachments',                                kind: 'command', status: 'v1' },
+  { name: 'messages.attachments.remove',                  method: 'DELETE', path: '/v2/messages/:messageId/attachments',                                kind: 'command', status: 'v1' },
+  { name: 'messages.delivery.get',                        method: 'GET',    path: '/v2/messages/:messageId/delivery',                                   kind: 'read',    status: 'v1' },
+  { name: 'entities.feed',                                method: 'GET',    path: '/v2/entities/:id/feed',                                              kind: 'read',    status: 'v1' },
+  { name: 'entities.context',                             method: 'GET',    path: '/v2/entities/:id/context',                                           kind: 'read',    status: 'v1' },
+  { name: 'interactionProfiles.propose',                 method: 'POST',   path: '/v2/spaces/:spaceId/interaction-profiles',                           kind: 'command', status: 'v1' },
+  { name: 'interactionProfiles.updateDraft',             method: 'PATCH',  path: '/v2/interaction-profiles/:profileId/draft',                          kind: 'command', status: 'v1' },
+  { name: 'interactionProfiles.validate',                method: 'POST',   path: '/v2/interaction-profiles/:profileId/validate',                       kind: 'command', status: 'v1' },
+  { name: 'interactionProfiles.preview',                 method: 'POST',   path: '/v2/interaction-profiles/:profileId/preview',                        kind: 'read',    status: 'v1' },
+  { name: 'interactionProfiles.activate',                method: 'POST',   path: '/v2/interaction-profiles/:profileId/activate',                       kind: 'command', status: 'v1' },
+  { name: 'interactionProfiles.retire',                  method: 'POST',   path: '/v2/interaction-profiles/:profileId/retire',                         kind: 'command', status: 'v1' },
+  { name: 'teamMembers.interactionProfile.setDefault',   method: 'PUT',    path: '/v2/team-members/:teamMemberId/interaction-profile-default',         kind: 'command', status: 'v1' },
+  { name: 'spaces.interactionProfile.setDefault',        method: 'PUT',    path: '/v2/spaces/:spaceId/interaction-profile-default',                    kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];

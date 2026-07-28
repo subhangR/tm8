@@ -5,7 +5,11 @@
   "private": true,
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run",
+    "generate": "bun src/generate.ts",
+    "check:generated": "bun src/generate.ts --check",
+    "test": "bun run check:generated && vitest run --config vitest.config.ts",
+    "test:foundation": "vitest run --config vitest.config.ts",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "stub": "bun src/stub-main.ts"
   },
   "dependencies": {

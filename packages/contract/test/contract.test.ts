@@ -39,7 +39,7 @@ describe('error taxonomy (DEV-8)', () => {
     expect(ERROR_STATUS).toEqual({
       invalid_input: 400, invalid_cursor: 400,
       unauthenticated: 401, forbidden: 403, not_found: 404,
-      version_conflict: 409, invariant_violation: 409,
+      version_conflict: 409, conflict: 409, invariant_violation: 409,
       payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
       not_implemented: 501, upstream_unavailable: 503,
     });
@@ -152,13 +152,13 @@ describe('DTO schemas', () => {
   it('validates recursive message views with nested replies', () => {
     const msg: MessageView = {
       ...taskSummary, id: 'ent_msg_1', kind: 'message',
-      state: { kind: 'message', anchorId: 'ent_task_1', rootMessageId: null, author: actor },
+      state: { kind: 'message', anchorId: 'ent_task_1', rootMessageId: null, author: actor, messageBatchId: null },
       content: { kind: 'message', body: 'hello', mentions: [], attachments: [] },
       replyCount: 1,
       replies: {
         items: [{
           ...taskSummary, id: 'ent_msg_2', kind: 'message',
-          state: { kind: 'message', anchorId: 'ent_task_1', rootMessageId: 'ent_msg_1', author: actor },
+          state: { kind: 'message', anchorId: 'ent_task_1', rootMessageId: 'ent_msg_1', author: actor, messageBatchId: null },
           content: { kind: 'message', body: 'reply', mentions: [], attachments: [] },
           replyCount: 0,
         }],
@@ -198,7 +198,7 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
   });
 
   it('createEntity refuses message/member/work_session kinds (DEV-1 + R16)', () => {
-    const base = { spaceId: 'space_1', title: 'x' };
+    const base = { clientMutationId: 'cmid-create-1', spaceId: 'space_1', title: 'x' };
     for (const kind of ['message', 'member', 'work_session']) {
       expect(CreateEntityInputSchema.safeParse({ ...base, kind }).success).toBe(false);
     }
@@ -207,7 +207,7 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
   });
 
   it('execution.spawn validates persona + mode enums and the typed project/workdir (AM-2 §1)', () => {
-    const ok = { spaceId: 'space_1', teamMemberId: 'ent_tm_1', taskIds: ['ent_task_1'], mode: 'worker' };
+    const ok = { clientMutationId: 'cmid-spawn-1', spaceId: 'space_1', teamMemberId: 'ent_tm_1', taskIds: ['ent_task_1'], mode: 'worker' };
     expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, mode: 'boss' }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: 'space_1' }).success).toBe(false);

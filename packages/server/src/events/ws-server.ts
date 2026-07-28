@@ -8,9 +8,12 @@
  * catalog-generated and a hardcoded `/v2/ws` here would be a second source of
  * truth that silently drifts.
  *
- * This is a skeleton: the handshake is real (a browser `WebSocket` connects,
- * frames flow, heartbeats evict dead peers) but nothing publishes yet, and
- * there is no client→server control protocol — see `onClientMessage` below.
+ * NO LONGER A SKELETON. The handshake is real, and so is everything above it:
+ * `@tm8/contract` now defines the client→server control frames, `control.ts`
+ * applies them through an authorizer that is actually invoked, and `pump.ts`
+ * publishes durable events to each connection under its own claims. This file
+ * stays deliberately thin — it owns the upgrade and nothing else, and the
+ * composition root wires the control channel in through `onClientMessage`.
  */
 import type { IncomingMessage } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -43,17 +46,24 @@ export interface WsServerOptions {
   heartbeatMs?: number;
   missedPongLimit?: number;
   /**
-   * Raw client→server text frames. There is intentionally no default handling.
+   * Raw client→server text frames.
    *
-   * TODO(contract): the contract defines the server→client `WorkspaceEvent`
-   * but NO client→server control message — there is no shape for "subscribe me
-   * to space X", "unsubscribe", or "turn the presence channel on". The
-   * registry has the methods (`subscribe` / `subscribePresence`); nothing may
-   * call them from the wire until that shape exists in @tm8/contract. Inventing
-   * one here would put an off-contract protocol on the socket, so this hook is
-   * the honest hole instead.
+   * This used to be "the honest hole": the contract defined no client→server
+   * message, and the previous author declined to invent one rather than put an
+   * off-contract protocol on the socket. That refusal was correct and the hole
+   * is now filled at the contract level — `WorkspaceControlFrame` exists, and
+   * the composition root passes `createControlChannel(...).handle` here. The
+   * hook stays a hook so this file still knows nothing about authorization.
    */
   onClientMessage?: (conn: EventSink, text: string) => void;
+  /**
+   * Called when a connection goes away, after it leaves the registry.
+   *
+   * Presence and the pump's per-connection cursors are keyed by connection id,
+   * and both would otherwise leak: a viewer would linger after their tab closed
+   * and a cursor map would grow without bound across a long-lived process.
+   */
+  onDisconnect?: (connId: string) => void;
   /** Called after a successful upgrade, before any frame is read. */
   onConnection?: (conn: EventSink) => void;
 }
@@ -145,7 +155,10 @@ export function createWsServer(opts: WsServerOptions = {}): WsServer {
     });
 
     registry.add(conn);
-    conn.onClose(() => registry.remove(conn.id));
+    conn.onClose(() => {
+      registry.remove(conn.id);
+      opts.onDisconnect?.(conn.id);
+    });
     if (opts.onClientMessage !== undefined) {
       const handler = opts.onClientMessage;
       conn.onMessage((text) => handler(conn, text));

@@ -1,0 +1,243 @@
+===============================================================================
+ARCHIVED PRE-033 RED — W2.SEC-1b ledger_replay principal pin
+===============================================================================
+
+WHY THIS FILE EXISTS. This red becomes PERMANENTLY UNRECOVERABLE once migration
+033 lands. The suite's escape hatch, SEC1B_CANDIDATE=none — documented at :54 as
+the way to "capture the RED against the landed chain" — only suppresses applying
+an OUT-OF-REPO candidate. Line :62 derives CANDIDATE_IS_LANDED from
+migrationFiles().some(f => f.startsWith('033_')), so once 033 is in
+db/migrations the chain supplies the pin regardless of the env var, and the
+suite can never again produce its own red. This file is the only remaining
+proof that the pin was ever necessary.
+
+-------------------------------------------------------------------------------
+CONDITIONS OF CAPTURE. An archived red whose conditions are not stated is a
+rumour with a number attached, so all of them are here.
+-------------------------------------------------------------------------------
+DATE:      2026-07-27
+HOST CWD:  /Users/subhang/Desktop/Projects/tm8/packages/server
+COMMAND, exactly as run:
+    cd /Users/subhang/Desktop/Projects/tm8/packages/server && \
+    SEC1B_CANDIDATE=none ./node_modules/.bin/vitest run --no-file-parallelism \
+      test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts
+VERSION BANNER, full and with its trailing path:
+    RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+PROCESS EXIT: 1
+RESULT:       6 failed | 9 passed (15)
+
+CHAIN IDENTITY IT WAS CAPTURED AGAINST:
+    migrations applied: 28  (001_core_graph.sql .. 031_w2_sec1_replay_principal_resource_binding.sql)
+    033: ABSENT — asserted, not assumed
+    digest: 619a826887b4abf7
+    DIGEST METHOD, stated because a digest without its method cannot be checked:
+      sha256 over the concatenated BYTES of every db/migrations/*.sql in sorted
+      filename order, no separators, no filenames mixed in; first 16 hex chars.
+      Full: 619a826887b4abf79489f6db4b09228ac7cfd41bf1ac2964dfb76828ccad4af5
+    ✔ RESOLVED 2026-07-27, and this paragraph replaces an earlier one that
+      wrongly recorded the coordinator's digest as non-reproducing. BOTH
+      FIGURES ARE CORRECT AND BOTH DESCRIBE THIS SAME 28-FILE CHAIN. They are
+      two different recipes, not two different trees — nothing had drifted.
+
+      The canonical chain identity, and the one to quote:
+          cd db/migrations && shasum -a 256 *.sql | shasum -a 256 | cut -c1-16
+          -> 8c5227dfe17923c2      28 files
+      Re-measured independently and it reproduces exactly.
+
+      THE `cd` IS LOAD-BEARING. `shasum` prints "HASH  FILENAME" and the second
+      `shasum` hashes those output LINES, so the path AS TYPED is part of the
+      input. The same 28 files yield a different digest from the repo root as
+      `db/migrations/*.sql`, another from packages/server as `../../db/...`,
+      and another again with absolute paths. Seven earlier digests were
+      formally retired as cwd artifacts for exactly this reason; the canonical
+      form above was adopted only after being proved cwd-independent from four
+      starting directories AND proved to retain rename-sensitivity.
+
+      The content-only digest recorded on line 32 is ALSO correct under the
+      method stated on lines 33-36, and re-derives today as
+      619a826887b4abf79489f6db4b09228ac7cfd41bf1ac2964dfb76828ccad4af5
+      (`cat *.sql | shasum -a 256`, run from db/migrations). It is retained
+      because this capture was made against it. It is deliberately NOT
+      rename-sensitive — it hashes bytes only — which is precisely why the
+      canonical recipe, which does mix filenames in, is the one to quote for
+      chain identity.
+
+      WHY THE ORIGINAL SIX CONSTRUCTIONS ALL MISSED: none of them was
+      "cd into db/migrations first, then bare *.sql, hashing shasum's own
+      output lines". The earlier text was wrong to cast doubt on a correct
+      chain identity, and that error is corrected here rather than left to
+      mislead a future reader of an artifact meant to outlive its authors.
+
+FIXTURE GUARD WAS REPAIRED BEFORE THIS CAPTURE — one line, so the difference
+from this file's earlier state is visible rather than confusing: the
+fixture-integrity assertion at :232 had already been changed from a tautology
+(it compared migrationFiles() against its own sort, and could not fail) to a
+real two-mechanism cross-check (objects parsed from migration file TEXT versus
+the scratch database's live pg_catalog). No pin test was touched. Consequence
+for the reader: the passing fixture line below does real work, so this artifact
+carries its own evidence that the chain was genuinely applied.
+
+-------------------------------------------------------------------------------
+THE RED SET — AND IT MATCHES THE INDEPENDENT PREDICTION EXACTLY, 6 FOR 6.
+-------------------------------------------------------------------------------
+Predicted red pre-033: the sequential cross-principal negative, the raced
+(TOCTOU) negative, both fail-closed-on-an-unestablished-principal negatives, and
+both oracle tests. That is precisely what went red — no extras, none missing.
+No divergence to report.
+
+WHAT MAKES THESE REDS EVIDENCE RATHER THAN NOISE. Every one failed AT THE
+NEGATIVE, after its POSITIVE CONTROLS had already passed inside the same test:
+the harness bound genuinely non-null, genuinely distinct identities, and the
+ledger row was read back OUT OF STORAGE and carried a non-null principal. The
+comparison therefore had real operands on BOTH sides and the stranger was still
+let through. A vacuous harness would have failed the controls instead; it did
+not.
+
+THE LEAK, IN ONE LINE: RIVAL_IDENTITY, addressing its OWN Space, replayed
+OWNER_IDENTITY's clientMutationId and RECEIVED THE OWNER'S FULL STORED TASK
+PROJECTION — ok===true where a 23514 refusal was required. The raced case is the
+same leak reached through the TOCTOU window. The two fail-closed cases show a
+NULL-principal ledger row handed to a bound caller and to an unbound one; see
+the companion W2.NULL-PRINCIPAL result for the EXECUTED proof that such a row is
+reachable in production (public.reset_session_wake_budget_for_member_reply,
+015:1497, granted to tm8_app at 015:2178) and not merely constructible in a
+fixture.
+
+BRACKETING RUN: the same suite WITH the 033 candidate applied is 15 passed (15).
+
+===============================================================================
+Everything below this line is the captured output, VERBATIM AND UNEDITED.
+===============================================================================
+
+
+ RUN  v2.1.9 /Users/subhang/Desktop/Projects/tm8/packages/server
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts (15 tests | 6 failed) 1200ms
+   × W2.SEC-1b ledger_replay principal pin > cross-principal replay at entities.create (no 031 coverage) > records a non-null principal, replays for the recorder, refuses a stranger 10ms
+     → SEC-1b: a different principal replaying entities.create RETURNED a value (no error raised): {"entity":{"id":"019fa109-71a7-7092-ade5-88567be120b7","kind":"task","content":{"axes":{},"title":"owner task under the pin","priority":"medium","created_at":"2026-07-27T06:16:18.53377+05:30","updated_at":"2026-07-27T06:16:18.53377+05:30","description":"","work_status":"open","acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.53377+05:30"},"position":1,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","created_at":"2026-07-27T06:16:18.53377+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","updated_at":"2026-07-27T06:16:18.53377+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.53377+05:30"},"patches":[{"id":"019fa109-71a7-7092-ade5-88567be120b7","kind":"task","content":{"axes":{},"title":"owner task under the pin","due_date":null,"priority":"medium","created_at":"2026-07-27T06:16:18.53377+05:30","updated_at":"2026-07-27T06:16:18.53377+05:30","description":"","work_status":"open","points_estimate":null,"acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.53377+05:30"},"position":1,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","parent_id":null,"created_at":"2026-07-27T06:16:18.53377+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","deleted_at":null,"updated_at":"2026-07-27T06:16:18.53377+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.53377+05:30"}],"activity":"019fa109-71a8-796f-80f8-be8eda3840fa"}: expected true to be false // Object.is equality
+   × W2.SEC-1b ledger_replay principal pin > cross-principal replay raced against an uncommitted ledger row > refuses the attacker parked on the victim's advisory lock 67ms
+     → SEC-1b TOCTOU: a stranger racing the victim's uncommitted ledger row RETURNED a value (no error raised): {"entity":{"id":"019fa109-71b3-7d10-9e40-16e6cff40aed","kind":"task","content":{"axes":{},"title":"victim task raced","priority":"medium","created_at":"2026-07-27T06:16:18.546994+05:30","updated_at":"2026-07-27T06:16:18.546994+05:30","description":"","work_status":"open","acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.546994+05:30"},"position":2,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","created_at":"2026-07-27T06:16:18.546994+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","updated_at":"2026-07-27T06:16:18.546994+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.546994+05:30"},"patches":[{"id":"019fa109-71b3-7d10-9e40-16e6cff40aed","kind":"task","content":{"axes":{},"title":"victim task raced","due_date":null,"priority":"medium","created_at":"2026-07-27T06:16:18.546994+05:30","updated_at":"2026-07-27T06:16:18.546994+05:30","description":"","work_status":"open","points_estimate":null,"acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.546994+05:30"},"position":2,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","parent_id":null,"created_at":"2026-07-27T06:16:18.546994+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","deleted_at":null,"updated_at":"2026-07-27T06:16:18.546994+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.546994+05:30"}],"activity":"019fa109-71b4-7819-b397-8c340bddccb6"}: expected true to be false // Object.is equality
+   × W2.SEC-1b ledger_replay principal pin > fail-closed on an unestablished principal > refuses a bound caller — a replay with no recorded principal belongs to no one 1ms
+     → orphan replay RETURNED a value (no error raised): {"entity":{"id":"stolen","title":"unowned stored result"}}: expected true to be false // Object.is equality
+   × W2.SEC-1b ledger_replay principal pin > fail-closed on an unestablished principal > refuses an UNBOUND caller — null does not match null here 2ms
+     → an identity-less caller replaying a null-identity row RETURNED a value (no error raised): {"entity":{"id":"stolen","title":"unowned stored result"}}: expected true to be false // Object.is equality
+   × W2.SEC-1b ledger_replay principal pin > the 23514 operation-label oracle is removed > keeps the DEV-9 guard but names neither the cmid nor the recorded operation 5ms
+     → the caller-supplied cmid is echoed back: expected 'client mutation id sec1b-oracle-probe…' not to contain 'sec1b-oracle-probe'
+   × W2.SEC-1b ledger_replay principal pin > the 23514 operation-label oracle is removed > tells a stranger nothing about the recorded operation 4ms
+     → expected 'client mutation id sec1b-oracle-stran…' to contain 'clientMutationId belongs to another p…'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts > W2.SEC-1b ledger_replay principal pin > cross-principal replay at entities.create (no 031 coverage) > records a non-null principal, replays for the recorder, refuses a stranger
+AssertionError: SEC-1b: a different principal replaying entities.create RETURNED a value (no error raised): {"entity":{"id":"019fa109-71a7-7092-ade5-88567be120b7","kind":"task","content":{"axes":{},"title":"owner task under the pin","priority":"medium","created_at":"2026-07-27T06:16:18.53377+05:30","updated_at":"2026-07-27T06:16:18.53377+05:30","description":"","work_status":"open","acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.53377+05:30"},"position":1,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","created_at":"2026-07-27T06:16:18.53377+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","updated_at":"2026-07-27T06:16:18.53377+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.53377+05:30"},"patches":[{"id":"019fa109-71a7-7092-ade5-88567be120b7","kind":"task","content":{"axes":{},"title":"owner task under the pin","due_date":null,"priority":"medium","created_at":"2026-07-27T06:16:18.53377+05:30","updated_at":"2026-07-27T06:16:18.53377+05:30","description":"","work_status":"open","points_estimate":null,"acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.53377+05:30"},"position":1,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","parent_id":null,"created_at":"2026-07-27T06:16:18.53377+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","deleted_at":null,"updated_at":"2026-07-27T06:16:18.53377+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.53377+05:30"}],"activity":"019fa109-71a8-796f-80f8-be8eda3840fa"}: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts:388:9
+    386|         outcome.ok,
+    387|         `SEC-1b: a different principal replaying entities.create ${des…
+    388|       ).toBe(false);
+       |         ^
+    389|       if (outcome.ok) return;
+    390|       expect(outcome.code).toBe('23514');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts > W2.SEC-1b ledger_replay principal pin > cross-principal replay raced against an uncommitted ledger row > refuses the attacker parked on the victim's advisory lock
+AssertionError: SEC-1b TOCTOU: a stranger racing the victim's uncommitted ledger row RETURNED a value (no error raised): {"entity":{"id":"019fa109-71b3-7d10-9e40-16e6cff40aed","kind":"task","content":{"axes":{},"title":"victim task raced","priority":"medium","created_at":"2026-07-27T06:16:18.546994+05:30","updated_at":"2026-07-27T06:16:18.546994+05:30","description":"","work_status":"open","acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.546994+05:30"},"position":2,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","created_at":"2026-07-27T06:16:18.546994+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","updated_at":"2026-07-27T06:16:18.546994+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.546994+05:30"},"patches":[{"id":"019fa109-71b3-7d10-9e40-16e6cff40aed","kind":"task","content":{"axes":{},"title":"victim task raced","due_date":null,"priority":"medium","created_at":"2026-07-27T06:16:18.546994+05:30","updated_at":"2026-07-27T06:16:18.546994+05:30","description":"","work_status":"open","points_estimate":null,"acceptance_criteria":[]},"version":1,"counters":{"likes":0,"stars":0,"points":0,"dislikes":0,"messages":0,"updated_at":"2026-07-27T06:16:18.546994+05:30"},"position":2,"space_id":"019fa109-718e-71de-92f2-d62da10cfa4b","parent_id":null,"created_at":"2026-07-27T06:16:18.546994+05:30","created_by":"019fa109-718e-7204-8e7d-3621e482f5e0","deleted_at":null,"updated_at":"2026-07-27T06:16:18.546994+05:30","visibility":"space","activity_at":"2026-07-27T06:16:18.546994+05:30"}],"activity":"019fa109-71b4-7819-b397-8c340bddccb6"}: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts:499:11
+    497|           `SEC-1b TOCTOU: a stranger racing the victim's uncommitted l…
+    498|             describeOutcome(outcome),
+    499|         ).toBe(false);
+       |           ^
+    500|         if (outcome.ok) return;
+    501|         expect(outcome.code).toBe('23514');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts > W2.SEC-1b ledger_replay principal pin > fail-closed on an unestablished principal > refuses a bound caller — a replay with no recorded principal belongs to no one
+AssertionError: orphan replay RETURNED a value (no error raised): {"entity":{"id":"stolen","title":"unowned stored result"}}: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts:551:71
+    549|         appValue(OWNER_IDENTITY, createTaskSql(), [spaceOwner.spaceId,…
+    550|       );
+    551|       expect(outcome.ok, `orphan replay ${describeOutcome(outcome)}`).…
+       |                                                                       ^
+    552|       if (outcome.ok) return;
+    553|       expect(outcome.code).toBe('23514');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts > W2.SEC-1b ledger_replay principal pin > fail-closed on an unestablished principal > refuses an UNBOUND caller — null does not match null here
+AssertionError: an identity-less caller replaying a null-identity row RETURNED a value (no error raised): {"entity":{"id":"stolen","title":"unowned stored result"}}: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts:588:9
+    586|         outcome.ok,
+    587|         `an identity-less caller replaying a null-identity row ${descr…
+    588|       ).toBe(false);
+       |         ^
+    589|       if (outcome.ok) return;
+    590|       expect(outcome.code).toBe('23514');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts > W2.SEC-1b ledger_replay principal pin > the 23514 operation-label oracle is removed > keeps the DEV-9 guard but names neither the cmid nor the recorded operation
+AssertionError: the caller-supplied cmid is echoed back: expected 'client mutation id sec1b-oracle-probe…' not to contain 'sec1b-oracle-probe'
+
+Expected: "sec1b-oracle-probe"
+Received: "client mutation id sec1b-oracle-probe already used for operation entities.create"
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts:754:78
+    752|       expect(outcome.code).toBe('23514');
+    753|       expect(outcome.message).toContain('already used for operation');
+    754|       expect(outcome.message, 'the caller-supplied cmid is echoed back…
+       |                                                                              ^
+    755|       expect(
+    756|         outcome.message,
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts > W2.SEC-1b ledger_replay principal pin > the 23514 operation-label oracle is removed > tells a stranger nothing about the recorded operation
+AssertionError: expected 'client mutation id sec1b-oracle-stran…' to contain 'clientMutationId belongs to another p…'
+
+Expected: "clientMutationId belongs to another principal"
+Received: "client mutation id sec1b-oracle-stranger already used for operation entities.create"
+
+ ❯ test/db/w2-sec1b-ledger-replay-principal-pin.pg.test.ts:779:31
+    777|       if (outcome.ok) return;
+    778|       expect(outcome.code).toBe('23514');
+    779|       expect(outcome.message).toContain(PRINCIPAL_MESSAGE);
+       |                               ^
+    780|       expect(outcome.message).not.toContain('already used for operatio…
+    781|       expect(outcome.message).not.toContain('entities.create');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+ Test Files  1 failed (1)
+      Tests  6 failed | 9 passed (15)
+   Start at  06:16:17
+   Duration  1.47s (transform 47ms, setup 0ms, collect 63ms, tests 1.20s, environment 0ms, prepare 46ms)
+

@@ -17,6 +17,8 @@
  * are constrained to them — drift fails the build.
  */
 
+import type { OperationName } from './catalog.js';
+
 // ===========================================================================
 // §1 — Inherited contract (UI snapshot, near-verbatim)
 // ===========================================================================
@@ -29,7 +31,7 @@ export type Cursor = string;
 export type CoreEntityKind =
   | 'channel' | 'task' | 'message' | 'member' | 'team_member'
   | 'doc' | 'file' | 'spell' | 'skill' | 'pull_request' | 'commit'
-  | 'work_session' | 'collection';
+  | 'work_session' | 'collection' | 'project' | 'interaction_profile';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -88,7 +90,7 @@ export type CoreEntityState =
   | { kind: 'channel'; topic: string; unreadCount: number; workingAgentCount: number }
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
-      editedAt?: string | null }
+      messageBatchId: string | null; editedAt?: string | null }
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
       liveWork?: LiveWork | null }
@@ -101,7 +103,11 @@ export type CoreEntityState =
   | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;
       startedAt: string | null; exitedAt: string | null }
-  | { kind: 'collection'; collectionType: string; itemCount: number };
+  | { kind: 'collection'; collectionType: string; itemCount: number }
+  | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
+  | { kind: 'interaction_profile'; status: InteractionProfileStatus;
+      currentDraftVersion: number; activeVersion: number | null;
+      activeHash: string | null; retiredAt: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -146,10 +152,15 @@ export type CoreEntityContent =
   | { kind: 'pull_request' | 'commit' | 'file' | 'spell' | 'skill'; [key: string]: unknown }
   // tm8 additions (03 §1, §4).
   | { kind: 'work_session'; nodeId: string | null;
-      /** AM-2 §1: typed link to the project resource the session runs in. */
-      projectId: ProjectId | null;
+      /** Immutable launch-root provenance; associations are `in_project` edges. */
+      launchProjectId: ProjectId | null;
       workingOn: EntitySummary[]; transcriptDoc: EntitySummary | null }
-  | { kind: 'collection'; description: string; items: EntitySummary[] };
+  | { kind: 'collection'; description: string; items: EntitySummary[] }
+  | { kind: 'project'; projectId: ProjectId; repoUrl?: string | null;
+      materializedVersion: number }
+  | { kind: 'interaction_profile'; status: InteractionProfileStatus;
+      templateKey: string; templateVersion: number; resolvedHash: string | null;
+      generatedByTeamMemberId: EntityId | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -170,7 +181,24 @@ export interface Connections {
 export interface EdgeGroup { type: string; direction: 'outgoing'|'incoming'; label: string; edges: EdgeView[]; nextCursor?: Cursor }
 
 export interface EdgeView { id: string; type: string; source: EntitySummary; target: EntitySummary; props: Record<string, unknown>;
-  createdBy: ActorSummary; createdAt: string; resolved?: boolean; hard?: boolean }
+  createdBy: ActorSummary; createdAt: string; updatedAt: string; resolved?: boolean; hard?: boolean }
+
+/** Flat `entities.connections` query; cursors bind this complete fingerprint. */
+export interface EntityConnectionsQuery {
+  types?: string[];
+  direction?: 'incoming' | 'outgoing' | 'both';
+  peerIds?: EntityId[];
+  peerKinds?: EntityKind[];
+  createdByIds?: EntityId[];
+  createdAfter?: string;
+  createdBefore?: string;
+  sort?: 'createdAt' | 'updatedAt' | 'type';
+  order?: 'asc' | 'desc';
+  cursor?: Cursor;
+  limit?: number;
+}
+
+export type EntityConnectionsPage = Page<EdgeView>;
 
 export interface EntityCapabilities { canEdit: boolean; canDelete: boolean; canAddChild: boolean; canLink: boolean;
   canPull: boolean; canReact: boolean; canGrantPoints: boolean; canComplete: boolean }
@@ -227,7 +255,8 @@ export interface MessageView extends EntitySummary {
 }
 
 export interface ActivityItem { id: string; entityId?: EntityId | null; actor?: ActorSummary | null;
-  verb: string; summary: Record<string, unknown>; createdAt: string; refId?: string | null }
+  verb: string; summary: Record<string, unknown>; createdAt: string; refId?: string | null;
+  workSessionId?: EntityId | null }
 
 export interface PresenceSnapshot { viewers: ActorSummary[]; typingActorIds: EntityId[]; updatedAt: string }
 
@@ -276,6 +305,24 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'counter.changed'; entityId: EntityId; counters: EntityCounters; clientMutationId?: string }
  | { type: 'activity.created'; activity: ActivityItem; clientMutationId?: string }
  | { type: 'notification.created'|'notification.read'; notification: NotificationItem; clientMutationId?: string }
+ | { type: 'menu.updated'; menu: MenuConfig; clientMutationId?: string }
+ | { type: 'space.default_channel.updated'; channelId: EntityId | null;
+     settingsRevision: number; clientMutationId?: string }
+ | { type: 'project.association.corrected'; result: EdgeCorrectionResult; clientMutationId?: string }
+ | { type: 'handoff.prepared'|'handoff.delivery_settled'|'handoff.recorded'|'handoff.withdrawn';
+     handoff: HandoffView; clientMutationId?: string }
+ | { type: 'message.delivery_reserved'|'message.delivery_settled';
+     delivery: MessageDeliveryRecord; clientMutationId?: string }
+ | { type: 'message.attachments.updated'; message: MessageView; clientMutationId?: string }
+ | { type: 'interaction_profile.proposed'|'interaction_profile.updated'|'interaction_profile.activated'|'interaction_profile.retired';
+     profile: InteractionProfileView; clientMutationId?: string }
+ | { type: 'interaction_profile.validated'; validation: ProfileValidationView; clientMutationId?: string }
+ | { type: 'interaction_profile.default_updated';
+     target: { type: 'team_member'; value: TeammateProfileDefaultView }
+       | { type: 'space'; value: SpaceProfileDefaultView };
+     clientMutationId?: string }
+ | { type: 'work_session.profile_pinned'|'work_session.profile_repinned';
+     pin: InteractionProfilePinView; clientMutationId?: string }
  | { type: 'presence.changed'; entityId: EntityId; presence: PresenceSnapshot }
  | { type: 'typing.changed'; anchorId: EntityId; typingActorIds: EntityId[] });
 
@@ -290,6 +337,121 @@ export type PresenceWorkspaceEvent =
 /** The durable event stream (`subscribe`) emits exactly these. */
 export type DurableWorkspaceEvent = Exclude<WorkspaceEvent, PresenceWorkspaceEvent>;
 
+// ---------------------------------------------------------------------------
+// The CLIENT→SERVER control channel on the same socket (§5)
+//
+// Everything above this line travels server→client. This block is the only
+// traffic that travels the other way, and it is being ADDED to complete three
+// requirements the contract had already adopted but could not express:
+//
+//   1. Semantic delivery of AUTHORIZED durable events. `events.subscribe` is
+//      ONE multiplexed socket for the whole workspace (T-L10), so the server
+//      cannot know which Spaces a connection wants until the connection says
+//      so. Without `subscribe`/`unsubscribe` the fan-out has no recipients and
+//      every durable event is delivered to nobody.
+//   2. Reconnect/replay reconciliation. A client that dropped and returned must
+//      be able to name the last seq it durably applied, or it silently loses
+//      the gap — `resume`.
+//   3. Presence. `presence` toggles the ephemeral channel. Note this is not a
+//      new idea: the DEV-4 note above ALREADY says presence events "arrive only
+//      on the separate `subscribePresence` channel", naming a client-driven
+//      toggle that had no wire shape to be driven by.
+//
+// A query string on the upgrade cannot serve these: it is evaluated ONCE, so it
+// can express an initial subscribe and a resume cursor but can NEVER express
+// subscribing to an additional Space, unsubscribing, or toggling presence on a
+// live socket without tearing the socket down and rebuilding it.
+//
+// DELIBERATELY NOT HERE, and flagged rather than decided: (a) a server→client
+// acknowledgement telling a client its subscribe was refused — without it an
+// unauthorized subscribe is indistinguishable from an authorized-but-quiet
+// Space; (b) a `schemaVersion` on control frames. Both are real questions and
+// both would widen this beyond the three adopted requirements, so they are
+// raised for arbitration instead of being settled here.
+// ---------------------------------------------------------------------------
+
+/**
+ * How many Spaces one `subscribe`/`unsubscribe` frame may name.
+ *
+ * The wire is untrusted input: without a bound, one frame can ask the server to
+ * allocate and authorize an unbounded set. Bounded for the same reason
+ * `events.poll` clamps `limit` rather than trusting it.
+ */
+export const MAX_CONTROL_FRAME_SPACES = 100;
+
+/**
+ * A control frame sent BY A CLIENT to the server over `events.subscribe`.
+ *
+ * `subscribe` and `resume` are deliberately separate frames rather than one
+ * `subscribe {since?}`. They are different requests: `subscribe` is idempotent
+ * membership in the fan-out, `resume` is a replay of stored events from a
+ * cursor. Merging them would make every re-subscribe implicitly re-replay, and
+ * would leave a client that is ALREADY subscribed and has merely detected a gap
+ * with no way to ask for the gap without a redundant subscribe.
+ *
+ * Subscribing is NOT a way around read authorization: the server authorizes
+ * every named Space against the same membership predicate that guards
+ * `spaces.get`, and a Space the caller may not read is never added to the
+ * connection's fan-out set.
+ */
+export type WorkspaceControlFrame =
+  /** Add these Spaces to this connection's durable fan-out set. */
+  | { type: 'subscribe'; spaceIds: SpaceId[] }
+  /** Remove these Spaces from it. */
+  | { type: 'unsubscribe'; spaceIds: SpaceId[] }
+  /** Toggle the ephemeral presence channel for the Spaces already subscribed (DEV-4). */
+  | { type: 'presence'; on: boolean }
+  /**
+   * Replay stored events for `spaceId` after `since`.
+   *
+   * `since` is the per-Space `seq` from the AM-2 §3 envelope — the last seq the
+   * client durably applied — not a timestamp and not an opaque cursor.
+   */
+  | { type: 'resume'; spaceId: SpaceId; since: number }
+  /**
+   * Announce this caller's ephemeral presence at `entityId` (requirement 3).
+   *
+   * WHY THIS EXISTS, since it is the frame that is easiest to mistake for scope
+   * growth: a presence-channel TOGGLE with no presence WRITER satisfies the
+   * channel and not the requirement — `presence.get` would have no source and
+   * would return empty viewers for every entity forever, which is the same
+   * "green badge over an absence" construct `poll.ts` refuses for `events.poll`.
+   * The toggle says "send me presence"; this says "here is some".
+   *
+   * `spaceId` is what gets AUTHORIZED. It is not trusted as a fact about where
+   * `entityId` lives: the store is keyed by `(spaceId, entityId)` and
+   * `presence.get` resolves an entity's REAL Space before reading, so a caller
+   * that names the wrong Space writes into a bucket nobody ever reads. The lie
+   * is self-neutralizing and costs no extra read on the write path.
+   *
+   * Ephemeral by construction (DEV-4): this never produces a durable row, never
+   * advances the durable cursor, and is not replayable.
+   */
+  | { type: 'presence.set'; spaceId: SpaceId; entityId: EntityId; viewing: boolean; typing: boolean };
+
+/**
+ * The ONLY server→client message on this socket that is not a `WorkspaceEvent`.
+ *
+ * Without it a refused `subscribe` is indistinguishable from a Space that is
+ * simply quiet, and a client would wait forever on events it will never be sent
+ * — the same "cannot tell 'not allowed' from 'nothing here'" defect that makes
+ * an always-empty read dishonest. The authorizer is the thing that must ship
+ * with the control protocol, and this is the only side of it a client can see.
+ *
+ * `type` is namespaced `control.*`, which cannot collide with any
+ * `WorkspaceEvent` variant, so a client discriminates on `type` as it already
+ * does and never has to parse two competing shapes.
+ */
+export interface WorkspaceControlAck {
+  type: 'control.refused';
+  /** Which frame was refused. */
+  frame: WorkspaceControlFrame['type'];
+  /** Present when the refusal was about a specific Space. */
+  spaceId?: SpaceId;
+  /** `forbidden` = the authorizer said no. `malformed` = it was not a valid frame. */
+  reason: 'forbidden' | 'malformed';
+}
+
 // Facade-defined: notification row backing the Inbox screen (route matrix:
 // "notification rows with target EntitySummary, actor, kind, read state and
 // timestamp").
@@ -300,6 +462,7 @@ export interface NotificationItem {
   actor?: ActorSummary | null;
   target?: EntitySummary | null;
   message?: string;
+  recipient: ActorSummary;
   readAt: string | null;
   createdAt: string;
 }
@@ -317,17 +480,42 @@ export interface NotificationItem {
  * concurrency cap). Distinct from `rate_limited` (request-frequency
  * throttling): same 429 status, retryable once capacity frees.
  */
+/** Closed W0-dossier error subset used by the adopted amendment family. */
+export type ErrorCode =
+  | 'invalid_input' | 'forbidden' | 'not_found' | 'conflict'
+  | 'invariant_violation' | 'limit_exceeded' | 'not_implemented';
+
+export type AmendmentErrorReason =
+  | 'use_message_send' | 'automated_wake_limit' | 'session_contact_forbidden'
+  | 'handoff_forbidden' | 'message_batch_identity_mismatch'
+  | 'feed_scope_not_applicable' | 'feed_item_not_in_scope'
+  | 'project_not_linked' | 'project_association_cap' | 'project_over_cap'
+  | 'menu_revision_conflict' | 'menu_upgrade_required'
+  | 'profile_not_validated' | 'profile_referenced_default' | 'profile_retired'
+  | 'profile_principal_required' | 'profile_capture_mode_reserved'
+  | 'attachment_edge_owned';
+
+/** Typed fields admitted by the W0 amendment family on `error.details`. */
+export interface ErrorDetails {
+  reason: string;
+  currentVersion?: number;
+  currentRevision?: number;
+  currentMenu?: MenuConfig;
+  activeLinks?: number;
+  deliveryId?: string;
+}
+
 export type CommandErrorCode =
   | 'invalid_input' | 'invalid_cursor'
   | 'unauthenticated' | 'forbidden' | 'not_found'
-  | 'version_conflict' | 'invariant_violation'
+  | 'version_conflict' | 'conflict' | 'invariant_violation'
   | 'payload_too_large' | 'rate_limited' | 'limit_exceeded'
   | 'not_implemented' | 'upstream_unavailable';
 
 export const ERROR_STATUS: Record<CommandErrorCode, number> = {
   invalid_input: 400, invalid_cursor: 400,
   unauthenticated: 401, forbidden: 403, not_found: 404,
-  version_conflict: 409, invariant_violation: 409,
+  version_conflict: 409, conflict: 409, invariant_violation: 409,
   payload_too_large: 413, rate_limited: 429, limit_exceeded: 429,
   not_implemented: 501, upstream_unavailable: 503,
 };
@@ -422,13 +610,22 @@ export interface PatchTaskInput extends CommandContext {
  * `execution.spawn` (03 §1.1); custom `c:*` kinds create through here.
  */
 export interface CreateEntityInput extends CommandContext {
+  clientMutationId: string;
   spaceId: SpaceId;
-  kind: Exclude<EntityKind, 'message' | 'member' | 'work_session'>;
+  kind: Exclude<EntityKind, 'message' | 'member' | 'work_session' | 'project' | 'interaction_profile'>;
   title: string;
   parentId?: EntityId | null;
   position?: number;
   content?: Record<string, unknown>;
   attachTo?: { entityId: EntityId; edgeType: 'attached_to' | 'relates_to' };
+  connections?: InitialConnectionInput[];
+}
+
+/** Atomic initial edge created in the same transaction as its source entity. */
+export interface InitialConnectionInput {
+  type: string;
+  targetId: EntityId;
+  props?: Record<string, unknown>;
 }
 
 export interface PatchEntityInput extends CommandContext {
@@ -456,14 +653,39 @@ export interface PlacementInput extends CommandContext {
   embedMessage?: string;
 }
 
+/** Canonical post-batch DTO after deprecated singular-anchor normalization. */
 export interface PostMessageInput extends CommandContext {
-  anchorId: EntityId;
+  clientMutationId: string;
+  anchorIds: EntityId[];
   body: string;
   parentMessageId?: EntityId | null;
-  mentions?: Mention[];
-  attachments?: FileAttachment[];
+  mentionIds?: EntityId[];
+  attachmentIds?: EntityId[];
 }
-export interface PatchMessageInput extends CommandContext { body: string; mentions?: Mention[] }
+
+/** Accepted only at the versioned input migration boundary. */
+export type PostMessageWireInput = Omit<PostMessageInput, 'anchorIds'> & {
+  anchorIds?: EntityId[];
+  /** @deprecated Normalize to a one-element `anchorIds` array. */
+  anchorId?: EntityId;
+};
+
+export interface MessageBatchResult {
+  messageBatchId: string;
+  messages: MessageView[];
+}
+
+export interface PatchMessageInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  body: string;
+  mentions?: Mention[];
+}
+
+export interface DeleteMessageInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+}
 
 export interface ReactionInput extends CommandContext {
   reaction: 'like'|'dislike'|'star';
@@ -490,10 +712,10 @@ export interface TrackingRefreshInput extends CommandContext { entityIds?: Entit
  * POST /v2/entities/:id/commands/link-pr (DEV-3): creates/upserts the
  * pull_request entity for `url` and the `tracks` edge atomically.
  */
-export interface LinkPrInput extends CommandContext { url: string }
+export interface LinkPrInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
-export interface LinkCommitInput extends CommandContext { url: string }
+export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
 
 export interface TaskAxisInput extends CommandContext {
   name: string;
@@ -522,6 +744,48 @@ export interface UpdateSpaceInput extends CommandContext {
   name?: string;
   description?: string;
   githubRepo?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// W0 dossier: Space menu and shared settings revision
+// ---------------------------------------------------------------------------
+
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'channels' | 'settings';
+export type MenuKindRef = Exclude<EntityKind, 'channel' | 'message'>;
+
+export type MenuLeaf =
+  | { type: 'view'; ref: MenuViewRef }
+  | { type: 'kind'; ref: MenuKindRef };
+
+export type MenuItem =
+  | { type: 'view'; ref: MenuViewRef; children?: MenuLeaf[] }
+  | { type: 'kind'; ref: MenuKindRef };
+
+export interface MenuGroup {
+  id: string;
+  label: string;
+  items: MenuItem[];
+}
+
+export interface MenuConfigPayload {
+  schemaVersion: 1;
+  groups: MenuGroup[];
+}
+
+export interface MenuConfig extends MenuConfigPayload {
+  revision: number;
+}
+
+export interface UpdateMenuInput {
+  clientMutationId: string;
+  expectedRevision: number;
+  payload: MenuConfigPayload;
+}
+
+export interface SetDefaultChannelInput {
+  clientMutationId: string;
+  expectedSettingsRevision: number;
+  channelId: EntityId | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +853,14 @@ export interface SpaceSettings {
   taskAxes: TaskAxis[];
 }
 
+/** Member-authorized settings projection returned by A03 and settings reads. */
+export interface SpaceSettingsView extends SpaceSettings {
+  menu: MenuConfig;
+  defaultChannelId: EntityId | null;
+  defaultInteractionProfileId: EntityId | null;
+  settingsRevision: number;
+}
+
 /** POST /v2/saved-views */
 export interface SavedView {
   id: string;
@@ -606,7 +878,21 @@ export interface PaletteAction {
   id: string;
   label: string;
   kind: 'navigate' | 'create' | 'link' | 'pull' | 'status' | string;
+  operation: OperationName;
   targetEntityId?: EntityId;
+  targetVersion?: number;
+  capabilityEpoch: string;
+  authzTarget: 'server' | 'space' | 'project' | 'entity' | 'session';
+  exposure: 'public' | 'composite' | 'internal' | 'reserved';
+  helpRef: string;
+}
+
+export interface ActionDiscoveryResult {
+  actorId: EntityId;
+  targetEntityId?: EntityId;
+  targetVersion?: number;
+  capabilityEpoch: string;
+  actions: PaletteAction[];
 }
 
 export type Unsubscribe = () => void;
@@ -656,6 +942,9 @@ export interface ProjectResource {
   workingDir: string;
   trust: ProjectTrustLevel;
   defaults: ProjectDefaults;
+  /** Migration/remediation state for the 16-active-link cap. */
+  linkFrozen?: boolean;
+  activeLinkCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -684,16 +973,29 @@ export interface ProjectLinkInput extends CommandContext {
   projectId: ProjectId;
 }
 
+export interface CorrectProjectAssociationInput {
+  clientMutationId: string;
+  projectId: ProjectId;
+  expectedArtifactVersion: number;
+}
+
+export interface EdgeCorrectionResult {
+  artifactId: EntityId;
+  projectId: ProjectId;
+  outcome: 'removed' | 'demoted' | 'unchanged';
+  edge: EdgeView | null;
+}
+
 /**
  * Worktree semantics for a spawn (AM-2 §1): `project` runs the session
  * directly in `project.workingDir`; `worktree` gives it an isolated git
  * worktree (server-managed path under the node data dir, guarded per
  * 10-SECURITY-MODEL) off `baseRef` (default: the repo's default branch).
  */
-export interface SpawnWorkdir {
-  mode: 'project' | 'worktree';
-  baseRef?: string | null;
-}
+export type SpawnWorkdir =
+  | { mode: 'project' }
+  | { mode: 'worktree'; baseRef?: string | null }
+  | { mode: 'scratch' };
 
 // --- execution.* operation family (R16) ------------------------------------
 
@@ -715,6 +1017,7 @@ export interface SpawnWorkdir {
  *   other mutation — the ledger is the execution audit trail.
  */
 export interface ExecutionSpawnInput extends CommandContext {
+  clientMutationId: string;
   spaceId: SpaceId;
   /** The persona to run; authorization resolves through its owner (T-L7). */
   teamMemberId: EntityId;
@@ -729,6 +1032,10 @@ export interface ExecutionSpawnInput extends CommandContext {
   projectId?: ProjectId | null;
   /** Working-directory semantics; default `{ mode: 'project' }`. */
   workdir?: SpawnWorkdir;
+  /** Explicit consent carrier for untrusted Projects and scratch roots. */
+  confirmUntrusted?: true;
+  /** Optional active profile override; human-principal authorization is server-owned. */
+  interactionProfileId?: EntityId;
   mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
   model?: string | null;
   agentTool?: string | null;
@@ -828,7 +1135,11 @@ export interface FileUploadGrant {
  * new file detail. POST /v2/files/uploads/:uploadId/abort releases the slot.
  * Both take only the command context (ids travel in the path).
  */
-export type FileUploadCompleteInput = CommandContext;
+export interface FileUploadCompleteInput extends CommandContext {
+  clientMutationId: string;
+  /** Finalized `file -> attached_to -> target` edges created atomically. */
+  targets?: EntityId[];
+}
 export type FileUploadAbortInput = CommandContext;
 
 /**
@@ -839,6 +1150,325 @@ export type FileUploadAbortInput = CommandContext;
  * the asymmetric bridge — is RESERVED for Phase 2 and must answer an honest
  * 501 until built (DEV-13).
  */
+
+// --- W0 amendment DTOs -------------------------------------------------------
+
+export interface AddMessageAttachmentsInput {
+  clientMutationId: string;
+  expectedVersion: number;
+  fileEntityIds: EntityId[];
+}
+export type RemoveMessageAttachmentsInput = AddMessageAttachmentsInput;
+
+export interface MessageDeliveryQuery {
+  cursor?: Cursor;
+  limit?: number;
+}
+
+export type MessageDeliveryStatus =
+  | 'pending' | 'dispatching' | 'delivered' | 'failed_retryable'
+  | 'failed_permanent' | 'unknown' | 'expired' | 'cancelled';
+
+export interface MessageDeliveryRecord {
+  deliveryId: string;
+  messageId: EntityId;
+  sourceWorkSessionId: EntityId | null;
+  targetWorkSessionId: EntityId;
+  status: MessageDeliveryStatus;
+  attemptNo: number;
+  failureReason: string | null;
+  reservedAt: string;
+  claimedAt: string | null;
+  settledAt: string | null;
+  updatedAt: string;
+}
+
+export interface MessageDeliveryView {
+  message: MessageView;
+  deliveries: MessageDeliveryRecord[];
+}
+
+export type HandoffDeliveryStatus = 'prepared' | 'dispatching' | 'delivered' | 'refused' | 'unknown';
+export type HandoffRecordStatus = 'pending' | 'recorded' | 'failed' | 'withdrawn';
+
+export interface ShareProjectionEnvelope {
+  entityId: EntityId;
+  kind: EntityKind;
+  title: string;
+  contentVersion: number;
+  sourceSpaceId: SpaceId;
+  body: string;
+  bodyBytes: number;
+  truncated: boolean;
+  omittedFields: string[];
+}
+
+export interface SendHandoffInput {
+  clientMutationId: string;
+  sourceEntityId: EntityId;
+}
+
+export interface HandoffListQuery {
+  deliveryStatus?: HandoffDeliveryStatus[];
+  recordStatus?: HandoffRecordStatus[];
+  cursor?: Cursor;
+  limit?: number;
+}
+
+export interface WithdrawHandoffInput {
+  clientMutationId: string;
+  expectedRecordVersion: number;
+  reason?: string;
+}
+
+export interface HandoffView {
+  handoffId: string;
+  sourceEntityId: EntityId;
+  targetWorkSessionId: EntityId;
+  deliveryStatus: HandoffDeliveryStatus;
+  recordStatus: HandoffRecordStatus;
+  sourceSnapshot: ShareProjectionEnvelope;
+  envelopeHash: string;
+  sourceMissing: boolean;
+  recordVersion: number;
+  withdrawnBy: ActorSummary | null;
+  withdrawnAt: string | null;
+  withdrawReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FeedScope = 'direct_v1' | 'session_chat_v1';
+export type FeedVia = 'subject' | 'anchored' | 'authored' | 'replies' | 'caused';
+
+export interface EntityFeedQuery {
+  scope?: 'default' | FeedScope;
+  order?: 'newest' | 'oldest';
+  around?: `message:${string}` | `activity:${string}`;
+  cursor?: Cursor;
+  limit?: number;
+}
+
+export interface DeliverySummary {
+  deliveryId: string;
+  targetWorkSessionId: EntityId;
+  status: MessageDeliveryStatus;
+  attemptNo: number;
+  failureReason: string | null;
+  updatedAt: string;
+}
+
+export interface FeedItemBase {
+  itemId: string;
+  createdAt: string;
+  sortId: string;
+  via: FeedVia[];
+  actor: ActorSummary | null;
+  sourceWorkSessionId: EntityId | null;
+  anchor: EntitySummary | null;
+  logicalOperationId: string | null;
+}
+
+export type FeedItem =
+  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[] })
+  | (FeedItemBase & { itemKind: 'activity'; activity: ActivityItem });
+
+export interface EntityFeedPage {
+  resolvedScope: FeedScope;
+  predicates: FeedVia[];
+  items: FeedItem[];
+  nextCursor: Cursor | null;
+  previousCursor?: Cursor | null;
+}
+
+export type EntityContextSection = 'summary' | 'hierarchy' | 'connections' | 'messages' | 'activity' | 'actions';
+
+export interface EntityContextQuery {
+  sections?: EntityContextSection[];
+  totalBytes?: number;
+  sectionBytes?: number;
+}
+
+export interface EntityContextView {
+  schemaVersion: 'tm8.entity-context.v1';
+  root: EntitySummary;
+  content?: { excerpt: string; source: 'entity' | 'message' | 'file'; truncated: boolean };
+  parents: EntitySummary[];
+  children: EntitySummary[];
+  edges: EdgeView[];
+  messages: MessageView[];
+  actions: PaletteAction[];
+  provenance: { operation: OperationName; fetchedAt: string; eventSeq: number };
+  cursors: Record<string, Cursor | null>;
+  byteSize: number;
+  truncated: boolean;
+}
+
+export interface ClosedPromptPolicy {
+  kernelTemplate: string;
+  manifestMaxBytes: number;
+  kernelMaxBytes: number;
+  initialContextMaxBytes: number;
+  rollingControlMaxBytes: number;
+  allowedInjectionKinds: string[];
+  untrustedEncoding: 'escaped-xml';
+}
+
+export interface ToolDiscoveryPolicy {
+  rootHelpRef: 'tm8://help';
+  preloadNouns: string[];
+  semanticSearchEnabled: boolean;
+  semanticMaxMatches: number;
+  nounShardMaxBytes: number;
+  commandShardMaxBytes: number;
+  entityContextDefaultBytes: number;
+  providerToolRegistrationAllowlist?: OperationName[];
+}
+
+export interface FeedPolicy {
+  scope: FeedScope;
+  pageSize: number;
+  bodyExcerptBytes: number;
+}
+
+export interface ComposerInteractionPolicy {
+  schemaRef: string;
+  supportsReply: boolean;
+  supportsAttachments: boolean;
+  allowedAttachmentKinds: string[];
+  operationBindings: OperationName[];
+}
+
+export interface InteractionProfileDraft {
+  name: string;
+  templateKey: string;
+  templateVersion: number;
+  promptPolicy: ClosedPromptPolicy;
+  toolDiscoveryPolicy: ToolDiscoveryPolicy;
+  feedPolicy: FeedPolicy;
+  providerCaptureMode: 'explicit-only';
+  composerPolicy: ComposerInteractionPolicy;
+}
+
+export type InteractionProfileStatus = 'draft' | 'active' | 'retired';
+
+export interface ProposeInteractionProfileInput {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  draft: InteractionProfileDraft;
+}
+export interface UpdateInteractionProfileDraftInput {
+  clientMutationId: string;
+  expectedVersion: number;
+  draft: InteractionProfileDraft;
+}
+export interface ValidateInteractionProfileInput { clientMutationId: string; expectedVersion: number }
+export interface PreviewInteractionProfileInput { profileVersion: number }
+export interface ActivateInteractionProfileInput {
+  clientMutationId: string;
+  validatedVersion: number;
+  validatedHash: string;
+  confirm: true;
+}
+export interface RetireInteractionProfileInput {
+  clientMutationId: string;
+  expectedVersion: number;
+  confirm: true;
+}
+export interface SetTeammateProfileDefaultInput {
+  clientMutationId: string;
+  expectedVersion: number;
+  profileId: EntityId | null;
+}
+export interface SetSpaceProfileDefaultInput {
+  clientMutationId: string;
+  expectedSettingsRevision: number;
+  profileId: EntityId | null;
+  confirmAgentGenerated?: true;
+}
+
+export interface InteractionProfileView {
+  profileId: EntityId;
+  spaceId: SpaceId;
+  status: InteractionProfileStatus;
+  currentDraftVersion: number;
+  validatedVersion: number | null;
+  validatedHash: string | null;
+  activeVersion: number | null;
+  activeHash: string | null;
+  generatedByTeamMemberId: EntityId | null;
+  retiredAt: string | null;
+  version: number;
+  draft: InteractionProfileDraft;
+}
+
+export interface ProfileValidationIssue {
+  path: string;
+  code: string;
+  message: string;
+}
+
+export interface ProfileValidationView {
+  profileId: EntityId;
+  profileVersion: number;
+  status: 'valid' | 'invalid';
+  validatedHash: string | null;
+  issues: ProfileValidationIssue[];
+}
+
+/** Sanitized, non-interactive projection: no prompt/tool/capture policy. */
+export interface InteractionProfilePreview {
+  profileId: EntityId;
+  profileVersion: number;
+  name: string;
+  templateKey: string;
+  templateVersion: number;
+  feedPolicy: FeedPolicy;
+  composerPolicy: ComposerInteractionPolicy;
+  validatedHash: string | null;
+  generatedByTeamMemberId: EntityId | null;
+}
+
+export interface TeammateProfileDefaultView {
+  teamMemberId: EntityId;
+  defaultInteractionProfileId: EntityId | null;
+  version: number;
+}
+
+export interface SpaceProfileDefaultView {
+  spaceId: SpaceId;
+  defaultInteractionProfileId: EntityId | null;
+  settingsRevision: number;
+}
+
+export interface InteractionProfilePinView {
+  workSessionId: EntityId;
+  pinRevision: number;
+  profileId: EntityId | null;
+  profileVersion: number | null;
+  templateKey: string;
+  templateVersion: number;
+  resolvedHash: string;
+  source: 'spawn_override' | 'teammate_default' | 'space_default' | 'core_default';
+  createdAt: string;
+}
+
+export type InboxRecipient =
+  | { type: 'member'; memberId: EntityId }
+  | { type: 'team_member'; teamMemberId: EntityId };
+
+export interface InboxListQuery {
+  recipient?: InboxRecipient;
+  spaceId?: SpaceId;
+  unread?: boolean;
+  cursor?: Cursor;
+  limit?: number;
+}
+
+export interface InboxMarkReadInput {
+  clientMutationId: string;
+  recipient?: InboxRecipient;
+}
 
 // --- custom entity kinds (T-L4, R7–R9) --------------------------------------
 

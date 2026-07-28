@@ -35,8 +35,30 @@ export function commandsWork(deps: FacadeDeps): OperationHandler {
         input.status,
         envelope.actorId ?? null,
         input.startedAt ?? null,
+        // `note` is THREE-STATE in the contract — `schemas.ts:976` declares
+        // `note: z.string().nullable().optional()`, so absent, explicit null
+        // and a value are three distinct inputs that all validate.
+        //
+        // The RPC discriminates them with a SEVENTH argument. Per `037:75-82`
+        // and the merge at `037:119-124`, `p_clear_note` WINS over `p_note`,
+        // and `p_note` NULL means "fall back to the stored value". So
+        // `?? null` is the RIGHT binding for `p_note` — but only BECAUSE the
+        // seventh argument now carries the distinction. Passing six arguments
+        // collapsed absent and explicit-null onto the preserve branch, and an
+        // explicit clear returned 200 having done nothing.
+        //
+        // MEASURED, not reasoned: against a real Server on staged chains, this
+        // same request CLEARED the note at chain 036 and silently preserved it
+        // at chain 037, from a proven non-null starting value. This RESTORES a
+        // capability that demonstrably worked, rather than adding a new one.
+        // No migration could have fixed one input without breaking the other,
+        // because both collapsed to one wire value UPSTREAM of SQL.
+        //
+        // NOTE THE POSITION: `p_clear_note` is the seventh parameter, AFTER
+        // `p_client_mutation_id` — not adjacent to `p_note`.
         input.note ?? null,
         envelope.clientMutationId ?? null,
+        input.note === null,
       ]);
       return toCommandResult(q, raw, owner.identityId);
     });
