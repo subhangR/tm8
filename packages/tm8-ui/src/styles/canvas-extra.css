@@ -54,6 +54,13 @@
      reading as a warning and never as success. */
   --pn-x-warn-fill: #FFF8EC;
 
+  /* R5 parity (user directive, routed [master->fe 43]): the primary create
+     chip ("+ New" / "+ Launch") is an INK chip in the canvas, and its hover
+     is a measured value — style-hover="background:#3A362E" on the create
+     chip in T0-1 Workspace Hi-Fi. The chip's own fill/text are --pn-ink /
+     --pn-paper (already tokens); only the hover needed a home here. */
+  --pn-x-btn-ink-hover: #3A362E;
+
   /* P2 (live-terminal transplant): xterm's ITheme cannot take a raw hex
      literal in TS source (§14), and it cannot resolve a `var(...)` string
      passed to its canvas renderer either — colors are read from these custom
@@ -92,4 +99,7 @@
 .cv2-root[data-theme='dark'],
 [data-theme='dark'] .cv2-root {
   --pn-x-warn-fill: color-mix(in srgb, var(--pn-wait) 14%, var(--pn-card));
+  /* Dark ink-chip hover is a DERIVATION, not a measurement (the canvas is
+     light-only): ink nudged toward paper, so it tracks the dark ramp. */
+  --pn-x-btn-ink-hover: color-mix(in srgb, var(--pn-ink) 86%, var(--pn-paper));
 }

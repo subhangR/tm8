@@ -826,14 +826,21 @@
   cursor: pointer;
   white-space: nowrap;
 }
+/* R5 parity (user finding, [master->fe 43]): the canvas renders the create
+   chip as INK — #23201B fill / #F4F2EC text / r7 / 4px 10px / 12px 600,
+   hover #3A362E — where this was a brand-soft outline chip. Fill and text
+   are ink/paper TOKENS, so dark theme inverts to a light chip on dark
+   ground with no per-theme rule; the sizes override the shared base above
+   because the base also serves .lp__quick, which the canvas keeps small. */
 .cv2-root .lp__new {
-  color: var(--pn-brand-2);
-  background: var(--pn-brand-soft);
-  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  font-size: 12px;
+  border-radius: 7px;
+  padding: 4px 10px;
+  color: var(--pn-paper);
+  background: var(--pn-ink);
+  border: 1px solid transparent;
 }
-.cv2-root .lp__new:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
-.cv2-root[data-theme='dark'] .lp__new,
-[data-theme='dark'] .cv2-root .lp__new { color: var(--pn-brand); }
+.cv2-root .lp__new:hover { background: var(--pn-x-btn-ink-hover); }
 .cv2-root .lp__quick {
   color: var(--pn-ink-2);
   background: var(--pn-card);
