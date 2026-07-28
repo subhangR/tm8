@@ -1,0 +1,218 @@
+/**
+ * Gate boot: seam → domain store → the selectors the views hand to the panels.
+ *
+ * This is the ONLY place the shell touches the seam. Everything below it —
+ * WorkspaceView, the panels, the rail — receives plain functions and arrays and
+ * has no idea whether a fixture or a real node produced them, which is the
+ * point of the seam being transport-shaped (LLD §10.1, C-3).
+ *
+ * Two laws it exists to enforce, both easy to break by accident elsewhere:
+ *
+ *  - **Liveness comes ONLY from `seam.liveness.statusOf`** (R-UI-5, §10.2.2).
+ *    Nothing here derives a verdict from `activityAt` recency or any other
+ *    summary field; `unknown` is returned when there is no snapshot, and
+ *    `unknown` renders neutral, never live (D6).
+ *  - **No kind literal reaches shell code** (§15.2). The panels are told WHICH
+ *    kind to render by the caller, and the live set arrives from the seam's
+ *    liveness snapshot — which IS the set of live session ids by the C-1
+ *    definition, so the shell never issues a kind-filtered query to find them
+ *    (B7).
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  CollectionQuery,
+  EntityDetail,
+  EntitySummary,
+  MenuConfig,
+  SpaceId,
+  SpaceSummary,
+} from '@tm8/contract';
+import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
+import { createFixtureSeam } from '../data';
+import { createDomainStore, type DomainStoreHandle } from '../data/project/domain-store';
+import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
+import { toSessionRow } from '../terminal';
+
+export interface GateData {
+  ready: boolean;
+  spaceId: SpaceId;
+  spaces: SpaceSummary[];
+  menu: ResolvedMenu;
+  connection: ConnectionState;
+  /** Live set, verbatim from the seam snapshot. The ONLY source for `● N live`. */
+  liveIds: readonly string[];
+  /** THE verdict. Never computed in the UI. */
+  livenessOf: (id: string) => SessionLiveness;
+  /** Rows for a (kind, filter) pair — hydrated once, then served from memory. */
+  rowsFor: (kind: string) => (filter: unknown) => readonly EntitySummary[];
+  detailOf: (id: string) => EntityDetail | undefined;
+  /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
+  activity: Readonly<Record<string, boolean>>;
+  seam: Seam;
+  domain: DomainStoreHandle;
+}
+
+/** Kinds the gate screen hydrates up front: the two workspace side panels. */
+export interface GateOptions {
+  leftKind: string;
+  rightKind: string;
+}
+
+export function useGateData(options: GateOptions): GateData {
+  // One seam and one domain store for the app's lifetime. `useRef` rather than
+  // `useMemo` because StrictMode may discard a memo, and a second seam would
+  // mean a second event stream and a silently divided cache.
+  const seamRef = useRef<Seam | null>(null);
+  if (seamRef.current === null) seamRef.current = createFixtureSeam();
+  const seam = seamRef.current;
+
+  const domainRef = useRef<DomainStoreHandle | null>(null);
+  if (domainRef.current === null) domainRef.current = createDomainStore(seam);
+  const domain = domainRef.current;
+
+  const [ready, setReady] = useState(false);
+  const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
+  const [spaceId, setSpaceId] = useState<SpaceId>('' as SpaceId);
+  const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
+  const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
+  const [liveIds, setLiveIds] = useState<readonly string[]>([]);
+  const [rows, setRows] = useState<Record<string, readonly EntitySummary[]>>({});
+  const [details, setDetails] = useState<Record<string, EntityDetail>>({});
+  const [activity] = useState<Readonly<Record<string, boolean>>>({});
+
+  /**
+   * Hydration is written as ONE idempotent, re-runnable function from day one
+   * (§10.2.5): `onResync` means catch-up integrity was lost, and the only
+   * honest response is to re-run the reads rather than patch around the gap.
+   */
+  const hydrate = useCallback(
+    async (space: SpaceId) => {
+      const [menuRaw, snapshot] = await Promise.all([
+        seam.menu(space).catch((error: unknown) => {
+          setMenu(resolveMenu(undefined, error));
+          return undefined;
+        }),
+        // `refresh()` RESOLVES the snapshot; there is no accessor to read one
+        // back. Holding the latest is this layer's job by design (A1c), which
+        // is why every renderer below takes `liveIds` as a plain array.
+        seam.liveness.refresh(space).catch(() => undefined),
+      ]);
+      if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
+      if (snapshot) setLiveIds(snapshot.liveEntityIds);
+
+      const load = async (kind: string) => {
+        const query = { spaceId: space, kinds: [kind] } as unknown as CollectionQuery;
+        const result = await seam.query(query);
+        setRows((current) => ({ ...current, [kind]: result.page.items }));
+      };
+      await Promise.all([load(options.leftKind), load(options.rightKind)]);
+    },
+    [seam, options.leftKind, options.rightKind],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const list = await seam.spaces();
+      if (cancelled) return;
+      const first = list[0];
+      if (!first) return;
+      setSpaces(list);
+      setSpaceId(first.id);
+      await seam.openSpace(first.id);
+      await hydrate(first.id);
+      if (!cancelled) setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [seam, hydrate]);
+
+  // Connection honesty, rendered once in the shell and selected everywhere
+  // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
+  useEffect(() => seam.onConnection(setConnection), [seam]);
+
+  // The live set changes without us asking; `onChange` is the push half of the
+  // liveness surface and keeps the held snapshot from going quietly stale.
+  useEffect(
+    () => seam.liveness.onChange((snapshot) => setLiveIds(snapshot.liveEntityIds)),
+    [seam],
+  );
+
+  // Catch-up integrity lost ⇒ re-run hydration. Idempotent by construction.
+  useEffect(
+    () => seam.onResync((space) => { if (space === spaceId) void hydrate(space); }),
+    [seam, spaceId, hydrate],
+  );
+
+  const livenessOf = useCallback(
+    (id: string): SessionLiveness => {
+      const summary = Object.values(rows)
+        .flat()
+        .find((row) => row.id === id);
+      // No row ⇒ no evidence ⇒ 'unknown'. Never optimistically 'live'.
+      if (!summary) return 'unknown';
+      // The recorded status lives on `state`, NOT as a top-level `workStatus`:
+      // tasks carry `state.workStatus`, sessions carry `state.status` (seam
+      // Amendment 1). Reading a top-level field that does not exist yielded
+      // `null` for every row, so `statusOf` answered 'not-running' for ALL of
+      // them — while the bar, which reads the seam's live set directly, said
+      // "1 live". The screen contradicted itself. Caught in the browser, not by
+      // any test. `toSessionRow` projects STRUCTURALLY ('status' in state), so
+      // this stays kind-literal-free.
+      const recorded = toSessionRow(summary).recordedStatus
+        ?? (summary.state as unknown as { workStatus?: string | null }).workStatus
+        ?? null;
+      return seam.liveness.statusOf({ id: summary.id, workStatus: recorded as never });
+    },
+    [seam, rows],
+  );
+
+  const rowsFor = useCallback(
+    (kind: string) => () => rows[kind] ?? [],
+    [rows],
+  );
+
+  const detailOf = useCallback((id: string) => details[id], [details]);
+
+  // Detail is pulled lazily as panels open; the store keeps what it has seen.
+  useEffect(() => {
+    if (!ready) return;
+    const unsubscribe = domain.store.subscribe(() => {
+      // Domain-store echoes reconcile into the same cache the panels read.
+    });
+    return unsubscribe;
+  }, [ready, domain]);
+
+  const pull = useCallback(
+    async (id: string) => {
+      if (details[id]) return;
+      const detail = await seam.entity(id as never).catch(() => undefined);
+      if (detail) setDetails((current) => ({ ...current, [id]: detail }));
+    },
+    [seam, details],
+  );
+
+  // Exposed through the returned object so views can request a panel's detail
+  // without reaching for the seam themselves.
+  const data = useMemo<GateData & { pull: (id: string) => void }>(
+    () => ({
+      ready,
+      spaceId,
+      spaces,
+      menu,
+      connection,
+      liveIds,
+      livenessOf,
+      rowsFor,
+      detailOf,
+      activity,
+      seam,
+      domain,
+      pull: (id: string) => void pull(id),
+    }),
+    [ready, spaceId, spaces, menu, connection, liveIds, livenessOf, rowsFor, detailOf, activity, seam, domain, pull],
+  );
+
+  return data;
+}

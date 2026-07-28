@@ -1,10 +1,9 @@
-import { GalleryPage } from './gallery/GalleryPage';
+import { GateApp } from './views/GateApp';
 
 /**
- * A0 placeholder root: the dev-only kit gallery. The real shell (space tab
- * bar → menu rail → view host) replaces this in A1; the gallery then moves
- * behind a dev route.
+ * THE GATE (R5): the complete T0-1 master screen, interactive on fixtures, in
+ * both themes. The A0 kit gallery moves behind a dev route at fan-out.
  */
 export function App() {
-  return <GalleryPage />;
+  return <GateApp />;
 }
