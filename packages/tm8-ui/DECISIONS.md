@@ -741,3 +741,72 @@ It is A1c's own keeper line from the same evening — *"an exit code that answer
 Concretely, an interim's exit condition must name an **executor-side observation** — a passing test against the real implementation, or a measured query result — never merely the appearance of a type. D20's exit condition was written against a type, which is why it fired early. Interims written after this entry should state their exit as *"when `<executor>` demonstrably honours `<member>`"*, and D20's formulation is the counter-example to copy from.
 
 Rationale: this is the third instance today of the same shape — a claim about a shared artifact made from a local one (A1a's doorbell naming a type not yet in HEAD; A1c clearing a landing on a working-tree measurement; and now both of us retiring a partition on a declaration rather than an implementation). The first two were caught before anything landed on them. This one landed, reached HEAD, and was caught only because someone was looking at the actual screen. That is the argument for the rule: the two cheap catches were luck of timing, and the expensive one is what the general form is written to prevent.
+
+## D57.1 — AMENDMENT to D57: the chain is declaration → data → implementation → CALL, and we stopped one short (2026-07-28)
+
+Source: found by A1 Primitives holding the camera on the corrected-Sessions frame, immediately after D57's own fix landed at `80dc8aa` and failed to change the screen. Authored by A1 Primitives; committed under the coordinator's ledger ceremony.
+
+**D57 said workarounds retire on the executor's implementation, not the contract's declaration. That was right and it was not far enough.** The fix it prescribed was built, was correct, was tested executor-side, was verified live in the browser — and the defect did not move, because **nothing ever called the executor with the filter.**
+
+**THE FULL CHAIN, and where each link was verified:**
+
+| link | artefact | verified by | verdict |
+|---|---|---|---|
+| DECLARATION | `contract.ts:242` — `sessionStatus?: WorkSessionStatus[]` | A1a, in the tree | correct |
+| DATA | `SESSION_TIERS` carry the filter | A1a, `bf731e2` | correct |
+| CONSUMER | panel spreads `tier.filter` into `rowsFor(...)` | A1c, `51a892c` | correct |
+| IMPLEMENTATION | fixture-seam honours `sessionStatus` | fe, `80dc8aa`, with an executor-side test | correct |
+| **CALL** | `useGateData.rowsFor` passes the filter to the seam | **nobody** | **discards it** |
+
+Four links correct, one silently dropping, and the feature dead.
+
+```ts
+// src/views/useGateData.ts
+line 48   rowsFor: (kind: string) => (filter: unknown) => readonly EntitySummary[];
+line 222  const rowsFor = useCallback((kind: string) => () => rows[kind] ?? [], [rows]);
+```
+
+The type **declares** a filter parameter. The implementation **never binds it**. Every query returns a pre-hydrated per-kind array, so no filter from any lane has ever reached the seam through this shell.
+
+**THE ARITHMETIC IS WHY THIS IS UNDENIABLE.** All three lifecycle tiers receive the *same array*. The roster shows **4 rows**; the footer reads *"4 open · 4 done · 4 archived"*; the header total reads **12**. **There are four sessions, displayed as twelve** — one set counted three times. A screen was reporting triple its true content, on the panel a reviewer opens first, while every suite was green.
+
+**WHY NO GREEN COULD SEE IT — the structural finding, which is the transferable part:**
+
+- `(filter: unknown)` is a signature that **promises acceptance**. An implementation ignoring its own argument is **type-legal**, so `tsc` can never object.
+- The consumer's tests inject their own `rowsFor` and therefore exercise **the consumer's call**, never the shell's.
+- The executor's test invokes the seam directly and therefore exercises **the executor**, never the call into it.
+
+The defect lives **precisely in the gap between the two suites that both went green**. Neither was wrong; neither was sufficient; and no amount of additional testing *on either side* would have found it, because each side's tests stop at its own boundary. An executor never invoked with a filter is indistinguishable — from every green either lane can run — from one that ignores it.
+
+**THE AMENDED RULE:**
+
+> A contract declaration is a promise. An executor's implementation is the fact. **A caller that passes the argument is what makes the fact reachable.** Workarounds retire on the reachable fact — verified end to end, through the real call path, on the surface a user sees.
+
+**OPERATIVELY**, an interim's exit condition must now name **an observation at the call layer**: a test that drives the real caller into the real executor, or a measured result on the rendered surface. "The executor implements it" is a necessary claim and, as this incident proves, an insufficient one. The standing requirement added with this entry: **where a seam is crossed, one test must live in the gap and assert the crossing** — owned by neither side alone, because that is exactly the territory neither side's suite covers.
+
+**COST OF THE MISS, recorded plainly:** three separate ceremonies (`bf731e2`, `51a892c`, `80dc8aa`) each landed a correct change against a chain that was already broken further along, and each was certified green by measurements that were individually true. The defect survived four correct verifications by four seats. It was caught by **looking at the screen** — the same instrument that caught the enabled-inert launch, the floor-crush, and the clipped SHARED CONTEXT. Every defect that reached HEAD tonight was found by rendering the thing and looking at it, and none by a passing suite.
+
+## D58 — The user's acceptance bar is PIXEL PARITY with the T0-1 canvas; first strike landed, systematic pass running (2026-07-28)
+
+Source: user directive routed [master->fe 43] ("our app should be pixel perfect like this, still I see lot of color differences, buttons dont have black") plus live follow-ups in-session ("fonts are ok, letters are too small"). Authored and committed by fe-coordinator.
+
+**RULINGS:**
+
+1. **The create chip is INK.** `.lp__new` (+ New / + Launch — one class, every kind) renders `--pn-ink` fill / `--pn-paper` text, r7, 4px 10px, 12px 600, hover `--pn-x-btn-ink-hover` (#3A362E, canvas-measured; dark counterpart is a derivation and says so in the file). Landed `d877d83`. The oracle values were extracted from the canvas's inline styles, not eyeballed.
+2. **The sheet's `.lq__launch` commit button is NOT ruled by this entry.** It answers to the T5-5 canvas, which has not been diffed yet. Recoloring it on the strength of a T0-1 finding would be exactly the drift this ledger exists to prevent.
+3. **"Letters too small" is routed as a SPEC-level question, not a component fix.** The build's type sizes were transcribed verbatim from the canvas (11.5px body, 9–10.5px monos — D5). If the user reads the canvas-as-presented as better, the likely mechanism is presentation scaling on the design host, and the honest fix is ONE root-scale ruling made by the user with the ratio measured and in front of them — never per-component nudges chasing a feeling.
+4. **The systematic diff (D10's canvas diff, never previously run) is the next cycle:** colors → type scale → spacing, output as a RULED-vs-DRIFT divergence ledger (PARITY-LEDGER.md), fixes windowed after the ledger exists so every change cites either a ruling or a measured oracle value.
+
+## D59 — DECISIONS.md, MEMORY.md and CHARTER.md are COORDINATOR-COMMITTED, and the control that enforces it (2026-07-28)
+
+Source: the A1c staging deviation of this evening — a seat's R17 audit printed `M packages/tm8-ui/DECISIONS.md` in its own pre-commit output and the seat certified compliance anyway, having read an ambiguous coordinator phrase ("your D-entries") as commit authorization. Both halves owned: the phrase was the coordinator's, the certification-over-contrary-evidence was the seat's. Authored and committed by fe-coordinator.
+
+**THE RULE:** ledger and charter files are committed by the coordinator's hand only. A seat AUTHORS entries (authorship is named in the entry, as D57.1 above is A1c's); the coordinator COMMITS them. No delegation of this by phrasing, however generous the phrasing sounds — an ambiguous grant is not a grant.
+
+**THE CONTROL, adopted fleet-wide and run in every R17 pre-commit step since:**
+
+```sh
+git diff --cached --name-only | grep -E '(DECISIONS|MEMORY|CHARTER)\.md' && ABORT
+```
+
+It fails loud on exactly the class of staging the deviation slipped through. The deeper lesson travels with it: **an audit that prints the violation and gets certified anyway is worse than no audit** — it converts contrary evidence into false confidence. The control exists so the certification step cannot skip the reading step.
