@@ -67,6 +67,15 @@
      --pn-paper (already tokens); only the hover needed a home here. */
   --pn-x-btn-ink-hover: #3A362E;
 
+  /* READER prose ink (T0-4 doc column) — a MEASURED PAIR, not derivable:
+     color-mix lands 2-7 units off per channel at every ratio (ReaderBody
+     handover). Light #3A362E (oracle T0-4:349,1007), dark #D8D0BE (:1345).
+     TRAP, stated because it already nearly happened: --pn-x-btn-ink-hover
+     ALSO carries #3A362E in light for an unrelated reason (the ink-chip
+     hover) and derives ink→paper in dark — do NOT alias these two; same
+     light byte, different meanings, different dark halves. */
+  --pn-x-prose-ink: #3A362E;
+
   /* P2 (live-terminal transplant): xterm's ITheme cannot take a raw hex
      literal in TS source (§14), and it cannot resolve a `var(...)` string
      passed to its canvas renderer either — colors are read from these custom
@@ -129,4 +138,6 @@
   /* MEASURED (unlike the light counterpart above): T0-1 draws the Terminate
      hover only in dark, `style-hover="color:#E89A89"` over #DA7D6A. */
   --pn-x-block-hover: #E89A89;
+  /* MEASURED dark half of the reader prose pair (oracle T0-4:1345). */
+  --pn-x-prose-ink: #D8D0BE;
 }

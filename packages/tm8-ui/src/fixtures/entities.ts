@@ -312,6 +312,48 @@ export const docLayoutSpec = summary({
   badges: { restricted: true },
 });
 
+/* The Layout spec's four chapters — the ORACLE'S OWN outline (T0-4 reader
+   frame: Shell regions, C_min formula, Floors, Responsive). They exist so
+   the reader body's TOC chips render POPULATED on the live screen; the
+   honest count-without-children absence state stays visible on any doc
+   whose detail carries no children (ReaderBody handover, fixture need 2). */
+export const docChapterShell = summary({
+  id: 'doc-chapter-shell',
+  kind: 'doc',
+  title: 'Shell regions',
+  excerpt: 'Tab bar, rail, three columns.',
+  parentId: docLayoutSpec.id,
+  counters: counters({}),
+  state: { kind: 'doc', format: 'markdown', childCount: 0 },
+});
+export const docChapterCmin = summary({
+  id: 'doc-chapter-cmin',
+  kind: 'doc',
+  title: 'C_min formula',
+  excerpt: 'The floor arithmetic.',
+  parentId: docLayoutSpec.id,
+  counters: counters({}),
+  state: { kind: 'doc', format: 'markdown', childCount: 0 },
+});
+export const docChapterFloors = summary({
+  id: 'doc-chapter-floors',
+  kind: 'doc',
+  title: 'Floors',
+  excerpt: 'Refuse the pin, keep the reason.',
+  parentId: docLayoutSpec.id,
+  counters: counters({}),
+  state: { kind: 'doc', format: 'markdown', childCount: 0 },
+});
+export const docChapterResponsive = summary({
+  id: 'doc-chapter-responsive',
+  kind: 'doc',
+  title: 'Responsive',
+  excerpt: 'What compacts, in order.',
+  parentId: docLayoutSpec.id,
+  counters: counters({}),
+  state: { kind: 'doc', format: 'markdown', childCount: 0 },
+});
+
 export const messageInThread = summary({
   id: 'msg-standup',
   kind: 'message',
@@ -498,7 +540,8 @@ export const fixtureSummaries: EntitySummary[] = [
   channelDesign,
   taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed,
-  docLayoutSpec, messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
+  docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
+  messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
   teamMemberScout,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
@@ -589,10 +632,14 @@ export const fixtureDetails: Record<string, EntityDetail> = {
   [docLayoutSpec.id]: detail(docLayoutSpec, {
     content: {
       kind: 'doc',
-      body: '# Layout spec\n\nC_min = max(320, V·320 + max(0, V−1)·8).\n\nFloors are floors: refuse the pin, keep the reason visible.',
+      body: '# Layout spec\n\nC_min = max(320, V·320 + max(0, V−1)·8).\n\n> Floors are law — 02 §6. A panel below its floor is a bug, not a compromise.\n\nFloors are floors: refuse the pin, keep the reason visible.',
       format: 'markdown',
     },
-    hierarchy: hierarchy(channelDesign, [], [channelDesign]),
+    hierarchy: hierarchy(
+      channelDesign,
+      [docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive],
+      [channelDesign],
+    ),
     capabilities: CAPS_READONLY, // restricted doc: viewer can look (summary-level), not touch
   }),
 
