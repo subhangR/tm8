@@ -114,49 +114,62 @@ export function EntityView(props: EntityViewProps) {
     />
   ) : null;
 
+  /* USER REFINEMENT 2026-07-29 (supersedes the full-bleed Z4 v1): the page
+   * behaves RESPONSIVELY and the list NEVER leaves the screen —
+   *   list  : the tree rides CENTERED in the middle;
+   *   aside : the panel opens right (Z3 ≈440), the tree stays centered in
+   *           what remains;
+   *   full  : the tree yields to a NARROW LEFT COLUMN and the entity takes
+   *           the entire remaining width (the Z4 header — ⇲ collapse,
+   *           breadcrumb, esc — rides on the expanded region, not over the
+   *           list).
+   */
+  const layoutMode = selectedId ? mode : 'list';
   return (
-    <div className="ev-root" data-testid="entity-view" data-kind={kind} data-mode={selectedId ? mode : 'list'}>
-      {mode === 'full' && selectedId ? (
-        /* Z4 FULL VIEW — full-bleed to the rail. Header per canvas: 42px,
-           collapse chip, breadcrumb, esc hint. */
-        <div className="ev-full" data-testid="entity-view-full">
-          <div className="ev-full__head">
-            <button
-              type="button"
-              className="ev-full__collapse"
-              onClick={() => setMode('aside')}
-              aria-label="Collapse to panel"
-            >
-              ⇲ collapse
-            </button>
-            <span className="ev-full__crumb">{`${config.labelPlural.toLowerCase()} · full view`}</span>
-            <span className="ev-full__spacer" />
-            <span className="ev-full__esc">esc</span>
+    <div className="ev-root" data-testid="entity-view" data-kind={kind} data-mode={layoutMode}>
+      <div className="ev-split" data-mode={layoutMode}>
+        <section
+          className={`ev-list ev-list--${layoutMode}`}
+          aria-label={`${config.labelPlural} list`}
+        >
+          {/* USER RULING (same day, refining D65): the middle is its OWN
+              wide component — an expandable tree — never the side
+              EntityListPanel stretched. */}
+          <EntityTree
+            kind={kind}
+            rowsFor={data.rowsFor(kind)}
+            livenessOf={data.livenessOf}
+            activity={data.activity}
+            selectedId={selectedId}
+            onSelect={(id) => openEntity(id as EntityId)}
+          />
+        </section>
+
+        {selectedId && mode === 'aside' ? (
+          <aside className="ev-aside" aria-label={`${config.label} details`} data-testid="entity-view-aside">
+            {detailPanel}
+          </aside>
+        ) : null}
+
+        {selectedId && mode === 'full' ? (
+          <div className="ev-expanded" data-testid="entity-view-full">
+            <div className="ev-full__head">
+              <button
+                type="button"
+                className="ev-full__collapse"
+                onClick={() => setMode('aside')}
+                aria-label="Collapse to panel"
+              >
+                ⇲ collapse
+              </button>
+              <span className="ev-full__crumb">{`${config.labelPlural.toLowerCase()} · full view`}</span>
+              <span className="ev-full__spacer" />
+              <span className="ev-full__esc">esc</span>
+            </div>
+            <div className="ev-full__body">{detailPanel}</div>
           </div>
-          <div className="ev-full__body">{detailPanel}</div>
-        </div>
-      ) : (
-        <div className={selectedId ? 'ev-split ev-split--open' : 'ev-split'}>
-          <section className="ev-list" aria-label={`${config.labelPlural} list`}>
-            {/* USER RULING (same day, refining D65): the middle is its OWN
-                wide component — an expandable tree — never the side
-                EntityListPanel stretched. */}
-            <EntityTree
-              kind={kind}
-              rowsFor={data.rowsFor(kind)}
-              livenessOf={data.livenessOf}
-              activity={data.activity}
-              selectedId={selectedId}
-              onSelect={(id) => openEntity(id as EntityId)}
-            />
-          </section>
-          {selectedId ? (
-            <aside className="ev-aside" aria-label={`${config.label} details`} data-testid="entity-view-aside">
-              {detailPanel}
-            </aside>
-          ) : null}
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
