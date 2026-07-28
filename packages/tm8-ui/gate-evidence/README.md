@@ -6,10 +6,10 @@ Every capture: real Chrome ("Browser 2"), `http://127.0.0.1:4612/`, viewport 149
 
 | File | Taken | Shows |
 |---|---|---|
-| `T0-1-gate-light-final.jpg` | 2026-07-28 16:57 | Complete gate screen, light: empty-center roster + fixed filter row. sha256 `c87ad5f0…7494eb4f` |
-| `T0-1-gate-dark-final.jpg` | 2026-07-28 16:57 | Same, dark. sha256 `826ba63e…2b9837dd` |
+| `T0-1-gate-light-final.jpg` | 2026-07-28 17:56, HEAD `db18c95` | THE review frame, light: findings #1–#7 composed — lifecycle tabs + footers both panels, empty-center roster with the verdict-beside-record pair, one-chip filter row, clean rail. sha256 `5fe82b35…6625d557` |
+| `T0-1-gate-dark-final.jpg` | 2026-07-28 17:56, HEAD `db18c95` | Same, dark — theme persisted-on-load proving 841731d in the capture itself. sha256 `aeff07ff…a913fe7c` |
 
-Capture record for the final pair: Browser 2, 1492×812, HEAD = 52a0751, three lanes green immediately before (tsc 0/0, 601 tests). Light and dark are from two loads, not one (a pre-hydration toggle click forced a re-navigation); fixture time is deterministic so the frames differ only by theme — verified by a differ-hash control (identical hashes would have exposed a silently failed toggle). The capturer's pre-committed served-state check ("Blocked" renders unclipped) was INAPPLICABLE to the remedy actually shipped (the row collapses to one trigger; the word no longer appears) — the real requirement (nothing overflows the column) was verified by direct observation instead, and this note records that the check that ran is not the check that was specified.
+Capture record for the final pair: Browser 2, 1492×812, HEAD = db18c95, FE-scope 444 tests exit 0 + both tsc lanes 0 at shoot time (package app-lane red only on bridge's in-flight itest files, known and theirs). Superseded intermediates from the R5 iteration (the 16:57 pair, the r5-findings-1-4 light, the session-dark-shell detail) remain as history rows below. Light and dark are from two loads, not one (a pre-hydration toggle click forced a re-navigation); fixture time is deterministic so the frames differ only by theme — verified by a differ-hash control (identical hashes would have exposed a silently failed toggle). The capturer's pre-committed served-state check ("Blocked" renders unclipped) was INAPPLICABLE to the remedy actually shipped (the row collapses to one trigger; the word no longer appears) — the real requirement (nothing overflows the column) was verified by direct observation instead, and this note records that the check that ran is not the check that was specified.
 
 ## SUPERSEDED (kept as history; do not review against these)
 

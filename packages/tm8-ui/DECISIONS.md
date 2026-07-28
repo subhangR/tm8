@@ -361,3 +361,153 @@ Rationale, and the reason this is a ledger entry rather than a bug fix: the row 
 Same floor-inversion class as D34 (unbounded content in a fixed slot destroying the slot), different root: a misread data shape rather than a long word.
 
 **Corollary, from the same pass:** popovers dismiss on Escape (consumed per C6 layer 2, so dismissing a picker never also pops the panel stack) and on outside pointer-down. The real-browser pass caught this in the new filter picker AND in the kind selector written hours earlier; both were fixed through one shared `useDismissable` rather than patching the instance under review. Jsdom could not have found it — nothing in a unit test notices that a popover has no way out.
+
+## D36 — In-panel list search is `f`; `/` stays the palette's guaranteed path everywhere (2026-07-28)
+
+Source: A1a nav/registry seat, ruling requested by fe-coordinator during R5 gate iteration (user finding #2 — in-panel list search, T0-3 anatomy). The coordinator's stated read was that layer 5 should consume `/` for search-focus ahead of layer 6's palette binding; that read is **not** adopted, for the reason below.
+
+Conflict: WLT §5.8 publishes plain `/` as the palette's path **"everywhere"** and names it the GUARANTEED one. T0-3 draws slash-focus on the panel's search field. Both cannot hold.
+
+Ruling: **`/` is untouched — it opens the palette at layer 6 from every focus state, including a focused list. In-panel search binds to plain `f` at layer 5.**
+
+Why the obvious reading fails, and this is the load-bearing part: `/` is guaranteed *because* `⌘K` is browser-owned on Chrome Windows/Linux and on Firefox everywhere (WLT §5.8's own collision matrix). A focused list is the workspace's most common focus state. Consuming `/` there would leave the palette with **no reachable binding at all on half the supported matrix, in the state users occupy most of the time** — and `Esc` does not rescue it, because at layer 5 `Esc` pops the panel stack rather than blurring to chrome. The guarantee would survive in the published text and die in practice, which is the failure mode C6 exists to prevent: the map is a contract, not a per-context lottery.
+
+`f` (find) is free, browser-proof, mnemonic, and gives search a guaranteed path of its own rather than borrowing the palette's. Consequences, all asserted by tests:
+- Layer 3 untouched — a focused terminal still owns `f`, and nothing about the terminal contract changes.
+- Layer 4 governs the field once focused: every plain key is dead (so typing `f` types an `f`), `Mod` chords stay live where receivable, and `Esc` blurs the FIELD rather than popping the stack.
+- **`Mod+F` is deliberately NOT bound.** It is absent from WLT's hard-exclusion list, but every browser opens its own find bar on it, and the contract never advertises a chord the browser owns (R8-3).
+
+Canvas disposition: T0-3's slash-focus pixel is **superseded**, the same shape as D1 retiring the tab-bar toggle the T0-1 canvas still draws — a published keyboard guarantee outranks a canvas affordance, and the authority chain (rulings → DECISIONS → WLT → SPEC-FINAL → canvases) says so directly. The canvas is right that the field needs a keyboard path; it is wrong about which key was available to spend.
+
+Rationale: the binding philosophy (R8-3) makes the browser-proof plain-key core the thing everything else is arranged around. Spending the one guaranteed global key on a per-panel affordance inverts that, and the cost lands invisibly — on keyboard-only users, on exactly the platforms where the fallback is already gone.
+
+## D37 — Correction to D36: the slash hint is drawn by T0-1, not T0-3 — and the hint chip must render `f` (2026-07-28)
+
+Source: A1a nav/registry seat, self-correction. Prompted by fe-coordinator's #2/#3 dispute resolution ("the authority was T0-1's in-situ panels; T0-3 draws neither"), then MEASURED against the canvas files rather than accepted as a second relay.
+
+**What D36 got wrong.** D36's canvas-disposition paragraph asserts that "T0-3 draws slash-focus on the panel's search field" and declares that pixel superseded. **T0-3 contains the string "search" zero times.** It draws no search field, so there was nothing there to supersede. I took that claim from the ruling request and repeated it as fact in a ledger entry without opening the canvas — a relayed claim published as a measurement, which is the failure this program has spent the day naming in other people's work.
+
+**What is actually true, and it does not weaken D36.** `T0-1 Workspace Hi-Fi` — THE GATE TARGET — draws the search field in BOTH side panels, with a per-kind placeholder (`Search teammates`, `Search projects`) and a mono key-hint chip. The chip's literal content is:
+
+```
+⌕ {{L.search}}<span style="flex:1"></span><span style="font-family:'JetBrains Mono';font-size:10px">/</span>
+```
+
+So the slash-focus affordance is real and IS drawn — in T0-1, not T0-3. D36's ruling (`f` for in-panel search, `/` reserved to the palette) and its supersession stand unchanged on their own argument, which never depended on which canvas drew the chip. Only the citation was wrong.
+
+**The consequence D36 missed, which is why this is a correction and not a footnote.** Because the chip lives in T0-1, it is ON THE GATE SCREEN. A reviewer opening the master screen will see a `/` hint next to a field that answers to `f`. Ruling: **the hint chip renders `f`.** A key hint is not decoration — it is the contract's own advertisement of itself, and a chip that names a key the app does not bind is a lie in the one place a user goes to learn the key. This is the same discipline as R8-3's "never advertise a chord the browser owns", applied to our own binding: never advertise a key we did not bind.
+
+Note for the R5 reviewer: the `/` in the canvas is not a defect in the design — it is the same key-budget collision D36 resolved, drawn before the collision was noticed. The canvas is right that the field deserves a hint; `f` is what the hint says.
+
+Method note, recorded because the correction was nearly missed twice: my first two attempts to verify this used `placeholder=` and `<input` as probes and returned zero for EVERY canvas including the one that demonstrably has search fields — the canvases are inline-styled divs with no form elements at all. A clean zero from a detector that cannot fire is not evidence, and I only caught it by checking that the probe fired on a known-positive first. The probe that works is the literal glyph-and-token shape (`⌕ {{…}}`).
+
+## D38 — Canvas hierarchy: T0-1's in-situ anatomy EXTENDS the component canvases; walks check the composed one (2026-07-28)
+
+Source: A1c, from an anatomy walk that produced a confidently wrong answer at the R5 gate. Corrected by fe-coordinator, who verified T0-1 independently; A1a's D37 corrects the same miss from the keyboard side.
+
+Ruling: when auditing a surface for missing elements, the COMPOSED canvas (T0-1, the gate screen) is authoritative over the dedicated component canvas (T0-3, T0-4) for what that surface carries IN SITU. T0-1's panel headers draw elements T0-3's dedicated panel frames do not, and T0-1 wins. An anatomy walk that measures only the component canvas is measuring the wrong artifact.
+
+Rationale, and the incident: asked to sweep the list-panel header for missing elements, I walked T0-3 element by element, measured all five of its frames, and reported — accurately — that T0-3 contains zero search glyphs, zero occurrences of the word "Search", and no view switcher in any frame. I concluded the features were unspecified and asked for a ruling before building. T0-1 draws BOTH: each panel header carries a bordered `⌕ {search}` input row with a mono hint chip, and its support code builds `views = [['≡','List'],['⑂','Tree'],['▥','Board'],['◉','Graph']]` with active-colour logic. The measurement was correct; the artifact was wrong. Two corroborating arguments I offered (ListConfig has no search field; the palette is the search surface per §4.2) were consistent with my wrong answer and did nothing to catch it — agreement among sources that share an assumption is not corroboration.
+
+Consequences adopted:
+1. **Anatomy walks name their artifact and check the composed canvas.** "T0-3 draws no search" and "the design specifies no search" are different claims; only the first was measured.
+2. **A drawn pixel loses to a later ruling, and the ledger says which.** T0-1's hint chip draws `/`; D36 binds `f`; the chip ships `f`. A chip naming an unbound key is a lie in the one place users look to learn keys.
+3. **The four switcher positions come from T0-1, not from the registry's six modes.** `feed` and `gallery` are CollectionView layouts (A2); the composed workspace canvas does not offer them in a side panel. `hiddenModes` may show fewer, never more.
+
+## D39 — The verdict outranks the record at EVERY consumer, and dead registry data is a defect class (2026-07-28)
+
+Source: A1c, from R5 gate findings #1 and #4 — both reported as separate defects, both one mechanism.
+
+Ruling, two parts:
+
+1. **Wherever a `liveTreatment` exists for a kind, it owns the status presentation** — the header pill, the tile word, and the chrome strip alike. A kind's own `statusPill`/`tile.badges` status source fills that slot only where no verdict is available. The record's claim is never discarded (the registry's authored label states and withdraws it in one breath) but it never wears the live treatment alone. Rendering record-`running` in live green above a session the node reports stale is the D6/R-UI-5 violation, and it shipped to the user's screen because this rule existed in the tile and nowhere else.
+
+2. **Registry data with no consumer is a defect, not a latent feature.** `ListConfig.tile.badges` — 35 sources across 16 rows — had no reader at all; the renderer consumed only `tile.pulse`. Every kind rendered a bare title, and `work_session` looked correct solely because it owns `liveTreatment`, a different field on a different path, which disguised a universal break as one kind's bug. The guard is a CONSUMER-COVERAGE test deriving the source set from the registry (not from the type union) and asserting the renderer handles each: the next added source fails loudly rather than rendering nothing.
+
+Rationale: the finding-class sentence is **a consumer that has the authoritative fact available and renders a lesser one**. All four gate findings were instances — the tile ignored its badges, the header ignored the verdict, the action bar was never handed the verdict or the capabilities the same panel was holding three lines above. Note the shape of the near-miss on the guard: a registry-side test asserting `tile.badges` is POPULATED passed throughout, over data nobody read. A test on one side of a seam cannot prove the two sides MEET; only a test that crosses it can.
+
+## D40 — Correction to D24: the whole work_session panel is an always-dark shell, not just the strip and host (2026-07-28)
+
+Source: A1c, from R5 gate finding #5 — the user's words were "TERMINAL SHOULD FULLY COVER". Measured against T0-1's in-situ (Z3) session markup and ordered by fe-coordinator as an append-only correction rather than an edit to D24.
+
+Ruling: the `work_session` panel renders in the always-dark scope IN ITS ENTIRETY — breadcrumb, header, action bar, tab strip, Content body sections, reserved seam, banner, canvas, the exited/stale fallbacks, and the footer. Not the strip and host alone. D24's mechanism is unchanged and untouched: a nested `.cv2-root[data-theme="dark"]` scope re-declaring the real dark tokens through tokens.css's own selector, zero duplicated hex, cannot-drift-by-construction. **Only the scope BOUNDARY moves.** Keyed on `panel.archetype === 'terminal'` — a registry field, never a kind literal.
+
+Measured values from T0-1's Z3 session panel, which is what settles it: every hairline `#2C2719` (dark line); title `#EFE9DB` (dark ink); provider and controls `#8C8470` hovering to `#302A1D`; close-hover `#DA7D6A`; section eyebrows `#665E4C`; project chip `#BDB5A2` on `#1B1810` with border `#3B3524`; terminal `#131009`; **and the EXITED fallback on `#1B1810` — dark, not paper.**
+
+Also corrected here: the reserved seam is **24px**, not the 34px built from T0-4 anatomy prose.
+
+Rationale, and the provenance, which is the part worth keeping: D24 ruled that panel chrome follows the theme and only the strip and host stay dark, and its stated evidence was T0-2's `#exited` frame drawing a LIGHT exited session panel. That frame is a standalone COMPONENT frame. The COMPOSED canvas draws the same state dark. **Generalising from the component canvas to the composed one is precisely the error D38 names — and I made it before writing D38 and did not catch it while writing D38.** A ruling I authored was the provenance of a gate defect, and the ledger is where that has to be visible; the code fix and the ledger fix land together.
+
+The symptom inverted the cause, which is why it took a measurement rather than a look: the xterm read as an *inset block with paper gutters*, so the natural reading was "the canvas region needs to be full-bleed". The canvas region was already full-bleed and measured clean (direct flex child, `flex: 1`, no margin, `min-height: 160`, scrolls internally). What was wrong was its NEIGHBOURS — the sections above and the fallback below wearing paper. **A region can look inset because it is inset, or because everything around it is the wrong colour; only measuring both tells you which.**
+
+Verified in the browser at 1492×812 in BOTH themes. Dark theme cannot prove this law — everything is dark there. The LIGHT theme is the test that matters, and it passes: the session panel renders fully dark against a paper workspace, reading as designed rather than as a rendering fault. Evidence: `gate-evidence/T0-1-session-dark-shell-light-theme.jpg`, sha256 739974ee773a3ff42079f468a7f8c33667757030e62ce00509bce29971da61a6.
+
+## D42 — Refinement of D38: the composed canvas governs COMPOSITION, the dedicated canvas governs GRAMMAR (2026-07-28)
+
+Source: A1c, after over-applying my own D38. The correcting argument is A1a's, from its D17 precedent.
+
+Ruling: D38 established that T0-1's in-situ anatomy EXTENDS the component canvases and that anatomy walks must check the composed one. That holds for **which elements exist** — it is how the search field and the view switcher were settled. It does **not** license "T0-1 overrides the component canvas on every question". The boundary, following D17's menu precedent (T1-1 governs menu ROW GRAMMAR, T0-1 governs rail COMPOSITION):
+
+- **Composition** — which elements a surface carries in situ: the COMPOSED canvas (T0-1) governs.
+- **Grammar** — the internal mechanics, labelling and persistence of an element: the DEDICATED canvas governs (T0-3 for the list panel, T0-4 for the detail panel).
+
+Rationale, and the incident that produced it: I reported the task section labels as a "divergence" because T0-1 draws `NEEDS ATTENTION` / `IN PROGRESS` while the registry declares `CURRENT` / `COMPLETED`, and implied a rename. A1a measured both canvases and refuted it on three grounds. (1) It is not a divergence — T0-3 draws CURRENT/COMPLETED and T0-1 draws the other pair; the registry matches its governing canvas exactly. (2) They are not the same mechanism: T0-1's are `isGrp` group rows guarded by `sort === 'Default' && !anyF`, so they EVAPORATE on any sort or filter, while `sections` persist and carry `collapsedByDefault`. (3) `NEEDS ATTENTION` is the R8-dormant attention concept already carried as `needsAttentionGroup` — a predicate, not a section.
+
+The cost had it been complied with rather than challenged: the rename would have silently deleted the completed/collapsed behaviour that WLT §3 lists as a survival item, and conflated a dormant designed-but-undetected feature with a live lifecycle split. I proposed it about another seat's data, from one canvas, while spending the same day arguing that conflating two axes is the defect class.
+
+**A ruling generalised past its evidence is a defect with a citation.** D38 was correct and I applied it to a question it never addressed; the citation made the over-application look grounded. This entry is the boundary D38 should have carried.
+
+## D43 — Lifecycle tiers are universal; tabs, footer and total read ONE per-tier query (2026-07-28)
+
+Source: **USER at R5 review, via master.** THE GATE'S FIRST USER-RATIFIED ENTRY. Registry field by A1a; consumers by A1c.
+
+Authority note, verbatim as ordered: **the user ratified the canvas ADDITION over WLT silence; WLT gains the tier by ratification, not by drift.**
+
+Ruling: every collection kind carries the three lifecycle tiers Open / Done / Archived, in fixed order, as T0-1 draws them — plus the footer count line (`9 open · 601 done · 33 archived`) and the kind-selector total. Tabs are a lifecycle TIER; `sections` are triage grouping WITHIN the current tier; the filter chips narrow within it further. All three coexist — T0-1 draws tabs and group headers together, and neither supersedes the other.
+
+Two consequences worth recording because they were nearly got wrong:
+
+1. **COUNTS ARE NOT A REGISTRY FIELD.** Each tier's count is its own query's result total, and the tab label, the footer line and the selector total all read that one source. A count field would be a second source that could disagree with the query it claims to summarise — the three surfaces would then be consistent with each other and wrong together. (A1a's design, against my requirement as stated; they were right to refuse the shape I asked for.)
+
+2. **`unsupported` IS THE HONEST-EMPTY ANSWER.** `archived` is a real query for every kind (`deleted: 'only'` is a genuine `CollectionQuery` member); `open`/`done` are only expressible where the contract knows a state axis. Every other kind's `done` tier carries an `unsupported` reason, renders with an honestly-zero count, and is dimmed but PRESENT — never hidden. Hidden and empty are different states (L6), and a tab that vanished per-kind would teach nothing about why. This means T0-1's drawn `Docs [Open 4, Done 58, Archived 4]` cannot be honoured: those are mock numbers and the contract has no doc-completion concept. Saying so is the ruling, not a shortfall.
+
+Implementation note that cost a real bug: tabs and filter chips had been coded as either/or, which was invisible while `work_session` was the only kind with tabs. Making tiers universal deleted the filter trigger from every kind at once. The tests caught it. **A conditional that is only ever exercised on one branch is untested in the other, and the day it flips it takes a working feature with it.**
+
+## D41 — Task sections are NOT renamed: T0-1's default grouping is a different mechanism (2026-07-28)
+
+*Appended OUT OF NUMERIC SEQUENCE, after D43, and the reason is itself the point.* I cited D41 in four committed test names, in `registry.ts` comments and in commit `db18c95` before the entry existed — the number was claimed in code and never written, so the citations dangled against a record that was not there. Siblings appended D42 and D43 around the gap. Rather than renumber committed code I am writing the entry at its claimed number and recording why it sits out of order: a reference in durable code is a claim on the ledger, and claiming one without writing it is the documentation form of the commit-dangle I caused an hour earlier with a doorbell.
+
+Source: A1a nav/registry seat. Raised as a canvas-conformance correction by A1c, relayed as an instruction by fe-coordinator, COUNTERED by me on measurement, and the counter accepted as the ruling by fe ([fe->a1a 34]).
+
+**The claim:** T0-1's composed task panel draws sections `NEEDS ATTENTION` / `IN PROGRESS` where the registry declares `CURRENT` / `COMPLETED`; therefore rename the registry's sections.
+
+**Measured, from the canvas files rather than the relay:** both label sets are drawn, in DIFFERENT canvases. `T0-3 Entity List Panel` contains `CURRENT` ×2 and `COMPLETED` ×1 and neither of the others; `T0-1 Workspace Hi-Fi` contains `NEEDS ATTENTION` ×1 and `IN PROGRESS` ×1 and neither of the others. So the registry never diverged from its governing canvas — it matches T0-3, the dedicated EntityListPanel canvas.
+
+**Ruling: no rename. `CURRENT` / `COMPLETED` stands**, because the two are not the same mechanism. Verbatim from T0-1's source:
+
+```js
+const buildTasks = (sort, f) => {
+  const anyF = Object.keys(f).length > 0;
+  if (sort === 'Default' && !anyF) return [
+    { isGrp: true, name: 'NEEDS ATTENTION · 2', gc: C.wait },
+```
+
+Three facts follow. (1) These are `isGrp` GROUP ROWS carrying a group colour; T0-3's are section EYEBROWS (mono 9.5px/600/.1em ink-3). (2) They exist only under `sort === 'Default' && !anyF` — a default-sort grouping that EVAPORATES on any sort or filter, where `sections` persist across both. (3) `NEEDS ATTENTION` is the R8-dormant concept the registry already carries as `needsAttentionGroup`.
+
+**What the rename would have cost, which is why it was dangerous rather than cosmetic:** it would have silently deleted `collapsedByDefault` on COMPLETED — a WLT §3 survival item, the one class of behaviour the survival list exists to make undeletable — and conflated a dormant designed-but-undetected feature with a live lifecycle split.
+
+**Disposition of T0-1's grouping:** recorded as an ADDITIVE default-`groupBy` candidate for the A2 wave (D2 axis-picker territory, `CollectionQuery.groupBy`). Not built now, and never as a substitution for `sections`.
+
+**Left honestly open:** whether the DESIGNER intends T0-1's attention/progress grouping to supersede T0-3's sections in the shipped product. The canvases do not answer it — they show two mechanisms with different persistence and different colour semantics, and that is a mechanism finding, not a design-intent one. If the answer is "supersede", the correct change is still not a rename: it is sections replaced by a default groupBy, plus a decision about where the completed/collapsed split goes.
+
+Precedent applied: D17's split (dedicated canvas governs GRAMMAR, composed canvas governs COMPOSITION), which A1c generalised as D42 after this counter.
+
+Rationale: a difference between two canvases is not a divergence in the data, and "just rename the labels" is the shape a spec-defect takes when the two things being compared were never the same field.
+
+## D44 — USER SCOPE DIRECTIVE: the Run workflow pulls forward from T5-5/A2 into current scope (2026-07-28)
+
+Source: USER order at R5 review, via master coordinator. Ledgered by fe-coordinator.
+
+Ruling: Every task/entity row gets a RUN BUTTON with the launch workflow behind it — launch profile, model selection, agent/teammate selection — in the CURRENT build, fixture-backed (fixture teammates/models/projects; spawn creates a fixture session; real execution.spawn wires at integration). Interaction shape is user-named: the maestro TaskTile expand pattern (row Run → inline quick config with teammate/model → full sheet), as a UX TRANSPLANT REFERENCE (reference paths recorded in the dispatch; R9 does not apply — this is interaction-shape reference, not code harvest). The T5-5 canvas remains the DESIGN authority for the full launch sheet (teammate rows with model+tool+owner, trust-gated M:N projects incl. scratch, profile resolution shown, refusal-card honesty). Registry-driven per-kind wiring via the existing rowActions carrier (B1) — no kind branching.
+
+Rationale: User order supersedes the A2 deferral for this workflow; composition law reconciles the user-required interaction shape with the approved sheet design. Sequencing (fe call): the findings #1–#7 capture ships as R5-closure evidence immediately; the Run-inclusive capture completes the reviewed package in the follow-on window.
