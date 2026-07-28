@@ -27,7 +27,7 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 1;
+export const SHIPPED_DEFAULT_MENU_REVISION = 2;
 
 /**
  * WLT §2, encoded literally:
@@ -71,6 +71,9 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
             { type: 'kind', ref: 'team_member' },
           ],
         },
+        // Revision 2 (2026-07-29): the ◉ Graph view — no longer deferred, the
+        // prototype ships on fixtures (GRAPH-VIEW-PLAN §2).
+        { type: 'view', ref: 'graph' },
       ],
     },
     {

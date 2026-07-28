@@ -659,6 +659,15 @@
   cursor: help;
 }
 .cv2-root .pn-msg__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); text-wrap: pretty; }
+/* A failed post is held HERE, beside the text that failed — T5-5's
+   anti-toast law: a refusal never leaves the surface that asked. */
+.cv2-root .pn-composer__error {
+  flex: 1 1 100%;
+  margin: 0 0 4px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-block);
+}
 .cv2-root .pn-composer {
   flex: none;
   display: flex;

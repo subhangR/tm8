@@ -11,8 +11,11 @@
  */
 import type { EntityId } from '@tm8/contract';
 
-/** T1-4 draws one glyph and one tone for this family: wait-amber, never block-red. */
-export type NoticeTone = 'warn' | 'error';
+/** T1-4 draws wait-amber and block-red; T4 ALSO draws an info-blue conflict
+    toast that was STRUCTURALLY IMPOSSIBLE while this union had two members
+    (Surface Audit — same class as the missing ActionRef verbs: a designed
+    state that cannot exist as data cannot render). */
+export type NoticeTone = 'warn' | 'error' | 'info';
 
 export interface Notice {
   id: string;

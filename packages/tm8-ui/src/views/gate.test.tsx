@@ -104,12 +104,12 @@ describe('THE GATE — composed T0-1 master screen', () => {
 
   it('renders in BOTH themes — dark is a data-theme scope, not a second stylesheet', async () => {
     const { container, getByLabelText } = renderGate();
-    await waitFor(() => getByLabelText('Account menu'));
+    await waitFor(() => getByLabelText('Toggle theme'));
     const root = container.querySelector('.cv2-root') as HTMLElement;
     expect(root.getAttribute('data-theme')).toBeNull(); // light: no stamp
 
     // D1: theme's one home is the account menu — never a tab-bar toggle.
-    getByLabelText('Account menu').click();
+    getByLabelText('Toggle theme').click();
     await waitFor(() => expect(root.getAttribute('data-theme')).toBe('dark'));
   });
 

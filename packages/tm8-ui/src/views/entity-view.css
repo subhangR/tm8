@@ -1,0 +1,133 @@
+/* ==========================================================================
+   ENTITY VIEW — the per-kind screen (D65): wide list + Z3 aside + Z4 full.
+   Geometry from canvas-T0-4.md: Z3 peek ≈440 / floor 320; Z4 full-view
+   header 42px, reading column max-width 700px on --pn-paper. Colors are
+   tokens only (the package hex guard scans this file).
+   ========================================================================== */
+
+.cv2-root .ev-root {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  background: var(--pn-paper);
+}
+
+/* --- list + aside split --------------------------------------------------- */
+.cv2-root .ev-split {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.cv2-root .ev-list {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The wide list hosts the same EntityListPanel; width is the "wider, more,
+   better" half of the ruling — the panel's non-compact form with room. */
+.cv2-root .ev-list > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.cv2-root .ev-aside {
+  flex: none;
+  width: 440px; /* Z3 peek (canvas) */
+  min-width: 320px; /* Z3 floor (canvas) */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .ev-aside > * {
+  flex: 1;
+  min-height: 0;
+}
+/* Below ~1100px viewport the 440 peek would crush the wide list under its
+   own floor; the aside yields to the Z3 floor instead of the list lying. */
+@media (max-width: 1100px) {
+  .cv2-root .ev-aside {
+    width: 320px;
+  }
+}
+
+/* --- Z4 full view ---------------------------------------------------------- */
+.cv2-root .ev-full {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-paper);
+}
+.cv2-root .ev-full__head {
+  flex: none;
+  height: 42px; /* canvas: full-view header */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .ev-full__collapse {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .ev-full__collapse:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .ev-full__crumb {
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cv2-root .ev-full__spacer {
+  flex: 1;
+  min-width: 0;
+}
+.cv2-root .ev-full__esc {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+/* V1 INTERIM (stated in EntityView.tsx): the Z3 panel rides in the Z4 shell,
+   centered at the reading measure. The six per-archetype Z4 layouts replace
+   this interior in their own pass; the SHELL (header, bleed, esc) is final.
+   Terminal exception: a work_session panel goes FULL WIDTH — capping the
+   terminal at prose measure would invert D63. */
+.cv2-root .ev-full__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0;
+}
+.cv2-root .ev-full__body > * {
+  flex: 1;
+  min-height: 0;
+  max-width: 980px;
+}
+.cv2-root .ev-full__body > [data-archetype='terminal'] {
+  max-width: none;
+}

@@ -106,6 +106,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               : `${admission.cause} — ${admission.remedy}`
           }
           liveness={data.livenessOf(id)}
+          livenessOf={data.livenessOf}
+          messages={data.messagesOf(id)}
+          onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
           streaming={data.activity[id] ?? false}
           onPin={() => {
             if (nav.pinned.includes(id)) {

@@ -333,7 +333,7 @@ describe('SpaceTabBar (T0-1, D1)', () => {
   it('exposes the account menu — theme’s one home per D1', () => {
     const onOpenAccount = vi.fn();
     const { getByLabelText } = renderBar({ onOpenAccount, accountInitial: 'A' });
-    fireEvent.click(getByLabelText('Account menu'));
+    fireEvent.click(getByLabelText('Toggle theme'));
     expect(onOpenAccount).toHaveBeenCalled();
   });
 

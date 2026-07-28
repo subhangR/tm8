@@ -47,11 +47,13 @@ describe('the shipped default menu', () => {
 
   it('omits deferred features entirely (R7-5: never rows in the shipped config)', () => {
     const refs = JSON.stringify(SHIPPED_DEFAULT_MENU);
-    // Activity, Leaderboard and Graph surface as disabled PALETTE rows (§4.2),
-    // never as menu rows — a menu row is a promise the app can navigate there.
+    // Activity and Leaderboard surface as disabled PALETTE rows (§4.2), never
+    // as menu rows — a menu row is a promise the app can navigate there.
+    // Graph LEFT this list on 2026-07-29 (user ruling): the ◉ view ships
+    // (GRAPH-VIEW-PLAN §2), so its row now keeps that promise.
     expect(refs).not.toContain('leaderboard');
     expect(refs).not.toContain('activity');
-    expect(refs).not.toContain('graph');
+    expect(refs).toContain('"graph"');
   });
 
   it('always contains settings — the schema requires it and so does §4.1', () => {
@@ -65,7 +67,7 @@ describe('the shipped default menu', () => {
       expect(presentation.icon.length, ref).toBeGreaterThan(0);
     }
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'inbox', 'settings', 'workspace'].sort(),
+      ['channels', 'dashboard', 'feed', 'graph', 'inbox', 'settings', 'workspace'].sort(),
     );
   });
 });

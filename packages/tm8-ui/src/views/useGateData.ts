@@ -23,6 +23,8 @@ import type {
   CollectionQuery,
   ExecutionSpawnInput,
   EntityDetail,
+  MessageView,
+  PostMessageInput,
   EntitySummary,
   MenuConfig,
   SpaceId,
@@ -73,6 +75,11 @@ export interface GateData {
    * count updates the way it will with a real node. Not a stub.
    */
   spawn: (input: ExecutionSpawnInput) => Promise<void>;
+  /** The composer's dispatcher (Surface Audit): seam postMessage, then the
+      anchor's thread re-read so the echo is on screen, not implied. */
+  postMessage: (input: PostMessageInput) => Promise<void>;
+  /** The thread for an entity, hydrated by pull(). Absent = no read ran. */
+  messagesOf: (id: string) => readonly MessageView[] | undefined;
   seam: Seam;
   domain: DomainStoreHandle;
 }
@@ -126,6 +133,7 @@ export function useGateData(options: GateOptions): GateData {
   const [liveIds, setLiveIds] = useState<readonly string[]>([]);
   const [rows, setRows] = useState<Record<string, readonly EntitySummary[]>>({});
   const [details, setDetails] = useState<Record<string, EntityDetail>>({});
+  const [threads, setThreads] = useState<Record<string, readonly MessageView[]>>({});
   const [activity] = useState<Readonly<Record<string, boolean>>>({});
 
   /**
@@ -279,6 +287,18 @@ export function useGateData(options: GateOptions): GateData {
     [seam, spaceId, hydrate],
   );
 
+  /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
+     nothing — inviting an action it could not perform, the worst honesty
+     class on the board. Same passthrough shape as spawn: the seam command,
+     then idempotent re-hydration so the thread shows the echo. */
+  const postMessage = useCallback(
+    async (input: PostMessageInput) => {
+      await seam.commands.postMessage(input);
+      if (spaceId) await hydrate(spaceId);
+    },
+    [seam, spaceId, hydrate],
+  );
+
   /**
    * THE FILTER REACHES THE SEAM (D57's fifth layer).
    *
@@ -354,10 +374,30 @@ export function useGateData(options: GateOptions): GateData {
   const pull = useCallback(
     async (id: string) => {
       if (details[id]) return;
-      const detail = await seam.entity(id as never).catch(() => undefined);
+      const [detail, thread] = await Promise.all([
+        seam.entity(id as never).catch(() => undefined),
+        // The thread rides the same pull: a composer that posts into a tab
+        // that never READS is only half a fix (Surface Audit). A read error
+        // leaves the id absent — the tab renders its designed empty state
+        // rather than a fabricated zero.
+        seam.messages(id as never).catch(() => undefined),
+      ]);
       if (detail) setDetails((current) => ({ ...current, [id]: detail }));
+      if (thread) setThreads((current) => ({ ...current, [id]: thread.items }));
     },
     [seam, details],
+  );
+
+  /** Post, then re-read THAT anchor's thread so the echo is visible truth. */
+  const postAndRefresh = useCallback(
+    async (input: PostMessageInput) => {
+      await postMessage(input);
+      const anchor = input.anchorIds[0];
+      if (!anchor) return;
+      const thread = await seam.messages(anchor as never).catch(() => undefined);
+      if (thread) setThreads((current) => ({ ...current, [anchor]: thread.items }));
+    },
+    [postMessage, seam],
   );
 
   // Exposed through the returned object so views can request a panel's detail
@@ -377,11 +417,13 @@ export function useGateData(options: GateOptions): GateData {
       activity,
       ensureKind,
       spawn,
+      postMessage: postAndRefresh,
+      messagesOf: (id: string) => threads[id],
       seam,
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, spawn, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, spawn, postAndRefresh, threads, seam, domain, pull],
   );
 
   return data;

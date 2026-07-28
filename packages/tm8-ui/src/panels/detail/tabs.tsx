@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ActivityItem, Connections, EdgeGroup, EntityDetail, MessageView } from '@tm8/contract';
 import { Avatar, Chip, Eyebrow } from '../../kit';
 import { getKind } from '../../domain';
@@ -23,6 +24,7 @@ export function DiscussionTab({
   authoredFrom,
   canPost,
   postDisabledReason,
+  onPost,
 }: {
   messages: readonly MessageView[];
   /** D7.3 copy for the hollow "from this session" chip. */
@@ -31,6 +33,10 @@ export function DiscussionTab({
   authoredFrom?: Readonly<Record<string, string | null>>;
   canPost?: boolean;
   postDisabledReason?: string;
+  /** The dispatcher. ABSENT ⇒ the composer renders DISABLED with the true
+      reason (Surface Audit 2026-07-29: it rendered enabled and wired to
+      nothing — inviting an action it could not perform). R5 #9, structural. */
+  onPost?: (body: string) => Promise<void> | void;
 }) {
   return (
     <div className="pn-body" id="tabpanel-discussion" role="tabpanel" aria-labelledby="tab-discussion">
@@ -52,23 +58,7 @@ export function DiscussionTab({
           ))}
         </ul>
       )}
-      <div className="pn-composer">
-        <input
-          className="pn-composer__input"
-          placeholder="Reply — @ to mention"
-          disabled={canPost === false}
-          title={canPost === false ? postDisabledReason : undefined}
-          aria-label="Reply"
-        />
-        <button
-          type="button"
-          className="pn-composer__send"
-          aria-label="Send reply"
-          disabled={canPost === false}
-        >
-          ↑
-        </button>
-      </div>
+      <Composer canPost={canPost} postDisabledReason={postDisabledReason} onPost={onPost} />
     </div>
   );
 }
@@ -266,4 +256,84 @@ function humanizeVerb(verb: string): string {
  */
 function relativeish(iso: string): string {
   return iso.slice(0, 10);
+}
+
+/**
+ * The composer — a REAL control now (Surface Audit): controlled input,
+ * Enter-or-click submit, in-flight disable, clear-on-success, error held
+ * visibly. No dispatcher ⇒ disabled-with-reason, never enabled-inert.
+ */
+function Composer({
+  canPost,
+  postDisabledReason,
+  onPost,
+}: {
+  canPost?: boolean;
+  postDisabledReason?: string;
+  onPost?: (body: string) => Promise<void> | void;
+}) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const blocked = canPost === false || !onPost;
+  const reason =
+    canPost === false
+      ? postDisabledReason
+      : !onPost
+        ? 'Posting isn’t connected in this surface yet — the composer is real; its dispatcher is not wired here.'
+        : undefined;
+
+  const submit = async () => {
+    const body = text.trim();
+    if (!body || blocked || busy || !onPost) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onPost(body);
+      setText('');
+    } catch (e) {
+      // The failure is the composer's fact — held HERE beside the text that
+      // failed (T5-5's anti-toast law: a refusal never leaves the surface
+      // that asked).
+      setError(e instanceof Error ? e.message : 'The message was not posted.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pn-composer">
+      {error ? (
+        <p className="pn-composer__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <input
+        className="pn-composer__input"
+        placeholder="Reply — @ to mention"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            void submit();
+          }
+        }}
+        disabled={blocked || busy}
+        title={reason}
+        aria-label="Reply"
+      />
+      <button
+        type="button"
+        className="pn-composer__send"
+        aria-label="Send reply"
+        disabled={blocked || busy || text.trim().length === 0}
+        title={reason}
+        onClick={() => void submit()}
+      >
+        {busy ? '…' : '↑'}
+      </button>
+    </div>
+  );
 }

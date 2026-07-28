@@ -186,6 +186,7 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   feed: { label: 'Feed', icon: '≋' },
   inbox: { label: 'Inbox', icon: '◹' },
   workspace: { label: 'Workspace', icon: '⌗' },
+  graph: { label: 'Graph', icon: '◉' },
   channels: { label: 'Channels', icon: '#' },
   settings: { label: 'Settings', icon: '⛭' },
 };

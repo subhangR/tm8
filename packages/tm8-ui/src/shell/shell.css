@@ -515,6 +515,12 @@
 .cv2-root .shell-notice--error .shell-notice__glyph {
   color: var(--pn-block);
 }
+/* T4's info-blue family — the conflict toast's tone (vocabulary added with
+   the NoticeTone member; the tone maps to the info ramp, word beside color
+   as everywhere). */
+.cv2-root .shell-notice--info .shell-notice__glyph {
+  color: var(--pn-info);
+}
 .cv2-root .shell-notice__text {
   flex: 1;
   display: flex;

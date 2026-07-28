@@ -9,8 +9,8 @@
  * The three lanes keep their authority: geometry sizes, navStore owns panel
  * state and the URL, the panels own anatomy. This file is composition only.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EntityId, SpaceId } from '@tm8/contract';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { EntityId, EntitySummary, SpaceId } from '@tm8/contract';
 import {
   MenuRail,
   NoticeHost,
@@ -21,6 +21,9 @@ import {
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import { navStore, useNavStore } from '../stores/navStore';
+import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
+import { createKeyboardController, type KeyboardController } from '../keyboard';
+import { allKinds } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput } from '../domain/launch';
 import type { DetailReasons } from '../panels';
@@ -34,6 +37,14 @@ import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { useTheme } from '../theme/useTheme';
 import { WorkspaceView } from './WorkspaceView';
+import { EntityView } from './EntityView';
+import { GraphScreen } from '../graph';
+import {
+  GRAPH_FIXTURE_NOW,
+  graphFixtureEdges,
+  graphFixtureNodes,
+  graphFixtureTimeline,
+} from '../fixtures';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -104,17 +115,58 @@ export function GateApp() {
     };
   }, [stack, pinned]);
 
-  // ⌘\ toggles the rail (§4.1). The full C6 controller is a separate lane; this
-  // is the one binding the shell owns outright.
+  /**
+   * GAP #0 (Surface Audit final): the palette and the C6 controller were
+   * NEVER MOUNTED while the UI's own copy taught "/ opens the palette" —
+   * a plain promise in visible copy, silently broken. This mounts the REAL
+   * controller (keyboard/controller.ts, chords guaranteed:true) as the one
+   * window keydown route; the old hand-rolled ⌘\ listener retired into it.
+   */
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const keyboardRef = useRef<KeyboardController | null>(null);
+  const commandSink = useRef<(command: string) => void>(() => undefined);
+  if (keyboardRef.current === null) {
+    keyboardRef.current = createKeyboardController({
+      onCommand: (command) => commandSink.current(command),
+    });
+  }
+  commandSink.current = (command: string) => {
+    if (command === 'palette.open') setPaletteOpen(true);
+    if (command === 'menu.toggle') setMenuCollapsed((collapsed) => !collapsed);
+  };
   useEffect(() => {
+    const kb = keyboardRef.current;
+    if (!kb) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== '\\' || !(event.metaKey || event.ctrlKey)) return;
-      event.preventDefault();
-      setMenuCollapsed((collapsed) => !collapsed);
+      const target = event.target as HTMLElement | null;
+      const textEntry =
+        !!target &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      kb.setContext({
+        textEntry,
+        modalDepth: paletteOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
+      });
+      // Legacy ⌘\ stays honored even if the binding table names it
+      // differently — losing a shipped shortcut would be its own regression.
+      if (event.key === '\\' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setMenuCollapsed((collapsed) => !collapsed);
+        return;
+      }
+      const result = kb.handle({
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+      });
+      if (result.handled && result.consumed) event.preventDefault();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [paletteOpen, launch]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -141,6 +193,45 @@ export function GateApp() {
   );
   void homeActivityLoadEarlierReason; // D7.1 — consumed by HomeView at fan-out.
 
+  /* Palette data. Results search WHAT THE APP HAS READ (the hydrated kind
+     caches) — honest scope for the fixture path; a seam-side text search is
+     the upgrade path and this stays correct when it lands. */
+  const paletteResults = useMemo(() => {
+    const q = paletteQuery.trim().toLowerCase();
+    if (!q) return [];
+    const seen = new Set<string>();
+    const out: EntitySummary[] = [];
+    for (const row of allKinds()) {
+      for (const item of data.rowsFor(row.kind)(undefined)) {
+        if (seen.has(item.id)) continue;
+        if (item.title.toLowerCase().includes(q)) {
+          seen.add(item.id);
+          out.push(item);
+          if (out.length >= 12) return out;
+        }
+      }
+    }
+    return out;
+  }, [paletteQuery, data]);
+
+  const paletteViews = useMemo<PaletteView[]>(
+    () => [
+      { id: 'view:workspace', label: 'Workspace', glyph: '#' },
+      { id: 'view:graph', label: 'Graph', glyph: '◉' },
+      { id: 'view:channels', label: 'Channels', glyph: '#' },
+      ...allKinds()
+        .filter((row) => !row.kind.startsWith('c:'))
+        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: row.chip.glyph })),
+    ],
+    [],
+  );
+  const openPaletteView = useCallback((id: string) => {
+    const [scope, ref] = id.split(':', 2) as [string, string];
+    if (scope === 'view') setActiveTarget({ type: 'view', ref: ref as never });
+    if (scope === 'kind') setActiveTarget({ type: 'kind', ref });
+    setPaletteOpen(false);
+  }, []);
+
   return (
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="shell-root">
@@ -149,6 +240,7 @@ export function GateApp() {
           activeSpaceId={data.spaceId || null}
           onSelectSpace={(id: SpaceId) => void id}
           accountInitial="A"
+          onOpenPalette={() => setPaletteOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
           onOpenAccount={toggleTheme}
         />
@@ -163,7 +255,46 @@ export function GateApp() {
             presentKind={presentKind}
           />
 
-          {data.ready ? (
+          {data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
+            /* ◉ Graph (revision-2 menu row) follows the D65 pattern exactly:
+               an activated menu view replaces the centre WHOLESALE — full
+               width, no side lists; node C1 clicks open the Z3 aside inside
+               the screen. Fixture-backed (GRAPH-VIEW-PLAN §2 P1). */
+            <GraphScreen
+              data={data}
+              reasons={reasons}
+              nodes={graphFixtureNodes}
+              edges={graphFixtureEdges}
+              timeline={graphFixtureTimeline}
+              now={GRAPH_FIXTURE_NOW}
+            />
+          ) : data.ready &&
+            (activeTarget?.type === 'kind' ||
+              (activeTarget?.type === 'view' && activeTarget.ref === 'channels')) ? (
+            /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
+               on row click, Z4 full on promote. The workspace stays the one
+               three-panel exception below. CHANNELS is a contract VIEW ref
+               but IS the channel EntityView (Surface Audit: it fell through
+               to the workspace silently — the misroute-honesty class). */
+            <EntityView
+              data={data}
+              kind={activeTarget.type === 'kind' ? activeTarget.ref : 'channel'}
+              reasons={reasons}
+              onNotice={notices.push}
+              onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
+            />
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref !== 'workspace' ? (
+            /* Unbuilt view refs (dashboard/feed/inbox/settings) SAY SO —
+               rendering the workspace under a highlighted Dashboard row was a
+               silent lie about where you are (same audit, same class). */
+            <div className="ev-root" data-testid="unbuilt-view">
+              <p className="evt-empty" style={{ margin: 24 }}>
+                {`${activeTarget.ref} isn’t built yet — its designed screen is coming. Nothing is hidden here; it does not exist in this build.`}
+              </p>
+            </div>
+          ) : data.ready ? (
             <WorkspaceView
               data={data}
               nav={nav}
@@ -239,6 +370,19 @@ export function GateApp() {
           )}
         </div>
 
+        <CommandPalette
+          open={paletteOpen}
+          results={paletteResults}
+          views={paletteViews}
+          ctx={{ spaceId: data.spaceId }}
+          onQueryChange={setPaletteQuery}
+          onOpenEntity={(id) => {
+            nav.push?.(id as EntityId);
+            setPaletteOpen(false);
+          }}
+          onOpenView={openPaletteView}
+          onDismiss={() => setPaletteOpen(false)}
+        />
         <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
       </div>
     </div>

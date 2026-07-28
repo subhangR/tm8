@@ -59,6 +59,14 @@ export const REASONS = {
   searchResultsDeferred: 'A full search results view isn’t available yet — the palette is the search surface.',
   activityScreenDeferred: 'The activity screen isn’t available yet.',
   addServerDeferred: 'Remote servers arrive in Phase 2 — this node is the only one wired.',
+  // T0-4 kind primaries (Surface Audit): drawn, ledgered, not yet executable.
+  equipDeferred: 'Equipping isn’t wired yet — the verb exists; its executor does not.',
+  refreshDeferred: 'Refreshing from the source isn’t wired yet.',
+  untrustDeferred: 'Trust changes aren’t wired yet — trust is a governed edit.',
+  unlinkDeferred: 'Unlinking isn’t wired yet.',
+  setAsDefaultDeferred: 'Setting a default isn’t wired yet.',
+  markReadDeferred: 'Read-state isn’t wired yet.',
+  quoteDeferred: 'Quoting into the composer isn’t wired yet.',
 } as const;
 
 /** Op-name gate (precedence 2): a facade refusal the shell already cached. */
@@ -265,6 +273,16 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
   'search-results': deferred('search-results', 'Open full results', '⌕', REASONS.searchResultsDeferred),
   'activity-screen': deferred('activity-screen', 'Activity', '◷', REASONS.activityScreenDeferred),
   'add-server': deferred('add-server', 'Add server', '＋', REASONS.addServerDeferred),
+  // T0-4 kind primaries (Surface Audit 2026-07-29). Deferred = renders
+  // disabled-with-reason wherever a registry row carries it (R7); each flips
+  // to available when its executor lands, with no consumer edit.
+  equip: deferred('equip', 'Equip', '⊕', REASONS.equipDeferred),
+  refresh: deferred('refresh', 'Refresh', '⟳', REASONS.refreshDeferred),
+  untrust: deferred('untrust', 'Untrust', '⛨', REASONS.untrustDeferred),
+  unlink: deferred('unlink', 'Unlink', '⊘', REASONS.unlinkDeferred),
+  'set-as-default': deferred('set-as-default', 'Set as default', '◎', REASONS.setAsDefaultDeferred),
+  'mark-read': deferred('mark-read', 'Mark read', '✓', REASONS.markReadDeferred),
+  quote: deferred('quote', 'Quote', '❝', REASONS.quoteDeferred),
 };
 
 /** Resolve a ref to its definition. Total over `ActionRef` — never throws. */

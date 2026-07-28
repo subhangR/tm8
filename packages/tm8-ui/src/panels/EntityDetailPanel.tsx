@@ -14,6 +14,10 @@ import {
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { GenericBody } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
+import { SubtreeBody } from './bodies/SubtreeBody';
+import { ReaderBody } from './bodies/ReaderBody';
+import { HubBody } from './bodies/HubBody';
+import { ProfileBody } from './bodies/ProfileBody';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -81,6 +85,12 @@ export interface EntityDetailPanelProps {
   /** work_session inputs — ignored by every other archetype. */
   handoffs?: readonly HandoffView[];
   liveness?: SessionLiveness;
+  /** Verdicts for RELATED session rows (SubtreeBody RUNS, ProfileBody RECENT
+      SESSIONS) — same seam source as `liveness`, per-id. Optional: an absent
+      map renders those rows' liveness as unverified, never as live. */
+  livenessOf?: (id: string) => SessionLiveness;
+  /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
+  onPostMessage?: (body: string) => Promise<void> | void;
   streaming?: boolean;
   needsAttention?: boolean;
   attentionDetail?: string;
@@ -238,6 +248,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
       <TabStrip
         active={tab}
+        contentLabel={config.label}
         counts={{
           discussion: props.messages?.length,
           connections: countConnections(detail, props.connections),
@@ -276,6 +287,7 @@ function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: 
         provenanceHollowReason={reasons.provenanceHollow}
         authoredFrom={props.authoredFrom}
         canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
+        onPost={props.onPostMessage}
       />
     );
   }
@@ -314,6 +326,50 @@ function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: 
         withdrawUnavailableReason={reasons.withdrawUnavailable}
         livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
         livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
+        onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+
+  /* The four remaining archetype arms (Surface Audit 2026-07-29: five
+     finished bodies had ZERO importers — the switch was the unowned edit).
+     Same law as the terminal arm: ARCHETYPE, a registry field, never kind. */
+  if (config.panel.archetype === 'subtree') {
+    return (
+      <SubtreeBody
+        detail={detail}
+        blocks={config.panel.blocks}
+        livenessOf={props.livenessOf}
+        onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+  if (config.panel.archetype === 'reader') {
+    return (
+      <ReaderBody
+        detail={detail}
+        blocks={config.panel.blocks ?? []}
+        historyUnavailableReason={reasons.versionHistory}
+        onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+  if (config.panel.archetype === 'hub') {
+    return (
+      <HubBody
+        detail={detail}
+        blocks={config.panel.blocks ?? []}
+        messages={props.messages}
+        onOpenEntity={onOpenEntity}
+      />
+    );
+  }
+  if (config.panel.archetype === 'profile') {
+    return (
+      <ProfileBody
+        detail={detail}
+        blocks={config.panel.blocks ?? []}
+        livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
       />
     );

@@ -75,9 +75,12 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) =>
       g.items.flatMap((i) => [i.ref, ...(i.type === 'view' ? (i.children ?? []).map((c) => c.ref) : [])]),
     );
-    for (const deferred of ['activity', 'leaderboard', 'graph']) {
+    // Graph left the deferred set 2026-07-29 (user ruling): the ◉ view ships
+    // as a revision-2 menu row (GRAPH-VIEW-PLAN §2).
+    for (const deferred of ['activity', 'leaderboard']) {
       expect(refs).not.toContain(deferred);
     }
+    expect(refs).toContain('graph');
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {

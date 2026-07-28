@@ -78,12 +78,18 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         / palette · ⌘K
       </button>
 
-      {/* D1: no ◐ toggle here. Theme lives in the account menu. */}
+      {/* D1: no ◐ toggle here. Theme lives in the account menu — but until
+          that MENU exists, this button's one real behavior is the theme
+          toggle, and its label says the TRUE thing (Surface Audit a11y: it
+          said "Account menu" while doing something else — a screen-reader
+          user got a lie the sighted user could at least discover). The label
+          reverts to "Account menu" the day the menu mounts. */}
       <button
         type="button"
         className="shell-tabbar__avatar"
         onClick={props.onOpenAccount}
-        aria-label="Account menu"
+        aria-label="Toggle theme"
+        title="Toggle theme"
       >
         {props.accountInitial ?? '·'}
       </button>

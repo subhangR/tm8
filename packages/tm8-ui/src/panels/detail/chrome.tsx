@@ -332,16 +332,22 @@ function ActionButton({
 export function TabStrip({
   active,
   counts,
+  contentLabel,
   onSelect,
 }: {
   active: PanelTab;
   /** Discussion and Connections carry counts; Content and Activity never do. */
   counts?: Partial<Record<PanelTab, number>>;
+  /** USER RULING 2026-07-29: the first tab names WHAT you are looking at —
+      the kind's singular label ("Task", "Doc", "Session") — instead of the
+      word "Content". Registry data in, no kind literal here. */
+  contentLabel?: string;
   onSelect?: (tab: PanelTab) => void;
 }) {
   return (
     <div className="pn-tabs" role="tablist" aria-label="Panel sections" data-testid="panel-tabs">
-      {PANEL_TABS.map(({ id, label }) => {
+      {PANEL_TABS.map(({ id, label: defaultLabel }) => {
+        const label = id === 'content' && contentLabel ? contentLabel : defaultLabel;
         const isActive = id === active;
         const count = counts?.[id];
         return (

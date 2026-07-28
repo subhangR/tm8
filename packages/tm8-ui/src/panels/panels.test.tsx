@@ -93,15 +93,18 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
   });
 
   it.each(kindsWithFixtures.map((r) => [r.config.kind, r.detail] as const))(
-    'D3: %s renders FOUR tabs in fixed order',
-    (_kind, detail) => {
+    'D3: %s renders FOUR tabs in fixed order — the first names the KIND (user ruling 2026-07-29)',
+    (kind, detail) => {
       const { getByTestId } = render(
         <EntityDetailPanel detail={detail} reasons={REASONS} ctx={ctx} />,
       );
       const labels = within(getByTestId('panel-tabs'))
         .getAllByRole('tab')
         .map((t) => t.textContent?.replace(/\d+$/, '').trim());
-      expect(labels).toEqual(['Content', 'Discussion', 'Connections', 'Activity']);
+      // The first tab reads the kind's SINGULAR registry label ("Task",
+      // "Session"), superseding the canvas's generic "Content" by user
+      // ruling; the other three and the fixed order are unchanged law.
+      expect(labels).toEqual([getKind(kind).label, 'Discussion', 'Connections', 'Activity']);
     },
   );
 

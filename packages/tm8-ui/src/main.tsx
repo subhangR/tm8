@@ -8,6 +8,7 @@ import './shell/shell.css';
 import './panels/panels.css';
 import './terminal/terminal.css';
 import './shell/palette.css';
+import './graph/graph.css';
 import { App } from './App';
 
 createRoot(document.getElementById('root')!).render(

@@ -275,7 +275,17 @@ export type ActionRef =
   | 'saved-views'
   | 'search-results'
   | 'activity-screen'
-  | 'add-server';
+  | 'add-server'
+  // T0-4 kind primaries (Surface Audit 2026-07-29: drawn in the canvas,
+  // absent from this union — the vocabulary edit precedes any registry
+  // wiring, because a verb that cannot exist as DATA cannot surface).
+  | 'equip'
+  | 'refresh'
+  | 'untrust'
+  | 'unlink'
+  | 'set-as-default'
+  | 'mark-read'
+  | 'quote';
 
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 

@@ -1,0 +1,221 @@
+/**
+ * EntityTree — the WIDE middle list of an EntityView (D65): a separate
+ * generic component, NOT the side EntityListPanel stretched (user ruling
+ * 2026-07-29). One component, every kind, registry-configured.
+ *
+ * Geometry is T0-3's tree spec, extracted not eyeballed (canvas-T0-3.md):
+ * indent 17px/level with guide hairlines at 7px + 17px·depth in --pn-line-2;
+ * carets ▾/▸ 9px --pn-ink-3 in a 10px column (leaves hold the column with an
+ * empty spacer); status dots encode state in GEOMETRY (solid=alive/done,
+ * hollow ring=open/exited, pulsing=streaming/live, amber ring=stale); parent
+ * titles 12.5px/500, children 12px regular; metas mono 9.5px.
+ *
+ * LIVENESS IS NEVER DERIVED HERE: session rows show the seam VERDICT passed
+ * in via `livenessOf` — the record's status word never upgrades a dead
+ * session to alive (two-source honesty).
+ *
+ * The tree is built from the flat query rows by parentId; a row whose parent
+ * is not in the current tier's result set roots itself (an orphan is shown,
+ * never silently dropped). Default EXPANDED — the canvas draws the
+ * coordinator tree open; collapsing is the gesture, not discovering.
+ */
+import { useMemo, useState } from 'react';
+import type { EntitySummary } from '@tm8/contract';
+import { getKind } from '../domain/registry';
+import type { QueryFilter } from '../domain/types';
+import type { SessionLiveness } from '../data/seam';
+import './entity-tree.css';
+
+export interface EntityTreeProps {
+  kind: string;
+  rowsFor: (filter: QueryFilter | undefined) => readonly EntitySummary[];
+  livenessOf: (id: string) => SessionLiveness;
+  /** Pool activity (streaming) by id — gated on the verdict, per the law. */
+  activity: Readonly<Record<string, boolean>>;
+  selectedId: string | null;
+  onSelect(id: string): void;
+}
+
+interface TreeNode {
+  row: EntitySummary;
+  children: TreeNode[];
+  depth: number;
+}
+
+function buildTree(rows: readonly EntitySummary[]): TreeNode[] {
+  const present = new Set(rows.map((r) => r.id));
+  const byParent = new Map<string | null, EntitySummary[]>();
+  for (const row of rows) {
+    const key = row.parentId && present.has(row.parentId) ? row.parentId : null;
+    const bucket = byParent.get(key);
+    if (bucket) bucket.push(row);
+    else byParent.set(key, [row]);
+  }
+  const attach = (parentKey: string | null, depth: number): TreeNode[] =>
+    (byParent.get(parentKey) ?? []).map((row) => ({
+      row,
+      depth,
+      children: attach(row.id, depth + 1),
+    }));
+  return attach(null, 0);
+}
+
+/**
+ * The state facts for a row: the word (mono, never color alone) and the dot's
+ * geometry class. Reads the SUMMARY's state union by its own discriminant —
+ * presentation, not kind-branching: adding a kind with one of these state
+ * shapes needs no edit here, which is the §15.2 test that matters.
+ */
+function stateFacts(
+  row: EntitySummary,
+  liveness: SessionLiveness,
+  streaming: boolean,
+): { word: string; dot: string } {
+  const s = row.state;
+  if (s.kind === 'work_session') {
+    // VERDICT outranks record: the record's word renders only when the
+    // verdict agrees something is running; otherwise the verdict's word is
+    // the row's truth.
+    if (liveness === 'live') {
+      return { word: streaming ? 'streaming' : s.status, dot: streaming ? 'dot--pulse' : 'dot--solid-run' };
+    }
+    if (liveness === 'stale') return { word: 'stale', dot: 'dot--ring-wait' };
+    if (liveness === 'unknown') return { word: 'unverified', dot: 'dot--ring-wait' };
+    return { word: 'not running', dot: 'dot--ring-idle' };
+  }
+  if (s.kind === 'task') {
+    if (s.workStatus === 'done') return { word: 'done', dot: 'dot--solid-run' };
+    if (s.workStatus === 'blocked') return { word: 'blocked', dot: 'dot--solid-block' };
+    if (s.workStatus === 'working') return { word: 'working', dot: 'dot--ring-run' };
+    return { word: s.workStatus, dot: 'dot--ring-idle' };
+  }
+  return { word: '', dot: 'dot--ring-idle' };
+}
+
+const relative = (iso: string): string => {
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return '';
+  const mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
+};
+
+export function EntityTree(props: EntityTreeProps) {
+  const { kind, rowsFor, selectedId } = props;
+  const config = getKind(kind);
+  const tiers = config.list.lifecycle ?? null;
+  const [tierId, setTierId] = useState<string>(tiers?.[0]?.id ?? 'open');
+  // Collapsed set (not expanded set): default-open needs no bookkeeping for
+  // rows that were never toggled, including rows that arrive later.
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+
+  const activeTier = tiers?.find((t) => t.id === tierId) ?? tiers?.[0] ?? null;
+  const rows = rowsFor(activeTier?.filter ?? { deleted: 'exclude' });
+  const roots = useMemo(() => buildTree(rows), [rows]);
+
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const renderNode = (node: TreeNode): React.ReactNode => {
+    const { row, children, depth } = node;
+    const isCollapsed = collapsed.has(row.id);
+    const facts = stateFacts(row, props.livenessOf(row.id), props.activity[row.id] ?? false);
+    return (
+      <li key={row.id} className="evt-node">
+        <div
+          role="button"
+          tabIndex={0}
+          className={row.id === selectedId ? 'evt-row evt-row--selected' : 'evt-row'}
+          data-depth={depth}
+          onClick={() => props.onSelect(row.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              props.onSelect(row.id);
+            }
+          }}
+        >
+          {children.length > 0 ? (
+            <button
+              type="button"
+              className="evt-caret"
+              aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+              aria-expanded={!isCollapsed}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle(row.id);
+              }}
+            >
+              {isCollapsed ? '▸' : '▾'}
+            </button>
+          ) : (
+            <span className="evt-caret evt-caret--leaf" aria-hidden />
+          )}
+          <span className={`evt-dot ${facts.dot}`} aria-hidden />
+          <span className={depth === 0 ? 'evt-title' : 'evt-title evt-title--child'} title={row.title}>
+            {row.title}
+          </span>
+          <span className="evt-spacer" />
+          {facts.word ? <span className="evt-word">{facts.word}</span> : null}
+          <span className="evt-when">{relative(row.activityAt)}</span>
+        </div>
+        {children.length > 0 && !isCollapsed ? (
+          <ul className="evt-children">{children.map(renderNode)}</ul>
+        ) : null}
+      </li>
+    );
+  };
+
+  return (
+    <div className="evt-root" data-testid="entity-tree" data-kind={kind}>
+      <div className="evt-head">
+        <span className="evt-head__glyph" aria-hidden>
+          {config.chip.glyph}
+        </span>
+        <span className="evt-head__label">{config.labelPlural}</span>
+        <span className="evt-head__count">{rows.length}</span>
+        <span className="evt-spacer" />
+      </div>
+
+      {tiers ? (
+        <div className="evt-tabs" role="tablist" aria-label="Lifecycle">
+          {tiers.map((tier) => {
+            const count = tier.unsupported ? 0 : rowsFor(tier.filter).length;
+            const active = tier.id === (activeTier?.id ?? '');
+            return (
+              <button
+                key={tier.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={active ? 'evt-tab evt-tab--active' : 'evt-tab'}
+                title={tier.unsupported}
+                onClick={() => setTierId(tier.id)}
+              >
+                {tier.label} <span className="evt-tab__n">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <div className="evt-scroll">
+        {roots.length === 0 ? (
+          <p className="evt-empty">
+            {`No ${config.labelPlural.toLowerCase()} here${activeTier ? ` in ${activeTier.label.toLowerCase()}` : ''}.`}
+          </p>
+        ) : (
+          <ul className="evt-tree">{roots.map(renderNode)}</ul>
+        )}
+      </div>
+    </div>
+  );
+}
