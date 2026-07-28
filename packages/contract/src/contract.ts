@@ -230,6 +230,16 @@ export interface CollectionQuery {
      * `mentionedActorId` semantics.
      */
     inFlightForActorId?: EntityId; needsActorId?: EntityId;
+    /**
+     * A22 (additive): only `work_session` rows in these statuses. While
+     * present the query returns work_sessions exclusively — the same
+     * kind-narrowing semantics `workStatus` has for tasks (a NULL state axis
+     * never matches). Combining it with `workStatus` is REFUSED as
+     * `invalid_input` (schema refinement): the filters are kind-disjoint, so
+     * the pair could only ever produce the always-empty set, and a confident
+     * zero is worse than a refusal that names the mechanism.
+     */
+    sessionStatus?: WorkSessionStatus[];
     deleted?: 'exclude'|'only'|'include';
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
@@ -1078,6 +1088,28 @@ export interface StreamAttachGrant {
   mode: 'view' | 'drive';
   token?: string | null;
   expiresAt: string;
+}
+
+/**
+ * A21 — `execution.liveness` (shape C-1): "is there actually a live PTY?"
+ *
+ * Recorded `work_sessions.status` and in-process PTY truth can disagree
+ * between boots (ghost reconciliation runs only at startup), so a
+ * status=running row is not evidence of a live terminal. This read answers
+ * from the ONE authority — the node's in-process PTY map — scoped to the
+ * sessions of one space the caller can read.
+ *
+ * `nodeBootId` is stable for the life of the server process and rotates on
+ * restart: a client comparing it across reads can tell "same node, session
+ * genuinely gone" from "node restarted — recorded statuses are stale until
+ * reconciliation" (the R-UI-5 honesty states). `checkedAt` is stamped at
+ * read time; liveness is a point-in-time observation, never a promise.
+ */
+export interface ExecutionLiveness {
+  /** work_session entity ids of THIS space with a live PTY right now. */
+  liveEntityIds: EntityId[];
+  nodeBootId: string;
+  checkedAt: string;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

@@ -36,16 +36,18 @@ const ADDITIVE_OPERATIONS = [
   { name: 'interactionProfiles.retire', method: 'POST', path: '/v2/interaction-profiles/:profileId/retire', kind: 'command', status: 'v1' },
   { name: 'teamMembers.interactionProfile.setDefault', method: 'PUT', path: '/v2/team-members/:teamMemberId/interaction-profile-default', kind: 'command', status: 'v1' },
   { name: 'spaces.interactionProfile.setDefault', method: 'PUT', path: '/v2/spaces/:spaceId/interaction-profile-default', kind: 'command', status: 'v1' },
+  // A21 (D2/C-1): point-in-time PTY liveness for one space's work_sessions.
+  { name: 'execution.liveness', method: 'GET', path: '/v2/spaces/:spaceId/execution/liveness', kind: 'read', status: 'v1' },
 ] as const;
 
 describe('W1 adopted catalog target', () => {
-  it('adds exactly A01-A20 in dossier order with exact bindings and kinds', () => {
+  it('adds exactly A01-A21 in dossier order with exact bindings and kinds', () => {
     expect(OPERATIONS.slice(-ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the exact 101-row target without changing reserved honesty', () => {
-    expect(OPERATIONS).toHaveLength(101);
-    expect(V1_OPERATIONS).toHaveLength(99);
+  it('reconciles the exact 102-row target without changing reserved honesty', () => {
+    expect(OPERATIONS).toHaveLength(102);
+    expect(V1_OPERATIONS).toHaveLength(100);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -61,12 +63,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 36, POST: 41, PATCH: 9, DELETE: 7, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 37, POST: 41, PATCH: 9, DELETE: 7, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 39, command: 61, stream: 1 });
+    }).toEqual({ read: 40, command: 61, stream: 1 });
   });
 });
 

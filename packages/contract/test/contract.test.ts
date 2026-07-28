@@ -4,9 +4,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  ActorSummarySchema, BASE_PATH, CollabError, CommandResultSchema,
+  ActorSummarySchema, BASE_PATH, CollabError, CollectionQuerySchema, CommandResultSchema,
   CreateEntityInputSchema, CURSOR_VERSION, decodeCursor, encodeCursor,
-  EntityKindSchema, EntitySummarySchema, ERROR_STATUS, ExecutionSpawnInputSchema,
+  EntityKindSchema, EntitySummarySchema, ERROR_STATUS, ExecutionLivenessSchema,
+  ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
   getOperation, isCollabError, isKeysetCursor, MessageViewSchema, OPERATIONS,
   ProjectCreateInputSchema, ProjectLinkInputSchema, ProjectResourceSchema,
@@ -147,6 +148,36 @@ describe('DTO schemas', () => {
     const custom = { ...taskSummary, id: 'ent_c_1', kind: 'c:design_asset' as const, state: { kind: 'c:design_asset' as const, fields: { status: 'draft', reviewed: false } } };
     expect(EntitySummarySchema.safeParse(custom).success).toBe(true);
     expect(EntityKindSchema.safeParse('design_asset').success).toBe(false); // custom kinds must be c:-namespaced
+  });
+
+  it('A21/A22: liveness is strict, sessionStatus filters alone, and the kind-disjoint pair is refused', () => {
+    // A21 — execution.liveness result, strict both ways.
+    const liveness = {
+      liveEntityIds: ['019f9896-928d-7a24-848b-4c8fdd82b761'],
+      nodeBootId: 'boot-1',
+      checkedAt: '2026-07-28T12:00:00.000Z',
+    };
+    expect(ExecutionLivenessSchema.safeParse(liveness).success).toBe(true);
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, extra: 1 }).success).toBe(false);
+    expect(ExecutionLivenessSchema.safeParse({ ...liveness, checkedAt: 'yesterday' }).success).toBe(false);
+
+    // A22 — each filter alone is legal…
+    const base = { spaceId: '019f9896-928d-79b6-ba1c-1cdcc1d30a6f' };
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['running', 'idle'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { workStatus: ['open'] } }).success).toBe(true);
+    expect(CollectionQuerySchema.safeParse({ ...base, filters: { sessionStatus: ['sleeping'] } }).success).toBe(false);
+
+    // …but the kind-disjoint PAIR is refused, not silently empty: no row is
+    // both a task and a work_session, so the conjunction could only ever
+    // produce the confident zero. The refusal names the mechanism.
+    const pair = CollectionQuerySchema.safeParse({
+      ...base,
+      filters: { workStatus: ['open'], sessionStatus: ['running'] },
+    });
+    expect(pair.success).toBe(false);
+    if (!pair.success) {
+      expect(JSON.stringify(pair.error.issues)).toContain('kind-disjoint');
+    }
   });
 
   it('validates recursive message views with nested replies', () => {

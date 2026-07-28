@@ -49,7 +49,7 @@ import type {
   SetDefaultChannelInput, SetSpaceProfileDefaultInput,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
-  SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  ExecutionLiveness, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, WithdrawHandoffInput,
@@ -475,8 +475,21 @@ const CollectionFiltersSchema = z.object({
   mentionedActorId: EntityIdSchema.optional(),
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
+  sessionStatus: z.array(WorkSessionStatusSchema).optional(),
   deleted: z.enum(['exclude', 'only', 'include']).optional(),
-}).strict();
+}).strict().superRefine((f, ctx) => {
+  // A22: refused, not silently empty. The two filters are kind-disjoint (no
+  // row is both a task and a work_session), so their conjunction can only
+  // ever return the always-empty set — the confident-zero a caller reads as
+  // "nothing matched" when the truth is "nothing COULD match". The pair was
+  // unauthorable before sessionStatus existed, so refusing it is additive.
+  if (f.workStatus && f.workStatus.length > 0 && f.sessionStatus && f.sessionStatus.length > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'workStatus and sessionStatus are kind-disjoint — no row is both a task and a work_session; pick one per query',
+    });
+  }
+});
 
 function collectionQueryShape() {
   return {
@@ -1241,6 +1254,13 @@ export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({
   mode: z.enum(['view', 'drive']),
   token: z.string().nullable().optional(),
   expiresAt: IsoTimestamp,
+}).strict();
+
+/** A21 — execution.liveness (C-1). Point-in-time; see the contract type. */
+export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
+  liveEntityIds: z.array(EntityIdSchema),
+  nodeBootId: z.string().min(1),
+  checkedAt: IsoTimestamp,
 }).strict();
 
 // ---------------------------------------------------------------------------
