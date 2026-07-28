@@ -12,6 +12,7 @@ import {
   TombstoneBody,
 } from './detail/PanelStates';
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
+import { CatchBoundary } from './detail/CatchBoundary';
 import { GenericBody } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
@@ -257,13 +258,20 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
       />
 
       {/* The error boundary wraps the BODY only: header, tabs and footer stay
-          live so close, pin and Esc keep working through a failed render. */}
+          live so close, pin and Esc keep working through a failed render.
+          TWO layers, honestly distinct: the `error` PROP is the caller
+          reporting a data failure; CatchBoundary is the REAL
+          componentDidCatch for a body that throws while rendering — until
+          it existed, "never white-screens" was a comment, not a mechanism
+          (Surface Audit). */}
       {error ? (
         <ErrorBody errorText={error} onRetry={props.onRetry} />
       ) : loading ? (
         <LoadingBody />
       ) : (
-        <PanelBody {...props} detail={detail} tab={tab} />
+        <CatchBoundary label={`${config.label.toLowerCase()} body`}>
+          <PanelBody {...props} detail={detail} tab={tab} />
+        </CatchBoundary>
       )}
 
       <PanelFooter

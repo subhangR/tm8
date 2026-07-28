@@ -27,6 +27,7 @@ import { allKinds } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput } from '../domain/launch';
 import type { DetailReasons } from '../panels';
+import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
   authoredFromHollowReason,
   homeActivityLoadEarlierReason,
@@ -255,6 +256,10 @@ export function GateApp() {
             presentKind={presentKind}
           />
 
+          {/* The REAL error boundary wraps the whole view region: a crashed
+              screen renders the designed error state with retry; the rail and
+              tab bar above stay live for navigating away. */}
+          <CatchBoundary label="view">
           {data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
             /* ◉ Graph (revision-2 menu row) follows the D65 pattern exactly:
                an activated menu view replaces the centre WHOLESALE — full
@@ -368,6 +373,7 @@ export function GateApp() {
               loading workspace…
             </div>
           )}
+          </CatchBoundary>
         </div>
 
         <CommandPalette
