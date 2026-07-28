@@ -388,3 +388,34 @@ passthrough already handles it).
   `spaces.menu.update` stay OUT of the seam — gate screen needs drag-share visuals with the live
   command disabled-with-reason, and menu editing is a post-gate settings surface. Adding either
   later is a deferred amendment requiring dual re-consensus.
+
+## 16. Real-transport adaptation record (B3 lane, accepted 2026-07-28; each item test-pinned in `real/`)
+
+Server-verified divergences between the seam surface and today's node, adapted in `ops.ts` ONLY —
+a test pins each so a wrong assumption fails at integration rather than silently:
+
+- **No task route**: `CreateTaskInput`/`PatchTaskInput` fields travel inside `content` on
+  POST/PATCH `/v2/entities` (workStatus included).
+- **`messages.edit`** answers a bare `MessageView`, not a `CommandResult` — lifted to
+  `patches: [view]`, nothing invented.
+- **`inbox.markRead` / `readMarks.upsert`** require a `clientMutationId` the seam signature has no
+  slot for — synthesized, safe ONLY because neither is an optimistic-echo path. `readMarks.upsert`
+  rejects `lastReadAt` entirely (server stamps time); the seam argument is deliberately dropped.
+- **`deleteEntity`/`restoreEntity`**: seam types ctx optional, server requires `clientMutationId`;
+  an omitted ctx earns an honest `invalid_input` — NOT papered over with a synthesized id, which
+  could never reconcile a journal entry the caller doesn't hold.
+- **`messages.delivery.get`** accepts a cursor but returns no `nextCursor` — not pageable; documented.
+- **`execution.prompt`** is a permanent 403 by design → `CollabError` passthrough,
+  disabled-with-reason rendering.
+- **`execution.liveness`** has no catalog row and no server route yet (Delta 2 pending): path bound
+  literally to the C-1 shape behind an `isOperationName` guard with TODO-swap-to-`bindPath`; a test
+  records the current catalog state so the row's landing flips it loudly.
+- **`openSpace` does not await the first liveness read** (against today's node it would reject
+  every open); `statusOf` answers `unknown` until the read lands — exactly what R-UI-5 reserves
+  `unknown` for.
+- **Zero-network is a type property**: `createRealSeam` REQUIRES `fetch` + `webSocketFactory`
+  with no defaults; `seam-real.ts` is not exported from `index.ts` (test-asserted) until integration.
+- **`realControls.onSpaceRefused`** (impl extension, NOT in seam.ts): the async `control.refused`
+  channel has no seam slot because the protocol has no positive ack to await. Recorded as a
+  DEFERRED seam amendment — decided with FE at the first integration swap that wires connection
+  honesty UI, mirroring the `fixtureControls` precedent.
