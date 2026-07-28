@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { EntityDetailSchema, EntitySummarySchema, type CoreEntityKind } from '@tm8/contract';
-import { fixtureDetails, fixtureSummaries, sessionStale, taskTombstone, taskUuidTitle } from './index';
+import {
+  authoredFromSessionByEntity,
+  fixtureDetails,
+  fixtureSummaries,
+  homeActivityLoadEarlierReason,
+  homeActivityPage,
+  collectionEmpty,
+  messageAgentNullProvenance,
+  presenceViewersByEntity,
+  sessionStale,
+  taskTombstone,
+  taskUuidTitle,
+} from './index';
 
 const CORE_KINDS: CoreEntityKind[] = [
   'channel', 'task', 'message', 'member', 'team_member',
@@ -61,5 +73,36 @@ describe('fixture dataset', () => {
     expect(fixtureSummaries.some((s) => s.badges.blocked)).toBe(true);
     expect(fixtureSummaries.some((s) => s.badges.restricted)).toBe(true);
     expect(fixtureSummaries.some((s) => (s.badges.workingActors ?? []).length > 0)).toBe(true);
+  });
+
+  it('D7.1 — home activity pages disabled-with-reason: more history, no cursor', () => {
+    expect(homeActivityPage.total).toBeGreaterThan(homeActivityPage.items.length);
+    expect(homeActivityPage.nextCursor).toBeNull();
+    expect(homeActivityLoadEarlierReason.length).toBeGreaterThan(0);
+  });
+
+  it('D7.2 — presence is measured-empty on every keyed entity (hollow-value)', () => {
+    const keys = Object.keys(presenceViewersByEntity);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const k of keys) expect(presenceViewersByEntity[k]).toHaveLength(0);
+  });
+
+  it('D7.3 — authored_from is null everywhere (hollow provenance chips)', () => {
+    const keys = Object.keys(authoredFromSessionByEntity);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const k of keys) expect(authoredFromSessionByEntity[k]).toBeNull();
+  });
+
+  it('C-5 — null-provenance message is AGENT-authored (chip expected, value null)', () => {
+    expect(messageAgentNullProvenance.createdBy.isAgent).toBe(true);
+    expect(messageAgentNullProvenance.kind).toBe('message');
+    expect(authoredFromSessionByEntity[messageAgentNullProvenance.id]).toBeNull();
+    expect(messageAgentNullProvenance.id in authoredFromSessionByEntity).toBe(true);
+  });
+
+  it('C-5 — empty collection: itemCount 0 and detail items []', () => {
+    expect(collectionEmpty.state.kind === 'collection' && collectionEmpty.state.itemCount === 0).toBe(true);
+    const d = fixtureDetails[collectionEmpty.id];
+    expect(d && d.content.kind === 'collection' && d.content.items).toHaveLength(0);
   });
 });

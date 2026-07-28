@@ -1,7 +1,14 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import { Avatar, Chip, Eyebrow, HRule, IconBtn, Kbd, Pill, VRule, type PillTone } from '../kit';
-import { fixtureSummaries, taskUuidTitle } from '../fixtures';
+import {
+  authoredFromHollowReason,
+  fixtureSummaries,
+  homeActivityLoadEarlierReason,
+  homeActivityPage,
+  presenceHollowReason,
+  taskUuidTitle,
+} from '../fixtures';
 
 /**
  * DEV-ONLY kit gallery: every primitive, light and dark side by side.
@@ -158,6 +165,23 @@ function ThemePane({ theme }: { theme: 'light' | 'dark' }) {
             <span className="t-secondary">left</span>
             <VRule height={18} />
             <span className="t-secondary">right</span>
+          </div>
+        </Section>
+
+        <Section title="D7 honesty states · measured backend gaps" row={false}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button type="button" className="kit-chip" disabled title={homeActivityLoadEarlierReason} style={{ opacity: 0.55, cursor: 'not-allowed' }}>
+              ↑ load earlier · {(homeActivityPage.total ?? 0) - homeActivityPage.items.length} more
+            </button>
+            <span className="t-secondary">disabled-with-reason (D7.1)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Pill outline title={presenceHollowReason}>◯ viewers · none</Pill>
+            <span className="t-secondary">hollow-value presence (D7.2)</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Pill outline title={authoredFromHollowReason}>▣ from session · —</Pill>
+            <span className="t-secondary">hollow provenance chip (D7.3)</span>
           </div>
         </Section>
 

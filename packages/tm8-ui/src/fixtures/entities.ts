@@ -288,9 +288,13 @@ export const sessionFailed = summary({
   },
 });
 
-// Live work badge now that both sides exist.
+// Live-work badge now that both sides exist. The nested task ref is a plain
+// serialized snapshot — wire data is JSON and can never be cyclic — so the
+// ref must NOT carry the badge that points back at its carrier (a real
+// reference cycle here sent zod into infinite recursion; caught by vitest).
+const taskGuideLinesRef: EntitySummary = { ...taskGuideLines, badges: {} };
 taskGuideLines.badges = {
-  workingActors: [{ actor: forge, task: taskGuideLines, startedAt: T.morning, note: 'porting guide lines' }],
+  workingActors: [{ actor: forge, task: taskGuideLinesRef, startedAt: T.morning, note: 'porting guide lines' }],
 };
 
 // ---------------------------------------------------------------------------
@@ -325,6 +329,27 @@ export const messageInThread = summary({
   },
 });
 
+/**
+ * C-5: NULL-PROVENANCE message — authored by an AGENT, exactly where a
+ * "from this session" chip is expected, but authored_from is null (backend
+ * gap G2, D7.3). The gate screen proves the hollow chip on this row.
+ */
+export const messageAgentNullProvenance = summary({
+  id: 'msg-forge-report',
+  kind: 'message',
+  title: 'forge: kit primitives extracted, byte-equality test green',
+  parentId: channelDesign.id,
+  activityAt: T.recent,
+  createdBy: forge,
+  state: {
+    kind: 'message',
+    anchorId: taskGuideLines.id,
+    rootMessageId: null,
+    author: forge,
+    messageBatchId: 'batch-forge-7',
+  },
+});
+
 export const memberAda = summary({
   id: 'ent-member-ada',
   kind: 'member',
@@ -343,7 +368,7 @@ export const teamMemberForge = summary({
     owner: ada,
     model: 'claude-fable-5',
     agentTool: 'claude-code',
-    liveWork: { actor: forge, task: taskGuideLines, startedAt: T.morning, note: null },
+    liveWork: { actor: forge, task: { ...taskGuideLines, badges: {} }, startedAt: T.morning, note: null },
   },
 });
 
@@ -407,6 +432,14 @@ export const collectionInbox = summary({
   state: { kind: 'collection', collectionType: 'manual', itemCount: 3 },
 });
 
+/** C-5: EMPTY collection — the empty-state rendering must be designed, not accidental. */
+export const collectionEmpty = summary({
+  id: 'coll-empty',
+  kind: 'collection',
+  title: 'Parked for later',
+  state: { kind: 'collection', collectionType: 'manual', itemCount: 0 },
+});
+
 export const projectTm8Ui = summary({
   id: 'ent-proj-tm8ui',
   kind: 'project',
@@ -444,9 +477,9 @@ export const fixtureSummaries: EntitySummary[] = [
   channelDesign,
   taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed,
-  docLayoutSpec, messageInThread, memberAda, teamMemberForge,
+  docLayoutSpec, messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
   prTransplant, commitFoundation, fileScreenshot,
-  spellDeploy, skillReview, collectionInbox, projectTm8Ui,
+  spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual,
 ];
 
@@ -573,8 +606,22 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     hierarchy: hierarchy(taskUuidTitle, [], [channelDesign, taskUuidTitle]),
   }),
 
+  [messageAgentNullProvenance.id]: detail(messageAgentNullProvenance, {
+    content: {
+      kind: 'message',
+      body: 'Kit primitives extracted from T0-1/T0-3/T0-4; tokens byte-equality test guards the transplant.',
+      mentions: [],
+      attachments: [],
+    },
+    hierarchy: hierarchy(channelDesign, [], [channelDesign]),
+  }),
+
   [collectionInbox.id]: detail(collectionInbox, {
     content: { kind: 'collection', description: 'Hand-picked triage queue.', items: [taskBlocked, prTransplant, messageInThread] },
+  }),
+
+  [collectionEmpty.id]: detail(collectionEmpty, {
+    content: { kind: 'collection', description: 'Nothing parked right now.', items: [] },
   }),
 
   [projectTm8Ui.id]: detail(projectTm8Ui, {
