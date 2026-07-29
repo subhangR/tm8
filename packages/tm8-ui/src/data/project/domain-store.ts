@@ -200,6 +200,144 @@ export function createDomainStore(seam?: DomainEventSource): DomainStoreHandle {
   };
 }
 
+// --- live membership: does an event-arrived entity belong in a cached list? --
+
+/**
+ * THREE ANSWERS, AND THE THIRD ONE IS THE POINT.
+ *
+ * The event stream delivers whole `EntitySummary` rows, so when a task is
+ * created the client HAS it — but a list on screen was produced by a filtered
+ * server query, and putting the new row into that list means deciding whether
+ * the server would have returned it. Two of the three answers are cheap; the
+ * third is the honest one:
+ *
+ *   'in'      — every clause of the filter is one this module evaluates, and
+ *               the row satisfies all of them. Safe to show.
+ *   'out'     — some clause is evaluable and the row fails it. Safe to hide,
+ *               and this is what makes a task LEAVE the Open list the moment
+ *               it is marked done, without a refresh.
+ *   'unknown' — the filter contains a clause this module cannot evaluate from
+ *               a summary (`readyToPull`, `axes`, `edge`, the actor-scoped
+ *               presets). NOT a guess in either direction: the list keeps
+ *               exactly what the server gave it, and a new row simply does not
+ *               appear there until the next real read. A wrong 'in' would put
+ *               a task in a tier it is not in, which is the same class of lie
+ *               as inventing the row outright.
+ *
+ * The clause semantics are MEASURED off the server, not assumed:
+ *   · a missing `deleted` clause means 'exclude' — `collections.ts:248` reads
+ *     `f.deleted ?? 'exclude'`, so the unfiltered list is not "everything";
+ *   · a NULL state axis never matches a status filter (contract §CollectionQuery
+ *     on `sessionStatus`), so a doc is 'out' of `workStatus: ['open']` rather
+ *     than being waved through.
+ *
+ * NO KIND LITERAL LIVES HERE. `workStatus` and `status` are STATE FIELD names
+ * read structurally off `EntityState`; which kinds carry them is the
+ * registry's business and never this function's.
+ */
+export type Membership = 'in' | 'out' | 'unknown';
+
+/** The filter clauses this module can decide. Everything else ⇒ 'unknown'. */
+const DECIDABLE_CLAUSES = new Set(['deleted', 'workStatus', 'sessionStatus']);
+
+export function membershipOf(filter: unknown, summary: EntitySummary): Membership {
+  const clauses: Record<string, unknown> =
+    filter && typeof filter === 'object' ? (filter as Record<string, unknown>) : {};
+
+  for (const name of Object.keys(clauses)) {
+    if (clauses[name] === undefined) continue;
+    if (!DECIDABLE_CLAUSES.has(name)) return 'unknown';
+  }
+
+  // `deleted` defaults to 'exclude' server-side, so the clause is evaluated
+  // whether or not the caller wrote one.
+  const deleted = clauses.deleted ?? 'exclude';
+  if (deleted === 'exclude' && summary.deletedAt !== null) return 'out';
+  if (deleted === 'only' && summary.deletedAt === null) return 'out';
+
+  const state = summary.state as unknown as Record<string, unknown>;
+  if (!matchesAxis(clauses.workStatus, state.workStatus)) return 'out';
+  if (!matchesAxis(clauses.sessionStatus, state.status)) return 'out';
+
+  return 'in';
+}
+
+/** A status clause: absent ⇒ no constraint; present ⇒ the row's axis must
+    exist and be listed. A null axis never matches, per the contract. */
+function matchesAxis(clause: unknown, value: unknown): boolean {
+  if (clause === undefined) return true;
+  const wanted = Array.isArray(clause) ? clause : [clause];
+  if (wanted.length === 0) return true;
+  if (typeof value !== 'string') return false;
+  return wanted.includes(value);
+}
+
+export interface RowProjection {
+  /** The ids the last real read returned for this (kind, filter), in order. */
+  ordered: readonly EntityId[];
+  /** The store's entity table — the event stream's own projection. */
+  entities: Readonly<Record<EntityId, EntitySummary>>;
+  kind: string;
+  spaceId: SpaceId;
+  filter: unknown;
+}
+
+/**
+ * THE LIVE LIST — a server-ordered read, kept current by the event stream.
+ *
+ * This is the whole create → event → screen loop in one pure function, and it
+ * is pure precisely so the loop can be asserted without a browser, a socket or
+ * a React tree.
+ *
+ * THREE THINGS HAPPEN, and each answers a different way a list goes stale:
+ *
+ *  1. **Every row is re-read from the store.** `ordered` holds ids, never
+ *     summaries, so a row someone else renamed shows the new title on the next
+ *     event — the list is a view over the projection, not a snapshot beside it.
+ *  2. **Rows the filter now excludes LEAVE.** A task marked done drops out of
+ *     Open by itself. Only an evaluable 'out' removes anything: 'unknown'
+ *     keeps the server's answer, so a filter this module cannot read can never
+ *     silently empty a panel.
+ *  3. **Rows the store knows and the read never saw ARRIVE, at the head.**
+ *     That is the created task appearing without a refresh. Head, not tail,
+ *     because `activityAt_desc` is the server's DEFAULT sort
+ *     (`collections.ts:98`) and nothing in this app passes a `sort` — so the
+ *     position is the server's own rule applied locally, not a preference. If
+ *     a caller ever passes a sort, this becomes a guess and this paragraph
+ *     becomes false, which is why it cites the line.
+ *
+ * PAGINATION IS AN HONEST HOLE: `ordered` is one page. An arrival that the
+ * server would have placed on page 2 is shown here on page 1. Stated rather
+ * than fixed — the lists this app draws are not paged yet.
+ */
+export function projectRows(input: RowProjection): EntitySummary[] {
+  const { ordered, entities, kind, spaceId, filter } = input;
+
+  const seen = new Set<EntityId>(ordered);
+  const base: EntitySummary[] = [];
+  for (const id of ordered) {
+    const row = entities[id];
+    // An id with no summary is one the store has never been told about; keep
+    // nothing rather than an empty shell. (Every read ingests, so this is the
+    // transient window between a read landing and its ingest, not a leak.)
+    if (!row) continue;
+    if (membershipOf(filter, row) === 'out') continue;
+    base.push(row);
+  }
+
+  const arrived = Object.values(entities)
+    .filter(
+      (e) =>
+        !seen.has(e.id) &&
+        e.kind === kind &&
+        e.spaceId === spaceId &&
+        membershipOf(filter, e) === 'in',
+    )
+    .sort((a, b) => (a.activityAt < b.activityAt ? 1 : a.activityAt > b.activityAt ? -1 : 0));
+
+  return arrived.length === 0 ? base : [...arrived, ...base];
+}
+
 // --- narrow selector helpers (mirroring collab-v2 graph.ts) -----------------
 
 export const selectEntity = (id: EntityId) => (s: DomainStoreState): EntitySummary | undefined =>

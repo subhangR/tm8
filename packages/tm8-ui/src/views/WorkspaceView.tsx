@@ -113,6 +113,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           livenessOf={data.livenessOf}
           messages={data.messagesOf(id)}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
+          /* GAP-2 (data-wiring handover): hand the seam commands down so the
+             save path is live in the workspace panels too. */
+          commands={data.seam.commands}
           streaming={data.activity[id] ?? false}
           onPin={() => {
             if (nav.pinned.includes(id)) {

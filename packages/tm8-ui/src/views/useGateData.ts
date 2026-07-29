@@ -18,11 +18,12 @@
  *    definition, so the shell never issues a kind-filtered query to find them
  *    (B7).
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   CollectionQuery,
   ExecutionSpawnInput,
   EntityDetail,
+  EntityId,
   MessageView,
   PostMessageInput,
   EntitySummary,
@@ -33,7 +34,7 @@ import type {
 import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
 import { browserWebSocketFactory, createFixtureSeam, createRealSeam } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
-import { createDomainStore, type DomainStoreHandle } from '../data/project/domain-store';
+import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/project/domain-store';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 
@@ -88,6 +89,18 @@ export interface GateData {
 export interface GateOptions {
   leftKind: string;
   rightKind: string;
+  /**
+   * THE SEAM INJECTION PORT.
+   *
+   * Omitted — which is what every screen does — the hook constructs the seam
+   * the flag selects, once, for the app's lifetime. Passing one is how a test
+   * drives the event stream by hand: `onEvent` is the input side of the whole
+   * live-update loop, and with no way to feed it, the only assertions
+   * available are about reads, which is exactly the half that was already
+   * working. Read once, on the same first render as the flag, for the same
+   * reason: two seams would mean two event streams and one divided cache.
+   */
+  seam?: Seam;
 }
 
 export function useGateData(options: GateOptions): GateData {
@@ -104,12 +117,17 @@ export function useGateData(options: GateOptions): GateData {
    * is reconciling, so the flag is deliberately NOT reactive. CHANGING IT
    * REQUIRES A RELOAD — that is the contract, not an oversight.
    *
-   * OFF by default: an un-opted session constructs exactly the fixture seam it
-   * always did.
+   * REAL BY DEFAULT since 2026-07-29 (`realSeamFlag.ts` carries the rules and
+   * the reasoning): an un-opted browser session talks to the node. There is no
+   * fall-back path — if the node is unreachable the boot read below rejects
+   * and `bootError` holds the reason, because quietly substituting fixtures
+   * would put invented entities on screen wearing the real ones' chrome.
    */
   const seamRef = useRef<Seam | null>(null);
   if (seamRef.current === null) {
-    seamRef.current = isRealSeamEnabled()
+    seamRef.current = options.seam
+      ? options.seam
+      : isRealSeamEnabled()
       ? createRealSeam({
           // baseUrl stays default-relative: the vite proxy carries /v2, so a
           // hardcoded origin here would bypass it and break same-origin.
@@ -131,10 +149,51 @@ export function useGateData(options: GateOptions): GateData {
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
   const [liveIds, setLiveIds] = useState<readonly string[]>([]);
-  const [rows, setRows] = useState<Record<string, readonly EntitySummary[]>>({});
-  const [details, setDetails] = useState<Record<string, EntityDetail>>({});
+  /**
+   * ROWS ARE IDS NOW, NOT SUMMARIES — and that one change is what closed the
+   * live loop.
+   *
+   * This used to hold the summaries a read returned. A cached row was then a
+   * PHOTOGRAPH: correct at read time and frozen after it, so the only way to
+   * see a change was to take the photograph again, which is why every update
+   * path in this file was a re-read. The event stream reduced correctly into
+   * the domain store the whole time and nothing rendered it.
+   *
+   * Splitting the two questions fixes it. This map answers the one the store
+   * genuinely cannot — WHICH entities the server put in this (kind, filter)
+   * list, in what order — and the store answers WHAT each of them currently
+   * is. `projectRows` joins them on every render, so an event that changes an
+   * entity changes the list, with no read and nothing to invalidate.
+   */
+  const [rows, setRows] = useState<Record<string, readonly EntityId[]>>({});
   const [threads, setThreads] = useState<Record<string, readonly MessageView[]>>({});
   const [activity] = useState<Readonly<Record<string, boolean>>>({});
+
+  /**
+   * The event stream's own projection, subscribed. `useSyncExternalStore` and
+   * not a `useEffect` + `setState` mirror: a mirror renders one frame behind
+   * and tears under concurrent rendering, and the whole claim of this file is
+   * that the screen agrees with the stream.
+   */
+  const entities = useSyncExternalStore(
+    domain.store.subscribe,
+    () => domain.store.getState().entities,
+  );
+  const details = useSyncExternalStore(
+    domain.store.subscribe,
+    () => domain.store.getState().details,
+  );
+
+  /** Every read lands in the store FIRST, then leaves its ordering here. Both
+      halves matter: skipping the ingest would leave `projectRows` joining ids
+      against entities it has never seen, and the list would render empty. */
+  const absorb = useCallback(
+    (key: string, items: readonly EntitySummary[]) => {
+      domain.store.getState().ingestSummaries([...items]);
+      setRows((current) => ({ ...current, [key]: items.map((item) => item.id) }));
+    },
+    [domain],
+  );
 
   /**
    * Hydration is written as ONE idempotent, re-runnable function from day one
@@ -160,11 +219,11 @@ export function useGateData(options: GateOptions): GateData {
         const query = { spaceId: space, kinds: [kind] } as unknown as CollectionQuery;
         const result = await seam.query(query);
         // Same key shape rowsFor reads: an unfiltered read is the '*' key.
-        setRows((current) => ({ ...current, [`${kind}::*`]: result.page.items }));
+        absorb(`${kind}::*`, result.page.items);
       };
       await Promise.all([load(options.leftKind), load(options.rightKind)]);
     },
-    [seam, options.leftKind, options.rightKind],
+    [seam, options.leftKind, options.rightKind, absorb],
   );
 
   const [bootError, setBootError] = useState<string | null>(null);
@@ -218,15 +277,25 @@ export function useGateData(options: GateOptions): GateData {
 
   // Catch-up integrity lost ⇒ re-run hydration. Idempotent by construction.
   useEffect(
-    () => seam.onResync((space) => { if (space === spaceId) void hydrate(space); }),
+    () =>
+      seam.onResync((space) => {
+        if (space !== spaceId) return;
+        // Detail reads are re-armed with everything else: a resync means the
+        // catch-up gap could have swallowed anything, including whatever made
+        // a detail read fail.
+        pulled.current.clear();
+        void hydrate(space);
+      }),
     [seam, spaceId, hydrate],
   );
 
   const livenessOf = useCallback(
     (id: string): SessionLiveness => {
-      const summary = Object.values(rows)
-        .flat()
-        .find((row) => row.id === id);
+      // O(1) off the projection, where it used to be a flatten-and-scan of
+      // every cached list. Same evidence, one lookup — and the projection is
+      // the fresher of the two, so a session whose status just changed is
+      // asked about with the status the node last sent.
+      const summary = entities[id as EntityId];
       // No row ⇒ no evidence ⇒ 'unknown'. Never optimistically 'live'.
       if (!summary) return 'unknown';
       // The recorded status lives on `state`, NOT as a top-level `workStatus`:
@@ -242,7 +311,7 @@ export function useGateData(options: GateOptions): GateData {
         ?? null;
       return seam.liveness.statusOf({ id: summary.id, workStatus: recorded as never });
     },
-    [seam, rows],
+    [seam, entities],
   );
 
   /**
@@ -252,6 +321,8 @@ export function useGateData(options: GateOptions): GateData {
    * re-render mid-flight does not issue a second query.
    */
   const inFlight = useRef(new Set<string>());
+  /** Ids whose detail read has been issued. See `pull` for why it is a ref. */
+  const pulled = useRef(new Set<string>());
   const ensureKind = useCallback(
     (kind: string) => {
       if (!spaceId || rows[`${kind}::*`] || inFlight.current.has(kind)) return;
@@ -259,7 +330,7 @@ export function useGateData(options: GateOptions): GateData {
       const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
       void seam
         .query(query)
-        .then((result) => setRows((current) => ({ ...current, [`${kind}::*`]: result.page.items })))
+        .then((result) => absorb(`${kind}::*`, result.page.items))
         .catch(() => {
           // A kind that will not load renders as an honestly empty panel
           // rather than a spinner that never resolves.
@@ -267,7 +338,7 @@ export function useGateData(options: GateOptions): GateData {
         })
         .finally(() => inFlight.current.delete(kind));
     },
-    [seam, spaceId, rows],
+    [seam, spaceId, rows, absorb],
   );
 
   useEffect(() => {
@@ -317,6 +388,12 @@ export function useGateData(options: GateOptions): GateData {
    * Now keyed per (kind, filter) — the hydration key LLD §3.1 specifies — and
    * an unseen key hydrates on demand. It returns [] until that resolves, which
    * is honest: not-yet-loaded is a real state and it is not the same as empty.
+   *
+   * AND IT IS LIVE. The key still decides WHICH read answered; `projectRows`
+   * decides what those rows currently say and whether the stream has added
+   * one. An unread key is still `[]` and still schedules its read — the
+   * projection augments the read path, it never stands in for it, or a kind
+   * nobody has asked for would render as confidently empty.
    */
   const cacheKey = (kind: string, filter: unknown): string =>
     `${kind}::${filter === undefined ? '*' : stableKey(filter)}`;
@@ -324,20 +401,41 @@ export function useGateData(options: GateOptions): GateData {
   const pending = useRef(new Set<string>());
   const [pendingTick, setPendingTick] = useState(0);
 
+  /**
+   * ONE PROJECTION PER KEY PER DATA GENERATION.
+   *
+   * `projectRows` builds a new array, and `rowsFor` is called from render — so
+   * without this the same key would hand every consumer a fresh identity on
+   * every render, and the `useMemo`/`useEffect` deps downstream (WorkspaceView's
+   * roster, GateApp's palette, useHomeData's three lists) would churn without
+   * end. The Map is re-created only when the ids or the entities change, which
+   * makes "the data did not change" and "the array is the same array" the same
+   * statement. Pinned by a test, because the failure is a render loop nobody
+   * would attribute to this file.
+   */
+  const projected = useMemo(() => new Map<string, readonly EntitySummary[]>(), [rows, entities, spaceId]);
+
   const rowsFor = useCallback(
     (kind: string) =>
       (filter?: unknown): readonly EntitySummary[] => {
         const key = cacheKey(kind, filter);
-        if (rows[key] !== undefined) return rows[key];
-        // Record the miss; the effect below performs the read. Requesting from
-        // inside render must never dispatch, so this only marks intent.
-        if (!pending.current.has(key)) {
-          pending.current.add(key);
-          queueMicrotask(() => setPendingTick((n) => n + 1));
+        const ordered = rows[key];
+        if (ordered === undefined) {
+          // Record the miss; the effect below performs the read. Requesting
+          // from inside render must never dispatch, so this only marks intent.
+          if (!pending.current.has(key)) {
+            pending.current.add(key);
+            queueMicrotask(() => setPendingTick((n) => n + 1));
+          }
+          return EMPTY_ROWS;
         }
-        return EMPTY_ROWS;
+        const hit = projected.get(key);
+        if (hit) return hit;
+        const out = projectRows({ ordered, entities, kind, spaceId, filter });
+        projected.set(key, out);
+        return out;
       },
-    [rows],
+    [rows, entities, spaceId, projected],
   );
 
   // Drains the misses recorded during render. Each (kind, filter) key is read
@@ -355,25 +453,17 @@ export function useGateData(options: GateOptions): GateData {
       } as unknown as CollectionQuery;
       void seam
         .query(query)
-        .then((result) => setRows((current) => ({ ...current, [key]: result.page.items })))
+        .then((result) => absorb(key, result.page.items))
         .catch(() => setRows((current) => ({ ...current, [key]: [] })));
     }
-  }, [ready, spaceId, seam, pendingTick]);
+  }, [ready, spaceId, seam, pendingTick, absorb]);
 
-  const detailOf = useCallback((id: string) => details[id], [details]);
-
-  // Detail is pulled lazily as panels open; the store keeps what it has seen.
-  useEffect(() => {
-    if (!ready) return;
-    const unsubscribe = domain.store.subscribe(() => {
-      // Domain-store echoes reconcile into the same cache the panels read.
-    });
-    return unsubscribe;
-  }, [ready, domain]);
+  const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
 
   const pull = useCallback(
     async (id: string) => {
-      if (details[id]) return;
+      if (pulled.current.has(id)) return;
+      pulled.current.add(id);
       const [detail, thread] = await Promise.all([
         seam.entity(id as never).catch(() => undefined),
         // The thread rides the same pull: a composer that posts into a tab
@@ -382,10 +472,25 @@ export function useGateData(options: GateOptions): GateData {
         // rather than a fabricated zero.
         seam.messages(id as never).catch(() => undefined),
       ]);
-      if (detail) setDetails((current) => ({ ...current, [id]: detail }));
+      /* THE DETAIL GOES INTO THE STORE, not beside it. `entity.upsert` then
+         overlays the fresher envelope onto it (reducers.mergeSummary keeps the
+         heavy sections), so an open panel shows a title someone else changed
+         without anyone re-reading — the same loop the lists get, for free.
+         The re-entrancy guard moved to a ref because the store's `details` is
+         no longer this hook's state: guarding on it would re-arm the read
+         every time an event touched the entity. */
+      /* A FAILED READ IS NOT RE-ARMED HERE, and that is deliberate now that
+         the default seam is a real node. `renderPanel` calls `pull` FROM
+         RENDER whenever the detail is missing, so clearing the guard on
+         failure turns one unreadable entity into an unbounded request loop
+         against the node — the fixture seam could never fail, so the shape was
+         invisible before the default flipped. The id stays claimed; `onResync`
+         clears the whole set, which is the same "catch-up integrity was lost,
+         re-run the reads" rule the rest of this hook obeys. */
+      if (detail) domain.store.getState().ingestDetail(detail);
       if (thread) setThreads((current) => ({ ...current, [id]: thread.items }));
     },
-    [seam, details],
+    [seam, domain],
   );
 
   /** Post, then re-read THAT anchor's thread so the echo is visible truth. */

@@ -1,16 +1,49 @@
 /**
- * THE REAL-SEAM DEV FLAG.
+ * WHICH SEAM THE APP CONSTRUCTS — and, since 2026-07-29, the answer in a
+ * browser is THE REAL ONE unless somebody says otherwise.
  *
- * `createRealSeam` is complete and the fixture seam is what the shell has
- * always constructed. Flipping that unconditionally would point every consumer
- * at a live node before the click path has been walked end to end, so the
- * choice is opt-in, read at ONE place (`useGateData`), and OFF by default —
- * `createFixtureSeam()` remains exactly what an un-opted session gets.
+ * === WHAT CHANGED AND WHY (USER RULING, first priority) ===
  *
- * Two ways to opt in, both gated on non-production:
- *   - `VITE_TM8_REAL_SEAM=1` at `vite dev` launch;
- *   - `localStorage.setItem('tm8-ui:real-seam', '1')` from the browser console,
- *     so verification can flip it without restarting vite.
+ * This gate used to be OFF by default: an un-opted session constructed
+ * `createFixtureSeam()`, so a fresh load of the app showed FIXTURE entities —
+ * invented tasks, invented sessions — rendered in exactly the chrome that real
+ * ones would use. Nothing on the screen said so. That is the honesty defect
+ * the whole program exists to remove, and it was the default state of the app.
+ *
+ * So the default inverted. The rules, in the order they are applied:
+ *
+ *   1. `MODE === 'production'` → FIXTURE. Kept verbatim from the opt-in era at
+ *      the coordinator's direction. STATED PLAINLY BECAUSE IT IS SURPRISING:
+ *      it means a production build shows fixture data while a dev build shows
+ *      the node — the inverse of what most people would predict. It is a
+ *      ruling, not a measurement, and it is flagged in
+ *      `src/data/HANDOVER-DataWiring.md` for reversal if that is not intended.
+ *   2. an explicit `'1'` → REAL. The old opt-in still works, unchanged.
+ *   3. an explicit `'0'` → FIXTURE. **NEW, and it is what makes the flip
+ *      safe**: a default with no off switch is a trap. This is how the launch
+ *      sheet's pickers, a demo, or anyone debugging without a node gets the
+ *      fixture world back — `localStorage.setItem('tm8-ui:real-seam','0')`.
+ *   4. `MODE === 'test'` → FIXTURE. Not a convenience: vitest runs with no
+ *      node and no network, so a real default there would make every suite
+ *      measure the ENVIRONMENT rather than the code, and 1000 tests would go
+ *      red saying nothing about the change that broke them. The browser
+ *      default is therefore asserted against `resolveSeamSource` directly with
+ *      an injected env (`seamSource.test.ts`) rather than being untestable.
+ *      NOTE that `realSeamFlag.test.ts`'s "is OFF by default" case now
+ *      measures THIS rule and not the app's default — it is still true, and it
+ *      no longer means what its name suggests.
+ *   5. otherwise → REAL.
+ *
+ * WHAT THE DEFAULT DOES **NOT** DO: fall back. If the node is unreachable the
+ * boot read rejects, `useGateData` holds the failure in `bootError`, and the
+ * shell must render that. It never quietly re-constructs the fixture seam —
+ * silently serving invented data in place of a node that is down is the same
+ * lie in a more expensive costume.
+ *
+ * The flag value is read from either source, in this order:
+ *   - `VITE_TM8_REAL_SEAM` at `vite dev` launch;
+ *   - `localStorage.getItem('tm8-ui:real-seam')` from the browser console, so
+ *     verification can flip it without restarting vite.
  *
  * === WHY `MODE`, NOT `DEV` ===
  *
@@ -42,27 +75,73 @@
  * should follow it in the same change rather than drift apart from the
  * pattern it was copied from.
  */
-export function isRealSeamEnabled(): boolean {
-  if (import.meta.env.MODE === 'production') return false;
-  if (import.meta.env.VITE_TM8_REAL_SEAM === '1') return true;
-  try {
-    // THE `typeof` CHECK IS INSIDE THE TRY DELIBERATELY.
-    //
-    // Storage can be a THROWING GETTER, not merely absent — some blocked
-    // origins and privacy modes define the property so that touching it raises.
-    // `typeof localStorage` is itself a property ACCESS, so a guard placed
-    // before the try throws past it and takes down the one call site that
-    // constructs the app's only seam. A test asserting the flag survives a
-    // throwing storage is what found this; the guard read as defensive and was
-    // not, because it evaluated the very expression it was guarding.
-    //
-    // NOTE FOR TRACK P: the same ordering is in
-    // `src/terminal/liveTerminalFlag.ts`, which this file was copied from. I
-    // have not edited it (P's carve-out) — flagged rather than fixed.
-    if (typeof localStorage === 'undefined') return false;
-    return localStorage.getItem('tm8-ui:real-seam') === '1';
-  } catch {
-    // A flag that cannot be read is not set.
-    return false;
+export type SeamSource = 'real' | 'fixture';
+
+/** The `import.meta.env` fields this gate reads — injectable, so the browser
+    default is assertable from a test process that is not a browser. */
+export interface SeamEnv {
+  MODE?: string;
+  VITE_TM8_REAL_SEAM?: string;
+}
+
+export const REAL_SEAM_STORAGE_KEY = 'tm8-ui:real-seam';
+
+/**
+ * THE PURE RESOLVER. Everything decidable about the choice lives here, taking
+ * its two inputs as arguments, because the one thing the old flag could not
+ * prove about itself was its own default: `isRealSeamEnabled()` reads the
+ * ambient MODE, and under vitest that MODE is 'test' forever. A test could
+ * assert the test-environment answer and nothing else, which is precisely the
+ * shape of a green that measures the runner instead of the rule.
+ */
+export function resolveSeamSource(env: SeamEnv, flag: string | null): SeamSource {
+  if (env.MODE === 'production') return 'fixture';
+  if (flag === '1') return 'real';
+  if (flag === '0') return 'fixture';
+  if (env.MODE === 'test') return 'fixture';
+  return 'real';
+}
+
+/**
+ * The flag VALUE from either source, or null when nobody set one.
+ *
+ * THE `typeof` CHECK IS INSIDE THE TRY DELIBERATELY.
+ *
+ * Storage can be a THROWING GETTER, not merely absent — some blocked origins
+ * and privacy modes define the property so that touching it raises. `typeof
+ * localStorage` is itself a property ACCESS, so a guard placed before the try
+ * throws past it and takes down the one call site that constructs the app's
+ * only seam. A test asserting the flag survives a throwing storage is what
+ * found this; the guard read as defensive and was not, because it evaluated
+ * the very expression it was guarding.
+ *
+ * NOTE FOR TRACK P: the same ordering is in
+ * `src/terminal/liveTerminalFlag.ts`, which this file was copied from. I have
+ * not edited it (P's carve-out) — flagged rather than fixed.
+ */
+export function readSeamFlag(env: SeamEnv): string | null {
+  if (env.VITE_TM8_REAL_SEAM != null && env.VITE_TM8_REAL_SEAM !== '') {
+    return env.VITE_TM8_REAL_SEAM;
   }
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(REAL_SEAM_STORAGE_KEY);
+  } catch {
+    // A flag that cannot be read is not set — and the default applies, which
+    // is now REAL. A storage failure must not silently demote the app to
+    // fixtures; that would be the fall-back this file exists to forbid.
+    return null;
+  }
+}
+
+/** The one call site is `useGateData`. */
+export function seamSource(): SeamSource {
+  const env = import.meta.env as unknown as SeamEnv;
+  return resolveSeamSource(env, readSeamFlag(env));
+}
+
+/** Kept as the historical name; `seamSource()` is the one that says what it
+    means, and both answer the same question. */
+export function isRealSeamEnabled(): boolean {
+  return seamSource() === 'real';
 }

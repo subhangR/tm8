@@ -116,6 +116,10 @@ export function EntityView(props: EntityViewProps) {
       livenessOf={data.livenessOf}
       messages={data.messagesOf(selectedId)}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
+      /* GAP-2 (data-wiring handover): the save path — inline title + Save +
+         conflict card — is live only where the host hands down the seam's
+         commands. AuthoringCommands is a structural subset, no cast. */
+      commands={data.seam.commands}
       streaming={data.activity[selectedId] ?? false}
       onPromote={() => setMode((m) => (m === 'aside' ? 'full' : 'aside'))}
       onClose={() => {

@@ -3,6 +3,7 @@ import type { ActivityItem, Connections, EntityDetail, HandoffView, MessageView 
 import type { SessionLiveness } from '../data/seam';
 import type { ActionContext, ActionRef, ContentBlockRef } from '../domain';
 import { getKind } from '../domain';
+import { AuthoringHost, SaveControls, useTaskSave, type AuthoringCommands } from '../authoring';
 import { ActionBar, PanelFooter, PanelHeader, TabStrip, type PanelHost, type PanelTab } from './detail/chrome';
 import {
   ErrorBody,
@@ -98,6 +99,28 @@ export interface EntityDetailPanelProps {
   needsAttention?: boolean;
   attentionDetail?: string;
 
+  /**
+   * THE EXECUTOR FOR EDITS. Absent ⇒ every save affordance on a kind that CAN
+   * be edited renders disabled-with-reason ("saving is not wired here"),
+   * which is L6: the control is visible, dead, and says why. It is never a
+   * live-looking title that swallows keystrokes.
+   *
+   * `AuthoringCommands` is a structural subset of `Seam['commands']`, so a
+   * host assigns `seam.commands` with NO cast and no adapter — an adapter
+   * being precisely where an argument gets dropped (D57.1).
+   */
+  commands?: AuthoringCommands | null;
+  /** A save landed. The live projection already carries the new version in
+      via the durable event; this is for anything a host wants on top. */
+  onSaved?: () => void;
+  /** Conflict resolution chose TAKE THEIRS and the node handed back its
+      detail. Optional because the event stream has already put their version
+      in the store — this is the host's chance to do more than that. */
+  onReloadDetail?: (current: EntityDetail) => void;
+  /** This id was just created by the ＋ New flow: open with the title focused
+      ("Z3 opens, title in inline-edit focus"). */
+  justCreated?: boolean;
+
   activeTab?: PanelTab;
   onTabChange?: (tab: PanelTab) => void;
   pinned?: boolean;
@@ -132,6 +155,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     setUncontrolledTab(t);
     onTabChange?.(t);
   };
+
+  /**
+   * THE SAVE FLOW LIVES HERE, above every early return, because hooks do.
+   *
+   * `useTaskSave` tolerates a null detail by design (a panel legitimately
+   * renders before its detail hydrates) and reports the reason through
+   * `unavailable` instead of throwing, so the call is unconditional and the
+   * loading panel below is unaffected.
+   *
+   * WHAT IT BUYS: `expectedVersion` is captured when the FIRST edit is made,
+   * not re-read at save time. A write that lands while the user is typing
+   * therefore produces a 409 the user can answer — reload or overwrite — where
+   * the read-at-save-time version would have overwritten the other writer with
+   * no conflict ever firing. The conflict is not an error path bolted on; it
+   * is the designed consequence of holding the version the edit was based on.
+   */
+  const editableConfig = detail ? getKind(detail.kind) : null;
+  const save = useTaskSave({
+    detail: detail ?? null,
+    commands: props.commands ?? null,
+    onSaved: () => props.onSaved?.(),
+    onReload: (current) => props.onReloadDetail?.(current),
+    editRefusal: editableConfig?.panel.capabilityReasons?.canEdit,
+  });
 
   /**
    * PERMISSION-LOST SHORT-CIRCUITS EVERYTHING, and it must come first.
@@ -228,20 +275,43 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           the chrome strip three lines below rendered the verdict correctly. The
           two consumers never disagreed — one was simply never wired.
         */
+        /* THE TITLE, only where the registry says this kind's title is
+           inline-editable (`list.inlineEdit.title`) — registry DATA, no kind
+           literal, and it is that field's FIRST consumer (its previous state
+           was 35 sources and zero readers, the D39.2 shape). Where it is
+           absent the title renders plain: a doc whose title the panel cannot
+           write must not wear the dotted underline that says it can. */
+        titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
+        titleLockReason={
+          config.list.inlineEdit?.title && save.unavailable
+            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
+            : undefined
+        }
+        autoFocusTitle={props.justCreated}
+        onCommitTitle={(title) => void save.commitNow({ title })}
         actions={
-          <ActionBar
-            detail={detail}
-            config={config}
-            inline
-            ctx={{
-              ...ctx,
-              entityId: ctx.entityId ?? detail.id,
-              kind: ctx.kind ?? detail.kind,
-              capabilities: ctx.capabilities ?? detail.capabilities,
-              liveness: ctx.liveness ?? props.liveness,
-            }}
-            onAction={props.onAction}
-          />
+          <>
+            <ActionBar
+              detail={detail}
+              config={config}
+              inline
+              ctx={{
+                ...ctx,
+                entityId: ctx.entityId ?? detail.id,
+                kind: ctx.kind ?? detail.kind,
+                capabilities: ctx.capabilities ?? detail.capabilities,
+                liveness: ctx.liveness ?? props.liveness,
+              }}
+              onAction={props.onAction}
+            />
+            {/* D63's inline action slot. Mounted only where an edit surface
+                exists: on a kind with no inline-editable field there is no
+                control being hidden, so a permanently-disabled Save would be
+                a reason attached to nothing. */}
+            {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+              <SaveControls save={save} />
+            ) : null}
+          </>
         }
       />
 
@@ -272,7 +342,14 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         <LoadingBody />
       ) : (
         <CatchBoundary label={`${config.label.toLowerCase()} body`}>
-          <PanelBody {...props} detail={detail} tab={tab} />
+          {/* THE CONFLICT AND REFUSAL CARDS RIDE IN THE BODY, never the
+              header — a card carrying a cause, an aftermath and two real
+              moves cannot live in a 30px row. `AuthoringHost` renders nothing
+              at all while the save is clean, so this costs the body no height
+              in the ordinary case. */}
+          <AuthoringHost save={save}>
+            <PanelBody {...props} detail={detail} tab={tab} />
+          </AuthoringHost>
         </CatchBoundary>
       )}
 

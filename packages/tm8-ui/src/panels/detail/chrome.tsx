@@ -2,6 +2,7 @@ import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import { resolveAction } from '../../domain';
+import { InlineTitleEditor } from '../../authoring';
 import { IconBtn, Pill, type PillTone } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
@@ -46,6 +47,11 @@ export function PanelHeader({
   pinned = false,
   pinRefusal,
   actions,
+  onCommitTitle,
+  titleEditable,
+  titleLockReason,
+  titlePlaceholder,
+  autoFocusTitle,
   onPin,
   onPromote,
   onClose,
@@ -63,12 +69,41 @@ export function PanelHeader({
       spent belongs to the body. Rendered between the status pill and the
       window controls; `ActionBar inline` is the expected occupant. */
   actions?: React.ReactNode;
+  /**
+   * THE TITLE IS REALLY EDITABLE NOW, or it does not look editable.
+   *
+   * What stood here was a `contentEditable` span with NO commit handler and no
+   * seam call — inert since the day it was written. It carried the dotted
+   * underline that means "you can change this", accepted keystrokes, and threw
+   * every one of them away on blur. That is R5 #9's enabled-inert class, in the
+   * most conspicuous string on the panel.
+   *
+   * So the dotted treatment is now tied to a real editor: pass a commit
+   * handler and the caller gets `InlineTitleEditor`, which sends
+   * `patchTask(expectedVersion)`; pass none and the title is a plain span that
+   * makes no promise. A caller that CAN edit but has no executor should say so
+   * through `SaveControls` (disabled-with-reason) rather than by dressing the
+   * title up.
+   */
+  onCommitTitle?: (title: string) => void;
+  /** False ⇒ plain span even with a handler: the kind's own lock (a message's
+      excerpt, a member's name, a commit's tracked subject) or a server
+      `canEdit: false`. Resolved by the caller from registry data + the seam. */
+  titleEditable?: boolean;
+  /** WHY it is locked — carried on the title itself, so a lock is stated. */
+  titleLockReason?: string;
+  /** The title is still the create flow's placeholder, not a name anyone
+      chose (T5-6 paints that state in ink-4). */
+  titlePlaceholder?: boolean;
+  /** "＋ New → Z3 opens, title in inline-edit focus" — true once, for the row
+      the create flow just made. */
+  autoFocusTitle?: boolean;
   onPin?: () => void;
   onPromote?: () => void;
   onClose?: () => void;
   onOverflow?: () => void;
 }) {
-  const editable = detail.capabilities.canEdit && !detail.deletedAt;
+  const editable = (titleEditable ?? false) && onCommitTitle !== undefined && !detail.deletedAt;
   return (
     <div className="pn-head" data-testid="panel-header">
       {breadcrumb ? <div className="pn-crumb">{breadcrumb}</div> : null}
@@ -76,26 +111,30 @@ export function PanelHeader({
         <span className="pn-head__glyph" aria-hidden>
           {config.chip.glyph}
         </span>
-        <span
-          className={
-            detail.deletedAt
-              ? 'pn-head__title pn-head__title--struck'
-              : editable
-                ? 'pn-head__title pn-head__title--editable'
-                : 'pn-head__title'
-          }
-          title={detail.title}
-          /* Inline-editable per the anatomy: dotted underline marks it, and
-             tracked kinds (PR, commit) lock it because their title follows the
-             source and cannot be written back. */
-          contentEditable={editable ? true : undefined}
-          suppressContentEditableWarning={editable}
-          role={editable ? 'textbox' : undefined}
-          aria-label={editable ? 'Title' : undefined}
-          tabIndex={editable ? 0 : undefined}
-        >
-          {detail.title}
-        </span>
+        {editable && onCommitTitle ? (
+          /* `au-title` is a byte-equivalent of `pn-head__title` — same flex,
+             same 14.5px/600, same nowrap+ellipsis — so this swap changes the
+             behaviour and not the box. The duplication is the authoring
+             lane's flagged item (HANDOVER-Authoring §7b): two class names for
+             one treatment, and `panels.css` is not this seat's to delete
+             from. Flagged, not silently left. */
+          <InlineTitleEditor
+            value={detail.title}
+            editable
+            placeholder={titlePlaceholder}
+            autoFocus={autoFocusTitle}
+            onCommit={onCommitTitle}
+          />
+        ) : (
+          <span
+            className={
+              detail.deletedAt ? 'pn-head__title pn-head__title--struck' : 'pn-head__title'
+            }
+            title={titleLockReason ? `${detail.title} — ${titleLockReason}` : detail.title}
+          >
+            {detail.title}
+          </span>
+        )}
 
         <StatusPillFor detail={detail} config={config} liveness={liveness} />
 

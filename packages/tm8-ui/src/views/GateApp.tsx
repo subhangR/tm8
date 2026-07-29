@@ -397,6 +397,16 @@ export function GateApp() {
                 })
               }
             />
+          ) : data.bootError ? (
+            /* GAP-1 (data-wiring handover): with the real seam now the
+               default, an unreachable node is a NORMAL state and must be
+               STATED — never a spinner that resolves for nobody, never a
+               silent fall-back to fixtures. */
+            <div className="shell-boot" role="alert">
+              <strong>Can’t reach the tm8 node.</strong>
+              <div>{data.bootError}</div>
+              <div>The workspace is empty because nothing could be read — not because there is nothing in it.</div>
+            </div>
           ) : (
             <div className="shell-boot" role="status">
               loading workspace…
