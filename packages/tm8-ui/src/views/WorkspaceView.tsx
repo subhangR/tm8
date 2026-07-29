@@ -25,6 +25,8 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
+import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { getKind } from '../domain/registry';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet } from './LaunchSheet';
 import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
@@ -140,6 +142,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     return [...rows].sort((a, b) => Number(live.has(b.id)) - Number(live.has(a.id)));
   }, [data, rightKind]);
 
+  /* Authoring mount 7a: the LEFT panel's +New becomes the REAL create flow.
+     Hook runs unconditionally (rules of hooks); the control renders only for
+     kinds whose registry row says quickCreate — data, not a kind literal. */
+  const leftConfig = getKind(leftKind);
+  const createFlow = useNewTask({
+    spaceId: data.spaceId,
+    placeholderTitle: placeholderTitleFor(leftConfig.label),
+    commands: data.seam.commands,
+    onCreated: (id) => nav.push?.(id as EntityId),
+  });
+
   const centreIsEmpty = nav.stack.length === 0 && nav.pinned.length === 0;
 
   return (
@@ -149,6 +162,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       left={
         <EntityListPanel
           kind={leftKind}
+          createSlot={
+            leftConfig.list.quickCreate ? (
+              <NewTaskControl flow={createFlow} label={leftConfig.palette?.createLabel ?? '＋ New'} />
+            ) : undefined
+          }
           rowsFor={data.rowsFor(leftKind) as never}
           ctx={ctx}
           compact={compact}

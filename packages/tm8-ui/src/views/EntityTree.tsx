@@ -34,6 +34,8 @@ export interface EntityTreeProps {
   activity: Readonly<Record<string, boolean>>;
   selectedId: string | null;
   onSelect(id: string): void;
+  /** Authoring 7a: the host's REAL create control, rendered in the head band. */
+  createSlot?: React.ReactNode;
 }
 
 interface TreeNode {
@@ -183,6 +185,7 @@ export function EntityTree(props: EntityTreeProps) {
         <span className="evt-head__label">{config.labelPlural}</span>
         <span className="evt-head__count">{rows.length}</span>
         <span className="evt-spacer" />
+        {props.createSlot}
       </div>
 
       {tiers ? (

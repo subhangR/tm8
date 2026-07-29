@@ -88,6 +88,8 @@ export interface EntityListPanelProps {
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
   onCreate?: () => void;
+  /** Authoring 7a: the host's REAL create control (NewTaskControl). */
+  createSlot?: React.ReactNode;
   onKindChange?: (kind: string) => void;
 
   /**
@@ -157,7 +159,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         onMode={setMode}
       />
 
-      <HeaderActions config={config} ctx={props.ctx} onCreate={props.onCreate} onAction={props.onAction} />
+      <HeaderActions config={config} ctx={props.ctx} onCreate={props.onCreate} createSlot={props.createSlot} onAction={props.onAction} />
 
       <SearchRow
         config={config}
@@ -460,11 +462,13 @@ function HeaderActions({
   config,
   ctx,
   onCreate,
+  createSlot,
   onAction,
 }: {
   config: KindConfig;
   ctx: ActionContext;
   onCreate?: () => void;
+  createSlot?: React.ReactNode;
   onAction?: (ref: ActionRef, entityId: string) => void;
 }) {
   const { quickCreate, quickLaunch } = config.list;
@@ -472,7 +476,13 @@ function HeaderActions({
 
   return (
     <div className="lp__actions">
-      {quickCreate ? (
+      {/* Authoring mount 7a: when the host supplies a REAL create flow it
+          replaces the bare button — which was INERT when onCreate was absent
+          (the audit's '+New inert' row). No slot and no onCreate ⇒ nothing
+          renders enabled-dead. */}
+      {quickCreate && createSlot ? (
+        createSlot
+      ) : quickCreate && onCreate ? (
         <button type="button" className="lp__new" onClick={onCreate}>
           ＋ New
         </button>

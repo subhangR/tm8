@@ -29,6 +29,7 @@ import { EntityDetailPanel, type DetailReasons } from '../panels';
 import { EntityTree } from './EntityTree';
 import type { ActionContext } from '../domain/types';
 import { getKind } from '../domain/registry';
+import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import './entity-view.css';
@@ -65,6 +66,16 @@ export function EntityView(props: EntityViewProps) {
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
   const config = getKind(kind);
+
+  /* Authoring mount 7a, EntityView host: +New in the tree head creates for
+     real and opens the new entity in the aside. quickCreate gates by
+     registry data. */
+  const createFlow = useNewTask({
+    spaceId: data.spaceId,
+    placeholderTitle: placeholderTitleFor(config.label),
+    commands: data.seam.commands,
+    onCreated: (id) => setSelectedId(id as EntityId),
+  });
 
   // Esc walks DOWN one level per press — the canvas's own law for Z4
   // ("⇲ collapse / esc returns to the panel"), extended one rung to the list.
@@ -137,6 +148,11 @@ export function EntityView(props: EntityViewProps) {
               EntityListPanel stretched. */}
           <EntityTree
             kind={kind}
+            createSlot={
+              config.list.quickCreate ? (
+                <NewTaskControl flow={createFlow} label={config.palette?.createLabel ?? '＋ New'} />
+              ) : undefined
+            }
             rowsFor={data.rowsFor(kind)}
             livenessOf={data.livenessOf}
             activity={data.activity}
