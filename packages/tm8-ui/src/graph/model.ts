@@ -40,6 +40,15 @@ export interface GraphModelInput {
   edgeTypeFilter: ReadonlySet<string> | null;
   /** The heat clock — fixtures pass FIXTURE_NOW, live passes wall time. */
   now: string;
+  /**
+   * Layout stability spine. When present, any PLACED node whose id is a key
+   * keeps EXACTLY that position — no re-layout, no packing shift. Placed nodes
+   * absent from the map are ARRIVALS: positioned heuristically next to their
+   * first frozen neighbor (or, lacking one, in a new-arrivals row beneath the
+   * bounding box) WITHOUT ever moving a frozen node. A frozen id that is no
+   * longer visible is simply ignored. Omit for a full re-layout.
+   */
+  frozen?: Readonly<Record<string, { x: number; y: number }>>;
 }
 
 export interface PlacedNode {
@@ -72,6 +81,12 @@ export interface GraphModel {
   componentCount: number;
   /** Nodes beyond RENDER_CAP that were NOT placed (0 = everything shown). */
   truncated: number;
+  /**
+   * How many placed nodes were positioned heuristically this call — i.e. the
+   * arrivals that landed beside a frozen neighbor or in the new-arrivals row.
+   * 0 whenever `frozen` was omitted (a full re-layout moves everyone by design).
+   */
+  pendingRelayout: number;
 }
 
 /** Ported from the proven model: humanized type, hard/soft suffix for deps. */
@@ -217,6 +232,184 @@ function layoutComponent(ids: EntityId[], edges: PlacedEdge[]): ComponentLayout 
   return { order: ids, pos, w, h };
 }
 
+// --------------------------------------------------------------------------
+// Layout stability: freeze known positions, place arrivals around them without
+// perturbing anyone frozen. The collision grid is NODE_W/NODE_H rectangles
+// snapped to the existing NODE_W+H_GAP / NODE_H+V_GAP spacing.
+// --------------------------------------------------------------------------
+
+function rectsOverlap(a: { x: number; y: number }, b: { x: number; y: number }): boolean {
+  return a.x < b.x + NODE_W && b.x < a.x + NODE_W && a.y < b.y + NODE_H && b.y < a.y + NODE_H;
+}
+
+/**
+ * First non-overlapping grid cell anchored at (ax, ay), scanning outward by
+ * Manhattan distance and preferring BELOW over to-the-right within each ring.
+ * (0,0) — the anchor itself — is skipped, so a neighbor's own slot is never
+ * reused.
+ */
+function findSpot(ax: number, ay: number, occupied: { x: number; y: number }[]): { x: number; y: number } {
+  const stepX = NODE_W + H_GAP;
+  const stepY = NODE_H + V_GAP;
+  for (let d = 1; d < 1000; d += 1) {
+    for (let row = d; row >= 0; row -= 1) {
+      const col = d - row;
+      const cand = { x: ax + col * stepX, y: ay + row * stepY };
+      if (!occupied.some((o) => rectsOverlap(cand, o))) return cand;
+    }
+  }
+  return { x: ax, y: ay + 1000 * stepY };
+}
+
+/**
+ * Position the placed nodes with frozen ids pinned and arrivals slotted in.
+ * Returns the placed list and the arrival count (`pendingRelayout`).
+ */
+function placeWithFrozen(
+  placedComponents: EntityId[][],
+  edges: PlacedEdge[],
+  byId: Map<EntityId, EntitySummary>,
+  blockedIds: Set<EntityId>,
+  frozen: Readonly<Record<string, { x: number; y: number }>>,
+  now: string,
+): { placed: PlacedNode[]; pendingRelayout: number } {
+  const placedIds: EntityId[] = [];
+  const componentOf = new Map<EntityId, number>();
+  for (const [ci, component] of placedComponents.entries()) {
+    for (const id of component) {
+      placedIds.push(id);
+      componentOf.set(id, ci);
+    }
+  }
+  const placedSet = new Set(placedIds);
+
+  // Undirected adjacency among placed nodes — arrivals cling to a placed
+  // frozen neighbor, so only placed endpoints carry positions.
+  const adj = new Map<EntityId, EntityId[]>();
+  for (const id of placedIds) adj.set(id, []);
+  for (const e of edges) {
+    if (!placedSet.has(e.sourceId) || !placedSet.has(e.targetId)) continue;
+    adj.get(e.sourceId)!.push(e.targetId);
+    adj.get(e.targetId)!.push(e.sourceId);
+  }
+
+  const pos = new Map<EntityId, { x: number; y: number }>();
+  const occupied: { x: number; y: number }[] = [];
+  for (const id of placedIds) {
+    const f = frozen[id];
+    if (f) {
+      const p = { x: f.x, y: f.y };
+      pos.set(id, p);
+      occupied.push(p);
+    }
+  }
+
+  const arrivals = placedIds.filter((id) => frozen[id] === undefined);
+  const withoutNeighbor: EntityId[] = [];
+  for (const id of arrivals) {
+    const neighbor = (adj.get(id) ?? []).find((n) => frozen[n] !== undefined);
+    if (neighbor === undefined) {
+      withoutNeighbor.push(id);
+      continue;
+    }
+    const anchor = pos.get(neighbor)!;
+    const spot = findSpot(anchor.x, anchor.y, occupied);
+    pos.set(id, spot);
+    occupied.push(spot);
+  }
+
+  // The rest land in a fresh row beneath the current bounding box.
+  let baselineY = occupied.length
+    ? Math.max(...occupied.map((o) => o.y + NODE_H)) + V_GAP
+    : MARGIN;
+  let cursorX = MARGIN;
+  for (const id of withoutNeighbor) {
+    if (cursorX > MARGIN && cursorX + NODE_W > MAX_ROW_W) {
+      cursorX = MARGIN;
+      baselineY += NODE_H + V_GAP;
+    }
+    let cand = { x: cursorX, y: baselineY };
+    while (occupied.some((o) => rectsOverlap(cand, o))) {
+      cand = { x: cand.x + (NODE_W + H_GAP), y: cand.y };
+    }
+    pos.set(id, cand);
+    occupied.push(cand);
+    cursorX = cand.x + NODE_W + H_GAP;
+  }
+
+  const placed: PlacedNode[] = placedIds.map((id) => {
+    const entity = byId.get(id)!;
+    const p = pos.get(id)!;
+    return {
+      entity,
+      x: p.x,
+      y: p.y,
+      heat: heatOf(entity.activityAt, now),
+      onBlockedPath: blockedIds.has(id),
+      ghost: entity.deletedAt !== null,
+      componentId: componentOf.get(id) ?? 0,
+    };
+  });
+  return { placed, pendingRelayout: arrivals.length };
+}
+
+/**
+ * Undirected n-hop neighborhood of `focusId`. Accepts PlacedEdge-shaped
+ * (`sourceId`/`targetId`) OR EdgeView-shaped (`source.id`/`target.id`) edges,
+ * so both the model's output and the raw contract feed work. Traversal stays
+ * within the given node set; an unknown `focusId` yields just `{focusId}`.
+ * Deterministic, never throws.
+ */
+export function focusSubgraph(
+  nodes: readonly { id: string }[],
+  edges: readonly { sourceId?: string; targetId?: string; source?: { id: string }; target?: { id: string } }[],
+  focusId: string,
+  hops: number,
+): Set<string> {
+  const known = new Set(nodes.map((n) => n.id));
+  const adj = new Map<string, string[]>();
+  const link = (a: string, b: string): void => {
+    if (!adj.has(a)) adj.set(a, []);
+    adj.get(a)!.push(b);
+  };
+  for (const e of edges) {
+    const s = e.sourceId ?? e.source?.id;
+    const t = e.targetId ?? e.target?.id;
+    if (s === undefined || t === undefined) continue;
+    link(s, t);
+    link(t, s);
+  }
+
+  const result = new Set<string>([focusId]);
+  let frontier = [focusId];
+  for (let h = 0; h < hops && frontier.length > 0; h += 1) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const n of adj.get(id) ?? []) {
+        if (!known.has(n) || result.has(n)) continue;
+        result.add(n);
+        next.push(n);
+      }
+    }
+    frontier = next;
+  }
+  return result;
+}
+
+/**
+ * Ids whose title OR kind contains `query` (trimmed, case-insensitive
+ * substring). An empty or whitespace-only query matches nothing.
+ */
+export function searchMatches(nodes: readonly EntitySummary[], query: string): Set<string> {
+  const q = query.trim().toLowerCase();
+  const out = new Set<string>();
+  if (q === '') return out;
+  for (const n of nodes) {
+    if (n.title.toLowerCase().includes(q) || n.kind.toLowerCase().includes(q)) out.add(n.id);
+  }
+  return out;
+}
+
 export function buildGraphModel(input: GraphModelInput): GraphModel {
   const { kindFilter, edgeTypeFilter, now } = input;
 
@@ -287,33 +480,42 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     }
   }
 
-  // Pack islands into rows.
-  const placed: PlacedNode[] = [];
-  let cursorX = MARGIN;
-  let cursorY = MARGIN;
-  let rowH = 0;
-  for (const [componentId, component] of placedComponents.entries()) {
-    const layout = layoutComponent(component, edges);
-    if (cursorX > MARGIN && cursorX + layout.w > MAX_ROW_W) {
-      cursorX = MARGIN;
-      cursorY += rowH + ISLAND_GAP;
-      rowH = 0;
+  // Position the placed nodes. With `frozen`, pinned ids hold and arrivals
+  // slot in around them; otherwise pack whole islands into rows.
+  let placed: PlacedNode[];
+  let pendingRelayout = 0;
+  if (input.frozen) {
+    const r = placeWithFrozen(placedComponents, edges, byId, blockedIds, input.frozen, now);
+    placed = r.placed;
+    pendingRelayout = r.pendingRelayout;
+  } else {
+    placed = [];
+    let cursorX = MARGIN;
+    let cursorY = MARGIN;
+    let rowH = 0;
+    for (const [componentId, component] of placedComponents.entries()) {
+      const layout = layoutComponent(component, edges);
+      if (cursorX > MARGIN && cursorX + layout.w > MAX_ROW_W) {
+        cursorX = MARGIN;
+        cursorY += rowH + ISLAND_GAP;
+        rowH = 0;
+      }
+      for (const id of component) {
+        const p = layout.pos.get(id)!;
+        const entity = byId.get(id)!;
+        placed.push({
+          entity,
+          x: cursorX + p.x,
+          y: cursorY + p.y,
+          heat: heatOf(entity.activityAt, now),
+          onBlockedPath: blockedIds.has(id),
+          ghost: entity.deletedAt !== null,
+          componentId,
+        });
+      }
+      cursorX += layout.w + ISLAND_GAP;
+      rowH = Math.max(rowH, layout.h);
     }
-    for (const id of component) {
-      const p = layout.pos.get(id)!;
-      const entity = byId.get(id)!;
-      placed.push({
-        entity,
-        x: cursorX + p.x,
-        y: cursorY + p.y,
-        heat: heatOf(entity.activityAt, now),
-        onBlockedPath: blockedIds.has(id),
-        ghost: entity.deletedAt !== null,
-        componentId,
-      });
-    }
-    cursorX += layout.w + ISLAND_GAP;
-    rowH = Math.max(rowH, layout.h);
   }
 
   const placedIds = new Set(placed.map((p) => p.entity.id));
@@ -330,5 +532,6 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     height,
     componentCount: placedComponents.length,
     truncated,
+    pendingRelayout,
   };
 }

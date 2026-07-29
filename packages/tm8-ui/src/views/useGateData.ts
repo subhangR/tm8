@@ -21,6 +21,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
   CollectionQuery,
+  CommandResult,
+  EdgeView,
   ExecutionSpawnInput,
   EntityDetail,
   EntityId,
@@ -30,16 +32,28 @@ import type {
   MenuConfig,
   SpaceId,
   SpaceSummary,
+  ProjectResource,
 } from '@tm8/contract';
-import type { ConnectionState, Seam, SessionLiveness } from '../data/seam';
+import { launchModel } from '@tm8/contract';
+import type { ConnectionState, LivenessSnapshot, Seam, SessionLiveness } from '../data/seam';
 import { browserWebSocketFactory, createFixtureSeam, createRealSeam } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
 import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/project/domain-store';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
+import type { LaunchCapacity, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
+
+export interface GateGraphData {
+  nodes: readonly EntitySummary[];
+  edges: readonly EdgeView[];
+  loading: boolean;
+  error: string | null;
+  now: string;
+  refresh: () => void;
+}
 
 /** Order-independent key: two equal filters must not produce two cache rows. */
 function stableKey(value: unknown): string {
@@ -68,19 +82,30 @@ export interface GateData {
   detailOf: (id: string) => EntityDetail | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
+  /** Server-hydrated graph lens, projected live through entity/edge events. */
+  graph: GateGraphData;
+  /** Launch resources from the active seam; never presentation fixtures. */
+  launch: {
+    teammates: readonly LaunchTeammate[];
+    projects: readonly LaunchProject[];
+    profiles: readonly LaunchProfile[];
+    capacity?: LaunchCapacity;
+  };
   /** Hydrate a kind the viewer selected after boot. Idempotent. */
   ensureKind: (kind: string) => void;
   /**
-   * D44: launch creates a REAL fixture session through the seam's own command
-   * path — patches, echo event, monotonic seq — so the live set moves and the
-   * count updates the way it will with a real node. Not a stub.
+   * D44: launch runs through the active seam's command path. Command patches
+   * reconcile immediately and the durable event stream remains authoritative.
    */
-  spawn: (input: ExecutionSpawnInput) => Promise<void>;
+  /** Spawn and return the authoritative work-session id for immediate focus. */
+  spawn: (input: ExecutionSpawnInput) => Promise<EntityId>;
   /** The composer's dispatcher (Surface Audit): seam postMessage, then the
       anchor's thread re-read so the echo is on screen, not implied. */
   postMessage: (input: PostMessageInput) => Promise<void>;
   /** The thread for an entity, hydrated by pull(). Absent = no read ran. */
   messagesOf: (id: string) => readonly MessageView[] | undefined;
+  /** Reconcile a command's authoritative detail and every summary patch. */
+  reconcileCommand: (result: CommandResult) => void;
   seam: Seam;
   domain: DomainStoreHandle;
 }
@@ -89,6 +114,8 @@ export interface GateData {
 export interface GateOptions {
   leftKind: string;
   rightKind: string;
+  /** Relative same-origin base. Named Servers use the local node's relay. */
+  serverBaseUrl?: string;
   /**
    * THE SEAM INJECTION PORT.
    *
@@ -129,8 +156,14 @@ export function useGateData(options: GateOptions): GateData {
       ? options.seam
       : isRealSeamEnabled()
       ? createRealSeam({
-          // baseUrl stays default-relative: the vite proxy carries /v2, so a
-          // hardcoded origin here would bypass it and break same-origin.
+          ...(options.serverBaseUrl
+            ? {
+                baseUrl: options.serverBaseUrl,
+                wsUrl: `${location.origin.replace(/^http/i, 'ws')}${options.serverBaseUrl}/v2/ws`,
+              }
+            : {}),
+          // The local Server stays default-relative. A named Server uses the
+          // same-origin relay above, so browser CORS never becomes transport.
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
           origin: location.origin,
@@ -149,6 +182,15 @@ export function useGateData(options: GateOptions): GateData {
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
   const [liveIds, setLiveIds] = useState<readonly string[]>([]);
+  const [executionCapacity, setExecutionCapacity] = useState<LivenessSnapshot['capacity']>();
+  const [linkedProjects, setLinkedProjects] = useState<readonly ProjectResource[]>([]);
+  const [spaceDefaultProfileId, setSpaceDefaultProfileId] = useState<EntityId | null>(null);
+  const [teammateProfileDefaults, setTeammateProfileDefaults] = useState<Readonly<Record<string, EntityId | null>>>({});
+  const [graphLoad, setGraphLoad] = useState<{
+    phase: 'loading' | 'ready' | 'error';
+    error: string | null;
+    now: string;
+  }>(() => ({ phase: 'loading', error: null, now: new Date().toISOString() }));
   /**
    * ROWS ARE IDS NOW, NOT SUMMARIES — and that one change is what closed the
    * live loop.
@@ -183,6 +225,10 @@ export function useGateData(options: GateOptions): GateData {
     domain.store.subscribe,
     () => domain.store.getState().details,
   );
+  const edgeProjection = useSyncExternalStore(
+    domain.store.subscribe,
+    () => domain.store.getState().edges,
+  );
 
   /** Every read lands in the store FIRST, then leaves its ordering here. Both
       halves matter: skipping the ingest would leave `projectRows` joining ids
@@ -195,6 +241,26 @@ export function useGateData(options: GateOptions): GateData {
     [domain],
   );
 
+  const loadGraph = useCallback(
+    async (space: SpaceId) => {
+      setGraphLoad((current) => ({ ...current, phase: 'loading', error: null }));
+      try {
+        const result = await seam.graph({ spaceId: space, layout: 'graph', limit: 150 });
+        const store = domain.store.getState();
+        store.ingestSummaries(result.nodes);
+        store.ingestEdges(result.edges);
+        setGraphLoad({ phase: 'ready', error: null, now: new Date().toISOString() });
+      } catch (error: unknown) {
+        setGraphLoad({
+          phase: 'error',
+          error: String((error as { message?: string })?.message ?? error),
+          now: new Date().toISOString(),
+        });
+      }
+    },
+    [seam, domain],
+  );
+
   /**
    * Hydration is written as ONE idempotent, re-runnable function from day one
    * (§10.2.5): `onResync` means catch-up integrity was lost, and the only
@@ -202,7 +268,7 @@ export function useGateData(options: GateOptions): GateData {
    */
   const hydrate = useCallback(
     async (space: SpaceId) => {
-      const [menuRaw, snapshot] = await Promise.all([
+      const [menuRaw, snapshot, projects, settings] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
           setMenu(resolveMenu(undefined, error));
           return undefined;
@@ -211,19 +277,44 @@ export function useGateData(options: GateOptions): GateData {
         // back. Holding the latest is this layer's job by design (A1c), which
         // is why every renderer below takes `liveIds` as a plain array.
         seam.liveness.refresh(space).catch(() => undefined),
+        seam.projects(space),
+        seam.spaceSettings(space),
+        loadGraph(space),
       ]);
       if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
-      if (snapshot) setLiveIds(snapshot.liveEntityIds);
+      if (snapshot) {
+        setLiveIds(snapshot.liveEntityIds);
+        setExecutionCapacity(snapshot.capacity);
+      }
+      setLinkedProjects(projects);
+      setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
 
       const load = async (kind: string) => {
         const query = { spaceId: space, kinds: [kind] } as unknown as CollectionQuery;
         const result = await seam.query(query);
         // Same key shape rowsFor reads: an unfiltered read is the '*' key.
         absorb(`${kind}::*`, result.page.items);
+        return result.page.items;
       };
-      await Promise.all([load(options.leftKind), load(options.rightKind)]);
+      const loaded = await Promise.all(
+        [...new Set([options.leftKind, options.rightKind, 'team_member', 'interaction_profile'])]
+          .map(async (kind) => {
+            const items = await load(kind);
+            return { kind, items };
+          }),
+      );
+      const teammateRows = loaded
+        .filter((entry) => entry.kind === 'team_member')
+        .flatMap((entry) => entry.items);
+      const defaults = await Promise.all(teammateRows.map(async (teammate) => {
+        const page = await seam.connections(teammate.id, { limit: 200 }).catch(() => undefined);
+        const edge = page?.items.find((candidate) =>
+          candidate.type === 'defaults_to_profile' && candidate.source.id === teammate.id);
+        return [teammate.id, edge?.target.id ?? null] as const;
+      }));
+      setTeammateProfileDefaults(Object.fromEntries(defaults));
     },
-    [seam, options.leftKind, options.rightKind, absorb],
+    [seam, options.leftKind, options.rightKind, absorb, loadGraph],
   );
 
   const [bootError, setBootError] = useState<string | null>(null);
@@ -271,7 +362,10 @@ export function useGateData(options: GateOptions): GateData {
   // The live set changes without us asking; `onChange` is the push half of the
   // liveness surface and keeps the held snapshot from going quietly stale.
   useEffect(
-    () => seam.liveness.onChange((snapshot) => setLiveIds(snapshot.liveEntityIds)),
+    () => seam.liveness.onChange((snapshot) => {
+      setLiveIds(snapshot.liveEntityIds);
+      setExecutionCapacity(snapshot.capacity);
+    }),
     [seam],
   );
 
@@ -349,14 +443,75 @@ export function useGateData(options: GateOptions): GateData {
 
   const spawn = useCallback(
     async (input: ExecutionSpawnInput) => {
-      await seam.commands.spawn(input);
-      // Re-read the reads the new session affects. Hydration is idempotent by
-      // construction (§10.2.5), which is exactly why it is safe to re-run here
-      // rather than hand-patching a row into the cache.
-      if (spaceId) await hydrate(spaceId);
+      const result = await seam.commands.spawn(input);
+      domain.store.getState().ingestSummaries(result.patches);
+      if (result.entity) domain.store.getState().ingestDetail(result.entity);
+      domain.store.getState().reconcile(input.clientMutationId);
+
+      const sessionId = result.entity?.id
+        ?? result.patches.find((patch) => patch.state.kind === 'work_session')?.id;
+      if (!sessionId) {
+        throw new Error('execution.spawn returned no work-session entity');
+      }
+
+      // The command result opens the caller's terminal immediately. The
+      // durable entity.upsert event independently converges other clients;
+      // neither path needs a browser refresh or a post-command full hydrate.
+      return sessionId;
     },
-    [seam, spaceId, hydrate],
+    [seam, domain],
   );
+
+  const launch = useMemo<GateData['launch']>(() => {
+    const summaries = Object.values(entities).filter((row) => row.spaceId === spaceId && row.deletedAt === null);
+    const teammates: LaunchTeammate[] = summaries.flatMap((row) => {
+      if (row.state.kind !== 'team_member') return [];
+      const supportedModel = launchModel(row.state.model);
+      if (!supportedModel || supportedModel.agentTool !== row.state.agentTool) return [];
+      const name = row.title || row.id;
+      return [{
+        id: row.id,
+        name,
+        initial: name.slice(0, 1).toUpperCase(),
+        model: row.state.model ?? '',
+        agentTool: row.state.agentTool ?? '',
+        owner: row.state.owner.displayName,
+        liveSessions: null,
+        ...(teammateProfileDefaults[row.id]
+          ? { defaultProfileId: teammateProfileDefaults[row.id] ?? undefined }
+          : {}),
+      }];
+    });
+    const profiles: LaunchProfile[] = summaries.flatMap((row) => {
+      if (row.state.kind !== 'interaction_profile') return [];
+      return [{
+        id: row.id,
+        name: row.title || row.id,
+        version: row.state.activeVersion ?? row.state.currentDraftVersion,
+        status: row.state.status,
+        isSpaceDefault: row.id === spaceDefaultProfileId,
+      }];
+    });
+    const projects: LaunchProject[] = linkedProjects.map((project, index) => ({
+      id: project.id,
+      name: project.name,
+      trusted: project.trust === 'trusted',
+      detail: project.trust === 'trusted'
+        ? `trusted · ${project.workingDir}`
+        : '',
+      ...(project.trust === 'untrusted'
+        ? { reason: "untrusted — can't host sessions · trust it in Node settings" }
+        : {}),
+      selectedByDefault: index === 0 && project.trust === 'trusted',
+    }));
+    const capacity = executionCapacity
+      ? {
+          slotsFree: Math.max(0, executionCapacity.total - executionCapacity.used),
+          slotsTotal: executionCapacity.total,
+        }
+      : undefined;
+    return { teammates, projects, profiles, ...(capacity ? { capacity } : {}) };
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, teammateProfileDefaults]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty
@@ -460,6 +615,15 @@ export function useGateData(options: GateOptions): GateData {
 
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
 
+  const reconcileCommand = useCallback(
+    (result: CommandResult) => {
+      const store = domain.store.getState();
+      if (result.patches.length > 0) store.ingestSummaries(result.patches);
+      if (result.entity) store.ingestDetail(result.entity);
+    },
+    [domain],
+  );
+
   const pull = useCallback(
     async (id: string) => {
       if (pulled.current.has(id)) return;
@@ -505,6 +669,35 @@ export function useGateData(options: GateOptions): GateData {
     [postMessage, seam],
   );
 
+  const graphNodes = useMemo(
+    () =>
+      graphLoad.phase === 'error'
+        ? EMPTY_ROWS
+        : Object.values(entities).filter((entity) => entity.spaceId === spaceId),
+    [graphLoad.phase, entities, spaceId],
+  );
+  const graphEdges = useMemo(() => {
+    if (graphLoad.phase === 'error') return [];
+    const nodeIds = new Set(graphNodes.map((node) => node.id));
+    return Object.values(edgeProjection).filter(
+      (edge) => nodeIds.has(edge.source.id) && nodeIds.has(edge.target.id),
+    );
+  }, [graphLoad.phase, graphNodes, edgeProjection]);
+  const refreshGraph = useCallback(() => {
+    if (spaceId) void loadGraph(spaceId);
+  }, [spaceId, loadGraph]);
+  const graph = useMemo<GateGraphData>(
+    () => ({
+      nodes: graphNodes,
+      edges: graphEdges,
+      loading: graphLoad.phase === 'loading',
+      error: graphLoad.error,
+      now: graphLoad.now,
+      refresh: refreshGraph,
+    }),
+    [graphNodes, graphEdges, graphLoad, refreshGraph],
+  );
+
   // Exposed through the returned object so views can request a panel's detail
   // without reaching for the seam themselves.
   const data = useMemo<GateData & { pull: (id: string) => void }>(
@@ -520,15 +713,18 @@ export function useGateData(options: GateOptions): GateData {
       rowsFor,
       detailOf,
       activity,
+      graph,
+      launch,
       ensureKind,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => threads[id],
+      reconcileCommand,
       seam,
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, detailOf, activity, ensureKind, spawn, postAndRefresh, threads, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, detailOf, activity, graph, launch, ensureKind, spawn, postAndRefresh, threads, reconcileCommand, seam, domain, pull],
   );
 
   return data;

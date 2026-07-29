@@ -78,10 +78,12 @@ export {
   buildSpawnInput,
   canLaunch,
   defaultConfigFor,
+  defaultLaunchTarget,
   describeCapacity,
   describeTeammateLoad,
   describeProfile,
   modelsFor,
+  newLaunchMutationId,
   EDGES_NOT_HYDRATED_REASON,
 } from './launch';
 export type {

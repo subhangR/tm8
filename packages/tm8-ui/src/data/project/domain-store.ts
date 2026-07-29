@@ -35,6 +35,7 @@ import {
   type SpaceSettings,
   ingestDelivery,
   ingestDetail,
+  ingestEdges,
   ingestHandoffs,
   ingestMessages,
   ingestNotifications,
@@ -51,6 +52,7 @@ export type DomainEventSource = Pick<Seam, 'onEvent'>;
 export interface DomainActions {
   // hydration ingestion (read results)
   ingestSummaries(list: EntitySummary[]): void;
+  ingestEdges(list: EdgeView[]): void;
   ingestDetail(detail: EntityDetail): void;
   ingestMessages(anchorId: EntityId, messages: MessageView[]): void;
   ingestNotifications(items: NotificationItem[]): void;
@@ -93,6 +95,7 @@ export function createDomainStore(seam?: DomainEventSource): DomainStoreHandle {
     pendingMutations: {},
 
     ingestSummaries: (list) => set((state) => ingestSummaries(state, list)),
+    ingestEdges: (list) => set((state) => ingestEdges(state, list)),
     ingestDetail: (detail) => set((state) => ingestDetail(state, detail)),
     ingestMessages: (anchorId, messages) => set((state) => ingestMessages(state, anchorId, messages)),
     ingestNotifications: (items) => set((state) => ingestNotifications(state, items)),

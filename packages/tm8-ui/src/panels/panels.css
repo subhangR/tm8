@@ -41,6 +41,68 @@
   display: flex;
   flex-direction: column;
 }
+/* USER RULING 2026-07-29: all session metadata lives in one collapsed drawer
+   BELOW the canvas. The bar is the only default cost; opening it lets its
+   content shrink the canvas temporarily rather than reserving space forever. */
+.cv2-root .pn-terminal-drawer {
+  flex: none;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .pn-terminal-drawer__bar {
+  min-width: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+}
+.cv2-root .pn-terminal-drawer__toggle {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--pn-ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+.cv2-root .pn-terminal-drawer__toggle:hover { color: var(--pn-ink); }
+.cv2-root .pn-terminal-drawer__caret {
+  flex: none;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-terminal-drawer__label {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-wide);
+}
+.cv2-root .pn-terminal-drawer__summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-terminal-drawer__bar > .term-exit-chip { flex: none; }
+.cv2-root .pn-terminal-drawer__content {
+  max-height: 224px;
+  overflow-y: auto;
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .pn-terminal-drawer__content .term-strip {
+  border-bottom: 1px solid var(--pn-line);
+}
 /* R5 #10 — TERMINAL-DOMINANT. The context header is the only thing above the
    chrome strip, and it takes its own height and no more: `flex: none` so it
    can never grow into the terminal, and when expanded it scrolls INSIDE its
@@ -313,28 +375,28 @@
 }
 .cv2-root .pn-head__row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
   padding: 4px 12px 9px;
 }
 .cv2-root .pn-head__glyph { flex: none; color: var(--pn-ink-3); font-size: 13px; }
-/* The title is the ONLY thing that shrinks: a UUID-length title ellipsizes
-   while the pill and the controls stay put (the 320-floor law). */
+/* The title owns the identity row and is always readable in full. Long names
+   wrap rather than ellipsize; actions live in the tab row below. */
 .cv2-root .pn-head__title {
-  flex: 0 1 auto;
-  min-width: 64px;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14.5px;
   font-weight: 600;
   color: var(--pn-ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
   outline: none;
 }
 /* Dotted underline = editable. Tracked kinds (PR, commit) lock their title
    because it follows the source and cannot be written back. */
 .cv2-root .pn-head__title--editable {
-  border-bottom: 1px dotted var(--pn-ink-4);
   cursor: text;
 }
 .cv2-root .pn-head__title--editable:focus-visible { border-bottom-color: var(--pn-brand); }
@@ -409,16 +471,34 @@
   padding: 3px 10px;
 }
 
-.cv2-root .pn-tabs {
+.cv2-root .pn-panelbar {
   flex: none;
   height: 30px;
   display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--pn-line);
+  min-width: 0;
+}
+.cv2-root .pn-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
   align-items: stretch;
   gap: 14px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--pn-line);
+  padding: 0 8px 0 12px;
   font-size: 12px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.cv2-root .pn-tabs::-webkit-scrollbar { display: none; }
+.cv2-root .pn-panelbar__end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 6px;
 }
 .cv2-root .pn-tab {
   appearance: none;
@@ -759,8 +839,8 @@
   height: 36px;
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 10px;
+  gap: 5px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--pn-line);
   position: relative;
 }
@@ -771,9 +851,9 @@
   background: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-family: inherit;
-  font-size: var(--pn-fs-sm);
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--pn-ink);
   cursor: pointer;
@@ -833,8 +913,8 @@
   height: 34px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 5px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--pn-line);
   overflow: hidden;
 }
@@ -843,10 +923,10 @@
   flex: none;
   appearance: none;
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   border-radius: 6px;
-  padding: 2px 9px;
+  padding: 2px 8px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -857,9 +937,9 @@
    ground with no per-theme rule; the sizes override the shared base above
    because the base also serves .lp__quick, which the canvas keeps small. */
 .cv2-root .lp__new {
-  font-size: 12px;
+  font-size: 11.5px;
   border-radius: 7px;
-  padding: 4px 10px;
+  padding: 3px 8px;
   color: var(--pn-paper);
   background: var(--pn-ink);
   border: 1px solid transparent;
@@ -944,7 +1024,9 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 4px 0;
+  padding: 6px 8px 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
 }
 
 .cv2-root .lp__eyebrow {
@@ -952,7 +1034,7 @@
   border: 0;
   background: none;
   text-align: left;
-  padding: 8px 10px 3px;
+  padding: 9px 4px 5px;
   font-family: var(--pn-mono);
   font-size: 9.5px;
   font-weight: 600;
@@ -969,7 +1051,7 @@
   background: none;
   text-align: left;
   margin-top: auto;
-  padding: 7px 10px 3px;
+  padding: 8px 4px 3px;
   border-top: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
   font-size: 9.5px;
@@ -980,36 +1062,104 @@
 }
 .cv2-root .lp__collapsed:hover { color: var(--pn-ink-3); }
 
-/* --- the tile — T0-1 1e two-line anatomy ---------------------------------- */
-/* Line 1: dot · avatar · title · status word.  Line 2: mono meta · tag.
-   Measured from the T0-1 row template: dot 8, avatar 17, title 13/600,
-   word pill mono 9 r999 pad 1/6, meta 10.5, tag mono 9 r4 pad 1/5. */
+/* --- entity cards — Maestro surface + T0-1 hierarchy ----------------------- */
+/* Rounded, elevated card shell from the Maestro reference; disclosure column,
+   status control, attached children and inline config from the workspace file. */
+.cv2-root .lp__tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+/* THE CONTROL LIST IS ONE UNBROKEN COLUMN. Rows bleed past `lp__body`'s 8px
+   gutter so each tile's hairline runs edge to edge, and NOTHING between rows
+   has a gap — not siblings, not a parent and its subtasks. The band eyebrows
+   stay inset, which is what makes the rows read as a table under a label. */
+.cv2-root .lp__tree--control {
+  gap: 0;
+  margin-inline: -8px;
+  border-top: 1px solid var(--pn-line);
+}
+.cv2-root .lp__branch { min-width: 0; }
+.cv2-root .lp__children {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  margin: 6px 0 1px 14px;
+  padding-left: 8px;
+  border-left: 1px solid var(--pn-line-2);
+  animation: lp-children-in var(--pn-dur-base) var(--pn-ease-out);
+}
+/* Subtasks of a control card are ATTACHED: the wrapper contributes no gap, no
+   inset and no border of its own. Depth is drawn inside the tile instead
+   (`--tt-indent`), so an expanded subtree stays flush with its parent. */
+.cv2-root .lp__tree--control .lp__children {
+  gap: 0;
+  margin: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+@keyframes lp-children-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .cv2-root .lp__tile {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 7px 12px;
-  border-left: 2px solid transparent;
-  /* T0-1 sibling divider: the oracle's row site is `border-left:2px solid
-     {{s.bar}};border-bottom:1px solid #F0EDE4` — this exact tile. */
-  border-bottom: 1px solid var(--pn-x-hairline-soft);
-  cursor: pointer;
+  min-width: 0;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
   box-sizing: border-box;
+  transition:
+    border-color var(--pn-dur-base) var(--pn-ease-out),
+    box-shadow var(--pn-dur-base) var(--pn-ease-out),
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
 }
-.cv2-root .lp__tile:hover { background: var(--pn-hover); }
-.cv2-root .lp__tile:focus-visible { outline: 1px solid var(--pn-brand); outline-offset: -1px; }
-/* Selection needs a treatment DISTINCT from hover, or a keyboard user cannot
-   tell where they are while the mouse sits elsewhere. */
-.cv2-root .lp__tile--selected { background: var(--pn-hover); border-left-color: var(--pn-brand); }
-.cv2-root .lp__tile--attention { background: color-mix(in srgb, var(--pn-wait) 7%, transparent); }
+.cv2-root .lp__tile:hover {
+  border-color: color-mix(in srgb, var(--pn-brand) 55%, var(--pn-line-2));
+  box-shadow: none;
+  transform: none;
+}
+.cv2-root .lp__tile--selected {
+  border-color: var(--pn-brand);
+  background: color-mix(in srgb, var(--pn-brand-soft) 62%, var(--pn-card));
+  box-shadow: none;
+}
+.cv2-root .lp__tile--attention {
+  border-color: color-mix(in srgb, var(--pn-wait) 42%, var(--pn-line));
+  background: color-mix(in srgb, var(--pn-wait) 6%, var(--pn-card));
+}
+.cv2-root .lp__tile[data-flow='open']:hover { transform: none; }
+.cv2-root .lp__tile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.cv2-root .lp--compact .lp__tile-main { padding: 6px 7px; }
 
-.cv2-root .lp__row1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.cv2-root .lp__row2 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cv2-root .lp__row1 { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.cv2-root .lp__row2 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 23px;
+}
+.cv2-root .lp__tile[data-tree='true'] .lp__row2 { padding-left: 46px; }
 .cv2-root .lp__meta {
   flex: 1;
   min-width: 0;
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--pn-ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -1027,14 +1177,50 @@
   white-space: nowrap;
 }
 
-/* One 1px hairline per ancestor level, stepping 17px per depth. */
-.cv2-root .lp__guide {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--pn-line-2);
+/* The caret always owns a column, including on leaves, so titles never jump. */
+.cv2-root .lp__disclosure {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-ui);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
 }
+.cv2-root .lp__disclosure > span {
+  transition: transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .lp__disclosure:hover { color: var(--pn-ink-2); background: var(--pn-active); }
+.cv2-root .lp__disclosure--expanded > span { transform: rotate(90deg); }
+.cv2-root .lp__disclosure--empty { color: var(--pn-line-2); cursor: default; }
+
+.cv2-root .lp__statusmark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--pn-idle-soft);
+  color: var(--pn-idle);
+}
+.cv2-root .lp__statusmark--run { background: var(--pn-run-soft); color: var(--pn-run); }
+.cv2-root .lp__statusmark--wait { background: var(--pn-wait-soft); color: var(--pn-wait); }
+.cv2-root .lp__statusmark--block { background: var(--pn-block-soft); color: var(--pn-block); }
+.cv2-root .lp__statusmark--info { background: var(--pn-info-soft); color: var(--pn-info); }
+.cv2-root .lp__statusmark--brand { background: var(--pn-brand-soft); color: var(--pn-brand); }
+.cv2-root .lp__kindmark { font-size: 10px; font-weight: 700; line-height: 1; }
+
+/* Nested branches own the guide line; the card itself stays a complete object. */
+.cv2-root .lp__guide { display: none; }
 
 .cv2-root .lp__dot {
   flex: none;
@@ -1064,19 +1250,33 @@
   .cv2-root .lp__dot--pulse { animation: none; }
 }
 
-/* The title is the ONLY thing that shrinks. Everything else is flex:none. */
+/* The title is the ONLY thing that shrinks. It is a real button, so the card
+   never nests interactive controls inside a fake role=button. */
 .cv2-root .lp__title {
+  appearance: none;
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
   font-weight: 600;
+  line-height: 1.3;
   color: var(--pn-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: left;
+  cursor: pointer;
 }
-.cv2-root .lp--compact .lp__title { font-size: 12px; }
+.cv2-root .lp--compact .lp__title { font-size: 11.5px; }
 .cv2-root .lp__title--done { color: var(--pn-ink-3); text-decoration: line-through; }
+.cv2-root .lp__title:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 
 .cv2-root .lp__badges { flex: none; display: inline-flex; align-items: center; gap: 5px; }
 .cv2-root .lp__word {
@@ -1096,23 +1296,37 @@
   align-items: center;
   gap: 4px;
 }
-.cv2-root .lp__tile:hover .lp__rowactions,
+.cv2-root .lp__tile-main:hover .lp__rowactions,
 .cv2-root .lp__tile:focus-within .lp__rowactions { display: inline-flex; }
-.cv2-root .lp__tile:hover .lp__badges,
+.cv2-root .lp__tile-main:hover .lp__badges,
 .cv2-root .lp__tile:focus-within .lp__badges { display: none; }
 .cv2-root .lp__rowaction {
   appearance: none;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
   font-family: var(--pn-mono);
   font-size: 10.5px;
   font-weight: 600;
   color: var(--pn-ink-2);
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: 5px;
-  padding: 1px 6px;
+  border-radius: var(--pn-r-sm);
+  padding: 0;
   cursor: pointer;
 }
-.cv2-root .lp__rowaction:hover { background: var(--pn-hover); }
+.cv2-root .lp__rowaction:hover {
+  color: var(--pn-paper);
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .lp__children { animation: none; }
+  .cv2-root .lp__tile { transition: none; }
+  .cv2-root .lp__tile:hover { transform: none; }
+}
 
 /* Filter picker — the UNBOUNDED set lives here, where it can scroll, so the
    row above it stays bounded by construction: active chips + one trigger. */
@@ -1152,10 +1366,10 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 5px;
   height: 28px;
-  margin: 6px 10px;
-  padding: 0 9px;
+  margin: 5px 8px;
+  padding: 0 8px;
   background: var(--pn-card);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
@@ -1169,7 +1383,7 @@
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--pn-ink);
   outline: none;
 }
@@ -1265,19 +1479,63 @@
 }
 
 .cv2-root .lp__flow {
-  margin: 6px 0 2px;
-  padding: 8px;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
-  background: var(--pn-card);
+  margin: 0;
+  padding: 10px;
+  border-top: 1px solid var(--pn-line);
+  background: color-mix(in srgb, var(--pn-surface) 72%, var(--pn-card));
   cursor: default;
 }
 
-.cv2-root .lq { display: flex; flex-direction: column; gap: 7px; }
-.cv2-root .lq__row { display: flex; gap: 8px; }
+.cv2-root .lq { display: flex; flex-direction: column; gap: 9px; }
+.cv2-root .lq__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.cv2-root .lq__heading {
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--pn-ink);
+}
+.cv2-root .lq__subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .lq__close {
+  appearance: none;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cv2-root .lq__close:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .lq__row { display: flex; flex-wrap: wrap; gap: 8px; }
 /* min-width:0 so a long teammate name shrinks the select instead of forcing
    the row wider than the panel — the 200px floor is real. */
-.cv2-root .lq__field { display: flex; flex-direction: column; gap: 3px; flex: 1 1 0; min-width: 0; }
+.cv2-root .lq__field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 112px;
+  min-width: 0;
+}
 .cv2-root .lq__label {
   font-family: var(--pn-mono);
   font-size: 9.5px;
@@ -1289,13 +1547,19 @@
   appearance: none;
   width: 100%;
   min-width: 0;
-  font-family: var(--pn-sans);
+  min-height: 28px;
+  font-family: var(--pn-ui);
   font-size: 11.5px;
-  color: var(--pn-ink-1);
-  background: var(--pn-bg);
+  color: var(--pn-ink);
+  background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: 5px;
-  padding: 3px 6px;
+  border-radius: var(--pn-r-sm);
+  padding: 4px 7px;
+  outline: none;
+}
+.cv2-root .lq__select:focus-visible {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
 }
 
 .cv2-root .lq__profile,
@@ -1326,14 +1590,14 @@
 .cv2-root .lq__more:hover { color: var(--pn-ink-1); }
 .cv2-root .lq__launch {
   appearance: none;
-  font-family: var(--pn-sans);
+  font-family: var(--pn-ui);
   font-size: 11.5px;
   font-weight: 600;
   color: var(--pn-card);
   background: var(--pn-brand);
   border: 1px solid var(--pn-brand);
-  border-radius: 5px;
-  padding: 3px 10px;
+  border-radius: var(--pn-r-sm);
+  padding: 4px 11px;
   cursor: pointer;
 }
 .cv2-root .lq__launch:hover { filter: brightness(1.06); }

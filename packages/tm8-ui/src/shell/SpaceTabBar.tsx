@@ -1,6 +1,6 @@
 /**
- * SpaceTabBar — the 42px top bar: product mark, space switcher, palette hint,
- * account avatar. Transcribed from the T0-1 canvas.
+ * SpaceTabBar — the compact top bar: product mark, selected Server, space
+ * switcher, palette hint, account avatar.
  *
  * D1 — THE ◐ THEME TOGGLE IS NOT BUILT. The T0-1 canvas still draws one
  * (the canvas is byte-unchanged), but the Round-2 amendment retires it: theme's
@@ -9,9 +9,15 @@
  * test suite asserts its ABSENCE — a regression that "restores" it to match the
  * canvas would be restoring a retired control.
  */
+import type { ReactNode } from 'react';
 import type { SpaceId, SpaceSummary } from '@tm8/contract';
 
 export interface SpaceTabBarProps {
+  /** The Server whose spaces and menu currently own the workspace. */
+  activeServer?: {
+    label: string;
+    reachability: 'checking' | 'online' | 'offline';
+  };
   spaces: readonly SpaceSummary[];
   activeSpaceId: SpaceId | null;
   onSelectSpace(id: SpaceId): void;
@@ -20,6 +26,14 @@ export interface SpaceTabBarProps {
   onOpenPalette?(): void;
   /** Monogram for the account avatar. */
   accountInitial?: string;
+  /**
+   * Replaces the avatar button when supplied (T3-3, user-ordered 2026-07-29):
+   * the host mounts the real account menu here, which carries the signed-in
+   * name, the theme control and sign-out. Left undefined the bar keeps the
+   * avatar fallback below, so a bar rendered without an auth gate — every
+   * existing shell test, and the app before anyone signs in — is unchanged.
+   */
+  accountSlot?: ReactNode;
   /**
    * Creating a space is not in the Phase-1 seam surface, so the affordance
    * renders disabled-with-reason rather than vanishing (L6).
@@ -37,6 +51,19 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
       <div className="shell-tabbar__mark" aria-label="tm8">
         <span aria-hidden="true">◈</span> tm8
       </div>
+      {props.activeServer ? (
+        <div
+          className="shell-tabbar__server"
+          aria-label={`Selected server: ${props.activeServer.label}, ${props.activeServer.reachability}`}
+          title={`Selected server · ${props.activeServer.label} · ${props.activeServer.reachability}`}
+        >
+          <span
+            className={`shell-tabbar__server-dot shell-tabbar__server-dot--${props.activeServer.reachability}`}
+            aria-hidden="true"
+          />
+          <span className="shell-tabbar__server-label">{props.activeServer.label}</span>
+        </div>
+      ) : null}
       <div className="shell-tabbar__divider" role="presentation" />
 
       <div className="shell-tabbar__spaces" role="tablist" aria-label="Spaces">
@@ -78,21 +105,24 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
         / palette · ⌘K
       </button>
 
-      {/* D1: no ◐ toggle here. Theme lives in the account menu — but until
-          that MENU exists, this button's one real behavior is the theme
-          toggle, and its label says the TRUE thing (Surface Audit a11y: it
-          said "Account menu" while doing something else — a screen-reader
-          user got a lie the sighted user could at least discover). The label
-          reverts to "Account menu" the day the menu mounts. */}
-      <button
-        type="button"
-        className="shell-tabbar__avatar"
-        onClick={props.onOpenAccount}
-        aria-label="Toggle theme"
-        title="Toggle theme"
-      >
-        {props.accountInitial ?? '·'}
-      </button>
+      {/* D1: no ◐ toggle here. Theme lives in the account menu. THAT MENU NOW
+          EXISTS and arrives through `accountSlot` — which is the condition
+          this comment named ("the label reverts to 'Account menu' the day the
+          menu mounts"), so the fallback below is now only for a bar rendered
+          WITHOUT one. While that is the case the label keeps saying the true
+          thing: this button toggles the theme, and a screen-reader user is
+          told that rather than being promised a menu that is not there. */}
+      {props.accountSlot ?? (
+        <button
+          type="button"
+          className="shell-tabbar__avatar"
+          onClick={props.onOpenAccount}
+          aria-label="Toggle theme"
+          title="Toggle theme"
+        >
+          {props.accountInitial ?? '·'}
+        </button>
+      )}
     </header>
   );
 }

@@ -156,6 +156,7 @@ describe('DTO schemas', () => {
       liveEntityIds: ['019f9896-928d-7a24-848b-4c8fdd82b761'],
       nodeBootId: 'boot-1',
       checkedAt: '2026-07-28T12:00:00.000Z',
+      capacity: { used: 1, total: 8 },
     };
     expect(ExecutionLivenessSchema.safeParse(liveness).success).toBe(true);
     expect(ExecutionLivenessSchema.safeParse({ ...liveness, extra: 1 }).success).toBe(false);
@@ -238,14 +239,24 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
   });
 
   it('execution.spawn validates persona + mode enums and the typed project/workdir (AM-2 §1)', () => {
-    const ok = { clientMutationId: 'cmid-spawn-1', spaceId: 'space_1', teamMemberId: 'ent_tm_1', taskIds: ['ent_task_1'], mode: 'worker' };
+    const ok = {
+      clientMutationId: 'cmid-spawn-1',
+      spaceId: '11111111-1111-4111-8111-111111111111',
+      teamMemberId: '22222222-2222-4222-8222-222222222222',
+      taskIds: ['33333333-3333-4333-8333-333333333333'],
+      mode: 'worker',
+    };
     expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, mode: 'boss' }).success).toBe(false);
-    expect(ExecutionSpawnInputSchema.safeParse({ spaceId: 'space_1' }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ spaceId: ok.spaceId }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
-      ...ok, projectId: 'proj_1', workdir: { mode: 'worktree', baseRef: 'main' },
+      ...ok, projectId: '44444444-4444-4444-8444-444444444444', workdir: { mode: 'project' },
     }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'scratch' } }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'worktree', baseRef: 'main' } }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'yolo' } }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, spaceId: 'fixture-space' }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, interactionProfileId: 'fixture-profile' }).success).toBe(false);
     // the pre-AM-2 untyped ref is dead
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, projectRef: '~/code/x' }).success).toBe(false);
   });

@@ -26,7 +26,7 @@ export const PANEL_COL_MIN = 320;
 
 /** Menu rail: two discrete states, never a continuum (02-LAYOUT §1). */
 export const MENU_COLLAPSED = 48;
-export const MENU_EXPANDED = 220;
+export const MENU_EXPANDED = 165;
 
 /** Server rail: hidden or 48. Phase 1 wires only the implicit local server (R10). */
 export const SERVER_RAIL_HIDDEN = 0;
@@ -37,7 +37,7 @@ export const LEFT_PANEL_MIN = 200;
 export const RIGHT_PANEL_MIN = 220;
 
 /** Side-panel defaults — 02-LAYOUT §2 decides these; LLD §16 records them as NOT open. */
-export const LEFT_PANEL_DEFAULT = 280;
+export const LEFT_PANEL_DEFAULT = 240;
 export const RIGHT_PANEL_DEFAULT = 319;
 
 /** Terminal host floor (L4). Owned by the terminal lane; exported so the floor set is one list. */

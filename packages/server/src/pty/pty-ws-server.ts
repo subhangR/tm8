@@ -71,6 +71,9 @@ export interface PtyWsServerOptions {
    */
   pty: PtyHostService;
   logger?: PtyWsLogger;
+  /** Forwarded to each connection's heartbeat; injectable so tests need not wait 30s. */
+  heartbeatMs?: number;
+  missedPongLimit?: number;
 }
 
 export interface PtyWsServer {
@@ -244,18 +247,25 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     // Register inbound/cleanup handlers BEFORE resolving the replay: the gap
     // path awaits the headless mirror, and input and socket-close events must
     // stay observable during that window.
-    const conn = new PtyWsConnection(socket as WsSocket, {
-      onInput: (data) => pty.write(sessionId, data),
-      onControl: (text) => handleControl(sessionId, conn, text),
-      onClose: () => {
-        connections.delete(conn);
-        const peers = connectionsBySession.get(sessionId);
-        peers?.delete(conn);
-        if (peers?.size === 0) connectionsBySession.delete(sessionId);
-        pty.removeSubscriber(sessionId, conn);
-        logger.info('PtyWsServer: client detached', { sessionId });
+    const conn = new PtyWsConnection(
+      socket as WsSocket,
+      {
+        onInput: (data) => pty.write(sessionId, data),
+        onControl: (text) => handleControl(sessionId, conn, text),
+        onClose: () => {
+          connections.delete(conn);
+          const peers = connectionsBySession.get(sessionId);
+          peers?.delete(conn);
+          if (peers?.size === 0) connectionsBySession.delete(sessionId);
+          pty.removeSubscriber(sessionId, conn);
+          logger.info('PtyWsServer: client detached', { sessionId });
+        },
       },
-    });
+      {
+        ...(opts.heartbeatMs === undefined ? {} : { heartbeatMs: opts.heartbeatMs }),
+        ...(opts.missedPongLimit === undefined ? {} : { missedPongLimit: opts.missedPongLimit }),
+      },
+    );
     connections.add(conn);
     const sessionConnections = connectionsBySession.get(sessionId) ?? new Set<PtyWsConnection>();
     sessionConnections.add(conn);

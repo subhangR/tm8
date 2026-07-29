@@ -233,6 +233,19 @@ class RecordingPty implements InternalPromptPty {
   }
 }
 
+/**
+ * Fake `InternalPromptDeliverySettlement` — this fixture's `RecordingPty` above
+ * admits every delivery synchronously and never calls a real `onPromptSettled`,
+ * so resolving 'delivered' immediately reproduces the admission-is-the-outcome
+ * shape this file's assertions were written against.
+ */
+function fakePromptSettlement(): { awaitOutcome: () => Promise<{ outcome: 'delivered' }>; cancel: () => void } {
+  return {
+    awaitOutcome: async () => ({ outcome: 'delivered' }),
+    cancel: () => {},
+  };
+}
+
 interface ServerProcess {
   readonly pty: RecordingPty;
   readonly service: W2ExecutionDeliveryService;
@@ -251,7 +264,7 @@ interface ServerProcess {
 function boot(deliveryUrl: string, liveSessions: readonly string[]): ServerProcess {
   const rpc = PgW2DeliveryRpcPort.fromConnectionString(deliveryUrl, 8);
   const pty = new RecordingPty(liveSessions);
-  const service = new W2ExecutionDeliveryService({ rpc, pty });
+  const service = new W2ExecutionDeliveryService({ rpc, pty, promptSettlement: fakePromptSettlement() });
   return {
     pty,
     service,

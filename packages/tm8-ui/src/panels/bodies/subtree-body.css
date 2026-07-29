@@ -98,6 +98,52 @@
   gap: 4px;
 }
 
+/* --- task description editor --------------------------------------------- */
+.cv2-root .sb-description {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cv2-root .sb-description__label {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+.cv2-root .sb-description__input {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  box-sizing: border-box;
+  resize: none;
+  overflow: hidden;
+  padding: 9px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  outline: none;
+}
+.cv2-root .sb-description__input::placeholder {
+  color: var(--pn-ink-4);
+}
+.cv2-root .sb-description__input:not(:read-only):hover {
+  border-color: var(--pn-line-2);
+}
+.cv2-root .sb-description__input:not(:read-only):focus {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+.cv2-root .sb-description__input:read-only {
+  background: var(--pn-surface);
+  cursor: default;
+}
+
 /* --- SUBTREE rows (L68–L70) ---------------------------------------------- */
 .cv2-root .sb-rows {
   display: flex;

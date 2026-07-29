@@ -63,6 +63,30 @@ describe('THE GATE — composed T0-1 master screen', () => {
     within(grid).getByLabelText('Workspace center');
   });
 
+  it('moves a complete side panel across the center without losing its behavior', async () => {
+    const view = renderGate();
+    const grid = await waitFor(() => view.getByTestId('workspace-grid'));
+    const left = within(grid).getByLabelText('Left panel');
+    const right = within(grid).getByLabelText('Right panel');
+
+    expect(left.querySelector('[data-kind="task"]')).not.toBeNull();
+    expect(right.querySelector('[data-kind="work_session"]')).not.toBeNull();
+
+    fireEvent.keyDown(within(left).getByRole('button', { name: /drag task panel/i }), {
+      key: 'Enter',
+    });
+
+    await waitFor(() => expect(right.querySelector('[data-kind="task"]')).not.toBeNull());
+    expect(left.querySelector('[data-kind="work_session"]')).not.toBeNull();
+    expect(within(right).getByRole('button', { name: /drag task panel/i })).toBeTruthy();
+
+    // The empty-center session roster follows the session panel's registry
+    // capability, not a hard-wired assumption that Sessions stays on the right.
+    const rosterNames = [...view.getByTestId('empty-center').querySelectorAll('.shell-empty__name')]
+      .map((node) => node.textContent);
+    expect(rosterNames).toContain('forge');
+  });
+
   it('renders the empty centre as the ROSTER plus the grammar lesson (02-LAYOUT §2.2)', async () => {
     // The spec's own words: "The empty state doubles as the live-session roster
     // and teaches the grammar." A blank centre would satisfy "nothing is open"
@@ -132,12 +156,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
       fireEvent.click(full as HTMLElement);
       await waitFor(() => expect(getByTestId('launch-sheet')).toBeTruthy());
     } else {
-      // A1c's control may not be mounted in this fixture state; assert the
-      // WIRING exists rather than silently passing on its absence.
-      expect(
-        (container.innerHTML.match(/launch/i) ?? []).length,
-        'the launch flow must be wired into the rendered view',
-      ).toBeGreaterThan(0);
+      // This fixture state has no task quick-config mounted. The Sessions
+      // list's old *disabled* Launch sentence was previously counted here as
+      // proof of reachability, even though clicking it could do nothing. Do
+      // not resurrect that false positive or its header row.
+      expect(container.querySelector('[data-kind="work_session"] .lp__actions')).toBeNull();
     }
   });
 
@@ -171,6 +194,29 @@ describe('THE GATE — composed T0-1 master screen', () => {
       });
     } else {
       expect(before.length, 'the roster must render a live count to compare against').toBeGreaterThan(0);
+    }
+  });
+
+  it('opens Graph from the rail with workspace data from the active seam', async () => {
+    const resizeObserver = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as typeof ResizeObserver;
+
+    const view = renderGate();
+    try {
+      await waitFor(() => view.getByTestId('workspace-grid'));
+      fireEvent.click(view.getByRole('button', { name: 'Graph' }));
+
+      const graph = await waitFor(() => view.getByTestId('graph-screen'));
+      expect(within(graph).getByText('Graph · workspace data')).toBeTruthy();
+      expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0);
+    } finally {
+      view.unmount();
+      if (resizeObserver === undefined) delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+      else globalThis.ResizeObserver = resizeObserver;
     }
   });
 

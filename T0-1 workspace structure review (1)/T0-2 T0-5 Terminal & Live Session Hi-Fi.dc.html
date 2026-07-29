@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ T0-2 STRIP ANATOMY ============ -->
+<section id="strip" data-screen-label="T0-2 — Terminal chrome strip anatomy" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T0-2 · TERMINAL CHROME STRIP — THE ONE PIXEL-FROZEN ROW</span>
+    <span style="font-size:12px;color:#8E897B">dark graphite in both themes — terminal-adjacent chrome freezes once, not twice</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations · strip state</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:426px;flex:none;background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:500px">
+      <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › sessions</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">02 §3.1 · work_session</span></div>
+      <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+        <span style="width:20px;height:20px;flex:none;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">F</span>
+        <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px;flex:none">● running</span>
+        <div style="flex:1"></div>
+        <span style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8">⋯</span>
+        <span style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8">⌖</span>
+        <span style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8">⤢</span>
+        <span style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8;color:#BB4D3D">✕</span>
+      </div>
+      <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+        <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span>
+        <span style="display:flex;align-items:center;gap:4px;color:#8E897B;cursor:pointer" style-hover="color:#23201B">Discussion <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">4</span></span>
+        <span style="display:flex;align-items:center;color:#8E897B;cursor:pointer" style-hover="color:#23201B">Connections</span>
+        <span style="display:flex;align-items:center;color:#8E897B;cursor:pointer" style-hover="color:#23201B">Activity</span>
+        <div style="flex:1"></div>
+        <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;align-self:center">1</span></sc-if>
+      </div>
+      <div style="height:28px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">toolbar — reserved seam</span>
+        <div style="flex:1"></div>
+        <span style="display:inline-flex;border:1px dashed #D8D3C6;border-radius:6px;overflow:hidden;opacity:.55"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 8px;color:#5B564C;background:#ECE8DF">Terminal</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 8px;color:#B7B2A4">Chat</span></span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">phase 2</span>
+      </div>
+      <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border-bottom:1px solid #2C2719;box-sizing:border-box">
+        <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+        <span style="flex:0 1 auto;min-width:56px;font-size:12.5px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge</span>
+        <span style="color:#665E4C;font-size:11px;flex:none">·</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0">claude-sonnet-4</span>
+        <div style="flex:1"></div>
+        <sc-if value="{{isStreaming}}" hint-placeholder-val="{{true}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 8px;flex:none;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>streaming</span></sc-if>
+        <sc-if value="{{isRunning}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 8px;flex:none;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381"></span>running</span></sc-if>
+        <sc-if value="{{isExited}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360;background:rgba(122,115,96,.2);border-radius:999px;padding:2px 8px;flex:none;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>exited</span></sc-if>
+        <sc-if value="{{notExited}}" hint-placeholder-val="{{true}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer;white-space:nowrap;flex:none" style-hover="border-color:#665E4C;color:#EFE9DB">exit terminal <span style="color:#8C8470">⌃`</span></span></sc-if>
+        <sc-if value="{{isExited}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer;white-space:nowrap;flex:none" style-hover="border-color:#665E4C;color:#EFE9DB">transcript ↗</span></sc-if>
+        <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if>
+      </div>
+      <div style="flex:1;background:#0D0B08;display:flex;align-items:center;justify-content:center;position:relative">
+        <div style="text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.9;color:#4A4334">▉ xterm canvas — verbatim transplant<br>do not design inside · scrolls internally · min-height 160</div>
+        <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="position:absolute;top:10px;right:10px;width:15px;height:15px;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if>
+      </div>
+      <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 2 viewing · launched by @ada · active 2m ago</div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="width:322px;flex:none;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Reserved toolbar seam.</span> Nearly empty in Phase 1, but the row exists NOW — Phase 2 drops [ Terminal | Chat ] into it with zero relayout (02 §3.1). Ghost shows what fills it.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">The strip — h 34.</span> Identity left: agent avatar (rounded-square = agent), persona name, provider in mono. Status pill: word + color, never color alone. Right: the <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">exit terminal ⌃`</span> chip — the only way out of terminal focus capture, visible at EVERY width, every live state. Exited swaps the chip slot to <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">transcript ↗</span>, geometry unchanged.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Canvas is a black box.</span> Near-black in both themes; the strip is therefore dark graphite in both themes too — one rendering gets pixel-frozen, not a light and a dark twin.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">dimensions · h 34 · pad 0 10 · gap 8 · avatar 18 r5 · name 12.5/600 · provider mono 10.5 · pill mono 9.5 · chip mono 10, r6, pad 3 9 · hairline line-dark below</div>
+    </div>
+    </sc-if>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;flex-direction:column">
+        <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-bottom:none;border-radius:7px 7px 0 0;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">forge</span>
+          <span style="color:#665E4C;font-size:11px">·</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">claude-sonnet-4</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>streaming</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer;white-space:nowrap" style-hover="border-color:#665E4C;color:#EFE9DB">exit terminal <span style="color:#8C8470">⌃`</span></span>
+        </div>
+        <div style="height:24px;background:#0D0B08;border:1px solid #2C2719;border-top:1px solid #2C2719;border-radius:0 0 7px 7px"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;padding-top:7px">the strip at full width — identity · status · exit, nothing else. no tabs, no verbs: those live in the panel chrome above the seam</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">FOCUS CAPTURE CONTRACT</div>
+        <div style="font-size:11.5px;line-height:1.55;color:#BDB5A2;text-wrap:pretty">While the canvas holds keyboard focus, every app shortcut is captured by the terminal. <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#EFE9DB">⌃`</span> is the one reserved escape — which is why the chip may never truncate away, hide behind overflow, or drop below 320px.</div>
+        <div style="display:flex;gap:6px;padding-top:2px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:5px;padding:2px 7px">canvas focused → chip lit</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;border:1px solid #2C2719;border-radius:5px;padding:2px 7px">blurred → chip rests</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ T0-2 STATES × WIDTHS ============ -->
+<section id="strip-states" data-screen-label="T0-2 — Strip states and 320px floor" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">STRIP STATES × WIDTHS — EVERY LIFECYCLE WORD · SURVIVES THE 320 FLOOR</span>
+    <span style="font-size:12px;color:#8E897B">status is always word + color · worst-case persona names truncate, the exit chip never does</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:680px;flex:none;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">forge</span><span style="color:#665E4C;font-size:11px">·</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">claude-sonnet-4</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>streaming</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">exit terminal <span style="color:#8C8470">⌃`</span></span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">streaming — dot pulses 1.6s · output is arriving now</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">forge</span><span style="color:#665E4C;font-size:11px">·</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">claude-sonnet-4</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381"></span>running</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">exit terminal <span style="color:#8C8470">⌃`</span></span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">running — alive, quiet · solid dot</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">S</span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">scout</span><span style="color:#665E4C;font-size:11px">·</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">claude-opus-4</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#D9AA49;animation:pnPulse 1.6s infinite"></span>needs you</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">exit terminal <span style="color:#8C8470">⌃`</span></span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">needs you — agent is blocked on human input · wait amber, pulsing</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(122,115,96,.2);color:#7A7360;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">E</span>
+          <span style="font-size:12.5px;font-weight:600;color:#BDB5A2">echo</span><span style="color:#665E4C;font-size:11px">·</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#665E4C">claude-sonnet-4</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360;background:rgba(122,115,96,.2);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>exited</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">transcript ↗</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">exited — hollow dot, identity dims one step · chip slot becomes transcript ↗ (exit is meaningless)</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">forge</span><span style="color:#665E4C;font-size:11px">·</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">claude-sonnet-4</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#D9AA49"></span>stale — node restarted</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">transcript ↗</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">stale — the node restarted under a live record · honest amber, never fake-alive green</span>
+      </div>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">AT THE 320 FLOOR</div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="width:320px;height:34px;display:flex;align-items:center;gap:7px;padding:0 8px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">W</span>
+          <span style="flex:0 1 auto;min-width:56px;font-size:12.5px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">worker-9f3c2a1e-7b4d-4c9a-b2e1</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 8px;flex:none;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>streaming</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 8px;cursor:pointer;flex:none" style-hover="border-color:#665E4C;color:#EFE9DB">exit <span style="color:#8C8470">⌃`</span></span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">320px · UUID-length persona name</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="width:320px;height:34px;display:flex;align-items:center;gap:7px;padding:0 8px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(122,115,96,.2);color:#7A7360;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">W</span>
+          <span style="flex:0 1 auto;min-width:56px;font-size:12.5px;font-weight:600;color:#BDB5A2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">worker-9f3c2a1e-7b4d-4c9a-b2e1</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360;background:rgba(122,115,96,.2);border-radius:999px;padding:2px 8px;flex:none;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>exited</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 8px;cursor:pointer;flex:none" style-hover="border-color:#665E4C;color:#EFE9DB">transcript ↗</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">320px · exited</span>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+      <div style="border-top:1px solid #2C2719;padding-top:10px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Degradation order, narrow → narrower:</span> provider drops first (below ~380) · name ellipsizes at min-width 56 · pill and chip NEVER shrink or hide. The chip label compacts to <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">exit ⌃`</span> at the floor — the keystroke stays visible.</div>
+        <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Five words, one grammar:</span> streaming · running · needs you · exited · stale. Green run pair, wait amber pair, idle grey — straight off the status ramp; no new hues.</div>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+</section>
+
+<!-- ============ T0-2 EXITED FALLBACK ============ -->
+<section id="exited" data-screen-label="T0-2 — Exited fallback" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">EXITED FALLBACK — READ-ONLY STATUS + TRANSCRIPT REPLACES THE CANVAS</span>
+    <span style="font-size:12px;color:#8E897B">panel chrome stays put in both themes · only the canvas region swaps</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:426px;flex:none;background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:440px">
+      <div style="display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid #E7E3D9">
+        <span style="width:20px;height:20px;flex:none;border-radius:5px;background:rgba(162,156,142,.16);color:#8E897B;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">E</span>
+        <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">echo</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#A29C8E;background:rgba(162,156,142,.16);border-radius:999px;padding:2px 7px;flex:none">○ exited</span>
+        <div style="flex:1"></div>
+        <span style="color:#8E897B;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⤢</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">✕</span>
+      </div>
+      <div style="height:28px;flex:none;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid #E7E3D9"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">toolbar — reserved seam</span></div>
+      <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border-bottom:1px solid #2C2719">
+        <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(122,115,96,.2);color:#7A7360;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">E</span>
+        <span style="font-size:12.5px;font-weight:600;color:#BDB5A2">echo</span>
+        <span style="color:#665E4C;font-size:11px">·</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#665E4C">claude-sonnet-4</span>
+        <div style="flex:1"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360;background:rgba(122,115,96,.2);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>exited</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">transcript ↗</span>
+      </div>
+      <div style="flex:1;background:#F4F2EC;display:flex;align-items:center;justify-content:center">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:9px;max-width:280px;text-align:center">
+          <span style="width:12px;height:12px;border-radius:50%;border:2px solid #A29C8E;box-sizing:border-box"></span>
+          <span style="font-size:13.5px;font-weight:600;color:#23201B">Session exited</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">exit code 0 · ran 41m · ended 12m ago</span>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:7px;padding:5px 14px;font-size:12.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">View transcript ↗</span>
+          <span style="font-size:11px;line-height:1.5;color:#8E897B;text-wrap:pretty">Read-only — the session record, discussion and connections stay. Re-run from its task.</span>
+        </div>
+      </div>
+      <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 1 viewing · launched by @ada · exited 12m ago</div>
+    </div>
+    <div style="width:426px;flex:none;background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:440px">
+      <div style="display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid #2C2719">
+        <span style="width:20px;height:20px;flex:none;border-radius:5px;background:rgba(122,115,96,.2);color:#7A7360;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">E</span>
+        <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">echo</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360;background:rgba(122,115,96,.2);border-radius:999px;padding:2px 7px;flex:none">○ exited</span>
+        <div style="flex:1"></div>
+        <span style="color:#8C8470;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8C8470;font-size:12px;padding:2px 4px">⌖</span><span style="color:#8C8470;font-size:12px;padding:2px 4px">⤢</span><span style="color:#8C8470;font-size:12px;padding:2px 4px">✕</span>
+      </div>
+      <div style="height:28px;flex:none;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid #2C2719"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">toolbar — reserved seam</span></div>
+      <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border-bottom:1px solid #2C2719">
+        <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(122,115,96,.2);color:#7A7360;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">E</span>
+        <span style="font-size:12.5px;font-weight:600;color:#BDB5A2">echo</span>
+        <span style="color:#665E4C;font-size:11px">·</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#665E4C">claude-sonnet-4</span>
+        <div style="flex:1"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360;background:rgba(122,115,96,.2);border-radius:999px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px"><span style="width:6px;height:6px;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>exited</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;background:#221E15;border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">transcript ↗</span>
+      </div>
+      <div style="flex:1;background:#15130E;display:flex;align-items:center;justify-content:center">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:9px;max-width:280px;text-align:center">
+          <span style="width:12px;height:12px;border-radius:50%;border:2px solid #7A7360;box-sizing:border-box"></span>
+          <span style="font-size:13.5px;font-weight:600;color:#EFE9DB">Session exited</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">exit code 0 · ran 41m · ended 12m ago</span>
+          <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:7px;padding:5px 14px;font-size:12.5px;cursor:pointer" style-hover="background:rgba(224,164,90,.25)">View transcript ↗</span>
+          <span style="font-size:11px;line-height:1.5;color:#8C8470;text-wrap:pretty">Read-only — the session record, discussion and connections stay. Re-run from its task.</span>
+        </div>
+      </div>
+      <div style="height:26px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">◉ 1 viewing · launched by @ada · exited 12m ago</div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Only the canvas swaps.</span> Header, seam, strip and footer keep exact geometry — no jump when a session dies mid-view.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Fallback follows the theme.</span> The live canvas is near-black everywhere; once it's gone, the region rejoins paper/graphite. Death reads as the terminal literally leaving the panel.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Facts, then the exit.</span> Exit code · duration · recency in mono; one brass action (transcript); one caption stating what remains. Non-zero exit codes render the code in block red — word + color, as always.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ T0-5 LIVE-SESSION BAR ============ -->
+<section id="livebar" data-screen-label="T0-5 — Live-session bar" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T0-5 · LIVE-SESSION BAR — A RUNNING AGENT IS NEVER INVISIBLE</span>
+    <span style="font-size:12px;color:#8E897B">fixed top row of the workspace center · dark graphite in both themes · h 30</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:720px;flex:none;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:8px;height:8px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite;flex:none"></span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB;cursor:pointer" style-hover="color:#E0A45A">forge</span>
+          <span style="font-size:12.5px;color:#8C8470;cursor:pointer" style-hover="color:#BDB5A2;text-decoration:underline">— 3 live</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">roster ▾</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">focused + streaming — dot pulses · click name raises the session · click “3 live” or roster ▾ opens the roster</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:8px;height:8px;border-radius:50%;background:#5CB381;flex:none"></span>
+          <span style="font-size:12.5px;font-weight:600;color:#EFE9DB;cursor:pointer" style-hover="color:#E0A45A">forge</span>
+          <span style="font-size:12.5px;color:#8C8470;cursor:pointer" style-hover="color:#BDB5A2;text-decoration:underline">— 3 live</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:2px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:5px" style-hover="background:rgba(217,170,73,.28)"><span style="width:6px;height:6px;border-radius:50%;background:#D9AA49;animation:pnPulse 1.6s infinite"></span>scout needs you</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">roster ▾</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">attention chip — an unfocused session needs input · click jumps straight to scout</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:8px;height:8px;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box;flex:none"></span>
+          <span style="font-size:12.5px;font-weight:600;color:#BDB5A2;cursor:pointer" style-hover="color:#E0A45A">echo</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#7A7360">exited 12m ago</span>
+          <span style="font-size:12.5px;color:#8C8470;cursor:pointer" style-hover="color:#BDB5A2;text-decoration:underline">— 2 live</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">roster ▾</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">focused session exited — hollow dot + honest recency; live count still counts the others</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:8px;height:8px;border-radius:50%;background:#7A7360;flex:none"></span>
+          <span style="font-size:12.5px;color:#8C8470">no focused session</span>
+          <span style="font-size:12.5px;color:#8C8470;cursor:pointer" style-hover="color:#BDB5A2;text-decoration:underline">— 3 live</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="border-color:#665E4C;color:#EFE9DB">roster ▾</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">nothing focused — the count keeps running agents visible even with every panel closed</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;box-sizing:border-box">
+          <span style="width:8px;height:8px;border-radius:50%;border:1.5px solid #665E4C;box-sizing:border-box;flex:none"></span>
+          <span style="font-size:12.5px;color:#8C8470">no sessions running</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#E0A45A;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="background:rgba(224,164,90,.25)">run a task ▸</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">zero live — quiet, plus the one next step: quick-launch from Tasks</span>
+      </div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Always present.</span> Fixed top row of the workspace center (02 §2.3), h 30, never scrolls away, never collapses. It is the app's heartbeat line.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Three click targets, no more.</span> Name → raise session · count / roster ▾ → roster · attention chip → the session that needs you. Attention outranks focus: the chip appears even while you're deep in another terminal.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Same dot grammar as the strip:</span> pulsing = streaming · solid = alive · hollow = exited · amber = needs you. Learned once, read everywhere.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ T0-5 ROSTER + EMPTY CENTER ============ -->
+<section id="roster" data-screen-label="T0-5 — Roster + empty center" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">ROSTER + EMPTY CENTER — THE SAME LIST, POPOVER OR TEACHING STATE</span>
+    <span style="font-size:12px;color:#8E897B">NEEDS YOU sorts above live · exited keeps a labeled place · the empty center doubles as the roster (02 §2.2)</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:280px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.6);overflow:hidden">
+        <div style="padding:9px 12px 4px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#D9AA49">NEEDS YOU · 1</div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;background:rgba(217,170,73,.07)" style-hover="background:#262117">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#D9AA49;animation:pnPulse 1.6s infinite"></span>
+          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(217,170,73,.18);color:#D9AA49;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">S</span>
+          <span style="font-size:12px;font-weight:600;color:#EFE9DB">scout</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470">task T-109</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#D9AA49">needs you</span>
+        </div>
+        <div style="padding:8px 12px 4px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">LIVE · 2</div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer" style-hover="background:#262117">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>
+          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+          <span style="font-size:12px;font-weight:600;color:#EFE9DB">forge</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470">T-114 · coordinator</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381">streaming</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px 7px 26px;cursor:pointer" style-hover="background:#262117">
+          <span style="width:10px;height:1px;background:#3B3524;flex:none"></span>
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#5CB381"></span>
+          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">W</span>
+          <span style="font-size:12px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">worker-9f3c</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381">running</span>
+        </div>
+        <div style="padding:8px 12px 4px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#665E4C">RECENTLY EXITED · 1</div>
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer;opacity:.75" style-hover="background:#262117">
+          <span style="width:8px;height:8px;flex:none;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>
+          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(122,115,96,.2);color:#7A7360;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">E</span>
+          <span style="font-size:12px;font-weight:600;color:#BDB5A2">echo</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">12m ago</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#7A7360">exited</span>
+        </div>
+        <div style="border-top:1px solid #2C2719;padding:6px 12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">click focuses · p pins · esc closes</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">roster popover — anchors under the bar, w 280, pop shadow</span>
+    </div>
+    <div style="width:460px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#15130E;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:400px;display:flex;flex-direction:column">
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border-bottom:1px solid #2C2719">
+          <span style="width:8px;height:8px;border-radius:50%;background:#7A7360;flex:none"></span>
+          <span style="font-size:12.5px;color:#8C8470">no focused session</span>
+          <span style="font-size:12.5px;color:#8C8470">— 3 live</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="border-color:#665E4C">roster ▾</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px">
+          <div style="display:flex;flex-direction:column;gap:8px;width:330px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">LIVE SESSIONS</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:#221E15;border:1px solid #2C2719;border-radius:8px;cursor:pointer" style-hover="background:#262117;border-color:#3B3524">
+              <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#D9AA49;animation:pnPulse 1.6s infinite"></span>
+              <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">scout</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#D9AA49;font-weight:600">NEEDS YOU</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8C8470">· task T-109</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:#221E15;border:1px solid #2C2719;border-radius:8px;cursor:pointer" style-hover="background:#262117;border-color:#3B3524">
+              <span style="width:8px;height:8px;flex:none;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>
+              <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">forge</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8C8470">streaming · task T-114 · claude</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:#221E15;border:1px solid #2C2719;border-radius:8px;cursor:pointer" style-hover="background:#262117;border-color:#3B3524">
+              <span style="width:8px;height:8px;flex:none;border-radius:50%;border:1.5px solid #7A7360;box-sizing:border-box"></span>
+              <span style="font-size:12.5px;font-weight:600;color:#BDB5A2">echo</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">exited 12m ago</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:7px">
+            <span style="font-size:12.5px;color:#8C8470">Click any task or session to open it here.</span>
+            <div style="display:flex;gap:6px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:5px;padding:2px 7px">esc closes</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:5px;padding:2px 7px">p pins</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:5px;padding:2px 7px">/ palette</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">empty center (02 §2.2) — the roster becomes the teaching state; grammar hints, no illustration</span>
+    </div>
+    <div style="width:300px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#15130E;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:400px;display:flex;flex-direction:column">
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border-bottom:1px solid #2C2719">
+          <span style="width:8px;height:8px;border-radius:50%;border:1.5px solid #665E4C;box-sizing:border-box;flex:none"></span>
+          <span style="font-size:12.5px;color:#8C8470">no sessions running</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:0 28px;text-align:center">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#665E4C">NO SESSIONS YET</span>
+          <span style="font-size:12.5px;line-height:1.55;color:#8C8470;text-wrap:pretty">Agents run against tasks. Pick one in the Tasks panel and press <span style="color:#E0A45A;font-weight:600">Run ▸</span> — its terminal opens here.</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#E0A45A;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:3px 10px;cursor:pointer" style-hover="background:rgba(224,164,90,.25)">run a task ▸</span>
+          <div style="display:flex;gap:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:5px;padding:2px 7px">p pins</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:5px;padding:2px 7px">/ palette</span>
+          </div>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">zero-live empty center — teaches the run grammar in place</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Sort is triage:</span> NEEDS YOU · live · recently exited. Coordinator→worker nesting shows one guide-line level; the full tree lives in the Sessions list panel (T0-3).</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">One list, two homes.</span> Popover and empty state render the same rows — same dots, same words — so the roster is learned once.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;stripState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;streaming&quot;,&quot;running&quot;,&quot;exited&quot;],&quot;default&quot;:&quot;streaming&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Anatomy frame&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const w = this.props.stripState ?? 'streaming';
+    return {
+      notes: this.props.notes ?? true,
+      isStreaming: w === 'streaming',
+      isRunning: w === 'running',
+      isExited: w === 'exited',
+      notExited: w !== 'exited'
+    };
+  }
+}
+</script>
+</body>
+</html>

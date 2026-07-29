@@ -1,0 +1,666 @@
+/* ===========================================================================
+   T2 SETTINGS, TRUST & AUTHORING — half A (space settings · members · invites
+   · menu editor).
+
+   ORACLE: "T0-1 workspace structure review (1)/T2 Settings, Trust & Authoring
+   Hi-Fi.dc.html". T2-1 is L21–142, T2-3 is L275–391. Every value below cites
+   the oracle line it was EXTRACTED from — none eyeballed (brief §2.1).
+
+   COLOUR: tokens only; `src/hex-ban.test.ts` walks this file. The T2 palette
+   turned out to need NO new token — every hex the oracle paints on these two
+   frames already exists in tokens.css. The mapping, measured 2026-07-29:
+
+     #FBFAF6 --pn-surface   #F4F2EC --pn-paper    #FFFFFF --pn-card
+     #F2EFE8 --pn-hover     #ECE8DF --pn-active   #E7E3D9 --pn-line
+     #D8D3C6 --pn-line-2    #F0EDE4 --pn-x-hairline-soft
+     #23201B --pn-ink       #5B564C --pn-ink-2    #8E897B --pn-ink-3
+     #B7B2A4 --pn-ink-4     #B26A2B --pn-brand    #9A581F --pn-brand-2
+     #BB4D3D --pn-block     #BD8A2A --pn-wait     #3E8E5A --pn-run
+     dark-scope panels: #1D1912/#221E15/#262117/#3B3524/#EFE9DB/#BDB5A2/
+     #8C8470/#665E4C/#6F9FC7/#D9AA49 are the DARK values of paper/card/hover/
+     line-2/ink/ink-2/ink-3/ink-4/info/wait — i.e. the oracle drew those two
+     panels in the dark theme, not in a bespoke palette (see HANDOVER §2).
+
+   Alpha idiom follows `auth.css`: rgba(var(--pn-brand-rgb), a) for brass,
+   color-mix(... N%, transparent) for everything else.
+
+   TYPE: canvas-measured literals stay verbatim (D5). Global scale is the one
+   `zoom: 1.1` lever on `.cv2-root` (D60.1) — never a per-element bump here.
+   =========================================================================== */
+
+/* --- the frame ----------------------------------------------------------- */
+
+/* Product surfaces are FULL-BLEED (D47): the oracle's 1264px dark stage and
+   its 470px card heights are review-board furniture, not product geometry.
+   What IS product is the 160px nav column (L31) and the card grammar. */
+.set-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+}
+
+.set-card {
+  background: var(--pn-surface);
+  /* Oracle L30 draws the card border as #2C2719 — that is the DARK --pn-line,
+     used because the card sits on the review board's dark stage. In product
+     the same edge is --pn-line, which inverts correctly. RULED, HANDOVER §2. */
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md); /* L30 radius:10px */
+  box-shadow: var(--pn-sh-sm);
+  display: flex;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* --- T2-1a · section nav (oracle L31–L44) -------------------------------- */
+
+.set-nav {
+  width: 160px; /* L31 */
+  flex: none;
+  background: var(--pn-surface);
+  border-right: 1px solid var(--pn-line);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0; /* L31 */
+  min-height: 0;
+}
+
+.set-nav__eyebrow {
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L32 */
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--pn-ink-4);
+  padding: 0 14px 8px; /* L32 */
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.set-nav__row {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent; /* L33 */
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px; /* L33 */
+  color: var(--pn-ink-2);
+  padding: 6px 14px; /* L33 */
+  cursor: pointer;
+}
+.set-nav__row:hover { background: var(--pn-hover); } /* L33 style-hover */
+.set-nav__row[aria-current='true'] {
+  font-weight: 600; /* L34 */
+  color: var(--pn-ink);
+  border-left-color: var(--pn-brand);
+  background: var(--pn-active);
+  padding: 6px 14px 6px 11px; /* L34 — the 3px rule eats from the left pad */
+}
+.set-nav__spacer { flex: 1; }
+.set-nav__row--danger {
+  color: var(--pn-block); /* L43 */
+  border-top: 1px solid var(--pn-x-hairline-soft); /* L43 */
+}
+
+/* --- section body -------------------------------------------------------- */
+
+.set-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.set-section__head {
+  padding: 16px 18px 12px; /* L46 */
+  border-bottom: 1px solid var(--pn-line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.set-section__title {
+  font-family: var(--pn-serif);
+  font-size: 19px; /* L47 */
+  font-weight: 500;
+}
+.set-section__grow { flex: 1; }
+.set-section__scroll { flex: 1; min-height: 0; overflow: auto; }
+
+/* Brass chip — the oracle's secondary primary (L49, L101, L288). NOT the ink
+   chip: D58.1 rules the ink treatment for `.lp__new` create chips on T0-1;
+   this canvas paints its own affirmatives brass, and a surface answers to its
+   own oracle. The one ink button on these frames is the redeem CTA (L133). */
+.set-chip {
+  appearance: none;
+  font-family: inherit;
+  color: var(--pn-brand-2);
+  font-weight: 600;
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-sm);
+  padding: 3px 11px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.set-chip:hover { background: rgba(var(--pn-brand-rgb), 0.2); }
+.set-chip--block { display: block; width: 100%; padding: 4px 0; text-align: center; }
+.set-chip--sm { padding: 2px 9px; font-size: 11px; }
+
+.set-ghost {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 2px 8px;
+  background: var(--pn-card);
+  cursor: pointer;
+}
+.set-ghost:hover { background: var(--pn-hover); }
+
+.set-eyebrow {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pn-ink-4);
+  text-transform: uppercase;
+}
+
+.set-prose {
+  font-size: 11px; /* L88 */
+  line-height: 1.6;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+.set-note {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+}
+
+/* --- T2-1b · members table (oracle L51–L89) ------------------------------ */
+
+.set-member {
+  display: flex;
+  align-items: center;
+  gap: 9px; /* L51 */
+  padding: 9px 18px; /* L51 */
+  /* Repeated siblings inside one component ⇒ the soft hairline, D-law 4. The
+     oracle draws #F0EDE4 here and #E7E3D9 on the header, which is that rule
+     stated in the source. */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+.set-member__avatar {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pn-active);
+  color: var(--pn-ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.set-member__avatar--pending {
+  background: none;
+  border: 1px dashed var(--pn-ink-4); /* L79 */
+  color: var(--pn-ink-4);
+}
+.set-member__name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px; /* L53 */
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.set-member__handle {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--pn-ink-4);
+}
+.set-member__when { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+
+.set-role {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  border-radius: var(--pn-r-pill);
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+.set-role--locked { font-weight: 600; color: var(--pn-brand-2); background: var(--pn-brand-soft); }
+.set-role--select { color: var(--pn-ink-2); border: 1px solid var(--pn-line-2); background: var(--pn-card); }
+.set-role--pending { font-weight: 600; color: var(--pn-wait); background: var(--pn-wait-soft); }
+
+/* L78: the pending row is tinted rgba(162,156,142,.06). --pn-idle-soft is the
+   same colour at .16, so this DERIVES the .06 rather than restating a literal
+   the guard would (correctly) reject — and it tracks the token in dark. */
+.set-member--pending { background: color-mix(in srgb, var(--pn-idle-soft) 38%, transparent); }
+
+/* --- T2-1c · invites (oracle L92–L122) ----------------------------------- */
+
+.set-panel {
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.set-panel__head {
+  padding: 14px 16px 10px; /* L94 */
+  border-bottom: 1px solid var(--pn-line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-panel__title { font-family: var(--pn-serif); font-size: 17px; font-weight: 500; } /* L95 */
+
+.set-invite-form {
+  padding: 12px 16px; /* L99 */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.set-field {
+  display: flex;
+  align-items: center;
+  padding: 0 9px;
+  height: 28px; /* L102 */
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-2);
+}
+.set-field--grow { flex: 1; }
+
+.set-invite {
+  padding: 7px 16px; /* L108 */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.set-invite__code { font-family: var(--pn-mono); font-size: 10.5px; font-weight: 600; color: var(--pn-ink); }
+.set-invite__meta { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
+.set-invite__stamp { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+.set-invite--revoked { opacity: 0.7; } /* L117 */
+.set-invite--revoked .set-invite__code { font-weight: 400; color: var(--pn-ink-3); text-decoration: line-through; }
+.set-invite__revoked-word { font-family: var(--pn-mono); font-size: 9px; font-weight: 600; color: var(--pn-block); }
+.set-invite__group { padding: 10px 16px 4px; } /* L107 */
+
+/* --- T2-1d · redeem landing (oracle L124–L139) --------------------------- */
+
+.set-redeem {
+  background: var(--pn-paper); /* L125 — paper, not surface: it is a page */
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+}
+.set-redeem__mark { font-family: var(--pn-mono); font-size: 13px; font-weight: 600; color: var(--pn-brand); }
+.set-redeem__title { font-family: var(--pn-serif); font-size: 22px; font-weight: 500; line-height: 1.2; }
+.set-redeem__sub { font-size: 12px; color: var(--pn-ink-3); }
+.set-redeem__field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding-top: 6px;
+}
+.set-redeem__label {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--pn-ink-3);
+}
+.set-redeem__input {
+  height: 32px; /* L131 */
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  font-size: 12.5px;
+  color: var(--pn-ink);
+  font-family: inherit;
+}
+.set-redeem__input::placeholder { color: var(--pn-ink-4); }
+/* L133 — the ONE ink control on these frames. D58.1's hover token applies. */
+.set-redeem__cta {
+  width: 100%;
+  padding: 7px 0;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  cursor: pointer;
+}
+.set-redeem__cta:hover { background: var(--pn-x-btn-ink-hover); }
+.set-redeem__foot { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+
+/* --- T2-3 · menu editor (oracle L282–L330) ------------------------------- */
+
+.set-menu {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  min-height: 0;
+  flex-wrap: wrap;
+}
+.set-menu__editor { flex: 1 1 470px; min-width: 0; max-width: 470px; } /* L283 */
+.set-menu__preview { flex: 0 0 220px; } /* L336 */
+.set-menu__states { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+
+.set-menu__head {
+  padding: 12px 14px 10px; /* L286 */
+  border-bottom: 1px solid var(--pn-line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.set-menu__title { font-family: var(--pn-serif); font-size: 16px; font-weight: 500; } /* L287 */
+.set-menu__version { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4); }
+.set-menu__rows { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; }
+
+.set-row { display: flex; align-items: center; gap: 7px; }
+.set-row--group { padding: 5px 14px; } /* L295 */
+.set-row--group + .set-row--group { margin-top: 4px; }
+.set-row--item { padding: 5px 14px 5px 30px; } /* L301 */
+.set-row--item:hover { background: var(--pn-hover); }
+.set-row--child { padding: 4px 14px 4px 48px; position: relative; } /* L318 */
+/* L319 — the child spine. */
+.set-row--child::before {
+  content: '';
+  position: absolute;
+  left: 37px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pn-line);
+}
+.set-row--dragging {
+  background: rgba(var(--pn-brand-rgb), 0.07); /* L310 */
+  border-top: 1px dashed rgba(var(--pn-brand-rgb), 0.45);
+  border-bottom: 1px dashed rgba(var(--pn-brand-rgb), 0.45);
+}
+
+.set-grip {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--pn-ink-4);
+  font-size: 11px;
+  cursor: grab;
+  line-height: 1;
+}
+.set-row--dragging .set-grip { color: var(--pn-brand-2); cursor: grabbing; }
+.set-row__glyph { color: var(--pn-ink-3); font-size: 11px; }
+.set-row__label { flex: 1; min-width: 0; font-size: 12px; }
+.set-row--child .set-row__label { font-size: 11.5px; color: var(--pn-ink-2); }
+.set-row__type { font-family: var(--pn-mono); font-size: 8.5px; color: var(--pn-ink-4); }
+.set-row__x,
+.set-row__pencil {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--pn-ink-4);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: var(--pn-r-xs);
+  line-height: 1;
+}
+.set-row__x:hover { color: var(--pn-block); }
+.set-row__pencil:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
+
+/* L311 — rename in place. The caret is the oracle's own 1.5px brand bar; here
+   it is a real focused input, so the browser draws it. */
+.set-rename {
+  height: 22px;
+  padding: 0 8px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-xs);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--pn-ink);
+  min-width: 0;
+  width: 140px;
+}
+.set-rename__hint { font-family: var(--pn-mono); font-size: 8.5px; color: var(--pn-brand-2); }
+
+.set-add-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 14px 4px; /* L324 */
+  margin-top: 4px;
+  border-top: 1px solid var(--pn-x-hairline-soft);
+}
+.set-add {
+  appearance: none;
+  background: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-brand-2);
+  border: 1px dashed rgba(var(--pn-brand-rgb), 0.5); /* L325 */
+  border-radius: var(--pn-r-sm);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+.set-add:hover { background: rgba(var(--pn-brand-rgb), 0.08); }
+
+.set-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 14px 8px;
+}
+
+/* --- live preview (oracle L336–L352) ------------------------------------- */
+
+.set-prev__head {
+  padding: 9px 12px 6px;
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-4);
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  text-transform: uppercase;
+}
+.set-prev__body { flex: 1; min-height: 0; overflow: auto; padding: 8px 0; }
+.set-prev__group {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--pn-ink-4);
+  padding: 10px 12px 4px;
+  text-transform: uppercase;
+}
+.set-prev__group:first-child { padding-top: 2px; }
+.set-prev__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-left: 3px solid transparent;
+}
+.set-prev__row--active {
+  padding: 5px 12px 5px 9px;
+  background: var(--pn-active);
+  border-left-color: var(--pn-brand);
+}
+.set-prev__row--active .set-prev__label { font-weight: 600; color: var(--pn-ink); }
+.set-prev__glyph { color: var(--pn-ink-3); font-size: 11px; }
+.set-prev__row--active .set-prev__glyph { color: var(--pn-brand-2); }
+.set-prev__label { flex: 1; min-width: 0; font-size: 11.5px; color: var(--pn-ink-2); }
+.set-prev__child { display: flex; align-items: center; padding: 4px 12px 4px 32px; position: relative; }
+.set-prev__child::before {
+  content: '';
+  position: absolute;
+  left: 20px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pn-line);
+}
+.set-prev__child span { font-size: 11px; color: var(--pn-ink-2); }
+.set-prev__foot {
+  padding: 7px 12px;
+  border-top: 1px solid var(--pn-x-hairline-soft);
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  color: var(--pn-ink-4);
+}
+
+/* --- state panels (oracle L356–L385) ------------------------------------- */
+
+.set-state {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.set-state__banner {
+  background: var(--pn-hover);
+  border-radius: var(--pn-r-md);
+  padding: 9px 11px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.set-state__banner--info { border: 1px solid color-mix(in srgb, var(--pn-info) 40%, transparent); }
+.set-state__banner--warn { border: 1px solid color-mix(in srgb, var(--pn-wait) 40%, transparent); }
+.set-state__glyph { font-size: 11px; padding-top: 1px; }
+.set-state__banner--info .set-state__glyph { color: var(--pn-info); }
+.set-state__banner--warn .set-state__glyph { color: var(--pn-wait); }
+.set-state__text { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.set-state__title { font-size: 11.5px; font-weight: 600; color: var(--pn-ink); }
+.set-state__body { font-size: 10.5px; line-height: 1.45; color: var(--pn-ink-2); }
+.set-state__action {
+  appearance: none;
+  background: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--pn-info);
+  border: 1px solid color-mix(in srgb, var(--pn-info) 40%, transparent);
+  border-radius: var(--pn-r-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.set-state__action:hover { background: color-mix(in srgb, var(--pn-info) 12%, transparent); }
+.set-state__foot { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
+
+/* --- refusal skins (D28 mechanics untouched; fill only) ------------------ */
+
+/* The inline refusal form already IS the brass chip. These two modifiers change
+   nothing about the treatment — not the aria-disabled, not the focusability,
+   not the reason in the DOM, not the .45 — they change WIDTH and FILL, which is
+   what the oracle draws differently at these two controls. Precedent and
+   argument: `src/auth/HANDOVER-Auth.md` §2.1. RULED, see HANDOVER §2. */
+.set-refuse--block,
+.set-refuse--ink { display: block; width: 100%; }
+.cv2-root .set-refuse--block .hon-disabled-group,
+.cv2-root .set-refuse--ink .hon-disabled-group { display: flex; flex-direction: column; width: 100%; }
+.cv2-root .set-refuse--block .hon-disabled--inline {
+  display: block;
+  width: 100%;
+  padding: 4px 0; /* oracle L104 */
+  text-align: center;
+  font-size: 11.5px;
+}
+.cv2-root .set-refuse--ink .hon-disabled--inline {
+  display: block;
+  width: 100%;
+  padding: 7px 0; /* oracle L133 */
+  text-align: center;
+  border: 0;
+  border-radius: var(--pn-r-md);
+  font-size: 13px;
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+}
+
+/* --- honest absence ------------------------------------------------------ */
+
+/* An absence is STATED, not shouted (D-law 9). One quiet line inside the
+   surface that would have held the data, never an illustrated empty state
+   taxing the section it sits in. */
+.set-absent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+}
+.set-absent__head { font-size: 11.5px; color: var(--pn-ink-3); }
+.set-absent__why { font-family: var(--pn-mono); font-size: 9px; line-height: 1.5; color: var(--pn-ink-4); }
+
+.set-stack { display: flex; flex-direction: column; gap: 6px; padding: 12px 18px; }
+.set-kv { display: flex; align-items: baseline; gap: 10px; font-size: 12px; }
+.set-kv__k {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--pn-ink-4);
+  width: 96px;
+  flex: none;
+  text-transform: uppercase;
+}
+.set-kv__v { color: var(--pn-ink); min-width: 0; }
+
+/* --- dev review board (never product) ------------------------------------ */
+
+.set-board { display: flex; flex-direction: column; gap: 24px; padding: 20px; background: var(--pn-paper); }
+.set-board__pane { display: flex; flex-direction: column; gap: 8px; }
+.set-board__label {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--pn-ink-3);
+  text-transform: uppercase;
+}
+.set-board__frame { border: 1px solid var(--pn-line); border-radius: var(--pn-r-lg); padding: 16px; background: var(--pn-paper); }

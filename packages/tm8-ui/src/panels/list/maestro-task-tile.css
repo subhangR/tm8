@@ -1,0 +1,510 @@
+/* Direct port of Maestro's pn-tt task tile. The host supplies tm8 tokens. */
+.cv2-root .pn-stat {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+.cv2-root .pn-stat--run { color: var(--pn-run); }
+.cv2-root .pn-stat--wait { color: var(--pn-wait); }
+.cv2-root .pn-stat--block { color: var(--pn-block); }
+.cv2-root .pn-stat--info { color: var(--pn-info); }
+.cv2-root .pn-stat--brand { color: var(--pn-brand); }
+.cv2-root .pn-stat--idle { color: var(--pn-idle); }
+
+/* THE DOT. Solid = in motion or settled (a running task is a green dot);
+   hollow = declared but not started. No ring around either — the ring was the
+   loudest thing in the row and said nothing the dot does not. */
+.cv2-root .pn-stat__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-sizing: border-box;
+}
+.cv2-root .pn-stat--hollow .pn-stat__dot {
+  background: transparent;
+  border: 1.5px solid currentColor;
+  opacity: 0.6;
+}
+/* Streaming keeps the dot steady and pings a halo off it, so "alive" is
+   legible without the mark itself blinking out of the row. */
+.cv2-root .pn-stat--streaming::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  animation: pn-stat-ping 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  pointer-events: none;
+}
+@keyframes pn-stat-ping {
+  0% { transform: scale(1); opacity: 0.55; }
+  70%, 100% { transform: scale(2.2); opacity: 0; }
+}
+
+.cv2-root .pn-tt .pn-badge {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.cv2-root .pn-tt .pn-badge--status-run { color: var(--pn-run); border-color: var(--pn-run); }
+.cv2-root .pn-tt .pn-badge--status-wait { color: var(--pn-wait); border-color: var(--pn-wait); }
+.cv2-root .pn-tt .pn-badge--status-block { color: var(--pn-block); border-color: var(--pn-block); }
+.cv2-root .pn-tt .pn-badge--status-info { color: var(--pn-info); border-color: var(--pn-info); }
+.cv2-root .pn-tt .pn-badge--status-brand { color: var(--pn-brand); border-color: var(--pn-brand); }
+.cv2-root .pn-tt .pn-badge--priority-block { color: var(--pn-block); border-color: var(--pn-block); }
+.cv2-root .pn-tt .pn-badge--priority-wait { color: var(--pn-wait); border-color: var(--pn-wait); }
+.cv2-root .pn-tt .pn-badge--priority-info { color: var(--pn-info); border-color: var(--pn-info); }
+.cv2-root .pn-tt .pn-badge--priority-run { color: var(--pn-run); border-color: var(--pn-run); }
+.cv2-root .pn-tt .pn-badge__people { display: inline-flex; align-items: center; }
+.cv2-root .pn-tt .pn-badge__people .kit-avatar + .kit-avatar {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--pn-card);
+}
+.cv2-root .pn-tt .pn-toggle {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  box-sizing: border-box;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ONE CHIP METRIC FOR THE WHOLE EXPANDED BLOCK. `pn-badge` and `pn-toggle`
+   arrive from two different vocabularies and shipped with different radii,
+   heights, fonts and letter-spacing, so a single metarow rendered a rectangle,
+   a lozenge and a capsule side by side and read as broken rather than varied.
+   The facts still differ in COLOUR (tone) and CONTENT — they no longer differ
+   in shape. */
+.cv2-root .pn-tt__meta .pn-badge,
+.cv2-root .pn-tt__meta .pn-toggle {
+  height: 24px;
+  min-height: 24px;
+  padding: 0 8px;
+  gap: 5px;
+  border-radius: var(--pn-r-sm);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+/* Sized at the call site (`AvatarSize` 15); this only tightens the overlap so
+   a three-actor stack still fits the chip's inline padding. */
+.cv2-root .pn-tt__meta .pn-badge__people .kit-avatar + .kit-avatar {
+  margin-left: -5px;
+}
+
+.cv2-root .pn-tt {
+  --tt-indent: 0px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  container-name: task-tile;
+  container-type: inline-size;
+  min-width: 0;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 0;
+  background: var(--pn-card);
+  box-shadow: none;
+  transition: background 120ms;
+}
+.cv2-root .pn-tt:hover {
+  background: var(--pn-hover);
+}
+.cv2-root .pn-tt--active {
+  background: var(--pn-active);
+}
+.cv2-root .pn-tt--attention {
+  background: var(--pn-wait-soft);
+}
+.cv2-root .pn-tt--completed .pn-tt__title {
+  color: var(--pn-ink-4);
+  text-decoration: line-through;
+}
+
+/* DEPTH IS PADDING, NOT A NESTED BOX. A subtask used to live inside an inset,
+   gapped, bordered `lp__children` wrapper, which detached it from its parent:
+   the run of rows broke into floating clusters. Indenting the row's CONTENT
+   instead keeps every tile full-bleed and edge-to-edge, so a parent and its
+   subtasks read as one continuous column with the hierarchy carried by the
+   indent and the hairline below. */
+.cv2-root .pn-tt[data-depth='1'] { --tt-indent: 16px; }
+.cv2-root .pn-tt[data-depth='2'] { --tt-indent: 32px; }
+.cv2-root .pn-tt[data-depth='3'] { --tt-indent: 48px; }
+.cv2-root .pn-tt[data-depth='4'] { --tt-indent: 64px; }
+.cv2-root .pn-tt[data-depth='5'] { --tt-indent: 76px; }
+/* Deeper than 5 stops indenting rather than squeezing the title to nothing. */
+.cv2-root .pn-tt:not([data-depth='0']):not([data-depth='1']):not([data-depth='2']):not([data-depth='3']):not([data-depth='4']):not([data-depth='5']) {
+  --tt-indent: 84px;
+}
+/* One hairline per nested row, marking the column its parent occupies. */
+.cv2-root .pn-tt:not([data-depth='0'])::before {
+  content: '';
+  position: absolute;
+  left: calc(var(--tt-indent) + 2px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--pn-line);
+  pointer-events: none;
+}
+
+.cv2-root .pn-tt__main {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 12px 9px calc(10px + var(--tt-indent));
+  cursor: pointer;
+}
+.cv2-root .pn-tt__arrow {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--pn-ink-4);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  line-height: 0;
+}
+.cv2-root .pn-tt__arrow:hover { color: var(--pn-ink-2); background: var(--pn-active); }
+.cv2-root .pn-tt__arrow svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+  transition: transform 140ms;
+}
+.cv2-root .pn-tt__arrow--expanded svg { transform: rotate(90deg); }
+.cv2-root .pn-tt__arrow--empty { color: var(--pn-line-2); }
+.cv2-root .pn-tt__arrowCount {
+  margin-left: 1px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-tt__status {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+.cv2-root .pn-tt__status-text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+/* THE TRUNCATION CONTRACT. The title is the only `flex: 1` child of the row
+   and every sibling is `flex: 0 0 auto`, so narrowing the panel compresses the
+   title and ellipsises it — it never spills past the tile and never pushes the
+   caret out of view. `min-width: 0` is what lets a flex item shrink below its
+   content width at all; `overflow`+`text-overflow` are what draw the `…`.
+   Removing any one of the three brings the overflow back. */
+.cv2-root .pn-tt__title {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cv2-root .pn-tt__title:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.cv2-root .pn-tt__inline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+.cv2-root .pn-tt .pn-av-group {
+  display: inline-flex;
+  align-items: center;
+  padding-left: 6px;
+}
+.cv2-root .pn-tt .pn-av-group .kit-avatar { box-shadow: 0 0 0 2px var(--pn-card); }
+.cv2-root .pn-tt .pn-av-group .kit-avatar + .kit-avatar { margin-left: -7px; }
+
+/* HOVER REVEALS, IT DOES NOT RESIZE. `display: none → flex` (the Maestro
+   original) makes the cluster take zero width at rest, so hovering a row grows
+   it and re-truncates the title under the cursor — the list visibly twitches as
+   the pointer travels down it. Keeping the cluster in the layout and fading it
+   means the truncation point is identical in all three states, so `normal` and
+   `hovered` differ by ink only. */
+.cv2-root .pn-tt__actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms var(--pn-ease-out, ease-out);
+}
+.cv2-root .pn-tt:hover .pn-tt__actions,
+.cv2-root .pn-tt:focus-within .pn-tt__actions,
+.cv2-root .pn-tt[data-details='open'] .pn-tt__actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cv2-root .pn-tt__actions > *:not(:first-child):not(.pn-tt__ind) { display: none; }
+.cv2-root .pn-tt__actions .lp__rowaction,
+.cv2-root .pn-tt__actions .hon-checking,
+.cv2-root .pn-tt__actions .hon-disabled {
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  transition: background 140ms, border-color 140ms, color 140ms;
+}
+/* Run is the row's one primary verb — it inverts on hover so it reads as the
+   thing you came for, not as another muted glyph. */
+.cv2-root .pn-tt__actions .lp__rowaction:hover {
+  color: var(--pn-paper);
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+}
+.cv2-root .pn-tt__actions .lp__rowaction--on {
+  color: var(--pn-paper);
+  background: var(--pn-brand);
+  border-color: var(--pn-brand);
+}
+.cv2-root .pn-tt__ind {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-4);
+}
+.cv2-root .pn-tt__ind:hover { color: var(--pn-ink-2); background: var(--pn-active); }
+.cv2-root .pn-tt__ind svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+  transition: transform 140ms;
+}
+.cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
+
+/* Expanded facts hang off the STATUS column, not the tile edge: 10px row pad +
+   18px caret + 9px gap. The chips therefore start on the same vertical as the
+   dot at every depth and every panel width (the indent and the narrow-container
+   overrides move both together). */
+.cv2-root .pn-tt__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 1px 12px 11px calc(37px + var(--tt-indent));
+}
+.cv2-root .pn-tt__metarow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.cv2-root .pn-tt__time {
+  margin-left: auto;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+/* LaunchQuickConfig is tm8's data adapter inside Maestro's meta rows. */
+.cv2-root .pn-tt .lp__flow--control {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-sizing: border-box;
+}
+.cv2-root .pn-tt .lq { gap: 8px; }
+.cv2-root .pn-tt .lq__head { display: none; }
+.cv2-root .pn-tt .lq__row { gap: 7px; }
+.cv2-root .pn-tt .lq__field {
+  position: relative;
+  flex: 1 1 104px;
+  gap: 0;
+}
+.cv2-root .pn-tt .lq__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.cv2-root .pn-tt .lq__select {
+  appearance: auto;
+  min-height: 31px;
+  padding: 4px 8px;
+  background: var(--pn-card);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Keep the primary row readable when the panel itself is narrow, regardless
+   of viewport size (split panes can be much smaller than the window). */
+@container task-tile (max-width: 480px) {
+  .cv2-root .pn-tt__main {
+    gap: 7px;
+    padding-inline: calc(8px + var(--tt-indent)) 9px;
+  }
+
+  .cv2-root .pn-tt__title {
+    font-size: 12.5px;
+  }
+
+  .cv2-root .pn-tt__inline {
+    display: none;
+  }
+
+  /* Still hung off the status column — 8px pad + 18px caret + 7px gap. The
+     chips must not jump to the tile edge just because the panel narrowed. */
+  .cv2-root .pn-tt__meta {
+    padding-inline: calc(33px + var(--tt-indent)) 10px;
+  }
+
+  .cv2-root .pn-tt[data-depth='3'] { --tt-indent: 40px; }
+  .cv2-root .pn-tt[data-depth='4'] { --tt-indent: 50px; }
+  .cv2-root .pn-tt[data-depth='5'] { --tt-indent: 58px; }
+}
+
+@container task-tile (max-width: 360px) {
+  .cv2-root .pn-tt__main {
+    gap: 5px;
+    padding-inline: calc(6px + var(--tt-indent)) 6px;
+  }
+
+  .cv2-root .pn-tt__arrowCount {
+    display: none;
+  }
+
+  .cv2-root .pn-tt__title {
+    font-size: 12px;
+  }
+
+  .cv2-root .pn-tt__actions {
+    gap: 1px;
+  }
+
+  .cv2-root .pn-tt__meta {
+    padding-inline: calc(29px + var(--tt-indent)) 8px;
+  }
+
+  /* Depth costs title width, and at this size the title is all there is. */
+  .cv2-root .pn-tt[data-depth='1'] { --tt-indent: 11px; }
+  .cv2-root .pn-tt[data-depth='2'] { --tt-indent: 22px; }
+  .cv2-root .pn-tt[data-depth='3'] { --tt-indent: 30px; }
+  .cv2-root .pn-tt[data-depth='4'] { --tt-indent: 36px; }
+  .cv2-root .pn-tt[data-depth='5'] { --tt-indent: 40px; }
+}
+
+/* Run is the point of hovering a task row, so it survives almost to the floor.
+   It used to drop at 480px-wide panels (the threshold was 300px and a docked
+   Tasks panel is ~260px), which is why hover revealed only a caret. Below 200px
+   two 24px buttons plus the caret leave the title nothing, so Run yields — the
+   details caret is the one control that must never disappear. */
+@container task-tile (max-width: 200px) {
+  .cv2-root .pn-tt__actions > :first-child:not(.pn-tt__ind) {
+    display: none;
+  }
+}
+.cv2-root .pn-tt .lq__profile {
+  align-self: flex-start;
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 4px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+}
+.cv2-root .pn-tt .lq__capacity,
+.cv2-root .pn-tt .lq__load { line-height: 1.45; }
+.cv2-root .pn-tt .lq__actions { align-items: center; }
+.cv2-root .pn-tt .lq__more {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 3px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  text-decoration: none;
+}
+.cv2-root .pn-tt .lq__launch {
+  min-height: 29px;
+  padding-inline: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-stat--streaming::after { animation: none; opacity: 0.4; }
+  .cv2-root .pn-tt,
+  .cv2-root .pn-tt__actions,
+  .cv2-root .pn-tt__arrow svg,
+  .cv2-root .pn-tt__ind svg { transition: none; }
+}

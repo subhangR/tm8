@@ -1,0 +1,354 @@
+/**
+ * Thread styles — paper & ink, scoped under .cv2-root like every other
+ * collab-v2 surface. Agent messages get a tinted rail; nothing else about
+ * them is set apart.
+ */
+
+/* --- standalone gallery --------------------------------------------------- */
+.cv2-root .cv2-threadgallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--pn-space-5);
+  padding: var(--pn-space-5);
+  align-items: start;
+}
+.cv2-root .cv2-threadgallery__pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 560px;
+  border: 1px solid var(--pn-line);
+  border-radius: 12px;
+  background: var(--pn-surface);
+  padding: var(--pn-space-3);
+  gap: var(--pn-space-2);
+}
+.cv2-root .cv2-threadgallery__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+.cv2-root .cv2-threadgallery__note {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+
+/* --- virtualizer ---------------------------------------------------------- */
+.cv2-root .cv2-vlist {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.cv2-root .cv2-vlist__rows { display: block; }
+.cv2-root .cv2-vrow { display: block; }
+
+/* --- thread shell --------------------------------------------------------- */
+.cv2-root .cv2-thread {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: var(--pn-space-2);
+  font-family: var(--pn-ui);
+}
+.cv2-root .cv2-thread--feed { flex: 1; }
+.cv2-root .cv2-thread__list { padding: var(--pn-space-2) 0; }
+.cv2-root .cv2-thread--feed .cv2-thread__list { padding: var(--pn-space-4) var(--pn-space-1); }
+
+.cv2-root .cv2-thread__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) 0;
+}
+.cv2-root .cv2-thread__error {
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-block);
+}
+
+/* --- one message ---------------------------------------------------------- */
+.cv2-root .cv2-thread__msg {
+  display: flex;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-2);
+  border-radius: 10px;
+}
+.cv2-root .cv2-thread__msg:hover { background: var(--pn-hover); }
+.cv2-root .cv2-thread__msg[data-depth]:not([data-depth='0']) {
+  border-left: 2px solid var(--pn-line-2);
+  padding-left: var(--pn-space-3);
+}
+.cv2-root .cv2-thread__msg[data-agent] {
+  box-shadow: inset 2px 0 0 var(--pn-run-soft);
+}
+.cv2-root .cv2-thread__msg[data-unread] {
+  background: var(--pn-brand-soft);
+}
+.cv2-root .cv2-thread__msg--pending { opacity: 0.62; }
+.cv2-root .cv2-thread__msg--pending[data-failed] { opacity: 1; }
+.cv2-root .cv2-thread__msg--tombstone {
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding-block: var(--pn-space-1);
+}
+
+.cv2-root .cv2-thread__main { flex: 1; min-width: 0; }
+.cv2-root .cv2-thread__avatarghost {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--pn-active); flex: none;
+}
+
+.cv2-root .cv2-thread__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+.cv2-root .cv2-thread__author {
+  font-weight: 700;
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink);
+}
+.cv2-root .cv2-thread__agent {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--pn-active);
+  border: 1px solid var(--pn-line-2);
+  color: var(--pn-ink-2);
+}
+.cv2-root .cv2-thread__time,
+.cv2-root .cv2-thread__edited {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .cv2-thread__body {
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  margin-top: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cv2-root .cv2-thread__mention .cv2-chip,
+.cv2-root .cv2-thread__ref .cv2-chip { vertical-align: baseline; }
+
+.cv2-root .cv2-thread__mentions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-1);
+  margin-top: var(--pn-space-1);
+}
+
+.cv2-root .cv2-thread__embed {
+  margin-top: var(--pn-space-2);
+  max-width: 440px;
+}
+
+.cv2-root .cv2-thread__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-2);
+}
+.cv2-root .cv2-thread__attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* --- per-message actions -------------------------------------------------- */
+.cv2-root .cv2-thread__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-1);
+}
+.cv2-root .cv2-thread__reactions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+.cv2-root .cv2-thread__act,
+.cv2-root .cv2-thread__replytoggle,
+.cv2-root .cv2-thread__activitytoggle,
+.cv2-root .cv2-thread__more {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+}
+.cv2-root .cv2-thread__act:hover,
+.cv2-root .cv2-thread__replytoggle:hover,
+.cv2-root .cv2-thread__activitytoggle:hover,
+.cv2-root .cv2-thread__more:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .cv2-thread__act--danger:hover { color: var(--pn-block); }
+.cv2-root .cv2-thread__replytoggle { font-family: var(--pn-mono); }
+.cv2-root .cv2-thread__more { display: block; margin: var(--pn-space-1) 0; }
+
+.cv2-root .cv2-thread__failed {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-1);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-block);
+}
+
+/* --- editor --------------------------------------------------------------- */
+.cv2-root .cv2-thread__editor { margin-top: var(--pn-space-1); }
+.cv2-root .cv2-thread__editinput {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  font: inherit;
+  font-size: var(--pn-fs-body);
+  color: var(--pn-ink);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 8px;
+  padding: var(--pn-space-2);
+}
+.cv2-root .cv2-thread__editactions {
+  display: flex;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-1);
+}
+
+/* --- unread + activity ---------------------------------------------------- */
+.cv2-root .cv2-thread__unread {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) var(--pn-space-2);
+}
+.cv2-root .cv2-thread__unreadline {
+  flex: 1;
+  height: 1px;
+  background: var(--pn-brand);
+  opacity: 0.6;
+}
+.cv2-root .cv2-thread__unreadlabel {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: var(--pn-track-label);
+  color: var(--pn-brand);
+  text-transform: uppercase;
+}
+.cv2-root .cv2-thread__jump {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .cv2-thread__activity {
+  padding: var(--pn-space-1) var(--pn-space-2);
+  color: var(--pn-ink-3);
+}
+.cv2-root .cv2-thread__activitylist {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--pn-space-3);
+}
+.cv2-root .cv2-thread__activitylist li {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  font-size: var(--pn-fs-label);
+  padding: 2px 0;
+}
+
+.cv2-root .cv2-thread__typing {
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  font-style: italic;
+  margin: 0;
+}
+
+/* --- composer ------------------------------------------------------------- */
+.cv2-root .cv2-thread__composer {
+  border: 1px solid var(--pn-line);
+  border-radius: 10px;
+  background: var(--pn-card);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  box-shadow: var(--pn-sh-sm, none);
+}
+.cv2-root .cv2-thread__composer--dropping {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+}
+.cv2-root .cv2-thread__composerctx {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  padding-bottom: var(--pn-space-1);
+}
+.cv2-root .cv2-thread__composeractions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-2);
+}
+.cv2-root .cv2-thread__hint {
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+/* react-mentions internals */
+.cv2-root .cv2-mentions__control,
+.cv2-root .cv2-mentions textarea,
+.cv2-root .cv2-mentions input {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  min-height: 40px;
+  resize: none;
+}
+.cv2-root .cv2-mentions__highlighter {
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  padding: 0;
+  border: none;
+}
+.cv2-root .cv2-mentions__mark {
+  background: var(--pn-brand-soft);
+  border-radius: 4px;
+}
+.cv2-root .cv2-mentions__suggestions {
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 10px;
+  box-shadow: var(--pn-sh-md, 0 6px 20px rgba(0, 0, 0, 0.12));
+  overflow: hidden;
+  font-size: var(--pn-fs-sm);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.cv2-root .cv2-mentions__suggestions__item {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.cv2-root .cv2-mentions__suggestions__item--focused {
+  background: var(--pn-active);
+}

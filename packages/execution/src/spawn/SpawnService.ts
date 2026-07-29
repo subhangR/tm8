@@ -10,7 +10,7 @@ import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
-import type { Logger, PtySessionStatus } from '../pty/types.js';
+import type { Logger, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
 import {
@@ -43,6 +43,8 @@ export interface SpawnServiceOptions {
   logger?: Logger;
   /** Injected for tests. Defaults to `process.env`. */
   env?: NodeJS.ProcessEnv;
+  /** Window in which a child exit makes spawn itself fail. Default 150ms. */
+  bootSettlementMs?: number;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -53,6 +55,36 @@ const EXIT_STATUS_MAP: Record<PtySessionStatus, WorkSessionStatus> = {
   failed: 'failed',
 };
 
+/**
+ * Turn a {@link PtyExitInfo} into the honest, human-readable statement that
+ * lands in `work_sessions.error` for a NATURAL exit.
+ *
+ * The record law this exists to satisfy: a died session must persist the exit
+ * code, the terminating signal, or a NAMED unknown — never silence. Before
+ * this existed, `handlePtyExit` passed no `exitCode` and no `error` at all for
+ * ANY exit, so `work_sessions.error` and `.exit_code` were both NULL for every
+ * agent death this process ever recorded, for either tool — indistinguishable
+ * from a row nobody thought to fill in. A clean `completed` exit (code 0)
+ * needs no narrative — `exit_code = 0` already says it plainly — so this is
+ * only called for the `failed` branch.
+ */
+function describePtyExit(exitInfo: PtyExitInfo): string {
+  const { exitCode, signal } = exitInfo;
+  if (signal !== null && exitCode !== null) {
+    return `agent process exited with code ${String(exitCode)} after signal ${String(signal)}`;
+  }
+  if (signal !== null) {
+    return `agent process was terminated by signal ${String(signal)}`;
+  }
+  if (exitCode !== null) {
+    return `agent process exited with code ${String(exitCode)}`;
+  }
+  // The true "we could not determine how" case — node-pty reported neither.
+  // An explicit statement, not a blank field: NULL here would read exactly
+  // like the pre-fix silence this function exists to end.
+  return 'agent process exited; neither an exit code nor a signal was reported';
+}
+
 export class SpawnService {
   private readonly graph: GraphPort;
   private readonly pty: PtyHostService;
@@ -61,6 +93,7 @@ export class SpawnService {
   private readonly nodeId: string | null;
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
+  private readonly bootSettlementMs: number;
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -87,6 +120,7 @@ export class SpawnService {
     this.nodeId = options.nodeId ?? null;
     this.logger = options.logger;
     this.env = options.env ?? process.env;
+    this.bootSettlementMs = options.bootSettlementMs ?? 150;
   }
 
   private manifestPathFor(sessionId: string): string {
@@ -109,6 +143,7 @@ export class SpawnService {
    */
   async spawn(auth: GraphAuth, request: SpawnRequest): Promise<SpawnResult> {
     const taskIds = request.taskIds ?? [];
+    let bootExit: PtyExitInfo | undefined;
 
     const context = await this.graph.loadSpawnContext(auth, {
       spaceId: request.spaceId,
@@ -122,7 +157,13 @@ export class SpawnService {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
 
-    const { sessionId, commandResult } = await this.graph.createWorkSession(auth, {
+    const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
+      spaceId: request.spaceId,
+      teamMemberId: request.teamMemberId,
+      interactionProfileId: request.interactionProfileId ?? null,
+    });
+
+    const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
       taskIds,
@@ -143,9 +184,41 @@ export class SpawnService {
     // only exists now. Re-resolve so the manifest and the PTY agree.
     const cwd = context.project ? workdir.path : join(this.dataDir, 'scratch', sessionId);
 
+    // A ledger replay is a transport retry of the original command result, not
+    // permission to boot another child under the old work-session id.
+    if (replayed) {
+      const command = buildAgentCommand(launch, this.env);
+      const manifestPath = this.manifestPathFor(sessionId);
+      const manifest = composeManifest({
+        sessionId,
+        request,
+        context,
+        launch,
+        interactionProfile: { ...resolvedProfile, pinRevision: 0 },
+        workdir: { mode: workdir.mode, path: cwd },
+        command,
+        baseUrl: this.baseUrl,
+      });
+      return {
+        sessionId,
+        manifestPath,
+        manifest,
+        command,
+        cwd,
+        envVarNames: [],
+        reused: true,
+        commandResult,
+      };
+    }
+
     this.sessionAuth.set(sessionId, auth);
 
     try {
+      const interactionProfile = await this.graph.recordInteractionProfilePin(
+        auth,
+        sessionId,
+        resolvedProfile,
+      );
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -157,6 +230,7 @@ export class SpawnService {
         request,
         context,
         launch,
+        interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
         baseUrl: this.baseUrl,
@@ -177,6 +251,7 @@ export class SpawnService {
       const command = withAgentPrompt(
         baseCommand,
         `${envelope.system}\n\n${envelope.task}`,
+        launch,
         this.env,
       );
 
@@ -203,7 +278,23 @@ export class SpawnService {
         ...(request.rows ? { rows: request.rows } : {}),
       });
 
+      // Arm the watcher before the first post-spawn await. A very short-lived
+      // child can exit while the running transition is in flight; registering
+      // after that await creates a gap where the PTY entry and its exit evidence
+      // have already been removed before we begin watching.
+      const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
+
       await this.graph.transition(auth, { sessionId, status: 'running' });
+
+      const earlyExit = await bootSettlement;
+      if (earlyExit) {
+        bootExit = earlyExit;
+        throw new SpawnError(
+          `agent process exited during the ${String(this.bootSettlementMs)}ms boot settlement window`,
+          'internal',
+          { sessionId, exitCode: earlyExit.exitCode, signal: earlyExit.signal },
+        );
+      }
 
       this.logger?.info('SpawnService: session spawned', { sessionId, cwd, reused });
 
@@ -213,7 +304,7 @@ export class SpawnService {
       // there would burn a slot against the concurrency cap forever, so mark it
       // failed before rethrowing — and do not let a cleanup failure mask the
       // original error, which is the one that explains what happened.
-      await this.failSession(auth, sessionId, error);
+      await this.failSession(auth, sessionId, error, bootExit);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -230,14 +321,50 @@ export class SpawnService {
     await rename(tmp, path);
   }
 
-  private async failSession(auth: GraphAuth, sessionId: string, error: unknown): Promise<void> {
+  private async failSession(
+    auth: GraphAuth,
+    sessionId: string,
+    error: unknown,
+    exitInfo?: PtyExitInfo,
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
     try {
       await this.graph.transition(auth, {
         sessionId,
         status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
+        ...(exitInfo ? { exitCode: exitInfo.exitCode } : {}),
+        // A NAMED unknown, never blank: an Error with an empty message would
+        // otherwise write error = '' — a value that PASSES a `NOT NULL`-style
+        // honesty check while saying nothing, which is the exact failure this
+        // whole fix exists to close.
+        error: exitInfo
+          ? describePtyExit(exitInfo)
+          : message.trim() !== ''
+            ? message
+            : 'spawn failed for an unspecified reason',
       });
     } catch (cleanupError) {
+      // CONFLICT, not a fresh failure: sqlstate 23514 here means the row is
+      // ALREADY terminal — almost always because the PTY died fast enough
+      // that `handlePtyExit` (this class's OTHER writer) already recorded the
+      // real exit evidence (see describePtyExit) before this optimistic
+      // 'running'->'failed' write got its turn. MEASURED 2026-07-28: without
+      // this guard, that race lands the confusing `illegal work_session
+      // transition failed -> running` text in `error` — the SQL exception's
+      // own message, not the agent's actual death reason — silently
+      // OVERWRITING the good evidence the exit path had just written moments
+      // earlier (`coalesce(p_error, error)` only protects a NULL write; this
+      // one is non-null). Detected by sqlstate rather than by re-reading the
+      // row, so no extra query sits on this hot error path.
+      const sqlState = (cleanupError as { code?: string } | null)?.code;
+      if (sqlState === '23514') {
+        this.logger?.info(
+          'SpawnService: skipped a redundant failed-transition write — the row is already terminal, ' +
+            'almost certainly from the real PTY-exit path recording it first',
+          { sessionId, originalError: message },
+        );
+        return;
+      }
       this.logger?.error(
         'SpawnService: failed to mark session failed after spawn error',
         cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
@@ -308,7 +435,18 @@ export class SpawnService {
   async terminate(
     auth: GraphAuth,
     sessionId: string,
-    opts: { force?: boolean; clientMutationId?: string | null } = {},
+    opts: {
+      force?: boolean;
+      clientMutationId?: string | null;
+      /**
+       * Overrides the default `error` text. For a caller that knows WHY it is
+       * terminating this session for a reason other than "an operator asked"
+       * (ghost reconciliation, for one) — so the row says that, not a generic
+       * "terminated by request" that would misattribute an automatic cleanup
+       * to a human action that never happened.
+       */
+      reason?: string;
+    } = {},
   ): Promise<{ outcome: string; commandResult: unknown }> {
     const commandResult = await this.graph.recordCommand(auth, {
       sessionId,
@@ -320,14 +458,49 @@ export class SpawnService {
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
 
+    // Phase 1b — a genuine kill FAILURE must not be reported as a successful
+    // exit. Ported from old maestro's own discrimination
+    // (sessionRoutes.ts:576-580: `if (killOutcome === 'error') return
+    // res.status(500)` BEFORE any state write) — tm8 carried the PtyKillOutcome
+    // type itself but had DROPPED the short-circuit this specific value exists
+    // to drive, in tm8's own glue code with no maestro counterpart. Before this
+    // guard: `entry.proc.kill()` throwing something other than ESRCH (EPERM, a
+    // genuine signal-delivery refusal) still fell through to the unconditional
+    // `status: 'exited'` write below — the database said the session was gone
+    // while the OS process might still be running, with nothing louder than a
+    // `logger.info` nobody greps. `kill()` still finalizes its OWN bookkeeping
+    // unconditionally (the tracked entry is gone either way — see its own
+    // doc comment), so this session cannot be reconciled through the normal
+    // PTY-exit path anymore regardless; the one thing still within our control
+    // is not ALSO lying about it in the graph. Leaving the row at its prior,
+    // non-terminal status here is more honest than a false 'exited': Phase 1's
+    // `reconcileNodeGhosts` will retire it with an accurate reason at the next
+    // restart if it is never resolved another way.
+    if (outcome === 'error') {
+      throw new SpawnError(
+        `failed to terminate work session ${sessionId}: the kill signal itself failed`,
+        'internal',
+        { sessionId, outcome },
+      );
+    }
+
+    // `kill()` sends a signal and finalizes the tracked entry synchronously —
+    // it does not, and structurally cannot, wait for node-pty's own async exit
+    // event, so there is no real exit code available here to report. That is
+    // a fact about this path, not a gap: `error` says so explicitly instead of
+    // leaving `exit_code`/`error` both NULL, which used to be indistinguishable
+    // from every OTHER unrecorded death this whole fix exists to end.
     // 'not_found' is not an error: terminating an already-dead session is the
     // user cancelling something that just finished. The graph still needs to
     // reflect the terminal state, and the RPC tolerates same→same.
-    await this.graph.transition(auth, {
-      sessionId,
-      status: 'exited',
-      ...(opts.force ? { error: 'terminated by request (force)' } : {}),
-    });
+    const error =
+      opts.reason ??
+      (outcome === 'not_found'
+        ? 'terminate requested, but no live PTY was found (already exited)'
+        : opts.force
+          ? 'terminated by request (force) — exit code not observed, kill does not wait for the real exit event'
+          : 'terminated by request — exit code not observed, kill does not wait for the real exit event');
+    await this.graph.transition(auth, { sessionId, status: 'exited', error });
 
     this.logger?.info('SpawnService: session terminated', { sessionId, outcome });
     return { outcome, commandResult };
@@ -381,7 +554,12 @@ export class SpawnService {
       // only at boot: a session with a LIVE PTY on this node is not a ghost.
       if (this.pty.hasSession(sessionId)) continue;
       try {
-        await this.terminate(auth, sessionId);
+        await this.terminate(auth, sessionId, {
+          reason:
+            `retired at node startup: this node still recorded status '${status}' with no live ` +
+            'PTY for it — the process almost certainly died with a prior instance of this node ' +
+            '(crash or restart) before it could record its own exit',
+        });
         retired += 1;
         this.logger?.info('SpawnService: retired ghost session', { sessionId, status });
       } catch (error) {
@@ -407,7 +585,11 @@ export class SpawnService {
    * `createExecutionPtyHost` in the server's execution-handlers does exactly
    * that, and it is the only reason the graph ever learns an agent finished.
    */
-  handlePtyExit = async (sessionId: string, status: PtySessionStatus): Promise<void> => {
+  handlePtyExit = async (
+    sessionId: string,
+    status: PtySessionStatus,
+    exitInfo: PtyExitInfo = { exitCode: null, signal: null },
+  ): Promise<void> => {
     const auth = this.sessionAuth.get(sessionId);
     this.sessionAuth.delete(sessionId);
     if (auth === undefined) {
@@ -418,7 +600,16 @@ export class SpawnService {
       return;
     }
     try {
-      await this.graph.transition(auth, { sessionId, status: EXIT_STATUS_MAP[status] });
+      await this.graph.transition(auth, {
+        sessionId,
+        status: EXIT_STATUS_MAP[status],
+        exitCode: exitInfo.exitCode,
+        // A clean 'completed' exit needs no narrative — exit_code alone says
+        // it. 'failed' always gets an explicit statement of what the PTY
+        // actually reported (see describePtyExit) — never left for `error` to
+        // stay NULL by default.
+        ...(status === 'failed' ? { error: describePtyExit(exitInfo) } : {}),
+      });
     } catch (error) {
       // LOUD, always, even with no logger injected.
       //

@@ -148,6 +148,12 @@ export interface PgDbOptions {
   readonly max?: number;
   readonly connectionTimeoutMillis?: number;
   readonly idleTimeoutMillis?: number;
+  /**
+   * Local test mode only. Passed as a per-connection PostgreSQL startup
+   * setting, not a request claim, so it cannot be influenced by an HTTP
+   * caller and does not widen the four-claim RLS contract.
+   */
+  readonly idempotencyEnabled?: boolean;
 }
 
 export class PgDb implements Db {
@@ -159,6 +165,7 @@ export class PgDb implements Db {
       max: options.max ?? 8,
       connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5_000,
       idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
+      options: `-c tm8.idempotency_enabled=${options.idempotencyEnabled === false ? 'off' : 'on'}`,
     });
     // An idle-client error (server restart, sidecar bounce) is emitted on the
     // pool, and an unhandled 'error' event on an EventEmitter takes the process

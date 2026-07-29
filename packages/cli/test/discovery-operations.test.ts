@@ -1,12 +1,12 @@
 /**
  * The CLI-owned OperationDiscovery projection — harness §7.1.
  *
- * EXHAUSTIVENESS over all 101 catalog rows, including internal and reserved.
+ * EXHAUSTIVENESS over all 106 catalog rows, including internal and reserved.
  * This file is the classic vacuous-pass risk (a loop that iterates nothing, or
  * `undefined` compared to `undefined`, is green and proves nothing), so every
  * sweep here:
  *
- *   - asserts the row count it swept against the coordinator-verified 101;
+ *   - asserts the row count it swept against the coordinator-verified 102;
  *   - records each visited operation in a set compared back to `OPERATIONS`;
  *   - requires a CONCRETE value from a closed enum for every field, never
  *     merely "not undefined".
@@ -46,7 +46,7 @@ import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/
 import { emitCommandHelp } from '../src/commands/help.js';
 import { createOutput } from '../src/output.js';
 
-const EXPECTED_ROWS = 101;
+const EXPECTED_ROWS = 106;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -112,7 +112,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 101 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 106 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -151,10 +151,10 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('97 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('102 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 97, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 102, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -806,7 +806,7 @@ describe('flag parseability: what the projection publishes, the parser can repre
       expect(d.syntax, d.operation).not.toMatch(/--timeout <n>/);
       expect(d.syntax, d.operation).not.toMatch(/--limit <n>/);
     }
-    expect(GLOBAL_OPTIONS).toEqual(['space', 'as', 'format', 'timeout', 'no-color', 'quiet']);
+    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet']);
   });
 });
 

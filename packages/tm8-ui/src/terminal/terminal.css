@@ -184,19 +184,42 @@
 
 /* --- The host (black box) ------------------------------------------------ */
 /* 160px is the contract floor (L4). The host scrolls INTERNALLY — xterm owns
-   its own scrollback — so it never grows the panel. */
+   its own scrollback — so it never grows the panel.
+   NOT flex-centered: a live xterm appends its own `.terminal` element as a
+   normal child and sizes itself off the host's clientWidth/clientHeight via
+   FitAddon, so centering it would fight that measurement and letterbox the
+   grid. The ghost placeholder (only present pre-mount / non-live verdicts)
+   centers itself instead, absolutely positioned over the empty box.
+
+   COUNTER-SCALE, root-caused by the master: `.cv2-root` (styles/app.css:43)
+   applies `zoom: 1.1` — the user's ruled UI-scale experiment — and every
+   descendant inherits it, including this one. A live xterm's canvas glyphs
+   are not the UI's to scale (R9's logic extended past color/font to size):
+   TERMINAL_FONT_SIZE 13 rendering at an effective 14.3px, upscaled through
+   canvas, is exactly the "oversized and blurry vs. maestro" complaint. No
+   `--*-zoom` custom property exists to read here (checked; app.css keeps the
+   1.1 as a literal) — hardcoded to its reciprocal, WHICH MUST STAY IN SYNC
+   WITH styles/app.css:43. If that literal ever changes, this one has to
+   change with it; there is no other mechanism holding them together.
+   The reciprocal alone is not the whole fix — see LiveTerminal.tsx's mount
+   effect for the forced cell re-measurement `zoom` requires (xterm's canvas
+   font metrics do not recompute on their own when the ambient zoom changes). */
 .cv2-root .term-host {
   flex: 1 1 auto;
   min-height: 160px;
   min-width: 0;
   overflow: hidden;
   background: var(--pn-x-term-bg);
+  position: relative;
+  zoom: calc(1 / 1.1);
+}
+.cv2-root .term-host__ghost {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-}
-.cv2-root .term-host__ghost {
+  pointer-events: none;
   font-family: var(--pn-mono);
   font-size: 10px;
   line-height: 1.9;

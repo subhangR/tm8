@@ -177,6 +177,11 @@ const member = await call('create a team member (the agent persona)', 'POST', '/
   spaceId,
   kind: 'team_member',
   title: 'Smoke Agent',
+  content: {
+    model: 'claude-sonnet-5',
+    agentTool: 'claude-code',
+    mode: 'worker',
+  },
   clientMutationId: cmid('member'),
 });
 const teamMemberId = need(

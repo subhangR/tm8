@@ -1,9 +1,9 @@
 /**
- * `tm8 session spawn|terminate|attach` — the work-session lifecycle (§4.13),
- * projecting `execution.spawn`, `execution.terminate`, and
- * `execution.streams.attach`.
+ * `tm8 session liveness|spawn|terminate|attach` — the work-session lifecycle
+ * (§4.13), projecting `execution.liveness`, `execution.spawn`,
+ * `execution.terminate`, and `execution.streams.attach`.
  *
- * THE FOURTH `execution.*` ROW IS NOT HERE, AND THAT IS THE POINT.
+ * THE INTERNAL `execution.prompt` ROW IS NOT HERE, AND THAT IS THE POINT.
  * `execution.prompt` is INTERNAL. Only the audited Server-side delivery
  * principal may invoke it, it names `messages.post` as its public composite,
  * and no flag, alias, or debug path enables a caller-facing form. So this file
@@ -20,11 +20,9 @@
  *  - CLOSED SETS ARE CHECKED LOCALLY, OPEN QUESTIONS ARE NOT. `--workdir` and
  *    `--mode` name closed enumerations, so a typo is caught here with the set
  *    spelled out (exit 2, nothing sent). Whether a Project is trusted, whether
- *    this caller may spawn, whether `worktree` has landed — none of those are
- *    local decisions, and guessing at them would be the CLI inventing an
- *    authorization or capability answer the Server owns. `--workdir worktree`
- *    is therefore SENT, and the Server's honest `not_implemented` is what the
- *    caller sees.
+ *    this caller may spawn, and project trust are Server decisions. Worktree is
+ *    not in the public contract until the node can create and clean one safely,
+ *    so the CLI neither advertises nor sends it.
  *  - TERMINATE IS DESTRUCTIVE. `--yes` is required (§7.5). `--force` changes
  *    HOW the process is stopped, never WHO may stop it, so it is an ordinary
  *    optional flag and adds no confirmation of its own.
@@ -46,12 +44,12 @@ import { readTextSource } from '../args.js';
 import { requireSpace } from '../context.js';
 import { InterruptedError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
-import { resolveMutationId } from '../mutation.js';
+import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
-const WORKDIRS = ['project', 'worktree', 'scratch'] as const;
+const WORKDIRS = ['project', 'scratch'] as const;
 type WorkdirMode = (typeof WORKDIRS)[number];
 
 /** §4.13's closed session-mode set. */
@@ -105,6 +103,25 @@ function requireConfirmation(command: string, cmd: CommandContext): void {
   }
 }
 
+async function sessionLiveness(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('session liveness', cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const snapshot = await observedInvoke<ExecutionLivenessDto>(
+    clientFor(cmd.ctx),
+    'execution.liveness',
+    { params: { spaceId } },
+  );
+  cmd.out.data(snapshot, renderLiveness);
+  return EXIT_OK;
+}
+
+interface ExecutionLivenessDto {
+  liveEntityIds?: unknown;
+  nodeBootId?: unknown;
+  checkedAt?: unknown;
+  capacity?: { used?: unknown; total?: unknown };
+}
+
 async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   const spaceId = requireSpace(cmd.ctx);
   const teamMemberId = cmd.options.value('teammate');
@@ -119,6 +136,9 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   const taskIds = cmd.options.values('task');
   const projectId = cmd.options.value('launch-project');
   const profileId = cmd.options.value('interaction-profile');
+  const model = cmd.options.value('model');
+  const agentTool = cmd.options.value('agent-tool');
+  const title = cmd.options.value('title');
   const contextSource = cmd.options.value('context');
 
   const body: Record<string, unknown> = {
@@ -128,15 +148,16 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   };
   if (taskIds.length > 0) body.taskIds = taskIds;
   if (projectId !== undefined) body.projectId = projectId;
-  // `SpawnWorkdir` is a discriminated union, not a bare string. `worktree`
-  // additionally admits a `baseRef`, which the frozen projection gives no flag
-  // for — see the report; nothing is invented here to fill that gap.
+  // `SpawnWorkdir` is a discriminated union, not a bare string.
   if (workdir !== undefined) body.workdir = { mode: workdir };
   if (cmd.options.bool('confirm-untrusted')) body.confirmUntrusted = true;
   // A human-principal question the SERVER owns: supplying this as an agent or
   // through `--as` is refused there, not pre-judged here.
   if (profileId !== undefined) body.interactionProfileId = profileId;
   if (mode !== undefined) body.mode = mode;
+  if (model !== undefined) body.model = model;
+  if (agentTool !== undefined) body.agentTool = agentTool;
+  if (title !== undefined) body.title = title;
   // `--context` is LAUNCH-MANIFEST context, not a runtime prompt. It is
   // appended to the composed manifest at spawn and never delivered to a
   // running session — that path is a message.
@@ -337,11 +358,24 @@ function renderGrant(dto: StreamAttachGrantDto): string {
   return `${parts.filter(Boolean).join('  ')}${expires}`;
 }
 
+function renderLiveness(dto: ExecutionLivenessDto): string {
+  const ids = Array.isArray(dto.liveEntityIds) ? dto.liveEntityIds.map(String) : [];
+  const lines = [ids.length === 0 ? 'live sessions: none' : `live sessions (${ids.length}):`];
+  for (const id of ids) lines.push(`  ${id}`);
+  if (typeof dto.nodeBootId === 'string') lines.push(`nodeBootId: ${dto.nodeBootId}`);
+  if (typeof dto.checkedAt === 'string') lines.push(`checkedAt: ${dto.checkedAt}`);
+  if (typeof dto.capacity?.used === 'number' && typeof dto.capacity.total === 'number') {
+    lines.push(`capacity: ${String(dto.capacity.used)}/${String(dto.capacity.total)} in use`);
+  }
+  return lines.join('\n');
+}
+
 /**
- * The registry contribution. THREE rows, deliberately — `execution.prompt` has
- * no entry here and must never gain one.
+ * The registry contribution. Four caller-facing rows, deliberately —
+ * `execution.prompt` has no entry here and must never gain one.
  */
 export const SESSION_COMMANDS: CommandModule[] = [
+  { path: ['session', 'liveness'], run: sessionLiveness },
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'terminate'], run: sessionTerminate },
   { path: ['session', 'attach'], run: sessionAttach },

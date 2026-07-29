@@ -77,6 +77,18 @@
   text-decoration: line-through;
 }
 
+/* Action chips (re-layout, focus breadcrumb) — a gv-filter with a brand-soft
+   fill so it reads as an available action rather than a passive filter. */
+.gv-filter--action {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+}
+.gv-filter--action:hover {
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.55);
+}
+
 /* -- honesty banner + empty state ----------------------------------------- */
 
 .gv-banner {
@@ -104,6 +116,15 @@
   margin: 0;
 }
 
+.gv-empty__detail {
+  max-width: 42rem;
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  text-align: center;
+}
+
 /* -- canvas ---------------------------------------------------------------- */
 
 .gv-viewport {
@@ -127,6 +148,12 @@
   top: 0;
   left: 0;
   transform-origin: 0 0;
+}
+
+/* Applied ONLY during a programmatic reveal-pan (aside open / resize) so it
+   eases; manual drag/zoom clear the flag so they track instantly. */
+.gv-canvas--ease {
+  transition: transform var(--pn-dur-base) var(--pn-ease-out);
 }
 
 /* -- edges ------------------------------------------------------------------ */
@@ -220,6 +247,18 @@
 
 .gv-node--dim { opacity: 0.25; }
 
+/* Search: unmatched nodes read like a hover-neighborhood miss (same opacity);
+   matched nodes carry a SUBTLE persistent brass outline — 1px at reduced alpha,
+   deliberately weaker than the 2px selected ring. Declared before the selected
+   block so a selected+matched node keeps the full ring (source-order wins). */
+.gv-node--unmatched { opacity: 0.25; }
+.gv-node--match {
+  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.55), var(--pn-sh-sm);
+}
+.gv-node--match:hover {
+  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.55), var(--pn-sh-md);
+}
+
 /* Materialize: fade + 4px rise with a brass ring that decays. */
 .gv-node--new {
   animation:
@@ -228,6 +267,61 @@
 }
 
 .gv-node--flash { animation: gv-ring 1.8s var(--pn-ease-standard); }
+
+/* Selected — the node bound to the aside wears a PERSISTENT brass ring
+   (box-shadow, never a border, so content never shifts), visually distinct
+   from the decaying gv-node--flash pulse. Selection outranks hover-dimming:
+   a selected node never fades below legibility even inside a dimmed
+   neighborhood. */
+.gv-node--selected {
+  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-sm);
+}
+.gv-node--selected:hover {
+  box-shadow: 0 0 0 2px var(--pn-brand), var(--pn-sh-md);
+}
+.gv-node--selected.gv-node--dim,
+.gv-node--selected.gv-node--unmatched {
+  opacity: 0.8;
+}
+
+/* Focus affordance — a small ⌖ button in the card's bottom-right (clear of the
+   status pills up top). Hidden until the card is hovered/focused so it never
+   competes with the card content; the pressed state stays lit while focus mode
+   is on. It is a REAL nested button (the card is a role=button div). */
+.gv-node__focus {
+  position: absolute;
+  right: var(--pn-space-1);
+  bottom: var(--pn-space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--pn-ink-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-out);
+}
+.gv-node:hover .gv-node__focus,
+.gv-node:focus-within .gv-node__focus,
+.gv-node__focus:focus-visible {
+  opacity: 1;
+}
+.gv-node__focus:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.gv-node__focus--on {
+  opacity: 1;
+  color: var(--pn-brand-2);
+  border-color: rgba(var(--pn-brand-rgb), 0.4);
+  background: var(--pn-brand-soft);
+}
 
 @keyframes gv-rise {
   from { opacity: 0; translate: 0 4px; }
@@ -322,12 +416,22 @@
 
 /* -- ticker ----------------------------------------------------------------- */
 
-.gv-ticker {
+/* Right rail — stacks the minimap above the ticker, both kept visible, in the
+   bottom-right corner opposite the shelf. */
+.gv-rail {
   position: absolute;
   right: var(--pn-space-4);
   bottom: var(--pn-space-4);
-  width: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--pn-space-2);
   max-width: 44%;
+}
+
+.gv-ticker {
+  width: 300px;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -456,7 +560,9 @@
   }
   .gv-node,
   .gv-edge__line,
-  .gv-filter {
+  .gv-filter,
+  .gv-canvas--ease,
+  .gv-node__focus {
     transition: none;
   }
 }

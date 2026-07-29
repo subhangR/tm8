@@ -24,6 +24,14 @@
 export { NODE_BOOT_ID, PtyHostService, stripScrollbackDeviceQueries } from './pty/PtyHostService.js';
 export { OutputBuffer, type ReplaySlice } from './pty/OutputBuffer.js';
 export { TerminalStateMirror } from './pty/TerminalStateMirror.js';
+// Two-signal prompt-delivery completion bridge (honest delivery-saga settle —
+// see PromptSettlementWaiter's own docs). Exported for the same reason
+// W2MessageDeliveryAdapter is: only the server package can wire it into a real
+// PtyHostService instance and a real delivery saga.
+export {
+  PromptSettlementWaiter,
+  type PromptSettlementResult,
+} from './pty/PromptSettlementWaiter.js';
 // W2 B2: the pre-reserved delivery adapter. Exported (additively) because the
 // server package is the only place that can supply its `authorize` guard, and
 // the package `exports` map has no subpath — without this line the seam G04 cut
@@ -42,6 +50,7 @@ export type {
   FrameSink,
   Logger,
   PtyHostOptions,
+  PtyExitInfo,
   PtyKillOutcome,
   PtySessionStatus,
   PtySpawnParams,

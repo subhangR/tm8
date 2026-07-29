@@ -340,26 +340,43 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
   });
 
   /**
-   * FROZEN LITERAL — BEFORE AND AFTER RECORDED, per the instrument rules.
+   * FROZEN LITERAL — FULL ROTATION HISTORY, per the instrument rules.
    *
    *   BEFORE  34   chain digest a799b7ef1b20a9b0   (highest 037)
-   *   AFTER   37   chain digest fff3995e1c2a5dcd   (highest 040)
+   *   THEN    37   chain digest fff3995e1c2a5dcd   (highest 040)
+   *   NOW     39   chain digest 0dff33602fcc6b7c   (highest 042)
    *
-   * Rotated by the W5 coordinator's re-land of 038 (entities.patch resource
-   * binding), 039 (delivery principal tightened to session_user) and 040 (019's
-   * Teammate exited-target pair shape). Both digests measured by this seat with
-   * `cd db/migrations && shasum -a 256 *.sql | shasum -a 256 | cut -c1-16`, the
-   * `cd` being load-bearing, and with the empty-input control
-   * `e3b0c44298fc1c14` printed beside each and confirmed DIFFERENT — a digest of
-   * nothing looks exactly like a digest.
+   * The history is KEPT rather than overwritten: each row is one landing this
+   * detector caught, and a reader who sees only the current pair cannot tell a
+   * literal that has been maintained from one that was never exercised.
    *
-   * THIS TEST WENT RED IN THE LANDING GATE AS `expected 37 to be 34` AND THAT
-   * WAS THE DETECTOR WORKING. It is updated to a NEW EXACT LITERAL — never to a
-   * range, never to `migrationFiles().length`, which would be a live-computed
-   * value that can no longer notice a chain that silently shrank or grew.
+   * Rotations: 038 (entities.patch resource binding), 039 (delivery principal
+   * tightened to session_user) and 040 (019's Teammate exited-target pair
+   * shape); then 041 (record_execution_command resource binding) and 042
+   * (set_pull_state's clear parameter).
+   *
+   * EVERY digest above was measured BY THIS SEAT with
+   * `cd db/migrations && shasum -a 256 *.sql | shasum -a 256 | cut -c1-16` —
+   * the `cd` is load-bearing, because shasum hashes its own output lines and
+   * those carry the path as typed — and with the empty-input control
+   * `e3b0c44298fc1c14` printed beside each and confirmed DIFFERENT. A digest of
+   * nothing looks exactly like a digest. None was adopted from an announcement.
+   *
+   * THIS TEST WENT RED IN BOTH LANDING GATES — `expected 37 to be 34`, then
+   * `expected 39 to be 37` — AND BOTH TIMES THAT WAS THE DETECTOR WORKING, not
+   * a regression. It is updated to a NEW EXACT LITERAL each time; never to a
+   * range, and never to `migrationFiles().length`, which would be a
+   * live-computed value that passes on any chain length and could no longer
+   * notice a chain that silently shrank or grew.
+   *
+   * WHY THE COUNT AND NOT THE DIGEST IS ASSERTED: the fixture applies whatever
+   * `migrationFiles()` enumerates, so the count is the property this test can
+   * observe. The digests above are the RECORD of which chain each count belonged
+   * to — they are not asserted here, and re-deriving one is a `cd` and a
+   * `shasum`, never a value copied from a message.
    */
   it('applies the FULL migration chain, enumerated rather than hand-listed', () => {
-    expect(server.appliedMigrations.length).toBe(37);
+    expect(server.appliedMigrations.length).toBe(39);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

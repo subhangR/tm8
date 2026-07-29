@@ -23,8 +23,18 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
-import type { LaunchCapacity } from '../domain/launch';
-import type { LaunchProject, LaunchProfile, LaunchTeammate } from './launch-fixtures';
+import {
+  agentTool,
+  LAUNCH_MODES,
+  modelsFor,
+  type LaunchCapacity,
+  type LaunchConfig,
+  type LaunchMode,
+  type LaunchProfile,
+  type LaunchProject,
+  type LaunchTarget,
+  type LaunchTeammate,
+} from '../domain/launch';
 
 export interface LaunchSheetProps {
   /** The entity being launched from. The sheet is bound to it and dies with it. */
@@ -36,23 +46,20 @@ export interface LaunchSheetProps {
   projects: readonly LaunchProject[];
   profiles: readonly LaunchProfile[];
   /** Node capacity, stated BEFORE commitment (T5-5 footer). Domain's shape. */
-  capacity: LaunchCapacity;
+  capacity?: LaunchCapacity;
   /** A refusal renders IN the sheet, never as a toast (T5-5 annotation 6). */
   refusal?: { cause: string; detail: string } | null;
   onLaunch(config: LaunchSelection): void;
   onCancel(): void;
 }
 
-export interface LaunchSelection {
+export interface LaunchSelection extends LaunchConfig {
   subjectId: EntityId;
-  teammateId: string;
-  /** M:N, RULING J. First pick is the initial cwd — provenance only. */
-  projectIds: string[];
-  profileId: string;
+  teamMemberId: EntityId;
 }
 
 /** The resolution order T5-5's annotation states. Only the winner is drawn. */
-const RESOLUTION_ORDER = ['teammate default', 'space default', 'server default'] as const;
+const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] as const;
 
 export function LaunchSheet(props: LaunchSheetProps) {
   const { teammates, projects, profiles } = props;
@@ -84,13 +91,19 @@ export function LaunchSheet(props: LaunchSheetProps) {
   }, [onCancel]);
 
   const [teammateId, setTeammateId] = useState(() => teammates[0]?.id ?? '');
-  const [projectIds, setProjectIds] = useState<string[]>(() =>
-    projects.filter((p) => p.selectedByDefault && p.trusted).map((p) => p.id),
-  );
+  const initialTeammate = teammates[0];
+  const [agentToolId, setAgentToolId] = useState(() => initialTeammate?.agentTool ?? '');
+  const [model, setModel] = useState(() => initialTeammate?.model ?? '');
+  const [target, setTarget] = useState<LaunchTarget>(() => {
+    const project = projects.find((p) => p.selectedByDefault && p.trusted);
+    return project ? { kind: 'project', projectId: project.id } : { kind: 'scratch' };
+  });
+  const [mode, setMode] = useState<LaunchMode>('worker');
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
 
   const teammate = teammates.find((t) => t.id === teammateId);
+  const models = modelsFor(agentToolId);
 
   /**
    * The resolved profile and WHERE IT CAME FROM. D51 requires the chain to be
@@ -106,13 +119,10 @@ export function LaunchSheet(props: LaunchSheetProps) {
     if (byTeammate) return { profile: byTeammate, from: `${teammate?.name}'s default`, step: 0 };
     const bySpace = profiles.find((p) => p.isSpaceDefault);
     if (bySpace) return { profile: bySpace, from: 'space default', step: 1 };
-    return { profile: profiles.find((p) => p.isServerDefault), from: 'server default', step: 2 };
+    return { profile: profiles.find((p) => p.isServerDefault), from: 'node default', step: 2 };
   }, [profileId, profiles, teammate]);
 
-  const toggleProject = (id: string) =>
-    setProjectIds((current) =>
-      current.includes(id) ? current.filter((p) => p !== id) : [...current, id],
-    );
+  const atCapacity = props.capacity !== undefined && props.capacity.slotsFree <= 0;
 
   return (
     <div className="ls" role="dialog" aria-modal="true" aria-label="Launch session" data-testid="launch-sheet">
@@ -147,7 +157,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 role="radio"
                 aria-checked={on}
                 className={`ls__row ${on ? 'ls__row--on' : ''}`}
-                onClick={() => setTeammateId(t.id)}
+                onClick={() => {
+                  setTeammateId(t.id);
+                  setAgentToolId(t.agentTool);
+                  setModel(t.model);
+                }}
               >
                 <span className="ls__avatar" aria-hidden="true">{t.initial}</span>
                 <span className="ls__rowtext">
@@ -162,34 +176,76 @@ export function LaunchSheet(props: LaunchSheetProps) {
               </button>
             );
           })}
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">Model</span>
+              <span className="ls__rowsub">{agentTool(agentToolId)?.label ?? agentToolId}</span>
+              <select
+                value={model}
+                data-testid="launch-model"
+                onChange={(event) => setModel(event.target.value)}
+              >
+                {models.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </span>
+          </label>
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">Session mode</span>
+              <select
+                value={mode}
+                data-testid="launch-mode"
+                onChange={(event) => setMode(event.target.value as LaunchMode)}
+              >
+                {LAUNCH_MODES.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </span>
+          </label>
         </section>
 
         <section className="ls__section">
-          <div className="ls__eyebrow">PROJECTS — PICK ANY, OR NONE</div>
+          <div className="ls__eyebrow">WORKING DIRECTORY</div>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={target.kind === 'scratch'}
+            className={`ls__row ${target.kind === 'scratch' ? 'ls__row--on' : ''}`}
+            onClick={() => setTarget({ kind: 'scratch' })}
+          >
+            <span className="ls__glyph" aria-hidden="true">◌</span>
+            <span className="ls__rowtext">
+              <span className="ls__rowname ls__rowname--quiet">scratch — no project</span>
+              <span className="ls__rowsub">server-managed session directory</span>
+            </span>
+            <span className={`ls__check ${target.kind === 'scratch' ? 'ls__check--on' : 'ls__check--off'}`} aria-hidden="true">
+              {target.kind === 'scratch' ? '✓' : ''}
+            </span>
+          </button>
           {projects.map((p) => {
-            const on = projectIds.includes(p.id);
-            const first = projectIds[0] === p.id;
+            const on = target.kind === 'project' && target.projectId === p.id;
             return (
               <button
                 key={p.id}
                 type="button"
-                role="checkbox"
+                role="radio"
                 aria-checked={on}
                 aria-disabled={!p.trusted || undefined}
                 // L6/D28: untrusted is DISABLED WITH REASON and still
                 // focusable — the reason is unreachable if the control is not.
                 className={`ls__row ${on ? 'ls__row--on' : ''} ${p.trusted ? '' : 'ls__row--refused'}`}
-                onClick={(e) => (p.trusted ? toggleProject(p.id) : e.preventDefault())}
+                onClick={(e) => (p.trusted ? setTarget({ kind: 'project', projectId: p.id }) : e.preventDefault())}
                 title={p.trusted ? undefined : p.reason}
               >
-                <span className="ls__glyph" aria-hidden="true">{p.scratch ? '◌' : '⬒'}</span>
+                <span className="ls__glyph" aria-hidden="true">⬒</span>
                 <span className="ls__rowtext">
-                  <span className={p.scratch ? 'ls__rowname ls__rowname--quiet' : 'ls__rowname'}>
-                    {p.name}
-                  </span>
+                  <span className="ls__rowname">{p.name}</span>
                   <span className={`ls__rowsub ${p.trusted ? 'ls__rowsub--ok' : 'ls__rowsub--bad'}`}>
                     {p.trusted ? p.detail : p.reason}
-                    {first ? ' · initial cwd' : ''}
+                    {on ? ' · initial cwd' : ''}
                   </span>
                 </span>
                 <span className={`ls__check ${on ? 'ls__check--on' : 'ls__check--off'}`} aria-hidden="true">
@@ -206,7 +262,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
           <div className="ls__row ls__row--inert">
             <span className="ls__glyph" aria-hidden="true">⛭</span>
             <span className="ls__rowtext">
-              <span className="ls__rowname">{resolution.profile?.name ?? 'no profile'}</span>
+              <span className="ls__rowname">{resolution.profile?.name ?? 'resolved by node at commit'}</span>
               <span className="ls__rowsub">
                 resolved from {resolution.from} · profiles narrow, never grant
               </span>
@@ -281,8 +337,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <span className="ls__capacity">
           node loopback ·{' '}
           <span className="ls__slots">
-            {props.capacity.slotsTotal} slots, {props.capacity.slotsTotal - props.capacity.slotsFree} in
-            use
+            {props.capacity
+              ? `${String(props.capacity.slotsTotal)} slots, ${String(props.capacity.slotsTotal - props.capacity.slotsFree)} in use`
+              : 'capacity unavailable — the node will decide at commit'}
           </span>
         </span>
         <div className="ls__spacer" />
@@ -292,14 +349,19 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <button
           type="button"
           className="ls__launch"
-          onClick={() =>
+          disabled={!teammate || atCapacity}
+          onClick={() => {
+            if (!teammate || atCapacity) return;
             props.onLaunch({
               subjectId: props.subjectId,
-              teammateId,
-              projectIds,
-              profileId: resolution.profile?.id ?? '',
-            })
-          }
+              teamMemberId: teammate.id,
+              agentToolId: agentToolId || null,
+              model: model || null,
+              mode,
+              target,
+              ...(profileId ? { interactionProfileId: profileId } : {}),
+            });
+          }}
         >
           Launch ▸
         </button>

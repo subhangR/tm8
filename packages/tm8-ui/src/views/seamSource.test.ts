@@ -51,14 +51,10 @@ describe('resolveSeamSource — the truth table', () => {
     expect(resolveSeamSource(test, null)).toBe('fixture');
   });
 
-  it('production is FIXTURE, opt-in or not — the guard the brief kept verbatim', () => {
-    // STATED BECAUSE IT IS SURPRISING, and flagged in the handover rather than
-    // quietly encoded: this makes a production build show fixture data while a
-    // dev build shows the node. It is a ruling carried forward from the opt-in
-    // era, not a measurement, and it is the one line here that may want
-    // reversing.
-    expect(resolveSeamSource(prod, null)).toBe('fixture');
-    expect(resolveSeamSource(prod, '1')).toBe('fixture');
+  it('production defaults real; explicit fixture mode remains available', () => {
+    expect(resolveSeamSource(prod, null)).toBe('real');
+    expect(resolveSeamSource(prod, '1')).toBe('real');
+    expect(resolveSeamSource(prod, '0')).toBe('fixture');
   });
 
   it('any value that is neither "1" nor "0" is not an opt-in or an opt-out', () => {

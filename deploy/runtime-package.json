@@ -1,0 +1,12 @@
+{
+  "name": "tm8-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@xterm/addon-serialize": "^0.14.0",
+    "@xterm/headless": "^6.0.0",
+    "node-pty": "^1.0.0",
+    "pg": "^8.22.0",
+    "zod": "^3.23.0"
+  }
+}

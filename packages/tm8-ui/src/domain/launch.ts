@@ -23,6 +23,7 @@ import type {
   ProjectId,
   SpawnWorkdir,
 } from '@tm8/contract';
+import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 
 // ---------------------------------------------------------------------------
 // Agent tools and models
@@ -51,14 +52,17 @@ export const AGENT_TOOLS: readonly AgentToolDef[] = [
   {
     id: 'claude-code',
     label: 'Claude Code',
-    models: [
-      { id: 'claude-fable-5', label: 'Fable 5', note: 'default for coordinators' },
-      { id: 'claude-opus-5', label: 'Opus 5' },
-      { id: 'claude-sonnet-5', label: 'Sonnet 5' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', note: 'fastest' },
-    ],
+    models: LAUNCH_MODEL_CATALOG
+      .filter((entry) => entry.agentTool === 'claude-code')
+      .map((entry) => ({ id: entry.model, label: entry.label, note: entry.note })),
   },
-  { id: 'echo-agent', label: 'Echo agent', models: [{ id: 'echo', label: 'Echo', note: 'no model — replays input' }] },
+  {
+    id: 'codex',
+    label: 'Codex',
+    models: LAUNCH_MODEL_CATALOG
+      .filter((entry) => entry.agentTool === 'codex')
+      .map((entry) => ({ id: entry.model, label: entry.label, note: entry.note })),
+  },
 ];
 
 export function agentTool(id: string | null | undefined): AgentToolDef | null {
@@ -140,6 +144,11 @@ export const SCRATCH_OPTION = {
 };
 
 export type LaunchTarget = { kind: 'project'; projectId: ProjectId } | { kind: 'scratch' };
+
+/** Keep target construction in the launch domain so rendering code never branches on entity vocabulary. */
+export function defaultLaunchTarget(projectId: ProjectId | null | undefined): LaunchTarget {
+  return projectId ? { kind: 'project', projectId } : { kind: 'scratch' };
+}
 
 // ---------------------------------------------------------------------------
 // Profile resolution
@@ -265,6 +274,37 @@ export interface LaunchCapacity {
   slotsTotal: number;
 }
 
+/** Launch resource view models hydrated from the active seam. */
+export interface LaunchTeammate {
+  id: string;
+  name: string;
+  initial: string;
+  model: string;
+  agentTool: string;
+  owner: string;
+  defaultProfileId?: string;
+  liveSessions?: number | null;
+}
+
+export interface LaunchProject {
+  id: string;
+  name: string;
+  trusted: boolean;
+  detail: string;
+  reason?: string;
+  scratch?: boolean;
+  selectedByDefault?: boolean;
+}
+
+export interface LaunchProfile {
+  id: string;
+  name: string;
+  version: number;
+  status: InteractionProfileStatus;
+  isSpaceDefault?: boolean;
+  isServerDefault?: boolean;
+}
+
 export function describeCapacity(c: LaunchCapacity): string {
   return `${c.slotsFree} of ${c.slotsTotal} session slots free`;
 }
@@ -342,17 +382,17 @@ export function defaultConfigFor(teammate: {
   id: EntityId;
   agentTool?: string | null;
   model?: string | null;
-}): LaunchConfig {
-  const toolId = teammate.agentTool ?? AGENT_TOOLS[0].id;
+}, defaultProjectId?: ProjectId | null): LaunchConfig {
+  const toolId = teammate.agentTool ?? null;
   return {
     teamMemberId: teammate.id,
     agentToolId: toolId,
     // The teammate's recorded model wins over this UI's first option: the
     // record is what has been running, and overriding it silently would make
     // the quick config change behaviour just by being opened.
-    model: teammate.model ?? modelsFor(toolId)[0]?.id ?? null,
+    model: teammate.model ?? null,
     mode: 'worker',
-    target: { kind: 'scratch' },
+    target: defaultLaunchTarget(defaultProjectId),
   };
 }
 
@@ -367,6 +407,22 @@ export function canLaunch(
 ): LaunchRefusal {
   if (!config.teamMemberId) {
     return { ok: false, reason: 'Pick a teammate — a session runs as a persona, never anonymously.' };
+  }
+  if (!config.agentToolId) {
+    return { ok: false, reason: 'This teammate has no persisted agent tool, so the node cannot build its launch command.' };
+  }
+  const tool = agentTool(config.agentToolId);
+  if (!tool) {
+    return { ok: false, reason: `This node does not support the persisted agent tool “${config.agentToolId}”.` };
+  }
+  if (!config.model) {
+    return { ok: false, reason: `This teammate has no persisted model for ${tool.label}.` };
+  }
+  if (!tool.models.some((model) => model.id === config.model)) {
+    return {
+      ok: false,
+      reason: `Model “${config.model}” is not a truthful ${tool.label} launch option on this node.`,
+    };
   }
   const target = config.target;
   if (target.kind === 'project') {
@@ -410,6 +466,9 @@ export function buildSpawnInput(args: {
   title?: string;
 }): ExecutionSpawnInput {
   const { config } = args;
+  if (!config.teamMemberId) {
+    throw new Error('cannot build execution.spawn input without a teammate');
+  }
   const target = config.target;
   // Scratch is the ABSENCE of a project, per the contract's own comment —
   // omitted/null projectId IS the projectless session. No invented flag.
@@ -420,7 +479,7 @@ export function buildSpawnInput(args: {
   const input: ExecutionSpawnInput = {
     clientMutationId: args.clientMutationId,
     spaceId: args.spaceId,
-    teamMemberId: config.teamMemberId as EntityId,
+    teamMemberId: config.teamMemberId,
     projectId: target.kind === 'scratch' ? null : target.projectId,
     workdir,
     mode: config.mode,
@@ -435,4 +494,16 @@ export function buildSpawnInput(args: {
   // `true`, so an absent field and a false one are not the same statement.
   if (config.confirmUntrusted) input.confirmUntrusted = true;
   return input;
+}
+
+let launchMutationSequence = 0;
+
+/** Fresh per deliberate submit; callers keep the returned value only when
+ * retrying the same transport attempt. */
+export function newLaunchMutationId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `launch:${crypto.randomUUID()}`;
+  }
+  launchMutationSequence += 1;
+  return `launch:${Date.now().toString(36)}:${launchMutationSequence.toString(36)}`;
 }

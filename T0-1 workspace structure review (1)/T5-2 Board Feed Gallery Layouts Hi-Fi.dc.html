@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ BOARD ============ -->
+<section id="board" data-screen-label="T5-2 — Board layout (tasks)" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T5-2 · BOARD — COLUMNS BY STATUS AXIS, Z2 CARDS, HONEST OVERFLOW</span>
+    <span style="font-size:12px;color:#8E897B">mode=board on any collection · tasks config shown · drag between columns = entities.patch on the axis</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations · worst-case · mid-drag</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:876px;flex:none;background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:560px">
+      <div style="height:38px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="color:#8E897B">◔</span>Tasks <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">18</span></span>
+        <span style="display:inline-flex;border:1px solid #D8D3C6;border-radius:6px;overflow:hidden;background:#FFFFFF;margin-left:6px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 9px;color:#8E897B;cursor:pointer" style-hover="background:#F2EFE8">List</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;padding:3px 9px;color:#23201B;background:#ECE8DF;border-left:1px solid #E7E3D9;cursor:pointer">Board</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 9px;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer" style-hover="background:#F2EFE8">Tree</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 9px;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer" style-hover="background:#F2EFE8">Feed</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 9px;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer" style-hover="background:#F2EFE8">Gallery</span>
+          <span title="graph canvas isn't built yet — T3-6 deferred" style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 9px;color:#B7B2A4;border-left:1px solid #E7E3D9;cursor:not-allowed;opacity:.55">◉ Graph</span>
+        </span>
+        <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span></sc-if>
+        <div style="flex:1"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:999px;padding:2px 8px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">axis: status ▾</span>
+        <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">＋ New</span>
+      </div>
+      <div style="flex:1;min-height:0;display:flex;gap:10px;padding:12px;overflow:hidden;position:relative">
+        <div style="flex:1;min-width:0;background:#EFECE4;border:1px solid #E7E3D9;border-radius:9px;display:flex;flex-direction:column;overflow:hidden">
+          <div style="height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px"><span style="width:9px;height:9px;border-radius:50%;border:2px solid #A29C8E;box-sizing:border-box"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.08em;color:#5B564C">OPEN · 4</span><div style="flex:1"></div><span style="color:#B7B2A4;font-size:12px;cursor:pointer">＋</span></div>
+          <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:0 6px 6px">
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Inbox read-state model</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-121</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:3px;padding:0 4px">MED</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">A</span></div>
+            </div>
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="font-size:12px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Palette ranking pass</span></sc-if>
+              <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="font-size:12px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">9f3c2a1e-7b4d-4c9a-b2e1-palette-ranking-pass-with-per-kind-boosts-and-recency-decay</span></sc-if>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-133</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#8C8470;border:1px solid #D8D3C6;border-radius:3px;padding:0 4px">LOW</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">N</span></div>
+            </div>
+            <sc-if value="{{dragOn}}" hint-placeholder-val="{{true}}">
+            <div style="border:1.5px dashed #D8D3C6;border-radius:8px;height:52px;flex:none;display:flex;align-items:center;justify-content:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">picked up from here</span></div>
+            </sc-if>
+            <sc-if value="{{dragOff}}" hint-placeholder-val="{{false}}">
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35">Exited-fallback route</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-109</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#BB4D3D;background:rgba(187,77,61,.12);border-radius:3px;padding:0 4px">HIGH</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">A</span></div>
+            </div>
+            </sc-if>
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35">Palette fallback `/` binding</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-134</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#8C8470;border:1px solid #D8D3C6;border-radius:3px;padding:0 4px">LOW</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">N</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;border:1px solid #E7E3D9;border-radius:9px;display:flex;flex-direction:column;overflow:hidden;position:relative;background:{{laneBg}}">
+          <div style="height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px"><span style="width:9px;height:9px;border-radius:50%;border:2px solid #3E8E5A;box-sizing:border-box"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.08em;color:#3E8E5A">WORKING · 6</span><div style="flex:1"></div><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if></div>
+          <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:0 6px 6px">
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Session tree guide lines</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-114</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:3px;padding:0 4px">MED</span><span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#3E8E5A"><span style="width:5px;height:5px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>forge</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">A</span></div>
+            </div>
+            <sc-if value="{{dragOn}}" hint-placeholder-val="{{true}}"><div style="height:2px;flex:none;background:#B26A2B;border-radius:2px;margin:0 2px;box-shadow:0 0 0 2px rgba(178,106,43,.25)"></div></sc-if>
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35">port .pn-tree rules</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-118</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">F</span></div>
+            </div>
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35">MenuConfig renderer</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-131</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#BB4D3D;background:rgba(187,77,61,.12);border-radius:3px;padding:0 4px">HIGH</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">N</span></div>
+            </div>
+            <div style="margin-top:auto;flex:none;display:flex;align-items:center;gap:5px;padding:5px 4px 2px;border-top:1px dashed #D8D3C6"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;cursor:pointer" style-hover="color:#9A581F">＋ 3 more — column shows 20 max · open as list ↗</span><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if></div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;background:#EFECE4;border:1px solid #E7E3D9;border-radius:9px;display:flex;flex-direction:column;overflow:hidden">
+          <div style="height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px"><span style="width:9px;height:9px;border-radius:50%;background:#3F6C90"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.08em;color:#3F6C90">IN REVIEW · 2</span><div style="flex:1"></div></div>
+          <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:0 6px 6px">
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35">C_min enforcement</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-112</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#3F6C90;background:rgba(63,108,144,.12);border-radius:3px;padding:0 4px;font-weight:600">⑂ #212</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">A</span></div>
+            </div>
+            <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+              <span style="font-size:12px;font-weight:500;line-height:1.35">Guide x-offset map</span>
+              <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-98</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">F</span></div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;background:#EFECE4;border:1px solid #E7E3D9;border-radius:9px;display:flex;flex-direction:column;overflow:hidden">
+          <div style="height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px"><span style="width:9px;height:9px;border-radius:50%;background:#BB4D3D"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.08em;color:#BB4D3D">BLOCKED · 1</span><div style="flex:1"></div></div>
+          <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:0 6px 6px">
+            <sc-if value="{{dragOff}}" hint-placeholder-val="{{false}}"><div style="border:1.5px dashed #D8D3C6;border-radius:8px;flex:1;display:flex;align-items:center;justify-content:center;min-height:52px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4;text-align:center;line-height:1.5">empty — drag a card here<br>sets status → blocked</span></div></sc-if>
+            <sc-if value="{{dragOn}}" hint-placeholder-val="{{true}}"><div style="border:1.5px dashed #D8D3C6;border-radius:8px;flex:none;height:52px;display:flex;align-items:center;justify-content:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">was here — leaving…</span></div></sc-if>
+          </div>
+        </div>
+        <div style="width:34px;flex:none;background:#EFECE4;border:1px solid #E7E3D9;border-radius:9px;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:8px;cursor:pointer" style-hover="background:#ECE8DF">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">▸</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.08em;color:#3E8E5A;writing-mode:vertical-rl">DONE · 601</span>
+        </div>
+        <sc-if value="{{dragOn}}" hint-placeholder-val="{{true}}">
+        <div style="position:absolute;left:236px;top:150px;width:196px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px;box-shadow:0 12px 34px rgba(40,34,24,.24);transform:rotate(2.5deg);z-index:5;cursor:grabbing">
+          <span style="font-size:12px;font-weight:500;line-height:1.35">Exited-fallback route</span>
+          <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-109</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#BB4D3D;background:rgba(187,77,61,.12);border-radius:3px;padding:0 4px">HIGH</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">A</span></div>
+          <span style="position:absolute;left:8px;bottom:-22px;font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#FFF;background:#B26A2B;border-radius:4px;padding:2px 6px;white-space:nowrap">drop → working · patch status</span>
+        </div>
+        </sc-if>
+      </div>
+      <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4;background:#FBFAF6">axis = any single-select field (status shown; priority, assignee via axis ▾) · card click opens Z3 (C1) · esc during drag cancels</div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">The six-mode switcher, complete.</span> List · Board · Tree · Feed · Gallery drawn; ◉ Graph renders disabled-with-reason (T3-6 deferred) — present, never hidden, never faked. Mode rides the route (?mode=board).</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Columns are the axis, honestly.</span> Headers are dot + word + count off the ramp — never color alone. Empty lanes stay visible with their drop meaning. The done lane collapses to a rail (601 cards would be noise), one click expands.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Overflow honesty.</span> A column renders 20 cards max, then the T1-4 overflow notice: “＋ 3 more — open as list ↗”. No infinite column scroll pretending everything is visible.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Mid-drag (Tweak).</span> Card lifts with pop shadow + 2.5° tilt; source slot goes dashed; the brass insertion line marks the drop; the cursor chip names the write: “drop → working · patch status”. Drop = entities.patch on the axis field — the same write as the inline ramp menu. Esc cancels. PTY-style irreversibility does NOT apply here, but undo affordances are T5-4-deferred: the honest path back is dragging back.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Z2 card.</span> Title (2-line clamp) · ID · priority badge · live-run indicator when a session is on it · assignee avatar with provenance shape. Same fields as the list tile, re-stacked.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">geometry · lane min 180 · card pad 8/9 · lane gap 10 · header 30 · done rail 34 · drag tilt 2.5° · insertion line 2px brass</div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ FEED ============ -->
+<section id="feed" data-screen-label="T5-2 — Feed layout" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">FEED — THE CHRONOLOGICAL FORM OF ANY COLLECTION (entities.feed · via terms · one cursor)</span>
+    <span style="font-size:12px;color:#8E897B">row anatomy · day grouping · via-labels · live-append that never yanks scroll · load-earlier</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:560px;flex:none;background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:520px">
+      <div style="height:36px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="color:#8E897B">◔</span>Tasks</span>
+        <span style="display:inline-flex;border:1px solid #D8D3C6;border-radius:6px;overflow:hidden;background:#FFFFFF">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B">List</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9">Board</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9">Tree</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;padding:2px 7px;background:#ECE8DF;border-left:1px solid #E7E3D9">Feed</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9">Gallery</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#B7B2A4;border-left:1px solid #E7E3D9;opacity:.55">◉</span>
+        </span>
+        <div style="flex:1"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:999px;padding:2px 8px;background:#FFFFFF">via: all ▾</span>
+      </div>
+      <div style="height:30px;flex:none;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #E7E3D9;background:#FBFAF6">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:999px;padding:2px 10px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)"><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B;animation:pnPulse 1.6s infinite"></span>2 new — click to append</span>
+        <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;margin-left:8px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span></sc-if>
+      </div>
+      <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding:2px 0">
+        <div style="padding:6px 12px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">TODAY · MON 27 JUL</div>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 12px;cursor:pointer;background:rgba(178,106,43,.05)" style-hover="background:#F2EFE8">
+          <span style="width:18px;height:18px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;margin-top:1px">F</span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="font-size:12px;line-height:1.45;color:#5B564C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#23201B">forge</span> <span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 3px">agent</span> completed <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ T-98 guide x-offset map</span></div>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 6px;background:#FFFFFF">via subtree</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">12m · just appended</span></div>
+          </div>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 12px;cursor:pointer" style-hover="background:#F2EFE8">
+          <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;margin-top:1px">N</span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="font-size:12px;line-height:1.45;color:#5B564C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#23201B">@noa</span> changed <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ T-131 MenuConfig renderer</span> → <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A">working</span></div>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 6px;background:#FFFFFF">via assignment</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">1h</span></div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 12px;cursor:pointer" style-hover="background:#F2EFE8">
+          <span style="width:18px;height:18px;flex:none;border-radius:4px;background:rgba(189,138,42,.14);color:#BD8A2A;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;margin-top:1px">S</span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="font-size:12px;line-height:1.45;color:#5B564C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#23201B">scout</span> <span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 3px">agent</span> flagged <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ T-109 exited-fallback route</span> <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#BD8A2A">needs you</span></div>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 6px;background:#FFFFFF">via run</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">2h</span></div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 12px;cursor:pointer" style-hover="background:#F2EFE8">
+          <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;margin-top:1px">A</span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><div style="font-size:12px;line-height:1.45;color:#5B564C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#23201B">@ada</span> created <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ T-134 palette fallback binding</span></div></sc-if>
+            <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><div style="font-size:12px;line-height:1.45;color:#5B564C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#23201B">@ada</span> created <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ 9f3c2a1e-7b4d-4c9a-b2e1-palette-fallback-binding-with-per-kind-boosts</span></div></sc-if>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 6px;background:#FFFFFF">via project tm8-ui</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">3h</span></div>
+          </div>
+        </div>
+        <div style="padding:7px 12px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">YESTERDAY · SUN 26 JUL</div>
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 12px;cursor:pointer" style-hover="background:#F2EFE8">
+          <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;margin-top:1px">A</span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+            <div style="font-size:12px;line-height:1.45;color:#5B564C;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="font-weight:600;color:#23201B">@ada</span> set <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ T-109</span> → <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BB4D3D">blocked</span></div>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 6px;background:#FFFFFF">via assignment</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">1d</span></div>
+          </div>
+        </div>
+        <div style="margin-top:auto;border-top:1px solid #F0EDE4;display:flex;align-items:center;justify-content:center;padding:7px 0"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:999px;padding:2px 12px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">↓ load earlier — before 26 jul</span><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;margin-left:8px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if></div>
+      </div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="width:330px;flex:none;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Live-append never yanks.</span> New events queue behind the pill; clicking appends them (brass-tinted for a breath) and scroll stays put. Auto-append only when already pinned to top.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Row anatomy.</span> Provenance avatar (round human / square agent + agent tag) · actor · verb · entity chip (click = Z3, C1) · status words colored off the ramp · then the via-label — the reason this row is in YOUR feed, straight from entities.feed's via terms. Never omitted: an unexplained row is a lie of relevance.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">One cursor, both ends.</span> Single-cursor paging: ↓ load earlier names the boundary date; the pill counts the queued head. Day markers are mono eyebrows, sticky while scrolling.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">row h 40–44 (two decks) · avatar 18 · entity chip inline · via chip mono 8.5 · day eyebrow sticky · append flash 900ms brass-soft</div>
+    </div>
+    </sc-if>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">ONE ROW, DISSECTED</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:10px 12px;display:flex;align-items:flex-start;gap:8px">
+        <span style="width:18px;height:18px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;margin-top:1px">F</span>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+          <div style="font-size:12px;color:#5B564C"><span style="font-weight:600;color:#23201B">forge</span> <span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 3px">agent</span> completed <span style="border:1px solid #E7E3D9;border-radius:5px;padding:0 5px;font-size:11px;background:#FFFFFF">◔ T-98</span></div>
+          <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 6px;background:#FFFFFF">via subtree</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">12m</span></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470;border:1px solid #3B3524;border-radius:4px;padding:2px 6px">avatar = provenance shape</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470;border:1px solid #3B3524;border-radius:4px;padding:2px 6px">entity chip → Z3 (C1)</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470;border:1px solid #3B3524;border-radius:4px;padding:2px 6px">via-label = why it's here</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470;border:1px solid #3B3524;border-radius:4px;padding:2px 6px">deck 2 never wraps deck 1</span>
+      </div>
+      <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Feed is a <span style="font-weight:600;color:#EFE9DB">layout of the collection</span>, not a different product: same query scope as the list, ordered by event time. The message-thread grammar (T10) is NOT this — threads have composers; feeds are read-only projections.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GALLERY ============ -->
+<section id="gallery" data-screen-label="T5-2 — Gallery layout (docs)" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">GALLERY — THE CARD GRID (DOCS SHOWN; ANY KIND CONFIGURES IT)</span>
+    <span style="font-size:12px;color:#8E897B">Z2 cards in an auto-fill grid · identical selection + click behavior (C1) · density from container width, floors at 1 column</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:620px;flex:none;background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:520px">
+      <div style="height:36px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="color:#8E897B">▤</span>Docs <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">18</span></span>
+        <span style="display:inline-flex;border:1px solid #D8D3C6;border-radius:6px;overflow:hidden;background:#FFFFFF">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B">List</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9">Board</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9">Tree</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9">Feed</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;padding:2px 7px;background:#ECE8DF;border-left:1px solid #E7E3D9">Gallery</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#B7B2A4;border-left:1px solid #E7E3D9;opacity:.55">◉</span>
+        </span>
+        <div style="flex:1"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:999px;padding:2px 8px;background:#FFFFFF">↓ edited</span>
+        <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">＋ New</span>
+      </div>
+      <div style="flex:1;overflow:hidden;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px;align-content:start">
+        <div style="background:#FFFFFF;border:1px solid #B26A2B;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:0 0 0 2px rgba(178,106,43,.18);position:relative">
+          <span style="position:absolute;top:8px;right:8px;width:15px;height:15px;border-radius:50%;background:#B26A2B;color:#FFF;display:flex;align-items:center;justify-content:center;font-size:9px">✓</span>
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <span style="font-size:12.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Layout spec</span>
+          <span style="font-size:10.5px;color:#8E897B;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Every shrinkable region states a floor — floors are law, not preference.</span>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 6px">v3</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">2h · @ada</span></div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #D8D3C6;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:0 2px 6px rgba(40,34,24,.06);position:relative">
+          <div style="position:absolute;top:7px;right:7px;display:flex;gap:3px"><span style="width:18px;height:18px;border-radius:5px;background:#F2EFE8;color:#8E897B;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer">⌖</span><span style="width:18px;height:18px;border-radius:5px;background:#F2EFE8;color:#8E897B;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer">⤢</span></div>
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="font-size:12.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Menu spec</span></sc-if>
+          <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="font-size:12.5px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Menu spec — appendix C: responsive floor derivations and C_min proofs (v2 draft, do not cite)</span></sc-if>
+          <span style="font-size:10.5px;color:#8E897B;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">MenuConfig groups, items, leaves — depth exactly ≤1, refs unique.</span>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 6px">v2</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">1d · @ada</span></div>
+          <span style="position:absolute;bottom:-9px;left:10px;font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8470;background:#1D1912;border-radius:3px;padding:1px 5px">hover — ⌖ pin · ⤢ promote</span>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <span style="font-size:12.5px;font-weight:600;line-height:1.3">Graph concept</span>
+          <span style="font-size:10.5px;color:#8E897B;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Edges as first-class rows; the canvas is a projection, not a store.</span>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 6px">v1</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">3d · @noa</span></div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <span style="font-size:12.5px;font-weight:600;line-height:1.3">UX brief</span>
+          <span style="font-size:10.5px;color:#8E897B;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Entity = component. Two axes always visible. Talk where the work is.</span>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 6px">v5</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">4d · @ada</span></div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <span style="font-size:12.5px;font-weight:600;line-height:1.3">Trust model notes</span>
+          <span style="font-size:10.5px;color:#8E897B;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Trust is granted to projects, pinned at launch, never widened silently.</span>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 6px">v5</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">4d · @kai</span></div>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <span style="font-size:12.5px;font-weight:600;line-height:1.3">Terminology v2.11</span>
+          <span style="font-size:10.5px;color:#8E897B;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Server is the root noun; hubspace is retired; workspace is the view.</span>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;padding-top:4px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 6px">v11</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">6d · @ada</span></div>
+        </div>
+      </div>
+      <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4;background:#FBFAF6">grid: auto-fill minmax(180px, 1fr) · selection, j/k + arrows, Enter = open — identical to list (C1)</div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="width:330px;flex:none;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">The Z2 card again.</span> Same card family as Board — kind glyph, title clamp, excerpt (docs config adds it), footer = version pill + recency + author. A kind contributes fields; the card shell never forks.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Selection is universal.</span> Brass ring + check = selected (keyboard or click); hover reveals ⌖ pin / ⤢ promote in place. Enter opens the Z3 panel — exactly the list behavior, C1 everywhere.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Files config.</span> Files swap the excerpt for the striped preview placeholder (T0-4's grammar); no status pill — files have no state, honestly.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">card min 180 · pad 10 · title clamp 2 · excerpt clamp 2 · gap 10 · footer hairline · density: 3-up at 620, 1-up at 320</div>
+    </div>
+    </sc-if>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">FILES VARIANT — PREVIEW SLOT</div>
+      <div style="width:200px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(40,34,24,.05)">
+        <div style="height:74px;border:1px solid #E7E3D9;border-radius:6px;background:repeating-linear-gradient(-45deg,#F7F5EF,#F7F5EF 7px,#F1EEE6 7px,#F1EEE6 14px);display:flex;align-items:center;justify-content:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:4px;padding:2px 6px">image · 1284×902</span></div>
+        <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">guide-offsets.png</span>
+        <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">412 KB · 2d · @ada</span></div>
+      </div>
+      <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Gallery earns its place for <span style="font-weight:600;color:#EFE9DB">content-forward kinds</span> — docs, files, spells. KindRegistry defaults it for those and hides nothing: every kind can still render every layout.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STATES + FLOORS + DARK ============ -->
+<section id="states-floors" data-screen-label="T5-2 — States, floors, dark" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T4 STATES · 320 FLOORS · DARK — ALL THREE LAYOUTS</span>
+    <span style="font-size:12px;color:#8E897B">empty teaches in place · loading = geometry-true skeletons · floors: board pages one lane, grids drop to 1-up</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:330px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+          <span style="font-size:12px;font-weight:600"><span style="color:#8E897B">◔</span> Tasks</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;padding:2px 6px;background:#ECE8DF;border-radius:5px">Board</span>
+          <div style="flex:1"></div>
+          <span style="display:inline-flex;border:1px solid #D8D3C6;border-radius:6px;overflow:hidden;background:#FFFFFF"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;cursor:pointer">‹</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;padding:2px 8px;color:#3E8E5A;border-left:1px solid #E7E3D9">WORKING · 6 ▾</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer">›</span></span>
+        </div>
+        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:6px;padding:8px">
+          <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px">
+            <span style="font-size:12px;font-weight:500;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-114</span><span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#3E8E5A"><span style="width:5px;height:5px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>forge</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">A</span></div>
+          </div>
+          <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px">
+            <span style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">port .pn-tree rules</span>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-118</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">F</span></div>
+          </div>
+          <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 9px;display:flex;flex-direction:column;gap:5px">
+            <span style="font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">MenuConfig renderer</span>
+            <div style="display:flex;align-items:center;gap:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">T-131</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#BB4D3D;background:rgba(187,77,61,.12);border-radius:3px;padding:0 4px">HIGH</span><div style="flex:1"></div><span style="width:14px;height:14px;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:600">N</span></div>
+          </div>
+          <div style="margin-top:auto;display:flex;align-items:center;gap:5px;border-top:1px dashed #D8D3C6;padding-top:5px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">＋ 3 more · open as list ↗</span></div>
+        </div>
+        <div style="height:24px;flex:none;border-top:1px solid #E7E3D9;background:#FBFAF6;display:flex;align-items:center;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">‹ › pages lanes · drag still works across the page turn</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">board @ 320 — one lane at a time; the lane pager names its neighbors</span>
+    </div>
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:330px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;background:#FBFAF6;border-bottom:1px solid #E7E3D9"><span style="font-size:12px;font-weight:600"><span style="color:#8E897B">◔</span> Tasks</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;padding:2px 6px;background:#ECE8DF;border-radius:5px">Feed</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px;font-weight:600">● 2 new</span></div>
+        <div style="flex:1;overflow:hidden;padding:2px 0">
+          <div style="padding:5px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">TODAY</div>
+          <div style="display:flex;align-items:flex-start;gap:6px;padding:5px 10px"><span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;margin-top:1px">F</span><div style="flex:1;min-width:0"><div style="font-size:11.5px;line-height:1.4;color:#5B564C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:600;color:#23201B">forge</span> completed ◔ T-98</div><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 5px;background:#FFFFFF">via subtree</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#B7B2A4">12m</span></div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:6px;padding:5px 10px"><span style="width:16px;height:16px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;margin-top:1px">N</span><div style="flex:1;min-width:0"><div style="font-size:11.5px;line-height:1.4;color:#5B564C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:600;color:#23201B">@noa</span> changed ◔ T-131 → <span style="color:#3E8E5A;font-family:'JetBrains Mono',monospace;font-size:9.5px">working</span></div><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 5px;background:#FFFFFF">via assignment</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#B7B2A4">1h</span></div></div></div>
+          <div style="display:flex;align-items:flex-start;gap:6px;padding:5px 10px"><span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(189,138,42,.14);color:#BD8A2A;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;margin-top:1px">S</span><div style="flex:1;min-width:0"><div style="font-size:11.5px;line-height:1.4;color:#5B564C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:600;color:#23201B">scout</span> flagged ◔ T-109 <span style="color:#BD8A2A;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600">needs you</span></div><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:0 5px;background:#FFFFFF">via run</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#B7B2A4">2h</span></div></div></div>
+        </div>
+        <div style="height:24px;flex:none;border-top:1px solid #E7E3D9;background:#FBFAF6;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">↓ load earlier</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">feed @ 320 — two decks hold; via chips stay (they are the honesty)</span>
+    </div>
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:330px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;background:#FBFAF6;border-bottom:1px solid #E7E3D9"><span style="font-size:12px;font-weight:600"><span style="color:#8E897B">▤</span> Docs</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;padding:2px 6px;background:#ECE8DF;border-radius:5px">Gallery</span><div style="flex:1"></div><span style="color:#9A581F;font-weight:600;font-size:12px">＋</span></div>
+        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;gap:8px;padding:10px">
+          <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:5px">
+            <span style="color:#8E897B;font-size:12px">▤</span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Layout spec</span>
+            <span style="font-size:10px;color:#8E897B;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Every shrinkable region states a floor — floors are law.</span>
+            <div style="display:flex;gap:5px;align-items:center;border-top:1px solid #F0EDE4;padding-top:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 5px">v3</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#B7B2A4">2h · @ada</span></div>
+          </div>
+          <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:9px;padding:10px;display:flex;flex-direction:column;gap:5px">
+            <span style="color:#8E897B;font-size:12px">▤</span>
+            <span style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Menu spec</span>
+            <div style="display:flex;gap:5px;align-items:center;border-top:1px solid #F0EDE4;padding-top:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:0 5px">v2</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#B7B2A4">1d · @ada</span></div>
+          </div>
+        </div>
+        <div style="height:24px;flex:none;border-top:1px solid #E7E3D9;background:#FBFAF6;display:flex;align-items:center;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">1-up grid — cards, not rows: the layout keeps its meaning</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">gallery @ 320 — minmax floor reached, single column</span>
+    </div>
+    <div style="width:240px;flex:none;display:flex;flex-direction:column;gap:10px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">EMPTY — TEACHES IN PLACE (T4)</span>
+        <div style="border:1px solid #E7E3D9;border-radius:7px;background:#FFFFFF;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:5px">
+          <span style="color:#8E897B;font-size:14px">◔</span>
+          <span style="font-size:10.5px;color:#5B564C;text-align:center;line-height:1.5">No tasks in review. Drag a card here — or <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#9A581F">c</span> creates one.</span>
+        </div>
+      </div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">LOADING — SKELETON CARDS (T4)</span>
+        <div style="border:1px solid #E7E3D9;border-radius:7px;background:#FFFFFF;padding:8px;display:flex;flex-direction:column;gap:6px">
+          <div style="border:1px solid #F0EDE4;border-radius:6px;padding:7px;display:flex;flex-direction:column;gap:5px"><span style="height:8px;width:70%;border-radius:4px;background:#ECE8DF;animation:pnPulse 1.6s infinite"></span><span style="height:7px;width:45%;border-radius:4px;background:#F2EFE8"></span></div>
+          <div style="border:1px solid #F0EDE4;border-radius:6px;padding:7px;display:flex;flex-direction:column;gap:5px"><span style="height:8px;width:60%;border-radius:4px;background:#F2EFE8"></span><span style="height:7px;width:50%;border-radius:4px;background:#F2EFE8"></span></div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8E897B;line-height:1.5">geometry-true: skeleton = card shape · appears after 150ms · counts arrive last</span>
+      </div>
+    </div>
+    <div style="width:560px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#15130E;border:1px solid #3B3524;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;height:300px;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#1B1810;border-bottom:1px solid #2C2719">
+          <span style="font-size:12px;font-weight:600;color:#EFE9DB"><span style="color:#8C8470">◔</span> Tasks</span>
+          <span style="display:inline-flex;border:1px solid #3B3524;border-radius:6px;overflow:hidden;background:#221E15">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8C8470">List</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;padding:2px 7px;color:#EFE9DB;background:#302A1D;border-left:1px solid #2C2719">Board</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8C8470;border-left:1px solid #2C2719">Tree</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8C8470;border-left:1px solid #2C2719">Feed</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#8C8470;border-left:1px solid #2C2719">Gallery</span>
+            <span title="graph canvas isn't built yet — T3-6 deferred" style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;color:#665E4C;border-left:1px solid #2C2719;cursor:not-allowed">◉</span>
+          </span>
+          <div style="flex:1"></div>
+          <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:2px 8px;font-size:11px">＋ New</span>
+        </div>
+        <div style="flex:1;display:flex;gap:8px;padding:10px;overflow:hidden">
+          <div style="flex:1;background:#1B1810;border:1px solid #2C2719;border-radius:8px;display:flex;flex-direction:column;overflow:hidden">
+            <div style="height:26px;flex:none;display:flex;align-items:center;gap:5px;padding:0 8px"><span style="width:8px;height:8px;border-radius:50%;border:2px solid #7A7360;box-sizing:border-box"></span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#BDB5A2">OPEN · 4</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:5px;padding:0 5px 5px">
+              <div style="background:#221E15;border:1px solid #2C2719;border-radius:7px;padding:7px 8px;display:flex;flex-direction:column;gap:4px"><span style="font-size:11px;font-weight:500;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Inbox read-state model</span><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8470">T-121</span><div style="flex:1"></div><span style="width:13px;height:13px;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:600">A</span></div></div>
+              <div style="background:#221E15;border:1px solid #2C2719;border-radius:7px;padding:7px 8px;display:flex;flex-direction:column;gap:4px"><span style="font-size:11px;font-weight:500;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Palette fallback binding</span><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8470">T-134</span><div style="flex:1"></div><span style="width:13px;height:13px;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:600">N</span></div></div>
+            </div>
+          </div>
+          <div style="flex:1;background:#1B1810;border:1px solid #2C2719;border-radius:8px;display:flex;flex-direction:column;overflow:hidden">
+            <div style="height:26px;flex:none;display:flex;align-items:center;gap:5px;padding:0 8px"><span style="width:8px;height:8px;border-radius:50%;border:2px solid #5CB381;box-sizing:border-box"></span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#5CB381">WORKING · 6</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:5px;padding:0 5px 5px">
+              <div style="background:#221E15;border:1px solid #2C2719;border-radius:7px;padding:7px 8px;display:flex;flex-direction:column;gap:4px"><span style="font-size:11px;font-weight:500;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8470">T-114</span><span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono',monospace;font-size:7.5px;font-weight:600;color:#5CB381"><span style="width:5px;height:5px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>forge</span><div style="flex:1"></div><span style="width:13px;height:13px;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:600">A</span></div></div>
+              <div style="margin-top:auto;border-top:1px dashed #3B3524;padding-top:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8470">＋ 3 more · open as list ↗</span></div>
+            </div>
+          </div>
+          <div style="flex:1;background:#1B1810;border:1px solid #2C2719;border-radius:8px;display:flex;flex-direction:column;overflow:hidden">
+            <div style="height:26px;flex:none;display:flex;align-items:center;gap:5px;padding:0 8px"><span style="width:8px;height:8px;border-radius:50%;background:#6F9FC7"></span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#6F9FC7">IN REVIEW · 2</span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:5px;padding:0 5px 5px">
+              <div style="background:#221E15;border:1px solid #2C2719;border-radius:7px;padding:7px 8px;display:flex;flex-direction:column;gap:4px"><span style="font-size:11px;font-weight:500;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">C_min enforcement</span><div style="display:flex;gap:4px;align-items:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#8C8470">T-112</span><span style="font-family:'JetBrains Mono',monospace;font-size:7.5px;font-weight:600;color:#6F9FC7;background:rgba(111,159,199,.17);border-radius:3px;padding:0 4px">⑂ #212</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">dark — token swap; lane tints stay soft, ramp words carry the meaning</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Floors are per-layout laws.</span> Board pages one lane (the pager names neighbors — no hidden columns); feed keeps both decks; gallery reaches its minmax floor at one column. Nothing degrades to a different layout silently.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">States come from T4 verbatim.</span> Empty teaches the gesture that fills it; loading is geometry-true skeletons (cards for grids, rows for feeds); errors use the designed refusal card — nothing new invented here.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;worstCase&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;midDrag&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const worst = this.props.worstCase ?? false;
+    const drag = this.props.midDrag ?? true;
+    return {
+      notes: this.props.notes ?? true, worst, nice: !worst,
+      dragOn: drag, dragOff: !drag,
+      laneBg: drag ? 'rgba(178,106,43,.07)' : '#EFECE4'
+    };
+  }
+}
+</script>
+</body>
+</html>

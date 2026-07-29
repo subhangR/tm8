@@ -862,3 +862,41 @@ One entry for the class: the audit's census was BUILT-BUT-UNREACHABLE — finish
 ## D67 — The completeness bar and the wave (2026-07-29, user program order via master)
 
 User order verbatim in effect: everything designed lands wired AT LEAST AT LINK LEVEL — completeness now, fidelity explicitly deferred to a later parity session; tokens and honesty laws still bind; no new debt, no polish. Execution: eleven fenced opus-5 surface lanes (SURFACE-WAVE-ROSTER.md), THREE ACTIVE at a time by user concurrency order, ordered resume queue, monitor on every in-flight task. The AUTH GATE is mandatory (reload lands on auth; create account; no app screen unauthenticated) and HONEST: the catalog exposes exactly identity.get — no signup/login/logout ops exist — so the gate is a LOCAL-SESSION gate that states its semantics on-screen; the missing ops are flagged as additive-amendment candidates. ReaderBody's three lane-rulings ratified (headings promote to the outline; heading chips are labels until anchoring exists; --pn-card chip ground, one dark step noted for parity). Four real docs seeded on the node via the app's own facade after the Docs view proved empty on the real seam — the tm8 CLI is double-broken (stale dist AND source missing the execution.liveness discovery row: the D57 chain one package over), routed to the server-wave backlog.
+
+## D68 — The entity title owns its row; tabs and compact actions share the second row (2026-07-29)
+
+Source: the user, reviewing the task entity panel live: the title must be fully visible; the task panel keeps **Run only**; Run sits on the right of the Task/Discussion/Connections/Activity row with expand and close; Points, Link and Add child leave the header and remain available from their entity-specific content surfaces.
+
+This amends D63.1 without restoring a third row. The panel is still two-row chrome, but the split is now **identity** then **navigation + compact actions**, rather than identity + every action then navigation. Long titles wrap instead of ellipsizing. `task.panel.primaries` is exactly `['run']`; Coordinate and Complete do not render in the task detail toolbar. The tab list scrolls at the 320px panel floor while the right-side controls remain fixed and reachable.
+
+Immediate visual correction from the same review: the ordinary separator between the title row and toolbar remains; the **dotted underline on editable titles is removed**. Editability remains real and keyboard-accessible, but it is no longer drawn as an extra line under the title.
+
+## D69 — Task description is a persistent, auto-growing editor (2026-07-29)
+
+Source: the user, continuing the task entity-panel review: the task's main content field must remain visible even when empty, accept edits in place, expand downward as text is written, and push the lower content regions down with it.
+
+The task field is `content.description`. Its content surface always mounts the same textarea for empty and populated values; an empty value carries an add-description prompt instead of removing the region. The textarea has no internal scrollbar or manual resize handle: its height follows its content, in normal document flow, so Subtree, Runs, and Linked remain below it and move downward. Changes stage through the existing version-checked task save path and use the toolbar's Save/Cancel controls.
+
+Immediate save-path correction from live review: an `entity.upsert` event carries an `EntitySummary`, so it can refresh title and version but **cannot carry `content.description`**. The successful command response's `entity` detail is therefore authoritative and is reconciled into the shared detail store by both Workspace and per-kind Entity views. Discarding that result made a successful description save appear to revert and left the stale value cached on reopen.
+
+## D70 — Terminal panels use the Task panel's compact header layout (2026-07-29)
+
+Source: the user, reviewing the terminal entity panel live: use the same layout as Tasks.
+
+The terminal keeps the shared two-row chrome: its full wrapping title and liveness pill occupy the identity row; Session, Discussion, Connections, and Activity occupy the left side of the second row; the compact primary and panel window controls occupy its right side. To match the Task toolbar's one-primary pressure budget, the terminal panel keeps **Terminate** only. **Complete** remains available through the session row actions and no longer squeezes the tabs, expand/close controls, or terminal canvas.
+
+Immediate refinement from the same review: "exactly same as Task row" means the compact row contains the four tabs, one entity primary, **Expand**, and **Close**—not More and Pin. Those two extra controls leave the row so the tabs remain visible. Below the canvas, the session strip and shared-context controls now live inside one collapsed **Session details** drawer; its summary retains the agent/project/share facts, and the terminal-exit shortcut remains visible even while the drawer is closed.
+
+The live screenshot then exposed the actual tab-squeezing mechanism: the session row was mounting a disabled **Save** plus its full edit-refusal sentence because `work_session.list.inlineEdit.title` claimed sessions were an authoring surface while the detail capability refused edits. Session titles are runtime records here, so that inline-edit declaration is removed. Task Save remains unchanged; terminal panels no longer spend their second row explaining why a Save that should not exist cannot run.
+
+## D71 — An unavailable Sessions-list launch action costs no header row (2026-07-29)
+
+Source: the user's screenshot of the Sessions entity list, where an unwired **Launch session** control and its full “This action isn’t connected yet” explanation occupied a dedicated row above Search.
+
+`EntityListPanel` now mounts its header-actions row only when it has a real create slot/callback or a real quick-launch dispatcher. The right Sessions list has neither, so Search follows the kind header directly. If a wired launch action is temporarily unavailable, its reason uses the compact control tooltip rather than an inline paragraph. Row-level action honesty remains unchanged; this ruling is about the list-header block and its layout cost.
+
+## D72 — The account popover has viewport width; Appearance controls the workspace theme state (2026-07-29)
+
+Source: the user's screenshot of the workspace account/settings popover collapsed to a narrow vertical strip, plus the direct question whether light/dark mode is implemented.
+
+The anchored account menu is 280px at ordinary widths and capped against the **viewport**, not against its narrow trigger containing block. Identity text truncates on one line; menu labels and the sign-out explanation receive the intended reading width. Appearance is now controlled by `GateApp`'s persisted theme state: choosing Light or Dark updates the root `data-theme` immediately and persists through the existing `useTheme` storage path. Previously the menu created a second independent hook instance, so it wrote storage and updated only itself while the open workspace kept its old theme until reload.

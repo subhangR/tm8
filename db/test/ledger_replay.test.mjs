@@ -148,6 +148,18 @@ test('execution.spawn: a retried spawn returns the original session, not a secon
   const first = json(spawnSql, { claims: w.claimsA });
   const replay = json(spawnSql, { claims: w.claimsA });
 
+  assert.equal(first.__tm8_replayed, false, 'the fresh call must be distinguishable in-process');
+  assert.equal(replay.__tm8_replayed, true, 'the retry must be marked so SpawnService never boots twice');
+  const stored = json(
+    `select result from public.command_ledger where client_mutation_id = ${literal(id)}`,
+    { claims: w.claimsA },
+  );
+  assert.equal(
+    Object.hasOwn(stored, '__tm8_replayed'),
+    false,
+    'the internal replay marker must not become part of the durable public CommandResult',
+  );
+
   assert.equal(
     replay.entity.id,
     first.entity.id,

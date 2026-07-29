@@ -53,6 +53,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type {
   CollectionQuery,
   DurableWorkspaceEvent,
+  EdgeView,
   EntitySummary,
   SpaceId,
 } from '@tm8/contract';
@@ -83,6 +84,21 @@ function task(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
     badges: {},
     ...over,
   } as EntitySummary;
+}
+
+function edge(id: string, source: EntitySummary, target: EntitySummary): EdgeView {
+  return {
+    id,
+    type: 'relates_to',
+    source,
+    target,
+    hard: false,
+    resolved: true,
+    metadata: {},
+    createdBy: source.createdBy,
+    createdAt: source.createdAt,
+    updatedAt: source.updatedAt,
+  } as EdgeView;
 }
 
 interface Harness {
@@ -127,14 +143,26 @@ function harness(seeded: EntitySummary[]): Harness {
     async menu() {
       return null;
     },
+    async spaceSettings() {
+      return { defaultInteractionProfileId: null } as never;
+    },
+    async projects() {
+      return [];
+    },
     async query(input: CollectionQuery) {
       queryCalls += 1;
       const kinds = input.kinds ?? [];
       const items = seeded.filter((s) => kinds.includes(s.kind));
       return { query: input, page: { items, nextCursor: undefined } } as never;
     },
+    async graph() {
+      return { nodes: seeded, edges: [], clusters: [] };
+    },
     async entity() {
       throw new Error('not read by this test');
+    },
+    async connections() {
+      return { items: [], nextCursor: null, total: 0 } as never;
     },
     async messages() {
       throw new Error('not read by this test');
@@ -165,6 +193,39 @@ function harness(seeded: EntitySummary[]): Harness {
 const OPEN = { workStatus: ['open'], deleted: 'exclude' };
 
 describe('the live event loop — an event moves the screen, alone', () => {
+  it('hydrates graph.query once, then projects entity and edge events without fixtures', async () => {
+    const first = task('ent-graph-first');
+    const second = task('ent-graph-second');
+    const h = harness([first, second]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.graph.loading).toBe(false));
+    expect(result.current.graph.error).toBeNull();
+    expect(result.current.graph.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining([first.id, second.id]),
+    );
+
+    const arrival = task('ent-graph-arrival', { activityAt: '2026-07-29T11:00:00.000Z' });
+    act(() => {
+      h.emit({
+        type: 'entity.upsert',
+        spaceId: SPACE,
+        seq: 1,
+        entity: arrival,
+      } as unknown as DurableWorkspaceEvent);
+      h.emit({
+        type: 'edge.upsert',
+        spaceId: SPACE,
+        seq: 2,
+        edge: edge('edge-live', first, arrival),
+      } as unknown as DurableWorkspaceEvent);
+    });
+
+    expect(result.current.graph.nodes.map((node) => node.id)).toContain(arrival.id);
+    expect(result.current.graph.edges.map((item) => item.id)).toContain('edge-live');
+  });
+
   it('the created task is ON SCREEN, and it got there without a re-read', async () => {
     const h = harness([task('ent-task-seeded')]);
     const { result } = renderHook(() =>

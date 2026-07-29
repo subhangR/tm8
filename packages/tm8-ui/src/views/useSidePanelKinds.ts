@@ -20,12 +20,32 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { SpaceId } from '@tm8/contract';
+import {
+  LEFT_PANEL_DEFAULT,
+  LEFT_PANEL_MIN,
+  RIGHT_PANEL_DEFAULT,
+  RIGHT_PANEL_MIN,
+} from '../shell/geometry';
+
+export type SidePanelDock = 'left' | 'right';
+
+interface PersistedSidePanels {
+  left: string;
+  right: string;
+  leftWidth: number;
+  rightWidth: number;
+}
 
 export interface SidePanelKinds {
   leftKind: string;
   rightKind: string;
+  leftWidth: number;
+  rightWidth: number;
   setLeftKind(kind: string): void;
   setRightKind(kind: string): void;
+  movePanel(from: SidePanelDock, to: SidePanelDock): void;
+  resizePanel(side: SidePanelDock, width: number): void;
+  resetPanelWidth(side: SidePanelDock): void;
 }
 
 /** `tm8ui.sidePanel.{viewerId}.{spaceId}` — scoped per the §11 table. */
@@ -33,7 +53,10 @@ function storageKey(viewerId: string, spaceId: SpaceId): string {
   return `tm8ui.sidePanel.${viewerId}.${spaceId}`;
 }
 
-function read(viewerId: string, spaceId: SpaceId): { left?: string; right?: string } {
+function read(
+  viewerId: string,
+  spaceId: SpaceId,
+): Partial<PersistedSidePanels> {
   // Storage is a hostile input: it survives upgrades, users edit it, and a
   // parse failure here would take the whole workspace down. Fail to the
   // defaults rather than propagate.
@@ -42,10 +65,18 @@ function read(viewerId: string, spaceId: SpaceId): { left?: string; right?: stri
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return {};
-    const { left, right } = parsed as { left?: unknown; right?: unknown };
+    const { left, right, leftWidth, rightWidth } = parsed as Record<string, unknown>;
     return {
       left: typeof left === 'string' ? left : undefined,
       right: typeof right === 'string' ? right : undefined,
+      leftWidth:
+        typeof leftWidth === 'number' && Number.isFinite(leftWidth)
+          ? Math.max(LEFT_PANEL_MIN, leftWidth)
+          : undefined,
+      rightWidth:
+        typeof rightWidth === 'number' && Number.isFinite(rightWidth)
+          ? Math.max(RIGHT_PANEL_MIN, rightWidth)
+          : undefined,
     };
   } catch {
     return {};
@@ -65,9 +96,11 @@ export interface SidePanelKindsOptions {
 export function useSidePanelKinds(options: SidePanelKindsOptions): SidePanelKinds {
   const { viewerId, spaceId, defaultLeft, defaultRight, isSelectable } = options;
 
-  const [kinds, setKinds] = useState<{ left: string; right: string }>({
+  const [panels, setPanels] = useState<PersistedSidePanels>({
     left: defaultLeft,
     right: defaultRight,
+    leftWidth: LEFT_PANEL_DEFAULT,
+    rightWidth: RIGHT_PANEL_DEFAULT,
   });
 
   // Re-read when the viewer or space changes — the persistence is scoped to
@@ -78,20 +111,22 @@ export function useSidePanelKinds(options: SidePanelKindsOptions): SidePanelKind
     const stored = read(viewerId, spaceId);
     const usable = (kind: string | undefined, fallback: string): string =>
       kind && (isSelectable?.(kind) ?? true) ? kind : fallback;
-    setKinds({
+    setPanels({
       left: usable(stored.left, defaultLeft),
       right: usable(stored.right, defaultRight),
+      leftWidth: stored.leftWidth ?? LEFT_PANEL_DEFAULT,
+      rightWidth: stored.rightWidth ?? RIGHT_PANEL_DEFAULT,
     });
   }, [viewerId, spaceId, defaultLeft, defaultRight, isSelectable]);
 
   const persist = useCallback(
-    (next: { left: string; right: string }) => {
-      setKinds(next);
+    (next: PersistedSidePanels) => {
+      setPanels(next);
       if (!spaceId || typeof window === 'undefined') return;
       try {
         window.localStorage.setItem(
           storageKey(viewerId, spaceId),
-          JSON.stringify({ left: next.left, right: next.right }),
+          JSON.stringify(next),
         );
       } catch {
         // Storage full or blocked (private mode). The choice still applies to
@@ -102,9 +137,49 @@ export function useSidePanelKinds(options: SidePanelKindsOptions): SidePanelKind
   );
 
   return {
-    leftKind: kinds.left,
-    rightKind: kinds.right,
-    setLeftKind: useCallback((kind: string) => persist({ ...kinds, left: kind }), [kinds, persist]),
-    setRightKind: useCallback((kind: string) => persist({ ...kinds, right: kind }), [kinds, persist]),
+    leftKind: panels.left,
+    rightKind: panels.right,
+    leftWidth: panels.leftWidth,
+    rightWidth: panels.rightWidth,
+    setLeftKind: useCallback(
+      (kind: string) => persist({ ...panels, left: kind }),
+      [panels, persist],
+    ),
+    setRightKind: useCallback(
+      (kind: string) => persist({ ...panels, right: kind }),
+      [panels, persist],
+    ),
+    movePanel: useCallback(
+      (from: SidePanelDock, to: SidePanelDock) => {
+        if (from === to) return;
+        persist({
+          left: panels.right,
+          right: panels.left,
+          leftWidth: Math.max(LEFT_PANEL_MIN, panels.rightWidth),
+          rightWidth: Math.max(RIGHT_PANEL_MIN, panels.leftWidth),
+        });
+      },
+      [panels, persist],
+    ),
+    resizePanel: useCallback(
+      (side: SidePanelDock, width: number) =>
+        persist({
+          ...panels,
+          [side === 'left' ? 'leftWidth' : 'rightWidth']: Math.max(
+            side === 'left' ? LEFT_PANEL_MIN : RIGHT_PANEL_MIN,
+            Math.round(width),
+          ),
+        }),
+      [panels, persist],
+    ),
+    resetPanelWidth: useCallback(
+      (side: SidePanelDock) =>
+        persist({
+          ...panels,
+          [side === 'left' ? 'leftWidth' : 'rightWidth']:
+            side === 'left' ? LEFT_PANEL_DEFAULT : RIGHT_PANEL_DEFAULT,
+        }),
+      [panels, persist],
+    ),
   };
 }

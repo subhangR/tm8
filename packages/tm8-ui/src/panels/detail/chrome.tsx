@@ -44,31 +44,16 @@ export function PanelHeader({
   config,
   breadcrumb,
   liveness,
-  pinned = false,
-  pinRefusal,
-  actions,
   onCommitTitle,
   titleEditable,
   titleLockReason,
   titlePlaceholder,
   autoFocusTitle,
-  onPin,
-  onPromote,
-  onClose,
-  onOverflow,
 }: {
   detail: EntityDetail;
   config: KindConfig;
   breadcrumb?: string;
   liveness?: SessionLiveness;
-  pinned?: boolean;
-  /** Why pinning is refused right now (floors, 3-pin cap). L6: shown, not hidden. */
-  pinRefusal?: string;
-  /** USER RULING 2026-07-29: the action bar rides IN the header row — the
-      panel chrome is two rows (header, tabs), and the vertical the third row
-      spent belongs to the body. Rendered between the status pill and the
-      window controls; `ActionBar inline` is the expected occupant. */
-  actions?: React.ReactNode;
   /**
    * THE TITLE IS REALLY EDITABLE NOW, or it does not look editable.
    *
@@ -98,10 +83,6 @@ export function PanelHeader({
   /** "＋ New → Z3 opens, title in inline-edit focus" — true once, for the row
       the create flow just made. */
   autoFocusTitle?: boolean;
-  onPin?: () => void;
-  onPromote?: () => void;
-  onClose?: () => void;
-  onOverflow?: () => void;
 }) {
   const editable = (titleEditable ?? false) && onCommitTitle !== undefined && !detail.deletedAt;
   return (
@@ -137,31 +118,32 @@ export function PanelHeader({
         )}
 
         <StatusPillFor detail={detail} config={config} liveness={liveness} />
-
-        <span className="pn-head__spacer" />
-
-        {actions}
-
-        <IconBtn label="More actions" onClick={onOverflow}>
-          ⋯
-        </IconBtn>
-        {pinRefusal ? (
-          /* A refused pin states WHY on the control itself rather than going
-             quietly dead — the user needs to know it is a floor, not a bug. */
-          <DisabledIconControl label="Pin panel" glyph="⌖" reason={toReason(pinRefusal)} />
-        ) : (
-          <IconBtn label={pinned ? 'Unpin panel' : 'Pin panel'} onClick={onPin}>
-            ⌖
-          </IconBtn>
-        )}
-        <IconBtn label="Open full view" onClick={onPromote}>
-          ⤢
-        </IconBtn>
-        <IconBtn label="Close panel" danger onClick={onClose}>
-          ✕
-        </IconBtn>
       </div>
     </div>
+  );
+}
+
+/**
+ * Panel-level controls live beside the tabs, not beside the title. This keeps
+ * the identity row entirely available to a long title while preserving the
+ * stack controls in the compact second row.
+ */
+export function PanelWindowControls({
+  onPromote,
+  onClose,
+}: {
+  onPromote?: () => void;
+  onClose?: () => void;
+}) {
+  return (
+    <>
+      <IconBtn label="Open full view" onClick={onPromote}>
+        ⤢
+      </IconBtn>
+      <IconBtn label="Close panel" danger onClick={onClose}>
+        ✕
+      </IconBtn>
+    </>
   );
 }
 
@@ -253,59 +235,25 @@ function statusValue(source: StatusSource, state: EntityState): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Generic verbs on the left, kind PRIMARIES on the right — and every one of
- * them is an ActionRef resolved through the single action registry, so the
- * same verb behind the panel button, the tile hover action, ⌘Enter and the
- * palette row is literally the same object (§2.5). Unavailable verbs render
- * disabled-with-reason, never hidden (L6).
+ * The compact panel toolbar renders only the kind's primary verbs. Secondary
+ * entity operations (points, linking and child creation) belong to their
+ * content surfaces and no longer compete with navigation or the title.
  */
 export function ActionBar({
-  detail,
   config,
   ctx,
-  inline = false,
   onAction,
 }: {
-  detail: EntityDetail;
   config: KindConfig;
   ctx: ActionContext;
-  /** USER RULING 2026-07-29 (two-row chrome): render as a fragment INSIDE the
-      header row — no wrapper, no own spacer (the header's spacer already
-      right-aligns everything after it). The standalone row form is kept for
-      any host that still stacks it. */
-  inline?: boolean;
   onAction?: (ref: ActionRef) => void;
 }) {
   const primaries = config.panel.primaries ?? [];
-  const points = detail.counters.points;
-
-  const content = (
-    <>
-      <span className="pn-actions__verb" aria-label="Points">
-        ▲ {points}
-      </span>
-      <span className="kit-vrule" aria-hidden style={{ height: 14 }} />
-      <ActionButton ref_="link" ctx={ctx} onAction={onAction} />
-      {config.list.primaryActions?.includes('run') ? (
-        <ActionButton ref_="add-child" ctx={ctx} onAction={onAction} />
-      ) : null}
-      {inline ? null : <span className="pn-head__spacer" />}
+  return (
+    <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar">
       {primaries.map((ref) => (
         <ActionButton key={ref} ref_={ref} ctx={ctx} onAction={onAction} primary />
       ))}
-    </>
-  );
-
-  if (inline) {
-    return (
-      <span className="pn-actions pn-actions--inline" data-testid="panel-action-bar">
-        {content}
-      </span>
-    );
-  }
-  return (
-    <div className="pn-actions" data-testid="panel-action-bar">
-      {content}
     </div>
   );
 }
@@ -372,6 +320,7 @@ export function TabStrip({
   active,
   counts,
   contentLabel,
+  end,
   onSelect,
 }: {
   active: PanelTab;
@@ -381,33 +330,38 @@ export function TabStrip({
       the kind's singular label ("Task", "Doc", "Session") — instead of the
       word "Content". Registry data in, no kind literal here. */
   contentLabel?: string;
+  /** Primary entity actions and panel controls, fixed at the right edge. */
+  end?: React.ReactNode;
   onSelect?: (tab: PanelTab) => void;
 }) {
   return (
-    <div className="pn-tabs" role="tablist" aria-label="Panel sections" data-testid="panel-tabs">
-      {PANEL_TABS.map(({ id, label: defaultLabel }) => {
-        const label = id === 'content' && contentLabel ? contentLabel : defaultLabel;
-        const isActive = id === active;
-        const count = counts?.[id];
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`tab-${id}`}
-            aria-selected={isActive}
-            aria-controls={`tabpanel-${id}`}
-            tabIndex={isActive ? 0 : -1}
-            className={isActive ? 'pn-tab pn-tab--active' : 'pn-tab'}
-            onClick={() => onSelect?.(id)}
-          >
-            {label}
-            {/* A literal 0 is shown: measured-zero is a real answer here, and
-                the count comes from a read that actually ran. */}
-            {typeof count === 'number' ? <span className="pn-tab__count">{count}</span> : null}
-          </button>
-        );
-      })}
+    <div className="pn-panelbar" data-testid="panel-toolbar">
+      <div className="pn-tabs" role="tablist" aria-label="Panel sections" data-testid="panel-tabs">
+        {PANEL_TABS.map(({ id, label: defaultLabel }) => {
+          const label = id === 'content' && contentLabel ? contentLabel : defaultLabel;
+          const isActive = id === active;
+          const count = counts?.[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`tab-${id}`}
+              aria-selected={isActive}
+              aria-controls={`tabpanel-${id}`}
+              tabIndex={isActive ? 0 : -1}
+              className={isActive ? 'pn-tab pn-tab--active' : 'pn-tab'}
+              onClick={() => onSelect?.(id)}
+            >
+              {label}
+              {/* A literal 0 is shown: measured-zero is a real answer here, and
+                  the count comes from a read that actually ran. */}
+              {typeof count === 'number' ? <span className="pn-tab__count">{count}</span> : null}
+            </button>
+          );
+        })}
+      </div>
+      {end ? <div className="pn-panelbar__end">{end}</div> : null}
     </div>
   );
 }

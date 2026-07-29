@@ -62,6 +62,7 @@ import {
 } from './handlers/w2/messages-handoffs.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
+import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
 
 export interface RegisterFacadeHandlersDeps {
   readonly db: Db;
@@ -120,6 +121,7 @@ export function registerFacadeHandlers(
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);
+  registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);

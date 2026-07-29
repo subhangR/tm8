@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ READ / EDIT ============ -->
+<section id="read-edit" data-screen-label="T5-3 — Read and edit modes" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T5-3 · DOC AUTHORING — READ ⇄ EDIT INSIDE THE CONTENT TAB</span>
+    <span style="font-size:12px;color:#8E897B">T0-4's reader gains an edit mode, nothing else moves · markdown source in mono · permission-honest entry</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations · worst-case · save state</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:400px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:524px">
+        <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › docs</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Layout spec</span></sc-if>
+          <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Layout spec — appendix C: responsive floor derivations and C_min proofs (v3 draft, do not cite)</span></sc-if>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:2px 7px;flex:none">v3</span>
+          <div style="flex:1"></div>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⤢</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">✕</span>
+        </div>
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+          <span>▲ 6</span><span>▽</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span>⊕ Link</span><span>Add chapter</span>
+          <div style="flex:1"></div>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Edit</span>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span></sc-if>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+          <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span><span style="display:flex;align-items:center;gap:4px;color:#8E897B">Discussion <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">6</span></span><span style="display:flex;align-items:center;gap:4px;color:#8E897B">Connections <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">2</span></span><span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+        </div>
+        <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;gap:5px;flex-wrap:wrap">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#9A581F;border:1px solid rgba(178,106,43,.4);border-radius:999px;padding:2px 9px;background:rgba(178,106,43,.06)">Floors</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:2px 9px;background:#FFFFFF">Shell regions</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:2px 9px;background:#FFFFFF">Responsive</span>
+          </div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:15px;line-height:1.7;color:#3A362E;text-wrap:pretty">Every shrinkable region states a floor — <span style="font-weight:600">floors are law</span>, not preference. This app has been broken three separate times by flex tracks with zero minimums.</div>
+          <div style="border-left:2px solid #E7E3D9;padding:2px 0 2px 12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B">C_min = max(320, V·320 + (V−1)·8)</div>
+          <div style="border:1px solid #E7E3D9;border-radius:8px;overflow:hidden;background:#FFFFFF">
+            <div style="height:88px;background:repeating-linear-gradient(-45deg,#F7F5EF,#F7F5EF 7px,#F1EEE6 7px,#F1EEE6 14px);display:flex;align-items:center;justify-content:center"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:5px;padding:2px 7px">mermaid render · flowchart · 8 nodes</span></div>
+            <div style="height:26px;display:flex;align-items:center;gap:6px;padding:0 9px;border-top:1px solid #F0EDE4"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">◆ mermaid · breakpoint-cascade</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#9A581F;cursor:pointer" style-hover="text-decoration:underline">edit ↗</span></div>
+          </div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:15px;line-height:1.7;color:#3A362E;text-wrap:pretty">The center hosts pinned panels left-to-right in pin order, with the top of the stack as the rightmost column.</div>
+        </div>
+        <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">v3 · saved · 2 readers now</div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;line-height:1.5;padding:0 2px">read — T0-4's reader verbatim; Edit is the kind primary; blocks render inline with an edit ↗ affordance</div></sc-if>
+    </div>
+    <div style="width:400px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:524px">
+        <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › docs</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+          <span style="color:#8E897B;font-size:13px">▤</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Layout spec</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:999px;padding:2px 7px;flex:none">v3</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:2px 7px;flex:none">editing</span>
+          <div style="flex:1"></div>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">✕</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+          <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span><span style="display:flex;align-items:center;gap:4px;color:#8E897B">Discussion <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">6</span></span><span style="display:flex;align-items:center;gap:4px;color:#8E897B">Connections <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">2</span></span><span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+        </div>
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+          <span style="display:inline-flex;border:1px solid #D8D3C6;border-radius:6px;overflow:hidden;background:#FFFFFF">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;padding:3px 10px;background:#ECE8DF;cursor:pointer">Write</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:3px 10px;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer" style-hover="background:#F2EFE8">Preview</span>
+          </span>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if>
+          <div style="flex:1"></div>
+          <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Save v4</span>
+        </div>
+        <sc-if value="{{conflictOn}}" hint-placeholder-val="{{false}}">
+        <div style="flex:none;display:flex;gap:8px;align-items:flex-start;padding:8px 12px;background:rgba(63,108,144,.08);border-bottom:1px solid rgba(63,108,144,.25)">
+          <span style="color:#3F6C90;font-size:11px;padding-top:1px">✎</span>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+            <span style="font-size:11.5px;font-weight:600;color:#23201B">@noa saved v4 while you were editing</span>
+            <span style="font-size:10.5px;line-height:1.45;color:#5B564C">Your draft is still yours. Saving publishes v5 over their text.</span>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#3F6C90;cursor:pointer;white-space:nowrap;padding-top:1px" style-hover="text-decoration:underline">load theirs — discards draft</span>
+        </div>
+        </sc-if>
+        <div style="flex:1;overflow:auto;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.8;color:#3A362E;background:#FFFFFF">
+          <div><span style="color:#9A581F;font-weight:600">## Floors</span></div>
+          <div>Every shrinkable region states a floor — <span style="font-weight:600">**floors are law**</span>, not preference.</div>
+          <div><span style="color:#8E897B">&gt; C_min = max(320, V·320 + (V−1)·8)</span></div>
+          <div style="margin:7px 0;border:1px dashed #D8D3C6;border-radius:7px;padding:6px 9px;display:flex;align-items:center;gap:7px;background:#FBFAF6">
+            <span style="color:#8E897B;font-size:11px">◆</span>
+            <span style="font-size:10px;color:#5B564C;flex:1">```mermaid · breakpoint-cascade · 8 nodes</span>
+            <span style="font-size:9.5px;color:#9A581F;cursor:pointer" style-hover="text-decoration:underline">open editor ⤢</span>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">3</span></sc-if>
+          </div>
+          <div>The center hosts pinned panels left-to-right in pin order, with the top of the stack as the rightmost<span style="display:inline-block;width:1.5px;height:14px;background:#B26A2B;vertical-align:text-bottom;margin-left:1px;animation:pnPulse 1.1s infinite"></span></div>
+        </div>
+        <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px">
+          <span style="display:inline-flex;align-items:center;gap:5px;color:{{saveC}}"><span style="width:6px;height:6px;border-radius:50%;background:{{saveC}};animation:{{saveAnim}}"></span>{{saveWord}}</span>
+          <div style="flex:1"></div>
+          <span style="color:#B7B2A4">esc cancels · ⌘enter saves</span>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span></sc-if>
+        </div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;line-height:1.5;padding:0 2px">edit — Write/Preview toggle replaces generic verbs; body swaps serif render for mono source; blocks become fence chips</div></sc-if>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Permission-honest entry.</span> Edit is the doc's kind primary. Without write permission it renders disabled-with-reason — <span style="font-family:'JetBrains Mono',monospace;font-size:10px">“Edit — read-only: your role can't edit docs in atelier”</span> — never hidden. One rule from T1-4, applied.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Stance: toggle in Z3, split in Z4.</span> A 320–440px panel can't afford honest columns, so Z3 gets Write ⇄ Preview (state survives the switch). The Z4 full view below is where side-by-side lives. One editor, two stances, chosen by geometry — not preference.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Blocks stay blocks.</span> In source, a mermaid/excalidraw fence renders as a chip — the text around it stays editable text; the block body is edited in its own editor (Z4), never inline as raw code someone can half-break.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Save states in words.</span> unsaved changes → saving… → saved · v4. Saves ride entities.patch with a version bump. The Tweak cycles all four states including conflict.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Conflict = T4's law, adapted.</span> Last-write-wins, no merge dialogs. The info-blue banner states the fact (@noa saved v4), what your save will do (v5 over theirs), and one quiet out (load theirs — discards draft). A fact, not a fork; drafts are never silently replaced because the editor holds them locally.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">geometry · editor mono 11.5/1.8 on card-white · read serif 15/1.7 · toggle in action bar · save word in footer left · no co-editing, no cursors in v1 — presence stays “2 readers now”</div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ Z4 SPLIT + BLOCK EDITORS ============ -->
+<section id="z4-blocks" data-screen-label="T5-3 — Z4 split view + block editors" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">Z4 — SIDE-BY-SIDE MARKDOWN · FULL-BLEED BLOCK EDITORS</span>
+    <span style="font-size:12px;color:#8E897B">⤢ promotes the same editing session · mermaid/excalidraw get the whole stage, source ⇄ canvas</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:700px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:330px">
+        <div style="height:38px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+          <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;padding:3px 10px;font-size:11px;font-weight:600;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">⇲ collapse</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › docs › Layout spec · full view</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:2px 7px">editing</span>
+          <div style="flex:1"></div>
+          <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Save v4</span>
+        </div>
+        <div style="flex:1;min-height:0;display:flex">
+          <div style="flex:1;min-width:0;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;color:#3A362E;background:#FFFFFF;overflow:hidden">
+            <div><span style="color:#9A581F;font-weight:600">## Floors</span></div>
+            <div>Every shrinkable region states a floor —</div>
+            <div><span style="font-weight:600">**floors are law**</span>, not preference.</div>
+            <div><span style="color:#8E897B">&gt; C_min = max(320, V·320 + (V−1)·8)</span></div>
+            <div style="margin:6px 0;border:1px dashed #D8D3C6;border-radius:6px;padding:4px 8px;display:flex;align-items:center;gap:6px;background:#FBFAF6"><span style="color:#8E897B;font-size:10px">◆</span><span style="font-size:9.5px;color:#5B564C">```mermaid · breakpoint-cascade</span></div>
+            <div>The center hosts pinned panels left-to-right<span style="display:inline-block;width:1.5px;height:13px;background:#B26A2B;vertical-align:text-bottom;margin-left:1px;animation:pnPulse 1.1s infinite"></span></div>
+          </div>
+          <div style="width:1px;flex:none;background:#D8D3C6;cursor:col-resize;position:relative"><span style="position:absolute;top:50%;left:-3px;width:7px;height:26px;border-radius:4px;background:#D8D3C6"></span></div>
+          <div style="flex:1;min-width:0;padding:12px 16px;overflow:hidden;background:#FBFAF6">
+            <div style="font-family:'Newsreader',Georgia,serif;font-size:17px;font-weight:500;padding-bottom:6px">Floors</div>
+            <div style="font-family:'Newsreader',Georgia,serif;font-size:13.5px;line-height:1.7;color:#3A362E;text-wrap:pretty">Every shrinkable region states a floor — <span style="font-weight:600">floors are law</span>, not preference.</div>
+            <div style="border-left:2px solid #E7E3D9;padding:2px 0 2px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;margin:8px 0">C_min = max(320, V·320 + (V−1)·8)</div>
+            <div style="border:1px solid #E7E3D9;border-radius:7px;height:64px;background:repeating-linear-gradient(-45deg,#F7F5EF,#F7F5EF 7px,#F1EEE6 7px,#F1EEE6 14px);display:flex;align-items:center;justify-content:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:4px;padding:2px 6px">mermaid render</span></div>
+          </div>
+        </div>
+        <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;background:#FBFAF6;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">split remembers its ratio per doc · preview tracks the caret · unsaved changes</div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;line-height:1.5;padding:0 2px">Z4 split — source left, live preview right, draggable hairline; same session as Z3 (⤢ promotes it, ⇲ collapses back, draft intact)</div></sc-if>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">BLOCK EDITORS — FULL-BLEED Z4</div>
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;height:150px;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#FBFAF6;border-bottom:1px solid #E7E3D9"><span style="font-size:10.5px;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:1px 8px;background:#FFFFFF;color:#5B564C;cursor:pointer">⇲ back to doc</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">◆ mermaid · breakpoint-cascade</span><div style="flex:1"></div><span style="color:#9A581F;font-weight:600;font-size:10.5px;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:1px 8px;cursor:pointer">Apply to draft</span></div>
+        <div style="flex:1;display:flex">
+          <div style="flex:1;background:#FFFFFF;padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.7;color:#5B564C">flowchart LR<br>&nbsp;&nbsp;rail --&gt; center<br>&nbsp;&nbsp;center --&gt; panels</div>
+          <div style="width:1px;background:#D8D3C6"></div>
+          <div style="flex:1.4;background:repeating-linear-gradient(-45deg,#F7F5EF,#F7F5EF 7px,#F1EEE6 7px,#F1EEE6 14px);display:flex;align-items:center;justify-content:center"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:4px;padding:2px 6px">live render</span></div>
+        </div>
+      </div>
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;display:flex;flex-direction:column;height:150px;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;background:#FBFAF6;border-bottom:1px solid #E7E3D9"><span style="font-size:10.5px;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:1px 8px;background:#FFFFFF;color:#5B564C;cursor:pointer">⇲ back to doc</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">✎ excalidraw · shell-regions sketch</span><div style="flex:1"></div><span style="color:#9A581F;font-weight:600;font-size:10.5px;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:1px 8px;cursor:pointer">Apply to draft</span></div>
+        <div style="flex:1;background:repeating-linear-gradient(-45deg,#F7F5EF,#F7F5EF 7px,#F1EEE6 7px,#F1EEE6 14px);display:flex;align-items:center;justify-content:center;position:relative">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:4px;padding:2px 6px">excalidraw canvas · 22 shapes · full-bleed</span>
+          <div style="position:absolute;left:10px;top:10px;display:flex;flex-direction:column;gap:3px"><span style="width:20px;height:20px;border-radius:5px;background:#FBFAF6;border:1px solid #D8D3C6;display:flex;align-items:center;justify-content:center;font-size:9px;color:#5B564C">◻</span><span style="width:20px;height:20px;border-radius:5px;background:#FBFAF6;border:1px solid #D8D3C6;display:flex;align-items:center;justify-content:center;font-size:9px;color:#5B564C">◯</span><span style="width:20px;height:20px;border-radius:5px;background:#FBFAF6;border:1px solid #D8D3C6;display:flex;align-items:center;justify-content:center;font-size:9px;color:#5B564C">╱</span></div>
+        </div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty"><span style="font-weight:600;color:#EFE9DB">Apply to draft, not to the doc.</span> Block editors write back into the OPEN draft; the doc itself changes only on Save. One save, one version bump — blocks never fork the version history.</div></sc-if>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SAVE STATES + DARK + FLOOR ============ -->
+<section id="states" data-screen-label="T5-3 — Save states, dark, 320 floor" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">SAVE STATES · DARK · 320 FLOOR</span>
+    <span style="font-size:12px;color:#8E897B">four footer words · graphite editor · the floor keeps the toggle and the save word</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:250px;flex:none;display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">THE FOUR FOOTER STATES</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C"><span style="width:6px;height:6px;border-radius:50%;background:#8E897B"></span>unsaved changes</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#BD8A2A"><span style="width:6px;height:6px;border-radius:50%;background:#BD8A2A;animation:pnPulse 1.6s infinite"></span>saving…</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>saved · v4 · just now</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3F6C90"><span style="font-size:10px">✎</span>@noa saved v4 — see banner</div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C;line-height:1.6">word + color, never color alone · the state lives in the footer, the conflict fact in a banner — no toasts inside an editor</span>
+    </div>
+    <div style="width:400px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:380px">
+        <div style="display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid #2C2719">
+          <span style="color:#8C8470;font-size:13px">▤</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:14px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Layout spec</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#E0A45A;background:rgba(224,164,90,.15);border-radius:999px;padding:2px 7px;flex:none">editing</span>
+          <div style="flex:1"></div>
+          <span style="color:#8C8470;font-size:12px">✕</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #2C2719">
+          <span style="display:inline-flex;border:1px solid #3B3524;border-radius:6px;overflow:hidden;background:#1B1810">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;padding:2px 10px;background:#302A1D;color:#EFE9DB">Write</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:2px 10px;color:#8C8470;border-left:1px solid #2C2719">Preview</span>
+          </span>
+          <div style="flex:1"></div>
+          <span style="color:#BDB5A2;font-weight:600;border:1px solid #3B3524;border-radius:6px;padding:2px 9px;font-size:11px;background:#221E15">Cancel</span>
+          <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:2px 9px;font-size:11px">Save v4</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.8;color:#BDB5A2;background:#1B1810">
+          <div><span style="color:#E0A45A;font-weight:600">## Floors</span></div>
+          <div>Every shrinkable region states a floor — <span style="font-weight:600;color:#EFE9DB">**floors are law**</span>, not preference.</div>
+          <div><span style="color:#8C8470">&gt; C_min = max(320, V·320 + (V−1)·8)</span></div>
+          <div style="margin:7px 0;border:1px dashed #3B3524;border-radius:7px;padding:6px 9px;display:flex;align-items:center;gap:7px;background:#221E15"><span style="color:#8C8470;font-size:11px">◆</span><span style="font-size:10px;color:#BDB5A2;flex:1">```mermaid · breakpoint-cascade</span><span style="font-size:9.5px;color:#E0A45A;cursor:pointer">open editor ⤢</span></div>
+          <div>The center hosts pinned panels<span style="display:inline-block;width:1.5px;height:14px;background:#E0A45A;vertical-align:text-bottom;margin-left:1px;animation:pnPulse 1.1s infinite"></span></div>
+        </div>
+        <div style="height:26px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;gap:8px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#D9AA49"><span style="width:6px;height:6px;border-radius:50%;background:#D9AA49;animation:pnPulse 1.6s infinite"></span>saving…<div style="flex:1"></div><span style="color:#665E4C">⌘enter</span></div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">dark — editor sits on surface-dark; syntax accents move to dark brass</span>
+    </div>
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:380px">
+        <div style="display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid #E7E3D9">
+          <span style="color:#8E897B;font-size:13px;flex:none">▤</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Layout spec — appendix C: responsive floor derivations and C_min proofs</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:2px 6px;flex:none">editing</span>
+          <span style="color:#8E897B;font-size:12px;flex:none">✕</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:6px;padding:0 10px;border-bottom:1px solid #E7E3D9">
+          <span style="display:inline-flex;border:1px solid #D8D3C6;border-radius:6px;overflow:hidden;background:#FFFFFF">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;padding:2px 8px;background:#ECE8DF">Write</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 8px;color:#8E897B;border-left:1px solid #E7E3D9">Preview</span>
+          </span>
+          <div style="flex:1"></div>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 8px;font-size:10.5px">Save</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:10px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.75;color:#3A362E;background:#FFFFFF">
+          <div><span style="color:#9A581F;font-weight:600">## Floors</span></div>
+          <div>Every shrinkable region states a floor — **floors are law**, not preference.</div>
+          <div style="margin:6px 0;border:1px dashed #D8D3C6;border-radius:6px;padding:5px 8px;display:flex;align-items:center;gap:6px;background:#FBFAF6"><span style="color:#8E897B;font-size:10px">◆</span><span style="font-size:9.5px;color:#5B564C;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">```mermaid · breakpoint-cascade</span><span style="font-size:9px;color:#9A581F">⤢</span></div>
+          <div>The center hosts pinned panels left-to-right in pin order<span style="display:inline-block;width:1.5px;height:13px;background:#B26A2B;vertical-align:text-bottom;margin-left:1px;animation:pnPulse 1.1s infinite"></span></div>
+        </div>
+        <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:6px;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5B564C"><span style="width:6px;height:6px;border-radius:50%;background:#8E897B"></span>unsaved<div style="flex:1"></div><span style="color:#B7B2A4">⌘↵</span></div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">320 floor — UUID-length title ellipsizes; toggle, Save and the save word all survive; Cancel folds into ✕</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">No co-editing theater.</span> v1 has no collaborative cursors; presence stays the footer's “N readers”. The conflict banner is the entire concurrency story — honest and small.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">History stays API-only.</span> entities.versions exists but reversal vocabulary is T5-4-deferred — so no “history ▸” affordance is drawn in edit mode; the read view keeps its existing quiet link only.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;worstCase&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;saveState&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;unsaved&quot;,&quot;saving&quot;,&quot;saved&quot;,&quot;conflict&quot;],&quot;default&quot;:&quot;unsaved&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Editor&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const worst = this.props.worstCase ?? false;
+    const st = this.props.saveState ?? 'unsaved';
+    const M = {
+      unsaved: { w: 'unsaved changes', c: '#8E897B', a: 'none' },
+      saving: { w: 'saving…', c: '#BD8A2A', a: 'pnPulse 1.6s infinite' },
+      saved: { w: 'saved · v4 · just now', c: '#3E8E5A', a: 'none' },
+      conflict: { w: 'unsaved changes', c: '#8E897B', a: 'none' }
+    };
+    const m = M[st] || M.unsaved;
+    return {
+      notes: this.props.notes ?? true, worst, nice: !worst,
+      saveWord: m.w, saveC: m.c, saveAnim: m.a,
+      conflictOn: st === 'conflict'
+    };
+  }
+}
+</script>
+</body>
+</html>

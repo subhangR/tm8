@@ -1,7 +1,7 @@
 /**
  * The CLI-owned `OperationDiscovery` projection — harness §7.1.
  *
- * One row per catalog operation, TOTAL over all 101 including internal and
+ * One row per catalog operation, TOTAL over all 106 including internal and
  * reserved. Everything the CLI knows about a command — its noun, its verb, its
  * exposure, its side effect, whether it needs a mutation id or a version guard,
  * and whether this node can actually run it — is derived from here, so help,
@@ -170,6 +170,38 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'none',
     tags: ['whoami', 'me', 'actor', 'principal'],
+  },
+  'serverConnections.list': {
+    cmd: ['server', 'list'],
+    syn: 'tm8 server list',
+    sum: 'List named routes to other tm8 Servers stored on this local node',
+    authz: 'server',
+    input: 'none',
+    tags: ['remote', 'connection', 'target'],
+  },
+  'serverConnections.create': {
+    cmd: ['server', 'add'],
+    syn: 'tm8 server add <name> --url <base-url> [--username <username>] [--mutation-id <id>]',
+    sum: 'Register a named route to another tm8 Server after checking its health endpoint',
+    authz: 'server',
+    input: 'bound',
+    tags: ['remote', 'connection', 'target'],
+  },
+  'serverConnections.get': {
+    cmd: ['server', 'get'],
+    syn: 'tm8 server get <name>',
+    sum: 'Read one named Server route',
+    authz: 'server',
+    input: 'none',
+    tags: ['remote', 'connection', 'target'],
+  },
+  'serverConnections.delete': {
+    cmd: ['server', 'remove'],
+    syn: 'tm8 server remove <name> --yes [--mutation-id <id>]',
+    sum: 'Remove a named Server route from this local node',
+    authz: 'server',
+    input: 'bound',
+    tags: ['remote', 'connection', 'target'],
   },
   'spaces.list': {
     cmd: ['space', 'list'],
@@ -879,7 +911,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|worktree|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -888,7 +920,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
       '`--context` is launch-manifest context, NOT a runtime prompt',
-      '`--workdir worktree` is discoverable reserved syntax and answers not_implemented until its gate closes',
+      'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
   'execution.prompt': {
@@ -925,6 +957,18 @@ const ROWS: Record<OperationName, Row> = {
     side: 'execution',
     tags: ['terminal', 'pty', 'watch', 'drive'],
     notes: ['`--format json` implies `--grant-only`: interactive terminal bytes are not DTO output'],
+  },
+  'execution.liveness': {
+    cmd: ['session', 'liveness'],
+    syn: 'tm8 session liveness [--space <space-id>]',
+    sum: 'Read which work sessions in a Space have a live PTY on this server process right now',
+    authz: 'space',
+    input: 'none',
+    tags: ['alive', 'live', 'pty', 'terminal', 'ghost', 'running'],
+    notes: [
+      'this is a point-in-time node observation, not a durable work-session status',
+      '`nodeBootId` changes when the server process restarts, so snapshots from different boots are not directly comparable',
+    ],
   },
 
   // ── custom entity kinds ──────────────────────────────────────────────────
@@ -1172,6 +1216,7 @@ const ROWS: Record<OperationName, Row> = {
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
   identity: 'identity',
+  serverConnections: 'server',
   spaces: 'space',
   entities: 'entity',
   tracking: 'tracking',
@@ -1291,7 +1336,7 @@ function withAvailability(row: BaseRow, from?: AvailabilityLedger): OperationDis
  * Memoized against the DEFAULT ledger's revision only. An explicitly passed
  * ledger is always re-resolved, because a cache keyed on the wrong ledger is
  * how a projection starts answering for a node the caller is no longer talking
- * to — and a stale availability claim is worse than recomputing 101 rows.
+ * to — and a stale availability claim is worse than recomputing 106 rows.
  */
 let cached: { rev: number; rows: readonly OperationDiscovery[] } | undefined;
 
@@ -1319,7 +1364,7 @@ export const DISCOVERY: readonly OperationDiscovery[] = new Proxy([] as Operatio
     Reflect.getOwnPropertyDescriptor(discovery(), prop),
 }) as readonly OperationDiscovery[];
 
-/** Exact-operation lookup. TOTAL over all 101 rows, internal and reserved included. */
+/** Exact-operation lookup. TOTAL over all 106 rows, internal and reserved included. */
 export function discoveryFor(operation: OperationName, from?: AvailabilityLedger): OperationDiscovery {
   const row = BY_NAME.get(operation);
   /* c8 ignore next */
@@ -1353,6 +1398,19 @@ export interface CommandDiscovery {
   helpRef: string;
   availability: Availability;
   availabilityReason: AvailabilityReason;
+  /**
+   * The source of the WEAKEST stage's verdict — carried with the availability
+   * and reason it belongs to, never left behind.
+   *
+   * It exists because the three fields are ONE verdict read from one row. When
+   * only the first two were rolled up, a command whose weakest stage was
+   * `observed` could report that stage's availability and reason beside the
+   * HEAD stage's source, producing `(unavailable, not_implemented_on_node,
+   * contract)` — a triple `resolveAvailability` cannot produce for any single
+   * operation, and one that reads as a PERMANENT, NODE-INDEPENDENT contract
+   * verdict when the truth is node-local and cleared by re-pointing.
+   */
+  availabilitySource: AvailabilitySource;
 }
 
 const COMMAND_ORDER: string[] = [];
@@ -1373,11 +1431,18 @@ for (const row of BASE) {
  * can initialize but not complete is not an available command, and saying it is
  * would be the optimistic answer this whole field exists to refuse.
  */
-function weakest(rows: readonly OperationDiscovery[]): Pick<CommandDiscovery, 'availability' | 'availabilityReason'> {
+function weakest(
+  rows: readonly OperationDiscovery[],
+): Pick<CommandDiscovery, 'availability' | 'availabilityReason' | 'availabilitySource'> {
   const rank: Record<Availability, number> = { unavailable: 0, unknown: 1, available: 2 };
   let worst = rows[0] as OperationDiscovery;
   for (const r of rows) if (rank[r.availability] < rank[worst.availability]) worst = r;
-  return { availability: worst.availability, availabilityReason: worst.availabilityReason };
+  // ALL THREE FROM `worst`, never two from here and one from elsewhere.
+  return {
+    availability: worst.availability,
+    availabilityReason: worst.availabilityReason,
+    availabilitySource: worst.availabilitySource,
+  };
 }
 
 function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
@@ -1431,6 +1496,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  */
 const NOUN_SUMMARY: Record<string, string> = {
   identity: 'Who this process is calling as',
+  server: 'Named routes to other tm8 Servers',
   space: 'Spaces — the authorization and event boundary, and their members, invites, axes, and menus',
   entity: 'Every entity kind: read, create, update, move, query, and relate',
   task: 'Task lifecycle: transition, complete, and link pull requests or commits',
@@ -1452,7 +1518,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   action: 'What THIS actor may actually do on a target right now',
   event: 'Durable Space events, by poll or live stream',
   presence: 'Who is present on an entity',
-  session: 'Work sessions: spawn, attach, terminate',
+  session: 'Work sessions: inspect live PTYs, spawn, attach, terminate',
   kind: 'The entity-kind registry, core and custom',
   handoff: 'Project a bounded entity snapshot into a work session',
   'interaction-profile': 'Interaction Profile lifecycle and defaults',

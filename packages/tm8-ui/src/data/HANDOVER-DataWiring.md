@@ -29,11 +29,10 @@ And the app showed invented data, `＋ New` wrote to a node nobody was reading, 
 
 | rule | result | why |
 |---|---|---|
-| `MODE === 'production'` | fixture | **kept verbatim per the brief — and flagged, see §6 GAP-6.** It means a production build shows fixture data while a dev build shows the node. |
 | flag `'1'` | real | the old opt-in, unchanged |
 | flag `'0'` | fixture | **NEW.** A default with no off switch is a trap; this is how the fixture world comes back with no rebuild |
 | `MODE === 'test'` | fixture | vitest has no node and no network. A real default there makes every suite measure the ENVIRONMENT — 1000 reds saying nothing about the change that caused them |
-| otherwise | **real** | the headline |
+| otherwise, including production | **real** | the headline; production never silently composes fixture data |
 
 **Why a pure resolver and not just an inverted return.** `isRealSeamEnabled()` reads the ambient `MODE`, and under vitest that is `'test'` forever — so the app's real default was *structurally unassertable*. `seamSource.test.ts` is the whole truth table against injected envs. A default nobody can assert is a default nobody can defend.
 
@@ -47,8 +46,8 @@ And the app showed invented data, `＋ New` wrote to a node nobody was reading, 
 |---|---|---|
 | `views/GateApp.tsx`, `home/HomeScreen.tsx` | `presenceHollowReason`, `authoredFromHollowReason`, `homeActivityLoadEarlierReason` | **LEGITIMATE.** Honesty COPY, not entity data — the sentences that explain a hollow value. Nothing about them is a stand-in for a node. |
 | `gallery/GalleryPage.tsx` | fixture entities | **LEGITIMATE.** It is a component gallery; fixtures are its subject. |
-| `views/WorkspaceView.tsx` + `LaunchSheet.tsx` | `views/launch-fixtures` — teammates, projects, capacity, profiles | **REAL GAP, and the brief predicted it.** The launch sheet's pickers are invented. Flagged, not mine (GAP-5a). |
-| `views/GateApp.tsx:288` → `graph/GraphScreen` | `graphFixtureNodes`, `graphFixtureEdges`, `graphFixtureTimeline`, `GRAPH_FIXTURE_NOW` | **THE BIGGEST REMAINING MOCK SURFACE.** The Graph screen renders fixture entities regardless of which seam is constructed. `views/GateApp.tsx` and `src/graph/**` are both outside this seat (GAP-5b). |
+| `views/WorkspaceView.tsx` + `LaunchSheet.tsx` | Active seam — team/profile entities, linked projects, settings defaults, liveness capacity | **RESOLVED.** Production launch pickers are graph/server-backed; `views/launch-fixtures` is test-only (GAP-5a). |
+| `views/GateApp.tsx` → `graph/GraphScreen` | active seam `graph.query` + domain-store entity/edge projection | **RESOLVED.** Initial nodes/edges come from the server graph lens; durable events update the same normalized projection in realtime. |
 | `data/fixtures/seam-fixture.ts` | everything | **LEGITIMATE.** It IS the fixture seam, and it is now reachable only by opt-out or under MODE=test. |
 
 `src/fixtures/**` was not touched, per the brief.
@@ -228,12 +227,12 @@ Two candidate one-liners, both outside this seat: set `current: details.current`
 
 ### GAP-5 — mock data still on real screens
 
-- **5a** — the launch sheet's teammate/project/capacity/profile pickers are `views/launch-fixtures`. Invented.
-- **5b** — **`GateApp.tsx:288` hands `graphFixtureNodes`/`graphFixtureEdges` to `GraphScreen`.** The Graph screen renders fixture entities no matter which seam was constructed. This is the largest remaining mock surface and the flag does not touch it. `src/graph/**` and `GateApp.tsx` are both outside this seat.
+- **5a — RESOLVED.** Launch teammate/profile summaries, linked projects and node capacity now come from the active seam. `views/launch-fixtures` remains test-only.
+- **5b — RESOLVED.** `GateApp` now hands `GraphScreen` the active seam's `graph.query` lens. Hydrated edges share the domain store with `edge.upsert`/`edge.deleted`, and hydrated nodes share it with entity events, so the canvas advances without a fixture timeline or refresh.
 
-### GAP-6 — `MODE === 'production'` → fixtures
+### GAP-6 — RESOLVED: production uses the real seam
 
-Kept verbatim per the brief. Stated because it is surprising and because keeping a rule is a choice: a production build now shows fixture data while a dev build shows the node. It is a ruling carried forward from the opt-in era, not a measurement. **Reverse it by deleting one line** (`if (env.MODE === 'production') return 'fixture';`) if that is not intended.
+Production now follows the ordinary real-seam default. Fixture mode is explicit (`'0'`) or the test composition only.
 
 ### GAP-7 — `realSeamFlag.test.ts`'s "is OFF by default"
 

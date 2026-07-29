@@ -56,6 +56,8 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
+  ServerConnectionCreateInputSchema,
+  ServerConnectionDeleteInputSchema,
   TaskAxisInputSchema,
   TrackingRefreshInputSchema,
   UpdateSpaceInputSchema,
@@ -92,6 +94,10 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  // node-local named Server routes
+  'serverConnections.create': ServerConnectionCreateInputSchema,
+  'serverConnections.delete': ServerConnectionDeleteInputSchema,
+
   // spaces
   'spaces.create': CreateSpaceInputSchema,
   'spaces.update': UpdateSpaceInputSchema,

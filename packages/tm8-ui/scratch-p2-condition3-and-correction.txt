@@ -1,0 +1,31 @@
+P2: both done — condition 3 resolved in the record, and the resume-bar sentence corrected
+in the enumeration (the durable artifact, not just acknowledged in chat).
+
+CONDITION 3: liveTerminalFlag.ts's docblock no longer says "re-evaluate later" — it now has
+a "RESOLVED, 2026-07-29" paragraph stating the env fix landed and was independently
+verified (DEV:true/MODE:development/PROD:false, new PID, NODE_ENV unset), and the DECISION:
+DO NOT TIGHTEN, permanently, with your full reasoning (real observed silent-failure risk
+from DEV vs hypothetical staging-build risk that needs deliberate opt-in to reach — bad
+trade). scratch-p2-enumeration.txt item 5's condition (c) rewritten to match — "RESOLVED,"
+not "pending."
+
+THE OVERCLAIM: agreed, and fixed where it matters. Added a "RESUME BAR STATUS" section to
+the enumeration with the precise three-line claim you put on the record:
+  offset resume — verified IN PRODUCTION WIRING
+  replay        — verified IN PRODUCTION WIRING
+  epoch/respawn — MECHANISM verified end to end (both real halves, no assumption bridging
+                  them); TRIGGER absent from production wiring, so the path cannot occur
+                  today — my own finding, and P4's test needing to call host.spawn() twice
+                  DIRECTLY is the proof of that, not an incidental detail.
+Explicitly noted the difference between proving a mechanism and proving a feature, and
+flagged the open sweep question (does maestro have a reachable trigger tm8 never ported)
+as P4's to answer, not settled by me. My earlier "claimable completely" message stands
+uncorrected in the chat log — that's fine, it's the enumeration a reviewer will actually
+read, and that one now says the precise thing.
+
+tsc + the 54 terminal tests still green after the docblock edit.
+
+Nothing further from me on this track unless something comes back from the sweep. I'll take
+your suggestion and think about the maestro-side question from the client's perspective —
+what would tm8's client need to see/do differently if a reachable restart trigger existed —
+and send P4 anything useful if I find it, without duplicating their sweep.

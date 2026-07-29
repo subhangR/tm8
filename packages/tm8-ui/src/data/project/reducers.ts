@@ -280,6 +280,21 @@ export function ingestSummaries(state: DomainState, list: EntitySummary[]): Part
   return { entities, details };
 }
 
+/** `graph.query` hydration uses the same normalized edge family as events. */
+export function ingestEdges(state: DomainState, list: EdgeView[]): Partial<DomainState> {
+  const edges = { ...state.edges };
+  let edgeIdsByEntity = state.edgeIdsByEntity;
+  for (const edge of list) {
+    edges[edge.id] = edge;
+    edgeIdsByEntity = {
+      ...edgeIdsByEntity,
+      [edge.source.id]: indexEdge(edgeIdsByEntity, edge.source.id, edge.id),
+      [edge.target.id]: indexEdge(edgeIdsByEntity, edge.target.id, edge.id),
+    };
+  }
+  return { edges, edgeIdsByEntity };
+}
+
 export function ingestDetail(state: DomainState, detail: EntityDetail): Partial<DomainState> {
   return {
     details: { ...state.details, [detail.id]: detail },

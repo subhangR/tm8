@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ ANATOMY ============ -->
+<section id="anatomy" data-screen-label="T3-3 — Account menu anatomy" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T3-3 · ACCOUNT MENU — THE “WHO AM I” SURFACE OFF THE TOP-BAR AVATAR</span>
+    <span style="font-size:12px;color:#8E897B">identity · profile entry · theme (its one home) · acting-as seam · node settings · honest sign-out</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations · worst-case identity · acting-as live</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:560px;flex:none;display:flex;flex-direction:column">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px 10px 0 0;box-shadow:0 2px 8px rgba(0,0,0,.5);height:42px;display:flex;align-items:center;gap:12px;padding:0 14px;box-sizing:border-box">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</div>
+        <div style="width:1px;height:18px;background:#E7E3D9"></div>
+        <div style="display:flex;align-items:center;gap:6px;background:#ECE8DF;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+        <div style="flex:1"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;background:#FFFFFF">/ palette · ⌘K</div>
+        <div style="position:relative;display:flex">
+          <div style="width:22px;height:22px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#5B564C;cursor:pointer;box-shadow:0 0 0 2px #B26A2B">A</div>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="position:absolute;top:-7px;right:-7px;width:15px;height:15px;border-radius:50%;background:rgba(178,106,43,.9);color:#FFF;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span></sc-if>
+        </div>
+      </div>
+      <div style="background:#EFECE4;border:1px solid #2C2719;border-top:none;border-radius:0 0 10px 10px;padding:10px 14px 18px;display:flex;justify-content:flex-end;position:relative;min-height:472px;box-sizing:border-box">
+        <div style="width:296px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:10px;box-shadow:0 12px 34px rgba(40,34,24,.14);overflow:hidden;height:fit-content">
+          <div style="padding:12px 12px 10px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #E7E3D9">
+            <span style="width:36px;height:36px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">A</span>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:6px;min-width:0"><sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ada</span></sc-if><sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">Adelaide Konstantina Lovelace-Kowalczyk</span></sc-if><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#5B564C;background:#ECE8DF;border-radius:4px;padding:1px 5px;flex:none">owner</span></div>
+              <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ada@loopback · local node</span></sc-if>
+              <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">adelaide.konstantina.lovelace-kowalczyk@loopback</span></sc-if>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A">● online</span>
+            </div>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;align-self:flex-start">2</span></sc-if>
+          </div>
+          <div style="padding:4px">
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#F2EFE8">
+              <span style="color:#8E897B;font-size:12px;width:14px;text-align:center">◯</span>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">My profile</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">opens your member panel (C1)</div></div>
+              <span style="color:#B7B2A4;font-size:11px">›</span>
+              <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if>
+            </div>
+          </div>
+          <div style="padding:6px 12px 10px;border-top:1px solid #F0EDE4;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:6px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">THEME</span><div style="flex:1"></div><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span></sc-if></div>
+            <div style="display:flex;border:1px solid #D8D3C6;border-radius:7px;overflow:hidden;background:#FFFFFF">
+              <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:4px 0;background:#ECE8DF;color:#23201B;cursor:pointer">☼ light ✓</span>
+              <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 0;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer" style-hover="background:#F2EFE8">◐ dark</span>
+              <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 0;color:#8E897B;border-left:1px solid #E7E3D9;cursor:pointer" style-hover="background:#F2EFE8">◑ system</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;line-height:1.5">theme's one home — the Round-1 tab-bar ◐ retires (see reconciliation below)</span>
+          </div>
+          <div style="padding:4px;border-top:1px solid #F0EDE4">
+            <sc-if value="{{actingOff}}" hint-placeholder-val="{{true}}">
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:6px;cursor:not-allowed;opacity:.62">
+              <span style="color:#8E897B;font-size:12px;width:14px;text-align:center">⇄</span>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600;color:#5B564C">Act as teammate…</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;line-height:1.5">disabled — one signed-in identity on a loopback node; seam reserved for accounts</div></div>
+              <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;opacity:1">5</span></sc-if>
+            </div>
+            </sc-if>
+            <sc-if value="{{actingOn}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:2px;padding:7px 8px;border-radius:6px;background:#F2EFE8">
+              <div style="display:flex;align-items:center;gap:8px"><span style="color:#8E897B;font-size:12px;width:14px;text-align:center">⇄</span><span style="font-size:12.5px;font-weight:600;flex:1">Act as teammate</span><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">5</span></sc-if></div>
+              <div style="display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:5px;cursor:pointer;background:#FFFFFF;border:1px solid #E7E3D9;margin-left:22px" style-hover="border-color:#D8D3C6"><span style="width:15px;height:15px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">F</span><span style="font-size:11.5px;font-weight:600;flex:1">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">claude-sonnet</span></div>
+              <div style="display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:5px;cursor:pointer;background:#FFFFFF;border:1px solid #E7E3D9;margin-left:22px" style-hover="border-color:#D8D3C6"><span style="width:15px;height:15px;flex:none;border-radius:4px;background:rgba(189,138,42,.14);color:#BD8A2A;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">S</span><span style="font-size:11.5px;font-weight:600;flex:1">scout</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">claude-opus</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;margin-left:22px;line-height:1.5">acting is audited — every write records “ada acting as forge”</span>
+            </div>
+            </sc-if>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#F2EFE8">
+              <span style="color:#8E897B;font-size:12px;width:14px;text-align:center">⚙</span>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">Node settings</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">trust · slots · project registry (T3-5)</div></div>
+              <span style="color:#B7B2A4;font-size:11px">›</span>
+              <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">6</span></sc-if>
+            </div>
+          </div>
+          <div style="padding:4px;border-top:1px solid #F0EDE4">
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#F2EFE8">
+              <span style="color:#8E897B;font-size:12px;width:14px;text-align:center">↦</span>
+              <div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">Sign out</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;line-height:1.5">ends this browser session only — the local node and live agents keep running</div></div>
+              <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">7</span></sc-if>
+            </div>
+          </div>
+          <div style="height:24px;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">tm8 v1 · node loopback<div style="flex:1"></div>esc closes</div>
+        </div>
+      </div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="width:330px;flex:none;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Trigger.</span> The top-bar avatar (round = human, always). Open state = 2px brass ring. Click or Enter opens; Esc closes the menu only — layer 2 of the keyboard chain, it never also pops the panel stack.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Identity summary.</span> Name + role chip · node identity line in mono (account@node) · presence as dot + word. Long names ellipsize; the chip and presence never collapse.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">My profile = the member Z3.</span> No separate profile screen — the row pushes your own member panel onto the stack (T0-4 anatomy). Edit mode below.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Theme, reconciled.</span> One home (ruling): the segmented light/dark/system control lives here. The Round-1 tab-bar ◐ is retired — an amendment to T0-1, drawn below, not a redesign of it. System is honest: the caption states the resolved value.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">5</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Acting-as seam.</span> Ships disabled-with-reason (T1-4 vocabulary) — visible, reason inline, never hidden, never faked. The Tweak flips it to the future live picker: square-avatar teammates + an audit caption.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">6</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Node settings link.</span> Deep link to T3-5 (already designed). Kept in the account menu because trust and slots are “me and my node” concerns, not space settings.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">7</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Honest sign-out.</span> On loopback v1 signing out has limited meaning — the copy says exactly what happens: the UI session ends, the node and agents do not. No fake security theater.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">geometry · menu w 296 · anchored below avatar, right-aligned, 8px viewport inset · rows h 32+ · identity block 60 · pop shadow · focus order: identity → rows top-to-bottom</div>
+    </div>
+    </sc-if>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">THEME RECONCILIATION — ONE HOME</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;height:36px;display:flex;align-items:center;gap:10px;padding:0 12px;box-sizing:border-box;opacity:.65">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#B26A2B">◈ tm8</span><div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;background:#FFFFFF">/ ⌘K</span>
+          <span style="font-size:12px;color:#BB4D3D;position:relative">◐<span style="position:absolute;left:-3px;right:-3px;top:50%;height:1.5px;background:#BB4D3D;transform:rotate(-18deg)"></span></span>
+          <span style="width:20px;height:20px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#5B564C">A</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">round 1 — ◐ ad-hoc toggle in the tab bar · superseded</span>
+        <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;height:36px;display:flex;align-items:center;gap:10px;padding:0 12px;box-sizing:border-box">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#B26A2B">◈ tm8</span><div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;background:#FFFFFF">/ ⌘K</span>
+          <span style="width:20px;height:20px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#5B564C">A</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">round 2 — theme lives in the account menu; the slot closes up</span>
+      </div>
+      <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Rationale: the worklist demands one home. The menu wins — theme is an <span style="font-weight:600;color:#EFE9DB">account presentation preference</span> (it will sync per account), not space chrome. Cost: two clicks instead of one; the palette keeps <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#EFE9DB">“toggle theme”</span> as the fast path.</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470;padding-top:6px">SIGN-OUT CONFIRM — HONEST COPY</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 12px 34px rgba(0,0,0,.4);padding:14px;display:flex;flex-direction:column;gap:9px;width:262px;box-sizing:border-box">
+        <div style="font-size:13.5px;font-weight:600">Sign out of tm8?</div>
+        <div style="font-size:11.5px;line-height:1.55;color:#5B564C;text-wrap:pretty">This ends your browser session. On a local node that is all it does — <span style="font-weight:600">forge and scout keep running</span>, and anyone at this machine can sign back in.</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px">
+          <span style="padding:4px 11px;border:1px solid #D8D3C6;border-radius:7px;font-size:11.5px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span>
+          <span style="padding:4px 11px;border-radius:7px;font-size:11.5px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Sign out</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROFILE EDIT ============ -->
+<section id="profile-edit" data-screen-label="T3-3 — Profile edit mode" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">PROFILE EDIT — THE MEMBER Z3 (T0-4), PLUS AN EDIT MODE, NOTHING NEW</span>
+    <span style="font-size:12px;color:#8E897B">Edit is the kind primary on YOUR member panel · identity fields editable · system-owned fields hollow, with captions</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:426px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:524px">
+        <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › members</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+          <span style="width:20px;height:20px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">A</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ada</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px;flex:none">● online</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:2px 7px;flex:none">editing</span>
+          <div style="flex:1"></div>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⤢</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">✕</span>
+        </div>
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+          <span>⊕ Link</span>
+          <div style="flex:1"></div>
+          <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Save</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+          <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span><span style="display:flex;align-items:center;gap:4px;color:#8E897B">Discussion <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">2</span></span><span style="display:flex;align-items:center;gap:4px;color:#8E897B">Connections <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">4</span></span><span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+        </div>
+        <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:40px;height:40px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;position:relative">A<span style="position:absolute;right:-4px;bottom:-4px;width:16px;height:16px;border-radius:50%;background:#FFFFFF;border:1px solid #D8D3C6;display:flex;align-items:center;justify-content:center;font-size:8px;color:#8E897B;cursor:pointer">✎</span></span>
+            <div style="min-width:0;flex:1;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;line-height:1.5">avatars stay round for humans — provenance rule; upload replaces the letterform</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8E897B">DISPLAY NAME</span>
+            <div style="height:30px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-size:12.5px;box-shadow:0 0 0 2px rgba(178,106,43,.11)">ada<span style="width:1.5px;height:15px;background:#B26A2B;margin-left:1px;animation:pnPulse 1.1s infinite"></span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8E897B">ABOUT</span>
+            <div style="min-height:44px;display:flex;padding:7px 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12px;color:#5B564C;line-height:1.5">Shell + panels. Ask me about the stack machine.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8E897B">ACCOUNT ID</span>
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#F2EFE8;border:1px solid #E7E3D9;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B">ada@loopback<div style="flex:1"></div><span style="font-size:9px">system-owned · rename in node settings</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;opacity:.75">
+            <div style="background:#FFFFFF;border:1px dashed #D8D3C6;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#23201B">112</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">tasks done</span></div>
+            <div style="background:#FFFFFF;border:1px dashed #D8D3C6;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#23201B">412</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">points</span></div>
+            <div style="background:#FFFFFF;border:1px dashed #D8D3C6;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#23201B">2</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">teammates</span></div>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;margin-top:-6px">stats are system-owned — dashed while editing, untouchable</span>
+        </div>
+        <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">unsaved changes · esc cancels · ⌘enter saves</div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;line-height:1.5;padding:0 2px">edit mode — same Z3, action bar swaps to Cancel/Save; “editing” pill joins the header; saves ride entities.patch + version bump</div></sc-if>
+    </div>
+    <div style="width:426px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:524px">
+        <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">atelier › members</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #2C2719">
+          <span style="width:20px;height:20px;flex:none;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">A</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ada</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 7px;flex:none">● online</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#E0A45A;background:rgba(224,164,90,.15);border-radius:999px;padding:2px 7px;flex:none">editing</span>
+          <div style="flex:1"></div>
+          <span style="color:#8C8470;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8C8470;font-size:12px;padding:2px 4px">✕</span>
+        </div>
+        <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:11.5px;color:#BDB5A2">
+          <span>⊕ Link</span>
+          <div style="flex:1"></div>
+          <span style="color:#BDB5A2;font-weight:600;border:1px solid #3B3524;border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer;background:#221E15" style-hover="background:#262117">Cancel</span>
+          <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(224,164,90,.25)">Save</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:12px">
+          <span style="display:flex;align-items:center;font-weight:600;color:#EFE9DB;border-bottom:2px solid #E0A45A">Content</span><span style="display:flex;align-items:center;gap:4px;color:#8C8470">Discussion <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">2</span></span><span style="display:flex;align-items:center;gap:4px;color:#8C8470">Connections <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">4</span></span><span style="display:flex;align-items:center;color:#8C8470">Activity</span>
+        </div>
+        <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="width:40px;height:40px;flex:none;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;position:relative">A<span style="position:absolute;right:-4px;bottom:-4px;width:16px;height:16px;border-radius:50%;background:#221E15;border:1px solid #3B3524;display:flex;align-items:center;justify-content:center;font-size:8px;color:#8C8470;cursor:pointer">✎</span></span>
+            <div style="min-width:0;flex:1;font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C;line-height:1.5">same geometry on graphite — token swap only</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8C8470">DISPLAY NAME</span>
+            <div style="height:30px;display:flex;align-items:center;padding:0 10px;background:#1B1810;border:1px solid #E0A45A;border-radius:7px;font-size:12.5px;color:#EFE9DB;box-shadow:0 0 0 2px rgba(224,164,90,.15)">ada<span style="width:1.5px;height:15px;background:#E0A45A;margin-left:1px;animation:pnPulse 1.1s infinite"></span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8C8470">ABOUT</span>
+            <div style="min-height:44px;display:flex;padding:7px 10px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;font-size:12px;color:#BDB5A2;line-height:1.5">Shell + panels. Ask me about the stack machine.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8C8470">ACCOUNT ID</span>
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 10px;background:#262117;border:1px solid #2C2719;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8470">ada@loopback<div style="flex:1"></div><span style="font-size:9px">system-owned</span></div>
+          </div>
+        </div>
+        <div style="height:28px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">unsaved changes · esc cancels · ⌘enter saves</div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;line-height:1.5;padding:0 2px">dark — warm graphite tokens; focused field ring in dark brass</div></sc-if>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Edit is a mode, not a screen.</span> Entry: the Edit primary on your own member panel (others' profiles never offer it — permission honesty), or “My profile” → Edit. The chrome stays; only the action bar and body change.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Editable vs system-owned.</span> Identity (display name, avatar, about) is yours. Account ID, role, stats are system-owned: solid-read-only or dashed-while-editing, each with a caption saying who owns it — the hollow-value grammar from T1-4/T4.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Save semantics.</span> Footer states “unsaved changes”; Save rides entities.patch with a version bump; a conflicting concurrent edit lands in T4's conflict treatment — no silent last-write-wins.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ DARK + FLOORS ============ -->
+<section id="dark-floors" data-screen-label="T3-3 — Dark menu + 320 floor" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">DARK + THE 320 FLOOR — SAME MENU, CLAMPED, NEVER CLIPPED</span>
+    <span style="font-size:12px;color:#8E897B">token swap only · at 320px the menu clamps to viewport − 16, right-anchored · every row survives</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:560px;flex:none;display:flex;flex-direction:column">
+      <div style="background:#1B1810;border:1px solid #3B3524;border-radius:10px 10px 0 0;height:42px;display:flex;align-items:center;gap:12px;padding:0 14px;box-sizing:border-box">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#E0A45A">◈ tm8</div>
+        <div style="width:1px;height:18px;background:#2C2719"></div>
+        <div style="display:flex;align-items:center;gap:6px;background:#302A1D;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600;color:#EFE9DB"><span style="width:7px;height:7px;border-radius:50%;background:#E0A45A"></span>atelier</div>
+        <div style="flex:1"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8470;border:1px solid #2C2719;border-radius:6px;padding:3px 9px;background:#221E15">/ palette · ⌘K</div>
+        <div style="width:22px;height:22px;border-radius:50%;background:#302A1D;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#BDB5A2;cursor:pointer;box-shadow:0 0 0 2px #E0A45A">A</div>
+      </div>
+      <div style="background:#15130E;border:1px solid #3B3524;border-top:none;border-radius:0 0 10px 10px;padding:10px 14px 18px;display:flex;justify-content:flex-end;min-height:420px;box-sizing:border-box">
+        <div style="width:296px;background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.6);overflow:hidden;height:fit-content">
+          <div style="padding:12px 12px 10px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #2C2719">
+            <span style="width:36px;height:36px;flex:none;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600">A</span>
+            <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px">
+              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:13.5px;font-weight:600;color:#EFE9DB">ada</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#BDB5A2;background:#302A1D;border-radius:4px;padding:1px 5px">owner</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470">ada@loopback · local node</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381">● online</span>
+            </div>
+          </div>
+          <div style="padding:4px">
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#262117">
+              <span style="color:#8C8470;font-size:12px;width:14px;text-align:center">◯</span>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#EFE9DB">My profile</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">opens your member panel (C1)</div></div>
+              <span style="color:#665E4C;font-size:11px">›</span>
+            </div>
+          </div>
+          <div style="padding:6px 12px 10px;border-top:1px solid #2C2719;display:flex;flex-direction:column;gap:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">THEME</span>
+            <div style="display:flex;border:1px solid #3B3524;border-radius:7px;overflow:hidden;background:#1B1810">
+              <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 0;color:#8C8470;cursor:pointer" style-hover="background:#262117">☼ light</span>
+              <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:4px 0;background:#302A1D;color:#EFE9DB;border-left:1px solid #2C2719;cursor:pointer">◐ dark ✓</span>
+              <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:10px;padding:4px 0;color:#8C8470;border-left:1px solid #2C2719;cursor:pointer" style-hover="background:#262117">◑ system</span>
+            </div>
+          </div>
+          <div style="padding:4px;border-top:1px solid #2C2719">
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:6px;cursor:not-allowed;opacity:.6">
+              <span style="color:#8C8470;font-size:12px;width:14px;text-align:center">⇄</span>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#BDB5A2">Act as teammate…</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C;line-height:1.5">disabled — one signed-in identity on a loopback node</div></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#262117">
+              <span style="color:#8C8470;font-size:12px;width:14px;text-align:center">⚙</span>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#EFE9DB">Node settings</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">trust · slots · project registry (T3-5)</div></div>
+              <span style="color:#665E4C;font-size:11px">›</span>
+            </div>
+          </div>
+          <div style="padding:4px;border-top:1px solid #2C2719">
+            <div style="display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer" style-hover="background:#262117">
+              <span style="color:#8C8470;font-size:12px;width:14px;text-align:center">↦</span>
+              <div style="flex:1"><div style="font-size:12.5px;font-weight:600;color:#EFE9DB">Sign out</div><div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C;line-height:1.5">ends this browser session only — the local node and live agents keep running</div></div>
+            </div>
+          </div>
+          <div style="height:24px;border-top:1px solid #2C2719;display:flex;align-items:center;gap:8px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">tm8 v1 · node loopback<div style="flex:1"></div>esc closes</div>
+        </div>
+      </div>
+    </div>
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:38px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid #E7E3D9;box-sizing:border-box">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#B26A2B">◈</div>
+          <div style="display:flex;align-items:center;gap:5px;background:#ECE8DF;border-radius:6px;padding:3px 8px;font-size:11.5px;font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+          <div style="flex:1"></div>
+          <div style="width:20px;height:20px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#5B564C;box-shadow:0 0 0 2px #B26A2B">A</div>
+        </div>
+        <div style="background:#EFECE4;padding:8px 8px 14px;display:flex;justify-content:flex-end">
+          <div style="width:100%;max-width:304px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:10px;box-shadow:0 12px 34px rgba(40,34,24,.14);overflow:hidden">
+            <div style="padding:10px 12px;display:flex;gap:9px;align-items:center;border-bottom:1px solid #E7E3D9">
+              <span style="width:32px;height:32px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600">A</span>
+              <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:1px">
+                <div style="display:flex;align-items:center;gap:6px;min-width:0"><sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">ada</span></sc-if><sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">Adelaide Konstantina Lovelace-Kowalczyk</span></sc-if><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#5B564C;background:#ECE8DF;border-radius:4px;padding:1px 5px;flex:none">owner</span></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ada@loopback · ● online</span>
+              </div>
+            </div>
+            <div style="padding:4px">
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer" style-hover="background:#F2EFE8"><span style="color:#8E897B;font-size:11px;width:13px;text-align:center">◯</span><span style="font-size:12px;font-weight:600;flex:1">My profile</span><span style="color:#B7B2A4;font-size:11px">›</span></div>
+            </div>
+            <div style="padding:5px 12px 9px;border-top:1px solid #F0EDE4;display:flex;flex-direction:column;gap:5px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">THEME</span>
+              <div style="display:flex;border:1px solid #D8D3C6;border-radius:7px;overflow:hidden;background:#FFFFFF">
+                <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;padding:4px 0;background:#ECE8DF">☼ ✓</span>
+                <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:4px 0;color:#8E897B;border-left:1px solid #E7E3D9">◐</span>
+                <span style="flex:1;text-align:center;font-family:'JetBrains Mono',monospace;font-size:9.5px;padding:4px 0;color:#8E897B;border-left:1px solid #E7E3D9">◑</span>
+              </div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">labels compact to glyphs — words in tooltips</span>
+            </div>
+            <div style="padding:4px;border-top:1px solid #F0EDE4">
+              <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 8px;opacity:.62;cursor:not-allowed"><span style="color:#8E897B;font-size:11px;width:13px;text-align:center">⇄</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:600;color:#5B564C">Act as teammate…</div><div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4;line-height:1.4">disabled — one identity on this node</div></div></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer" style-hover="background:#F2EFE8"><span style="color:#8E897B;font-size:11px;width:13px;text-align:center">⚙</span><span style="font-size:12px;font-weight:600;flex:1">Node settings</span><span style="color:#B7B2A4;font-size:11px">›</span></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer" style-hover="background:#F2EFE8"><span style="color:#8E897B;font-size:11px;width:13px;text-align:center">↦</span><span style="font-size:12px;font-weight:600;flex:1">Sign out</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">320 floor — menu clamps to viewport − 16px; sub-captions shorten, no row disappears</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Dark is a token swap.</span> Graphite surfaces, dark brass focus ring, pop shadow deepens. Geometry identical — light/dark overlay pixel-for-pixel.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Floor behavior.</span> The menu is anchored to the avatar and clamped to the viewport with an 8px inset. Theme labels compact to glyphs (words move to tooltips + focus announcement); the acting-as reason shortens but stays. Worst-case identity ellipsizes in the block — chip and presence hold.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">C8.</span> The menu is a listbox: focus trap, arrow keys move, Enter activates, Esc returns focus to the avatar. Disabled rows are focusable and announce their reason — screen readers get the same honesty as sighted users.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;worstCase&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;actingAsLive&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Acting-as seam&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const worst = this.props.worstCase ?? false;
+    const acting = this.props.actingAsLive ?? false;
+    return { notes: this.props.notes ?? true, worst, nice: !worst, actingOn: acting, actingOff: !acting };
+  }
+}
+</script>
+</body>
+</html>

@@ -74,6 +74,7 @@ export const USAGE = `tm8 — the graph-native CLI for a tm8 Server
   tm8 <noun> [<subnoun>] <verb> [arguments] [options]
 
 global options
+  --server <name>           target a named Server registered on the local Server
   --space <space-id>        the Space this command acts in
   --as <actor-id>           author as an authorized Member or Teammate
   --format human|json|jsonl stdout shape; human renders the same DTO as json
@@ -202,11 +203,19 @@ async function dispatch(invocation: ParsedInvocation, out: Output): Promise<Exit
     );
   }
 
-  const ctx = resolveContext({
+  let ctx = resolveContext({
     globals,
     session: sessionContextFromEnv(),
     config: loadLocalConfig(),
   });
+
+  if (globals.server !== undefined) {
+    if (match.path[0] === 'server') {
+      throw new CliError('server registry commands always act on the local Server; omit --server', EXIT_USAGE);
+    }
+    const { resolveServerTarget } = await import('./server-target.js');
+    ctx = await resolveServerTarget(ctx, globals.server);
+  }
 
   return command.run({
     path: match.path,

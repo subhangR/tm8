@@ -45,6 +45,7 @@
  *   Restored: Tests  9 passed (9).
  */
 import { describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { CollabError, type CommandResult, type EntityDetail, type EntityId, type PatchTaskInput } from '@tm8/contract';
 import { ALL_MODES, REASONS as DOMAIN_REASONS, getKind, type ActionContext } from '../../domain';
@@ -96,6 +97,58 @@ const ok = (): Promise<CommandResult> => Promise.resolve({} as CommandResult);
 const patchSpy = () => vi.fn((_id: EntityId, _input: PatchTaskInput) => ok());
 
 describe('the panel mounts the real save path', () => {
+  it('keeps the description editor mounted and saves its staged text', async () => {
+    if (TASK.content.kind !== 'task') throw new Error('the task fixture must carry task content');
+    const savedEntity: EntityDetail = {
+      ...TASK,
+      version: TASK.version + 1,
+      content: { ...TASK.content, description: 'Context that grows with the task.' },
+    };
+    const result: CommandResult = { entity: savedEntity, patches: [savedEntity] };
+    const patchTask = vi.fn((_id: EntityId, _input: PatchTaskInput) => Promise.resolve(result));
+    const onSaved = vi.fn();
+
+    function SavedPanel() {
+      const [detail, setDetail] = useState<EntityDetail>({
+        ...TASK,
+        content: { ...TASK.content, description: '' },
+      });
+      return (
+        <EntityDetailPanel
+          detail={detail}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createTask: vi.fn(ok), patchTask }}
+          onSaved={(commandResult) => {
+            onSaved(commandResult);
+            if (commandResult.entity) setDetail(commandResult.entity);
+          }}
+        />
+      );
+    }
+
+    const { getByRole, getByTestId } = render(
+      <div className="cv2-root">
+        <SavedPanel />
+      </div>,
+    );
+
+    const description = getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
+    expect(description.value).toBe('');
+    fireEvent.change(description, { target: { value: 'Context that grows with the task.' } });
+    fireEvent.click(getByTestId('authoring-save'));
+
+    await waitFor(() => expect(patchTask).toHaveBeenCalledTimes(1));
+    const [id, patch] = patchTask.mock.calls[0]!;
+    expect(id).toBe(TASK.id);
+    expect(patch).toMatchObject({
+      description: 'Context that grows with the task.',
+      expectedVersion: TASK.version,
+    });
+    expect(onSaved).toHaveBeenCalledWith(result);
+    expect(description.value).toBe('Context that grows with the task.');
+  });
+
   it('the title is a REAL editor and it sends patchTask', async () => {
     const patchTask = patchSpy();
     const { getByTestId, getByRole } = render(
@@ -110,7 +163,7 @@ describe('the panel mounts the real save path', () => {
     );
 
     fireEvent.click(getByTestId('authoring-title'));
-    const input = getByRole('textbox');
+    const input = getByRole('textbox', { name: 'Title' });
     fireEvent.change(input, { target: { value: 'a name someone chose' } });
     fireEvent.keyDown(input, { key: 'Enter' });
 
@@ -133,8 +186,8 @@ describe('the panel mounts the real save path', () => {
       </div>,
     );
     fireEvent.click(getByTestId('authoring-title'));
-    fireEvent.change(getByRole('textbox'), { target: { value: 'mine' } });
-    fireEvent.keyDown(getByRole('textbox'), { key: 'Enter' });
+    fireEvent.change(getByRole('textbox', { name: 'Title' }), { target: { value: 'mine' } });
+    fireEvent.keyDown(getByRole('textbox', { name: 'Title' }), { key: 'Enter' });
 
     await waitFor(() => expect(patchTask).toHaveBeenCalledTimes(1));
     expect(patchTask.mock.calls[0]![1]).toMatchObject({ expectedVersion: TASK.version });
@@ -167,7 +220,7 @@ describe('the panel mounts the real save path', () => {
     );
 
     fireEvent.click(getByTestId('authoring-title'));
-    fireEvent.change(getByRole('textbox'), { target: { value: 'mine' } });
+    fireEvent.change(getByRole('textbox', { name: 'Title' }), { target: { value: 'mine' } });
 
     rerender(
       <div className="cv2-root">
@@ -179,7 +232,7 @@ describe('the panel mounts the real save path', () => {
         />
       </div>,
     );
-    fireEvent.keyDown(getByRole('textbox'), { key: 'Enter' });
+    fireEvent.keyDown(getByRole('textbox', { name: 'Title' }), { key: 'Enter' });
 
     await waitFor(() => expect(patchTask).toHaveBeenCalledTimes(1));
     expect(patchTask.mock.calls[0]![1]).toMatchObject({ expectedVersion: TASK.version + 5 });
@@ -199,8 +252,8 @@ describe('the panel mounts the real save path', () => {
     );
 
     fireEvent.click(getByTestId('authoring-title'));
-    fireEvent.change(getByRole('textbox'), { target: { value: 'mine' } });
-    fireEvent.keyDown(getByRole('textbox'), { key: 'Enter' });
+    fireEvent.change(getByRole('textbox', { name: 'Title' }), { target: { value: 'mine' } });
+    fireEvent.keyDown(getByRole('textbox', { name: 'Title' }), { key: 'Enter' });
 
     const card = await waitFor(() => {
       const found = container.querySelector('[data-testid="authoring-conflict"]');
@@ -251,8 +304,8 @@ describe('the panel mounts the real save path', () => {
     );
 
     fireEvent.click(getByTestId('authoring-title'));
-    fireEvent.change(getByRole('textbox'), { target: { value: 'mine' } });
-    fireEvent.keyDown(getByRole('textbox'), { key: 'Enter' });
+    fireEvent.change(getByRole('textbox', { name: 'Title' }), { target: { value: 'mine' } });
+    fireEvent.keyDown(getByRole('textbox', { name: 'Title' }), { key: 'Enter' });
 
     const card = await waitFor(() => {
       const found = container.querySelector('[data-testid="authoring-conflict"]');
@@ -274,8 +327,12 @@ describe('a panel with no executor says so — it does not pretend', () => {
       </div>,
     );
     const header = getByTestId('panel-header');
-    expect(header.textContent).toContain('Save');
-    expect(header.querySelector('[aria-disabled="true"]')).not.toBeNull();
+    const toolbar = getByTestId('panel-toolbar');
+    // Save lives with the panel actions below the title. A permanently visible
+    // refusal must not steal width from a long title.
+    expect(header.textContent).not.toContain('Save');
+    expect(toolbar.textContent).toContain('Save');
+    expect(toolbar.querySelector('[aria-disabled="true"]')).not.toBeNull();
   });
 
   it('does NOT dress the title as editable when nothing can save it', () => {

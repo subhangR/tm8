@@ -29,6 +29,11 @@ export {
 } from './security.js';
 export { createStaticHandler, type StaticHandler } from './static.js';
 export {
+  createRemoteServerProxy,
+  type RemoteServerProxy,
+  type ServerConnectionTargetResolver,
+} from './remote-proxy.js';
+export {
   createFacadeServer,
   type FacadeServer,
   type FacadeServerOptions,

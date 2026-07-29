@@ -335,6 +335,16 @@ export class W2MessagesHandoffsService {
 
     // The transaction above has committed. Dispatch may block on a PTY write,
     // so it must never execute while graph row locks are held.
+    //
+    // NOT AWAITED PAST reserve(): `adapter.dispatch()` now waits for the PTY
+    // closed loop's REAL outcome (promptInternal / PromptSettlementWaiter,
+    // packages/execution + facade/services/w2/execution.ts) before it settles,
+    // which can legitimately take from milliseconds to tens of seconds on a
+    // cold spawn. This is the messages.post HTTP response path — it must stay
+    // bounded and independent of agent TUI behavior, so only the fast, durable
+    // `reserve()` claim is awaited here. `dispatch()` still runs to completion
+    // and still calls settle exactly once; this request's response just no
+    // longer blocks on watching it do so.
     if (this.options.messageDelivery) {
       for (const intent of stored.result.deliveryIntents ?? []) {
         try {
@@ -343,15 +353,21 @@ export class W2MessagesHandoffsService {
             requestId: ctx.requestId,
           });
           if (!reservation) continue;
-          await this.options.messageDelivery.adapter.dispatch({
-            ...reservation,
-            requestId: ctx.requestId,
-            principal: this.options.messageDelivery.principalFor(reservation),
-          });
+          void this.options.messageDelivery.adapter
+            .dispatch({
+              ...reservation,
+              requestId: ctx.requestId,
+              principal: this.options.messageDelivery.principalFor(reservation),
+            })
+            .catch(() => {
+              // Same posture as the try/catch this replaces: the durable row
+              // remains pending/dispatching for the existing maintenance owner
+              // to expire or recover. Stored-first means an adapter outage
+              // cannot roll back or disguise the message command.
+            });
         } catch {
-          // The durable row remains pending/dispatching for the existing
-          // maintenance owner to expire or recover. Stored-first means an
-          // adapter outage cannot roll back or disguise the message command.
+          // reserve() itself failing is the one case still caught synchronously
+          // here; dispatch()'s own failures are caught on its own promise above.
         }
       }
     }

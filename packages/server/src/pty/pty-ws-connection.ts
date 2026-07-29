@@ -25,15 +25,36 @@
  *   client -> server   BINARY = keystrokes written straight to the PTY;
  *                               TEXT = JSON control ({type:'resize'})
  *
- * NO permessage-deflate and NO heartbeat dependence: maestro's PTY socket
- * negotiates neither (the `ws` server defaults compression off, and reconnect is
- * driven by onclose + offset resume rather than by pings), so matching it means
- * implementing neither. Inbound pings are still answered — that costs nothing and
- * keeps well-behaved intermediaries happy — but nothing here DEPENDS on them.
+ * NO permessage-deflate, matching maestro (the `ws` server defaults compression
+ * off and neither side ever negotiates the extension).
+ *
+ * HEARTBEAT: this DOES depend on protocol-level ping/pong — correcting an
+ * earlier version of this comment that claimed the opposite. maestro's
+ * PtyWebSocketServer gained a server-originated ping/pong reaper in maestro
+ * commit f0f22ce (an `isAlive` latch: ping every 30s, terminate a subscriber
+ * that hasn't ponged back since the previous sweep), landing AFTER the "no
+ * heartbeat dependence" claim was written here — so that claim had drifted
+ * from a decision into a stale, false statement, and a dead subscriber (a
+ * killed client process, no clean close frame) was never reaped. Fixed by
+ * porting the BEHAVIOR (ping cadence, dead-peer eviction, unref'd timer,
+ * stop-on-shutdown), not maestro's `ws`-library isAlive flag — this file
+ * hand-rolls the same frame codec `events/ws-connection.ts` does, and that
+ * file already has exactly this heartbeat (`missedPongLimit`-latched,
+ * `DEFAULT_HEARTBEAT_MS`/`DEFAULT_MISSED_PONG_LIMIT`), so the two sockets now
+ * deliberately match each other's idiom instead of one hand-rolled socket
+ * having a reaper and its sibling not. Inbound pings are still answered
+ * either way — that costs nothing and keeps well-behaved intermediaries
+ * happy. Browsers answer protocol-level pings automatically at the WebSocket
+ * stack level, so no client-side change is required, and a client that never
+ * itself reads pong frames is unaffected.
  */
 import { randomUUID } from 'node:crypto';
 
-import type { WsSocket } from '../events/ws-connection.js';
+import {
+  DEFAULT_HEARTBEAT_MS,
+  DEFAULT_MISSED_PONG_LIMIT,
+  type WsSocket,
+} from '../events/ws-connection.js';
 import {
   CLOSE_CODE,
   FrameDecoder,
@@ -57,6 +78,16 @@ export interface PtyWsConnectionHandlers {
   onClose?(): void;
 }
 
+export interface PtyWsConnectionOptions {
+  /**
+   * Ping period. Injectable so tests do not sit for 30 seconds; the timer is
+   * `unref()`ed so a live connection never keeps the process alive on its own.
+   */
+  heartbeatMs?: number;
+  /** Missed heartbeats tolerated before the peer is presumed dead and reaped. */
+  missedPongLimit?: number;
+}
+
 export class PtyWsConnection {
   readonly id = randomUUID();
 
@@ -64,12 +95,23 @@ export class PtyWsConnection {
   private readonly decoder = new FrameDecoder();
   private readonly handlers: PtyWsConnectionHandlers;
 
+  private readonly heartbeatMs: number;
+  private readonly missedPongLimit: number;
+  private heartbeat: NodeJS.Timeout | null = null;
+  private missedPongs = 0;
+
   private state: number = PTY_SOCKET_STATE.open;
   private closeFired = false;
 
-  constructor(socket: WsSocket, handlers: PtyWsConnectionHandlers = {}) {
+  constructor(
+    socket: WsSocket,
+    handlers: PtyWsConnectionHandlers = {},
+    opts: PtyWsConnectionOptions = {},
+  ) {
     this.socket = socket;
     this.handlers = handlers;
+    this.heartbeatMs = opts.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
+    this.missedPongLimit = opts.missedPongLimit ?? DEFAULT_MISSED_PONG_LIMIT;
 
     // PTY output is latency-sensitive and already coalesced into 16ms frames by
     // PtyHostService, so Nagle would only add delay to frames that are
@@ -78,6 +120,8 @@ export class PtyWsConnection {
     socket.on('data', (chunk: Buffer) => this.onData(chunk));
     socket.on('error', () => this.finish());
     socket.on('close', () => this.finish());
+
+    this.startHeartbeat();
   }
 
   /**
@@ -120,6 +164,7 @@ export class PtyWsConnection {
   close(code: number = CLOSE_CODE.normal, reason = ''): void {
     if (this.state !== PTY_SOCKET_STATE.open) return;
     this.state = PTY_SOCKET_STATE.closing;
+    this.stopHeartbeat();
     try {
       this.socket.write(encodeCloseFrame(code, reason));
       this.socket.end();
@@ -164,7 +209,9 @@ export class PtyWsConnection {
           }
           break;
         case OPCODE.pong:
-          // Nothing depends on pongs here (see the header note on heartbeats).
+          // Answers our own heartbeat ping (see the header note): the peer is
+          // alive, so the miss counter resets before the next sweep.
+          this.missedPongs = 0;
           break;
         case OPCODE.close: {
           const { code, reason } = decodeClosePayload(frame.payload);
@@ -185,9 +232,44 @@ export class PtyWsConnection {
     }
   }
 
+  /**
+   * Server-originated ping/pong reaper (see the header note). Mirrors
+   * `events/ws-connection.ts`'s `startHeartbeat` exactly: a peer that misses
+   * `missedPongLimit` consecutive sweeps is presumed dead — no clean close
+   * frame is coming — and is force-closed rather than left as a phantom
+   * subscriber until TCP eventually notices.
+   */
+  private startHeartbeat(): void {
+    const timer = setInterval(() => {
+      if (this.state !== PTY_SOCKET_STATE.open) return;
+      if (this.missedPongs >= this.missedPongLimit) {
+        this.close(CLOSE_CODE.goingAway, 'heartbeat timeout');
+        this.socket.destroy();
+        this.finish();
+        return;
+      }
+      this.missedPongs += 1;
+      try {
+        this.socket.write(encodeFrame(OPCODE.ping, Buffer.alloc(0)));
+      } catch {
+        // Best effort: the socket's own close/error handler detaches this sink.
+      }
+    }, this.heartbeatMs);
+    timer.unref?.();
+    this.heartbeat = timer;
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat !== null) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = null;
+    }
+  }
+
   /** Terminal state transition; `onClose` fires at most once. */
   private finish(): void {
     this.state = PTY_SOCKET_STATE.closed;
+    this.stopHeartbeat();
     if (this.closeFired) return;
     this.closeFired = true;
     this.handlers.onClose?.();

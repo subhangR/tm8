@@ -42,6 +42,13 @@ export type KindPresenter = (ref: string) => RefPresentation | null;
 
 export type MenuTarget = { type: 'view'; ref: MenuViewRef } | { type: 'kind'; ref: string };
 
+export interface ServerRailItem {
+  id: string;
+  label: string;
+  local: boolean;
+  reachability: 'checking' | 'online' | 'offline';
+}
+
 export interface MenuRailProps {
   config: MenuConfig;
   /** Discrete by law. */
@@ -51,6 +58,11 @@ export interface MenuRailProps {
   activeTarget?: MenuTarget | null;
   onNavigate(target: MenuTarget): void;
   presentKind: KindPresenter;
+  /** Phase 2: Servers are groups in this one rail, never a second rail. */
+  servers?: readonly ServerRailItem[];
+  activeServerId?: string;
+  onSelectServer?(id: string): void;
+  onAddServer?(): void;
   /**
    * R10 / RULING B: Phase 1 wires ONLY the implicit local server. The rail is
    * built per the T0-1 unified design, but the add-server affordance renders
@@ -118,6 +130,35 @@ export function MenuRail(props: MenuRailProps) {
       data-collapsed={collapsed}
     >
       <div className="shell-rail__scroll">
+        {props.servers ? (
+          <div className="shell-rail__servers" aria-label="Servers">
+            {props.servers.map((server) => {
+              const active = server.id === props.activeServerId;
+              const initial = server.local ? '◈' : server.label.trim().charAt(0).toUpperCase();
+              return (
+                <button
+                  type="button"
+                  key={server.id}
+                  className={`shell-rail__server ${active ? 'shell-rail__server--active' : ''}`}
+                  aria-current={active ? 'true' : undefined}
+                  aria-expanded={active}
+                  aria-label={`${server.label}, ${server.reachability}`}
+                  title={collapsed ? `${server.label} · ${server.reachability}` : undefined}
+                  onClick={() => props.onSelectServer?.(server.id)}
+                >
+                  <span className="shell-rail__server-icon" aria-hidden="true">{initial}</span>
+                  {!collapsed ? <span className="shell-rail__server-name">{server.label}</span> : null}
+                  <span
+                    className={`shell-rail__server-status shell-rail__server-status--${server.reachability}`}
+                    aria-hidden="true"
+                  />
+                  {!collapsed ? <span className="shell-rail__server-caret" aria-hidden="true">{active ? '▾' : '▸'}</span> : null}
+                </button>
+              );
+            })}
+            <div className="shell-rail__server-divider" role="separator" />
+          </div>
+        ) : null}
         {config.groups.map((group) => (
           <div key={group.id} className="shell-rail__group">
             {/* GRAMMAR 1 — group header. A label, and nothing else: not a
@@ -259,16 +300,16 @@ export function MenuRail(props: MenuRailProps) {
           the reason unreachable to exactly the people L6 exists to serve. */}
       <button
         type="button"
-        className="shell-rail__footer shell-rail__footer--disabled"
-        aria-disabled="true"
-        onClick={(event) => event.preventDefault()}
+        className={`shell-rail__footer ${props.onAddServer ? '' : 'shell-rail__footer--disabled'}`}
+        aria-disabled={props.onAddServer ? undefined : 'true'}
+        onClick={props.onAddServer ?? ((event) => event.preventDefault())}
         // The reason rides the accessible name and the tooltip, NOT inline
-        // text: a full sentence printed into a 220px rail wrapped to three
+        // text: a full sentence printed into a fixed-width rail wrapped to three
         // lines and collided with its own label (caught in the browser — jsdom
         // has no layout engine and reported this as passing). Same floor-
         // inversion class as D34: long copy in a fixed slot destroys the slot.
-        aria-label={`Add server — ${props.addServerReason ?? ADD_SERVER_DISABLED_REASON}`}
-        title={props.addServerReason ?? ADD_SERVER_DISABLED_REASON}
+        aria-label={props.onAddServer ? 'Add server' : `Add server — ${props.addServerReason ?? ADD_SERVER_DISABLED_REASON}`}
+        title={props.onAddServer ? 'Add server' : props.addServerReason ?? ADD_SERVER_DISABLED_REASON}
       >
         <span aria-hidden="true">＋</span>
         {!collapsed && <span className="shell-rail__footer-label">add server</span>}

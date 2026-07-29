@@ -10,6 +10,7 @@
  * about the frame moves.
  */
 import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
 import type { Db, DbClaims } from './db/types.js';
@@ -35,6 +36,7 @@ import { loadConfig, resolveServerDataDir, type ServerConfig } from './http/conf
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { createStaticHandler } from './http/static.js';
+import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createPtyWsServer, isPtyUpgrade } from './pty/index.js';
 
@@ -89,7 +91,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * operation, rather than boot successfully and then fail per-request with a
    * connection error that looks like an outage.
    */
-  const db = config.databaseUrl ? createDb(config.databaseUrl) : undefined;
+  const db = config.databaseUrl
+    ? createDb(config.databaseUrl, { idempotencyEnabled: config.idempotencyEnabled !== false })
+    : undefined;
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
@@ -110,6 +114,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * `registerExecutionHandlers` here.
    */
   const execution = db ? createExecutionRuntime({ db, config, dataDir, owner }) : undefined;
+
+  if (db && config.launchBootstrap) {
+    const seeded = await ensureLaunchResources({
+      db,
+      owner: await owner!(),
+      projectDir: config.launchProjectDir ?? process.cwd(),
+    });
+    if (seeded.spaces > 0) {
+      console.log(
+        `  launch bootstrap: ${seeded.spaces} space(s), project ${seeded.projectId}, ` +
+          `${seeded.teammatesCreated} teammate(s) created, ${seeded.teammatesUpdated} repaired`,
+      );
+    }
+  }
 
   // Ephemeral presence (DEV-4): in-process, no table, dies with the process.
   // Declared before the registration block because `presence.get` is only
@@ -134,7 +152,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   if (execution && deliveryUrl) await verifyDeliveryPrincipal(deliveryUrl);
   const delivery =
     execution && deliveryUrl
-      ? createW2ExecutionDelivery({ connectionString: deliveryUrl, pty: execution.pty })
+      ? createW2ExecutionDelivery({
+          connectionString: deliveryUrl,
+          pty: execution.pty,
+          promptSettlement: execution.promptSettlement,
+        })
       : undefined;
 
   if (db) {
@@ -274,12 +296,28 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ? createW2FileUploadRoute({ deps: { db, config, owner: owner! }, blobStore })
     : undefined;
 
+  const remoteServerProxy = db && owner
+    ? createRemoteServerProxy(async (name) => {
+        const nodeOwner = await owner();
+        const rows = await db.query<{ base_url: string }>(
+          {
+            identityId: nodeOwner.identityId,
+            nodeAdmin: nodeOwner.isNodeAdmin,
+          },
+          `select base_url from public.server_connections where lower(name) = lower($1)`,
+          [name],
+        );
+        return rows[0]?.base_url ?? null;
+      })
+    : undefined;
+
   const server = createFacadeServer({
     config,
     registry,
     upgrades,
     ...(identityResolver ? { identityResolver } : {}),
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
+    ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 

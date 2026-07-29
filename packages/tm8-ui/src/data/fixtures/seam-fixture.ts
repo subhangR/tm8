@@ -49,6 +49,8 @@ import {
   type ExecutionSpawnInput,
   type ExecutionTerminateInput,
   type FeedItem,
+  type GraphQuery,
+  type GraphResult,
   type HandoffView,
   type MenuConfig,
   type MessageBatchResult,
@@ -62,8 +64,10 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectResource,
   type ReactionInput,
   type SpaceId,
+  type SpaceSettingsView,
   type SpaceSummary,
   type WorkInput,
   type WorkStatus,
@@ -89,6 +93,20 @@ import {
 } from '../../fixtures';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
+
+const FIXTURE_PROJECTS: readonly ProjectResource[] = [
+  {
+    id: 'proj-tm8ui',
+    name: 'tm8-ui',
+    repoUrl: 'https://github.com/subhang/tm8',
+    workingDir: '/fixture/tm8-ui',
+    trust: 'trusted',
+    defaults: {},
+    activeLinkCount: 1,
+    createdAt: FIXTURE_NOW,
+    updatedAt: FIXTURE_NOW,
+  },
+];
 
 const clone = <T>(x: T): T => structuredClone(x);
 
@@ -191,6 +209,7 @@ export function createFixtureSeam(): FixtureSeam {
       liveEntityIds: [sessionLive.id],
       nodeBootId: FIXTURE_NODE_BOOT_ID,
       checkedAt: FIXTURE_NOW,
+      capacity: { used: 1, total: 8 },
     }],
   ]);
 
@@ -481,6 +500,23 @@ export function createFixtureSeam(): FixtureSeam {
     async spaces() {
       return clone([spaceSummary]);
     },
+    async spaceSettings(spaceId): Promise<SpaceSettingsView> {
+      if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+      return clone({
+        space: spaceSummary,
+        members: [{ actor: viewerActor, role: 'owner', joinedAt: FIXTURE_NOW }],
+        invites: [],
+        taskAxes: [],
+        menu: {
+          schemaVersion: 1,
+          revision: 1,
+          groups: [{ id: 'fixture', label: 'Fixture', items: [{ type: 'view', ref: 'settings' }] }],
+        },
+        defaultChannelId: null,
+        defaultInteractionProfileId: 'ip-house-style',
+        settingsRevision: 1,
+      });
+    },
     /** C-4: the dataset ships no menu row — resolve null, UI uses its default. */
     async menu(_spaceId): Promise<MenuConfig | null> {
       return null;
@@ -523,6 +559,52 @@ export function createFixtureSeam(): FixtureSeam {
       });
       return clone({ query: input, page: pageOf(rows, input) });
     },
+    async graph(input: GraphQuery): Promise<GraphResult> {
+      const collection = await seam.query({ ...input, limit: input.limit ?? 150 });
+      let nodes = collection.page.items;
+      const candidateIds = new Set(nodes.map((node) => node.id));
+
+      const byEdgeId = new Map<string, EdgeView>();
+      for (const node of nodes) {
+        const connections = extrasOf(node.id).connections;
+        for (const edge of [...connections.outgoing, ...connections.incoming].flatMap((group) => group.edges)) {
+          if (!candidateIds.has(edge.source.id) || !candidateIds.has(edge.target.id)) continue;
+          if (input.mode === 'dependency' && edge.type !== 'depends_on') continue;
+          if (input.edgeTypes?.length && !input.edgeTypes.includes(edge.type)) continue;
+          byEdgeId.set(edge.id, edge);
+        }
+      }
+      let edges = [...byEdgeId.values()];
+
+      if (input.focusId) {
+        const visible = new Set<EntityId>([input.focusId]);
+        let frontier = new Set<EntityId>([input.focusId]);
+        for (let hop = 0; hop < (input.hops ?? 1); hop += 1) {
+          const next = new Set<EntityId>();
+          for (const edge of edges) {
+            if (frontier.has(edge.source.id) && !visible.has(edge.target.id)) next.add(edge.target.id);
+            if (frontier.has(edge.target.id) && !visible.has(edge.source.id)) next.add(edge.source.id);
+          }
+          for (const id of next) visible.add(id);
+          frontier = next;
+        }
+        nodes = nodes.filter((node) => visible.has(node.id));
+        edges = edges.filter((edge) => visible.has(edge.source.id) && visible.has(edge.target.id));
+      }
+
+      const clustersByParent = new Map<EntityId, EntityId[]>();
+      for (const node of nodes) {
+        if (!node.parentId) continue;
+        const children = clustersByParent.get(node.parentId) ?? [];
+        children.push(node.id);
+        clustersByParent.set(node.parentId, children);
+      }
+      return clone({
+        nodes,
+        edges,
+        clusters: [...clustersByParent].map(([parentId, childIds]) => ({ parentId, childIds })),
+      });
+    },
     /** LLD §14: custom-kind (`c:*`) existence + naming metadata ONLY. */
     async entityKinds(spaceId): Promise<EntityKindDef[]> {
       const custom = new Map<string, EntitySummary>();
@@ -541,6 +623,9 @@ export function createFixtureSeam(): FixtureSeam {
         };
       }));
     },
+    async projects(): Promise<ProjectResource[]> {
+      return clone([...FIXTURE_PROJECTS]);
+    },
     async entity(id) {
       return clone(detailOf(id));
     },
@@ -548,11 +633,11 @@ export function createFixtureSeam(): FixtureSeam {
       requireSummary(id);
       return clone(pageOf(childrenOf(id), opts));
     },
-    async connections(id): Promise<Page<EdgeView>> {
+    async connections(id, opts): Promise<Page<EdgeView>> {
       requireSummary(id);
       const c = extrasOf(id).connections;
       const edges = [...c.outgoing, ...c.incoming].flatMap((g) => g.edges);
-      return clone({ items: edges, nextCursor: null, total: edges.length });
+      return clone(pageOf(edges, opts));
     },
     async activity(id, opts): Promise<Page<ActivityItem>> {
       const s = requireSummary(id);
@@ -947,6 +1032,10 @@ export function createFixtureSeam(): FixtureSeam {
       liveEntityIds: [...liveEntityIds],
       nodeBootId: nodeBootId ?? livenessBySpace.get(spaceId)?.nodeBootId ?? FIXTURE_NODE_BOOT_ID,
       checkedAt: tick(),
+      capacity: {
+        used: liveEntityIds.length,
+        total: livenessBySpace.get(spaceId)?.capacity?.total ?? 8,
+      },
     };
     livenessBySpace.set(spaceId, snap);
     for (const cb of livenessSubs) cb(clone(snap));

@@ -1,7 +1,8 @@
 /**
  * GraphView — the ◉ Graph canvas (GRAPH-VIEW-PLAN §2 P1, prototype on fixture
  * data). Direction C's Structure lens: stable layered islands, realtime as a
- * restrained overlay.
+ * restrained overlay. The active app hydrates this from `graph.query`; the
+ * optional timeline remains only for explicitly scripted fixture previews.
  *
  * Laws honored here:
  *  - C1: a node click (canvas OR shelf) pushes the entity's Z3 panel — the
@@ -29,10 +30,14 @@ import {
   NODE_H,
   NODE_W,
   buildGraphModel,
+  focusSubgraph,
+  searchMatches,
   type GraphModel,
   type PlacedEdge,
   type PlacedNode,
 } from './model';
+import { GraphSearch } from './GraphSearch';
+import { Minimap } from './Minimap';
 
 /** Structurally identical to the fixture's step type — no fixtures import. */
 export type GraphTimelineStep =
@@ -51,6 +56,8 @@ export interface GraphViewProps {
   onSelect(id: EntityId): void;
   /** The seam's honest snapshot verdict; gates every live treatment. */
   livenessOf(id: string): SessionLiveness;
+  /** The aside's current selection — the matching node wears a persistent ring. */
+  selectedId?: EntityId | null;
 }
 
 const ZOOM_MIN = 0.35;
@@ -135,7 +142,7 @@ function edgeMid(e: PlacedEdge, pos: Map<EntityId, PlacedNode>): { x: number; y:
 }
 
 export function GraphView(props: GraphViewProps) {
-  const { now, onSelect, livenessOf } = props;
+  const { now, onSelect, livenessOf, selectedId = null } = props;
 
   // Filters store the OFF sets, so kinds/types that appear later default ON.
   const [kindsOff, setKindsOff] = useState<ReadonlySet<string>>(new Set());
@@ -150,9 +157,25 @@ export function GraphView(props: GraphViewProps) {
   const [hoverId, setHoverId] = useState<EntityId | null>(null);
   const [flashId, setFlashId] = useState<EntityId | null>(null);
 
+  // W2 search + W1 focus + layout-freeze state.
+  const [query, setQuery] = useState('');
+  const [focus, setFocus] = useState<{ id: EntityId; hops: number } | null>(null);
+  // A bump forces one UNFROZEN model compute (explicit re-layout); the freeze
+  // ref then re-snapshots and stability resumes.
+  const [relayoutTick, setRelayoutTick] = useState(0);
+  const [vpSize, setVpSize] = useState<{ w: number; h: number } | null>(null);
+  // Eases the canvas transform ONLY during a programmatic reveal-pan (aside
+  // open / resize). Manual drag/zoom clear it so those stay instant.
+  const [panEase, setPanEase] = useState(false);
+
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const fittedRef = useRef(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The previous compute's placed positions — fed back as `frozen` so settled
+  // nodes never move (Stability spine). null = the next compute is a full,
+  // unfrozen re-layout (first mount, explicit re-layout, focus change).
+  const frozenRef = useRef<Readonly<Record<string, { x: number; y: number }>> | null>(null);
+  const panEaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const effectiveNodes = useMemo(
     () => props.nodes.map((n) => (touched[n.id] ? { ...n, activityAt: touched[n.id] } : n)),
@@ -166,21 +189,61 @@ export function GraphView(props: GraphViewProps) {
   );
   const typesPresent = useMemo(() => [...new Set(allEdges.map((e) => e.type))], [allEdges]);
 
+  // W2 search — matched ids for the current query (empty query → empty set).
+  const matches = useMemo(() => searchMatches(effectiveNodes, query), [effectiveNodes, query]);
+
+  // W1 focus — the undirected 2-hop subgraph around the focused node; we filter
+  // BEFORE the model so the subgraph lays out cleanly on its own.
+  const focusIds = useMemo(
+    () => (focus ? focusSubgraph(effectiveNodes, allEdges, focus.id, focus.hops) : null),
+    [focus, effectiveNodes, allEdges],
+  );
+  const modelNodes = useMemo(
+    () => (focusIds ? effectiveNodes.filter((n) => focusIds.has(n.id)) : effectiveNodes),
+    [effectiveNodes, focusIds],
+  );
+
+  // INTEGRATION(W1): frozen-layout + re-layout chip wired here. `frozenRef`
+  // carries the previous compute's placed positions; buildGraphModel pins them
+  // and slots only arrivals in, reporting model.pendingRelayout. null → a full
+  // unfrozen re-layout (first mount / explicit re-layout / focus change).
+  // relayoutTick is a dep so the re-layout chip can force one recompute.
   const model: GraphModel = useMemo(
     () =>
       buildGraphModel({
-        nodes: effectiveNodes,
+        nodes: modelNodes,
         edges: allEdges as EdgeView[],
         kindFilter: kindsOff.size ? new Set(kindsPresent.filter((k) => !kindsOff.has(k))) : null,
         edgeTypeFilter: typesOff.size
           ? new Set(typesPresent.filter((t) => !typesOff.has(t)))
           : null,
         now,
+        frozen: frozenRef.current ?? undefined,
       }),
-    [effectiveNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now],
+    // frozenRef is read intentionally without being a dep (the same idiom as
+    // prevCanvasIds below): it is refreshed by the snapshot effect after commit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [modelNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now, relayoutTick],
   );
 
+  // Snapshot placed positions AFTER each compute — the next compute freezes on
+  // this (unless a re-layout / focus change nulled the ref first).
+  useEffect(() => {
+    const snap: Record<string, { x: number; y: number }> = {};
+    for (const p of model.placed) snap[p.entity.id] = { x: p.x, y: p.y };
+    frozenRef.current = snap;
+  }, [model]);
+
   const posById = useMemo(() => new Map(model.placed.map((p) => [p.entity.id, p])), [model]);
+
+  // Latest-value mirrors so the size-change reveal effect can read them while
+  // depending ONLY on vpSize (a selection or pan change must not re-trigger it).
+  const tfRef = useRef(tf);
+  tfRef.current = tf;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const posByIdRef = useRef(posById);
+  posByIdRef.current = posById;
 
   // Materialize grammar: a node whose id was not on canvas last render enters
   // with the brass ring. The very first render staggers everything in.
@@ -238,17 +301,31 @@ export function GraphView(props: GraphViewProps) {
   // Pan / zoom — pointer drag, wheel-to-cursor, keyboard (T3-6 requires
   // keyboard access), one initial fit. NEVER an uninvoked move afterward.
   // ------------------------------------------------------------------------
+
+  // Viewport metrics — width/height prefer the OBSERVED size (correct the very
+  // moment the aside opens/closes, so the initial fit is right in the aside-open
+  // state too), with the live rect supplying the page offset cursor math needs.
+  const vpMetrics = useCallback(() => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    return {
+      w: vpSize?.w ?? rect?.width ?? 0,
+      h: vpSize?.h ?? rect?.height ?? 0,
+      left: rect?.left ?? 0,
+      top: rect?.top ?? 0,
+    };
+  }, [vpSize]);
+
   const fit = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || model.width === 0) return;
-    const rect = viewport.getBoundingClientRect();
-    const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(rect.width / model.width, rect.height / model.height, 1)));
+    if (model.width === 0) return;
+    const { w, h } = vpMetrics();
+    if (w === 0) return;
+    const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.min(w / model.width, h / model.height, 1)));
     setTf({
-      x: (rect.width - model.width * k) / 2,
-      y: Math.max(16, (rect.height - model.height * k) / 2),
+      x: (w - model.width * k) / 2,
+      y: Math.max(16, (h - model.height * k) / 2),
       k,
     });
-  }, [model.width, model.height]);
+  }, [model.width, model.height, vpMetrics]);
 
   useEffect(() => {
     if (fittedRef.current) return;
@@ -257,22 +334,72 @@ export function GraphView(props: GraphViewProps) {
     fit();
   }, [fit, model.placed.length]);
 
+  // Measure the viewport so the minimap can draw the visible-window frame in
+  // canvas space. Re-attaches when the viewport (un)mounts with the empty state.
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const measure = () => setVpSize({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [model.placed.length === 0 && model.shelf.length === 0]);
+
+  // ADDENDUM: when the viewport SIZE changes (aside open/close, window resize)
+  // and a node is selected, pan MINIMALLY so its rect stays fully visible with a
+  // 24px margin — same zoom k, no refit, and nothing moves when no node is
+  // selected (stability spine: a response to a user-invoked layout change, never
+  // an uninvoked drift). Depends on vpSize only; current tf/selection/positions
+  // come from refs so a selection or pan never re-fires this.
+  const prevVpRef = useRef(vpSize);
+  useEffect(() => {
+    const prev = prevVpRef.current;
+    prevVpRef.current = vpSize;
+    if (!vpSize) return;
+    if (prev && prev.w === vpSize.w && prev.h === vpSize.h) return;
+    const id = selectedIdRef.current;
+    if (id == null) return;
+    const node = posByIdRef.current.get(id);
+    if (!node) return;
+    const m = 24;
+    const t = tfRef.current;
+    const left = t.x + node.x * t.k;
+    const top = t.y + node.y * t.k;
+    const right = left + NODE_W * t.k;
+    const bottom = top + NODE_H * t.k;
+    let dx = 0;
+    let dy = 0;
+    if (left < m) dx = m - left;
+    else if (right > vpSize.w - m) dx = vpSize.w - m - right;
+    if (top < m) dy = m - top;
+    else if (bottom > vpSize.h - m) dy = vpSize.h - m - bottom;
+    if (dx === 0 && dy === 0) return;
+    setPanEase(true);
+    if (panEaseTimer.current) clearTimeout(panEaseTimer.current);
+    panEaseTimer.current = setTimeout(() => setPanEase(false), 320);
+    setTf((prior) => ({ ...prior, x: prior.x + dx, y: prior.y + dy }));
+  }, [vpSize]);
+
+  useEffect(() => () => {
+    if (panEaseTimer.current) clearTimeout(panEaseTimer.current);
+  }, []);
+
   const panTo = useCallback(
     (id: EntityId) => {
       const node = posById.get(id);
-      const viewport = viewportRef.current;
-      if (!node || !viewport) return;
-      const rect = viewport.getBoundingClientRect();
+      if (!node) return;
+      const { w, h } = vpMetrics();
       setTf((prior) => ({
         ...prior,
-        x: rect.width / 2 - (node.x + NODE_W / 2) * prior.k,
-        y: rect.height / 2 - (node.y + NODE_H / 2) * prior.k,
+        x: w / 2 - (node.x + NODE_W / 2) * prior.k,
+        y: h / 2 - (node.y + NODE_H / 2) * prior.k,
       }));
       setFlashId(id);
       if (flashTimer.current) clearTimeout(flashTimer.current);
       flashTimer.current = setTimeout(() => setFlashId(null), 1800);
     },
-    [posById],
+    [posById, vpMetrics],
   );
 
   const dragState = useRef<{ startX: number; startY: number; tx: number; ty: number } | null>(null);
@@ -284,8 +411,10 @@ export function GraphView(props: GraphViewProps) {
       // svg — starts a drag. The first guard here required the target to be
       // the viewport itself, which the canvas div covers almost entirely (the
       // edge svg is pointer-events:none, so hits land on the canvas div), so
-      // the hand grabbed nothing.
-      if ((event.target as HTMLElement).closest('button')) return;
+      // the hand grabbed nothing. The node card is now a role=button DIV, so
+      // guard on .gv-node too — otherwise a card press would start a pan.
+      if ((event.target as HTMLElement).closest('button, .gv-node')) return;
+      setPanEase(false); // dragging must track the pointer with no transition lag
       dragState.current = { startX: event.clientX, startY: event.clientY, tx: tf.x, ty: tf.y };
       (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
     },
@@ -304,36 +433,93 @@ export function GraphView(props: GraphViewProps) {
     dragState.current = null;
   }, []);
 
-  const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const rect = viewport.getBoundingClientRect();
-    const cx = event.clientX - rect.left;
-    const cy = event.clientY - rect.top;
-    setTf((prior) => {
-      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prior.k * Math.exp(-event.deltaY * 0.0016)));
-      const ratio = k / prior.k;
-      return { k, x: cx - (cx - prior.x) * ratio, y: cy - (cy - prior.y) * ratio };
-    });
+  const onWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      setPanEase(false); // manual zoom is instant, never eased
+      const { left, top } = vpMetrics();
+      const cx = event.clientX - left;
+      const cy = event.clientY - top;
+      setTf((prior) => {
+        const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prior.k * Math.exp(-event.deltaY * 0.0016)));
+        const ratio = k / prior.k;
+        return { k, x: cx - (cx - prior.x) * ratio, y: cy - (cy - prior.y) * ratio };
+      });
+    },
+    [vpMetrics],
+  );
+
+  // Double-click the background to zoom 1.5× toward the cursor (shift → out
+  // 1/1.5×), reusing onWheel's zoom-to-cursor math. Guard on the node card
+  // (role=button div) and any real button so it never fires over a card, shelf
+  // chip, or ticker row — single-click selection and pointer-drag are untouched.
+  const onDoubleClick = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if ((event.target as HTMLElement).closest('button, .gv-node')) return;
+      setPanEase(false); // discrete zoom, instant
+      const { left, top } = vpMetrics();
+      const cx = event.clientX - left;
+      const cy = event.clientY - top;
+      const factor = event.shiftKey ? 1 / 1.5 : 1.5;
+      setTf((prior) => {
+        const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prior.k * factor));
+        const ratio = k / prior.k;
+        return { k, x: cx - (cx - prior.x) * ratio, y: cy - (cy - prior.y) * ratio };
+      });
+    },
+    [vpMetrics],
+  );
+
+  const zoomBy = useCallback(
+    (factor: number) => {
+      setPanEase(false);
+      const { w, h } = vpMetrics();
+      const cx = w / 2;
+      const cy = h / 2;
+      setTf((prior) => {
+        const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prior.k * factor));
+        const ratio = k / prior.k;
+        return { k, x: cx - (cx - prior.x) * ratio, y: cy - (cy - prior.y) * ratio };
+      });
+    },
+    [vpMetrics],
+  );
+
+  // Center the canvas on a CANVAS-space point at the current zoom — the panTo
+  // math without the flash. Used by the minimap's onJump.
+  const jumpTo = useCallback(
+    (cx: number, cy: number) => {
+      setPanEase(false);
+      const { w, h } = vpMetrics();
+      setTf((prior) => ({ ...prior, x: w / 2 - cx * prior.k, y: h / 2 - cy * prior.k }));
+    },
+    [vpMetrics],
+  );
+
+  // Explicit re-layout: drop the freeze, force one unfrozen compute; the
+  // snapshot effect re-freezes on the fresh positions afterward.
+  const relayout = useCallback(() => {
+    frozenRef.current = null;
+    setRelayoutTick((t) => t + 1);
   }, []);
 
-  const zoomBy = useCallback((factor: number) => {
-    const viewport = viewportRef.current;
-    const rect = viewport?.getBoundingClientRect();
-    const cx = (rect?.width ?? 0) / 2;
-    const cy = (rect?.height ?? 0) / 2;
-    setTf((prior) => {
-      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prior.k * factor));
-      const ratio = k / prior.k;
-      return { k, x: cx - (cx - prior.x) * ratio, y: cy - (cy - prior.y) * ratio };
-    });
+  // Focus / clear-focus both allow one unfrozen compute so the changed node set
+  // lays out cleanly, then re-freeze resumes.
+  const focusOn = useCallback((id: EntityId) => {
+    frozenRef.current = null;
+    setFocus({ id, hops: 2 });
+  }, []);
+  const clearFocus = useCallback(() => {
+    frozenRef.current = null;
+    setFocus(null);
   }, []);
 
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      const pan = (dx: number, dy: number) =>
+      const pan = (dx: number, dy: number) => {
+        setPanEase(false);
         setTf((prior) => ({ ...prior, x: prior.x + dx, y: prior.y + dy }));
+      };
       switch (event.key) {
         case 'ArrowUp': pan(0, PAN_STEP); break;
         case 'ArrowDown': pan(0, -PAN_STEP); break;
@@ -359,15 +545,74 @@ export function GraphView(props: GraphViewProps) {
   const filtered = kindsOff.size > 0 || typesOff.size > 0;
   const nothingVisible = model.placed.length === 0 && model.shelf.length === 0;
 
+  const searching = query.trim().length > 0;
+  // Enter pans to the FIRST placed match (an unplaced match can't be centered).
+  const onSearchSubmit = () => {
+    const first = model.placed.find((p) => matches.has(p.entity.id));
+    if (first) panTo(first.entity.id);
+  };
+
+  const focusTitle = focus ? effectiveNodes.find((n) => n.id === focus.id)?.title ?? '' : '';
+  const showMinimap = model.placed.length >= 8;
+  const minimapNodes = useMemo(
+    () =>
+      model.placed.map((p) => ({
+        id: p.entity.id,
+        x: p.x,
+        y: p.y,
+        w: NODE_W,
+        h: NODE_H,
+        tone: (p.onBlockedPath
+          ? 'blocked'
+          : livenessOf(p.entity.id) === 'live'
+            ? 'live'
+            : 'default') as 'default' | 'blocked' | 'live',
+      })),
+    [model.placed, livenessOf],
+  );
+  const minimapViewport =
+    vpSize && tf.k > 0
+      ? { x: -tf.x / tf.k, y: -tf.y / tf.k, w: vpSize.w / tf.k, h: vpSize.h / tf.k }
+      : null;
+
   return (
     <div className="gv-root" data-testid="graph-view">
       <div className="gv-toolbar">
-        <Eyebrow>Graph · fixture data</Eyebrow>
+        <Eyebrow>Graph · workspace data</Eyebrow>
         <span className="gv-toolbar__count">
           {model.placed.length} nodes · {model.edges.length} edges · {model.componentCount}{' '}
           {model.componentCount === 1 ? 'island' : 'islands'}
         </span>
         <span className="gv-toolbar__spacer" />
+        {/* INTEGRATION(W2): GraphSearch mounted here — before the filter selects
+            so search reads left-to-right first. matchCount is null when the query
+            is blank (nothing to say); Enter pans to the first match. */}
+        <GraphSearch
+          value={query}
+          onChange={setQuery}
+          matchCount={searching ? matches.size : null}
+          onSubmit={onSearchSubmit}
+        />
+        {focus ? (
+          <button
+            type="button"
+            className="gv-filter gv-filter--action"
+            onClick={clearFocus}
+            title="Clear focus — show the whole graph"
+          >
+            ⌖ focused: {focusTitle} · {focus.hops} hops · show all
+          </button>
+        ) : null}
+        {model.pendingRelayout > 0 ? (
+          <button
+            type="button"
+            className="gv-filter gv-filter--action"
+            onClick={relayout}
+            title="Re-layout the graph — new arrivals were placed beside their neighbors"
+          >
+            ⟳ re-layout ({model.pendingRelayout} new)
+          </button>
+        ) : null}
         {/* USER RULING 2026-07-29 (live, brokered into the graph carve-out by
             the FE coordinator, dual attribution — graph seat's lane, disclosed
             at its next wake): per-kind and per-edge chips became two compact
@@ -435,10 +680,11 @@ export function GraphView(props: GraphViewProps) {
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onWheel={onWheel}
+          onDoubleClick={onDoubleClick}
           onKeyDown={onKeyDown}
         >
           <div
-            className="gv-canvas"
+            className={panEase ? 'gv-canvas gv-canvas--ease' : 'gv-canvas'}
             style={{
               width: model.width,
               height: model.height,
@@ -470,6 +716,14 @@ export function GraphView(props: GraphViewProps) {
                 ]
                   .filter(Boolean)
                   .join(' ');
+                // Declutter: labels are noise at fit zoom. Show one only when the
+                // canvas is legible (k ≥ 0.9), when its edge touches the hovered
+                // or selected node, or when it is BLOCKED — the word "blocked"
+                // never disappears (honesty law), whatever the zoom.
+                const touchesFocus =
+                  (hoverId !== null && (e.sourceId === hoverId || e.targetId === hoverId)) ||
+                  (selectedId !== null && (e.sourceId === selectedId || e.targetId === selectedId));
+                const showLabel = tf.k >= 0.9 || touchesFocus || e.blocked;
                 return (
                   <g key={e.id} className={cls}>
                     <path
@@ -477,9 +731,11 @@ export function GraphView(props: GraphViewProps) {
                       className="gv-edge__line"
                       markerEnd={`url(#${e.blocked ? 'gv-arrow-blocked' : 'gv-arrow'})`}
                     />
-                    <text x={mid.x} y={mid.y} className="gv-edge__label" textAnchor="middle">
-                      {e.label}
-                    </text>
+                    {showLabel && (
+                      <text x={mid.x} y={mid.y} className="gv-edge__label" textAnchor="middle">
+                        {e.label}
+                      </text>
+                    )}
                   </g>
                 );
               })}
@@ -490,29 +746,64 @@ export function GraphView(props: GraphViewProps) {
               const pill = statusPill(p.entity);
               const row = getKind(p.entity.kind);
               const dimmed = neighborhood !== null && !neighborhood.has(p.entity.id);
+              const selected = selectedId != null && selectedId === p.entity.id;
+              // Search: matched nodes get a subtle brass outline; everything else
+              // is dimmed like a hover-neighborhood miss. The two dims compose;
+              // selected still outranks both (handled in CSS).
+              const matched = searching && matches.has(p.entity.id);
+              const unmatched = searching && !matches.has(p.entity.id);
               const cls = [
                 'gv-node',
                 `gv-node--${p.heat}`,
                 p.onBlockedPath ? 'gv-node--blocked' : '',
                 p.ghost ? 'gv-node--ghost' : '',
                 dimmed ? 'gv-node--dim' : '',
+                unmatched ? 'gv-node--unmatched' : '',
+                matched ? 'gv-node--match' : '',
                 newIds.has(p.entity.id) ? 'gv-node--new' : '',
                 flashId === p.entity.id ? 'gv-node--flash' : '',
+                selected ? 'gv-node--selected' : '',
               ]
                 .filter(Boolean)
                 .join(' ');
+              const focused = focus?.id === p.entity.id;
               return (
-                <button
+                // A role=button div (not a <button>) so the focus affordance can
+                // be a REAL nested button — nested <button>s are invalid HTML.
+                // Keyboard: Enter/Space select, matching the old card button.
+                <div
                   key={p.entity.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={cls}
+                  aria-current={selected ? 'true' : undefined}
                   style={{ left: p.x, top: p.y, width: NODE_W, height: NODE_H }}
                   onClick={() => onSelect(p.entity.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onSelect(p.entity.id);
+                    }
+                  }}
                   onMouseEnter={() => setHoverId(p.entity.id)}
                   onMouseLeave={() => setHoverId(null)}
                   onFocus={() => setHoverId(p.entity.id)}
                   onBlur={() => setHoverId(null)}
                 >
+                  <button
+                    type="button"
+                    className={focused ? 'gv-node__focus gv-node__focus--on' : 'gv-node__focus'}
+                    aria-label="Focus on this node"
+                    aria-pressed={focused}
+                    onClick={(event) => {
+                      // Never let the focus verb also select the card.
+                      event.stopPropagation();
+                      if (focused) clearFocus();
+                      else focusOn(p.entity.id);
+                    }}
+                  >
+                    ⌖
+                  </button>
                   <span className="gv-node__head">
                     <span className="gv-node__glyph" aria-hidden>
                       {row.icon}
@@ -541,7 +832,7 @@ export function GraphView(props: GraphViewProps) {
                     )}
                     {p.ghost && <span className="gv-node__meta gv-node__meta--ghost">deleted</span>}
                   </span>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -566,18 +857,35 @@ export function GraphView(props: GraphViewProps) {
         </div>
       )}
 
-      {ticker.length > 0 && (
-        <div className="gv-ticker" role="log" aria-label="Recent graph events">
-          {ticker.map((entry) => (
-            <button
-              key={entry.key}
-              type="button"
-              className="gv-ticker__row"
-              onClick={entry.entityId ? () => panTo(entry.entityId!) : undefined}
-            >
-              {entry.label}
-            </button>
-          ))}
+      {/* INTEGRATION(W2): Minimap mounted here — a right-side rail stacks the
+          overview ABOVE the event ticker (both stay visible, column-gapped).
+          Hidden below 8 nodes: an overview of nothing is noise. onJump gives
+          CANVAS-space coords → jumpTo centers the transform at the current k. */}
+      {(showMinimap || ticker.length > 0) && (
+        <div className="gv-rail">
+          {showMinimap && (
+            <Minimap
+              width={model.width}
+              height={model.height}
+              nodes={minimapNodes}
+              viewport={minimapViewport}
+              onJump={jumpTo}
+            />
+          )}
+          {ticker.length > 0 && (
+            <div className="gv-ticker" role="log" aria-label="Recent graph events">
+              {ticker.map((entry) => (
+                <button
+                  key={entry.key}
+                  type="button"
+                  className="gv-ticker__row"
+                  onClick={entry.entityId ? () => panTo(entry.entityId!) : undefined}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

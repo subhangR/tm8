@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:35c9c744360e7935bebbadfb30b94181cca922abf30f53f19deb6815b0699b76",
+  "catalogDigest": "sha256:ea49dfb50f0967a8065c4d77376be1e5025061be2bc4d059f64a07d0b4d285ef",
   "catalog": {
-    "total": 102,
-    "v1": 100,
+    "total": 106,
+    "v1": 104,
     "reserved": 2,
-    "http": 101,
+    "http": 105,
     "ws": 1,
-    "registerableV1Http": 99,
+    "registerableV1Http": 103,
     "methods": {
-      "GET": 37,
-      "POST": 41,
+      "GET": 39,
+      "POST": 42,
       "PATCH": 9,
-      "DELETE": 7,
+      "DELETE": 8,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 40,
-      "command": 61,
+      "read": 42,
+      "command": 63,
       "stream": 1
     },
-    "uniqueNames": 102,
-    "uniqueBindings": 102
+    "uniqueNames": 106,
+    "uniqueBindings": 106
   },
   "reservedOperations": [
     "search.query",
@@ -204,6 +204,34 @@
         "operation": "identity.get",
         "method": "GET",
         "path": "/v2/identity",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "serverConnections.list",
+        "method": "GET",
+        "path": "/v2/server-connections",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "serverConnections.create",
+        "method": "POST",
+        "path": "/v2/server-connections",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "serverConnections.get",
+        "method": "GET",
+        "path": "/v2/server-connections/:name",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "serverConnections.delete",
+        "method": "DELETE",
+        "path": "/v2/server-connections/:name",
         "status": "registered",
         "source": "server-router"
       },
@@ -1118,7 +1146,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 71
+    "unimplementedV1Http": 75
   },
   "schemas": {
     "additive": {
@@ -1276,6 +1304,74 @@
         "intentTags": [
           "identity",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "serverConnections.list",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/serverConnections.list",
+        "intentTags": [
+          "server",
+          "connections",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "serverConnections.create",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/serverConnections.create",
+        "intentTags": [
+          "server",
+          "connections",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "serverConnections.get",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/serverConnections.get",
+        "intentTags": [
+          "server",
+          "connections",
+          "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "serverConnections.delete",
+        "noun": "server",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/serverConnections.delete",
+        "intentTags": [
+          "server",
+          "connections",
+          "delete"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

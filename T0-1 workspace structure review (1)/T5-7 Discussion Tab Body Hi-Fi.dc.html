@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ ANATOMY ============ -->
+<section id="anatomy" data-screen-label="T5-7 — Discussion tab anatomy" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T5-7 · DISCUSSION TAB — T10'S THREAD GRAMMAR INSIDE THE Z3, EVERY KIND</span>
+    <span style="font-size:12px;color:#8E897B">this thread IS the entity's discussion (anchorId) · stored-first composer · delivery is a facet, never a row</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations · worst-case · kind</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:426px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:600px">
+        <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{kCrumb}}</span></div>
+        <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+          <span style="color:#8E897B;font-size:13px">{{kGlyph}}</span>
+          <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{kTitle}}</span></sc-if>
+          <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{kTitleWorst}}</span></sc-if>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:{{kPillC}};background:{{kPillBg}};border-radius:999px;padding:2px 7px;flex:none">{{kPill}}</span>
+          <div style="flex:1"></div>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px">⋯</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">⤢</span><span style="color:#8E897B;font-size:12px;padding:2px 4px">✕</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+          <span style="display:flex;align-items:center;color:#8E897B;cursor:pointer" style-hover="color:#23201B">Content</span>
+          <span style="display:flex;align-items:center;gap:4px;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Discussion <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">6</span></span>
+          <span style="display:flex;align-items:center;gap:4px;color:#8E897B;cursor:pointer" style-hover="color:#23201B">Connections <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">3</span></span>
+          <span style="display:flex;align-items:center;color:#8E897B;cursor:pointer" style-hover="color:#23201B">Activity</span>
+          <div style="flex:1"></div>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;align-self:center">1</span></sc-if>
+        </div>
+        <div style="flex:1;min-height:0;overflow:auto;padding:8px 12px;display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;justify-content:center;padding:2px 0 6px"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:999px;padding:2px 10px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">↑ load earlier — 12 before mon</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0"><div style="flex:1;height:1px;background:#E7E3D9"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.08em;color:#B7B2A4">MON 27 JUL</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+          <div style="display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-radius:8px" style-hover="background:#F7F5EF">
+            <div style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">A</span>
+              <span style="font-size:12px;font-weight:600">ada</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">11:24</span>
+              <div style="flex:1"></div>
+              <span title="reply" style="color:#B7B2A4;font-size:11px;cursor:pointer" style-hover="color:#9A581F">↩</span>
+              <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if>
+            </div>
+            <div style="font-size:12.5px;line-height:1.55;color:#3A362E;text-wrap:pretty;padding-left:25px">Focus on the guide x-offsets first — the tree rules can wait for the flag.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-radius:8px" style-hover="background:#F7F5EF">
+            <div style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span style="width:18px;height:18px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+              <span style="font-size:12px;font-weight:600">forge</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 4px">agent</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">11:26</span>
+              <div style="flex:1"></div>
+              <span title="reply" style="color:#B7B2A4;font-size:11px;cursor:pointer" style-hover="color:#9A581F">↩</span>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:6px;border-left:2px solid #D8D3C6;padding:2px 8px;margin-left:25px;cursor:pointer;min-width:0" style-hover="border-color:#B26A2B">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;flex:none">ada</span>
+              <span style="font-size:10.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Focus on the guide x-offsets first — the tree rules…</span>
+            </div>
+            <div style="font-size:12.5px;line-height:1.55;color:#3A362E;text-wrap:pretty;padding-left:25px">Ack. Starting with guide offsets — the diff summary will land here.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:8px">
+            <span style="color:#8E897B;font-size:11px;flex:none">⤓</span>
+            <span style="flex:1;min-width:0;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@ada shared {{kChip}} into ▣ forge</span>
+            <span title="delivery confirmed by the pty write" style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:1px 7px;flex:none">delivered ✓</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">11:31</span>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0"><div style="flex:1;height:1px;background:rgba(178,106,43,.4)"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;letter-spacing:.08em;color:#9A581F">NEW SINCE OPENED · CLIENT-LOCAL</span><div style="flex:1;height:1px;background:rgba(178,106,43,.4)"></div></div>
+          <div style="display:flex;flex-direction:column;gap:4px;padding:6px 8px;border-radius:8px;background:rgba(178,106,43,.04)">
+            <div style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">N</span>
+              <span style="font-size:12px;font-weight:600">noa</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">11:52</span>
+              <div style="flex:1"></div>
+              <span title="reply" style="color:#B7B2A4;font-size:11px;cursor:pointer" style-hover="color:#9A581F">↩</span>
+            </div>
+            <div style="font-size:12.5px;line-height:1.55;color:#3A362E;text-wrap:pretty;padding-left:25px"><span style="color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 2px">@forge</span> the offsets look right at 200% now — ship it.</div>
+          </div>
+        </div>
+        <div style="flex:none;border-top:1px solid #E7E3D9;padding:8px 12px;display:flex;flex-direction:column;gap:5px;background:#FBFAF6">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">A</span>
+            <div style="flex:1;min-height:28px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;font-size:12px;color:#B7B2A4">{{kPlaceholder}}<span style="width:1.5px;height:14px;background:#B26A2B;margin-left:2px;animation:pnPulse 1.1s infinite"></span></div>
+            <span title="attach" style="color:#8E897B;font-size:13px;cursor:pointer;flex:none" style-hover="color:#9A581F">⊕</span>
+            <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:7px;padding:3px 11px;font-size:11.5px;cursor:pointer;flex:none" style-hover="background:rgba(178,106,43,.2)">Send</span>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span></sc-if>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">enter sends · shift+enter newline · stored first — delivery is a facet of the stored message</span>
+        </div>
+        <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">anchorId = {{kId}} · 6 messages · ◉ 2 viewing</div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;line-height:1.5;padding:0 2px">one embodiment, every kind — the Tweak swaps task / doc / project; only the header and composer placeholder change</div></sc-if>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="width:330px;flex:none;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">A tab body, not a mode.</span> The four-tab chrome is untouched; Discussion scrolls its thread and pins its composer to the panel foot. Esc still pops the panel — the composer is ordinary text entry (keyboard layer 4).</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">T10's rows, verbatim, re-toned.</span> Provenance avatars (round human / square agent + tag), reply-with-parent-excerpt, day markers, the client-local NEW divider — same grammar as the session Chat surface, on light panel tokens. State changes live in Activity, not here; Discussion is messages only.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Handoffs land here as anchored messages.</span> A share-into-session records its message in the target's Discussion with the delivery axis worn as a badge — delivered ✓ / unknown ⚠ / refused ✗, words + color. Withdrawal decorates the row; it never rewrites it.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Stored-first composer.</span> Send writes the graph message (it exists, permanently, immediately); delivery to any live agent is a facet that resolves after. Failure never hides the message — “send again” creates a deliberate new one. No delivery-only retry exists.</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">geometry · row pad 6/8 · avatar 18 · body indent 25 · composer min-h 28 grows to 5 lines · day marker hairline+mono · thread gap 3</div>
+    </div>
+    </sc-if>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:10px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">ANCHOR SEMANTICS — ONE STORE, TWO PROJECTIONS</div>
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:8px;padding:9px 11px;display:flex;flex-direction:column;gap:4px">
+        <div style="display:flex;align-items:center;gap:7px"><span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">F</span><span style="font-size:11.5px;font-weight:600;color:#EFE9DB">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">session chat · 11:52</span></div>
+        <div style="font-size:11px;line-height:1.5;color:#BDB5A2;padding-left:23px">Posted the summary to T-114 — review the breakpoint table.</div>
+        <div style="padding-left:23px"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#E0A45A;cursor:pointer" style-hover="text-decoration:underline">open in Discussion ↗</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding-left:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8470">⇣ lands on the SAME row</span></div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:9px 11px;display:flex;flex-direction:column;gap:4px;box-shadow:0 0 0 2px rgba(178,106,43,.25)">
+        <div style="display:flex;align-items:center;gap:7px"><span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">F</span><span style="font-size:11.5px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">◔ T-114 · Discussion · 11:52</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#9A581F;background:rgba(178,106,43,.11);border-radius:3px;padding:0 4px">focused</span></div>
+        <div style="font-size:11px;line-height:1.5;color:#3A362E;padding-left:23px">Posted the summary to T-114 — review the breakpoint table.</div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Chat, Discussion and the T10 feed are <span style="font-weight:600;color:#EFE9DB">projections of one message store</span>. “Open in Discussion ↗” from a session-chat row focuses the identical message here — same id, no copy, brass flash on arrival. Reply-into-thread from a feed row lands in this composer with the parent pre-quoted.</div></sc-if>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============ LIFECYCLE + EMPTY + DARK + FLOOR ============ -->
+<section id="states" data-screen-label="T5-7 — Send lifecycle, empty, dark, 320" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">SEND LIFECYCLE · EMPTY STATE · DARK (SESSION KIND) · 320 FLOOR</span>
+    <span style="font-size:12px;color:#8E897B">four layers, delivery worn as words · the empty thread teaches · session panels carry the same body on graphite</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+    <div style="width:250px;flex:none;display:flex;flex-direction:column;gap:8px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">FOUR SEND LAYERS</div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;gap:2px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#5B564C">1 · draft</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">client-local, survives tab switches</span></div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;gap:2px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#BD8A2A">2 · saving… <span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#BD8A2A;animation:pnPulse 1.6s infinite;vertical-align:middle"></span></span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">writing the graph message</span></div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;gap:2px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#3E8E5A">3 · stored ✓</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">permanent — exists no matter what happens next</span></div>
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;gap:3px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#5B564C">4 · delivery facet, per live target</span><div style="display:flex;gap:4px;flex-wrap:wrap"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:1px 7px">delivered ✓</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:1px 7px">pending ◌</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:1px 7px">unknown ⚠</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#BB4D3D;background:rgba(187,77,61,.12);border-radius:999px;padding:1px 7px">refused ✗</span></div></div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C;line-height:1.6">a failed facet never hides the row — “send again” is a NEW message; the original stays stored</span>
+    </div>
+    <div style="width:300px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:340px">
+        <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:12px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px">
+          <span style="display:flex;align-items:center;color:#8E897B">Content</span>
+          <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Discussion</span>
+          <span style="display:flex;align-items:center;color:#8E897B">Connections</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:18px">
+          <span style="color:#8E897B;font-size:15px">❝</span>
+          <span style="font-family:'Newsreader',Georgia,serif;font-size:14.5px;font-style:italic;color:#5B564C;text-align:center">No discussion yet.</span>
+          <span style="font-size:11px;color:#8E897B;text-align:center;line-height:1.6">Say something — every message anchors here,<br>and agents on this task read what you write.</span>
+        </div>
+        <div style="flex:none;border-top:1px solid #E7E3D9;padding:8px 12px;display:flex;align-items:center;gap:8px;background:#FBFAF6">
+          <span style="width:18px;height:18px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">A</span>
+          <div style="flex:1;min-height:28px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;font-size:12px;color:#B7B2A4">Say something…</div>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:7px;padding:3px 11px;font-size:11.5px">Send</span>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">empty — teaches in T4's grammar: glyph, one sentence, the composer is the action</span>
+    </div>
+    <div style="width:340px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:340px">
+        <div style="display:flex;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid #2C2719">
+          <span style="width:18px;height:18px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span>
+          <span style="font-size:13px;font-weight:600;color:#EFE9DB">forge</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:1px 6px">● running</span>
+          <div style="flex:1"></div>
+          <span style="color:#8C8470;font-size:11px">✕</span>
+        </div>
+        <div style="height:28px;flex:none;display:flex;align-items:stretch;gap:12px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:11.5px">
+          <span style="display:flex;align-items:center;color:#8C8470">Content</span>
+          <span style="display:flex;align-items:center;font-weight:600;color:#EFE9DB;border-bottom:2px solid #E0A45A">Discussion</span>
+          <span style="display:flex;align-items:center;color:#8C8470">Connections</span>
+          <span style="display:flex;align-items:center;color:#8C8470">Activity</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:8px 11px;display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;flex-direction:column;gap:3px;padding:5px 7px;border-radius:7px">
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:16px;height:16px;flex:none;border-radius:50%;background:#302A1D;color:#BDB5A2;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">A</span><span style="font-size:11.5px;font-weight:600;color:#EFE9DB">ada</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">11:24</span></div>
+            <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;padding-left:22px">Session brief: fix the guide offsets first.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;padding:4px 7px">
+            <span style="color:#8C8470;font-size:10px">⤓</span>
+            <span style="flex:1;min-width:0;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@ada shared ◔ T-114 into this session</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:1px 6px">unknown ⚠</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;padding:5px 7px;border-radius:7px">
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">F</span><span style="font-size:11.5px;font-weight:600;color:#EFE9DB">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:7.5px;font-weight:600;color:#E0A45A;background:rgba(224,164,90,.12);border-radius:3px;padding:0 3px">agent</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">11:47</span></div>
+            <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;padding-left:22px">Re-ran with the new offsets — the 3px drift is gone.</div>
+          </div>
+        </div>
+        <div style="flex:none;border-top:1px solid #2C2719;padding:7px 11px;display:flex;align-items:center;gap:7px">
+          <div style="flex:1;min-height:26px;display:flex;align-items:center;padding:0 9px;background:#1B1810;border:1px solid #2C2719;border-radius:7px;font-size:11px;color:#665E4C">Message this session’s discussion…</div>
+          <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:7px;padding:2px 10px;font-size:11px">Send</span>
+        </div>
+        <div style="height:24px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;padding:0 11px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">same store the Chat surface projects — contentSurface untouched</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">session kind — the one dark shell; Discussion ≠ Chat: this tab is the anchored thread, Chat is the Content surface</span>
+    </div>
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:340px">
+        <div style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid #E7E3D9">
+          <span style="color:#8E897B;font-size:12px;flex:none">◔</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Rebuild the session-tree guide-line measurement harness — 9f31c2e8</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:1px 6px;flex:none">● working</span>
+          <span style="color:#8E897B;font-size:11px;flex:none">✕</span>
+        </div>
+        <div style="height:28px;flex:none;display:flex;align-items:stretch;gap:11px;padding:0 10px;border-bottom:1px solid #E7E3D9;font-size:11px;overflow:hidden">
+          <span style="display:flex;align-items:center;color:#8E897B">Content</span>
+          <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Discussion</span>
+          <span style="display:flex;align-items:center;color:#8E897B">Connections</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:6px 10px;display:flex;flex-direction:column;gap:2px">
+          <div style="display:flex;flex-direction:column;gap:3px;padding:5px 6px">
+            <div style="display:flex;align-items:center;gap:6px"><span style="width:16px;height:16px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">A</span><span style="font-size:11.5px;font-weight:600">ada</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">11:24</span></div>
+            <div style="font-size:11.5px;line-height:1.5;color:#3A362E;padding-left:22px">Focus on the guide x-offsets first — the tree rules can wait.</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;padding:5px 6px">
+            <div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">F</span><span style="font-size:11.5px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:7.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 3px">agent</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">11:26</span></div>
+            <div style="display:flex;align-items:baseline;gap:5px;border-left:2px solid #D8D3C6;padding:1px 6px;margin-left:22px;min-width:0"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B;flex:none">ada</span><span style="font-size:10px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Focus on the guide x-offsets…</span></div>
+            <div style="font-size:11.5px;line-height:1.5;color:#3A362E;padding-left:22px">Ack. Starting with guide offsets.</div>
+          </div>
+        </div>
+        <div style="flex:none;border-top:1px solid #E7E3D9;padding:7px 10px;display:flex;align-items:center;gap:6px">
+          <div style="flex:1;min-height:26px;display:flex;align-items:center;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:11px;color:#B7B2A4">Message…</div>
+          <span style="color:#8E897B;font-size:12px">⊕</span>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:7px;padding:2px 9px;font-size:11px">Send</span>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">320 floor — UUID title ellipsizes · rows keep avatar + word · composer never shrinks below 26px</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Discussion vs Chat, stated once.</span> On a work_session panel BOTH exist: Chat is a Content-region surface (RULING K); Discussion is this outer tab. Projections of one store — the tab never grows a terminal, the surface never grows tabs.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Floor law.</span> At 320 the two-deck row anatomy holds: avatar and provenance tag are flex:none, bodies wrap, parent excerpts ellipsize. The composer keeps Send visible — no icon-only mystery buttons.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section></x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;worstCase&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;kind&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;task&quot;,&quot;doc&quot;,&quot;project&quot;],&quot;default&quot;:&quot;task&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Discussion&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const worst = this.props.worstCase ?? false;
+    const kind = this.props.kind ?? 'task';
+    const K = {
+      task: { crumb: 'atelier › tasks', glyph: '◔', title: 'Session tree guide lines', pill: '● working', pc: '#3E8E5A', pbg: 'rgba(62,142,90,.12)', chip: '◔ T-114', id: 'T-114', ph: 'Message this task’s discussion…' },
+      doc: { crumb: 'atelier › docs', glyph: '▤', title: 'Layout spec', pill: 'v3', pc: '#8E897B', pbg: 'rgba(162,156,142,.16)', chip: '▤ Layout spec', id: 'DOC-14', ph: 'Message this doc’s discussion…' },
+      project: { crumb: 'atelier › projects', glyph: '⬒', title: 'tm8-ui', pill: 'trusted', pc: '#3E8E5A', pbg: 'rgba(62,142,90,.12)', chip: '⬒ tm8-ui', id: 'PRJ-1', ph: 'Message this project’s discussion…' }
+    };
+    const k = K[kind] || K.task;
+    return {
+      notes: this.props.notes ?? true, worst, nice: !worst,
+      kCrumb: k.crumb, kGlyph: k.glyph, kTitle: k.title, kPill: k.pill, kPillC: k.pc, kPillBg: k.pbg,
+      kChip: k.chip, kId: k.id, kPlaceholder: k.ph,
+      kTitleWorst: 'Rebuild the session-tree guide-line measurement harness — 9f31c2e8-44d7-4a52-bb0e-7c1d90aa61f4'
+    };
+  }
+}
+</script>
+</body>
+</html>

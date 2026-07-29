@@ -256,4 +256,66 @@ describe('PTY WebSocket', () => {
     });
     expect(host.getSize('s-resize')).toEqual({ cols: 120, rows: 40 });
   });
+
+  it('a respawn on the same sessionId replaces the PTY: old socket closes with NO exit frame, new attach gets a different epoch and only the new stream', async () => {
+    // PtyHostService.spawn() is documented as "deliberately destructive for the
+    // agent resume path": calling it twice on the same sessionId kills the old
+    // PTY with notify=false (closeSubscribers — a plain close, no {type:'exit'}
+    // text frame) and installs a fresh entry with a new epoch. This is the
+    // wire-level behavior that claim rests on, observed here rather than
+    // inferred from the source comment.
+    host = new PtyHostService({ logger: quiet });
+    host.spawn({ sessionId: 's-respawn', command: 'echo A; sleep 5', cwd: CWD, env: {} });
+    await new Promise((r) => setTimeout(r, 400));
+
+    const server = createPtyWsServer({ pty: host });
+    const sockA = new FakeSocket();
+    await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=s-respawn&offset=0'), sockA, Buffer.alloc(0));
+
+    const framesA1 = decodeServerFrames(sockA.written());
+    const attachedA = texts(framesA1).find((c) => c.type === 'attached');
+    expect(attachedA).toBeDefined();
+    const epoch1 = attachedA.epoch;
+    expect(typeof epoch1).toBe('string');
+    expect(Buffer.concat(bins(framesA1).map((b) => b.payload)).toString('utf8')).toContain('A');
+
+    // The destructive replace: same sessionId, a new process.
+    host.spawn({ sessionId: 's-respawn', command: 'echo B; sleep 5', cwd: CWD, env: {} });
+    await waitFor(() => {
+      const frames = decodeServerFrames(sockA.written());
+      return frames.some((f) => f.kind === 'close');
+    });
+
+    // Old socket: a CLOSE frame arrived, but NEVER a {type:'exit'} text frame —
+    // that is what lets the client tell "replaced, reconnect" apart from "the
+    // agent actually exited, stop reconnecting" (ptyTransport.ts's
+    // _exitedSessions bookkeeping depends on this distinction).
+    const framesA2 = decodeServerFrames(sockA.written());
+    expect(framesA2.some((f) => f.kind === 'close')).toBe(true);
+    expect(texts(framesA2).some((c) => c.type === 'exit')).toBe(false);
+
+    // Give the NEW process time to actually produce output before attaching —
+    // otherwise the replay ring is legitimately still empty and `hasReplay`
+    // would be false for a timing reason, not a protocol one.
+    await waitFor(() => {
+      const r = host!.getReplay('s-respawn', 0);
+      return !!r && r.data.toString('utf8').includes('B');
+    });
+
+    // Reconnect fresh (offset 0, as a real client would after a close with no
+    // exit frame): a DIFFERENT epoch, and the replay/live output is the NEW
+    // process's stream only — no stale 'A' output bleeding across the replace.
+    const sockB = new FakeSocket();
+    await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=s-respawn&offset=0'), sockB, Buffer.alloc(0));
+
+    const framesB = decodeServerFrames(sockB.written());
+    const attachedB = texts(framesB).find((c) => c.type === 'attached');
+    expect(attachedB).toBeDefined();
+    expect(attachedB.epoch).not.toBe(epoch1);
+    expect(attachedB.hasReplay).toBe(true);
+
+    const bodyB = Buffer.concat(bins(framesB).map((b) => b.payload)).toString('utf8');
+    expect(bodyB).toContain('B');
+    expect(bodyB).not.toContain('A');
+  });
 });

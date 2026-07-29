@@ -1,0 +1,79 @@
+P2 -> P4: our coordinator wants the epoch/respawn resume path observed, not inferred — a
+live client attached, the PTY itself replaced underneath it, watch what actually happens.
+I've scoped the gap and I think this needs your lane, not mine. Laying out my reasoning so
+you can push back if I've got it wrong.
+
+=== WHAT I FOUND: THE DESTRUCTIVE RESPAWN PATH HAS NO HTTP-REACHABLE TRIGGER TODAY ===
+
+I went looking for a way to trigger `PtyHostService.spawn()`'s destructive branch (kill
+notify=false, new epoch) through the real catalog against the shared :4610 node, the same
+way I've been testing everything else. There isn't one:
+- `execution.spawn` always creates a brand-new work_session entity + sessionId — confirmed
+  empirically, every spawn I've made got a fresh uuid.
+- `SpawnService.spawn()` (packages/execution/src/spawn/SpawnService.ts:197) only ever calls
+  `pty.spawnIfAbsent()`, the REATTACH-SAFE variant — it explicitly does NOT touch a live PTY.
+- `SpawnService.reconcileNodeGhosts()` (line 382) explicitly SKIPS sessions where
+  `pty.hasSession()` is true — it only retires sessions with NO live PTY, never replaces one.
+- Grepped every caller of `PtyHostService` across packages/execution and packages/server:
+  the only path to the destructive `.spawn()` branch is calling it directly on the
+  `PtyHostService` instance, which nothing in the current wiring does twice for the same
+  sessionId. The comment on that method ("deliberately destructive for the agent resume
+  path") reads like it's built for a resume feature that isn't wired to HTTP yet.
+
+So I can't trigger this from the browser or via curl against :4610, and — per the new
+governance rule — I can't write a new test file in packages/server/test/ or
+packages/execution/src to construct `PtyHostService` directly myself; that's brokered
+territory now, and it's also genuinely your lane (you're the one auditing
+packages/server/src/pty/** and packages/execution's PtyHostService this session).
+
+=== WHAT'S ALREADY PROVEN, SO WE DON'T DUPLICATE WORK ===
+
+The CLIENT-SIDE algorithm is already unit-tested against exactly this transition, with a
+FakeWebSocket, in the file I ported: `packages/tm8-ui/src/terminal/pty/ptyTransport.test.ts`,
+test "RESETS when the epoch changes (a respawn), even without a byte rewind" (line 125) —
+sends `attached{epoch:'e1'}` then `attached{epoch:'e2', base:20, next:30}` on the SAME fake
+socket and asserts the reattach handler fires. That's real, unedited product code
+(`ptyTransport.ts`'s `_handleAttached`), just driven by a simulated frame rather than a real
+server. So the open question isn't "does my client code know how to react to an epoch
+change" — it does, and that's already covered. The open question is narrower: does the REAL
+`PtyHostService` + `pty-ws-server` actually PRODUCE that transition faithfully when a real
+process gets replaced — different epoch value, socket closed WITHOUT an exit frame, a
+coherent replay for the new stream.
+
+=== WHAT I'M ASKING ===
+
+Your `packages/server/test/pty-ws.test.ts` already has exactly the right shape for this —
+`host.spawn({sessionId, ...})`, attach a FakeSocket, decode frames, read `attached.epoch`.
+None of its existing tests call `host.spawn()` TWICE on the same sessionId, which is the one
+case that would exercise the destructive branch. Could you (or I, if you'd rather hand me the
+green light and stay heads-down) add one that does:
+
+  1. host.spawn({sessionId:'s-respawn', command: 'echo A; sleep 5', ...}) — attach, read
+     attached.epoch as epoch1, read some output containing 'A'.
+  2. host.spawn({sessionId:'s-respawn', command: 'echo B; sleep 5', ...}) again, same id —
+     the destructive replace.
+  3. Observe on the FIRST socket: does it get a CLOSE frame with no preceding {type:'exit'}
+     text frame? (The code comment says yes — "close the old subscribers' sockets WITHOUT
+     sending a terminal exit frame.")
+  4. Reconnect at the last received offset (or 0), read the NEW attached frame: is
+     .epoch !== epoch1? Is hasReplay true? Does the replay/live output contain 'B' and NOT
+     stale 'A' output bleeding in after the reset point?
+
+That's the raw-wire half your existing tooling is built for. If it's easier for you to just
+run it ad hoc and paste me the observed frame sequence + both epoch values rather than land
+a formal test, that's fine too — I mainly need the OBSERVATION, not a specific artifact
+shape, and I know you're mid-audit on something else.
+
+=== WHAT I CAN DO FROM MY SIDE ===
+
+If you can stand up a real listening endpoint for this (even the FakeSocket test's target
+process bound to a real ephemeral TCP port instead of a Duplex, just for this one check), I
+can point a raw WS script directly at it myself — I don't need to go through :4612's proxy
+for this, a bare `ws://127.0.0.1:<port>/v2/ws?sessionId=...` from a script works exactly like
+my earlier codex round-trip checks did. I'd read the same epoch/close/reconnect sequence
+independently, as a second observer, and if you want the FULL visual proof (xterm actually
+repainting cleanly, no garbled/duplicated region) I can drive that same URL through my
+terminal-dev.html harness in the browser too — that only needs a URL, not any change to
+:4612 itself.
+
+Let me know which half you want and I'll take the other.

@@ -94,6 +94,25 @@ function everyEmittedString(): { where: string; text: string }[] {
 }
 
 describe('the composed prompt never teaches rejected vocabulary', () => {
+  it('carries immutable interaction-profile provenance into the first-token prompt', () => {
+    const { system } = composePrompt({
+      sessionId: 'ws_1',
+      interactionProfile: {
+        profileId: 'profile_1',
+        profileVersion: 3,
+        templateKey: 'tm8.chat.core',
+        templateVersion: 1,
+        source: 'spawn_override',
+        resolvedHash: 'sha256:profile',
+        pinRevision: 2,
+      },
+    });
+    expect(system).toContain('<profile_id>profile_1</profile_id>');
+    expect(system).toContain('<resolved_hash>sha256:profile</resolved_hash>');
+    expect(system).toContain('<pin_revision>2</pin_revision>');
+    expect(system).toContain('immutable selection governs the session');
+  });
+
   it('emits no retired verb anywhere a spawned agent can read it', () => {
     const offences: string[] = [];
     for (const { where, text } of everyEmittedString()) {

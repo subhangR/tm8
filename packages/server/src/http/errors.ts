@@ -108,8 +108,28 @@ export function toWireError(err: unknown, requestId: string): WireErrorResponse 
   };
 }
 
+/**
+ * Anything that is NOT a `CollabError` becomes a generic 503 on the wire, by
+ * design — internal failure text never reaches the client. That rule is right
+ * and stays, but it used to mean the cause reached NOBODY: the pipeline's one
+ * catch called the writer and nothing else, so a real crash inside a handler
+ * showed up as `internal server error` in the browser and left no trace on the
+ * server either. Diagnosing the `/v2/execution/spawn` 503 started with adding
+ * this line, which is the evidence that it was missing.
+ *
+ * Logged HERE rather than at the catch site so it cannot be forgotten by a
+ * second caller: `sendWireError` is the only writer, so every unexpected
+ * escape is logged exactly once, correlated by the same `requestId` the client
+ * is holding.
+ */
+function logUnexpected(err: unknown, requestId: string): void {
+  const detail = err instanceof Error ? (err.stack ?? `${err.name}: ${err.message}`) : String(err);
+  console.error(`[tm8] unhandled error (requestId=${requestId}): ${detail}`);
+}
+
 /** The one and only error writer. */
 export function sendWireError(res: ServerResponse, err: unknown, requestId: string): void {
+  if (!isCollabError(err)) logUnexpected(err, requestId);
   const { status, body } = toWireError(err, requestId);
   if (res.headersSent) {
     res.end();

@@ -1,0 +1,21 @@
+[Unit]
+Description=tm8 server
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/tm8-workspace
+EnvironmentFile=/etc/tm8/tm8.env
+ExecStart=/usr/bin/node /opt/tm8/current/packages/server/dist/index.js
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=20
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

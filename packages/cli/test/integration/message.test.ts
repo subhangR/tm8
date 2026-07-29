@@ -243,7 +243,7 @@ afterAll(async () => {
 });
 
 describe('the node this suite measured', () => {
-  it('reports its mounted and registered counts, and 100 mounted routes', async () => {
+  it('reports its mounted and registered counts, and 101 mounted routes', async () => {
     const health = await server.health();
     // eslint-disable-next-line no-console
     console.log(
@@ -251,7 +251,7 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(100);
+    expect(health.operations).toBe(105);
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

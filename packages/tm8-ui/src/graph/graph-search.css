@@ -1,0 +1,65 @@
+/**
+ * GraphSearch — toolbar search field. ATELIER paper-and-ink, tokens only (hex
+ * is banned outside tokens.css). Mono face to match the toolbar count/eyebrow
+ * vocabulary; the field itself reads as a pill-bordered input that brightens
+ * to a brass hairline on focus. No motion beyond a fast ease-out border tint;
+ * prefers-reduced-motion collapses it.
+ */
+
+.gv-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  width: 180px;
+  flex: none;
+  padding: 2px var(--pn-space-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.gv-search:focus-within {
+  border-color: var(--pn-brand);
+}
+
+.gv-search__glyph {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-label);
+  color: var(--pn-ink-3);
+  flex: none;
+}
+
+.gv-search__input {
+  appearance: none;
+  min-width: 0;
+  flex: 1;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink);
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+}
+
+.gv-search__input::placeholder {
+  color: var(--pn-ink-4);
+}
+
+.gv-search__input:focus {
+  outline: none;
+}
+
+.gv-search__count {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gv-search {
+    transition: none;
+  }
+}

@@ -128,6 +128,21 @@ class RecordingPty {
   }
 }
 
+/**
+ * Fake `InternalPromptDeliverySettlement` (execution.ts) — these fixtures predate
+ * the two-signal PromptSettlementWaiter bridge, so `RecordingPty.deliverPrompt`
+ * above admits every delivery synchronously and never calls a real
+ * `onPromptSettled`. Resolving 'delivered' immediately reproduces the OLD
+ * admission-is-the-outcome behavior these tests were written against, without
+ * pretending this fake models the real closed loop's timing at all.
+ */
+function fakePromptSettlement(): { awaitOutcome: () => Promise<{ outcome: 'delivered' }>; cancel: () => void } {
+  return {
+    awaitOutcome: async () => ({ outcome: 'delivered' }),
+    cancel: () => {},
+  };
+}
+
 const CONFIG = { host: '127.0.0.1', port: 4610 } as unknown as ServerConfig;
 
 /**
@@ -349,7 +364,7 @@ describe('B1 — the internal delivery seam still works', () => {
     });
 
     const outcome = await promptInternal(
-      { pty: h.pty as never },
+      { pty: h.pty as never, promptSettlement: fakePromptSettlement() },
       principal,
       { ...binding, content: 'wake up', mode: 'send' },
     );
@@ -376,7 +391,11 @@ describe('B1 — the internal delivery seam still works', () => {
     };
 
     await expect(
-      promptInternal({ pty: h.pty as never }, forged, { ...binding, content: 'wake up', mode: 'send' }),
+      promptInternal(
+        { pty: h.pty as never, promptSettlement: fakePromptSettlement() },
+        forged,
+        { ...binding, content: 'wake up', mode: 'send' },
+      ),
     ).rejects.toThrow();
     expect(h.pty.bytes).toBe(0);
   });
@@ -387,7 +406,7 @@ describe('B1 — the internal delivery seam still works', () => {
       '../../src/facade/services/w2/execution.js'
     );
     const rpc = new FakeDeliveryRpc();
-    const service = new Service({ rpc, pty: h.pty as never });
+    const service = new Service({ rpc, pty: h.pty as never, promptSettlement: fakePromptSettlement() });
     const reservation = await service.reserve({
       messageId: IDS.message,
       targetWorkSessionId: IDS.session,
@@ -424,7 +443,7 @@ describe('B1 — the internal delivery seam still works', () => {
 
     await expect(
       promptInternal(
-        { pty: h.pty as never },
+        { pty: h.pty as never, promptSettlement: fakePromptSettlement() },
         principal,
         {
           deliveryId: IDS.delivery,
@@ -460,7 +479,10 @@ describe('B1 — the internal delivery seam still works', () => {
  */
 describe('B2 — the delivery path, over a fake RPC port', () => {
   function service(pty: RecordingPty, rpc = new FakeDeliveryRpc()) {
-    return { rpc, service: new W2ExecutionDeliveryService({ rpc, pty: pty as never }) };
+    return {
+      rpc,
+      service: new W2ExecutionDeliveryService({ rpc, pty: pty as never, promptSettlement: fakePromptSettlement() }),
+    };
   }
 
   async function deliver(
@@ -499,7 +521,11 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
 
   it('holds NO wake state: a rebuilt service does not mint a fresh allowance', async () => {
     const rpc = new FakeDeliveryRpc();
-    const first = new W2ExecutionDeliveryService({ rpc, pty: new RecordingPty() as never });
+    const first = new W2ExecutionDeliveryService({
+      rpc,
+      pty: new RecordingPty() as never,
+      promptSettlement: fakePromptSettlement(),
+    });
     for (const message of ['m1', 'm2']) {
       expect((await deliver(first, message, IDS.session, 'x')).outcome).toBe('delivered');
     }
@@ -508,7 +534,11 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     // A new service over the same durable state — the in-process analogue of a
     // restart. Two wakes remain, not four.
     const ptyAfter = new RecordingPty();
-    const second = new W2ExecutionDeliveryService({ rpc, pty: ptyAfter as never });
+    const second = new W2ExecutionDeliveryService({
+      rpc,
+      pty: ptyAfter as never,
+      promptSettlement: fakePromptSettlement(),
+    });
     expect((await deliver(second, 'm3', IDS.session, 'x')).outcome).toBe('delivered');
     expect((await deliver(second, 'm4', IDS.session, 'x')).outcome).toBe('delivered');
     expect(rpc.wakes).toBe(4);
@@ -572,6 +602,7 @@ describe('the seam handed to the composition root', () => {
     const svc = new W2ExecutionDeliveryService({
       rpc: new FakeDeliveryRpc(),
       pty: new RecordingPty() as never,
+      promptSettlement: fakePromptSettlement(),
     });
 
     const messageDelivery: NonNullable<W2MessagesHandoffsServiceOptions['messageDelivery']> = {
@@ -670,6 +701,7 @@ describe('registerFacadeHandlers carries messageDelivery to the messages seam', 
     const service = new W2ExecutionDeliveryService({
       rpc: new FakeDeliveryRpc(),
       pty: pty as never,
+      promptSettlement: fakePromptSettlement(),
     });
     const registry = new HandlerRegistry();
     registerFacadeHandlers(registry, {
@@ -738,6 +770,7 @@ describe('the delivery diagnostic names failures without becoming noise', () => 
     const svc = new W2ExecutionDeliveryService({
       rpc: new FakeDeliveryRpc(),
       pty: new RecordingPty() as never,
+      promptSettlement: fakePromptSettlement(),
       logger: recordingLogger(lines) as never,
     });
     const reservation = (await svc.reserve({
@@ -766,6 +799,7 @@ describe('the delivery diagnostic names failures without becoming noise', () => 
     const svc = new W2ExecutionDeliveryService({
       rpc,
       pty: new RecordingPty() as never,
+      promptSettlement: fakePromptSettlement(),
       logger: recordingLogger(lines) as never,
     });
 
@@ -796,6 +830,7 @@ describe('the delivery diagnostic names failures without becoming noise', () => 
     const svc = new W2ExecutionDeliveryService({
       rpc: new FakeDeliveryRpc(),
       pty: new RecordingPty() as never,
+      promptSettlement: fakePromptSettlement(),
       logger: recordingLogger(lines) as never,
     });
     const reservation = (await svc.reserve({

@@ -46,6 +46,7 @@ import type {
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
+  ServerConnection, ServerConnectionCreateInput, ServerConnectionDeleteInput,
   SetDefaultChannelInput, SetSpaceProfileDefaultInput,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
@@ -795,6 +796,49 @@ const commandContextShape = {
 export const CommandContextSchema: z.ZodType<CommandContext> =
   z.object(commandContextShape).strict();
 
+export const ServerConnectionNameSchema = z.string()
+  .min(1)
+  .max(63)
+  .regex(/^[a-z][a-z0-9-]*$/, 'name must start with a letter and contain only lowercase letters, digits, and hyphens');
+
+export const ServerConnectionBaseUrlSchema = z.string().min(1).max(2048).url().superRefine((value, ctx) => {
+  const url = new URL(value);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseUrl must use http or https' });
+  }
+  if (url.username || url.password) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseUrl must not contain credentials' });
+  }
+  if (url.hash) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseUrl must not contain a fragment' });
+  }
+  if ((url.pathname && url.pathname !== '/') || url.search) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseUrl must be an origin without a path or query' });
+  }
+});
+
+export const ServerConnectionSchema: z.ZodType<ServerConnection> = z.object({
+  id: z.string().uuid(),
+  name: ServerConnectionNameSchema,
+  baseUrl: ServerConnectionBaseUrlSchema,
+  username: z.string().min(1).max(100).nullable().optional(),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+}).strict();
+
+export const ServerConnectionCreateInputSchema: z.ZodType<ServerConnectionCreateInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  name: ServerConnectionNameSchema,
+  baseUrl: ServerConnectionBaseUrlSchema,
+  username: z.string().min(1).max(100).nullable().optional(),
+}).strict();
+
+export const ServerConnectionDeleteInputSchema: z.ZodType<ServerConnectionDeleteInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
 export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({
   token: z.string(),
   label: z.string(),
@@ -1043,7 +1087,7 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 // Space menu and shared settings revision (W0 dossier A01-A03/A20)
 // ---------------------------------------------------------------------------
 
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'channels', 'settings']);
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'settings']);
 export const MenuKindRefSchema = z.union([
   CoreEntityKindSchema.exclude(['channel', 'message']),
   CustomEntityKindSchema,
@@ -1211,20 +1255,21 @@ export const FileUploadAbortInputSchema = CommandContextSchema;
 
 export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('project') }).strict(),
-  z.object({ mode: z.literal('worktree'), baseRef: z.string().nullable().optional() }).strict(),
   z.object({ mode: z.literal('scratch') }).strict(),
 ]);
+
+const SpawnUuidSchema = z.string().uuid();
 
 export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
-  spaceId: SpaceIdSchema,
-  teamMemberId: EntityIdSchema,
-  taskIds: z.array(EntityIdSchema).optional(),
-  projectId: ProjectIdSchema.nullable().optional(),
+  spaceId: SpawnUuidSchema,
+  teamMemberId: SpawnUuidSchema,
+  taskIds: z.array(SpawnUuidSchema).optional(),
+  projectId: SpawnUuidSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
-  interactionProfileId: EntityIdSchema.optional(),
+  interactionProfileId: SpawnUuidSchema.optional(),
   mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
@@ -1261,6 +1306,10 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
   liveEntityIds: z.array(EntityIdSchema),
   nodeBootId: z.string().min(1),
   checkedAt: IsoTimestamp,
+  capacity: z.object({
+    used: z.number().int().nonnegative(),
+    total: z.number().int().positive(),
+  }).strict(),
 }).strict();
 
 // ---------------------------------------------------------------------------

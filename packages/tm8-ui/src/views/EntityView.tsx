@@ -36,6 +36,7 @@ import './entity-view.css';
 
 export interface EntityViewProps {
   data: GateData & { pull?: (id: string) => void };
+  serverBaseUrl?: string;
   kind: string;
   reasons: DetailReasons;
   onNotice(notice: Notice): void;
@@ -103,6 +104,7 @@ export function EntityView(props: EntityViewProps) {
   const detailPanel = selectedId ? (
     <EntityDetailPanel
       detail={detail ?? null}
+      serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
       host="stack"
       reasons={reasons}
@@ -120,6 +122,7 @@ export function EntityView(props: EntityViewProps) {
          conflict card — is live only where the host hands down the seam's
          commands. AuthoringCommands is a structural subset, no cast. */
       commands={data.seam.commands}
+      onSaved={data.reconcileCommand}
       streaming={data.activity[selectedId] ?? false}
       onPromote={() => setMode((m) => (m === 'aside' ? 'full' : 'aside'))}
       onClose={() => {

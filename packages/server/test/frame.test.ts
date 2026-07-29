@@ -74,6 +74,12 @@ describe('config (S1 — loopback only)', () => {
     const config = loadConfig({});
     expect(config.host).toBe('127.0.0.1');
     expect(config.port).toBe(4610);
+    expect(config.launchBootstrap).toBe(true);
+    expect(config.launchProjectDir).toBe(process.cwd());
+  });
+
+  it('allows launch resource bootstrap to be explicitly disabled', () => {
+    expect(loadConfig({ TM8_LAUNCH_BOOTSTRAP: '0' }).launchBootstrap).toBe(false);
   });
 
   it('REFUSES to start on a non-loopback bind (no token auth exists yet)', () => {

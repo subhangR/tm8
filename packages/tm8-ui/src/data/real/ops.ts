@@ -24,8 +24,8 @@
  *      `RequiredCommandContextSchema` is `.strict()` and the server stamps the
  *      time itself (`mark_read`, inbox-read-marks.ts:427). Sending it would be a
  *      400, and pretending the client's clock won would be worse.
- *   4. `liveness` — the catalog row does not exist yet (LLD §13 open item). See
- *      `livenessPath` below.
+ *   4. `liveness` — the response is space-scoped but does not echo `spaceId`,
+ *      so this adapter stamps the request id onto the snapshot.
  */
 import {
   bindPath,
@@ -47,6 +47,8 @@ import {
   type ExecutionPromptInput,
   type ExecutionSpawnInput,
   type ExecutionTerminateInput,
+  type GraphQuery,
+  type GraphResult,
   type HandoffView,
   type MenuConfig,
   type MessageBatchResult,
@@ -59,8 +61,10 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectResource,
   type ReactionInput,
   type SpaceId,
+  type SpaceSettingsView,
   type SpaceSummary,
   type WorkInput,
 } from '@tm8/contract';
@@ -143,14 +147,26 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<MenuConfig>('spaces.menu.get', { params: { spaceId } });
     },
 
+    spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView> {
+      return http.call<SpaceSettingsView>('spaces.settings', { params: { spaceId } });
+    },
+
     /** `cursor`/`limit` are BODY fields on this op, carried inside the query object. */
     query(input: CollectionQuery): Promise<CollectionResult> {
       return http.call<CollectionResult>('collections.query', { body: input });
     },
 
+    graph(input: GraphQuery): Promise<GraphResult> {
+      return http.call<GraphResult>('graph.query', { body: input });
+    },
+
     /** Bare array (core kinds first, then custom `c:*`). */
     entityKinds(spaceId: SpaceId): Promise<EntityKindDef[]> {
       return http.call<EntityKindDef[]>('entityKinds.list', { params: { spaceId } });
+    },
+
+    projects(spaceId: SpaceId): Promise<ProjectResource[]> {
+      return http.call<ProjectResource[]>('projects.list', { query: { spaceId } });
     },
 
     entity(id: EntityId): Promise<EntityDetail> {

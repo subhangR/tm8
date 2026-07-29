@@ -198,6 +198,15 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
   const sessions = fixtureSummaries.filter((s) => s.state.kind === 'work_session');
 
+  it('does not insert an unavailable launch block above the Sessions search', () => {
+    const { container, getByTestId } = render(
+      <EntityListPanel kind="work_session" rowsFor={rowsFor(sessions)} ctx={ctx} />,
+    );
+
+    expect(container.querySelector('.lp__actions')).toBeNull();
+    expect(getByTestId('list-search')).toBeTruthy();
+  });
+
   it('D41: lifecycle tabs are UNIVERSAL, and coexist with sections rather than replacing them', () => {
     // Pre-ratification this asserted the opposite — that task had NO tabs.
     // The user ratified the three-tier model as drawn on every collection
@@ -522,18 +531,94 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(unhandled, `TileBadgeSource with no renderer: ${unhandled.join(', ')}`).toEqual([]);
   });
 
-  it('R5 #1: a task row renders its full anatomy — dot, status word, priority tag, meta', () => {
+  it('R5 #1: the control-card anatomy maps status, priority, assignees and progress from real data', () => {
     const { getAllByTestId } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle])} ctx={ctx} />,
     );
     const tile = getAllByTestId('list-tile')[0]!;
-    expect(tile.querySelector('.lp__dot'), 'status dot').not.toBeNull();
-    expect(tile.querySelector('.lp__word')?.textContent, 'status word').toBe('in review');
-    expect(tile.querySelector('.lp__tag')?.textContent, 'priority tag').toBe('URGENT');
-    // The second line carries the mono facts: assignees, acceptance, pulls.
-    const meta = tile.querySelector('.lp__meta')?.textContent ?? '';
-    expect(meta, 'meta line').toContain('4/6');
-    expect(meta).toContain('Ada');
+    expect(tile.getAttribute('data-anatomy')).toBe('control-card');
+    expect(tile.querySelector('.pn-stat'), 'status glyph').not.toBeNull();
+    expect(tile.querySelector('.pn-tt__status-text')?.textContent, 'status word').toBe('in review');
+    expect(tile.querySelector('.pn-tt__main .pn-tag'), 'no duplicated header priority').toBeNull();
+
+    fireEvent.click(within(tile).getByRole('button', { name: /expand details/i }));
+    const expanded = tile.querySelector('.pn-tt__meta')?.textContent ?? '';
+    expect(
+      tile.querySelector('.pn-tt__meta .pn-badge--priority')?.textContent,
+      'expanded priority chip',
+    ).toBe('URGENT');
+    expect(expanded, 'expanded facts').toContain('4/6 criteria');
+    expect(expanded).toContain('Ada +1');
+    expect(expanded).toContain('3 pulled');
+    expect(
+      within(tile).getByRole('button', { name: /collapse details/i }).getAttribute('aria-expanded'),
+    ).toBe('true');
+  });
+
+  it('renders a task hierarchy as attached cards and expands/collapses children inline', () => {
+    const parent: EntitySummary = {
+      ...taskGuideLines,
+      id: 'task-parent-card',
+      title: 'Workspace layout',
+      parentId: null,
+    };
+    const child: EntitySummary = {
+      ...taskUuidTitle,
+      id: 'task-child-card',
+      title: 'Center sizing law',
+      parentId: parent.id,
+    };
+    const onSelect = vi.fn();
+    const { getAllByTestId, getByRole, queryByText } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([parent, child])}
+        ctx={ctx}
+        onSelect={onSelect}
+      />,
+    );
+
+    expect(getAllByTestId('list-tile')).toHaveLength(2);
+    expect(getAllByTestId('list-tile')[1]?.getAttribute('data-depth')).toBe('1');
+    const disclosure = getByRole('button', { name: /collapse workspace layout, 1 child/i });
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+
+    fireEvent.click(disclosure);
+    expect(getAllByTestId('list-tile')).toHaveLength(1);
+    expect(queryByText('Center sizing law')).toBeNull();
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+    fireEvent.click(disclosure);
+    fireEvent.click(getByRole('button', { name: 'Center sizing law' }));
+    expect(onSelect).toHaveBeenLastCalledWith(child.id);
+  });
+
+  it('uses the same hierarchy and semantic status colors for coordinator/session children', () => {
+    const coordinator: EntitySummary = {
+      ...sessionLive,
+      id: 'session-coordinator-card',
+      title: 'Coordinator session',
+      parentId: null,
+    };
+    const worker: EntitySummary = {
+      ...sessionStale,
+      id: 'session-worker-card',
+      title: 'Worker session',
+      parentId: coordinator.id,
+    };
+    const { getAllByTestId, getByRole } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor([coordinator, worker])}
+        ctx={ctx}
+        livenessOf={() => 'live'}
+      />,
+    );
+
+    expect(getAllByTestId('list-tile')).toHaveLength(2);
+    expect(getAllByTestId('list-tile')[0]?.querySelector('.lp__statusmark--run')).not.toBeNull();
+    fireEvent.click(getByRole('button', { name: /collapse coordinator session, 1 child/i }));
+    expect(getAllByTestId('list-tile')).toHaveLength(1);
   });
 
   it('R5 #1 is a CLASS: a non-session, non-task kind renders anatomy too', () => {
@@ -677,6 +762,77 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const bar = getByTestId('panel-action-bar');
     expect(bar.querySelectorAll('button.pn-btn--primary').length).toBeGreaterThan(0);
+  });
+
+  it('keeps the task title row clear and puts Run + panel controls beside the tabs', () => {
+    const detail = fixtureDetails[taskUuidTitle.id]!;
+    const { getByTestId, getByRole } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        onAction={() => {}}
+        onPromote={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    const header = getByTestId('panel-header');
+    const toolbar = getByTestId('panel-toolbar');
+    const tabs = getByTestId('panel-tabs');
+    const actions = getByTestId('panel-action-bar');
+
+    expect(header.contains(actions)).toBe(false);
+    expect(toolbar.contains(tabs)).toBe(true);
+    for (const label of ['Task', 'Discussion', 'Connections', 'Activity']) {
+      expect(tabs.textContent).toContain(label);
+    }
+    expect(toolbar.contains(actions)).toBe(true);
+    expect(toolbar.contains(getByRole('button', { name: 'Open full view' }))).toBe(true);
+    expect(toolbar.contains(getByRole('button', { name: 'Close panel' }))).toBe(true);
+    expect(toolbar.querySelector('[aria-label="More actions"]')).toBeNull();
+    expect(toolbar.querySelector('[aria-label="Pin panel"]')).toBeNull();
+    expect(actions.textContent).toContain('Run');
+    for (const removed of ['Coordinate', 'Complete', 'Points', 'Link', 'Add child']) {
+      expect(actions.textContent).not.toContain(removed);
+    }
+  });
+
+  it('gives terminal panels the same title-first, toolbar-second layout as tasks', () => {
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { getByTestId, getByRole } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities, liveness: 'stale' }}
+        liveness="stale"
+        onAction={() => {}}
+        onPromote={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    const header = getByTestId('panel-header');
+    const toolbar = getByTestId('panel-toolbar');
+    const tabs = getByTestId('panel-tabs');
+    const actions = getByTestId('panel-action-bar');
+
+    expect(header.textContent).toContain(detail.title);
+    expect(header.contains(actions)).toBe(false);
+    expect(toolbar.contains(tabs)).toBe(true);
+    for (const label of ['Session', 'Discussion', 'Connections', 'Activity']) {
+      expect(tabs.textContent).toContain(label);
+    }
+    expect(toolbar.contains(actions)).toBe(true);
+    expect(toolbar.contains(getByRole('button', { name: 'Open full view' }))).toBe(true);
+    expect(toolbar.contains(getByRole('button', { name: 'Close panel' }))).toBe(true);
+    expect(toolbar.querySelector('[aria-label="More actions"]')).toBeNull();
+    expect(toolbar.querySelector('[aria-label="Pin panel"]')).toBeNull();
+    expect(toolbar.textContent).not.toContain('Save');
+    expect(toolbar.querySelector('.hon-caption')).toBeNull();
+    expect(actions.textContent).toContain('Terminate');
+    expect(actions.textContent).not.toContain('Complete');
+    expect(getByTestId('terminal-body')).toBeTruthy();
   });
 
   it('R5 #4A: the action bar states reasons on the CONTROL, not as stacked sentences', () => {

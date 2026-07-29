@@ -165,15 +165,16 @@ describe('ESC — both halves, which is the point', () => {
 });
 
 describe('the sheet anatomy (T5-5 / D51)', () => {
-  it('renders THREE sections — model is a teammate-row subtitle, not a fourth', () => {
-    const { container } = renderSheet();
+  it('renders the complete launch configuration with an explicit model control', () => {
+    const { container, getByTestId } = renderSheet();
     const eyebrows = [...container.querySelectorAll('.ls__eyebrow')].map((n) => n.textContent);
     expect(eyebrows).toContain('TEAMMATE');
-    expect(eyebrows).toContain('PROJECTS — PICK ANY, OR NONE');
+    expect(eyebrows).toContain('WORKING DIRECTORY');
     expect(eyebrows).toContain('INTERACTION PROFILE');
-    // The model rides the row, so there is no MODEL section to find.
+    // Model stays within the teammate section, but is a real selectable input.
     expect(eyebrows).not.toContain('MODEL');
-    expect(container.textContent).toContain('claude-sonnet · claude-code · owned by @ada');
+    expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');
+    expect(getByTestId('launch-model')).toBeInstanceOf(HTMLSelectElement);
   });
 
   it('renders the untrusted project DISABLED-WITH-REASON and still reachable (L6/D28)', () => {
@@ -230,7 +231,7 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     expect(container.querySelector('.ls__capacity')?.textContent).toContain('8 slots, 3 in use');
   });
 
-  it('submits the full selection, first project first (RULING J: first pick = initial cwd)', () => {
+  it('submits one typed working-directory target and the full tool configuration', () => {
     const onLaunch = vi.fn();
     const { getByText } = renderSheet({ onLaunch });
     fireEvent.click(getByText('Launch ▸'));
@@ -242,9 +243,35 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       // way, a future rename fails here instead of silently re-breaking spawn.
       expect.objectContaining({
         subjectId: 'task-1',
-        teammateId: teamMemberForge.id,
-        projectIds: ['pj-tm8ui'],
+        teamMemberId: teamMemberForge.id,
+        target: { kind: 'project', projectId: 'pj-tm8ui' },
+        agentToolId: 'claude-code',
+        model: 'claude-sonnet-5',
+        mode: 'worker',
       }),
+    );
+  });
+
+  it('exposes and submits a concrete model choice in Full Options', () => {
+    const onLaunch = vi.fn();
+    const { getByTestId, getByText } = renderSheet({ onLaunch });
+    fireEvent.change(getByTestId('launch-model'), { target: { value: 'claude-opus-5' } });
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({
+      agentToolId: 'claude-code',
+      model: 'claude-opus-5',
+      target: { kind: 'project', projectId: 'pj-tm8ui' },
+    }));
+  });
+
+  it('sends only an explicit active profile selection', () => {
+    const onLaunch = vi.fn();
+    const { getByText } = renderSheet({ onLaunch });
+    fireEvent.click(getByText('change ▾'));
+    fireEvent.click(getByText('house-style'));
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch).toHaveBeenCalledWith(
+      expect.objectContaining({ interactionProfileId: 'pf-house' }),
     );
   });
 

@@ -54,6 +54,7 @@ import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
 import { GRAPH_COMMANDS } from './graph.js';
 import { UNDO_COMMANDS } from './undo.js';
+import { SERVER_COMMANDS } from './server.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -83,6 +84,7 @@ export const COMMANDS: CommandModule[] = [
   ...DISCOVERY_COMMANDS,
   ...HARNESS_COMMANDS,
   ...SEARCH_COMMANDS,
+  ...SERVER_COMMANDS,
   ...KIND_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,

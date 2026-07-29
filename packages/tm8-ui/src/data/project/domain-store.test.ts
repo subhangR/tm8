@@ -74,6 +74,15 @@ describe('createDomainStore wiring', () => {
     store.getState().applyEvent(event('entity.upsert', { entity: summary('t1') }));
     expect(selectEntity('t1')(store.getState())).toBeDefined();
   });
+
+  it('hydrates graph edges into the same projection that live edge events update', () => {
+    const { store } = createDomainStore();
+    store.getState().ingestEdges([edge('e1', 't1', 't2')]);
+    expect(selectEdgesOf('t1')(store.getState()).map((item) => item.id)).toEqual(['e1']);
+
+    store.getState().applyEvent(event('edge.upsert', { edge: edge('e2', 't1', 't3') }));
+    expect(selectEdgesOf('t1')(store.getState()).map((item) => item.id)).toEqual(['e1', 'e2']);
+  });
 });
 
 describe('optimistic journal integration', () => {

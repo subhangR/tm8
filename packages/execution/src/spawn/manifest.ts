@@ -139,18 +139,13 @@ export function resolveWorkdir(
   context: SpawnContext,
   opts: { scratchRoot: string; sessionIdHint?: string },
 ): { mode: WorkdirMode; path: string; baseRef: string | null } {
-  const mode: WorkdirMode = request.workdir?.mode ?? 'project';
+  const mode: WorkdirMode = request.workdir?.mode ?? (context.project ? 'project' : 'scratch');
   const baseRef = request.workdir?.baseRef ?? null;
 
-  if (mode === 'worktree') {
-    // Honest refusal over a silent downgrade to the project dir: a caller who
-    // asked for an isolated tree and got the shared one would find out by
-    // having their branch stomped. Worktree creation is R20, post-G1A.
-    throw new SpawnError(
-      'workdir.mode "worktree" is not implemented yet — G1A spawns into the project directory only',
-      'not_implemented',
-      { mode },
-    );
+  if (mode === 'scratch' && context.project) {
+    throw new SpawnError('workdir.mode "scratch" cannot be combined with a project', 'invalid_input', {
+      projectId: context.project.id,
+    });
   }
 
   if (context.project) {
@@ -189,25 +184,66 @@ export function echoAgentPath(): string {
 }
 
 /**
+ * Per-`agentTool` binary name, selected when the operator has not forced one
+ * via `TM8_AGENT_CMD`.
+ *
+ * Before this table existed, a per-session `agentTool: 'codex'` landed on the
+ * work_session row, the manifest, and `TM8_AGENT_TOOL` — everywhere EXCEPT the
+ * one place that decides which binary the PTY actually runs. `buildAgentCommand`
+ * ignored `launch.agentTool` entirely and fell straight through to `'claude'`,
+ * so a caller who asked for codex silently got Claude launched with a model
+ * name (e.g. `gpt-5-codex`) it does not recognise. Measured 2026-07-28: a spawn
+ * with `agentTool: 'codex'` produced a work_session row and manifest that both
+ * said `codex`, while the live PTY's argv (`ps -p <pid> -o args=`) was the bare
+ * `claude` command. This table is what makes the resolved tool selection reach
+ * the actual child process.
+ *
+ * Tool-specific argument and prompt handling lives in the two builders below;
+ * unsupported tools are rejected instead of being routed through another CLI.
+ */
+const AGENT_TOOL_BINARIES: Readonly<Record<string, string>> = {
+  'claude-code': 'claude',
+  codex: 'codex',
+  'echo-agent': ECHO_AGENT_CMD,
+};
+
+/**
  * Build the shell command line the PTY runs.
  *
- * `TM8_AGENT_CMD` selects the agent, defaulting to `claude`:
+ * `TM8_AGENT_CMD` is an OPERATOR OVERRIDE and wins over everything — it forces
+ * one binary for the whole node, whatever any session's resolved `agentTool`
+ * says. Absent it, the resolved tool picks its own default binary via
+ * {@link AGENT_TOOL_BINARIES}. Unrecognised tool names are rejected:
  *   - `echo-agent`  → the built-in smoke agent. Proves the whole loop (manifest
  *                     read → PTY spawn → prompt delivery → output) without
  *                     burning a real model session. HOW-TO-TEST uses this.
- *   - `claude`      → real Claude Code, with flags derived from the manifest the
+ *   - `claude-code` → real Claude Code, with flags derived from the manifest the
  *                     same way old maestro's ClaudeSpawner.buildBaseArgs did.
- *   - anything else → used verbatim. The operator owns their own wrapper; we do
- *                     not guess flags for a CLI whose interface we do not know.
+ *   - `codex`       → Codex with its model and developer-instruction config.
+ * An explicit `TM8_AGENT_CMD` remains a complete operator-owned wrapper and is
+ * used verbatim.
  */
 export function buildAgentCommand(
   launch: ResolvedLaunchConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const raw = env.TM8_AGENT_CMD?.trim() || 'claude';
+  const override = env.TM8_AGENT_CMD?.trim();
+  const raw = override || AGENT_TOOL_BINARIES[launch.agentTool];
+
+  if (!raw) {
+    throw new SpawnError(`unsupported agent tool: ${launch.agentTool}`, 'invalid_input', {
+      agentTool: launch.agentTool,
+    });
+  }
 
   if (raw === ECHO_AGENT_CMD) {
     return `node ${shellQuote(echoAgentPath())}`;
+  }
+
+  if (raw === 'codex') {
+    const args: string[] = [];
+    if (launch.model) args.push('--model', shellQuote(launch.model));
+    return ['codex', ...args].join(' ');
   }
 
   if (raw !== 'claude') return raw;
@@ -234,7 +270,7 @@ export function buildAgentCommand(
   // deadlock; that is post-Slice-1 work, and `mapClaudePermissionMode` is kept
   // for it rather than deleted.
   args.push('--dangerously-skip-permissions');
-  if (launch.model) args.push('--model', launch.model);
+  if (launch.model) args.push('--model', shellQuote(launch.model));
   return ['claude', ...args].join(' ');
 }
 
@@ -255,23 +291,29 @@ export function buildAgentCommand(
  * smoke stub (`echo-agent`) DOES read the manifest, so the loop passed on a path
  * the product never takes.
  *
- * Delivery is PER-TOOL and only Claude is wired here: codex takes
+ * Delivery is PER-TOOL: Claude takes `--append-system-prompt`; Codex takes
  * `-c developer_instructions=<json>` (`instructions` is reserved and ignored),
- * gemini has no system-prompt flag at all so system and task must be
- * concatenated into `--prompt`, and hermes uses an env var. Guessing flags for a
- * CLI we have not verified is how you get an agent that silently ignores its
- * briefing, so anything that is not Claude is returned UNCHANGED rather than
- * approximated. Wiring the other three is Slice 2.
+ * and the manifest-reading smoke agent needs no prompt flag. Operator wrappers
+ * are returned unchanged because tm8 cannot know their private flag vocabulary.
  */
 export function withAgentPrompt(
   command: string,
   systemPrompt: string,
+  launch: ResolvedLaunchConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const raw = env.TM8_AGENT_CMD?.trim() || 'claude';
-  if (raw !== 'claude') return command;
   if (systemPrompt.trim() === '') return command;
-  return `${command} --append-system-prompt ${shellQuote(systemPrompt)}`;
+  const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
+  if (raw === 'claude') {
+    return `${command} --append-system-prompt ${shellQuote(systemPrompt)}`;
+  }
+  if (raw === 'codex') {
+    const config = `developer_instructions=${JSON.stringify(systemPrompt)}`;
+    return `${command} -c ${shellQuote(config)}`;
+  }
+  // echo-agent reads the typed manifest directly. An operator-provided wrapper
+  // is a complete command whose private flag vocabulary tm8 must not guess.
+  return command;
 }
 
 /** tm8's four postures → the three `--permission-mode` values Claude accepts. */
@@ -297,6 +339,22 @@ const AUTH_ENV_KEYS = [
   'GOOGLE_API_KEY',
   'GOOGLE_GENAI_USE_VERTEXAI',
   'GOOGLE_GENAI_USE_GCA',
+] as const;
+
+/** Non-secret process basics an interactive CLI needs to behave normally. */
+const SAFE_BASE_ENV_KEYS = [
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'PATH',
+  'LANG',
+  'LC_ALL',
+  'TERM',
+  'COLORTERM',
+  'TMPDIR',
+  'XDG_CONFIG_HOME',
+  'XDG_CACHE_HOME',
 ] as const;
 
 /**
@@ -327,6 +385,11 @@ export function composeEnv(
     TM8_TEAM_MEMBER_ID: manifest.agent.teamMemberId,
     TM8_TASK_IDS: manifest.tasks.map((t) => t.id).join(','),
   };
+
+  for (const key of SAFE_BASE_ENV_KEYS) {
+    const value = parentEnv[key];
+    if (value) env[key] = value;
+  }
   if (manifest.project) env.TM8_PROJECT_ID = manifest.project.id;
   if (manifest.launch.model) env.TM8_MODEL = manifest.launch.model;
 
@@ -335,10 +398,24 @@ export function composeEnv(
     if (value) env[key] = value;
   }
 
-  // Explicit empty string, not deletion: node-pty merges over process.env, so
-  // `delete env[k]` here would leave the inherited value intact in the child.
+  // Explicit empty strings also defend wrappers that interpret presence.
   env.CLAUDE_CODE_ENTRYPOINT = '';
   env.CLAUDECODE = '';
+
+  // PROPHYLAXIS, not a fix for any observed cause. Confirmed on this machine
+  // (2026-07-28) that Claude Code self-updates a `npm-global` install in the
+  // background without being asked (`~/.claude/.last-update-result.json`
+  // recorded a real 2.1.219→2.1.220 event), and `DISABLE_AUTOUPDATER` is a
+  // real, honored env var (confirmed via `strings` on the installed binary,
+  // not assumed from documentation). A binary that can replace itself out
+  // from under a running PTY, with nothing supervising for that, is a
+  // documented hazard regardless of whether it has been shown to explain any
+  // particular session death — it has NOT been shown to be the cause of one.
+  // Disable it for every spawned agent as a precaution, and because it removes
+  // a confound from Phase 2's death diagnosis: a self-update mid-session would
+  // otherwise be indistinguishable, in the evidence describePtyExit records,
+  // from any other unexplained termination.
+  env.DISABLE_AUTOUPDATER = '1';
 
   // Put the `tm8` binary on the agent's PATH.
   //
@@ -408,6 +485,7 @@ export interface ComposeManifestInput {
   request: SpawnRequest;
   context: SpawnContext;
   launch: ResolvedLaunchConfig;
+  interactionProfile?: import('./types.js').InteractionProfilePinContext;
   workdir: { mode: WorkdirMode; path: string };
   command: string;
   baseUrl: string;
@@ -417,6 +495,16 @@ export interface ComposeManifestInput {
 /** Assemble the manifest. Pure — every input is already resolved. */
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   const { sessionId, request, context, launch, workdir, command, baseUrl } = input;
+  const interactionProfile = input.interactionProfile ?? {
+    profileId: null,
+    profileVersion: null,
+    templateKey: 'tm8.chat.core',
+    templateVersion: 1,
+    source: 'core_default' as const,
+    resolvedHash: 'core-default',
+    pinRevision: 0,
+    snapshot: { profile: { source: 'core_default' } },
+  };
   const member = context.teamMember;
 
   return {
@@ -458,6 +546,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
           trust: context.project.trust,
         }
       : null,
+    interactionProfile,
     tasks: context.tasks,
     // Composed as empty/null in G1A rather than omitted: the CLI reader is
     // tolerant, but a stable shape means adding them later is a value change,

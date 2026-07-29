@@ -23,13 +23,17 @@ import {
   SpawnError,
   SpawnService,
   PtyHostService,
+  PromptSettlementWaiter,
   type CreateWorkSessionInput,
+  type CreateWorkSessionResult,
   type GraphAuth,
   type GraphPort,
   type LoadSpawnContextInput,
   type Logger,
+  type PtyExitInfo,
   type PtySessionStatus,
   type RecordCommandInput,
+  type ResolvedInteractionProfileContext,
   type SpawnContext,
   type SpawnRequest,
   type Tm8Manifest,
@@ -46,7 +50,7 @@ import type {
 } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
-import { fail, notImplemented } from '../http/errors.js';
+import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
 import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
@@ -54,6 +58,10 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
+import {
+  recordInteractionProfilePin as persistInteractionProfilePin,
+  resolveInteractionProfileForLaunch,
+} from '../profiles/w2-profile-resolver.js';
 
 // Claims come from ./context.ts, deliberately NOT from a local helper.
 //
@@ -212,7 +220,7 @@ export class DbGraphPort implements GraphPort {
   async createWorkSession(
     auth: GraphAuth,
     input: CreateWorkSessionInput,
-  ): Promise<{ sessionId: string; commandResult: unknown }> {
+  ): Promise<CreateWorkSessionResult> {
     // Positional, in 007_rpc_catalog.sql:2027's declared order. Getting this
     // wrong is a silent semantic swap, not a type error — the two text
     // parameters either side of p_mode are the ones to watch.
@@ -239,12 +247,54 @@ export class DbGraphPort implements GraphPort {
       ],
     );
 
-    const entity = result?.entity as { id?: string } | undefined;
+    const replayed = result?.__tm8_replayed === true;
+    const { __tm8_replayed: _replayMarker, ...commandResult } = result ?? {};
+    const entity = commandResult.entity as { id?: string } | undefined;
     const sessionId = entity?.id;
     if (typeof sessionId !== 'string') {
       throw fail('upstream_unavailable', 'execution_spawn returned no work_session id');
     }
-    return { sessionId, commandResult: result };
+    return { sessionId, commandResult, replayed };
+  }
+
+  async resolveInteractionProfile(
+    auth: GraphAuth,
+    input: { spaceId: string; teamMemberId: string; interactionProfileId?: string | null },
+  ): Promise<ResolvedInteractionProfileContext> {
+    const resolved = await resolveInteractionProfileForLaunch(this.db, this.claims(auth), input);
+    return {
+      profileId: resolved.profileId,
+      profileVersion: resolved.profileVersion,
+      templateKey: resolved.templateKey,
+      templateVersion: resolved.templateVersion,
+      source: resolved.source,
+      resolvedHash: resolved.resolvedHash,
+      snapshot: resolved.snapshot,
+    };
+  }
+
+  async recordInteractionProfilePin(
+    auth: GraphAuth,
+    sessionId: string,
+    profile: ResolvedInteractionProfileContext,
+  ) {
+    const pin = await persistInteractionProfilePin(this.db, this.claims(auth), {
+      workSessionId: sessionId,
+      profileId: profile.profileId,
+      profileVersion: profile.profileVersion,
+      source: profile.source,
+      resolvedHash: profile.resolvedHash,
+    });
+    return {
+      profileId: pin.profileId,
+      profileVersion: pin.profileVersion,
+      templateKey: pin.templateKey,
+      templateVersion: pin.templateVersion,
+      source: pin.source,
+      resolvedHash: pin.resolvedHash,
+      pinRevision: pin.pinRevision,
+      snapshot: profile.snapshot,
+    };
   }
 
   async recordManifest(
@@ -351,6 +401,16 @@ export interface ExecutionRuntimeDeps {
 export interface ExecutionRuntime {
   /** Hand this to the WS layer — it is the instance the sessions live on. */
   pty: PtyHostService;
+  /**
+   * The two-signal prompt-delivery completion bridge `pty` above was
+   * constructed with (its `onPromptSettled` closes over this instance's
+   * `resolve`). Hand this to `createW2ExecutionDelivery` so the delivery saga
+   * can `awaitOutcome` a deliveryId instead of settling on admission — see
+   * `PromptSettlementWaiter`'s own docs in `@tm8/execution` for why
+   * construction order forces this instance to be built here, before the
+   * delivery service exists, rather than by the delivery service itself.
+   */
+  promptSettlement: PromptSettlementWaiter;
   spawnService: SpawnService;
   graph: DbGraphPort;
   register(registry: HandlerRegistry): void;
@@ -384,13 +444,22 @@ export interface ExecutionRuntime {
  * cannot have that sink, so the cycle is closed here with a lazy closure.
  */
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
-  const graph = new DbGraphPort(deps.db, deps.sessionCap ?? 8);
+  const sessionCap = deps.sessionCap ?? 8;
+  const graph = new DbGraphPort(deps.db, sessionCap);
 
   let spawnService!: SpawnService;
+  // See PromptSettlementWaiter's own docs (@tm8/execution) for why this exists:
+  // PtyHostService's onPromptSettled fires per-delivery completion, but the
+  // delivery saga that needs to AWAIT a specific deliveryId's outcome is built
+  // after this host (createW2ExecutionDelivery, from main.ts). This instance is
+  // the closure that lets construction stay host-first without either side
+  // reaching into the other's internals.
+  const promptSettlement = new PromptSettlementWaiter();
   const pty = new PtyHostService({
     ...(deps.logger ? { logger: deps.logger } : {}),
-    onSessionStatus: (sessionId: string, status: PtySessionStatus) =>
-      spawnService.handlePtyExit(sessionId, status),
+    onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) =>
+      spawnService.handlePtyExit(sessionId, status, exitInfo),
+    onPromptSettled: promptSettlement.resolve,
   });
 
   spawnService = new SpawnService({
@@ -406,9 +475,10 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
 
   return {
     pty,
+    promptSettlement,
     spawnService,
     graph,
-    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner, pty),
+    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap),
     reconcileGhosts: async () => {
       // Runs as the loopback OWNER. `work_session_transition` goes through
       // `require_space_member` → `require_identity` with no node-admin bypass,
@@ -442,6 +512,14 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
  * (or was built with `onSessionStatus` pointing at the returned service);
  * otherwise sessions will never transition off 'running' when their agent
  * exits. Prefer `createExecutionRuntime`.
+ *
+ * ⚠ SAME GAP, ONE MORE TIME: the returned `promptSettlement` is a freshly
+ * constructed, DISCONNECTED `PromptSettlementWaiter` — `deps.pty` was not built
+ * with its `resolve` wired as `onPromptSettled` (it could not have been; the
+ * pty already existed), so nothing will ever call it and any `awaitOutcome`
+ * registered against it hangs forever. Returned rather than omitted only so
+ * `ExecutionRuntime`'s shape stays uniform; a caller of THIS function must not
+ * wire it into `createW2ExecutionDelivery`.
  */
 export function registerExecutionHandlers(
   registry: HandlerRegistry,
@@ -464,9 +542,11 @@ export function registerExecutionHandlers(
     ...(deps.logger ? { logger: deps.logger } : {}),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
-  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty);
+  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, 8);
   return {
     pty: deps.pty,
+    // See the docblock above this function — disconnected, never resolves.
+    promptSettlement: new PromptSettlementWaiter(),
     spawnService,
     graph,
     register: () => {},
@@ -553,6 +633,7 @@ function registerHandlers(
   db: Db,
   resolveOwner: () => Promise<LoopbackOwner>,
   pty: PtyHostService,
+  sessionCap: number,
 ): void {
   /**
    * A21 — execution.liveness (C-1). The ONE authority on "is there a live
@@ -586,35 +667,32 @@ function registerHandlers(
               and e.deleted_at is null and e.id = any($2::uuid[])`,
           [spaceId, live],
         );
+    const capacityRows = await db.query<{ used: number | string }>(
+      claims,
+      'select internal.live_work_session_count(null) as used',
+    );
+    const capacity = capacityRows?.[0];
     const result: ExecutionLiveness = {
       liveEntityIds: rows.map((r) => r.id),
       nodeBootId: NODE_BOOT_ID,
       checkedAt: new Date().toISOString(),
+      capacity: { used: Number(capacity?.used ?? 0), total: sessionCap },
     };
     return json(result);
   });
   registry.register('execution.spawn', async (ctx) => {
     const input = ctx.body as ExecutionSpawnInput;
-    if (input.workdir?.mode === 'scratch') {
-      throw notImplemented('execution.spawn workdir.mode=scratch');
-    }
-    if (input.interactionProfileId !== undefined) {
-      throw notImplemented('execution.spawn interactionProfileId');
-    }
 
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    const supportedWorkdir =
-      input.workdir?.mode === 'project' || input.workdir?.mode === 'worktree'
-        ? input.workdir
-        : undefined;
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
       ...(input.taskIds ? { taskIds: input.taskIds } : {}),
       projectId: input.projectId ?? null,
-      ...(supportedWorkdir ? { workdir: supportedWorkdir } : {}),
+      ...(input.workdir ? { workdir: input.workdir } : {}),
+      ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),
       ...(input.confirmUntrusted ? { confirmUntrusted: true } : {}),
       mode: input.mode ?? null,
       model: input.model ?? null,

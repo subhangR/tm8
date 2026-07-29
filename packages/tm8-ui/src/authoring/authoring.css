@@ -26,20 +26,18 @@
 
 /* --------------------------------------------------------------------------
    The inline-editable title.
-   Resting state — T0-4 frame 1 header:
-     border-bottom:1px dotted #B7B2A4; cursor:text; 14.5px/600; ellipsis;
-     flex:0 1 auto; min-width:64px
-   The dotted underline IS the affordance. A title without it is read-only,
-   and T0-4's three locked kinds (message, member, commit) each draw it absent.
+   Resting state: full-width wrapping title. Editable titles retain the text
+   cursor and keyboard semantics without the canvas's dotted underline.
    -------------------------------------------------------------------------- */
 .cv2-root .au-title {
-  flex: 0 1 auto;
-  min-width: 64px;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14.5px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.35;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
   color: var(--pn-ink);
   background: none;
   border: 0;
@@ -48,7 +46,6 @@
 }
 
 .cv2-root .au-title--editable {
-  border-bottom: 1px dotted var(--pn-ink-4);
   cursor: text;
 }
 

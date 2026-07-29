@@ -1,4 +1,5 @@
-import type { LaunchCapacity } from '../domain/launch';
+import type { LaunchCapacity, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
+export type { LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
 
 /**
  * Launch-sheet fixture data (D51: "fixtures grow accordingly — profiles in the
@@ -17,58 +18,12 @@ import type { LaunchCapacity } from '../domain/launch';
  * sheet in which none of D51's required refusals can be seen.
  */
 
-export interface LaunchTeammate {
-  /**
-   * THE REAL ENTITY ID, not a view-model id.
-   *
-   * This field is a REFERENCE — it is carried by `buildSpawnInput` into
-   * `ExecutionSpawnInput.teamMemberId` and resolved by the seam's
-   * `requireSummary`. Every other field on this shape is presentation; this
-   * one is not. It read `tm-forge` while the fixture entity is `ent-tm-forge`,
-   * so the launch dispatched correctly and the node refused it: the two id
-   * spaces had simply never met. Prefixing at the mapping site would work
-   * today and would encode a naming convention into a call site, which stays
-   * correct exactly until someone renames an entity.
-   */
-  id: string;
-  name: string;
-  initial: string;
-  /** Model + tool + owner are the ROW SUBTITLE (T5-5), not a separate section. */
-  model: string;
-  agentTool: string;
-  owner: string;
-  defaultProfileId?: string;
-  /** Busy teammates stay launchable — T5-5 annotation 3. */
-  liveSessions?: number;
-}
-
-export interface LaunchProject {
-  id: string;
-  name: string;
-  /** Trust decides hosting. Untrusted renders disabled-with-reason, never hidden. */
-  trusted: boolean;
-  detail: string;
-  reason?: string;
-  scratch?: boolean;
-  selectedByDefault?: boolean;
-}
-
-export interface LaunchProfile {
-  id: string;
-  name: string;
-  version: number;
-  /** T2-4's lifecycle. Only `active` is selectable at launch. */
-  status: 'active' | 'draft' | 'retired';
-  isSpaceDefault?: boolean;
-  isServerDefault?: boolean;
-}
-
 export const LAUNCH_TEAMMATES: readonly LaunchTeammate[] = [
   {
     id: 'ent-tm-forge',
     name: 'forge',
     initial: 'F',
-    model: 'claude-sonnet',
+    model: 'claude-sonnet-5',
     agentTool: 'claude-code',
     owner: '@ada',
     defaultProfileId: 'pf-standard',
@@ -77,7 +32,7 @@ export const LAUNCH_TEAMMATES: readonly LaunchTeammate[] = [
     id: 'ent-tm-scout',
     name: 'scout',
     initial: 'S',
-    model: 'claude-opus',
+    model: 'claude-opus-5',
     agentTool: 'claude-code',
     owner: '@ada',
     liveSessions: 1,
@@ -94,13 +49,6 @@ export const LAUNCH_PROJECTS: readonly LaunchProject[] = [
     detail: '',
     // The mechanism, then somewhere to go — T5-5's untrusted-row vocabulary.
     reason: "untrusted — can't host sessions · trust it in Node settings ↗",
-  },
-  {
-    id: 'pj-scratch',
-    name: 'scratch — no project',
-    trusted: true,
-    scratch: true,
-    detail: 'contained scratch root · confirmUntrusted applies',
   },
 ];
 

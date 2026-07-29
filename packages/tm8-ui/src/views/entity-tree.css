@@ -81,7 +81,9 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 18px 24px;
+  padding: 12px 18px 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
 }
 .cv2-root .evt-tree,
 .cv2-root .evt-children {
@@ -89,76 +91,164 @@
   margin: 0;
   padding: 0;
 }
-/* Guide hairline: 7px in, children indented 17px per level (canvas). */
+.cv2-root .evt-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* Nested guide from the full workspace design; cards remain complete objects
+   inside it, which is the Maestro half of the hybrid. */
 .cv2-root .evt-children {
-  margin-left: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 1px 15px;
   padding-left: 9px;
   border-left: 1px solid var(--pn-line-2);
+  animation: evt-children-in var(--pn-dur-base) var(--pn-ease-out);
 }
-.cv2-root .evt-node {
-  margin: 0;
+@keyframes evt-children-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+.cv2-root .evt-node { margin: 0; min-width: 0; }
 .cv2-root .evt-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 10px;
-  border-radius: 6px;
+  gap: 9px;
+  min-height: 54px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
   cursor: pointer;
+  transition:
+    border-color var(--pn-dur-base) var(--pn-ease-out),
+    box-shadow var(--pn-dur-base) var(--pn-ease-out),
+    transform var(--pn-dur-fast) var(--pn-ease-out),
+    background var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-root .evt-row:hover {
-  background: var(--pn-hover);
+  border-color: color-mix(in srgb, var(--pn-brand) 55%, var(--pn-line-2));
+  box-shadow: var(--pn-sh-md);
+  transform: translateY(-1px);
 }
 .cv2-root .evt-row--selected {
-  background: var(--pn-active);
+  border-color: var(--pn-brand);
+  background: color-mix(in srgb, var(--pn-brand-soft) 62%, var(--pn-card));
+  box-shadow: 0 0 0 1px var(--pn-brand-soft), var(--pn-sh-sm);
 }
 .cv2-root .evt-caret {
   flex: none;
-  width: 10px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
   appearance: none;
   background: none;
   border: none;
+  border-radius: var(--pn-r-xs);
   padding: 0;
-  font-size: 9px;
-  color: var(--pn-ink-3);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--pn-ink-4);
   cursor: pointer;
   text-align: center;
 }
+.cv2-root .evt-caret:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .evt-caret--leaf {
+  font-size: 18px;
+  color: var(--pn-line-2);
   cursor: default;
 }
-.cv2-root .evt-title {
+.cv2-root .evt-caret--leaf:hover { color: var(--pn-line-2); background: transparent; }
+.cv2-root .evt-status {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--pn-idle-soft);
+}
+.cv2-root .evt-status--solid-run,
+.cv2-root .evt-status--ring-run,
+.cv2-root .evt-status--pulse { background: var(--pn-run-soft); }
+.cv2-root .evt-status--solid-block { background: var(--pn-block-soft); }
+.cv2-root .evt-status--ring-wait { background: var(--pn-wait-soft); }
+.cv2-root .evt-copy {
+  flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cv2-root .evt-copy__top,
+.cv2-root .evt-copy__meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.cv2-root .evt-title {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.3;
   color: var(--pn-ink);
+  text-align: left;
+  cursor: pointer;
 }
 .cv2-root .evt-title--child {
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cv2-root .evt-title:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 .cv2-root .evt-spacer {
   flex: 1;
   min-width: 0;
 }
-.cv2-root .evt-word {
+.cv2-root .evt-priority {
   flex: none;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--pn-ink-3);
+  background: var(--pn-idle-soft);
+}
+.cv2-root .evt-priority--urgent,
+.cv2-root .evt-priority--high { color: var(--pn-block); background: var(--pn-block-soft); }
+.cv2-root .evt-priority--medium { color: var(--pn-wait); background: var(--pn-wait-soft); }
+.cv2-root .evt-word {
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-3);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cv2-root .evt-when {
   flex: none;
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-4);
-  min-width: 28px;
-  text-align: right;
 }
 .cv2-root .evt-empty {
   margin: 24px 0 0;
@@ -192,4 +282,10 @@
 .cv2-root .dot--pulse {
   background: var(--pn-run);
   animation: pnPulse 1.6s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .evt-children { animation: none; }
+  .cv2-root .evt-row { transition: none; }
+  .cv2-root .evt-row:hover { transform: none; }
 }

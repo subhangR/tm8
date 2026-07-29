@@ -15,12 +15,9 @@ import type { TaskSaveHandle } from './useTaskSave';
  *           rgba(178,106,43,.35) → rgba(var(--pn-brand-rgb), .35), r6, 2px 9px,
  *           hover rgba(178,106,43,.2)
  *
- * WHERE IT MOUNTS — a RULED divergence from the frame, not drift. T5-6 draws
- * the pair in a standalone 32px action row beneath the tab strip; D63 (user
- * ruling, 2026-07-29) retired that row entirely and moved the action bar
- * inline into the header. So this renders as a FRAGMENT with no wrapper row of
- * its own, for the header's existing `actions` slot — the same shape
- * `ActionBar inline` already takes.
+ * WHERE IT MOUNTS — in the compact tab/action toolbar below the title. It is a
+ * fragment so the toolbar owns spacing and the full title never competes with
+ * save controls for horizontal room.
  *
  * IT RENDERS WHEN DIRTY, **OR** WHEN SAVING IS UNAVAILABLE. The second half is
  * L6, not clutter: a panel that cannot save must say so where the Save would

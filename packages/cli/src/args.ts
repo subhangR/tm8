@@ -30,8 +30,8 @@ import { readFileSync } from 'node:fs';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { OUTPUT_FORMATS, type OutputFormat } from './output.js';
 
-/** §3: the six global options. They bind context and output, never payload. */
-export const GLOBAL_OPTIONS = ['space', 'as', 'format', 'timeout', 'no-color', 'quiet'] as const;
+/** Global options. They bind target, context, and output, never payload. */
+export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet'] as const;
 
 /**
  * Every boolean in the frozen grammar. A flag NOT listed here consumes a value.
@@ -159,6 +159,7 @@ export class OptionBag {
 
 /** §3 global context/presentation options, already validated. */
 export interface GlobalOptions {
+  server: string | undefined;
   space: string | undefined;
   as: string | undefined;
   format: OutputFormat;
@@ -173,7 +174,7 @@ export interface GlobalOptions {
 export interface ParsedInvocation {
   /** Command path + arguments, in order. Globals are already removed. */
   positionals: string[];
-  /** Command options only — the six globals never appear here. */
+  /** Command options only — globals never appear here. */
   options: OptionBag;
   /** Everything after a literal `--`, unparsed. */
   passthrough: string[];
@@ -327,6 +328,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     return present;
   };
 
+  const server = takeScalar('server');
   const space = takeScalar('space');
   const as = takeScalar('as');
   const rawFormat = takeScalar('format');
@@ -355,6 +357,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
   }
 
   const globals: GlobalOptions = {
+    server,
     space,
     as,
     format: rawFormat === undefined ? 'human' : parseFormat(rawFormat),

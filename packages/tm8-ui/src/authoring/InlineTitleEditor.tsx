@@ -3,10 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 /**
  * THE INLINE-EDITABLE TITLE.
  *
- * T0-4's anatomy note 2, verbatim: "inline-editable title (dotted = editable;
- * tracked kinds lock it)". The dotted underline is not decoration — it is the
- * ONLY signal that the title is a control at all, so a title that can be
- * edited must wear it and a title that cannot must not.
+ * The title remains click/F2/Enter editable where the registry and server
+ * permit it. The earlier dotted underline treatment was removed by user
+ * direction; interaction semantics and keyboard access remain unchanged.
  *
  * WHICH TITLES LOCK, and why the caller decides rather than this component:
  * T0-4 draws three locked cases and each states its own reason — message

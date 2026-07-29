@@ -21,12 +21,24 @@ export function isShell(raw: string): raw is Shell {
   return (SHELLS as readonly string[]).includes(raw);
 }
 
-/** Root discovery commands are not domain grammar, so they are added here. */
+/**
+ * Commands the registry implements that the operation catalog cannot yield.
+ * `help`, the three `completion` forms and the harness bootstrap `worker init`
+ * map to no catalog operation, so `COMMAND_PATHS` never carries them and the
+ * generator below cannot derive them — THEY ARE COMPLETABLE ONLY IF LISTED
+ * HERE, BY HAND.
+ *
+ * Register a command with no discovery row, forget this list, and it is absent
+ * from completion in every shell at once, because all three are generated from
+ * one `ALL_PATHS`. That is exactly how `worker init` — the first command a
+ * spawned agent runs — was missing while the other four were present.
+ */
 const ROOT_COMMANDS: readonly (readonly string[])[] = [
   ['help'],
   ['completion', 'bash'],
   ['completion', 'zsh'],
   ['completion', 'fish'],
+  ['worker', 'init'],
 ];
 
 const ALL_PATHS: readonly string[] = [...ROOT_COMMANDS, ...COMMAND_PATHS]
@@ -34,6 +46,7 @@ const ALL_PATHS: readonly string[] = [...ROOT_COMMANDS, ...COMMAND_PATHS]
   .sort();
 
 const GLOBAL_OPTIONS: readonly string[] = [
+  '--server',
   '--space',
   '--as',
   '--format',
@@ -56,7 +69,8 @@ function bash(): string {
 #      or:  source <(tm8 completion bash)
 #
 # global options and their units:
-#   --space <space-id>   --as <actor-id>   --format human|json|jsonl
+#   --server <name>      --space <space-id>   --as <actor-id>
+#   --format human|json|jsonl
 #   --timeout <seconds>  — per-request timeout, in SECONDS (not milliseconds)
 #   --no-color   --quiet   --help
 
@@ -107,6 +121,7 @@ _tm8() {
 ${ALL_PATHS.map((p) => `    '${p}'`).join('\n')}
   )
   tm8_globals=(
+    '--server[target a named Server registered on the local Server]:name:'
     '--space[the Space this command acts in]:space-id:'
     '--as[author as an authorized Member or Teammate]:actor-id:'
     '--format[stdout shape]:format:(human json jsonl)'
@@ -147,6 +162,7 @@ function fish(): string {
     '',
     'complete -c tm8 -f',
     '',
+    "complete -c tm8 -l server -d 'target a named Server registered on the local Server' -r",
     "complete -c tm8 -l space -d 'the Space this command acts in' -r",
     "complete -c tm8 -l as -d 'author as an authorized Member or Teammate' -r",
     "complete -c tm8 -l format -d 'stdout shape' -xa 'human json jsonl'",

@@ -21,6 +21,25 @@ export type PtyKillOutcome = 'killed' | 'not_found' | 'error';
 export type PtySessionStatus = 'completed' | 'failed';
 
 /**
+ * The raw evidence node-pty's `onExit` handed back for a session that just died.
+ *
+ * `null` in either field is a fact, not a gap: node-pty's own callback type
+ * allows `signal` to be absent (POSIX processes ending by return, not by
+ * signal), and `exitCode` can be legitimately unknowable on some platforms.
+ * What this type exists to prevent is a THIRD kind of null that is NOT a fact
+ * — never having asked at all. Before this type existed, `PtyHostService`'s
+ * `onExit` destructured only `{ exitCode }`, discarding `signal` unconditionally
+ * and collapsing `exitCode` itself into the coarse `PtySessionStatus` before
+ * handing anything to `onSessionStatus` — so every `work_sessions` row this
+ * process ever wrote for a died session had `exit_code` and `error` both NULL,
+ * indistinguishable from a row nobody ever bothered to fill in.
+ */
+export interface PtyExitInfo {
+  exitCode: number | null;
+  signal: number | null;
+}
+
+/**
  * Minimal structured logger seam (shape-compatible with old maestro's ILogger).
  * Defaults to a no-op inside the host when omitted.
  */
@@ -64,10 +83,40 @@ export interface PtyHostOptions {
   logger?: Logger;
   /**
    * Single-writer status sink (R29). Called once when a PTY exits, with the
-   * status derived from its exit code. tm8's SpawnService wires this to a graph
-   * work-command; old maestro wrote it straight to the session file store.
+   * status derived from its exit code, AND the raw {@link PtyExitInfo} the exit
+   * event actually reported — so the sink can record real evidence instead of
+   * just the coarse completed/failed bucket. tm8's SpawnService wires this to a
+   * graph work-command; old maestro wrote it straight to the session file store.
    */
-  onSessionStatus?: (sessionId: string, status: PtySessionStatus) => void | Promise<void>;
+  onSessionStatus?: (
+    sessionId: string,
+    status: PtySessionStatus,
+    exitInfo: PtyExitInfo,
+  ) => void | Promise<void>;
+  /**
+   * Two-signal prompt-delivery completion, keyed by the caller-supplied
+   * `deliveryId` passed to {@link PtyHostService.deliverPrompt}. Fired once the
+   * closed loop in `writePromptToEntry` CONCLUDES for that delivery — never at
+   * admission, which `deliverPrompt`'s own returned `Promise<boolean>` already
+   * answers fast (admitted into the FIFO or bound-rejected). A delivery-saga
+   * caller settling a durable record must key off THIS callback, not the
+   * admission boolean: the closed loop can legitimately still be running its
+   * readiness gate or its Enter-retry verification loop long after admission
+   * resolved, so settling on admission records a result before the write is
+   * known to have actually left the composer. `'unknown'` covers every case the
+   * closed loop cannot positively confirm as submitted (exhausted retries with
+   * the text still verified present, or the delivery's PTY entry having been
+   * replaced/exited mid-delivery) — never silently upgraded to `'delivered'`.
+   * Never fired for a delivery admitted without a `deliveryId`. Mirrors
+   * `onSessionStatus`'s shape on purpose: an injected side-effect off the
+   * caller's await chain, not a new callback pattern.
+   */
+  onPromptSettled?: (
+    sessionId: string,
+    deliveryId: string,
+    outcome: 'delivered' | 'unknown',
+    reason?: string,
+  ) => void | Promise<void>;
   /** Live output fan-out coalescing window (ms). SCAR: default 16. */
   coalesceMs?: number;
   /** Force a flush when this many bytes accumulate inside one window. Default 64 KiB. */

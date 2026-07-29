@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#EDEAE0;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+<section style="padding:44px 48px 72px;font-family:'Hanken Grotesk',system-ui,sans-serif">
+  <div style="max-width:860px;display:flex;flex-direction:column;gap:8px;margin-bottom:34px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.12em;color:#8E897B">T0-1 · STRUCTURAL PASS · LIGHT · TURN 1</div>
+    <div style="font-family:'Newsreader',Georgia,serif;font-size:27px;font-weight:500;line-height:1.18;color:#23201B">Workspace master screen — three structures, three list densities</div>
+    <div style="font-size:13px;line-height:1.55;color:#5B564C;text-wrap:pretty">All on ATELIER tokens with representative tm8 data (menu grammar per brief §6, panel anatomy per layout spec §3, sessions with the honesty states). Judge: <b>surface separation</b> (<a href="#1a">1a</a> hairlines vs <a href="#1b">1b</a> floating vs <a href="#1c">1c</a> ink stage), <b>center emphasis</b>, and <b>row density at the 320px floor</b> (<a href="#1d">1d</a>–<a href="#1f">1f</a>). Brass tags are annotations, not UI — toggle them off in Tweaks. Interactions (click→stack, pin, Esc, ⌘\) land in the hi-fi pass.</div>
+  </div>
+  <div style="display:flex;gap:44px;flex-wrap:wrap;align-items:flex-start;margin-bottom:52px">
+
+    <!-- ═══════════════ 1a FLUSH HAIRLINE ═══════════════ -->
+    <div id="1a" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:864px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1a</span>
+        <span style="font-size:15px;font-weight:600">Flush hairline</span>
+        <span style="font-size:12.5px;color:#8E897B">one continuous surface, hairline-divided; center columns float as white cards — closest to shipping maestro density</span>
+      </div>
+      <div style="width:864px;height:540px;position:relative;flex:none">
+        <div style="position:absolute;left:0;top:0;width:1440px;height:900px;transform:scale(.6);transform-origin:0 0;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);display:flex;flex-direction:column;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B">
+          <!-- space tab bar -->
+          <div style="height:42px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</div>
+            <div style="width:1px;height:18px;background:#E7E3D9"></div>
+            <div style="display:flex;align-items:center;gap:6px;background:#ECE8DF;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+            <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:12.5px;color:#8E897B"><span style="width:7px;height:7px;border-radius:50%;background:#D8D3C6"></span>playground</div>
+            <div style="color:#B7B2A4;font-size:14px">+</div>
+            <div style="flex:1"></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;background:#FFFFFF">/ palette · ⌘K</div>
+            <div style="font-size:13px;color:#8E897B">◐</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#5B564C">A</div>
+          </div>
+          <div style="flex:1;display:flex;min-height:0">
+            <!-- menu rail -->
+            <div style="width:220px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;padding:8px 0 0">
+              <div style="flex:1;overflow:hidden">
+                <sc-for list="{{menu}}" as="r" hint-placeholder-count="18">
+                  <div>
+                    <sc-if value="{{r.isGroup}}" hint-placeholder-val="{{false}}"><div style="padding:14px 14px 4px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">{{r.name}}</div></sc-if>
+                    <sc-if value="{{r.isPlain}}" hint-placeholder-val="{{false}}"><div style="height:28px;display:flex;align-items:center;gap:9px;padding:0 14px;font-size:13px;color:#5B564C"><span style="width:16px;text-align:center;color:#8E897B;font-size:12px">{{r.ic}}</span><span style="flex:1">{{r.name}}</span><sc-if value="{{r.badge}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px">{{r.badge}}</span></sc-if></div></sc-if>
+                    <sc-if value="{{r.isCaret}}" hint-placeholder-val="{{false}}"><div style="height:30px;display:flex;align-items:center;gap:9px;padding:0 14px 0 12px;font-size:13px;font-weight:600;color:#23201B;background:#F2EFE8;border-left:2px solid #B26A2B"><span style="width:16px;text-align:center;color:#B26A2B;font-size:12px">{{r.ic}}</span><span style="flex:1">{{r.name}}</span><span style="color:#8E897B;font-size:10px">▾</span></div></sc-if>
+                    <sc-if value="{{r.isChild}}" hint-placeholder-val="{{false}}"><div style="height:26px;display:flex;align-items:center;gap:8px;padding:0 14px 0 36px;font-size:12.5px;color:#5B564C"><span style="width:14px;text-align:center;color:#B7B2A4;font-size:11px">{{r.ic}}</span><span style="flex:1">{{r.name}}</span><sc-if value="{{r.live}}" hint-placeholder-val="{{false}}"><span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>{{r.live}}</span></sc-if></div></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#B7B2A4">⟨⟨ collapse · ⌘\</div>
+            </div>
+            <!-- left list panel: TASKS -->
+            <div style="width:260px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0">
+              <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+                <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14px;font-weight:600">Tasks</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ New</div></div>
+                <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">⌕ Search tasks<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px">/</span></div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;background:#ECE8DF;font-size:11px;font-weight:600">All</span>
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">High</span>
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">Status ▾</span>
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">⇅ Sort</span>
+                </div>
+                <div style="display:flex;gap:6px"><div style="flex:1;height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;background:#FFFFFF"><span style="color:#3E8E5A;font-size:9px">▶</span>run</div><div style="flex:1;height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;background:#FFFFFF"><span style="color:#B26A2B;font-size:10px">⇄</span>coordinate</div></div>
+              </div>
+              <div style="flex:1;overflow:hidden">
+                <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">IN PROGRESS · 9</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+                <sc-for list="{{tasks}}" as="t" hint-placeholder-count="9">
+                  <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;background:{{t.selBg}}">
+                    <span style="color:#B7B2A4;font-size:8px">▸</span>
+                    <span style="width:11px;height:11px;flex:none;border-radius:50%;border:2px solid {{t.ring}}"></span>
+                    <span style="flex:1;font-size:12.5px;color:#23201B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.pc}};background:{{t.pb}};border-radius:4px;padding:1px 5px">{{t.prio}}</span>
+                  </div>
+                </sc-for>
+                <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="color:#B7B2A4;font-size:8px">▸</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">COMPLETED · 601</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+              </div>
+            </div>
+            <!-- center -->
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:#F4F2EC">
+              <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #E7E3D9">
+                <span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>
+                <span style="font-size:12.5px;font-weight:600">forge</span><span style="font-size:12.5px;color:#8E897B">— 3 live</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5B564C;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;background:#FBFAF6">roster ▾</span>
+              </div>
+              <div style="flex:1;display:flex;gap:8px;padding:8px;min-height:0">
+                <!-- pinned: task T-114 -->
+                <div style="flex:1;min-width:0;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;box-shadow:0 1px 2px rgba(40,34,24,.05);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › tasks</div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+                    <span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px;flex:none">● working</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8E897B;font-size:12px">⋯</span><span style="color:#9A581F;font-size:12px;background:rgba(178,106,43,.11);border-radius:5px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px">⤢</span><span style="color:#8E897B;font-size:12px">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+                    <span>▲ 2</span><span>▽</span><span>✶ 12</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span>⊕ Link</span><span>Add child</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px">Run ▸</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+                    <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Discussion · 7</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Connections · 4</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+                  </div>
+                  <div style="flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:hidden">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px">
+                      <div style="color:#8E897B">Assignee <span style="color:#23201B;font-weight:500">◯ @ada</span></div>
+                      <div style="color:#8E897B">Priority <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:4px;padding:1px 5px">MED</span></div>
+                      <div style="color:#8E897B">Project <span style="color:#23201B;font-weight:500">⬒ tm8-ui</span></div>
+                      <div style="color:#8E897B">Due <span style="color:#B7B2A4">—</span></div>
+                    </div>
+                    <div style="font-size:12.5px;line-height:1.55;color:#5B564C;text-wrap:pretty">Port maestro's session-tree guide lines into the generic Sessions list. Depth × 14px x-offsets, hairline in line-2, solid vs pulsing dots per streaming state.</div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">CHILDREN · 2</div>
+                      <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                        <div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:#3E8E5A;flex:none"></span><span style="flex:1;color:#8E897B;text-decoration:line-through">measure guide x-offsets</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">done</span></div>
+                        <div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;border:2px solid #3E8E5A;flex:none;box-sizing:border-box"></span><span style="flex:1;color:#23201B">port .pn-tree rules</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">working</span></div>
+                      </div>
+                    </div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LINKED</div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FBFAF6">⑂ PR #212</span>
+                        <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FBFAF6">▤ Layout spec</span>
+                        <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FBFAF6">▣ forge <span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 2 viewing · by @ada · v3 · active 2m ago</div>
+                </div>
+                <!-- stack top: session forge -->
+                <div style="flex:1;min-width:0;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › sessions</div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+                    <span style="width:18px;height:18px;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex:none">F</span>
+                    <span style="font-size:14.5px;font-weight:600">forge</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">claude-sonnet</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span> running</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8E897B;font-size:12px">⋯</span><span style="color:#8E897B;font-size:12px">⌖</span><span style="color:#8E897B;font-size:12px">⤢</span><span style="color:#8E897B;font-size:12px">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+                    <span>▲</span><span>✶</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span>⊕ Link</span><span>Share ▾</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#5B564C">Complete</span>
+                    <span style="color:#BB4D3D">Terminate</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+                    <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Discussion · 3</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Connections · 2</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+                  </div>
+                  <div style="height:24px;flex:none;border-bottom:1px dashed #E7E3D9"></div>
+                  <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5B564C">◈ forge · claude</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A">● running</span>
+                    <div style="flex:1"></div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C;border:1px solid #D8D3C6;border-radius:6px;padding:2px 8px;background:#FFFFFF">exit terminal ⌃`</span>
+                  </div>
+                  <div style="flex:1;background:#131009;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.75;overflow:hidden;min-height:96px">
+                    <sc-for list="{{term}}" as="l" hint-placeholder-count="8">
+                      <div style="color:{{l.c}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{l.tx}}</div>
+                    </sc-for>
+                    <span style="display:inline-block;width:7px;height:13px;background:#E0A45A;vertical-align:middle"></span>
+                  </div>
+                  <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 1 viewing · launched from ⬒ tm8-ui · pty alive</div>
+                </div>
+              </div>
+            </div>
+            <!-- right list panel: SESSIONS -->
+            <div style="width:280px;flex:none;background:#FBFAF6;border-left:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0">
+              <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+                <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">▣</span><span style="font-size:14px;font-weight:600">Sessions</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="border:1px solid #D8D3C6;background:#FFFFFF;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ Launch</div></div>
+                <div style="display:flex;gap:4px;font-size:12px">
+                  <span style="padding:3px 9px;border-radius:6px;background:#ECE8DF;font-weight:600">Open 4</span>
+                  <span style="padding:3px 9px;border-radius:6px;color:#8E897B">Done 13</span>
+                  <span style="padding:3px 9px;border-radius:6px;color:#8E897B">Archived 42</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 9px"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>3 live</span>
+                  <div style="flex:1"></div><span style="color:#8E897B;font-size:12px">⇅</span>
+                </div>
+              </div>
+              <div style="flex:1;overflow:hidden">
+                <sc-for list="{{sessions}}" as="s" hint-placeholder-count="9">
+                  <div>
+                    <sc-if value="{{s.isGrp}}" hint-placeholder-val="{{false}}"><div style="display:flex;align-items:center;gap:8px;padding:12px 12px 5px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{s.gc}}">{{s.name}}</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div></sc-if>
+                    <sc-if value="{{s.isRow}}" hint-placeholder-val="{{false}}">
+                      <div style="padding:6px 12px 6px {{s.pad}};display:flex;flex-direction:column;gap:2px;background:{{s.bg}};border-left:2px solid {{s.bar}}">
+                        <div style="display:flex;align-items:center;gap:7px">
+                          <sc-if value="{{s.tree}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;color:#D8D3C6;font-size:12px">{{s.tree}}</span></sc-if>
+                          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{s.dotBg}};border:{{s.dotBr}};animation:{{s.anim}}"></span>
+                          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">{{s.init}}</span>
+                          <span style="font-size:12.5px;font-weight:600;color:{{s.nc}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.name}}</span>
+                          <div style="flex:1"></div>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.wc}};background:{{s.ws}};border-radius:999px;padding:1px 6px;flex:none">{{s.word}}</span>
+                        </div>
+                        <div style="padding-left:{{s.mpad}};font-size:10.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.meta}}</div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">drop an entity here to share it ⤓</div>
+            </div>
+          </div>
+          <!-- annotations 1a -->
+          <sc-if value="{{showNotes}}" hint-placeholder-val="{{true}}">
+            <div style="position:absolute;inset:0;pointer-events:none;z-index:40;font-family:'JetBrains Mono',monospace">
+              <div style="position:absolute;left:700px;top:47px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">live-session bar — always present</div>
+              <div style="position:absolute;left:560px;top:625px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">pinned · explicit dismiss</div>
+              <div style="position:absolute;left:990px;top:625px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">stack top · Esc pops</div>
+              <div style="position:absolute;left:850px;top:200px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">seam → Phase-2 Terminal|Chat</div>
+              <div style="position:absolute;left:860px;top:660px;font-size:12.5px;color:#E0A45A;background:rgba(27,24,16,.92);border:1px solid rgba(224,164,90,.45);border-radius:4px;padding:2px 8px">↑ chrome strip + exit chip</div>
+              <div style="position:absolute;left:14px;top:800px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">↑ menu grammar: group · caret · children</div>
+              <div style="position:absolute;left:1165px;top:800px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">↑ honesty rows: needs-you · stale</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ 1b FLOATING COLUMNS ═══════════════ -->
+    <div id="1b" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:864px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1b</span>
+        <span style="font-size:15px;font-weight:600">Floating columns</span>
+        <span style="font-size:12.5px;color:#8E897B">spec-literal: regions are raised cards on paper, 8px gutters carry the resize handles; pins read as parallel columns</span>
+      </div>
+      <div style="width:864px;height:540px;position:relative;flex:none">
+        <div style="position:absolute;left:0;top:0;width:1440px;height:900px;transform:scale(.6);transform-origin:0 0;background:#F0EDE5;border:1px solid #D8D3C6;border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);display:flex;flex-direction:column;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B">
+          <div style="height:42px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;background:#F0EDE5;border-bottom:1px solid #E7E3D9">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</div>
+            <div style="width:1px;height:18px;background:#DDD8CC"></div>
+            <div style="display:flex;align-items:center;gap:6px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600;box-shadow:0 1px 2px rgba(40,34,24,.05)"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+            <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:12.5px;color:#8E897B"><span style="width:7px;height:7px;border-radius:50%;background:#D8D3C6"></span>playground</div>
+            <div style="color:#B7B2A4;font-size:14px">+</div>
+            <div style="flex:1"></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;background:#FBFAF6">/ palette · ⌘K</div>
+            <div style="font-size:13px;color:#8E897B">◐</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:#E2DDD1;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#5B564C">A</div>
+          </div>
+          <div style="flex:1;display:flex;min-height:0;gap:8px;padding:8px">
+            <!-- menu rail collapsed 48 -->
+            <div style="width:48px;flex:none;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:12px;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:2px;box-shadow:0 1px 2px rgba(40,34,24,.05)">
+              <sc-for list="{{railIcons}}" as="i" hint-placeholder-count="9">
+                <div style="width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:{{i.c}};background:{{i.bg}};box-shadow:{{i.sh}};position:relative">{{i.ic}}<sc-if value="{{i.dot}}" hint-placeholder-val="{{false}}"><span style="position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span></sc-if></div>
+              </sc-for>
+              <div style="flex:1"></div>
+              <div style="width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;color:#B7B2A4">⟩⟩</div>
+            </div>
+            <!-- left card -->
+            <div style="width:254px;flex:none;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:12px;box-shadow:0 1px 2px rgba(40,34,24,.05);display:flex;flex-direction:column;min-height:0;overflow:hidden">
+              <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+                <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14px;font-weight:600">Tasks</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ New</div></div>
+                <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">⌕ Search tasks<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px">/</span></div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap">
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;background:#ECE8DF;font-size:11px;font-weight:600">All</span>
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">High</span>
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">Status ▾</span>
+                  <span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">⇅ Sort</span>
+                </div>
+                <div style="display:flex;gap:6px"><div style="flex:1;height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;background:#FFFFFF"><span style="color:#3E8E5A;font-size:9px">▶</span>run</div><div style="flex:1;height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;background:#FFFFFF"><span style="color:#B26A2B;font-size:10px">⇄</span>coordinate</div></div>
+              </div>
+              <div style="flex:1;overflow:hidden">
+                <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">IN PROGRESS · 9</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+                <sc-for list="{{tasks}}" as="t" hint-placeholder-count="9">
+                  <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;background:{{t.selBg}}">
+                    <span style="color:#B7B2A4;font-size:8px">▸</span>
+                    <span style="width:11px;height:11px;flex:none;border-radius:50%;border:2px solid {{t.ring}}"></span>
+                    <span style="flex:1;font-size:12.5px;color:#23201B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.pc}};background:{{t.pb}};border-radius:4px;padding:1px 5px">{{t.prio}}</span>
+                  </div>
+                </sc-for>
+                <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="color:#B7B2A4;font-size:8px">▸</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">COMPLETED · 601</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+              </div>
+            </div>
+            <!-- gutter handle -->
+            <div style="width:0;position:relative;flex:none"><span style="position:absolute;left:-7px;top:390px;color:#B7B2A4;font-size:13px;letter-spacing:-2px">⋮⋮</span></div>
+            <!-- center track -->
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0;gap:8px">
+              <div style="height:32px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:10px;box-shadow:0 1px 2px rgba(40,34,24,.05)">
+                <span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>
+                <span style="font-size:12.5px;font-weight:600">forge</span><span style="font-size:12.5px;color:#8E897B">— 3 live</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5B564C;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;background:#FFFFFF">roster ▾</span>
+              </div>
+              <div style="flex:1;display:flex;gap:8px;min-height:0">
+                <div style="flex:1;min-width:0;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:12px;box-shadow:0 1px 2px rgba(40,34,24,.05);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › tasks</div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+                    <span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px;flex:none">● working</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8E897B;font-size:12px">⋯</span><span style="color:#9A581F;font-size:12px;background:rgba(178,106,43,.11);border-radius:5px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px">⤢</span><span style="color:#8E897B;font-size:12px">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+                    <span>▲ 2</span><span>▽</span><span>✶ 12</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span>⊕ Link</span><span>Add child</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px">Run ▸</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+                    <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Discussion · 7</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Connections · 4</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+                  </div>
+                  <div style="flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:hidden">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px">
+                      <div style="color:#8E897B">Assignee <span style="color:#23201B;font-weight:500">◯ @ada</span></div>
+                      <div style="color:#8E897B">Priority <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:4px;padding:1px 5px">MED</span></div>
+                      <div style="color:#8E897B">Project <span style="color:#23201B;font-weight:500">⬒ tm8-ui</span></div>
+                      <div style="color:#8E897B">Due <span style="color:#B7B2A4">—</span></div>
+                    </div>
+                    <div style="font-size:12.5px;line-height:1.55;color:#5B564C;text-wrap:pretty">Port maestro's session-tree guide lines into the generic Sessions list. Depth × 14px x-offsets, hairline in line-2, solid vs pulsing dots per streaming state.</div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">CHILDREN · 2</div>
+                      <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                        <div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:#3E8E5A;flex:none"></span><span style="flex:1;color:#8E897B;text-decoration:line-through">measure guide x-offsets</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">done</span></div>
+                        <div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;border:2px solid #3E8E5A;flex:none;box-sizing:border-box"></span><span style="flex:1;color:#23201B">port .pn-tree rules</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">working</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 2 viewing · by @ada · v3 · active 2m ago</div>
+                </div>
+                <div style="flex:1;min-width:0;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:12px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › sessions</div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+                    <span style="width:18px;height:18px;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex:none">F</span>
+                    <span style="font-size:14.5px;font-weight:600">forge</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">claude-sonnet</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px">● running</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8E897B;font-size:12px">⋯</span><span style="color:#8E897B;font-size:12px">⌖</span><span style="color:#8E897B;font-size:12px">⤢</span><span style="color:#8E897B;font-size:12px">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+                    <span>▲</span><span>✶</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span>⊕ Link</span><span>Share ▾</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#5B564C">Complete</span>
+                    <span style="color:#BB4D3D">Terminate</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+                    <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Discussion · 3</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Connections · 2</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+                  </div>
+                  <div style="height:24px;flex:none;border-bottom:1px dashed #E7E3D9"></div>
+                  <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5B564C">◈ forge · claude</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A">● running</span>
+                    <div style="flex:1"></div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C;border:1px solid #D8D3C6;border-radius:6px;padding:2px 8px;background:#FFFFFF">exit terminal ⌃`</span>
+                  </div>
+                  <div style="flex:1;background:#131009;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.75;overflow:hidden;min-height:96px">
+                    <sc-for list="{{term}}" as="l" hint-placeholder-count="8">
+                      <div style="color:{{l.c}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{l.tx}}</div>
+                    </sc-for>
+                    <span style="display:inline-block;width:7px;height:13px;background:#E0A45A;vertical-align:middle"></span>
+                  </div>
+                  <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 1 viewing · launched from ⬒ tm8-ui · pty alive</div>
+                </div>
+              </div>
+            </div>
+            <!-- gutter handle -->
+            <div style="width:0;position:relative;flex:none"><span style="position:absolute;left:-7px;top:390px;color:#B7B2A4;font-size:13px;letter-spacing:-2px">⋮⋮</span></div>
+            <!-- right card -->
+            <div style="width:274px;flex:none;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:12px;box-shadow:0 1px 2px rgba(40,34,24,.05);display:flex;flex-direction:column;min-height:0;overflow:hidden">
+              <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+                <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">▣</span><span style="font-size:14px;font-weight:600">Sessions</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="border:1px solid #D8D3C6;background:#FFFFFF;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ Launch</div></div>
+                <div style="display:flex;gap:4px;font-size:12px">
+                  <span style="padding:3px 9px;border-radius:6px;background:#ECE8DF;font-weight:600">Open 4</span>
+                  <span style="padding:3px 9px;border-radius:6px;color:#8E897B">Done 13</span>
+                  <span style="padding:3px 9px;border-radius:6px;color:#8E897B">Archived 42</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 9px"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>3 live</span>
+                  <div style="flex:1"></div><span style="color:#8E897B;font-size:12px">⇅</span>
+                </div>
+              </div>
+              <div style="flex:1;overflow:hidden">
+                <sc-for list="{{sessions}}" as="s" hint-placeholder-count="9">
+                  <div>
+                    <sc-if value="{{s.isGrp}}" hint-placeholder-val="{{false}}"><div style="display:flex;align-items:center;gap:8px;padding:12px 12px 5px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{s.gc}}">{{s.name}}</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div></sc-if>
+                    <sc-if value="{{s.isRow}}" hint-placeholder-val="{{false}}">
+                      <div style="padding:6px 12px 6px {{s.pad}};display:flex;flex-direction:column;gap:2px;background:{{s.bg}};border-left:2px solid {{s.bar}}">
+                        <div style="display:flex;align-items:center;gap:7px">
+                          <sc-if value="{{s.tree}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;color:#D8D3C6;font-size:12px">{{s.tree}}</span></sc-if>
+                          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{s.dotBg}};border:{{s.dotBr}};animation:{{s.anim}}"></span>
+                          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">{{s.init}}</span>
+                          <span style="font-size:12.5px;font-weight:600;color:{{s.nc}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.name}}</span>
+                          <div style="flex:1"></div>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.wc}};background:{{s.ws}};border-radius:999px;padding:1px 6px;flex:none">{{s.word}}</span>
+                        </div>
+                        <div style="padding-left:{{s.mpad}};font-size:10.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.meta}}</div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">drop an entity here to share it ⤓</div>
+            </div>
+          </div>
+          <!-- annotations 1b -->
+          <sc-if value="{{showNotes}}" hint-placeholder-val="{{true}}">
+            <div style="position:absolute;inset:0;pointer-events:none;z-index:40;font-family:'JetBrains Mono',monospace">
+              <div style="position:absolute;left:70px;top:760px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">↖ menu collapsed 48px — icon per ref</div>
+              <div style="position:absolute;left:288px;top:800px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">↑ 8px gutters = resize handles</div>
+              <div style="position:absolute;left:700px;top:53px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">bar + columns are cards on paper</div>
+              <div style="position:absolute;left:620px;top:625px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">C_min(2)=648 · both columns ≥320 ✓</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ 1c INK STAGE ═══════════════ -->
+    <div id="1c" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:864px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1c</span>
+        <span style="font-size:15px;font-weight:600">Ink stage</span>
+        <span style="font-size:12.5px;color:#8E897B">execution-forward: the center track is warm graphite so live sessions read as the stage; entity lists stay paper wings; session panel goes dark shell</span>
+      </div>
+      <div style="width:864px;height:540px;position:relative;flex:none">
+        <div style="position:absolute;left:0;top:0;width:1440px;height:900px;transform:scale(.6);transform-origin:0 0;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;overflow:hidden;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);display:flex;flex-direction:column;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B">
+          <div style="height:42px;flex:none;display:flex;align-items:center;gap:14px;padding:0 14px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</div>
+            <div style="width:1px;height:18px;background:#E7E3D9"></div>
+            <div style="display:flex;align-items:center;gap:6px;background:#ECE8DF;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+            <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:12.5px;color:#8E897B"><span style="width:7px;height:7px;border-radius:50%;background:#D8D3C6"></span>playground</div>
+            <div style="color:#B7B2A4;font-size:14px">+</div>
+            <div style="flex:1"></div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;background:#FFFFFF">/ palette · ⌘K</div>
+            <div style="font-size:13px;color:#8E897B">◐</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#5B564C">A</div>
+          </div>
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="width:220px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;padding:8px 0 0">
+              <div style="flex:1;overflow:hidden">
+                <sc-for list="{{menu}}" as="r" hint-placeholder-count="18">
+                  <div>
+                    <sc-if value="{{r.isGroup}}" hint-placeholder-val="{{false}}"><div style="padding:14px 14px 4px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">{{r.name}}</div></sc-if>
+                    <sc-if value="{{r.isPlain}}" hint-placeholder-val="{{false}}"><div style="height:28px;display:flex;align-items:center;gap:9px;padding:0 14px;font-size:13px;color:#5B564C"><span style="width:16px;text-align:center;color:#8E897B;font-size:12px">{{r.ic}}</span><span style="flex:1">{{r.name}}</span><sc-if value="{{r.badge}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px">{{r.badge}}</span></sc-if></div></sc-if>
+                    <sc-if value="{{r.isCaret}}" hint-placeholder-val="{{false}}"><div style="height:30px;display:flex;align-items:center;gap:9px;padding:0 14px 0 12px;font-size:13px;font-weight:600;color:#23201B;background:#F2EFE8;border-left:2px solid #B26A2B"><span style="width:16px;text-align:center;color:#B26A2B;font-size:12px">{{r.ic}}</span><span style="flex:1">{{r.name}}</span><span style="color:#8E897B;font-size:10px">▾</span></div></sc-if>
+                    <sc-if value="{{r.isChild}}" hint-placeholder-val="{{false}}"><div style="height:26px;display:flex;align-items:center;gap:8px;padding:0 14px 0 36px;font-size:12.5px;color:#5B564C"><span style="width:14px;text-align:center;color:#B7B2A4;font-size:11px">{{r.ic}}</span><span style="flex:1">{{r.name}}</span><sc-if value="{{r.live}}" hint-placeholder-val="{{false}}"><span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>{{r.live}}</span></sc-if></div></sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#B7B2A4">⟨⟨ collapse · ⌘\</div>
+            </div>
+            <div style="width:260px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0">
+              <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+                <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14px;font-weight:600">Tasks</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ New</div></div>
+                <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">⌕ Search tasks<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px">/</span></div>
+                <div style="display:flex;gap:6px"><div style="flex:1;height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;background:#FFFFFF"><span style="color:#3E8E5A;font-size:9px">▶</span>run</div><div style="flex:1;height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;background:#FFFFFF"><span style="color:#B26A2B;font-size:10px">⇄</span>coordinate</div></div>
+              </div>
+              <div style="flex:1;overflow:hidden">
+                <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">IN PROGRESS · 9</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+                <sc-for list="{{tasks}}" as="t" hint-placeholder-count="9">
+                  <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;background:{{t.selBg}}">
+                    <span style="color:#B7B2A4;font-size:8px">▸</span>
+                    <span style="width:11px;height:11px;flex:none;border-radius:50%;border:2px solid {{t.ring}}"></span>
+                    <span style="flex:1;font-size:12.5px;color:#23201B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.pc}};background:{{t.pb}};border-radius:4px;padding:1px 5px">{{t.prio}}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+            <!-- ink center -->
+            <div style="flex:1;display:flex;flex-direction:column;min-width:0;background:#1D1912">
+              <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #2C2719">
+                <span style="width:8px;height:8px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>
+                <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">forge</span><span style="font-size:12.5px;color:#8C8470">— 3 live</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px">roster ▾</span>
+              </div>
+              <div style="flex:1;display:flex;gap:8px;padding:8px;min-height:0">
+                <!-- pinned task panel stays paper -->
+                <div style="flex:1;min-width:0;background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">atelier › tasks</div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+                    <span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px;flex:none">● working</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8E897B;font-size:12px">⋯</span><span style="color:#9A581F;font-size:12px;background:rgba(178,106,43,.11);border-radius:5px;padding:2px 4px">⌖</span><span style="color:#8E897B;font-size:12px">⤢</span><span style="color:#8E897B;font-size:12px">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+                    <span>▲ 2</span><span>▽</span><span>✶ 12</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span>⊕ Link</span><span>Add child</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px">Run ▸</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+                    <span style="display:flex;align-items:center;font-weight:600;color:#23201B;border-bottom:2px solid #B26A2B">Content</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Discussion · 7</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Connections · 4</span>
+                    <span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+                  </div>
+                  <div style="flex:1;padding:12px;display:flex;flex-direction:column;gap:10px;overflow:hidden">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px">
+                      <div style="color:#8E897B">Assignee <span style="color:#23201B;font-weight:500">◯ @ada</span></div>
+                      <div style="color:#8E897B">Priority <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#8E897B;background:rgba(162,156,142,.16);border-radius:4px;padding:1px 5px">MED</span></div>
+                      <div style="color:#8E897B">Project <span style="color:#23201B;font-weight:500">⬒ tm8-ui</span></div>
+                      <div style="color:#8E897B">Due <span style="color:#B7B2A4">—</span></div>
+                    </div>
+                    <div style="font-size:12.5px;line-height:1.55;color:#5B564C;text-wrap:pretty">Port maestro's session-tree guide lines into the generic Sessions list. Depth × 14px x-offsets, hairline in line-2, solid vs pulsing dots per streaming state.</div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">CHILDREN · 2</div>
+                      <div style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                        <div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:#3E8E5A;flex:none"></span><span style="flex:1;color:#8E897B;text-decoration:line-through">measure guide x-offsets</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">done</span></div>
+                        <div style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;border:2px solid #3E8E5A;flex:none;box-sizing:border-box"></span><span style="flex:1;color:#23201B">port .pn-tree rules</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">working</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">◉ 2 viewing · by @ada · v3 · active 2m ago</div>
+                </div>
+                <!-- session panel: dark shell -->
+                <div style="flex:1;min-width:0;background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">atelier › sessions</div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #2C2719">
+                    <span style="width:18px;height:18px;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex:none">F</span>
+                    <span style="font-size:14.5px;font-weight:600;color:#EFE9DB">forge</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">claude-sonnet</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:2px 7px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span> running</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8C8470;font-size:12px">⋯</span><span style="color:#8C8470;font-size:12px">⌖</span><span style="color:#8C8470;font-size:12px">⤢</span><span style="color:#8C8470;font-size:12px">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:11.5px;color:#BDB5A2">
+                    <span>▲</span><span>✶</span><span style="width:1px;height:14px;background:#2C2719"></span><span>⊕ Link</span><span>Share ▾</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#BDB5A2">Complete</span>
+                    <span style="color:#DA7D6A">Terminate</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:12px">
+                    <span style="display:flex;align-items:center;font-weight:600;color:#EFE9DB;border-bottom:2px solid #E0A45A">Content</span>
+                    <span style="display:flex;align-items:center;color:#8C8470">Discussion · 3</span>
+                    <span style="display:flex;align-items:center;color:#8C8470">Connections · 2</span>
+                    <span style="display:flex;align-items:center;color:#8C8470">Activity</span>
+                  </div>
+                  <div style="height:24px;flex:none;border-bottom:1px dashed #2C2719"></div>
+                  <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#1B1810;border-bottom:1px solid #2C2719">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#BDB5A2">◈ forge · claude</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5CB381">● running</span>
+                    <div style="flex:1"></div>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px">exit terminal ⌃`</span>
+                  </div>
+                  <div style="flex:1;background:#131009;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.75;overflow:hidden;min-height:96px">
+                    <sc-for list="{{term}}" as="l" hint-placeholder-count="8">
+                      <div style="color:{{l.c}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{l.tx}}</div>
+                    </sc-for>
+                    <span style="display:inline-block;width:7px;height:13px;background:#E0A45A;vertical-align:middle"></span>
+                  </div>
+                  <div style="height:28px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">◉ 1 viewing · launched from ⬒ tm8-ui · pty alive</div>
+                </div>
+              </div>
+            </div>
+            <div style="width:280px;flex:none;background:#FBFAF6;border-left:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0">
+              <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+                <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">▣</span><span style="font-size:14px;font-weight:600">Sessions</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="border:1px solid #D8D3C6;background:#FFFFFF;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ Launch</div></div>
+                <div style="display:flex;gap:4px;font-size:12px">
+                  <span style="padding:3px 9px;border-radius:6px;background:#ECE8DF;font-weight:600">Open 4</span>
+                  <span style="padding:3px 9px;border-radius:6px;color:#8E897B">Done 13</span>
+                  <span style="padding:3px 9px;border-radius:6px;color:#8E897B">Archived 42</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 9px"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span>3 live</span>
+                  <div style="flex:1"></div><span style="color:#8E897B;font-size:12px">⇅</span>
+                </div>
+              </div>
+              <div style="flex:1;overflow:hidden">
+                <sc-for list="{{sessions}}" as="s" hint-placeholder-count="9">
+                  <div>
+                    <sc-if value="{{s.isGrp}}" hint-placeholder-val="{{false}}"><div style="display:flex;align-items:center;gap:8px;padding:12px 12px 5px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{s.gc}}">{{s.name}}</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div></sc-if>
+                    <sc-if value="{{s.isRow}}" hint-placeholder-val="{{false}}">
+                      <div style="padding:6px 12px 6px {{s.pad}};display:flex;flex-direction:column;gap:2px;background:{{s.bg}};border-left:2px solid {{s.bar}}">
+                        <div style="display:flex;align-items:center;gap:7px">
+                          <sc-if value="{{s.tree}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;color:#D8D3C6;font-size:12px">{{s.tree}}</span></sc-if>
+                          <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{s.dotBg}};border:{{s.dotBr}};animation:{{s.anim}}"></span>
+                          <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">{{s.init}}</span>
+                          <span style="font-size:12.5px;font-weight:600;color:{{s.nc}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.name}}</span>
+                          <div style="flex:1"></div>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.wc}};background:{{s.ws}};border-radius:999px;padding:1px 6px;flex:none">{{s.word}}</span>
+                        </div>
+                        <div style="padding-left:{{s.mpad}};font-size:10.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.meta}}</div>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">drop an entity here to share it ⤓</div>
+            </div>
+          </div>
+          <sc-if value="{{showNotes}}" hint-placeholder-val="{{true}}">
+            <div style="position:absolute;inset:0;pointer-events:none;z-index:40;font-family:'JetBrains Mono',monospace">
+              <div style="position:absolute;left:700px;top:47px;font-size:12.5px;color:#E0A45A;background:rgba(27,24,16,.92);border:1px solid rgba(224,164,90,.45);border-radius:4px;padding:2px 8px">center = graphite stage · terminal reads native</div>
+              <div style="position:absolute;left:560px;top:625px;font-size:12.5px;color:#8A4F16;background:rgba(251,250,246,.94);border:1px solid rgba(178,106,43,.45);border-radius:4px;padding:2px 8px">entity panels stay paper</div>
+              <div style="position:absolute;left:950px;top:625px;font-size:12.5px;color:#E0A45A;background:rgba(27,24,16,.92);border:1px solid rgba(224,164,90,.45);border-radius:4px;padding:2px 8px">session panel = dark shell (dark tokens)</div>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ DENSITY ROW ═══════════════ -->
+  <div style="max-width:860px;display:flex;flex-direction:column;gap:6px;margin-bottom:22px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.12em;color:#8E897B">LIST-PANEL DENSITY — TASKS AT THE 320PX FLOOR · 1:1 SCALE</div>
+    <div style="font-size:13px;line-height:1.5;color:#5B564C">Same data, three tile treatments. Trade-off is rows-visible vs metadata-visible-without-hover.</div>
+  </div>
+  <div style="display:flex;gap:36px;flex-wrap:wrap;align-items:flex-start">
+
+    <!-- 1d dense -->
+    <div id="1d" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:320px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1d</span>
+        <span style="font-size:15px;font-weight:600">Dense rows</span>
+        <span style="font-size:12.5px;color:#8E897B">30px · maestro parity · ~18 visible</span>
+      </div>
+      <div style="width:320px;height:600px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 1px 2px rgba(40,34,24,.05);overflow:hidden;display:flex;flex-direction:column;font-family:'Hanken Grotesk',system-ui,sans-serif">
+        <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #E7E3D9">
+          <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14px;font-weight:600">Tasks</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ New</div></div>
+          <div style="display:flex;gap:5px"><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;background:#ECE8DF;font-size:11px;font-weight:600">All</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">High</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">Status ▾</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">⇅</span></div>
+        </div>
+        <div style="flex:1;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">IN PROGRESS · 9</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+          <sc-for list="{{tasks}}" as="t" hint-placeholder-count="9">
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;background:{{t.selBg}}">
+              <span style="color:#B7B2A4;font-size:8px">▸</span>
+              <span style="width:11px;height:11px;flex:none;border-radius:50%;border:2px solid {{t.ring}}"></span>
+              <span style="flex:1;font-size:12.5px;color:#23201B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.pc}};background:{{t.pb}};border-radius:4px;padding:1px 5px">{{t.prio}}</span>
+            </div>
+          </sc-for>
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="color:#B7B2A4;font-size:8px">▾</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">COMPLETED · 601</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+          <sc-for list="{{doneTasks}}" as="t" hint-placeholder-count="2">
+            <div style="height:30px;display:flex;align-items:center;gap:8px;padding:0 12px;opacity:.62">
+              <span style="color:#B7B2A4;font-size:8px">▸</span>
+              <span style="width:11px;height:11px;flex:none;border-radius:50%;background:#3E8E5A;color:#FFFFFF;font-size:8px;display:flex;align-items:center;justify-content:center">✓</span>
+              <span style="flex:1;font-size:12.5px;color:#8E897B;text-decoration:line-through;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1e two-line -->
+    <div id="1e" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:320px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1e</span>
+        <span style="font-size:15px;font-weight:600">Two-line rows</span>
+        <span style="font-size:12.5px;color:#8E897B">52px · id + status word visible · ~10</span>
+      </div>
+      <div style="width:320px;height:600px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 1px 2px rgba(40,34,24,.05);overflow:hidden;display:flex;flex-direction:column;font-family:'Hanken Grotesk',system-ui,sans-serif">
+        <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #E7E3D9">
+          <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14px;font-weight:600">Tasks</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ New</div></div>
+          <div style="display:flex;gap:5px"><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;background:#ECE8DF;font-size:11px;font-weight:600">All</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">High</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">Status ▾</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">⇅</span></div>
+        </div>
+        <div style="flex:1;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:8px;padding:12px 12px 6px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">IN PROGRESS · 9</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div>
+          <sc-for list="{{tasks}}" as="t" hint-placeholder-count="9">
+            <div style="padding:7px 12px;display:flex;flex-direction:column;gap:3px;background:{{t.selBg}};border-bottom:1px solid #F0EDE4">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="width:11px;height:11px;flex:none;border-radius:50%;border:2px solid {{t.ring}}"></span>
+                <span style="flex:1;font-size:13px;font-weight:500;color:#23201B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{t.title}}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.pc}};background:{{t.pb}};border-radius:4px;padding:1px 5px">{{t.prio}}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding-left:19px">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{t.id}}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:{{t.wc}}">{{t.word}}</span>
+                <span style="font-size:10.5px;color:#B7B2A4">◧ {{t.msgs}}</span>
+                <div style="flex:1"></div>
+                <span style="width:16px;height:16px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;color:#5B564C">{{t.av}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- 1f cards -->
+    <div id="1f" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:320px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1f</span>
+        <span style="font-size:15px;font-weight:600">Z2 cards</span>
+        <span style="font-size:12.5px;color:#8E897B">full footer meta · ~6 visible</span>
+      </div>
+      <div style="width:320px;height:600px;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 1px 2px rgba(40,34,24,.05);overflow:hidden;display:flex;flex-direction:column;font-family:'Hanken Grotesk',system-ui,sans-serif">
+        <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #E7E3D9;background:#FBFAF6">
+          <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:13px">◔</span><span style="font-size:14px;font-weight:600">Tasks</span><span style="color:#B7B2A4;font-size:9px">▾</span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600">+ New</div></div>
+          <div style="display:flex;gap:5px"><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;background:#ECE8DF;font-size:11px;font-weight:600">All</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">High</span><span style="height:22px;display:inline-flex;align-items:center;padding:0 9px;border-radius:999px;border:1px solid #E7E3D9;font-size:11px;color:#5B564C">Status ▾</span></div>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:10px;display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{cardTasks}}" as="t" hint-placeholder-count="5">
+            <div style="background:#FFFFFF;border:1px solid {{t.cardBr}};border-radius:10px;box-shadow:0 1px 2px rgba(40,34,24,.05);padding:10px 11px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:7px">
+                <span style="color:#8E897B;font-size:11px">◔</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{t.id}}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.wc}};background:{{t.ws}};border-radius:999px;padding:1px 7px">{{t.word}}</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{t.pc}};background:{{t.pb}};border-radius:4px;padding:1px 5px">{{t.prio}}</span>
+              </div>
+              <div style="font-size:13px;font-weight:600;color:#23201B;line-height:1.3">{{t.title}}</div>
+              <div style="display:flex;align-items:center;gap:9px;font-size:10.5px;color:#8E897B">
+                <span style="white-space:nowrap;flex:none">▲ {{t.pts}}</span><span style="white-space:nowrap;flex:none">◧ {{t.msgs}}</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;border:1px solid #E7E3D9;border-radius:5px;padding:1px 6px;font-size:10px;background:#FBFAF6">{{t.edge}}</span>
+                <div style="flex:1"></div>
+                <span style="width:16px;height:16px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600;color:#5B564C">{{t.av}}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showNotes&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Wireframe&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const run = '#3E8E5A', runS = 'rgba(62,142,90,.12)', wait = '#BD8A2A', waitS = 'rgba(189,138,42,.14)',
+      block = '#BB4D3D', blockS = 'rgba(187,77,61,.12)', info = '#3F6C90', infoS = 'rgba(63,108,144,.12)',
+      idle = '#B7B2A4', idleS = 'rgba(162,156,142,.16)', grey = '#8E897B';
+    const PR = { HIGH: { c: block, b: blockS }, MED: { c: grey, b: idleS }, LOW: { c: idle, b: 'transparent' } };
+    const ST = {
+      working: { ring: run, word: 'working', wc: run, ws: runS },
+      open: { ring: idle, word: 'open', wc: grey, ws: idleS },
+      blocked: { ring: block, word: 'blocked', wc: block, ws: blockS },
+      review: { ring: info, word: 'in review', wc: info, ws: infoS },
+      stale: { ring: wait, word: 'stale', wc: wait, ws: waitS }
+    };
+    const mk = (id, title, prio, st, msgs, av, pts, edge, sel) => ({
+      id, title, prio, msgs, av, pts: pts || 0, edge: edge || '⑂ PR #212',
+      pc: PR[prio].c, pb: PR[prio].b, ring: ST[st].ring, word: ST[st].word, wc: ST[st].wc, ws: ST[st].ws,
+      sel: !!sel, selBg: sel ? '#ECE8DF' : 'transparent', cardBr: sel ? '#D8D3C6' : '#E7E3D9'
+    });
+    const tasks = [
+      mk('T-131', 'Menu rail: config-driven rendering', 'HIGH', 'working', 4, 'A', 8, '▤ Menu spec'),
+      mk('T-114', 'Session tree guide lines', 'MED', 'working', 7, 'A', 12, '⑂ PR #212', true),
+      mk('T-127', 'Panel stack: pin geometry + C_min', 'HIGH', 'working', 3, 'N', 6, '▤ Layout spec'),
+      mk('T-109', 'Terminal exited fallback', 'HIGH', 'blocked', 5, 'A', 4, '▣ scout'),
+      mk('T-121', 'Inbox read-state model', 'MED', 'review', 2, 'N', 3, '⑂ PR #208'),
+      mk('T-098', 'Collection Graph layout', 'MED', 'open', 0, 'A', 9, '▤ Graph concept'),
+      mk('T-133', 'Drag-to-session delivery facets', 'MED', 'open', 1, 'N', 2, '▣ forge'),
+      mk('T-136', 'Palette: disabled discovery rows', 'LOW', 'open', 0, 'A', 1, '▤ UX brief'),
+      mk('T-088', 'Dark theme: status ramp audit', 'LOW', 'stale', 2, 'N', 5, '▤ Tokens')
+    ];
+    const doneTasks = [mk('T-102', 'Space tab bar', 'MED', 'working', 0, 'A'), mk('T-095', 'Kind registry icons', 'LOW', 'working', 0, 'N')];
+    const cardTasks = tasks.slice(0, 5);
+    const menu = [];
+    const g = n => menu.push({ isGroup: true, name: n });
+    const p = (ic, name, badge) => menu.push({ isPlain: true, ic, name, badge: badge || false });
+    g('HOME'); p('⌂', 'Dashboard'); p('≋', 'Feed'); p('◲', 'Inbox', '3');
+    menu.push({ isCaret: true, ic: '▣', name: 'Workspace' });
+    const c = (ic, name, live) => menu.push({ isChild: true, ic, name, live: live || false });
+    c('◔', 'Tasks'); c('▣', 'Sessions', '3'); c('▤', 'Docs'); c('◇', 'Teammates');
+    g('TRACKING'); p('⬒', 'Projects'); p('⑂', 'Pull requests');
+    g('COLLAB'); p('◯', 'Members');
+    g('CHANNELS'); p('#', 'general'); p('#', 'design-crit');
+    g('SETTINGS'); p('⚙', 'Space settings');
+    const sRow = (o) => Object.assign({
+      isRow: true, pad: '12px', mpad: '32px', bg: 'transparent', bar: 'transparent', tree: false,
+      nc: '#23201B', anim: 'none', dotBg: run, dotBr: 'none'
+    }, o);
+    const sessions = [
+      { isGrp: true, name: 'NEEDS YOU · 1', gc: wait },
+      sRow({ name: 'scout', init: 'S', word: 'needs you', wc: wait, ws: waitS, meta: 'waiting on your input · 4m · task T-109', bg: 'rgba(189,138,42,.09)', bar: wait, dotBg: wait }),
+      { isGrp: true, name: 'LIVE · 3', gc: run },
+      sRow({ name: 'forge', init: 'F', word: 'streaming', wc: run, ws: runS, meta: 'task T-114 · coordinator · 2 workers', anim: 'pnPulse 1.6s infinite', bg: '#ECE8DF' }),
+      sRow({ name: 'lint-worker', init: 'L', word: 'running', wc: run, ws: runS, meta: 'spawned by forge · 8m', tree: '├', pad: '22px', mpad: '58px' }),
+      sRow({ name: 'test-worker', init: 'T', word: 'running', wc: run, ws: runS, meta: 'spawned by forge · 2m', tree: '└', pad: '22px', mpad: '58px' }),
+      { isGrp: true, name: 'EARLIER', gc: idle },
+      sRow({ name: 'echo', init: 'E', word: 'exited', wc: grey, ws: idleS, meta: '12m ago · view transcript', dotBg: 'transparent', dotBr: '2px solid #B7B2A4', nc: '#8E897B' }),
+      sRow({ name: 'relay', init: 'R', word: 'stale', wc: wait, ws: waitS, meta: 'node restarted — looked live · 41m', dotBg: 'transparent', dotBr: '2px solid #BD8A2A', nc: '#8E897B' })
+    ];
+    const term = [
+      { tx: '$ tm8 run T-114 --agent forge', c: '#EFE9DB' },
+      { tx: '✓ forge started · claude-sonnet · pty 102×34', c: '#7FBF98' },
+      { tx: '→ reading packages/ui/src/shell/PanelStack.tsx', c: '#B9B2A0' },
+      { tx: '→ measuring maestro .pn-tree guide offsets', c: '#B9B2A0' },
+      { tx: 'plan: 1) x-offset map  2) port rules  3) shots', c: '#B9B2A0' },
+      { tx: 'diff --git a/shell/PanelStack.tsx', c: '#8C8470' },
+      { tx: '+ const guideX = depth * 14 + 7; // px', c: '#7FBF98' },
+      { tx: 'running: pnpm test panel-stack …', c: '#D9AA49' }
+    ];
+    const railIcons = [
+      { ic: '⌂', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false },
+      { ic: '◲', c: '#8E897B', bg: 'transparent', sh: 'none', dot: true },
+      { ic: '▣', c: '#9A581F', bg: 'rgba(178,106,43,.11)', sh: 'inset 3px 0 0 #B26A2B', dot: false },
+      { ic: '◔', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false },
+      { ic: '▤', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false },
+      { ic: '◇', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false },
+      { ic: '⬒', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false },
+      { ic: '#', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false },
+      { ic: '⚙', c: '#8E897B', bg: 'transparent', sh: 'none', dot: false }
+    ];
+    return { tasks, doneTasks, cardTasks, menu, sessions, term, railIcons, showNotes: this.props.showNotes ?? true };
+  }
+}
+</script>
+</body>
+</html>

@@ -274,6 +274,7 @@ const ROWS: readonly KindConfig[] = [
       ],
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
+        anatomy: 'control-card',
         badges: [
           { source: 'workStatus' },
           { source: 'priority' },
@@ -296,7 +297,10 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'subtree',
-      primaries: ['run', 'coordinate', 'complete'],
+      // The detail header keeps one task action: Run. Coordinate and Complete
+      // remain available from their task-specific surfaces, not this compact
+      // panel toolbar.
+      primaries: ['run'],
       statusPill: {
         source: 'workStatus',
         tones: {
@@ -349,22 +353,18 @@ const ROWS: readonly KindConfig[] = [
       sort: [BY_ACTIVITY, BY_CREATED],
       needsAttentionGroup: sessionNeedsAttention,
       liveTreatment: sessionLiveTreatment,
-      inlineEdit: { title: true },
+      // Session titles are runtime records, not an authoring surface. Keeping
+      // this true mounted a refused Save control whose full reason squeezed
+      // Discussion/Connections/Activity out of the compact panel row.
       rowActions: ['complete', 'terminate'],
     }),
     panel: {
       archetype: 'terminal',
-      // T0-4's work_session block draws "Complete  Terminate" as the kind
-      // primaries and annotates it in words ("Complete / Terminate primaries").
-      // LLD §3.1 names the same pair ("Terminate cascades with blast-radius
-      // confirm; complete is intent-only"), and this row's own `rowActions`
-      // already said ['complete','terminate'] four lines above. Three
-      // independent sources agreed; the previous value here — 'prompt-session'
-      // — agreed with none of them and was authored from kind semantics by me,
-      // under no ruling. `prompt-session` remains a valid ActionRef for the
-      // terminal's own prompt affordance and the palette; it is simply not a
-      // PANEL PRIMARY.
-      primaries: ['complete', 'terminate'],
+      // USER RULING 2026-07-29: terminal panels use the same compact two-row
+      // geometry as tasks. Keep the destructive session verb at the right of
+      // the tab row; Complete remains available from `rowActions`, where it
+      // does not squeeze the title/tabs/window controls or the terminal canvas.
+      primaries: ['terminate'],
       statusPill: {
         source: 'sessionStatus',
         tones: { spawning: 'wait', running: 'run', idle: 'info', exited: 'idle', failed: 'block' },

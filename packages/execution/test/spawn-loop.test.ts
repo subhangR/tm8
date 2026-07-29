@@ -192,7 +192,7 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     // A closure that resolves the service lazily is what breaks the cycle, and
     // it is the same shape createExecutionPtyHost uses on the server side.
     let svc!: SpawnService;
-    const host = new PtyHostService({ onSessionStatus: (id, s) => svc.handlePtyExit(id, s) });
+    const host = new PtyHostService({ onSessionStatus: (id, s, exit) => svc.handlePtyExit(id, s, exit) });
     svc = new SpawnService({
       graph,
       pty: host,

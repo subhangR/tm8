@@ -26,6 +26,8 @@ export type {
   LoadSpawnContextInput,
   PermissionMode,
   ProjectContext,
+  ResolvedInteractionProfileContext,
+  InteractionProfilePinContext,
   RecordCommandInput,
   SpawnContext,
   SpawnRequest,

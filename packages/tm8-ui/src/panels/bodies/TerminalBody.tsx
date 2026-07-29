@@ -32,12 +32,9 @@ import { ShareDropTarget } from '../share/ShareDropTarget';
  *   ⚠ needs you banner                     (only when blocked on the user)
  *   terminal host  OR  an honest fallback
  *
- * PHASE 1 SCOPE (R9). There is no PTY, no transport, no xterm — the byte
- * stack is a verbatim transplant that arrives at integration. This renders
- * the DESIGNED STATIC state: a reserved host box for a live verdict, and the
- * real designed fallbacks for every other verdict. Because the fallbacks are
- * where the honesty lives, they are the states that actually matter at the
- * gate, and they are complete.
+ * Live verdicts mount the real xterm/PTY transport. Recorded terminal states
+ * keep the designed fallbacks, so stale/unknown/exited sessions never render a
+ * black box that implies bytes can still arrive.
  *
  * THE CANVAS REGION IS THE ONLY THING THAT SWAPS. Header, seam, strip and
  * footer keep exact geometry across every verdict, so a session ending never
@@ -46,6 +43,8 @@ import { ShareDropTarget } from '../share/ShareDropTarget';
 
 export interface TerminalBodyProps {
   detail: EntityDetail;
+  /** Same-origin route prefix for the tm8 server that owns this session. */
+  serverBaseUrl?: string;
   /** THE verdict — `seam.liveness.statusOf`. Never derived here. */
   liveness: SessionLiveness;
   /** Pool activity signal for this session. Gated on the verdict downstream. */
@@ -71,6 +70,7 @@ export interface TerminalBodyProps {
 
 export function TerminalBody({
   detail,
+  serverBaseUrl,
   liveness,
   streaming,
   needsAttention,
@@ -92,9 +92,15 @@ export function TerminalBody({
     needsAttention,
   });
   const style = presentationStyle(presentation);
-  // Only ever non-null while isLiveTerminalEnabled() has actually mounted a
-  // LiveTerminal (task P2 §8) — the ref stays null under the Phase-1 default,
-  // so the chip's onClick below is a safe no-op until the flag is on.
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [detailsDragging, setDetailsDragging] = useState(false);
+  const detailsOpen = detailsExpanded || detailsDragging;
+  const content = detail.content as unknown as Record<string, unknown>;
+  const launchProjectId =
+    typeof content.launchProjectId === 'string' ? content.launchProjectId : null;
+  // Non-null while a live verdict has mounted LiveTerminal. Tests and an
+  // explicit operator opt-out still use the placeholder, so the exit-focus
+  // action remains safely optional.
   const liveTerminalRef = useRef<LiveTerminalHandle>(null);
 
   /* USER RULING 2026-07-29 — "the terminal is the main thing of our app":
@@ -113,30 +119,94 @@ export function TerminalBody({
       <SessionCanvas
         presentation={presentation}
         sessionId={detail.id}
+        serverBaseUrl={serverBaseUrl}
         livenessLabel={livenessLabel}
         livenessReason={livenessReason}
         onOpenTranscript={onOpenTranscript}
         liveTerminalRef={liveTerminalRef}
       />
 
-      <TerminalChromeStrip
-        persona={row.name}
-        provider={row.provider}
-        presentation={presentation}
-        statusDetail={livenessReason}
-        compact={compact}
-        onOpenTranscript={onOpenTranscript}
-        onExitTerminal={() => liveTerminalRef.current?.blur()}
-      />
+      <div
+        className={detailsOpen ? 'pn-terminal-drawer pn-terminal-drawer--open' : 'pn-terminal-drawer'}
+        data-testid="terminal-bottom-drawer"
+        data-expanded={detailsOpen ? 'true' : 'false'}
+        onDragEnter={() => setDetailsDragging(true)}
+        onDragOver={() => setDetailsDragging(true)}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDetailsDragging(false);
+          }
+        }}
+        onDrop={() => setDetailsDragging(false)}
+      >
+        <div className="pn-terminal-drawer__bar">
+          <button
+            type="button"
+            className="pn-terminal-drawer__toggle"
+            data-testid="terminal-details-toggle"
+            aria-expanded={detailsOpen}
+            onClick={() => setDetailsExpanded((open) => !open)}
+          >
+            <span className="pn-terminal-drawer__caret" aria-hidden>
+              {detailsOpen ? '▾' : '▸'}
+            </span>
+            <span className="pn-terminal-drawer__label">Session details</span>
+            <span className="pn-terminal-drawer__summary">
+              {row.name} · {launchProjectId ? `⬒ ${launchProjectId}` : 'no project'} ·{' '}
+              {handoffs.length === 0 ? 'nothing shared' : `${handoffs.length} shared`}
+            </span>
+          </button>
 
-      <SessionContextHeader
-        detail={detail}
-        handoffs={handoffs}
-        receiverName={row.name}
-        shareUnavailableReason={shareUnavailableReason}
-        withdrawUnavailableReason={withdrawUnavailableReason}
-        onOpenEntity={onOpenEntity}
-      />
+          {style.isLive ? (
+            <button
+              type="button"
+              className="term-exit-chip"
+              onClick={() => liveTerminalRef.current?.blur()}
+              data-testid="exit-terminal-chip"
+              aria-label="Exit terminal focus — press Control and backtick"
+            >
+              {compact ? 'exit ' : 'exit terminal '}
+              <span className="term-exit-chip__key" aria-hidden>
+                ⌃`
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="term-exit-chip"
+              onClick={onOpenTranscript}
+              data-testid="transcript-chip"
+            >
+              transcript ↗
+            </button>
+          )}
+        </div>
+
+        {detailsOpen ? (
+          <div className="pn-terminal-drawer__content">
+            <TerminalChromeStrip
+              persona={row.name}
+              provider={row.provider}
+              presentation={presentation}
+              statusDetail={livenessReason}
+              compact={compact}
+              onOpenTranscript={onOpenTranscript}
+              onExitTerminal={() => liveTerminalRef.current?.blur()}
+              showFocusControl={false}
+            />
+
+            <SessionContextHeader
+              detail={detail}
+              handoffs={handoffs}
+              receiverName={row.name}
+              shareUnavailableReason={shareUnavailableReason}
+              withdrawUnavailableReason={withdrawUnavailableReason}
+              onOpenEntity={onOpenEntity}
+              forceOpen={detailsDragging}
+            />
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -171,6 +241,7 @@ function SessionContextHeader({
   shareUnavailableReason,
   withdrawUnavailableReason,
   onOpenEntity,
+  forceOpen = false,
 }: {
   detail: EntityDetail;
   handoffs: readonly HandoffView[];
@@ -178,6 +249,7 @@ function SessionContextHeader({
   shareUnavailableReason: string;
   withdrawUnavailableReason: string;
   onOpenEntity?: (id: string) => void;
+  forceOpen?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   /**
@@ -192,7 +264,7 @@ function SessionContextHeader({
   const launchProjectId =
     typeof content.launchProjectId === 'string' ? content.launchProjectId : null;
 
-  const open = expanded || dragging;
+  const open = expanded || dragging || forceOpen;
 
   return (
     <div
@@ -269,6 +341,7 @@ function SessionContextHeader({
 function SessionCanvas({
   presentation,
   sessionId,
+  serverBaseUrl,
   livenessLabel,
   livenessReason,
   onOpenTranscript,
@@ -276,6 +349,7 @@ function SessionCanvas({
 }: {
   presentation: ReturnType<typeof presentSession>;
   sessionId: string;
+  serverBaseUrl?: string;
   livenessLabel?: string;
   livenessReason?: string;
   onOpenTranscript?: () => void;
@@ -285,12 +359,15 @@ function SessionCanvas({
     case 'streaming':
     case 'running':
     case 'needs-you':
-      // Proven alive: mount the real byte stack behind the P2 dev flag
-      // (liveTerminalFlag.ts); off by default this still reserves the black
-      // box with Phase 1's placeholder, since there are no bytes to put in
-      // it without opting in.
+      // Proven alive: mount the real byte stack. The only placeholder path is
+      // the explicit operator/test opt-out in liveTerminalFlag.ts.
       return isLiveTerminalEnabled() ? (
-        <LiveTerminal ref={liveTerminalRef} sessionId={sessionId} live />
+        <LiveTerminal
+          ref={liveTerminalRef}
+          sessionId={sessionId}
+          serverBaseUrl={serverBaseUrl}
+          live
+        />
       ) : (
         <TerminalHost placeholder={TERMINAL_PLACEHOLDER} />
       );

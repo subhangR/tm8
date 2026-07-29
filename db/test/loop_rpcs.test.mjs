@@ -176,6 +176,12 @@ test('step 4 — spawn a session against that task, with a manifest', () => {
 });
 
 test('step 5 — the session comes up, and the prompt is audited', () => {
+  const beforeTransitionSeq = Number(
+    scalar(
+      `select coalesce(max(seq), 0) from public.workspace_events where space_id = ${uuid(w.spaceA)}`,
+      { claims: w.claimsA },
+    ),
+  );
   ok(
     `select public.work_session_transition(${uuid(state.session.id)}, 'running', null, null, null,
        ${literal(cmid('loop-running'))})`,
@@ -186,6 +192,21 @@ test('step 5 — the session comes up, and the prompt is audited', () => {
       claims: w.claimsA,
     }),
     'running',
+  );
+
+  const statusEvents = rows(
+    `select event_type, payload->>'id' entity_id, client_mutation_id
+       from public.workspace_events
+      where space_id = ${uuid(w.spaceA)} and seq > ${beforeTransitionSeq}
+      order by seq`,
+    { claims: w.claimsA },
+  );
+  assert.ok(
+    statusEvents.some((event) =>
+      event.event_type === 'entity.upsert' &&
+      event.entity_id === state.session.id &&
+      event.client_mutation_id === cmid('loop-running')),
+    'a work_session status transition must emit a durable entity.upsert carrying its mutation id',
   );
 
   // execution.prompt delivers into a live PTY: its effect is not graph state, so

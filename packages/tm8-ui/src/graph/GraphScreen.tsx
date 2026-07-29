@@ -28,11 +28,15 @@ export interface GraphScreenData {
 
 export interface GraphScreenProps {
   data: GraphScreenData;
+  serverBaseUrl?: string;
   reasons: DetailReasons;
   nodes: readonly EntitySummary[];
   edges: readonly EdgeView[];
   timeline?: readonly GraphTimelineStep[];
   now: string;
+  loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -66,6 +70,7 @@ export function GraphScreen(props: GraphScreenProps) {
   const detailPanel = selectedId ? (
     <EntityDetailPanel
       detail={detail ?? null}
+      serverBaseUrl={props.serverBaseUrl}
       loading={!detail}
       host="stack"
       reasons={reasons}
@@ -92,8 +97,35 @@ export function GraphScreen(props: GraphScreenProps) {
       now={props.now}
       onSelect={(id) => setSelectedId(id)}
       livenessOf={data.livenessOf}
+      selectedId={selectedId}
     />
   );
+
+  if (props.loading && props.nodes.length === 0) {
+    return (
+      <div className="gv-screen" data-testid="graph-screen" data-mode="loading">
+        <div className="gv-empty" role="status">
+          <p className="gv-empty__title">Loading the workspace graph…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (props.error && props.nodes.length === 0) {
+    return (
+      <div className="gv-screen" data-testid="graph-screen" data-mode="error">
+        <div className="gv-empty" role="alert">
+          <p className="gv-empty__title">The graph could not be read.</p>
+          <p className="gv-empty__detail">{props.error}</p>
+          {props.onRetry ? (
+            <button type="button" className="gv-filter" onClick={props.onRetry}>
+              Retry graph
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   if (mode === 'full' && selectedId) {
     return (

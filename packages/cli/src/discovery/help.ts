@@ -7,7 +7,7 @@
  *   tm8 help <noun>                   noun shard       12 KiB hard
  *   tm8 help <noun> <verb>            command shard    16 KiB hard
  *   tm8 help --query <intent>         intent search    16 KiB and 5 matches
- *   tm8 help --operation <Operation>  exact lookup, TOTAL over all 101 rows
+ *   tm8 help --operation <Operation>  exact lookup, TOTAL over all 106 rows
  *   tm8 <command> --help              the same command shard
  *   tm8 completion bash|zsh|fish      see ./completion.ts
  *
@@ -221,11 +221,12 @@ function fit<T extends { truncated?: Truncation }, I>(
 }
 
 /**
- * The six global options, each with its DIMENSION named. `--timeout <seconds>`
+ * The global options, each with its DIMENSION named. `--timeout <seconds>`
  * is the whole point: no authority specified a unit, seconds was ruled, and the
  * help text is the only place that ambiguity can be closed for a caller.
  */
 const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
+  { option: '--server <name>', summary: 'target a named Server registered on the local Server' },
   { option: '--space <space-id>', summary: 'the Space this command acts in' },
   { option: '--as <actor-id>', summary: 'author as an authorized Member or Teammate' },
   { option: '--format human|json|jsonl', summary: 'stdout shape; human renders the same DTO as json' },
@@ -308,7 +309,7 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
 
 /**
  * Trust labelling (§18.2). Only where the operation genuinely carries content
- * authored elsewhere — a blanket "everything is untrusted" note on all 101 rows
+ * authored elsewhere — a blanket "everything is untrusted" note on all 106 rows
  * would be noise that teaches nothing.
  */
 function trustNotesFor(rows: readonly OperationDiscovery[]): string[] {
@@ -338,15 +339,45 @@ function trustNotesFor(rows: readonly OperationDiscovery[]): string[] {
  * rendering the uppercase form would hand an agent a string it will never
  * actually match against an error it receives.
  */
-function errorRefsFor(rows: readonly OperationDiscovery[]): string[] {
-  const head = rows[0] as OperationDiscovery;
+/**
+ * `availability` is the EFFECTIVE verdict for the whole command — the weakest
+ * stage's, not the head row's.
+ *
+ * It is a parameter rather than a read of `rows[0]` because reading the head
+ * made this function disagree with the very DTO it is a field of: on
+ * `file upload` with the first stage handled and the second answering an honest
+ * 501, the shard correctly said `unavailable / not_implemented_on_node` while
+ * this function — looking at the AVAILABLE head — omitted
+ * `tm8://error/not_implemented`, the one code that command is then guaranteed
+ * to return. One DTO, two fields, directly contradictory.
+ */
+function errorRefsFor(
+  rows: readonly OperationDiscovery[],
+  availability: Availability,
+): string[] {
   const codes = ['invalid_input', 'forbidden', 'not_found'];
   if (rows.some((r) => r.versioning === 'expectedVersion')) codes.push('version_conflict');
   if (rows.some((r) => r.sideEffect !== 'none')) {
     codes.push('invariant_violation', 'rate_limited', 'upstream_unavailable');
   }
-  if (head.availability !== 'available') codes.push('not_implemented');
+  if (availability !== 'available') codes.push('not_implemented');
   return [...new Set(codes)].map((c) => `tm8://error/${c}`);
+}
+
+/**
+ * The command's effective availability verdict — all three fields together.
+ *
+ * Passed IN rather than patched onto the finished DTO. The patch-after version
+ * had two faults: it left `availabilitySource` behind (see
+ * `CommandDiscovery.availabilitySource`), and it mutated the DTO AFTER `fit()`
+ * had already measured it, so the byte cap was enforced against a shard that
+ * was not the one returned. Threading it through the builder means `fit()`
+ * sizes the real thing and the three fields cannot drift apart.
+ */
+interface EffectiveAvailability {
+  availability: Availability;
+  availabilityReason: AvailabilityReason;
+  availabilitySource: AvailabilitySource;
 }
 
 function shardFrom(
@@ -354,10 +385,18 @@ function shardFrom(
   command: string | null,
   syntax: string | null,
   cap: number,
+  effective?: EffectiveAvailability,
 ): CommandHelp {
   const head = rows[0] as OperationDiscovery;
   const notes = [...new Set(rows.flatMap((r) => r.notes))];
   const examples = command === null ? [] : head.examples.slice(0, 2);
+  // A single-operation shard IS its own weakest stage, so the head row is the
+  // effective verdict — the default is the composite rule, not an exception.
+  const verdict: EffectiveAvailability = effective ?? {
+    availability: head.availability,
+    availabilityReason: head.availabilityReason,
+    availabilitySource: head.availabilitySource,
+  };
 
   return fit<CommandHelp, string>(
     (items) => ({
@@ -374,13 +413,13 @@ function shardFrom(
       sideEffect: head.sideEffect,
       idempotency: head.idempotency,
       versioning: rows.some((r) => r.versioning === 'expectedVersion') ? 'expectedVersion' : 'none',
-      availability: head.availability,
-      availabilityReason: head.availabilityReason,
-      availabilitySource: head.availabilitySource,
+      availability: verdict.availability,
+      availabilityReason: verdict.availabilityReason,
+      availabilitySource: verdict.availabilitySource,
       reason: head.reason,
       publicComposite: head.publicComposite,
       trustNotes: trustNotesFor(rows),
-      errorRefs: errorRefsFor(rows),
+      errorRefs: errorRefsFor(rows, verdict.availability),
       notes: items,
       examples,
     }),
@@ -399,14 +438,15 @@ export function commandHelp(path: readonly string[], opts: ShardOptions = {}): C
     const row = discovery(opts.from).find((d) => d.operation === o);
     return row as OperationDiscovery;
   });
-  const shard = shardFrom(rows, found.command, found.syntax, opts.cap ?? CAPS.command);
-  shard.availability = found.availability;
-  shard.availabilityReason = found.availabilityReason;
-  return shard;
+  return shardFrom(rows, found.command, found.syntax, opts.cap ?? CAPS.command, {
+    availability: found.availability,
+    availabilityReason: found.availabilityReason,
+    availabilitySource: found.availabilitySource,
+  });
 }
 
 /**
- * Exact `--operation` lookup. TOTAL over all 101 rows including composite,
+ * Exact `--operation` lookup. TOTAL over all 106 rows including composite,
  * internal, and reserved (conformance D2/D7).
  *
  * For a row with no public invocation this returns `command: null` and

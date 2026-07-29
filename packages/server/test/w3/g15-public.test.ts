@@ -60,13 +60,13 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operations: number;
       implemented: number;
     };
-    expect(OPERATIONS).toHaveLength(102);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(101);
+    expect(OPERATIONS).toHaveLength(106);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(105);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 101,
-      implemented: 99,
+      operations: 105,
+      implemented: 103,
     });
   });
 
@@ -101,7 +101,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // GENERATIONS, kept with cause: 98 (as authored — 100 non-WS rows minus
     // the 2 permanently reserved, 101-row catalog era) -> 99 (Delta 2 / A21:
     // `execution.liveness` joined `OPERATIONS`, the 101->102 family).
-    expect(implemented).toHaveLength(99);
+    expect(implemented).toHaveLength(103);
   });
 
   /**

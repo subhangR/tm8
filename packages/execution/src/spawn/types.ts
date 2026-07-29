@@ -28,7 +28,7 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
 export type PermissionMode = 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
 
 /** Working-directory semantics (contract `SpawnWorkdir`). */
-export type WorkdirMode = 'project' | 'worktree';
+export type WorkdirMode = 'project' | 'scratch';
 
 /**
  * Opaque per-request authorization, passed straight through to the graph
@@ -122,6 +122,23 @@ export interface CreateWorkSessionResult {
   sessionId: string;
   /** The RPC's raw CommandResult, forwarded to the client untouched. */
   commandResult: unknown;
+  /** True when the command ledger returned an earlier spawn result. */
+  replayed: boolean;
+}
+
+export interface ResolvedInteractionProfileContext {
+  profileId: string | null;
+  profileVersion: number | null;
+  templateKey: string;
+  templateVersion: number;
+  source: 'spawn_override' | 'teammate_default' | 'space_default' | 'core_default';
+  resolvedHash: string;
+  /** Canonical immutable policy snapshot selected by the server resolver. */
+  snapshot: Record<string, unknown>;
+}
+
+export interface InteractionProfilePinContext extends ResolvedInteractionProfileContext {
+  pinRevision: number;
 }
 
 export interface TransitionInput {
@@ -151,6 +168,17 @@ export interface GraphPort {
   loadSpawnContext(auth: GraphAuth, input: LoadSpawnContextInput): Promise<SpawnContext>;
   /** `public.execution_spawn` — work_session row + `working_on` edges, one tx. */
   createWorkSession(auth: GraphAuth, input: CreateWorkSessionInput): Promise<CreateWorkSessionResult>;
+  /** Resolve the immutable profile selection before launch. */
+  resolveInteractionProfile(
+    auth: GraphAuth,
+    input: { spaceId: string; teamMemberId: string; interactionProfileId?: string | null },
+  ): Promise<ResolvedInteractionProfileContext>;
+  /** Persist the immutable profile pin against the new work session. */
+  recordInteractionProfilePin(
+    auth: GraphAuth,
+    sessionId: string,
+    profile: ResolvedInteractionProfileContext,
+  ): Promise<InteractionProfilePinContext>;
   /** `public.record_session_manifest` — names only, never values (S-redaction). */
   recordManifest(
     auth: GraphAuth,
@@ -245,6 +273,9 @@ export interface Tm8Manifest {
 
   project: { id: string; name: string; workingDir: string; trust: string } | null;
 
+  /** Immutable interaction-profile provenance resolved and pinned at launch. */
+  interactionProfile: InteractionProfilePinContext;
+
   tasks: TaskContext[];
 
   /** Skills the agent should load. G1A composes none — the graph-side skill
@@ -271,6 +302,7 @@ export interface SpawnRequest {
   taskIds?: string[];
   projectId?: string | null;
   workdir?: { mode?: WorkdirMode; baseRef?: string | null };
+  interactionProfileId?: string | null;
   mode?: AgentMode | null;
   model?: string | null;
   agentTool?: string | null;

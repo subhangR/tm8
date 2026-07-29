@@ -11,11 +11,13 @@ import { describe, expect, it } from 'vitest';
 import type { EntityId } from '@tm8/contract';
 import {
   GRID_GAP,
+  LEFT_PANEL_DEFAULT,
   LEFT_PANEL_MIN,
   MAX_PINNED,
   MENU_COLLAPSED,
   MENU_EXPANDED,
   PANEL_COL_MIN,
+  RIGHT_PANEL_DEFAULT,
   RIGHT_PANEL_MIN,
   admitPin,
   cMin,
@@ -298,7 +300,7 @@ describe('shrink order (02-LAYOUT §5 / WLT §6 / T1-3)', () => {
     const layout = solveWorkspace({ ...base, viewport: 1920 });
     expect(layout.menu).toBe(MENU_EXPANDED);
     expect(layout.stackMode).toBe('columns');
-    expect(layout.left).toBe(280);
+    expect(layout.left).toBe(LEFT_PANEL_DEFAULT);
     expect(layout.right).toBe(319);
     expect(layout.center).toBeGreaterThanOrEqual(layout.centerMin);
   });
@@ -310,17 +312,17 @@ describe('shrink order (02-LAYOUT §5 / WLT §6 / T1-3)', () => {
     expect(wide.menu).toBe(MENU_EXPANDED);
     expect(tight.menu).toBe(MENU_COLLAPSED);
     // …and the panels are still untouched at their defaults.
-    expect(tight.left).toBe(280);
-    expect(tight.right).toBe(319);
+    expect(tight.left).toBe(LEFT_PANEL_DEFAULT);
+    expect(tight.right).toBe(RIGHT_PANEL_DEFAULT);
     expect(tight.stackMode).toBe('columns');
   });
 
   it('STEP 2 — side panels shrink toward their floors, never below', () => {
-    const layout = solveWorkspace({ ...base, viewport: 1600, pinned: ids(3), stack: [] });
+    const layout = solveWorkspace({ ...base, viewport: 1550, pinned: ids(3), stack: [] });
     expect(layout.menu).toBe(MENU_COLLAPSED);
     expect(layout.left).toBeGreaterThanOrEqual(LEFT_PANEL_MIN);
     expect(layout.right).toBeGreaterThanOrEqual(RIGHT_PANEL_MIN);
-    expect(layout.left).toBeLessThan(280);
+    expect(layout.left).toBeLessThan(LEFT_PANEL_DEFAULT);
   });
 
   it('never returns a side panel below its floor at ANY viewport', () => {

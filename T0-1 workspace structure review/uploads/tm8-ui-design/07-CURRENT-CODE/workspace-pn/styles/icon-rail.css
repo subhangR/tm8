@@ -1,0 +1,69 @@
+/* Verbatim pn-* rail component layer from Maestro redesign-tokens.css. */
+.cv2-root .pn-rail,
+.cv2-root .pn-rail *,
+.cv2-root .pn-rail *::before,
+.cv2-root .pn-rail *::after { box-sizing: border-box; }
+
+.cv2-root .pn-rail {
+  width: 56px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0 10px;
+  gap: 4px;
+  background: var(--pn-paper);
+  border-right: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-rail-mark { color: var(--pn-brand); margin-bottom: 10px; }
+
+.cv2-root .pn-rail-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background 140ms, color 140ms;
+}
+
+.cv2-root .pn-rail-btn:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .pn-rail-btn--active { background: var(--pn-active); color: var(--pn-ink); }
+.cv2-root .pn-rail-btn--active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--pn-brand);
+}
+.cv2-root .pn-rail-btn svg { width: 19px; height: 19px; }
+.cv2-root .pn-rail-btn:disabled { cursor: not-allowed; }
+
+.cv2-root .pn-rail-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+@media (max-width: 768px) {
+  .cv2-root .pn-rail-btn { width: 44px; height: 44px; }
+}

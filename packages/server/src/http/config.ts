@@ -47,6 +47,15 @@ export interface ServerConfig {
    * and the blob store. `loadConfig` always supplies a positive safe integer.
    */
   readonly fileMaxSizeBytes?: number;
+  /** Seed/repair launchable personas and the current project at boot. */
+  readonly launchBootstrap?: boolean;
+  /** Absolute current project registered by launch bootstrap. */
+  readonly launchProjectDir?: string;
+  /**
+   * Enables command-ledger replay and recording. Defaults to true; false is a
+   * local CRUD-test mode in which client mutation ids are deliberately ignored.
+   */
+  readonly idempotencyEnabled?: boolean;
 }
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
@@ -66,6 +75,14 @@ function expandHome(path: string): string {
   if (path === '~') return homedir();
   if (path.startsWith('~/')) return join(homedir(), path.slice(2));
   return path;
+}
+
+function envBoolean(value: string | undefined, name: string, fallback: boolean): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === undefined || normalized === '') return fallback;
+  if (['1', 'true', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'off'].includes(normalized)) return false;
+  throw new ConfigError(`${name} must be one of 1/0, true/false, or on/off`);
 }
 
 /** Resolve the shared tm8 state root without reading any unrelated config. */
@@ -120,5 +137,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     databaseUrl: env.TM8_DATABASE_URL?.trim() || undefined,
     dataDir: resolveServerDataDir(env),
     fileMaxSizeBytes,
+    launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
+    launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
+    idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
   };
 }

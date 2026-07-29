@@ -14,6 +14,7 @@ import type {
   GraphPort,
   LoadSpawnContextInput,
   RecordCommandInput,
+  ResolvedInteractionProfileContext,
   SpawnContext,
   Tm8Manifest,
   TransitionInput,
@@ -33,10 +34,13 @@ export class FakeGraph implements GraphPort {
   readonly transitions: TransitionInput[] = [];
   readonly commands: RecordCommandInput[] = [];
   readonly manifests: Array<{ sessionId: string; manifest: Tm8Manifest; envVarNames: string[] }> = [];
+  readonly profilePins: Array<{ sessionId: string; profile: ResolvedInteractionProfileContext }> = [];
   readonly authSeen: GraphAuth[] = [];
 
   /** Set to make the next createWorkSession throw, for the rollback test. */
   failNextCreate: Error | null = null;
+  /** Return this existing session from the next create attempt as a ledger replay. */
+  replaySessionId: string | null = null;
 
   constructor(private readonly options: FakeGraphOptions) {}
 
@@ -88,9 +92,54 @@ export class FakeGraph implements GraphPort {
       this.failNextCreate = null;
       throw err;
     }
+    if (this.replaySessionId) {
+      const sessionId = this.replaySessionId;
+      this.replaySessionId = null;
+      return {
+        sessionId,
+        commandResult: { entityId: sessionId, patches: [sessionId] },
+        replayed: true,
+      };
+    }
     this.created.push(input);
     const sessionId = randomUUID();
-    return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] } };
+    return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
+  }
+
+  async resolveInteractionProfile(
+    auth: GraphAuth,
+    input: { spaceId: string; teamMemberId: string; interactionProfileId?: string | null },
+  ): Promise<ResolvedInteractionProfileContext> {
+    this.authSeen.push(auth);
+    return input.interactionProfileId
+      ? {
+          profileId: input.interactionProfileId,
+          profileVersion: 1,
+          templateKey: 'tm8.chat.core',
+          templateVersion: 1,
+          source: 'spawn_override',
+          resolvedHash: 'fixture-profile-hash',
+          snapshot: { profile: { source: 'spawn_override' } },
+        }
+      : {
+          profileId: null,
+          profileVersion: null,
+          templateKey: 'tm8.chat.core',
+          templateVersion: 1,
+          source: 'core_default',
+          resolvedHash: 'fixture-core-profile-hash',
+          snapshot: { profile: { source: 'core_default' } },
+        };
+  }
+
+  async recordInteractionProfilePin(
+    auth: GraphAuth,
+    _sessionId: string,
+    profile: ResolvedInteractionProfileContext,
+  ) {
+    this.authSeen.push(auth);
+    this.profilePins.push({ sessionId: _sessionId, profile });
+    return { ...profile, pinRevision: 1 };
   }
 
   async recordManifest(

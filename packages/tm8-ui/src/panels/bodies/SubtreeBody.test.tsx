@@ -68,6 +68,15 @@ function withChildren(children: readonly EntitySummary[]): EntityDetail {
   };
 }
 
+function withDescription(description: string): EntityDetail {
+  const base = taskDetail();
+  if (base.content.kind !== 'task') throw new Error('this fixture must carry task content');
+  return {
+    ...base,
+    content: { ...base.content, description },
+  };
+}
+
 const staleVerdict = (id: string): SessionLiveness | undefined =>
   id === sessionStale.id ? 'stale' : undefined;
 
@@ -99,6 +108,55 @@ describe('the composed metadata grid', () => {
     // Two renderings of one fact drift the moment one of them is edited.
     const { getByTestId } = renderBody();
     expect(getByTestId('subtree-grid').textContent).not.toMatch(/in.review/i);
+  });
+});
+
+describe('DESCRIPTION — always present and growing in document flow', () => {
+  it('renders an editable empty widget when the task has no description', () => {
+    const onDescriptionChange = vi.fn();
+    const { getByRole } = renderBody({
+      detail: withDescription(''),
+      onDescriptionChange,
+    });
+
+    const input = getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
+    expect(input.value).toBe('');
+    expect(input.placeholder).toBe('Add a description…');
+
+    fireEvent.change(input, { target: { value: 'The task now has a description.' } });
+    expect(onDescriptionChange).toHaveBeenCalledWith('The task now has a description.');
+  });
+
+  it('shows an existing description in the same editor', () => {
+    const { getByRole } = renderBody({ detail: withDescription('Persisted task context') });
+    const input = getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
+    expect(input.value).toBe('Persisted task context');
+  });
+
+  it('grows to its content and keeps the lower regions after it', () => {
+    const onDescriptionChange = vi.fn();
+    const { getByRole, getByTestId, rerender } = render(
+      <SubtreeBody
+        detail={withDescription('')}
+        descriptionDraft=""
+        onDescriptionChange={onDescriptionChange}
+      />,
+    );
+    const input = getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
+    Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 180 });
+
+    rerender(
+      <SubtreeBody
+        detail={withDescription('')}
+        descriptionDraft={'First line\nSecond line\nThird line'}
+        onDescriptionChange={onDescriptionChange}
+      />,
+    );
+
+    expect(input.style.height).toBe('180px');
+    expect(
+      input.compareDocumentPosition(getByTestId('subtree-section')) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
 

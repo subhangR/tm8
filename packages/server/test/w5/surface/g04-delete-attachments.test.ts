@@ -130,9 +130,10 @@ describe('W5.C G04 messages.delete + attachments — behavioural branches', () =
    * ⚠ CHARACTERISATION OF A MEASURED ASYMMETRY — READ THE DISPOSITION BEFORE
    * CHANGING THIS TEST.
    *
-   * MECHANISM, read from `019_w2_messages_handoffs.sql:316-321`: BOTH the
-   * version check AND the authorization check sit INSIDE
-   * `if message.redacted_at is null then`:
+   * MECHANISM, read from the LIVE body of `public.w2_tombstone_message` via
+   * `pg_get_functiondef` on a freshly-migrated scratch database, with `--`
+   * comments STRIPPED before matching. BOTH the version check AND the
+   * authorization check sit INSIDE `if message.redacted_at is null then`:
    *
    *     if message.redacted_at is null then
    *       perform internal.assert_version(p_message_id, p_expected_version);
@@ -145,10 +146,27 @@ describe('W5.C G04 messages.delete + attachments — behavioural branches', () =
    * SO ON AN ALREADY-REDACTED MESSAGE, A **FRESH** cmid WITH **ANY**
    * `expectedVersion` — measured at 999 — RETURNS 200. Both checks are skipped.
    *
+   * ⚠ WHICH MIGRATION DEFINES THE BODY ABOVE, AND WHY NO LINE NUMBER APPEARS.
+   * `w2_tombstone_message` is REFERENCED by 019, 020 and 032, but DEFINED by
+   * only two of them — `019_w2_messages_handoffs.sql` and, LAST,
+   * `032_w2_sec1_stage1b_replay_resource_binding.sql`. **032 IS THE LIVE
+   * DEFINITION**, confirmed two ways: it is the highest-numbered definer, and
+   * the live catalog body carries `require_replay_subject`, which is 032's
+   * resource-binding marker and is absent from 019's.
+   *
+   * THIS COMMENT PREVIOUSLY CITED `019:316-321`. THAT WAS A POINTER INTO A
+   * SUPERSEDED BODY — as was a proposed correction to `019:641`. Both named a
+   * file that does not define the live function. **A MIGRATION FILE IS NOT THE
+   * DEFINITION OF ITS OWN FUNCTION**, and a line number in a durable test file
+   * is a pointer into a tree that moves. So this citation names the SYMBOL and
+   * the DEFINING MIGRATION and carries no line number; re-derive it with
+   * `pg_get_functiondef`, comment-stripped, which is a `select` away.
+   *
    * WHAT THIS IS **NOT**: it is not a data-loss or content-disclosure defect.
    * The second call changes nothing, the body is already `[redacted]`, and
-   * `internal.require_space_member` at `:314` sits OUTSIDE the branch and is
-   * still enforced — so a non-member cannot reach it at all.
+   * `internal.require_space_member` sits OUTSIDE that branch — verified against
+   * the live comment-stripped body, not inferred — so a non-member cannot reach
+   * it at all.
    *
    * WHAT IT **IS**: the API reports 200 to a request whose stated precondition
    * is false. A caller cannot use `expectedVersion` to detect that its view is
@@ -192,7 +210,8 @@ describe('W5.C G04 messages.delete + attachments — behavioural branches', () =
     expect(
       bogus.status,
       'If this is now 409, the version check has been hoisted above the redacted_at guard at '
-        + '019:316. That is the fix arriving — invert this test to expect 409, record before/after.',
+        + 'the redacted_at guard in w2_tombstone_message (defined by migration 032). That is the fix '
+        + 'arriving — invert this test to expect 409, record before/after.',
     ).toBe(200);
 
     // THE CONTRAST, driven in the same run so the asymmetry is measured rather
@@ -216,8 +235,8 @@ describe('W5.C G04 messages.delete + attachments — behavioural branches', () =
   /**
    * ⚠ THE HANDLER'S OWN VALIDATION IS SHADOWED ON THE HTTP PATH.
    *
-   * `updateAttachments` checks `fileIds.length === 0` (`:417`) and `uniqueIds`
-   * enforces at-most-16-unique (`:213-218`). BOTH ARE UNREACHABLE VIA HTTP:
+   * `updateAttachments` checks `fileIds.length === 0` and `uniqueIds`
+   * enforces at-most-16-unique. BOTH ARE UNREACHABLE VIA HTTP:
    * `AddMessageAttachmentsInputSchema` is bound in `INPUT_SCHEMAS`, so an empty
    * array, a duplicate and a 17-element array are all refused at
    * `server.ts:166` with the validation frame's own literal, BEFORE the handler

@@ -6,6 +6,7 @@ import type {
   ActionRef,
   KindConfig,
   LaunchCapacity,
+  LaunchProjectOption,
   LifecycleTier,
   ListRowFacts,
   LiveTreatment,
@@ -27,7 +28,9 @@ import {
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
+import { MaestroTaskTile } from './list/MaestroTaskTile';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
+import { newLaunchMutationId } from '../domain/launch';
 
 /**
  * EntityListPanel — the other universal primitive (L3).
@@ -110,6 +113,7 @@ export interface EntityListPanelProps {
 export interface LaunchSources {
   spaceId: string;
   teammates: readonly LaunchTeammateOption[];
+  projects: readonly LaunchProjectOption[];
   loadFor?: (teamMemberId: string) => TeammateLaunchState;
   capacity?: LaunchCapacity;
   profileFor?: (teamMemberId: string | null) => ProfileResolution | undefined;
@@ -472,7 +476,9 @@ function HeaderActions({
   onAction?: (ref: ActionRef, entityId: string) => void;
 }) {
   const { quickCreate, quickLaunch } = config.list;
-  if (!quickCreate && !quickLaunch) return null;
+  const showCreate = Boolean(quickCreate && (createSlot || onCreate));
+  const showLaunch = Boolean(quickLaunch && onAction);
+  if (!showCreate && !showLaunch) return null;
 
   return (
     <div className="lp__actions">
@@ -480,14 +486,14 @@ function HeaderActions({
           replaces the bare button — which was INERT when onCreate was absent
           (the audit's '+New inert' row). No slot and no onCreate ⇒ nothing
           renders enabled-dead. */}
-      {quickCreate && createSlot ? (
+      {showCreate && createSlot ? (
         createSlot
-      ) : quickCreate && onCreate ? (
+      ) : showCreate && onCreate ? (
         <button type="button" className="lp__new" onClick={onCreate}>
           ＋ New
         </button>
       ) : null}
-      {quickLaunch ? <QuickLaunch ref_={quickLaunch} ctx={ctx} onAction={onAction} /> : null}
+      {showLaunch && quickLaunch ? <QuickLaunch ref_={quickLaunch} ctx={ctx} onAction={onAction} /> : null}
     </div>
   );
 }
@@ -506,7 +512,11 @@ function QuickLaunch({
   if (!onAction) return <DisabledAction reason={NOT_WIRED_REASON}>{`${def.label} ▸`}</DisabledAction>;
   const availability = def.availability(ctx);
   if (availability.kind === 'disabled') {
-    return <DisabledAction reason={toReason(availability.reason)}>{`${def.label} ▸`}</DisabledAction>;
+    return (
+      <DisabledIconControl label={def.label} reason={toReason(availability.reason)}>
+        {`${def.label} ▸`}
+      </DisabledIconControl>
+    );
   }
   return (
     <button type="button" className="lp__quick" onClick={() => onAction?.(ref_, ctx.entityId ?? '')}>
@@ -815,9 +825,16 @@ function Band({
       {attention.length > 0 ? (
         <>
           <div className="lp__eyebrow lp__eyebrow--attention">{`NEEDS YOU · ${attention.length}`}</div>
-          {attention.map((row) => (
-            <Tile key={row.id} row={row} props={props} config={config} attention />
-          ))}
+          {/* Same tree class as the main band — a control-card kind must not
+              render its NEEDS-YOU rows as gapped cards and its ordinary rows
+              as an attached column. */}
+          <div className={treeClass(config)} role="list">
+            {attention.map((row) => (
+              <div key={row.id} className="lp__branch" role="listitem">
+                <Tile row={row} props={props} config={config} attention />
+              </div>
+            ))}
+          </div>
         </>
       ) : null}
 
@@ -901,33 +918,102 @@ function TreeRows({
   props: EntityListPanelProps;
   config: KindConfig;
 }) {
-  const ordered = useMemo(() => {
-    if (!config.list.tree) return rows.map((row) => ({ row, depth: 0 }));
+  /**
+   * Collapsed, not expanded: rows remain visible by default (the existing
+   * contract and the full-workspace reference both open the active subtree),
+   * while a later-arriving child does not need state bookkeeping to appear.
+   */
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
 
-    const present = new Set(rows.map((r) => r.id));
-    const childrenOf = new Map<string, EntitySummary[]>();
-    const roots: EntitySummary[] = [];
-    for (const row of rows) {
-      const parent = row.parentId && present.has(row.parentId) ? row.parentId : null;
-      if (!parent) roots.push(row);
-      else childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), row]);
-    }
-    const out: Array<{ row: EntitySummary; depth: number }> = [];
-    const walk = (row: EntitySummary, depth: number) => {
-      out.push({ row, depth });
-      for (const child of childrenOf.get(row.id) ?? []) walk(child, depth + 1);
-    };
-    for (const root of roots) walk(root, 0);
-    return out;
-  }, [rows, config.list.tree]);
+  const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
+
+  const toggle = (id: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const renderNode = (node: TileTreeNode): React.ReactNode => {
+    const isCollapsed = collapsed.has(node.row.id);
+    const hasChildren = node.children.length > 0;
+    return (
+      <div
+        key={node.row.id}
+        className="lp__branch"
+        role={config.list.tree ? 'treeitem' : 'listitem'}
+        aria-expanded={config.list.tree && hasChildren ? !isCollapsed : undefined}
+        aria-selected={config.list.tree ? props.selectedId === node.row.id : undefined}
+      >
+        <Tile
+          row={node.row}
+          depth={node.depth}
+          props={props}
+          config={config}
+          childCount={node.children.length}
+          expanded={!isCollapsed}
+          onToggleChildren={hasChildren ? () => toggle(node.row.id) : undefined}
+        />
+        {hasChildren && !isCollapsed ? (
+          <div className="lp__children" role="group" data-testid="list-tile-children">
+            {node.children.map(renderNode)}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
-    <>
-      {ordered.map(({ row, depth }) => (
-        <Tile key={row.id} row={row} depth={depth} props={props} config={config} />
-      ))}
-    </>
+    <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
+      {roots.map(renderNode)}
+    </div>
   );
+}
+
+/** Control cards are an attached column; every other anatomy stays gapped. */
+function treeClass(config: KindConfig): string {
+  return config.list.tile.anatomy === 'control-card' ? 'lp__tree lp__tree--control' : 'lp__tree';
+}
+
+interface TileTreeNode {
+  row: EntitySummary;
+  children: TileTreeNode[];
+  depth: number;
+}
+
+/**
+ * Turns a flat query page into the disclosure tree rendered above. A missing
+ * parent roots its child instead of hiding it. The `seen` guard also keeps a
+ * malformed parent cycle visible as roots rather than recursing forever.
+ */
+function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): TileTreeNode[] {
+  if (!hierarchical) return rows.map((row) => ({ row, children: [], depth: 0 }));
+
+  const present = new Set(rows.map((row) => row.id));
+  const childrenOf = new Map<string | null, EntitySummary[]>();
+  for (const row of rows) {
+    const parent = row.parentId && present.has(row.parentId) ? row.parentId : null;
+    childrenOf.set(parent, [...(childrenOf.get(parent) ?? []), row]);
+  }
+
+  const seen = new Set<string>();
+  const attach = (row: EntitySummary, depth: number): TileTreeNode => {
+    seen.add(row.id);
+    return {
+      row,
+      depth,
+      children: (childrenOf.get(row.id) ?? [])
+        .filter((child) => !seen.has(child.id))
+        .map((child) => attach(child, depth + 1)),
+    };
+  };
+
+  const roots = (childrenOf.get(null) ?? []).map((row) => attach(row, 0));
+  for (const row of rows) {
+    if (!seen.has(row.id)) roots.push(attach(row, 0));
+  }
+  return roots;
 }
 
 function Tile({
@@ -936,14 +1022,21 @@ function Tile({
   props,
   config,
   attention = false,
+  childCount = 0,
+  expanded = false,
+  onToggleChildren,
 }: {
   row: EntitySummary;
   depth?: number;
   props: EntityListPanelProps;
   config: KindConfig;
   attention?: boolean;
+  childCount?: number;
+  expanded?: boolean;
+  onToggleChildren?: () => void;
 }) {
   const list = config.list;
+  const controlCard = list.tile.anatomy === 'control-card';
   const verdict = props.livenessOf?.(row.id);
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
@@ -954,6 +1047,8 @@ function Tile({
    * without a shared "only one open" register to keep in sync.
    */
   const [flowRef, setFlowRef] = useState<ActionRef | null>(null);
+  /** Maestro's trailing chevron opens row facts independently of Run. */
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   /** Bounds for the expand's outside-click dismissal — the trigger lives here too. */
   const tileRef = useRef<HTMLDivElement>(null);
 
@@ -993,6 +1088,127 @@ function Tile({
 
   const selected = props.selectedId === row.id;
   const done = row.deletedAt != null;
+  const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
+  const controlFacts = controlCard ? factsForControlCard(row) : null;
+
+  if (controlCard && controlFacts) {
+    return (
+      <MaestroTaskTile
+        rootRef={tileRef}
+        id={row.id}
+        title={row.title}
+        depth={depth}
+        selected={selected}
+        attention={attention}
+        completed={done || statusWord === 'done'}
+        childCount={childCount}
+        childrenExpanded={expanded}
+        onToggleChildren={onToggleChildren}
+        onSelect={() => props.onSelect?.(row.id)}
+        status={{
+          label: statusWord ?? 'no status',
+          title: statusTitle,
+          tone: statusTone,
+          hollow: statusHollow,
+          streaming,
+        }}
+        assignees={controlFacts.assignees}
+        actions={(list.rowActions ?? []).map((ref) => (
+          <RowAction
+            key={ref}
+            ref_={ref}
+            row={row}
+            props={props}
+            openFlow={flowRef}
+            onFlow={setFlowRef}
+          />
+        ))}
+        detailsExpanded={controlExpanded}
+        flowOpen={flowRef !== null}
+        onToggleDetails={() => {
+          if (controlExpanded) {
+            setDetailsExpanded(false);
+            setFlowRef(null);
+          } else {
+            setDetailsExpanded(true);
+          }
+        }}
+      >
+        <div className="pn-tt__metarow">
+          {statusWord ? (
+            <span className={`pn-badge pn-badge--status-${statusTone}`}>
+              <span
+                className={[
+                  'lp__dot',
+                  `lp__dot--${statusTone}`,
+                  statusHollow ? 'lp__dot--hollow' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                aria-hidden
+              />
+              {statusWord}
+            </span>
+          ) : null}
+          {tag ? (
+            <span className={`pn-badge pn-badge--priority pn-badge--priority-${tag.tone}`}>
+              {tag.label}
+            </span>
+          ) : null}
+          <span className="pn-badge pn-badge--assignees">
+            <span className="pn-badge__people" aria-hidden>
+              {controlFacts.assignees.length > 0
+                ? controlFacts.assignees.slice(0, 3).map((actor) => (
+                    <Avatar
+                      key={actor.id}
+                      provenance={actor.isAgent ? 'agent' : 'human'}
+                      label={actor.displayName}
+                      /* 15, not 20 — the avatar sits INSIDE a 24px chip and
+                         must not be what sets the chip's height. 15 is the
+                         smallest step `AvatarSize` offers. */
+                      size={15}
+                    />
+                  ))
+                : '♙'}
+            </span>
+            {controlFacts.assigneeLabel}
+          </span>
+        </div>
+
+        {flowRef ? (
+          <div className="lp__flow lp__flow--control">
+            <LaunchQuickConfig
+              subject={row}
+              spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
+              teammates={props.launch?.teammates ?? []}
+              projects={props.launch?.projects ?? []}
+              loadFor={props.launch?.loadFor}
+              capacity={props.launch?.capacity}
+              profileFor={props.launch?.profileFor}
+              onSpawn={props.launch?.onSpawn}
+              onFullOptions={
+                props.launch?.onFullOptions
+                  ? () => props.launch?.onFullOptions?.(row.id)
+                  : undefined
+              }
+              onDismiss={() => setFlowRef(null)}
+              boundsRef={tileRef}
+              newClientMutationId={() => props.launch?.mutationId(row.id) ?? newLaunchMutationId()}
+            />
+          </div>
+        ) : null}
+
+        <div className="pn-tt__metarow">
+          {controlFacts.meta.map((fact) => (
+            <span key={fact} className="pn-toggle pn-toggle--static">
+              {fact}
+            </span>
+          ))}
+          <span className="pn-tt__time">{relativeTileTime(row.updatedAt)}</span>
+        </div>
+      </MaestroTaskTile>
+    );
+  }
 
   return (
     <div
@@ -1004,96 +1220,121 @@ function Tile({
       ]
         .filter(Boolean)
         .join(' ')}
-      style={depth > 0 ? { paddingLeft: 10 + depth * 17 } : undefined}
       data-testid="list-tile"
       data-depth={depth}
+      data-tree={config.list.tree ? 'true' : undefined}
+      data-children={childCount > 0 ? childCount : undefined}
       data-flow={flowRef ? 'open' : undefined}
       data-streaming={streaming ? 'true' : 'false'}
-      onClick={() => props.onSelect?.(row.id)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          props.onSelect?.(row.id);
-        }
-      }}
     >
-      {config.list.tree && depth > 0 ? (
-        <span className="lp__guide" style={{ left: 4 + depth * 17 }} aria-hidden />
-      ) : null}
-
-      {/* Line 1 — dot · avatar · title · status word (T0-1 1e). */}
-      <div className="lp__row1">
-        {statusWord ? (
-          <span
-            className={[
-              'lp__dot',
-              `lp__dot--${statusTone}`,
-              statusHollow ? 'lp__dot--hollow' : '',
-              streaming ? 'lp__dot--pulse' : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            aria-hidden
-          />
-        ) : null}
-
-        {avatar ? (
-          <Avatar provenance={avatar.provenance} label={avatar.label} size={15} />
-        ) : null}
-
-        <span className={done ? 'lp__title lp__title--done' : 'lp__title'} title={row.title}>
-          {row.title}
-        </span>
-
-        {/* The badge slot YIELDS to the action cluster on hover — the row never
-            grows, so hovering cannot reflow the list under the cursor. */}
-        <span className="lp__badges">
-          {statusWord ? (
-            <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
-              {statusWord}
-            </span>
+      <div className="lp__tile-main" onClick={() => props.onSelect?.(row.id)}>
+        {/* Line 1 — disclosure · status mark · avatar · title · status. */}
+        <div className="lp__row1">
+          {config.list.tree ? (
+            onToggleChildren ? (
+              <button
+                type="button"
+                className={expanded ? 'lp__disclosure lp__disclosure--expanded' : 'lp__disclosure'}
+                aria-label={`${expanded ? 'Collapse' : 'Expand'} ${row.title}, ${childCount} ${childCount === 1 ? 'child' : 'children'}`}
+                aria-expanded={expanded}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleChildren();
+                }}
+              >
+                <span aria-hidden>›</span>
+              </button>
+            ) : (
+              <span className="lp__disclosure lp__disclosure--empty" aria-hidden>
+                ›
+              </span>
+            )
           ) : null}
-        </span>
 
-        <span className="lp__rowactions">
-          {(list.rowActions ?? []).map((ref) => (
-            <RowAction
-              key={ref}
-              ref_={ref}
-              row={row}
-              props={props}
-              openFlow={flowRef}
-              onFlow={setFlowRef}
-            />
-          ))}
-        </span>
+          <span
+            className={`lp__statusmark lp__statusmark--${statusTone}`}
+            aria-hidden
+            title={statusTitle}
+          >
+            {statusWord ? (
+              <span
+                className={[
+                  'lp__dot',
+                  `lp__dot--${statusTone}`,
+                  statusHollow ? 'lp__dot--hollow' : '',
+                  streaming ? 'lp__dot--pulse' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              />
+            ) : (
+              <span className="lp__kindmark">{config.chip.glyph}</span>
+            )}
+          </span>
+
+          {avatar ? <Avatar provenance={avatar.provenance} label={avatar.label} size={20} /> : null}
+
+          <button
+            type="button"
+            className={done ? 'lp__title lp__title--done' : 'lp__title'}
+            title={row.title}
+            aria-current={selected ? 'true' : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onSelect?.(row.id);
+            }}
+          >
+            {row.title}
+          </button>
+
+          {/* The badge slot YIELDS to the action cluster on hover — the card
+              never grows, so hovering cannot reflow the list under the cursor. */}
+          <span className="lp__badges">
+            {statusWord ? (
+              <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
+                {statusWord}
+              </span>
+            ) : null}
+          </span>
+
+          <span className="lp__rowactions">
+            {(list.rowActions ?? []).map((ref) => (
+              <RowAction
+                key={ref}
+                ref_={ref}
+                row={row}
+                props={props}
+                openFlow={flowRef}
+                onFlow={setFlowRef}
+              />
+            ))}
+          </span>
+
+        </div>
+
+        {/* Line 2 — quiet facts and a compact priority tag, aligned under the
+            title rather than under the disclosure/status controls. */}
+        {metas.length > 0 || tag ? (
+          <div className="lp__row2">
+            <span className="lp__meta">{metas.join(' · ')}</span>
+            {tag ? (
+              <span className={`lp__tag kit-pill--${tag.tone}`}>
+                {props.compact ? tag.label.slice(0, 2) : tag.label}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* Line 2 — mono meta, then the priority tag. Rendered only when the
-          row actually has something to say; an empty second line would be
-          chrome pretending to be content. */}
-      {metas.length > 0 || tag ? (
-        <div className="lp__row2">
-          <span className="lp__meta">{metas.join(' · ')}</span>
-          {tag ? (
-            <span className={`lp__tag kit-pill--${tag.tone}`}>
-              {props.compact ? tag.label.slice(0, 2) : tag.label}
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-
-      {/* The flow expand. Inside the row so it stays visually attached to the
-          thing being launched; clicks are stopped so configuring never reads
-          as selecting. */}
+      {/* The config is an attached card section, not a popover: the subject
+          remains obvious while teammate/model choices are changed. */}
       {flowRef ? (
         <div className="lp__flow" onClick={(e) => e.stopPropagation()}>
           <LaunchQuickConfig
             subject={row}
             spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
             teammates={props.launch?.teammates ?? []}
+            projects={props.launch?.projects ?? []}
             loadFor={props.launch?.loadFor}
             capacity={props.launch?.capacity}
             profileFor={props.launch?.profileFor}
@@ -1105,12 +1346,66 @@ function Tile({
             }
             onDismiss={() => setFlowRef(null)}
             boundsRef={tileRef}
-            clientMutationId={props.launch?.mutationId(row.id) ?? `launch:${row.id}`}
+            newClientMutationId={() => props.launch?.mutationId(row.id) ?? newLaunchMutationId()}
           />
         </div>
       ) : null}
     </div>
   );
+}
+
+interface ControlCardFacts {
+  assignees: EntitySummary['createdBy'][];
+  assigneeLabel: string;
+  meta: string[];
+}
+
+/**
+ * Maps the registry-selected control-card anatomy onto fields the summary
+ * actually carries. This is intentionally structural: another registry row
+ * with the same anatomy and fields gets the same component without teaching
+ * this panel an entity kind.
+ */
+function factsForControlCard(row: EntitySummary): ControlCardFacts {
+  const state = row.state as unknown as Record<string, unknown>;
+  const rawAssignees = Array.isArray(state.assignees) ? state.assignees : [];
+  const assignees = rawAssignees.filter(
+    (value): value is EntitySummary['createdBy'] =>
+      typeof value === 'object' &&
+      value !== null &&
+      typeof (value as { id?: unknown }).id === 'string' &&
+      typeof (value as { displayName?: unknown }).displayName === 'string',
+  );
+  const assigneeLabel =
+    assignees.length === 0
+      ? 'Unassigned'
+      : assignees.length === 1
+        ? assignees[0].displayName
+        : `${assignees[0].displayName} +${assignees.length - 1}`;
+
+  const meta: string[] = [];
+  const acceptance = state.acceptance as { completed?: unknown; total?: unknown } | undefined;
+  if (typeof acceptance?.total === 'number' && acceptance.total > 0) {
+    meta.push(`${typeof acceptance.completed === 'number' ? acceptance.completed : 0}/${acceptance.total} criteria`);
+  }
+  if (typeof state.dueDate === 'string' && state.dueDate) meta.push(`due ${state.dueDate}`);
+  const blockers = row.badges.blocked?.unresolvedHardDependencyCount ?? 0;
+  if (blockers > 0) meta.push(`${blockers} ${blockers === 1 ? 'blocker' : 'blockers'}`);
+  const pulls = row.badges.pulls?.length ?? 0;
+  if (pulls > 0) meta.push(`${pulls} pulled`);
+
+  return { assignees, assigneeLabel, meta };
+}
+
+function relativeTileTime(iso: string): string {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return 'updated recently';
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  if (minutes < 1) return 'updated now';
+  if (minutes < 60) return `updated ${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `updated ${hours}h ago`;
+  return `updated ${Math.round(hours / 24)}d ago`;
 }
 
 /**

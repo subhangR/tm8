@@ -578,8 +578,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // not measuring production. `implemented` is `registry.size`, the count of
     // MOUNTED handlers: the honest answer to "what is registered on this node",
     // which is not the same claim as "what is behaviourally complete".
-    expect(health).toMatchObject({ ok: true, operations: 101, implemented: 99 });
-    expect(harness.production.server.registry.size).toBe(99);
+    expect(health).toMatchObject({ ok: true, operations: 105, implemented: 103 });
+    expect(harness.production.server.registry.size).toBe(103);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -591,7 +591,7 @@ describe.sequential('W2.I02 real production public surface', () => {
       .filter((op) => op.method !== 'WS' && !registered.has(op.name))
       .map((op) => op.name);
     expect(residual).toEqual([]);
-    expect(registered.size + residual.length).toBe(99);
+    expect(registered.size + residual.length).toBe(103);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

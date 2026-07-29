@@ -503,7 +503,8 @@ describe('W1 honest W2-only skeletons', () => {
     const query = db.query as ReturnType<typeof vi.fn>;
     query
       .mockResolvedValueOnce([{ id: SPACE }])              // space readable
-      .mockResolvedValueOnce([{ id: SOURCE }]);            // one live id is ours
+      .mockResolvedValueOnce([{ id: SOURCE }])              // one live id is ours
+      .mockResolvedValueOnce([{ used: 1 }]);                // process-wide session capacity
     const ctx = { ...context('execution.liveness', undefined), params: { spaceId: SPACE } };
     const result = (await handler(ctx)) as { kind: string; data: unknown };
     expect(result.kind).toBe('json');
@@ -512,6 +513,7 @@ describe('W1 honest W2-only skeletons', () => {
     if (parsed.success) {
       expect(parsed.data.liveEntityIds).toEqual([SOURCE]);
       expect(parsed.data.nodeBootId.length).toBeGreaterThan(0);
+      expect(parsed.data.capacity).toEqual({ used: 1, total: 8 });
     }
     // The intersection query received the FULL live-pty id set (scoping is
     // the database's under the caller's claims, not a pre-filter here).
@@ -530,29 +532,21 @@ describe('W1 honest W2-only skeletons', () => {
   it.each([
     ['scratch workdir', { workdir: { mode: 'scratch' as const } }],
     ['interaction profile selection', { interactionProfileId: PROFILE }],
-  ])('refuses unsupported %s before owner, DB, or spawn-service access', async (_label, extra) => {
+  ])('forwards supported %s through the typed spawn boundary', async (_label, extra) => {
     const fixture = executionFixture();
     const handler = fixture.registry.get('execution.spawn');
     if (!handler) throw new Error('execution.spawn was not registered');
-    const error = await rejection(
-      Promise.resolve(
-        handler(
-          context('execution.spawn', {
-            clientMutationId: 'mutation-spawn-refused',
-            spaceId: SPACE,
-            teamMemberId: TEAMMATE,
-            ...extra,
-          }),
-        ),
-      ),
+    await handler(
+      context('execution.spawn', {
+        clientMutationId: 'mutation-spawn-supported',
+        spaceId: SPACE,
+        teamMemberId: TEAMMATE,
+        ...extra,
+      }),
     );
-    expect(toWireError(error, 'request-w1-compat')).toMatchObject({
-      status: 501,
-      body: { error: { code: 'not_implemented', requestId: 'request-w1-compat' } },
-    });
-    expect(fixture.owner).not.toHaveBeenCalled();
-    expect(fixture.tx).not.toHaveBeenCalled();
-    expect(fixture.spawn).not.toHaveBeenCalled();
+    expect(fixture.owner).toHaveBeenCalledOnce();
+    expect(fixture.spawn).toHaveBeenCalledOnce();
+    expect(fixture.spawn.mock.calls[0]?.[1]).toMatchObject(extra);
   });
 
   it('forwards supported untrusted-project consent without weakening it', async () => {

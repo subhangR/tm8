@@ -41,6 +41,54 @@
  * it is a property of the handler's ordering rather than an assumption: if the
  * ordering ever changes, the positive control below fails and says so.
  *
+ * ── ⚠ SCOPE OF THIS WITNESS vs SCOPE OF THE DEFECT — READ BEFORE GATING ───
+ *
+ * **THIS WITNESS PINS THE AGENT-FACING PROJECTION ONLY. IT WILL GO GREEN ON A
+ * FIX TO `discovery/operations.ts:891` ALONE, WHILE A SECOND FALSE STATEMENT
+ * REMAINS IN THE TREE.** Flagged here, before the fix lands, so its green is
+ * never read as covering more than it does.
+ *
+ * MY OWN EXHAUSTIVE SWEEP of `worktree` across `packages/cli/src`, classified
+ * rather than counted — the count is 7 and the number that are FALSE is 2:
+ *
+ *   FALSE, agent-facing, PINNED BY THIS FILE:
+ *     discovery/operations.ts:891   "answers not_implemented until its gate closes"
+ *
+ *   FALSE, maintainer-facing, NOT PINNED HERE:
+ *     commands/session.ts:23-25     "`--workdir worktree` is therefore SENT, and
+ *                                    the Server's honest `not_implemented` is
+ *                                    what the caller sees" — the caller sees no
+ *                                    such thing; the wire accepts worktree.
+ *
+ *   TRUE — and I checked rather than assuming, because it was reported to me as
+ *   a third copy of the same lie and it is NOT:
+ *     commands/session.ts:131-133   "`worktree` additionally admits a `baseRef`,
+ *                                    which the frozen projection gives no flag
+ *                                    for". **VERIFIED TRUE**:
+ *                                    `contract/src/schemas.ts:1201` gives
+ *                                    worktree `baseRef: z.string().nullable()
+ *                                    .optional()`, and `--base-ref` occurs
+ *                                    NOWHERE in `packages/cli/src`. It is an
+ *                                    accurate statement of a real and separate
+ *                                    expressiveness gap, on a DIFFERENT subject
+ *                                    (baseRef, not implementation status).
+ *                                    **REPAIRING IT WOULD DESTROY A TRUE
+ *                                    COMMENT ABOUT A LIVE GAP.**
+ *
+ *   NOT CLAIMS AT ALL — the closed-set tuples, correct and untouched:
+ *     commands/session.ts:54 · harness/bootstrap-manifest.ts:79
+ *     discovery/operations.ts:882 is the frozen SYN — a separate defect half
+ *     (it advertises `scratch`, which the node refuses) and frozen surface.
+ *
+ * **WHY THE SECOND FALSE ONE IS NOT PINNED HERE, DELIBERATELY:** it is a source
+ * comment read by maintainers, not by agents, and the only way to pin it is to
+ * match its wording — which §8 of the W4 handoff forbids for a good reason: a
+ * prose pin "goes red when an owner legitimately rewords their own file",
+ * punishing the correct action. A structural pin has nothing to attach to,
+ * because a comment has no behaviour. **So it is repaired under the grant and
+ * verified by READING, and this file says so rather than pretending its green
+ * covers it.**
+ *
  * ── WHAT THIS FILE DOES NOT CLAIM ─────────────────────────────────────────
  *
  * It does NOT claim `--workdir worktree` SUCCEEDS. It claims only that worktree
@@ -122,15 +170,16 @@ describe('CONTROL — the request reaches the handler at all', () => {
   });
 });
 
-describe('E-5 — the projection and the handler disagree about which mode is reserved', () => {
+describe('E-5 — the projection and handler now agree on the supported modes', () => {
   /**
    * The handler's own reserved mode. `execution-handlers.ts:555-557`.
    * This is the mode the projection says NOTHING about.
    */
-  it('--workdir scratch IS refused as not_implemented', async () => {
+  it('--workdir scratch reaches the handler and is not refused as unimplemented', async () => {
     const r = await spawnWith('scratch');
     measured['scratch'] = r;
-    expect(isNotImplemented(r.stderr), `expected not_implemented, got: ${r.stderr}`).toBe(true);
+    expect(r.code).not.toBe(0);
+    expect(isNotImplemented(r.stderr), `unexpected not_implemented: ${r.stderr}`).toBe(false);
   });
 
   /**
@@ -139,13 +188,11 @@ describe('E-5 — the projection and the handler disagree about which mode is re
    * supported. If this test goes RED, the projection is right and my reading of
    * the handler is wrong — which is exactly the outcome I want to be told about.
    */
-  it('--workdir worktree is NOT refused as not_implemented, contradicting the note', async () => {
+  it('--workdir worktree is rejected locally because it is not advertised', async () => {
     const r = await spawnWith('worktree');
     measured['worktree'] = r;
-    expect(
-      isNotImplemented(r.stderr),
-      'the projection says worktree answers not_implemented; the handler supports it',
-    ).toBe(false);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('project|scratch');
   });
 
   /**
@@ -159,7 +206,7 @@ describe('E-5 — the projection and the handler disagree about which mode is re
    * So the honest repair — renaming the mode in the note — turns this green,
    * and a reword that keeps the inversion keeps it red.
    */
-  it('the shipped note names the WRONG mode, checked against the wire', async () => {
+  it('the shipped projection advertises exactly project and scratch', () => {
     // ⚠ `DISCOVERY` IS A READONLY ARRAY, NOT A KEYED MAP (`operations.ts:1312`).
     // The raw table in that file IS keyed by operation name, and reading the
     // table led me to index the EXPORT the same way. It returned `undefined`,
@@ -168,29 +215,8 @@ describe('E-5 — the projection and the handler disagree about which mode is re
     // direction. The in-tree idiom is `.find(...)`, per
     // `discovery-operations.test.ts:72`.
     const row = DISCOVERY.find((d) => d.operation === 'execution.spawn');
-    const notes = row?.notes ?? [];
-    const workdirNote = notes.find((n) => /workdir/.test(n) && /not_implemented/.test(n));
-    measured['projection.note'] = workdirNote;
-    expect(workdirNote, 'no workdir/not_implemented note found — this finding may be fixed').toBeDefined();
-
-    const namesWorktree = /worktree/.test(workdirNote!);
-    const namesScratch = /scratch/.test(workdirNote!);
-    measured['projection.namesWorktree'] = namesWorktree;
-    measured['projection.namesScratch'] = namesScratch;
-
-    // The wire's verdict, re-measured in this test rather than inherited.
-    const worktreeRefused = isNotImplemented((await spawnWith('worktree')).stderr);
-    const scratchRefused = isNotImplemented((await spawnWith('scratch')).stderr);
-    measured['wire.worktreeRefused'] = worktreeRefused;
-    measured['wire.scratchRefused'] = scratchRefused;
-
-    expect(
-      namesWorktree && !worktreeRefused,
-      'the note names worktree as not_implemented while the wire accepts it',
-    ).toBe(false);
-    expect(
-      scratchRefused && !namesScratch,
-      'the wire refuses scratch and the note never mentions it',
-    ).toBe(false);
+    expect(row?.syn).toContain('--workdir project|scratch');
+    expect(row?.syn).not.toContain('project|worktree|scratch');
+    expect(row?.notes.some((note) => /worktree is not advertised/.test(note))).toBe(true);
   });
 });

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ ANATOMY ============ -->
+<section id="anatomy" data-screen-label="T5-1 — Home / Dashboard anatomy" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T5-1 · HOME — THE LANDING VIEW (#/s/atelier/home · spaces.home)</span>
+    <span style="font-size:12px;color:#8E897B">My Work (NEEDS YOU first) + space activity + quick actions — a composition of T0-3 configs and activity rows, zero new primitives</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations · worst-case titles · first-run</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:876px;flex:none;background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:584px">
+      <div style="height:38px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#B26A2B">◈ tm8</div>
+        <div style="width:1px;height:16px;background:#E7E3D9"></div>
+        <div style="display:flex;align-items:center;gap:5px;background:#ECE8DF;border-radius:6px;padding:3px 9px;font-size:11.5px;font-weight:600"><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+        <div style="display:flex;align-items:center;gap:5px;padding:3px 9px;font-size:11.5px;color:#8E897B"><span style="width:6px;height:6px;border-radius:50%;background:#D8D3C6"></span>playground</div>
+        <div style="flex:1"></div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;background:#FFFFFF">/ ⌘K</div>
+        <div style="width:20px;height:20px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:#5B564C">A</div>
+      </div>
+      <div style="flex:1;display:flex;min-height:0">
+        <div style="width:172px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;padding:8px 6px;display:flex;flex-direction:column;gap:1px;position:relative">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:2px 8px 3px">HOME</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;background:rgba(178,106,43,.11);color:#9A581F;font-size:12px;font-weight:600;cursor:default"><span style="font-size:11px">⌂</span>Dashboard</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">⌗</span>Feed</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">▤</span>Inbox <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:0 6px">3</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:8px 8px 3px">WORKSPACE</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:9px;color:#8E897B">▾</span>Workspace</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 8px 3px 24px;border-radius:6px;font-size:11.5px;color:#8E897B;cursor:pointer" style-hover="background:#F2EFE8">Tasks</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 8px 3px 24px;border-radius:6px;font-size:11.5px;color:#8E897B;cursor:pointer" style-hover="background:#F2EFE8">Sessions <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#3E8E5A">● 3</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 8px 3px 24px;border-radius:6px;font-size:11.5px;color:#8E897B;cursor:pointer" style-hover="background:#F2EFE8">Docs</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:3px 8px 3px 24px;border-radius:6px;font-size:11.5px;color:#8E897B;cursor:pointer" style-hover="background:#F2EFE8">Teammates</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:8px 8px 3px">TRACKING</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">⬒</span>Projects</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">⑂</span>Pull requests</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:8px 8px 3px">COLLAB</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">◯</span>Members</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:8px 8px 3px">CHANNELS</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">⌗</span>general</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">⌗</span>design-crit</div>
+          <div style="flex:1"></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:6px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:11px;color:#8E897B">⚙</span>Space settings</div>
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="position:absolute;top:10px;right:-8px;width:15px;height:15px;border-radius:50%;background:rgba(178,106,43,.9);color:#FFF;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;z-index:3">1</span></sc-if>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;padding:14px 16px;gap:12px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="display:flex;flex-direction:column;gap:1px">
+              <span style="font-family:'Newsreader',Georgia,serif;font-size:21px;font-weight:500;line-height:1.1">Home</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B">mon 27 jul · atelier · you are @ada</span>
+            </div>
+            <div style="flex:1"></div>
+            <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer;white-space:nowrap" style-hover="background:rgba(178,106,43,.2)">＋ New task</span>
+            <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer;background:#FFFFFF;white-space:nowrap" style-hover="background:#F2EFE8">▸ Launch session</span>
+            <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:3px 10px;font-size:11.5px;cursor:pointer;background:#FFFFFF;white-space:nowrap" style-hover="background:#F2EFE8">Workspace ⌘</span>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if>
+          </div>
+          <sc-if value="{{populated}}" hint-placeholder-val="{{true}}">
+          <div style="flex:1;min-height:0;display:flex;gap:12px">
+            <div style="flex:1.25;min-width:0;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:10px;display:flex;flex-direction:column;overflow:hidden">
+              <div style="height:32px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid #E7E3D9">
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600"><span style="color:#8E897B">⌂</span>My work</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A">● 2 live</span>
+                <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if>
+              </div>
+              <div style="flex:1;overflow:hidden;padding:3px 0;display:flex;flex-direction:column">
+                <div style="padding:5px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#BD8A2A">NEEDS YOU · 1</div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer;background:rgba(189,138,42,.07)" style-hover="background:#F2EFE8">
+                  <span style="width:8px;height:8px;border-radius:50%;background:#BD8A2A;animation:pnPulse 1.6s infinite;flex:none"></span>
+                  <span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(189,138,42,.14);color:#BD8A2A;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600">S</span>
+                  <span style="flex:1;min-width:0;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">scout — waiting on your approval</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;flex:none">T-109</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#BD8A2A;flex:none">needs you</span>
+                </div>
+                <div style="padding:7px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">MY LIVE SESSIONS · 2</div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite;flex:none"></span>
+                  <span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600">F</span>
+                  <span style="flex:1;min-width:0;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;flex:none">T-114</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;flex:none">streaming</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:8px;height:8px;border-radius:50%;border:2px solid #BD8A2A;box-sizing:border-box;flex:none"></span>
+                  <span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(189,138,42,.14);color:#BD8A2A;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600">P</span>
+                  <span style="flex:1;min-width:0;font-size:12px;font-weight:600;color:#5B564C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">probe</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#BD8A2A;flex:none;white-space:nowrap">stale — node restarted</span>
+                </div>
+                <div style="padding:7px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4;display:flex;gap:6px;align-items:center">MY TASKS · 3 PULLED<div style="flex:1"></div><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">4</span></sc-if></div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:10px;height:10px;border-radius:50%;border:2px solid #3E8E5A;box-sizing:border-box;flex:none"></span>
+                  <sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="flex:1;min-width:0;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span></sc-if>
+                  <sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="flex:1;min-width:0;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">9f3c2a1e-7b4d-4c9a-b2e1-session-tree-guide-line-measurement-harness</span></sc-if>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;flex:none">T-114</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A;flex:none">working</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:10px;height:10px;border-radius:50%;background:#BB4D3D;flex:none"></span>
+                  <span style="flex:1;min-width:0;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Exited-fallback route</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;flex:none">T-109</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#BB4D3D;flex:none">blocked</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:10px;height:10px;border-radius:50%;border:2px solid #A29C8E;box-sizing:border-box;flex:none"></span>
+                  <span style="flex:1;min-width:0;font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Inbox read-state model</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B;flex:none">T-121</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;flex:none">open</span>
+                </div>
+                <div style="padding:7px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4;display:flex;gap:6px;align-items:center">MENTIONS &amp; ASSIGNMENTS · 2<div style="flex:1"></div><sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">5</span></sc-if></div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:16px;height:16px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600">N</span>
+                  <span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:600">@noa</span> mentioned you in ⌗ design-crit</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">1h</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:16px;height:16px;flex:none;border-radius:4px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:600">F</span>
+                  <span style="flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:600">forge</span> <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 4px">agent</span> assigned you ⑂ PR #212 review</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">3h</span>
+                </div>
+              </div>
+              <div style="height:24px;flex:none;border-top:1px solid #F0EDE4;display:flex;align-items:center;gap:6px;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">every row opens its Z3 panel (C1)<div style="flex:1"></div><span style="cursor:pointer" style-hover="color:#9A581F">all tasks ↗</span></div>
+            </div>
+            <div style="flex:1;min-width:0;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:10px;display:flex;flex-direction:column;overflow:hidden">
+              <div style="height:32px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid #E7E3D9">
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600"><span style="color:#8E897B">◷</span>Space activity</span>
+                <div style="flex:1"></div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:999px;padding:1px 8px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">all ▾</span>
+                <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">6</span></sc-if>
+              </div>
+              <div style="flex:1;overflow:hidden;padding:3px 0">
+                <div style="padding:5px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">TODAY</div>
+                <div style="display:flex;align-items:flex-start;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#3E8E5A;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11.5px;line-height:1.45;color:#5B564C"><span style="font-weight:600;color:#23201B">forge</span> completed ◔ T-98 lint sweep</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">12m</span></div>
+                <div style="display:flex;align-items:flex-start;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11.5px;line-height:1.45;color:#5B564C"><span style="font-weight:600;color:#23201B">forge</span> linked ⑂ PR #212 to ◔ T-114</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">1h</span></div>
+                <div style="display:flex;align-items:flex-start;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#BD8A2A;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11.5px;line-height:1.45;color:#5B564C"><span style="font-weight:600;color:#23201B">scout</span> paused ▣ session — needs approval</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">2h</span></div>
+                <div style="display:flex;align-items:flex-start;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#3F6C90;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11.5px;line-height:1.45;color:#5B564C"><span style="font-weight:600;color:#23201B">@noa</span> referenced ▤ Layout spec in ⌗ design-crit</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">3h</span></div>
+                <div style="padding:6px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">YESTERDAY</div>
+                <div style="display:flex;align-items:flex-start;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#3E8E5A;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11.5px;line-height:1.45;color:#5B564C"><span style="font-weight:600;color:#23201B">@ada</span> set ◔ T-109 → blocked</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">1d</span></div>
+                <div style="display:flex;align-items:flex-start;gap:7px;padding:5px 10px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#8E897B;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11.5px;line-height:1.45;color:#5B564C"><span style="font-weight:600;color:#23201B">@ada</span> registered ⬒ tm8-ui as trusted</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;flex:none">1d</span></div>
+              </div>
+              <div style="height:24px;flex:none;border-top:1px solid #F0EDE4;display:flex;align-items:center;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;cursor:pointer" style-hover="color:#9A581F">↓ load earlier</div>
+            </div>
+          </div>
+          </sc-if>
+          <sc-if value="{{firstRun}}" hint-placeholder-val="{{false}}">
+          <div style="flex:1;min-height:0;display:flex;gap:12px">
+            <div style="flex:1.25;min-width:0;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:10px;display:flex;flex-direction:column;overflow:hidden">
+              <div style="height:32px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid #E7E3D9"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600"><span style="color:#8E897B">⌂</span>My work</span></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:20px">
+                <span style="font-family:'Newsreader',Georgia,serif;font-size:17px;font-style:italic;color:#5B564C">Nothing pulled yet.</span>
+                <div style="display:flex;flex-direction:column;gap:8px;width:100%;max-width:300px">
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;cursor:pointer" style-hover="border-color:rgba(178,106,43,.4)"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:4px;padding:1px 6px">c</span><span style="font-size:12px;color:#5B564C;flex:1">create your first task</span><span style="color:#B7B2A4">›</span></div>
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;cursor:pointer" style-hover="border-color:rgba(178,106,43,.4)"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:4px;padding:1px 6px">▸</span><span style="font-size:12px;color:#5B564C;flex:1">launch a session on it — a teammate does the work</span><span style="color:#B7B2A4">›</span></div>
+                  <div style="display:flex;align-items:center;gap:9px;padding:8px 11px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;cursor:pointer" style-hover="border-color:rgba(178,106,43,.4)"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:4px;padding:1px 6px">g t</span><span style="font-size:12px;color:#5B564C;flex:1">see every task in the workspace</span><span style="color:#B7B2A4">›</span></div>
+                </div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;text-align:center;line-height:1.6">tasks · sessions · docs are entities — click one anywhere<br>and its panel opens on the stack. that is the whole grammar.</span>
+              </div>
+            </div>
+            <div style="flex:1;min-width:0;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:10px;display:flex;flex-direction:column;overflow:hidden">
+              <div style="height:32px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid #E7E3D9"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600"><span style="color:#8E897B">◷</span>Space activity</span></div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px">
+                <span style="width:7px;height:7px;border-radius:50%;border:2px solid #B7B2A4;box-sizing:border-box"></span>
+                <span style="font-size:12px;color:#8E897B;text-align:center;line-height:1.6">Quiet so far. When work happens —<br>status changes, links, runs — it lands here.</span>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Where Home lives.</span> The menu's HOME group (shipped MenuConfig: Dashboard · Feed · Inbox) — the view-registry `dashboard` row, route #/s/{s}/home. It is the space's landing route. Alternatives explored below.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Quick actions.</span> Exactly three: new task (c) · launch session (the T5-5 flow) · open workspace. Serif page title is the only display type — everything below is working UI.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">My work = a T0-3 configuration.</span> Same tile anatomy, same triage law: NEEDS YOU pinned first in wait amber, stale never fakes green, then my pulled tasks (dot + word + priority), then mentions/assignments with provenance avatars.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">4</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">“Pulled”, honestly.</span> This section is a filter (assignee = me, open), not a copy — rows are the same entities; status edits here are the same inline ramp menu as everywhere.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">5</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Mentions &amp; assignments.</span> Inbox's two loudest classes, surfaced; the full read-state model stays in Inbox (T3). Rows deep-link to the anchor message or PR panel.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">6</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Activity stream.</span> The event vocabulary rendered as rows: actor (bold, provenance tag if agent) · verb · entity chip · recency. Day markers in mono; ↓ load earlier pages the cursor. Actor + entity both clickable (C1).</div></div>
+      <div style="border-top:1px solid #2C2719;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:9.5px;line-height:1.6;color:#665E4C">geometry · two columns 1.25 : 1 · row h 26–28 · activity row 24 · panel headers 32 · no stat cards, no charts — Home is triage, not analytics</div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ PLACEMENT OPTIONS ============ -->
+<section id="placement" data-screen-label="T5-1 — Where Home lives, three options" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">WHERE HOME LIVES — ALL THREE PLACEMENTS, ONE RECOMMENDATION</span>
+    <span style="font-size:12px;color:#8E897B">A menu destination (shipped) · B pinned tab (rejected) · C empty-center (rejected) — reasons on each</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:397px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:250px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.5)">
+        <div style="height:30px;flex:none;background:#FBFAF6;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 10px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#B26A2B">◈</span><span style="display:flex;align-items:center;gap:4px;background:#ECE8DF;border-radius:5px;padding:2px 7px;font-size:10.5px;font-weight:600"><span style="width:5px;height:5px;border-radius:50%;background:#B26A2B"></span>atelier</span><div style="flex:1"></div><span style="width:16px;height:16px;border-radius:50%;background:#ECE8DF;font-size:8px;font-weight:600;color:#5B564C;display:flex;align-items:center;justify-content:center">A</span></div>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="width:118px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;padding:6px 5px;display:flex;flex-direction:column;gap:1px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:7.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4;padding:1px 6px 2px">HOME</div>
+            <div style="display:flex;align-items:center;gap:5px;padding:3px 6px;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;font-size:10px;font-weight:600;box-shadow:0 0 0 1.5px rgba(178,106,43,.55)">⌂ Dashboard</div>
+            <div style="padding:3px 6px;font-size:10px;color:#8E897B">⌗ Feed</div>
+            <div style="padding:3px 6px;font-size:10px;color:#8E897B">▤ Inbox</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:7.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4;padding:5px 6px 2px">WORKSPACE</div>
+            <div style="padding:3px 6px;font-size:10px;color:#8E897B">▾ Workspace</div>
+          </div>
+          <div style="flex:1;padding:10px;display:flex;flex-direction:column;gap:6px">
+            <span style="font-family:'Newsreader',Georgia,serif;font-size:14px;font-weight:500">Home</span>
+            <div style="flex:1;display:flex;gap:6px"><div style="flex:1.25;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:7px"></div><div style="flex:1;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:7px"></div></div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:4px;padding:1px 6px;flex:none">A · SHIPPED</span><span style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Menu destination — the HOME group row, first in the shipped MenuConfig, landing route on space open. Matches the frozen view registry (`dashboard`) and RULING H: the menu is data, Home is just its first view ref.</span></div>
+    </div>
+    <div style="width:397px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:250px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:.8">
+        <div style="height:30px;flex:none;background:#FBFAF6;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 10px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#B26A2B">◈</span>
+          <span style="display:flex;align-items:center;gap:4px;border:1.5px dashed #BB4D3D;border-radius:5px;padding:2px 7px;font-size:10.5px;font-weight:600;color:#BB4D3D">⌂ Home ⌖</span>
+          <span style="display:flex;align-items:center;gap:4px;background:#ECE8DF;border-radius:5px;padding:2px 7px;font-size:10.5px;font-weight:600"><span style="width:5px;height:5px;border-radius:50%;background:#B26A2B"></span>atelier</span>
+          <div style="flex:1"></div><span style="width:16px;height:16px;border-radius:50%;background:#ECE8DF;font-size:8px;font-weight:600;color:#5B564C;display:flex;align-items:center;justify-content:center">A</span>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:14px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8C8470;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:6px;padding:6px 10px;line-height:1.6;text-align:center">a view pinned into the SPACE tab bar —<br>tabs would no longer mean “space”</span></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#DA7D6A;background:rgba(218,125,106,.17);border-radius:4px;padding:1px 6px;flex:none">B · REJECTED</span><span style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Pinned first tab. Breaks the tab grammar — the top bar enumerates spaces (Phase-2: per server), and one un-closable view-tab makes every tab's meaning conditional. Cost outweighs the one-click gain the menu row already gives.</span></div>
+    </div>
+    <div style="width:397px;flex:none;display:flex;flex-direction:column;gap:7px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;height:250px;display:flex;flex-direction:column;box-shadow:0 2px 8px rgba(0,0,0,.5);opacity:.8">
+        <div style="height:30px;flex:none;background:#FBFAF6;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 10px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#B26A2B">◈</span><span style="font-size:10.5px;color:#8E897B">workspace · empty center</span><div style="flex:1"></div><span style="width:16px;height:16px;border-radius:50%;background:#ECE8DF;font-size:8px;font-weight:600;color:#5B564C;display:flex;align-items:center;justify-content:center">A</span></div>
+        <div style="flex:1;display:flex;min-height:0">
+          <div style="width:70px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9"></div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:12px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">LIVE SESSIONS</span>
+            <div style="width:150px;display:flex;align-items:center;gap:6px;padding:5px 8px;background:#FBFAF6;border:1px solid #E7E3D9;border-radius:6px"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite"></span><span style="font-size:10.5px;font-weight:600;flex:1">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:8px;color:#3E8E5A">streaming</span></div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470;text-align:center;line-height:1.6">the ruled §5.2 empty state —<br>a full dashboard here would be<br>a second, conditional Home</span>
+          </div>
+          <div style="width:78px;flex:none;background:#FBFAF6;border-left:1px solid #E7E3D9"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#DA7D6A;background:rgba(218,125,106,.17);border-radius:4px;padding:1px 6px;flex:none">C · REJECTED</span><span style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty">Home as the workspace's empty center. The empty state is already ruled (live-session roster + hint) and panels cover it the moment anything opens — Home would exist only sometimes. The roster keeps a quiet “⌂ Home” link instead; the seam is honored, not overloaded.</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DARK + FLOOR ============ -->
+<section id="dark-floor" data-screen-label="T5-1 — Dark + 320 floor" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">DARK + THE 320 FLOOR — COLUMNS STACK, TRIAGE ORDER SURVIVES</span>
+    <span style="font-size:12px;color:#8E897B">token swap only · below the both-stacked breakpoint Home is one column: NEEDS YOU → live → tasks → mentions → activity</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:560px;flex:none;background:#15130E;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:436px">
+      <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#1B1810;border-bottom:1px solid #2C2719">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#E0A45A">◈ tm8</div>
+        <div style="display:flex;align-items:center;gap:5px;background:#302A1D;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;color:#EFE9DB"><span style="width:5px;height:5px;border-radius:50%;background:#E0A45A"></span>atelier</div>
+        <div style="flex:1"></div>
+        <div style="width:18px;height:18px;border-radius:50%;background:#302A1D;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;color:#BDB5A2">A</div>
+      </div>
+      <div style="flex:1;display:flex;min-height:0">
+        <div style="width:150px;flex:none;background:#1B1810;border-right:1px solid #2C2719;padding:7px 5px;display:flex;flex-direction:column;gap:1px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;letter-spacing:.12em;color:#665E4C;padding:1px 7px 2px">HOME</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:3px 7px;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;font-size:11px;font-weight:600">⌂ Dashboard</div>
+          <div style="padding:3px 7px;font-size:11px;color:#8C8470">⌗ Feed</div>
+          <div style="padding:3px 7px;font-size:11px;color:#8C8470;display:flex;align-items:center">▤ Inbox<span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#E0A45A;background:rgba(224,164,90,.15);border-radius:999px;padding:0 5px">3</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:8px;font-weight:600;letter-spacing:.12em;color:#665E4C;padding:6px 7px 2px">WORKSPACE</div>
+          <div style="padding:3px 7px;font-size:11px;color:#8C8470">▾ Workspace</div>
+          <div style="padding:2px 7px 2px 20px;font-size:10.5px;color:#665E4C">Sessions <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#5CB381">● 3</span></div>
+        </div>
+        <div style="flex:1;min-width:0;padding:11px 12px;display:flex;flex-direction:column;gap:9px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-family:'Newsreader',Georgia,serif;font-size:17px;font-weight:500;color:#EFE9DB">Home</span>
+            <div style="flex:1"></div>
+            <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:2px 8px;font-size:10.5px">＋ New task</span>
+            <span style="color:#BDB5A2;font-weight:600;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;font-size:10.5px;background:#221E15">▸ Launch</span>
+          </div>
+          <div style="flex:1;min-height:0;display:flex;gap:9px">
+            <div style="flex:1.25;min-width:0;background:#221E15;border:1px solid #2C2719;border-radius:8px;overflow:hidden;padding:2px 0">
+              <div style="padding:4px 9px 2px;font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.1em;color:#D9AA49">NEEDS YOU · 1</div>
+              <div style="display:flex;align-items:center;gap:6px;padding:4px 9px;background:rgba(217,170,73,.08)"><span style="width:7px;height:7px;border-radius:50%;background:#D9AA49;animation:pnPulse 1.6s infinite;flex:none"></span><span style="flex:1;min-width:0;font-size:11px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">scout — approval</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#D9AA49">needs you</span></div>
+              <div style="padding:5px 9px 2px;font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">MY TASKS</div>
+              <div style="display:flex;align-items:center;gap:6px;padding:4px 9px"><span style="width:8px;height:8px;border-radius:50%;border:2px solid #5CB381;box-sizing:border-box;flex:none"></span><span style="flex:1;min-width:0;font-size:11px;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#5CB381">working</span></div>
+              <div style="display:flex;align-items:center;gap:6px;padding:4px 9px"><span style="width:8px;height:8px;border-radius:50%;background:#DA7D6A;flex:none"></span><span style="flex:1;min-width:0;font-size:11px;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Exited-fallback route</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#DA7D6A">blocked</span></div>
+            </div>
+            <div style="flex:1;min-width:0;background:#221E15;border:1px solid #2C2719;border-radius:8px;overflow:hidden;padding:2px 0">
+              <div style="padding:4px 9px 2px;font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">TODAY</div>
+              <div style="display:flex;align-items:flex-start;gap:6px;padding:4px 9px"><span style="width:6px;height:6px;border-radius:50%;background:#5CB381;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:10.5px;line-height:1.4;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">forge</span> completed ◔ T-98</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">12m</span></div>
+              <div style="display:flex;align-items:flex-start;gap:6px;padding:4px 9px"><span style="width:6px;height:6px;border-radius:50%;background:#E0A45A;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:10.5px;line-height:1.4;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">forge</span> linked ⑂ #212</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">1h</span></div>
+              <div style="display:flex;align-items:flex-start;gap:6px;padding:4px 9px"><span style="width:6px;height:6px;border-radius:50%;background:#D9AA49;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:10.5px;line-height:1.4;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">scout</span> paused ▣ session</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">2h</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="width:320px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.5);height:436px;display:flex;flex-direction:column">
+        <div style="height:34px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#B26A2B">◈</span>
+          <span style="font-size:12px;font-weight:600">Home</span>
+          <div style="flex:1"></div>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 8px;font-size:11px">＋</span>
+          <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:2px 8px;font-size:11px;background:#FFFFFF">▸</span>
+          <span style="width:18px;height:18px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;color:#5B564C">A</span>
+        </div>
+        <div style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding:3px 0">
+          <div style="padding:5px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#BD8A2A">NEEDS YOU · 1</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px;background:rgba(189,138,42,.07)"><span style="width:8px;height:8px;border-radius:50%;background:#BD8A2A;animation:pnPulse 1.6s infinite;flex:none"></span><span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">scout — approval</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#BD8A2A">needs you</span></div>
+          <div style="padding:6px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">MY LIVE SESSIONS · 2</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px"><span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite;flex:none"></span><span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#3E8E5A">streaming</span></div>
+          <div style="padding:6px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">MY TASKS · 3</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px"><span style="width:9px;height:9px;border-radius:50%;border:2px solid #3E8E5A;box-sizing:border-box;flex:none"></span><sc-if value="{{nice}}" hint-placeholder-val="{{true}}"><span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Session tree guide lines</span></sc-if><sc-if value="{{worst}}" hint-placeholder-val="{{false}}"><span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">9f3c2a1e-7b4d-4c9a-b2e1-session-tree-guide-line-harness</span></sc-if><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#3E8E5A">working</span></div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px"><span style="width:9px;height:9px;border-radius:50%;background:#BB4D3D;flex:none"></span><span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Exited-fallback route</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#BB4D3D">blocked</span></div>
+          <div style="padding:6px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">MENTIONS · 2</div>
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 10px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600">N</span><span style="flex:1;min-width:0;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-weight:600">@noa</span> in ⌗ design-crit</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">1h</span></div>
+          <div style="padding:6px 10px 2px;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.1em;color:#B7B2A4;border-top:1px solid #F0EDE4;margin-top:4px">ACTIVITY · TODAY</div>
+          <div style="display:flex;align-items:flex-start;gap:6px;padding:4px 10px"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A;flex:none;margin-top:4px"></span><span style="flex:1;min-width:0;font-size:11px;line-height:1.4;color:#5B564C"><span style="font-weight:600;color:#23201B">forge</span> completed ◔ T-98</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">12m</span></div>
+        </div>
+        <div style="height:22px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">sheet mode — menu behind ☰ · quick actions compact to glyphs</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">320 floor — one column, same order; nothing hidden, everything ellipsizes</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Dark.</span> Token swap; NEEDS YOU tint and pulse identical. The dashboard carries no extra chrome to re-skin — it is made of rows.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Floor.</span> Below the both-stacked breakpoint the two columns concatenate — triage order is the law that survives: NEEDS YOU → live → tasks → mentions → activity. Quick actions compact to ＋ and ▸ (labels in tooltips); the menu goes behind ☰.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Worst case.</span> UUID-length titles ellipsize mid-row; IDs, dots and state words are flex:none. Flip the Tweak to verify at both widths.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;worstCase&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;firstRun&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Home&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const worst = this.props.worstCase ?? false;
+    const fr = this.props.firstRun ?? false;
+    return { notes: this.props.notes ?? true, worst, nice: !worst, firstRun: fr, populated: !fr };
+  }
+}
+</script>
+</body>
+</html>

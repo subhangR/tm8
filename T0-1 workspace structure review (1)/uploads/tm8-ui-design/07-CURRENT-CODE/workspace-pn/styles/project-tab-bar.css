@@ -1,0 +1,161 @@
+/* Verbatim pn-* top/project-tab component layer from Maestro. */
+.cv2-root .pn-top,
+.cv2-root .pn-top *,
+.cv2-root .pn-top *::before,
+.cv2-root .pn-top *::after { box-sizing: border-box; }
+
+.cv2-root .pn-top {
+  height: 42px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--pn-paper);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-ptabs { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
+.cv2-root .pn-ptab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 27px;
+  padding: 0 11px;
+  white-space: nowrap;
+  border-radius: var(--pn-r-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid transparent;
+}
+.cv2-root .pn-ptab--active {
+  background: var(--pn-card);
+  color: var(--pn-ink);
+  border-color: var(--pn-line);
+  font-weight: 600;
+  box-shadow: var(--pn-sh-sm);
+}
+.cv2-root .pn-top-r { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+
+.cv2-root .pn-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--pn-idle); }
+.cv2-root .pn-ptab .pn-dot { width: 6px; height: 6px; }
+.cv2-root .pn-dot--run { background: var(--pn-run); }
+.cv2-root .pn-dot--wait { background: var(--pn-wait); }
+.cv2-root .pn-dot--idle { background: var(--pn-idle); }
+.cv2-root .pn-dot-wrap { position: relative; display: inline-flex; }
+.cv2-root .pn-dot--live::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid var(--pn-run);
+  opacity: 0.5;
+  animation: pn-ping 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes pn-ping {
+  0% { transform: scale(0.7); opacity: 0.6; }
+  70%, 100% { transform: scale(1.5); opacity: 0; }
+}
+
+.cv2-root .pn-kbd {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 15px;
+  background: var(--pn-surface);
+}
+
+.cv2-root .pn-ib {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  transition: background 140ms, color 140ms;
+}
+.cv2-root .pn-ib:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .pn-ib:disabled { cursor: not-allowed; }
+.cv2-root .pn-ib svg { width: 16px; height: 16px; }
+
+.cv2-root .projectTabs {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.cv2-root .projectTabs::-webkit-scrollbar { display: none; }
+.cv2-root .projectTab { position: relative; max-width: 220px; cursor: pointer; }
+.cv2-root .projectTabMain {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.cv2-root .projectTabName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv2-root .projectTabCount {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  padding: 1px 5px;
+  min-width: 16px;
+  text-align: center;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .projectTabWorking {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-run);
+  background: var(--pn-run-soft);
+  border: 1px solid transparent;
+  padding: 1px 5px;
+  border-radius: var(--pn-r-xs);
+}
+.cv2-root .projectTabWorkingDot { width: 5px; height: 5px; border-radius: 999px; background: var(--pn-run); }
+.cv2-root .projectTabSettingsBtn {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  color: var(--pn-ink-3);
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  transition: background 140ms, color 140ms;
+}
+.cv2-root .projectTabSettingsBtn:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-root .projectTabSettingsBtn:disabled { cursor: not-allowed; }
+.cv2-root .projectTabNeedsInput { animation: projectTabNeedsInputGlow 2s ease-in-out infinite; }
+@keyframes projectTabNeedsInputGlow {
+  0%, 100% { box-shadow: 0 0 0 1px var(--pn-wait-soft); }
+  50% { box-shadow: 0 0 8px 1px var(--pn-wait-soft); }
+}
+.cv2-root .projectAddButton { width: 26px; height: 26px; }
+
+@media (max-width: 768px) {
+  .cv2-root .projectTab { min-height: 44px; display: flex; align-items: center; }
+  .cv2-root .projectTabMain { min-height: 44px; align-items: center; padding: 0 4px; }
+}

@@ -36,10 +36,12 @@ import { HandlerRegistry, INPUT_SCHEMAS } from '../facade/index.js';
 import { readJsonBody } from './body.js';
 import type { ServerConfig } from './config.js';
 import { fail, notImplemented, sendWireError } from './errors.js';
+import { normalizeCommandInputForIdempotencyMode } from './idempotency.js';
 import { nextRequestId } from './request-id.js';
 import { Router } from './router.js';
 import { autoOwnerResolver, BASE_SECURITY_HEADERS, checkTransport } from './security.js';
 import type { StaticHandler } from './static.js';
+import type { RemoteServerProxy } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
 import {
   isHandlerResult,
@@ -69,6 +71,8 @@ export interface FacadeServerOptions {
   readonly staticHandler?: StaticHandler;
   /** The sole non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
+  /** Same-origin relay for node-local named Server connections. */
+  readonly remoteServerProxy?: RemoteServerProxy;
 }
 
 export interface FacadeServer {
@@ -97,8 +101,17 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     });
   });
 
-  if (upgrades) {
+  if (upgrades || opts.remoteServerProxy) {
     http.on('upgrade', (req, socket, head) => {
+      const pathname = new URL(req.url ?? '/', 'http://tm8.invalid').pathname;
+      if (opts.remoteServerProxy?.matches(pathname)) {
+        void opts.remoteServerProxy.handleUpgrade(req, socket, head);
+        return;
+      }
+      if (!upgrades) {
+        socket.destroy();
+        return;
+      }
       void Promise.resolve(upgrades.handleUpgrade(req, socket, head)).catch(() => {
         socket.destroy();
       });
@@ -115,6 +128,11 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
     try {
       const decision = checkTransport(method, req.headers, config);
       if (decision.refusal) throw fail(decision.refusal.code, decision.refusal.message);
+
+      if (opts.remoteServerProxy?.matches(pathname)) {
+        await opts.remoteServerProxy.handleHttp(req, res);
+        return;
+      }
 
       if (pathname === '/health') {
         // Unenveloped on purpose: `/health` is not a catalog operation, so it
@@ -163,8 +181,13 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);
 
+      const requestBody = normalizeCommandInputForIdempotencyMode(
+        match.op,
+        body,
+        config.idempotencyEnabled !== false,
+      );
       const schema: ZodTypeAny | undefined = INPUT_SCHEMAS[match.opName];
-      const input = schema ? validate(schema, body) : body;
+      const input = schema ? validate(schema, requestBody) : requestBody;
 
       const ctx: RequestContext = {
         op: match.op,

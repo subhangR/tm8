@@ -5,13 +5,16 @@ import {
   buildSpawnInput,
   canLaunch,
   defaultConfigFor,
+  defaultLaunchTarget,
   describeCapacity,
   describeProfile,
   describeTeammateLoad,
   EDGES_NOT_HYDRATED_REASON,
   modelsFor,
+  newLaunchMutationId,
   type LaunchCapacity,
   type LaunchConfig,
+  type LaunchProjectOption,
   type ProfileResolution,
   type TeammateLaunchState,
 } from '../../domain';
@@ -63,6 +66,8 @@ export interface LaunchQuickConfigProps {
   spaceId: string;
   /** Selectable personas, already adapted to the shape above. */
   teammates: readonly LaunchTeammateOption[];
+  /** Linked projects; the first trusted row is the quick launch root. */
+  projects?: readonly LaunchProjectOption[];
   /** Live-session load per teammate. `null` count ⇒ hollow, never zero. */
   loadFor?: (teamMemberId: string) => TeammateLaunchState;
   /**
@@ -92,14 +97,17 @@ export interface LaunchQuickConfigProps {
    * re-opens it — and the toggle can never close. Defaults to this component.
    */
   boundsRef?: React.RefObject<HTMLElement | null>;
-  /** Deterministic id for the optimistic journal; the caller owns uniqueness. */
-  clientMutationId: string;
+  /** Fresh id minted when the viewer deliberately submits. */
+  newClientMutationId?: () => string;
+  /** Compatibility injection for deterministic component tests. */
+  clientMutationId?: string;
 }
 
 export function LaunchQuickConfig({
   subject,
   spaceId,
   teammates,
+  projects = [],
   loadFor,
   profileFor,
   capacity,
@@ -108,14 +116,16 @@ export function LaunchQuickConfig({
   onDismiss,
   boundsRef,
   clientMutationId,
+  newClientMutationId,
 }: LaunchQuickConfigProps) {
   const ref = useRef<HTMLDivElement>(null);
   const noop = useCallback(() => {}, []);
   useDismissable(true, boundsRef ?? ref, onDismiss ?? noop);
 
   const first = teammates[0];
+  const defaultProjectId = projects.find((project) => project.trusted)?.projectId ?? null;
   const [config, setConfig] = useState<LaunchConfig>(() =>
-    first ? defaultConfigFor(first) : emptyConfig(),
+    first ? defaultConfigFor(first, defaultProjectId) : emptyConfig(defaultProjectId),
   );
 
   /** The node's own words when it refuses. Null until it does. */
@@ -123,15 +133,24 @@ export function LaunchQuickConfig({
   const [pending, setPending] = useState(false);
 
   const models = useMemo(() => modelsFor(config.agentToolId), [config.agentToolId]);
-  // canLaunch owns every refusal. `projects: []` is honest for the quick path:
-  // it targets scratch, and a project target is a sheet concern.
-  const refusal = canLaunch(config, { projects: [], capacity });
+  const refusal = canLaunch(config, { projects, capacity });
 
   const selected = teammates.find((t) => t.id === config.teamMemberId);
   const load = selected && loadFor ? loadFor(selected.id) : null;
 
   return (
     <div className="lq" ref={ref} data-testid="launch-quick-config">
+      <div className="lq__head">
+        <span className="lq__heading">Run configuration</span>
+        <span className="lq__subject" title={subject.title}>
+          {subject.title}
+        </span>
+        {onDismiss ? (
+          <button type="button" className="lq__close" aria-label="Close run configuration" onClick={onDismiss}>
+            ×
+          </button>
+        ) : null}
+      </div>
       <div className="lq__row">
         <label className="lq__field">
           <span className="lq__label">Teammate</span>
@@ -144,7 +163,7 @@ export function LaunchQuickConfig({
               // Re-seed from the NEW teammate's record rather than patching one
               // field: its recorded tool and model travel together, and a
               // half-updated config would silently mix two personas' settings.
-              if (next) setConfig(defaultConfigFor(next));
+              if (next) setConfig(defaultConfigFor(next, defaultProjectId));
             }}
           >
             {teammates.length === 0 ? <option value="">no teammates available</option> : null}
@@ -265,7 +284,7 @@ export function LaunchQuickConfig({
               Promise.resolve(
                 onSpawn(
                   buildSpawnInput({
-                    clientMutationId,
+                    clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
                     spaceId,
                     config,
                     taskIds: [subject.id],
@@ -305,12 +324,12 @@ export function LaunchQuickConfig({
  * default tool: `canLaunch` then refuses with the missing-teammate reason,
  * which is the true blocker. A seeded tool would make the form look ready.
  */
-function emptyConfig(): LaunchConfig {
+function emptyConfig(defaultProjectId: LaunchProjectOption['projectId'] | null): LaunchConfig {
   return {
     teamMemberId: null,
     agentToolId: null,
     model: null,
     mode: 'worker',
-    target: { kind: 'scratch' },
+    target: defaultLaunchTarget(defaultProjectId),
   };
 }

@@ -1,0 +1,163 @@
+/* ==========================================================================
+   COLLAB V2 — DESIGN TOKENS  ·  "ATELIER" (paper & ink), module-scoped.
+   Ported from `Modular Collab Workspace UI/_ds` (colors_and_type.css). All
+   tokens live under `.cv2-root` so the module never leaks styles into the
+   host app. Dark = warm graphite via [data-theme="dark"] on .cv2-root or any
+   ancestor. Status is ALWAYS color + word, never color alone.
+   ========================================================================== */
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+.cv2-root {
+  /* --- 1 · paper & ink ---------------------------------------------------- */
+  --pn-paper:    #F4F2EC;
+  --pn-surface:  #FBFAF6;
+  --pn-card:     #FFFFFF;
+  --pn-hover:    #F2EFE8;
+  --pn-active:   #ECE8DF;
+
+  --pn-line:     #E7E3D9;
+  --pn-line-2:   #D8D3C6;
+
+  --pn-ink:      #23201B;
+  --pn-ink-2:    #5B564C;
+  --pn-ink-3:    #8E897B;
+  --pn-ink-4:    #B7B2A4;
+
+  /* --- 2 · brass (the one restrained accent) ------------------------------ */
+  --pn-brand:      #B26A2B;
+  --pn-brand-2:    #9A581F;
+  --pn-brand-soft: rgba(178, 106, 43, 0.11);
+  --pn-brand-rgb:  178, 106, 43;
+
+  /* --- 3 · functional / status (desaturated, anti-neon) ------------------- */
+  --pn-run:    #3E8E5A;   --pn-run-soft:   rgba(62, 142, 90, 0.12);
+  --pn-wait:   #BD8A2A;   --pn-wait-soft:  rgba(189, 138, 42, 0.14);
+  --pn-block:  #BB4D3D;   --pn-block-soft: rgba(187, 77, 61, 0.12);
+  --pn-info:   #3F6C90;   --pn-info-soft:  rgba(63, 108, 144, 0.12);
+  --pn-idle:   #A29C8E;   --pn-idle-soft:  rgba(162, 156, 142, 0.16);
+
+  /* Collab status semantics (pill tones map onto the functional ramp):
+     working=green · blocked=red · in_review=blue · stale=amber · done=green ·
+     open/idle=warm grey. */
+  --cv2-status-working:      var(--pn-run);
+  --cv2-status-working-soft: var(--pn-run-soft);
+  --cv2-status-done:         var(--pn-run);
+  --cv2-status-done-soft:    var(--pn-run-soft);
+  --cv2-status-blocked:      var(--pn-block);
+  --cv2-status-blocked-soft: var(--pn-block-soft);
+  --cv2-status-review:       var(--pn-info);
+  --cv2-status-review-soft:  var(--pn-info-soft);
+  --cv2-status-stale:        var(--pn-wait);
+  --cv2-status-stale-soft:   var(--pn-wait-soft);
+  --cv2-status-idle:         var(--pn-idle);
+  --cv2-status-idle-soft:    var(--pn-idle-soft);
+
+  /* --- 4 · type ------------------------------------------------------------ */
+  --pn-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --pn-ui:    'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pn-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', 'Menlo', monospace;
+
+  --pn-fs-display: 40px;
+  --pn-fs-h1: 28px;
+  --pn-fs-h2: 22px;
+  --pn-fs-h3: 18px;
+  --pn-fs-title: 15px;
+  --pn-fs-body: 14px;
+  --pn-fs-sm: 13px;
+  --pn-fs-label: 12px;
+  --pn-fs-micro: 11px;
+  --pn-fs-mono: 12.5px;
+
+  --pn-lh-tight: 1.18;
+  --pn-lh-snug: 1.35;
+  --pn-lh-body: 1.5;
+
+  --pn-track-mega: 0.12em;
+  --pn-track-label: 0.06em;
+  --pn-track-tight: -0.01em;
+
+  /* --- 5 · spacing (4px grid) ---------------------------------------------- */
+  --pn-space-1: 4px;
+  --pn-space-2: 8px;
+  --pn-space-3: 12px;
+  --pn-space-4: 16px;
+  --pn-space-5: 20px;
+  --pn-space-6: 24px;
+  --pn-space-8: 32px;
+  --pn-space-10: 40px;
+  --pn-space-12: 48px;
+  --pn-space-16: 64px;
+
+  /* --- 6 · radii ------------------------------------------------------------ */
+  --pn-r-xs: 5px;
+  --pn-r-sm: 7px;
+  --pn-r-md: 10px;
+  --pn-r-lg: 14px;
+  --pn-r-pill: 999px;
+
+  /* --- 7 · elevation (warm shadows; no glow) --------------------------------- */
+  --pn-sh-sm:  0 1px 2px rgba(40, 34, 24, 0.05);
+  --pn-sh-md:  0 2px 6px rgba(40, 34, 24, 0.06), 0 8px 24px rgba(40, 34, 24, 0.06);
+  --pn-sh-pop: 0 12px 34px rgba(40, 34, 24, 0.14);
+
+  /* --- 8 · motion (fast, mechanical, no bounce) ------------------------------ */
+  --pn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --pn-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --pn-dur-fast: 120ms;
+  --pn-dur-base: 180ms;
+  --pn-dur-slow: 280ms;
+
+  /* module base */
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+}
+
+/* Dark: same editorial system inverted into warm graphite (token-only). */
+.cv2-root[data-theme="dark"],
+[data-theme="dark"] .cv2-root {
+  --pn-paper:   #1D1912;
+  --pn-surface: #1B1810;
+  --pn-card:    #221E15;
+  --pn-hover:   #262117;
+  --pn-active:  #302A1D;
+
+  --pn-line:    #2C2719;
+  --pn-line-2:  #3B3524;
+
+  --pn-ink:     #EFE9DB;
+  --pn-ink-2:   #BDB5A2;
+  --pn-ink-3:   #8C8470;
+  --pn-ink-4:   #665E4C;
+
+  --pn-brand:      #E0A45A;
+  --pn-brand-2:    #C98A3E;
+  --pn-brand-soft: rgba(224, 164, 90, 0.15);
+  --pn-brand-rgb:  224, 164, 90;
+
+  --pn-run:   #5CB381;  --pn-run-soft:   rgba(92, 179, 129, 0.17);
+  --pn-wait:  #D9AA49;  --pn-wait-soft:  rgba(217, 170, 73, 0.18);
+  --pn-block: #DA7D6A;  --pn-block-soft: rgba(218, 125, 106, 0.17);
+  --pn-info:  #6F9FC7;  --pn-info-soft:  rgba(111, 159, 199, 0.17);
+  --pn-idle:  #7A7360;  --pn-idle-soft:  rgba(122, 115, 96, 0.20);
+
+  --pn-sh-sm:  0 1px 2px rgba(0, 0, 0, 0.45);
+  --pn-sh-md:  0 2px 8px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
+  --pn-sh-pop: 0 16px 44px rgba(0, 0, 0, 0.6);
+}
+
+/* --- semantic type classes (scoped) ------------------------------------------ */
+.cv2-root .t-display { font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); color: var(--pn-ink); }
+.cv2-root .t-h1 { font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); color: var(--pn-ink); }
+.cv2-root .t-h2 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h2); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+.cv2-root .t-h3 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h3); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+.cv2-root .t-title { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-title); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+.cv2-root .t-body { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
+.cv2-root .t-secondary { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-sm); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
+.cv2-root .t-label { font-family: var(--pn-ui); font-weight: 500; font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
+.cv2-root .t-eyebrow { font-family: var(--pn-mono); font-weight: 600; font-size: var(--pn-fs-micro); text-transform: uppercase; letter-spacing: var(--pn-track-mega); color: var(--pn-ink-3); }
+.cv2-root .t-quote { font-family: var(--pn-serif); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
+.cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
+.cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }

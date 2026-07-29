@@ -42,13 +42,17 @@ import {
   type EntityId,
   type EntityKindDef,
   type EntitySummary,
+  type GraphQuery,
+  type GraphResult,
   type HandoffView,
   type MenuConfig,
   type MessageDeliveryView,
   type MessageView,
   type NotificationItem,
   type Page,
+  type ProjectResource,
   type SpaceId,
+  type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
 import type { FeedOpts, IdentityView, PageOpts, Seam, Unsubscribe } from '../seam';
@@ -218,6 +222,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     identity: (): Promise<IdentityView> => ops.identity(),
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
+    spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
 
     /**
      * LLD C-4, the ONE soft-fallback in the whole seam: `not_implemented` (501)
@@ -238,10 +243,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
 
     query: (input: CollectionQuery): Promise<CollectionResult> => ops.query(input),
+    graph: (input: GraphQuery): Promise<GraphResult> => ops.graph(input),
     entityKinds: (spaceId: SpaceId): Promise<EntityKindDef[]> => ops.entityKinds(spaceId),
+    projects: (spaceId: SpaceId): Promise<ProjectResource[]> => ops.projects(spaceId),
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
     children: (id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> => ops.children(id, opts),
-    connections: (id: EntityId): Promise<Page<EdgeView>> => ops.connections(id),
+    connections: (id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),
     activity: (id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>> => ops.activity(id, opts),
     messages: (anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>> => ops.messages(anchorId, opts),
     handoffs: (workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> =>

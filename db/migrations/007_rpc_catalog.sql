@@ -2043,7 +2043,9 @@ declare
   patches uuid[];
 begin
   replay := internal.ledger_replay(p_client_mutation_id, 'execution.spawn');
-  if replay is not null then return replay; end if;
+  if replay is not null then
+    return replay || jsonb_build_object('__tm8_replayed', true);
+  end if;
   perform internal.require_space_member(p_space_id);
   actor := internal.resolve_actor(p_actor_id, p_space_id);
   perform internal.bind_actor(actor);
@@ -2109,7 +2111,7 @@ begin
            internal.command_result(session_id, null,
              internal.record_activity(p_space_id, session_id, actor, 'created', null,
                jsonb_build_object('kind', 'work_session', 'teamMemberId', p_team_member_id)),
-             patches));
+             patches)) || jsonb_build_object('__tm8_replayed', false);
 end
 $$;
 
@@ -2157,6 +2159,13 @@ begin
          exited_at = case when p_status in ('exited','failed') then coalesce(exited_at, now()) else exited_at end
    where entity_id = p_session_id;
   perform set_config('tm8.work_session_transition', 'off', true);
+
+  -- Status is detail-table state, but durable UI events project from entity
+  -- envelope changes. Advance the envelope so running/exited/failed is emitted
+  -- through the ordinary entity.upsert sequence instead of requiring a poll.
+  update public.entities
+     set version = version + 1, activity_at = now(), updated_at = now()
+   where id = p_session_id;
 
   return internal.ledger_record(p_client_mutation_id, 'execution.transition',
            internal.command_result(p_session_id, null, null, array[p_session_id]));

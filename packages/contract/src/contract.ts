@@ -583,6 +583,27 @@ export interface CommandResult {
 /** Common envelope on every command (§4 preamble). */
 export interface CommandContext { actorId?: EntityId; clientMutationId?: string }
 
+/** A node-local, named route to another tm8 Server. Credentials are a later transport concern. */
+export interface ServerConnection {
+  id: string;
+  name: string;
+  baseUrl: string;
+  username?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServerConnectionCreateInput extends CommandContext {
+  clientMutationId: string;
+  name: string;
+  baseUrl: string;
+  username?: string | null;
+}
+
+export interface ServerConnectionDeleteInput extends CommandContext {
+  clientMutationId: string;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;
@@ -760,7 +781,8 @@ export interface UpdateSpaceInput extends CommandContext {
 // W0 dossier: Space menu and shared settings revision
 // ---------------------------------------------------------------------------
 
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'channels' | 'settings';
+/** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view. */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings';
 export type MenuKindRef = Exclude<EntityKind, 'channel' | 'message'>;
 
 export type MenuLeaf =
@@ -996,15 +1018,10 @@ export interface EdgeCorrectionResult {
   edge: EdgeView | null;
 }
 
-/**
- * Worktree semantics for a spawn (AM-2 §1): `project` runs the session
- * directly in `project.workingDir`; `worktree` gives it an isolated git
- * worktree (server-managed path under the node data dir, guarded per
- * 10-SECURITY-MODEL) off `baseRef` (default: the repo's default branch).
- */
+/** Publicly supported spawn targets. Worktree remains a future execution
+ * capability and is intentionally absent until the node can create one. */
 export type SpawnWorkdir =
   | { mode: 'project' }
-  | { mode: 'worktree'; baseRef?: string | null }
   | { mode: 'scratch' };
 
 // --- execution.* operation family (R16) ------------------------------------
@@ -1036,8 +1053,7 @@ export interface ExecutionSpawnInput extends CommandContext {
   /**
    * AM-2 §1: typed project reference (replaces the untyped `projectRef`).
    * The project must be linked to `spaceId` and pass its trust gate.
-   * Required when `workdir.mode` is 'worktree'; omitted/null = a projectless
-   * scratch session in a server-managed temp dir.
+   * Omitted/null = a projectless scratch session in a server-managed temp dir.
    */
   projectId?: ProjectId | null;
   /** Working-directory semantics; default `{ mode: 'project' }`. */
@@ -1110,6 +1126,8 @@ export interface ExecutionLiveness {
   liveEntityIds: EntityId[];
   nodeBootId: string;
   checkedAt: string;
+  /** Node-wide admission truth used by execution.spawn's concurrency gate. */
+  capacity: { used: number; total: number };
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
@@ -63,9 +63,23 @@ export interface SubtreeBodyProps {
   onOpenEntity?: (id: string) => void;
   /** Wired ⇒ `＋ add child…` is live; absent ⇒ it renders disabled (R7). */
   onAddChild?: () => void;
+  /** Current staged value; undefined means use the persisted description. */
+  descriptionDraft?: string;
+  /** Present only when this task can actually be patched. */
+  onDescriptionChange?: (description: string) => void;
+  descriptionUnavailableReason?: string;
 }
 
-export function SubtreeBody({ detail, blocks, livenessOf, onOpenEntity, onAddChild }: SubtreeBodyProps) {
+export function SubtreeBody({
+  detail,
+  blocks,
+  livenessOf,
+  onOpenEntity,
+  onAddChild,
+  descriptionDraft,
+  onDescriptionChange,
+  descriptionUnavailableReason,
+}: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
   const runs = dedupe([...children.filter(isRunKind), ...peersOf(detail).filter(isRunKind)]);
@@ -81,7 +95,12 @@ export function SubtreeBody({ detail, blocks, livenessOf, onOpenEntity, onAddChi
       data-testid="subtree-body"
     >
       <MetaGrid detail={detail} onOpenEntity={onOpenEntity} />
-      <Description detail={detail} />
+      <DescriptionEditor
+        detail={detail}
+        draft={descriptionDraft}
+        onChange={onDescriptionChange}
+        unavailableReason={descriptionUnavailableReason}
+      />
       <SubtreeSection
         detail={detail}
         childWork={childWork}
@@ -212,11 +231,52 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   );
 }
 
-function Description({ detail }: { detail: EntityDetail }) {
+function DescriptionEditor({
+  detail,
+  draft,
+  onChange,
+  unavailableReason,
+}: {
+  detail: EntityDetail;
+  draft?: string;
+  onChange?: (description: string) => void;
+  unavailableReason?: string;
+}) {
   const content = detail.content as unknown as Record<string, unknown>;
-  const prose = typeof content.description === 'string' ? content.description : typeof content.body === 'string' ? content.body : null;
-  if (!prose) return null;
-  return <p className="pn-prose">{prose}</p>;
+  const persisted =
+    typeof content.description === 'string'
+      ? content.description
+      : typeof content.body === 'string'
+        ? content.body
+        : '';
+  const value = draft ?? persisted;
+  const textarea = useRef<HTMLTextAreaElement | null>(null);
+
+  // The field has no internal scroll. Its box follows scrollHeight, which
+  // pushes every later task region downward in the body's normal document flow.
+  useLayoutEffect(() => {
+    const node = textarea.current;
+    if (!node) return;
+    node.style.height = '0px';
+    node.style.height = `${Math.max(node.scrollHeight, 72)}px`;
+  }, [value]);
+
+  return (
+    <label className="sb-description" data-testid="task-description-editor">
+      <span className="sb-description__label">Description</span>
+      <textarea
+        ref={textarea}
+        className="sb-description__input"
+        aria-label="Description"
+        value={value}
+        placeholder="Add a description…"
+        readOnly={!onChange}
+        title={unavailableReason}
+        rows={1}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    </label>
+  );
 }
 
 // ---------------------------------------------------------------------------

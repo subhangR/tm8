@@ -53,6 +53,7 @@ const MY_ROWS: readonly OperationName[] = [
   'interactionProfiles.retire',
   'teamMembers.interactionProfile.setDefault',
   'spaces.interactionProfile.setDefault',
+  'execution.liveness',
 ];
 
 const NIL = '00000000-0000-7000-8000-000000000000';
@@ -122,7 +123,7 @@ function idOf(data: unknown): string | undefined {
 // ── pass 1: the three-state probe, re-measured ──────────────────────────────
 
 describe('availability, re-measured on this node', () => {
-  it('records a three-state verdict for all twelve rows in this slot', async () => {
+  it('records a three-state verdict for all thirteen rows in this slot', async () => {
     for (const op of MY_ROWS) {
       observed.set(op, await server.observe(op));
     }
@@ -372,6 +373,7 @@ describe('the built CLI against the real Server', () => {
  */
 describe('per-operation CLI coverage against the real Server', () => {
   const coverage: string[] = [];
+  const outcomes: { operation: string; code: number; stderr: string }[] = [];
 
   /** Run the built CLI and record the exit code plus the taxonomy line. */
   async function cover(operation: string, argv: readonly string[]): Promise<{ code: number; stderr: string }> {
@@ -381,6 +383,7 @@ describe('per-operation CLI coverage against the real Server', () => {
     coverage.push(
       `${operation.padEnd(42)} exit=${String(r.code).padStart(3)}  ${taxonomy}${reason ? `/${reason}` : ''}`,
     );
+    outcomes.push({ operation, code: r.code, stderr: r.stderr });
     return { code: r.code, stderr: r.stderr };
   }
 
@@ -419,6 +422,7 @@ describe('per-operation CLI coverage against the real Server', () => {
     await cover('execution.spawn', ['session', 'spawn', '--space', S, '--teammate', NIL]);
     await cover('execution.terminate', ['session', 'terminate', NIL, '--yes']);
     await cover('execution.streams.attach', ['session', 'attach', NIL, '--mode', 'view', '--grant-only']);
+    await cover('execution.liveness', ['session', 'liveness', '--space', S]);
     await cover('interactionProfiles.propose', ['interaction-profile', 'propose', '--space', S, '--data', draft]);
     await cover('interactionProfiles.updateDraft', ['interaction-profile', 'update', NIL, '--expect-version', '1', '--data', draft]);
     await cover('interactionProfiles.validate', ['interaction-profile', 'validate', NIL, '--expect-version', '1']);
@@ -430,19 +434,19 @@ describe('per-operation CLI coverage against the real Server', () => {
     // eslint-disable-next-line no-console
     console.log(`[group9] CLI COVERAGE (built binary -> real Server)\n${coverage.join('\n')}`);
 
-    // Every one reached the node: none may answer "not implemented in this CLI
-    // build" (exit 8 from the local registry) and none may be a transport
-    // failure (exit 7). Those are the two outcomes that would mean the row was
-    // NOT actually exercised.
-    expect(coverage).toHaveLength(10);
-    for (const line of coverage) {
-      expect(line, line).not.toContain('exit=  8');
-      expect(line, line).not.toContain('exit=  7');
+    // Every one reached the node: none may answer the kernel's LOCAL
+    // "not implemented in this CLI build" diagnostic and none may be a
+    // transport failure (exit 7). A Server-side 501 also exits 8, but proves
+    // the opposite: the command bound a request and the node answered it.
+    expect(coverage).toHaveLength(11);
+    for (const outcome of outcomes) {
+      expect(outcome.stderr, outcome.operation).not.toContain('not implemented in this CLI build');
+      expect(outcome.code, outcome.operation).not.toBe(7);
     }
   }, 300_000);
 
   /**
-   * The eleventh commanded row. It was UNREACHABLE as published — `--version`
+   * The twelfth commanded row. It was UNREACHABLE as published — `--version`
    * was a global boolean in every position, so this invocation printed the CLI
    * version and exited 0 having previewed nothing. That defect was reported,
    * ruled on, and FIXED by the slot owning `src/args.ts` with a positional rule.
@@ -725,7 +729,7 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // PROBE-RED: the filter finds a populated family when one exists, so the
     // single-element result above is a fact about `teamMembers` and not about
     // a broken predicate.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(4);
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(5);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

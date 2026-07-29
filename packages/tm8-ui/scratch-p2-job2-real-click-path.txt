@@ -1,0 +1,91 @@
+P2: Job 2 — the real click path, observed. One finding changes the shape of "two flags away."
+Six items, in your order.
+
+=== 1. SPAWN THROUGH THE UI-REACHABLE PATH — BLOCKED, not curl-avoidable ===
+
+With both flags on, in the real app at :4612/ (not terminal-dev.html): the launch trigger is
+genuinely disabled-with-reason in this build, not just visually gray. Confirmed at the DOM
+level, not by staring at a screenshot:
+
+  <span class="hon-disabled hon-disabled--tooltip" role="button" aria-disabled="true"
+        aria-label="Run" ...>
+    <span aria-hidden="true">▶</span>Run
+    <span class="hon-tip" role="tooltip">
+      <span class="hon-tip__cause">This action isn't connected yet</span>
+      <span class="hon-tip__remedy">the verb exists and its screen does not dispatch it in
+        this build</span>
+    </span>
+  </span>
+
+Same class (`hon-disabled`) as the "＋ New" buttons on both the Tasks and Sessions panels —
+all three are the SAME honest stub, not three separate bugs. I reopened my one seed task
+(work_status: done -> open, reverted after) specifically to rule out "disabled because the
+task is done" as the cause before concluding this — it stayed disabled either way. So: as of
+this build, there is no working click path from a task (or from a blank session) to
+LaunchSheet actually dispatching `onLaunchSubmit`. The component (`LaunchSheet.tsx`) and the
+backend (`execution.spawn`) are both real; the wiring between "click Run" and "open the
+sheet" is the missing piece, and it's upstream of my lane (WorkspaceView/task-list territory,
+not `src/terminal/**`).
+
+ONE THING WORTH YOUR ATTENTION: while I was testing, TWO live sessions appeared that I did
+not create — "Live terminal for user" (started 00:27:13) and "USER TEST — live terminal
+demo" (started 00:28:10), both `claude-code`/`claude-haiku-4-5`, both genuinely `running`.
+Titles suggest someone (another lane, or a human) DID get a session running around the same
+time I was finding Run disabled. I don't know if they went through a working UI path I
+missed, or through curl like I ultimately did — worth asking whoever's behind those before
+concluding the launch trigger is uniformly dead everywhere in the app; my finding is specific
+to the "▶ Run" chip on a task's toolbar, which is the one entry point I could locate.
+
+Because I could not spawn through the UI, I populated ONE session via curl
+(POST /v2/execution/spawn, id 019faa17-199e-7c8f-ad07-8df64e35c43d, title "P2 M1 real-shell
+steps 2-6") specifically to exercise steps 2-6 below through the real shell. That is NOT a
+substitute for step 1 and I'm not presenting it as one — it's how I got a real, running
+session to test the REST of the claim against, since the launch trigger itself is what's
+missing, not anything in my terminal work.
+
+=== 2. SESSION APPEARS IN THE WORKSPACE UI — CONFIRMED ===
+
+The curl-spawned session showed up in the Sessions panel and the live-sessions list within
+the same page load, no manual refresh.
+
+=== 3. LIVE STREAMING TERMINAL IN THE REAL SESSION PANEL — CONFIRMED ===
+
+Clicked into it: real Claude Code boot sequence rendered through the actual TerminalBody /
+LiveTerminal path — "Welcome back Mama!", "Sonnet 5 with high effort", the real cwd, the real
+MCP-auth warning. Not a placeholder, not the harness — the real `packages/tm8-ui` session
+panel chrome (chip, status pill, exit chip) around a real xterm.
+
+=== 4. KEYBOARD ROUND-TRIP — CONFIRMED, focus measured not assumed ===
+
+Clicked into the terminal, read `document.activeElement` BEFORE typing:
+`{tag:"TEXTAREA", isXtermTextarea:true}`. Typed "PING_M1_ROUNDTRIP" — it appeared live in the
+prompt line, and the TUI itself reacted (dropped into its own "-- INSERT --" indicator),
+proving the keystrokes actually reached the real process, not just that xterm echoed locally.
+
+=== 5. BLUR, BOTH PATHS — CONFIRMED, checked what might have been disturbed ===
+
+Captured the exact terminal buffer text BEFORE either blur action (last 200 chars via
+`.xterm-rows`.textContent). Clicked the "exit terminal ⌃`" chip: `document.activeElement`
+moved to a `BUTTON`, no longer the xterm textarea, buffer text BYTE-IDENTICAL to before.
+Re-focused the terminal, pressed the PHYSICAL `Ctrl+backtick` chord: `document.activeElement`
+moved to `BODY`, buffer text again BYTE-IDENTICAL — no stray backtick character landed in the
+prompt line. Both paths blur without leaking a byte to the PTY.
+
+=== 6. RESUME ON RELOAD — CONFIRMED ===
+
+Full page reload (fresh navigation, not SPA state), re-opened the same session from the
+Sessions list: the ENTIRE prior state repainted correctly, including "PING_M1_ROUNDTRIP" from
+step 4 — offset resume + replay working through the real UI, not just through my harness or
+P4's raw-socket tests.
+
+=== BOTTOM LINE ===
+
+5 of 6 items hold, observed through the real app, not the harness. Item 1 does not — not
+because anything in the terminal transplant is wrong, but because the launch trigger itself
+doesn't dispatch in this build. That's the finding I'd lead with if you're amending the
+milestone: "two flags away" undersells it slightly — the flags unlock everything downstream
+of a session existing, correctly and completely, but getting a session to exist still needs
+either curl or whatever path produced those two mystery sessions.
+
+Files touched for this job: none in src/terminal/** — this was pure verification. One DB
+probe (task work_status open->done->reverted) and one curl spawn, both outside the codebase.

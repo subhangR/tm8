@@ -13,40 +13,77 @@
    T1-1 Menu rail grammar (row grammars), T1-4 (notice vocabulary).
    ========================================================================== */
 
-/* --- Space tab bar (T0-1, 42px) ------------------------------------------ */
+/* --- Compact Server + Space bar ------------------------------------------ */
 .cv2-root .shell-tabbar {
-  height: 42px;
+  height: 24px;
   flex: none;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 14px;
+  gap: 6px;
+  padding: 0 8px;
   background: var(--pn-surface);
   border-bottom: 1px solid var(--pn-line);
 }
 .cv2-root .shell-tabbar__mark {
   font-family: var(--pn-mono);
-  font-size: 13px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--pn-brand);
+  white-space: nowrap;
+}
+.cv2-root .shell-tabbar__server {
+  min-width: 0;
+  max-width: 168px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  color: var(--pn-ink-2);
+  background: var(--pn-active);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+.cv2-root .shell-tabbar__server-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--pn-idle);
+}
+.cv2-root .shell-tabbar__server-dot--online { background: var(--pn-run); }
+.cv2-root .shell-tabbar__server-dot--offline { background: var(--pn-block); }
+.cv2-root .shell-tabbar__server-dot--checking { background: var(--pn-wait); }
+.cv2-root .shell-tabbar__server-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .cv2-root .shell-tabbar__divider {
   width: 1px;
-  height: 18px;
+  height: 12px;
   background: var(--pn-line);
 }
 .cv2-root .shell-tabbar__spaces {
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 5px;
+  overflow: hidden;
 }
 .cv2-root .shell-tabbar__tab {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: 4px;
+  padding: 1px 5px;
   font-family: var(--pn-ui);
-  font-size: 12.5px;
+  font-size: 11px;
+  line-height: 16px;
   color: var(--pn-ink-3);
   background: transparent;
   border: 0;
@@ -62,8 +99,8 @@
   color: var(--pn-ink);
 }
 .cv2-root .shell-tabbar__dot {
-  width: 7px;
-  height: 7px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--pn-line-2);
 }
@@ -72,7 +109,7 @@
 }
 .cv2-root .shell-tabbar__add {
   color: var(--pn-ink-4);
-  font-size: 14px;
+  font-size: 12px;
   background: transparent;
   border: 0;
   padding: 0 4px;
@@ -82,17 +119,17 @@
 }
 .cv2-root .shell-tabbar__palette {
   font-family: var(--pn-mono);
-  font-size: 11px;
+  font-size: 9.5px;
   color: var(--pn-ink-3);
   border: 1px solid var(--pn-line);
   border-radius: 6px;
-  padding: 3px 9px;
+  padding: 1px 6px;
   background: var(--pn-card);
   cursor: pointer;
 }
 .cv2-root .shell-tabbar__avatar {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--pn-active);
   display: flex;
@@ -103,6 +140,16 @@
   color: var(--pn-ink-2);
   border: 0;
   cursor: pointer;
+}
+.cv2-root .shell-tabbar .auth-accountmenu__trigger {
+  gap: 4px;
+  padding: 0 4px 0 1px;
+  font-size: 10.5px;
+}
+.cv2-root .shell-tabbar .auth-avatar--sm {
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
 }
 /* D1: there is deliberately no `.shell-tabbar__theme` rule. The ◐ toggle the
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
@@ -123,6 +170,56 @@
   min-height: 34px;
   padding: 8px 0 4px;
 }
+.cv2-root .shell-rail__servers { padding: 0 0 4px; }
+.cv2-root .shell-rail__server {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  cursor: pointer;
+  text-align: left;
+}
+.cv2-root .shell-rail__server:hover { background: var(--pn-hover); }
+.cv2-root .shell-rail__server-icon {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid transparent;
+  border-radius: 8px;
+  color: var(--pn-ink-2);
+  background: var(--pn-active);
+  font-size: 12px;
+  font-weight: 600;
+}
+.cv2-root .shell-rail__server--active .shell-rail__server-icon {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand);
+}
+.cv2-root .shell-rail__server-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pn-ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .shell-rail__server-status { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--pn-idle); }
+.cv2-root .shell-rail__server-status--online { background: var(--pn-run); }
+.cv2-root .shell-rail__server-status--offline { background: var(--pn-block); }
+.cv2-root .shell-rail__server-status--checking { background: var(--pn-wait); }
+.cv2-root .shell-rail__server-caret { flex: none; color: var(--pn-ink-4); font-size: 9px; }
+.cv2-root .shell-rail__server-divider { height: 1px; margin: 5px 12px 1px; background: var(--pn-line); }
 .cv2-root .shell-rail__header {
   padding: 12px 12px 4px;
   /* .kit-eyebrow supplies the mono/600/.12em uppercase face. */
@@ -260,6 +357,29 @@
   align-items: center;
   padding-top: 8px;
 }
+.cv2-root .shell-rail--collapsed .shell-rail__servers {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cv2-root .shell-rail--collapsed .shell-rail__server {
+  width: 40px;
+  height: 38px;
+  min-height: 38px;
+  justify-content: center;
+  padding: 0;
+  position: relative;
+  border-radius: 7px;
+}
+.cv2-root .shell-rail--collapsed .shell-rail__server-icon { width: 30px; height: 30px; }
+.cv2-root .shell-rail--collapsed .shell-rail__server-status {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  border: 2px solid var(--pn-surface);
+}
+.cv2-root .shell-rail--collapsed .shell-rail__server-divider { width: 26px; margin: 6px auto; }
 .cv2-root .shell-rail--collapsed .shell-rail__row {
   width: 40px;
   height: 38px;
@@ -391,17 +511,74 @@
   background: var(--pn-paper);
 }
 .cv2-root .shell-ws__side {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--pn-surface);
   overflow: hidden;
 }
+.cv2-root .shell-ws__side--drop {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: -2px;
+  background: var(--pn-active);
+}
+.cv2-root .shell-ws__dock-grip {
+  width: 100%;
+  height: 14px;
+  min-height: 14px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--pn-line);
+  border-radius: 0;
+  background: var(--pn-surface);
+  color: var(--pn-ink-4);
+  font-size: 12px;
+  line-height: 1;
+  cursor: grab;
+}
+.cv2-root .shell-ws__dock-grip:hover,
+.cv2-root .shell-ws__dock-grip:focus-visible,
+.cv2-root .shell-ws__dock-grip[data-dragging] {
+  background: var(--pn-hover);
+  color: var(--pn-brand);
+  outline: none;
+}
+.cv2-root .shell-ws__dock-grip:active { cursor: grabbing; }
+.cv2-root .shell-ws__side-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
 .cv2-root .shell-ws__gap {
   /* The 8px gap IS the resize-handle track (WLT §6). */
+  position: relative;
   width: var(--ws-gap);
+  display: grid;
+  place-items: center;
   cursor: col-resize;
   background: transparent;
+  touch-action: none;
+  user-select: none;
+}
+.cv2-root .shell-ws__gap-line {
+  width: 1px;
+  height: 100%;
+  background: var(--pn-line);
+  transition: width 100ms, background 100ms;
+}
+.cv2-root .shell-ws__gap:hover .shell-ws__gap-line,
+.cv2-root .shell-ws__gap:focus-visible .shell-ws__gap-line,
+.cv2-root .shell-ws__gap[data-resizing] .shell-ws__gap-line {
+  width: 3px;
+  background: var(--pn-brand);
+}
+.cv2-root .shell-ws__gap:focus-visible {
+  outline: none;
 }
 .cv2-root .shell-ws__center {
   display: flex;

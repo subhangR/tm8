@@ -6,7 +6,7 @@
  *   tm8 help <noun>                     noun shard
  *   tm8 help <noun> <verb>              command shard
  *   tm8 help --query <intent>           intent search
- *   tm8 help --operation <Operation>    exact lookup, total over all 101
+ *   tm8 help --operation <Operation>    exact lookup, total over all 106
  *
  * HELP IS DATA, NOT A DIAGNOSTIC. It is requested output, so it goes to STDOUT
  * and exits 0. Only a help request that cannot be ANSWERED — an unknown noun,

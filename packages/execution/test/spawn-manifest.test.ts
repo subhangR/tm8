@@ -14,7 +14,7 @@ import {
   resolveWorkdir,
   withAgentPrompt,
 } from '../src/spawn/manifest.js';
-import { SpawnError, type SpawnContext, type SpawnRequest } from '../src/spawn/types.js';
+import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 
 function context(overrides: Partial<SpawnContext['teamMember']> = {}): SpawnContext {
   return {
@@ -99,14 +99,6 @@ describe('resolveWorkdir', () => {
     expect(resolveWorkdir(base, context(), opts).path).toBe('/tmp/tm8-fixture');
   });
 
-  it('refuses worktree mode loudly instead of silently using the project dir', () => {
-    // A caller who asked for an isolated tree and got the shared one finds out
-    // by having their branch stomped. R20, post-G1A.
-    expect(() =>
-      resolveWorkdir({ ...base, workdir: { mode: 'worktree' } }, context(), opts),
-    ).toThrow(SpawnError);
-  });
-
   it('rejects a working dir that is not a safe absolute path', () => {
     const ctx = context();
     ctx.project = { id: 'p', name: 'p', workingDir: '/tmp/../etc', trust: 'trusted' };
@@ -141,11 +133,11 @@ describe('buildAgentCommand', () => {
     // authorization layer is tm8's spawn-time project-trust gate, which has
     // already refused untrusted directories by the time we get here.
     expect(buildAgentCommand(launch, {})).toBe(
-      'claude --dangerously-skip-permissions --model opus',
+      "claude --dangerously-skip-permissions --model 'opus'",
     );
     expect(
       buildAgentCommand({ ...launch, permissionMode: 'bypassPermissions' }, {}),
-    ).toBe('claude --dangerously-skip-permissions --model opus');
+    ).toBe("claude --dangerously-skip-permissions --model 'opus'");
   });
 
   it('overrides a MORE RESTRICTIVE permissionMode — deliberate, and worth knowing', () => {
@@ -154,7 +146,7 @@ describe('buildAgentCommand', () => {
     // launch path that cannot deadlock, which is post-Slice-1 work. Pinned as a
     // test so the trade-off stays visible rather than being rediscovered.
     expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).toBe(
-      'claude --dangerously-skip-permissions --model opus',
+      "claude --dangerously-skip-permissions --model 'opus'",
     );
     expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).not.toContain(
       '--permission-mode',
@@ -164,7 +156,7 @@ describe('buildAgentCommand', () => {
   it('appends the composed system prompt for claude, shell-quoted', () => {
     const base = buildAgentCommand(launch, {});
     const prompt = "<tm8_system_prompt>it's \"quoted\"\nand multiline</tm8_system_prompt>";
-    const cmd = withAgentPrompt(base, prompt, {});
+    const cmd = withAgentPrompt(base, prompt, launch, {});
     expect(cmd.startsWith(base)).toBe(true);
     expect(cmd).toContain('--append-system-prompt');
     // POSIX single-quote escaping: the embedded apostrophe MUST be broken out,
@@ -173,18 +165,33 @@ describe('buildAgentCommand', () => {
     expect(cmd).toContain(`'\\''`);
   });
 
-  it('leaves a non-claude agent command UNCHANGED rather than guessing its flags', () => {
-    // codex takes `-c developer_instructions=`, gemini has no system-prompt flag
-    // at all. Approximating either is how an agent silently ignores its
-    // briefing, so Slice 1 wires claude only.
+  it('uses Codex developer_instructions and leaves complete operator wrappers unchanged', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5-codex' };
+    const codex = buildAgentCommand(codexLaunch, {});
+    expect(codex).toContain("codex --model 'gpt-5-codex'");
+    expect(withAgentPrompt(codex, 'PROMPT', codexLaunch, {})).toContain('developer_instructions=');
     const echo = buildAgentCommand(launch, { TM8_AGENT_CMD: 'echo-agent' });
-    expect(withAgentPrompt(echo, 'PROMPT', { TM8_AGENT_CMD: 'echo-agent' })).toBe(echo);
-    expect(withAgentPrompt('my-agent', 'PROMPT', { TM8_AGENT_CMD: 'my-agent' })).toBe('my-agent');
+    expect(withAgentPrompt(echo, 'PROMPT', launch, { TM8_AGENT_CMD: 'echo-agent' })).toBe(echo);
+    expect(withAgentPrompt('my-agent', 'PROMPT', launch, { TM8_AGENT_CMD: 'my-agent' })).toBe('my-agent');
+  });
+
+  it('rejects unsupported tools instead of silently launching Claude', () => {
+    expect(() => buildAgentCommand({ ...launch, agentTool: 'unknown-tool' }, {})).toThrow(
+      /unsupported agent tool/,
+    );
+  });
+
+  it('shell-quotes model names for every built-in CLI', () => {
+    const hostileModel = "model'; touch /tmp/not-run; echo '";
+    const claude = buildAgentCommand({ ...launch, model: hostileModel }, {});
+    const codex = buildAgentCommand({ ...launch, agentTool: 'codex', model: hostileModel }, {});
+    expect(claude).toContain(`--model ${"'model'\\''; touch /tmp/not-run; echo '\\'''"}`);
+    expect(codex).toContain(`--model ${"'model'\\''; touch /tmp/not-run; echo '\\'''"}`);
   });
 
   it('appends nothing when the composed prompt is empty', () => {
     const base = buildAgentCommand(launch, {});
-    expect(withAgentPrompt(base, '   ', {})).toBe(base);
+    expect(withAgentPrompt(base, '   ', launch, {})).toBe(base);
   });
 
   it('puts a RESOLVABLE `tm8` on the agent PATH, not merely a plausible directory', () => {
@@ -252,6 +259,19 @@ describe('composeEnv', () => {
     expect(env.ANTHROPIC_API_KEY).toBe('sk-test');
   });
 
+  it('does not inherit unrelated operator secrets into the child environment', () => {
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://x', {
+      PATH: '/usr/bin',
+      DATABASE_URL: 'postgres://secret',
+      TM8_DATABASE_URL: 'postgres://also-secret',
+      AWS_SECRET_ACCESS_KEY: 'secret',
+    });
+    expect(env.PATH).toContain('/usr/bin');
+    expect(env).not.toHaveProperty('DATABASE_URL');
+    expect(env).not.toHaveProperty('TM8_DATABASE_URL');
+    expect(env).not.toHaveProperty('AWS_SECRET_ACCESS_KEY');
+  });
+
   it('blanks CLAUDE_CODE_ENTRYPOINT rather than deleting it', () => {
     // node-pty merges over process.env, so `delete` here would leave the
     // inherited value intact in the child and the agent would refuse to start,
@@ -275,7 +295,7 @@ describe('composeManifest', () => {
         permissionMode: 'bypassPermissions',
       },
       workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
-      command: 'claude --dangerously-skip-permissions --model opus',
+      command: "claude --dangerously-skip-permissions --model 'opus'",
       baseUrl: 'http://127.0.0.1:4610',
       now: new Date('2026-07-25T12:00:00.000Z'),
     });
@@ -291,6 +311,13 @@ describe('composeManifest', () => {
     expect(manifest.agent.memory).toEqual([]);
     expect(manifest.promptExtra).toBe('focus on the seam');
     expect(manifest.generatedAt).toBe('2026-07-25T12:00:00.000Z');
+    expect(manifest.interactionProfile).toMatchObject({
+      profileId: null,
+      templateKey: 'tm8.chat.core',
+      source: 'core_default',
+      pinRevision: 0,
+      snapshot: { profile: { source: 'core_default' } },
+    });
   });
 
   it('titles a session from its first task, then from the persona', () => {

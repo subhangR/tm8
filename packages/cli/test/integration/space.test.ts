@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(100);
+    expect(health.operations).toBe(105);
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

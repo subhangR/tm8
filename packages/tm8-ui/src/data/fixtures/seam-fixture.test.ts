@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EntityDetailSchema,
   EntitySummarySchema,
+  GraphResultSchema,
   HandoffViewSchema,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   isCollabError,
@@ -46,11 +47,22 @@ describe('fixture seam — reads', () => {
     const spaces = await seam.spaces();
     expect(spaces.map((s) => s.id)).toEqual([FIXTURE_SPACE_ID]);
 
+    const settings = await seam.spaceSettings(FIXTURE_SPACE_ID);
+    expect(settings.defaultInteractionProfileId).toBe('ip-house-style');
+    expect(settings.settingsRevision).toBe(1);
+
     const result = await seam.query({ spaceId: FIXTURE_SPACE_ID });
     expect(result.page.items.length).toBeGreaterThan(0);
     for (const s of result.page.items) {
       expect(EntitySummarySchema.safeParse(s).success, s.id).toBe(true);
     }
+
+    const graph = await seam.graph({ spaceId: FIXTURE_SPACE_ID, layout: 'graph', limit: 150 });
+    expect(GraphResultSchema.safeParse(graph).success).toBe(true);
+    expect(graph.nodes.length).toBeGreaterThan(0);
+    expect(graph.edges.length).toBeGreaterThan(0);
+    const graphIds = new Set(graph.nodes.map((node) => node.id));
+    expect(graph.edges.every((edge) => graphIds.has(edge.source.id) && graphIds.has(edge.target.id))).toBe(true);
 
     const detail = await seam.entity(taskUuidTitle.id);
     expect(EntityDetailSchema.safeParse(detail).success).toBe(true);

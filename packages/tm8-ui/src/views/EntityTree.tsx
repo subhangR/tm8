@@ -94,6 +94,10 @@ function stateFacts(
   return { word: '', dot: 'dot--ring-idle' };
 }
 
+function priorityFor(row: EntitySummary): string | null {
+  return row.state.kind === 'task' ? row.state.priority : null;
+}
+
 const relative = (iso: string): string => {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return '';
@@ -130,26 +134,25 @@ export function EntityTree(props: EntityTreeProps) {
     const { row, children, depth } = node;
     const isCollapsed = collapsed.has(row.id);
     const facts = stateFacts(row, props.livenessOf(row.id), props.activity[row.id] ?? false);
+    const priority = priorityFor(row);
     return (
-      <li key={row.id} className="evt-node">
+      <li
+        key={row.id}
+        className="evt-node"
+        role="treeitem"
+        aria-expanded={children.length > 0 ? !isCollapsed : undefined}
+        aria-selected={row.id === selectedId}
+      >
         <div
-          role="button"
-          tabIndex={0}
           className={row.id === selectedId ? 'evt-row evt-row--selected' : 'evt-row'}
           data-depth={depth}
           onClick={() => props.onSelect(row.id)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              props.onSelect(row.id);
-            }
-          }}
         >
           {children.length > 0 ? (
             <button
               type="button"
               className="evt-caret"
-              aria-label={isCollapsed ? 'Expand' : 'Collapse'}
+              aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${row.title}, ${children.length} ${children.length === 1 ? 'child' : 'children'}`}
               aria-expanded={!isCollapsed}
               onClick={(e) => {
                 e.stopPropagation();
@@ -159,18 +162,44 @@ export function EntityTree(props: EntityTreeProps) {
               {isCollapsed ? '▸' : '▾'}
             </button>
           ) : (
-            <span className="evt-caret evt-caret--leaf" aria-hidden />
+            <span className="evt-caret evt-caret--leaf" aria-hidden>
+              ›
+            </span>
           )}
-          <span className={`evt-dot ${facts.dot}`} aria-hidden />
-          <span className={depth === 0 ? 'evt-title' : 'evt-title evt-title--child'} title={row.title}>
-            {row.title}
+
+          <span className={`evt-status evt-status--${facts.dot.replace('dot--', '')}`} aria-hidden>
+            <span className={`evt-dot ${facts.dot}`} />
           </span>
-          <span className="evt-spacer" />
-          {facts.word ? <span className="evt-word">{facts.word}</span> : null}
-          <span className="evt-when">{relative(row.activityAt)}</span>
+
+          <span className="evt-copy">
+            <span className="evt-copy__top">
+              <button
+                type="button"
+                className={depth === 0 ? 'evt-title' : 'evt-title evt-title--child'}
+                title={row.title}
+                aria-current={row.id === selectedId ? 'true' : undefined}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onSelect(row.id);
+                }}
+              >
+                {row.title}
+              </button>
+              {priority ? (
+                <span className={`evt-priority evt-priority--${priority}`}>{priority.toUpperCase()}</span>
+              ) : null}
+            </span>
+            <span className="evt-copy__meta">
+              {facts.word ? <span className="evt-word">{facts.word}</span> : null}
+              {facts.word ? <span aria-hidden>·</span> : null}
+              <span className="evt-when">{relative(row.activityAt)}</span>
+            </span>
+          </span>
         </div>
         {children.length > 0 && !isCollapsed ? (
-          <ul className="evt-children">{children.map(renderNode)}</ul>
+          <ul className="evt-children" role="group">
+            {children.map(renderNode)}
+          </ul>
         ) : null}
       </li>
     );
@@ -216,7 +245,9 @@ export function EntityTree(props: EntityTreeProps) {
             {`No ${config.labelPlural.toLowerCase()} here${activeTier ? ` in ${activeTier.label.toLowerCase()}` : ''}.`}
           </p>
         ) : (
-          <ul className="evt-tree">{roots.map(renderNode)}</ul>
+          <ul className="evt-tree" role="tree">
+            {roots.map(renderNode)}
+          </ul>
         )}
       </div>
     </div>

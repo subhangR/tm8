@@ -1,5 +1,6 @@
 /**
- * `tm8 session spawn|terminate|attach` — the three PUBLIC `execution.*` rows,
+ * `tm8 session liveness|spawn|terminate|attach` — the four caller-facing
+ * `execution.*` rows,
  * and the one that must have no command at all.
  *
  * WHY THIS FILE DRIVES THE MODULE RATHER THAN `run()`. `src/commands/registry.ts`
@@ -20,7 +21,7 @@
  * projection), and each is probe-red'd so that "absent" is a measurement rather
  * than a loop that iterated nothing.
  *
- * The four `execution.*` rows are mounted and registered on the Server but carry
+ * The five `execution.*` rows are mounted and registered on the Server but carry
  * ZERO W3 verdict: they are composed, not independently gated. That is a
  * statement about the Server, not about this file — the bindings below are
  * asserted against a local stub so they hold regardless of what any node
@@ -161,9 +162,9 @@ const body = (): Record<string, unknown> => (seen[0]?.body ?? {}) as Record<stri
 // ── registration and the anti-drift binding ─────────────────────────────────
 
 describe('registration', () => {
-  it('registers exactly the three public execution rows', async () => {
+  it('registers exactly the four caller-facing execution rows', async () => {
     const paths = (await sessionCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['session attach', 'session spawn', 'session terminate']);
+    expect(paths).toEqual(['session attach', 'session liveness', 'session spawn', 'session terminate']);
   });
 
   it('every registered path is in the frozen projection', async () => {
@@ -176,7 +177,7 @@ describe('registration', () => {
   });
 
   it('binds every path through the catalog, never a literal', async () => {
-    // The three bindings this module must produce, derived here the same way
+    // The four bindings this module must produce, derived here the same way
     // the module must derive them.
     expect(bindPath('execution.spawn', {})).toBe('/v2/execution/spawn');
     expect(bindPath('execution.terminate', { id: SESSION })).toBe(
@@ -185,6 +186,42 @@ describe('registration', () => {
     expect(bindPath('execution.streams.attach', { id: SESSION })).toBe(
       `/v2/entities/${SESSION}/commands/streams-attach`,
     );
+    expect(bindPath('execution.liveness', { spaceId: SPACE })).toBe(
+      `/v2/spaces/${SPACE}/execution/liveness`,
+    );
+  });
+});
+
+describe('session liveness', () => {
+  it('reads the space-scoped live PTY snapshot and renders follow-up ids', async () => {
+    reply.body = {
+      data: {
+        liveEntityIds: [SESSION],
+        nodeBootId: 'boot_1',
+        checkedAt: '2026-07-29T12:00:00.000Z',
+        capacity: { used: 3, total: 8 },
+      },
+      requestId: 'req_live',
+    };
+
+    const result = await drive(['session', 'liveness'], { TM8_SPACE_ID: SPACE });
+
+    expect(result.code).toBe(0);
+    expect(seen).toEqual([{ method: 'GET', pathname: bindPath('execution.liveness', { spaceId: SPACE }), body: undefined }]);
+    expect(result.stdout).toContain(SESSION);
+    expect(result.stdout).toContain('boot_1');
+    expect(result.stdout).toContain('capacity: 3/8 in use');
+    expect(result.stderr).toBe('');
+  });
+
+  it('refuses a mutation id because liveness is a read', async () => {
+    const result = await drive(
+      ['session', 'liveness', '--mutation-id', '77777777-7777-7777-8777-777777777777'],
+      { TM8_SPACE_ID: SPACE },
+    );
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('--mutation-id applies only to mutations');
+    expect(seen).toHaveLength(0);
   });
 });
 
@@ -224,6 +261,9 @@ describe('session spawn', () => {
       '--launch-project', 'bbbbbbbb-0000-7000-8000-000000000001',
       '--workdir', 'project',
       '--mode', 'coordinated-worker',
+      '--model', 'gpt-5.6-sol',
+      '--agent-tool', 'codex',
+      '--title', 'Launch from CLI',
       '--context', 'extra manifest context',
       '--confirm-untrusted',
     ]);
@@ -240,6 +280,9 @@ describe('session spawn', () => {
     expect(b.projectId).toBe('bbbbbbbb-0000-7000-8000-000000000001');
     expect(b.workdir).toEqual({ mode: 'project' });
     expect(b.mode).toBe('coordinated-worker');
+    expect(b.model).toBe('gpt-5.6-sol');
+    expect(b.agentTool).toBe('codex');
+    expect(b.title).toBe('Launch from CLI');
     expect(b.promptExtra).toBe('extra manifest context');
     expect(b.confirmUntrusted).toBe(true);
     expect(String(b.clientMutationId)).toMatch(UUID_PATTERN);
@@ -270,28 +313,17 @@ describe('session spawn', () => {
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--workdir', 'home',
     ]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('project|worktree|scratch');
+    expect(r.stderr).toContain('project|scratch');
     expect(seen).toEqual([]);
   });
 
-  it('passes `worktree` through — it is reserved syntax the SERVER refuses', async () => {
-    reply = {
-      status: 501,
-      body: {
-        error: {
-          code: 'not_implemented',
-          message: 'operation execution.spawn is not implemented on this node',
-          requestId: 'req_t',
-          retryable: false,
-        },
-      },
-    };
+  it('does not advertise or send worktree until it has a safe implementation', async () => {
     const r = await drive([
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--workdir', 'worktree',
     ]);
-    expect(seen).toHaveLength(1);
-    expect(body().workdir).toEqual({ mode: 'worktree' });
-    expect(r.code).toBe(8);
+    expect(seen).toEqual([]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('project|scratch');
   });
 
   it('refuses a mode outside the closed set', async () => {

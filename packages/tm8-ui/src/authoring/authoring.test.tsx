@@ -279,7 +279,7 @@ function openTitleEditor(): HTMLInputElement {
 }
 
 describe('the inline title', () => {
-  it('marks an editable title with the dotted-underline class and states a lock', () => {
+  it('marks an editable title as interactive and states a lock', () => {
     const { rerender } = render(
       <InlineTitleEditor value="Session tree guide lines" editable onCommit={() => {}} />,
     );

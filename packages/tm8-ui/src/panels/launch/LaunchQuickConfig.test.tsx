@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityCapabilities, ExecutionSpawnInput } from '@tm8/contract';
 import { FIXTURE_SPACE_ID, fixtureSummaries } from '../../fixtures';
 import { modelsFor, resolveAction, type ActionContext } from '../../domain';
@@ -20,8 +20,8 @@ import { LaunchQuickConfig, type LaunchTeammateOption } from './LaunchQuickConfi
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
 
 const TEAMMATES: readonly LaunchTeammateOption[] = [
-  { id: 'tm-forge', label: 'forge', agentTool: 'claude-code', model: 'claude-sonnet' },
-  { id: 'tm-scout', label: 'scout', agentTool: 'claude-code', model: 'claude-haiku' },
+  { id: 'tm-forge', label: 'forge', agentTool: 'claude-code', model: 'claude-sonnet-5' },
+  { id: 'tm-scout', label: 'scout', agentTool: 'claude-code', model: 'claude-haiku-4-5-20251001' },
 ];
 
 const subject = { id: 'task-1', title: 'Wire the launch flow' };
@@ -30,6 +30,7 @@ function sources(over: Partial<LaunchSources> = {}): LaunchSources {
   return {
     spaceId: FIXTURE_SPACE_ID,
     teammates: TEAMMATES,
+    projects: [],
     mutationId: (id) => `m:${id}`,
     ...over,
   };
@@ -84,7 +85,12 @@ describe('the Run verb opens a flow instead of dispatching', () => {
     expect(run).not.toBeNull();
     fireEvent.click(run as Element);
 
-    expect(getByTestId('launch-quick-config')).toBeTruthy();
+    const config = getByTestId('launch-quick-config');
+    expect(config).toBeTruthy();
+    // The Maestro layout is one component: launch controls live in the same
+    // expanded card region as the row facts, never in a detached popover.
+    expect(config.closest('.pn-tt__meta')).not.toBeNull();
+    expect(config.closest('[data-anatomy="control-card"]')).toBe(getAllByTestId('list-tile')[0]);
     // The whole point: opening a configuration is not launching.
     expect(onAction).not.toHaveBeenCalled();
   });
@@ -340,6 +346,30 @@ describe('what the config states before you commit', () => {
 });
 
 describe('what Launch actually commits', () => {
+  it('defaults to the first trusted linked project and submits project workdir', () => {
+    const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        subject={subject}
+        spaceId={FIXTURE_SPACE_ID}
+        teammates={TEAMMATES}
+        projects={[
+          { projectId: 'project-untrusted', name: 'vendor', trusted: false },
+          { projectId: 'project-current', name: 'tm8', trusted: true },
+        ]}
+        onSpawn={onSpawn}
+        clientMutationId="m:project"
+      />,
+    );
+
+    fireEvent.click(getByTestId('launch-commit'));
+    expect(onSpawn).toHaveBeenCalledWith(expect.objectContaining({
+      projectId: 'project-current',
+      workdir: { mode: 'project' },
+      mode: 'worker',
+    }));
+  });
+
   it('sends the configured teammate, model and task through buildSpawnInput', () => {
     const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
     const { getByTestId } = render(
@@ -381,6 +411,34 @@ describe('what Launch actually commits', () => {
     expect(serialized).toContain('tm-scout');
     expect(serialized).toContain('claude-haiku');
     expect(serialized).not.toContain('claude-sonnet');
+  });
+
+  it('mints a fresh mutation id for each deliberate submit attempt', async () => {
+    const newClientMutationId = vi.fn()
+      .mockReturnValueOnce('m:fresh-1')
+      .mockReturnValueOnce('m:fresh-2');
+    const onSpawn = vi.fn()
+      .mockRejectedValueOnce(new Error('first attempt refused'))
+      .mockResolvedValueOnce(undefined);
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        subject={subject}
+        spaceId={FIXTURE_SPACE_ID}
+        teammates={TEAMMATES}
+        onSpawn={onSpawn}
+        newClientMutationId={newClientMutationId}
+      />,
+    );
+
+    fireEvent.click(getByTestId('launch-commit'));
+    await waitFor(() => expect((getByTestId('launch-commit') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(getByTestId('launch-commit'));
+
+    expect(newClientMutationId).toHaveBeenCalledTimes(2);
+    expect(onSpawn.mock.calls.map(([input]) => input.clientMutationId)).toEqual([
+      'm:fresh-1',
+      'm:fresh-2',
+    ]);
   });
 
   it('offers only models the selected tool actually has', () => {

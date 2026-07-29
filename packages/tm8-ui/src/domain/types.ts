@@ -396,6 +396,12 @@ export interface ListConfig {
   tree?: { by: 'hierarchy'; guideLines: boolean };
   tile: {
     badges: readonly TileBadgeSpec[];
+    /**
+     * Registry-selected card anatomy. `control-card` is the Maestro-shaped
+     * work surface: a strong command row with an expandable facts/config
+     * region. The component still knows presentation data, never entity kinds.
+     */
+    anatomy?: 'standard' | 'control-card';
     /** The two-source law: pool activity signal, gated on a `live` verdict (F1). */
     pulse?: PulseBinding;
   };

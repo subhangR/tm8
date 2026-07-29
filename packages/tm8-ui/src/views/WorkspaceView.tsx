@@ -9,7 +9,7 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import type { ActionContext } from '../domain/types';
@@ -21,19 +21,21 @@ import {
   solveWorkspace,
   useMeasuredWidth,
   usePanelEngine,
+  type WorkspacePanelSide,
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { getKind } from '../domain/registry';
+import { newLaunchMutationId, type ProfileResolution } from '../domain/launch';
 import { EmptyCenter } from './EmptyCenter';
-import { LaunchSheet } from './LaunchSheet';
-import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
+import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 
 export interface WorkspaceViewProps {
   data: GateData & { pull?: (id: string) => void };
+  serverBaseUrl?: string;
   nav: NavPort & { tabOf?: (id: EntityId) => never };
   leftKind: string;
   rightKind: string;
@@ -44,12 +46,17 @@ export interface WorkspaceViewProps {
   /** The kind selectors are LIVE: the panel switches kind (T0-1 law). */
   onLeftKindChange?(kind: string): void;
   onRightKindChange?(kind: string): void;
+  leftWidth?: number;
+  rightWidth?: number;
+  onMoveSidePanel?(from: WorkspacePanelSide, to: WorkspacePanelSide): void;
+  onResizeSidePanel?(side: WorkspacePanelSide, width: number): void;
+  onResetSidePanelWidth?(side: WorkspacePanelSide): void;
   /** D44/D51 — the launch sheet's subject, or null when closed. */
   launchSubjectId?: EntityId | null;
   /** T5-5 annotation 6: a spawn refusal renders IN the sheet, never a toast. */
   launchRefusal?: { cause: string; detail: string } | null;
   onLaunchCancel?(): void;
-  onLaunchSubmit?(config: { subjectId: EntityId; teammateId: string; projectIds: string[]; profileId: string }): void;
+  onLaunchSubmit?(config: LaunchSelection): void;
   /** Esc must not pop the panel under an open sheet (A1a finding 1). */
   isModalOpen?(): boolean;
   /** THE DOOR: A1c's quick-config "full options ▸" opens the full sheet. */
@@ -64,27 +71,36 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   // ResizeObserver fires — never 0, which would be a claim that the centre is
   // zero-wide and would demote every pin at mount.
   const [centerRef, centerWidth] = useMeasuredWidth<HTMLDivElement>();
+  const viewportWidth = useViewportWidth();
 
   const engine = usePanelEngine({ nav, centerWidth, onNotice: props.onNotice });
 
   const layout = useMemo(
     () =>
       solveWorkspace({
-        viewport: typeof window === 'undefined' ? 1440 : window.innerWidth,
+        viewport: viewportWidth,
         serverRail: false, // R10: Phase 1 wires only the implicit local server.
         stack: nav.stack,
         pinned: nav.pinned,
         menuCollapsedByUser: menuCollapsed,
-        leftWidth: LEFT_PANEL_DEFAULT,
-        rightWidth: RIGHT_PANEL_DEFAULT,
+        leftWidth: props.leftWidth ?? LEFT_PANEL_DEFAULT,
+        rightWidth: props.rightWidth ?? RIGHT_PANEL_DEFAULT,
       }),
-    [nav.stack, nav.pinned, menuCollapsed],
+    [
+      viewportWidth,
+      nav.stack,
+      nav.pinned,
+      menuCollapsed,
+      props.leftWidth,
+      props.rightWidth,
+    ],
   );
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
 
   /** Panels at the side-panel floors drop metas and abbreviate badges. */
-  const compact = layout.left <= 220 || layout.right <= 240;
+  const leftCompact = layout.left <= 220;
+  const rightCompact = layout.right <= 240;
 
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
@@ -97,6 +113,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       return (
         <EntityDetailPanel
           detail={detail ?? null}
+          serverBaseUrl={props.serverBaseUrl}
           loading={!detail}
           host={host}
           reasons={reasons}
@@ -116,6 +133,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           /* GAP-2 (data-wiring handover): hand the seam commands down so the
              save path is live in the workspace panels too. */
           commands={data.seam.commands}
+          onSaved={data.reconcileCommand}
           streaming={data.activity[id] ?? false}
           onPin={() => {
             if (nav.pinned.includes(id)) {
@@ -139,19 +157,44 @@ export function WorkspaceView(props: WorkspaceViewProps) {
    * set rather than sorting on any summary field, which would be the forbidden
    * inference (D6).
    */
+  const rosterKind = useMemo(
+    () =>
+      [leftKind, rightKind].find((kind) => getKind(kind).list.liveTreatment != null) ?? rightKind,
+    [leftKind, rightKind],
+  );
   const rosterRows = useMemo(() => {
-    const rows = data.rowsFor(rightKind)(undefined).map((summary) => toSessionRow(summary));
+    const rows = data.rowsFor(rosterKind)(undefined).map((summary) => toSessionRow(summary));
     const live = new Set(data.liveIds);
     return [...rows].sort((a, b) => Number(live.has(b.id)) - Number(live.has(a.id)));
-  }, [data, rightKind]);
+  }, [data, rosterKind]);
 
-  /* Authoring mount 7a: the LEFT panel's +New becomes the REAL create flow.
-     Hook runs unconditionally (rules of hooks); the control renders only for
-     kinds whose registry row says quickCreate — data, not a kind literal. */
+  const profileFor = useCallback((teamMemberId: string | null): ProfileResolution => {
+    const teammate = data.launch.teammates.find((candidate) => candidate.id === teamMemberId);
+    const teammateDefault = data.launch.profiles.find((profile) => profile.id === teammate?.defaultProfileId);
+    if (teammateDefault) {
+      return { profileId: teammateDefault.id, label: teammateDefault.name, source: 'teammate-default' };
+    }
+    const spaceDefault = data.launch.profiles.find((profile) => profile.isSpaceDefault);
+    if (spaceDefault) {
+      return { profileId: spaceDefault.id, label: spaceDefault.name, source: 'space-default' };
+    }
+    return { profileId: null, label: 'resolved by node at commit', source: 'none' };
+  }, [data.launch.teammates, data.launch.profiles]);
+
+  /* Each dock owns a create-flow hook so a quick-create panel keeps the
+     behavior when it crosses the center. Both run unconditionally (rules of
+     hooks); the control only renders when registry data says quickCreate. */
   const leftConfig = getKind(leftKind);
-  const createFlow = useNewTask({
+  const rightConfig = getKind(rightKind);
+  const leftCreateFlow = useNewTask({
     spaceId: data.spaceId,
     placeholderTitle: placeholderTitleFor(leftConfig.label),
+    commands: data.seam.commands,
+    onCreated: (id) => nav.push?.(id as EntityId),
+  });
+  const rightCreateFlow = useNewTask({
+    spaceId: data.spaceId,
+    placeholderTitle: placeholderTitleFor(rightConfig.label),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });
@@ -162,17 +205,25 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     <WorkspaceGrid
       layout={layout}
       centerRef={centerRef}
+      leftLabel={leftConfig.label}
+      rightLabel={rightConfig.label}
+      onMovePanel={props.onMoveSidePanel}
+      onResizePanel={props.onResizeSidePanel}
+      onResetPanelWidth={props.onResetSidePanelWidth}
       left={
         <EntityListPanel
           kind={leftKind}
           createSlot={
-            leftConfig.list.quickCreate ? (
-              <NewTaskControl flow={createFlow} label={leftConfig.palette?.createLabel ?? '＋ New'} />
+            leftConfig.list.quickCreate && leftConfig.list.tile.anatomy === 'control-card' ? (
+              <NewTaskControl
+                flow={leftCreateFlow}
+                label={leftConfig.palette?.createLabel ?? '＋ New'}
+              />
             ) : undefined
           }
           rowsFor={data.rowsFor(leftKind) as never}
           ctx={ctx}
-          compact={compact}
+          compact={leftCompact}
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
@@ -193,14 +244,21 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           // either side.
           launch={{
             spaceId: ctx.spaceId,
-            teammates: LAUNCH_TEAMMATES.map((t) => ({
+            teammates: data.launch.teammates.map((t) => ({
               id: t.id,
               label: t.name,
               agentTool: t.agentTool,
               model: t.model,
             })),
-            capacity: LAUNCH_CAPACITY,
-            mutationId: (id: string) => `launch:${id}`,
+            projects: data.launch.projects.map((project) => ({
+              projectId: project.id,
+              name: project.name,
+              trusted: project.trusted,
+              ...(project.reason ? { untrustedReason: project.reason } : {}),
+            })),
+            capacity: data.launch.capacity,
+            profileFor,
+            mutationId: () => newLaunchMutationId(),
             onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
             onSpawn: props.onSpawn,
           }}
@@ -226,10 +284,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               subjectId={props.launchSubjectId}
               fromChip="◔ Run ▸"
               fromCaption="task pre-associated — the session links to it"
-              teammates={LAUNCH_TEAMMATES}
-              projects={LAUNCH_PROJECTS}
-              profiles={LAUNCH_PROFILES}
-              capacity={LAUNCH_CAPACITY}
+              teammates={data.launch.teammates}
+              projects={data.launch.projects}
+              profiles={data.launch.profiles}
+              capacity={data.launch.capacity}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
             />
@@ -249,17 +307,60 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       right={
         <EntityListPanel
           kind={rightKind}
+          createSlot={
+            rightConfig.list.quickCreate && rightConfig.list.tile.anatomy === 'control-card' ? (
+              <NewTaskControl
+                flow={rightCreateFlow}
+                label={rightConfig.palette?.createLabel ?? '＋ New'}
+              />
+            ) : undefined
+          }
           rowsFor={data.rowsFor(rightKind) as never}
           ctx={ctx}
-          compact={compact}
+          compact={rightCompact}
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={(id) => nav.push?.(id as EntityId)}
           onKindChange={props.onRightKindChange}
+          capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
+          launch={{
+            spaceId: ctx.spaceId,
+            teammates: data.launch.teammates.map((t) => ({
+              id: t.id,
+              label: t.name,
+              agentTool: t.agentTool,
+              model: t.model,
+            })),
+            projects: data.launch.projects.map((project) => ({
+              projectId: project.id,
+              name: project.name,
+              trusted: project.trusted,
+              ...(project.reason ? { untrustedReason: project.reason } : {}),
+            })),
+            capacity: data.launch.capacity,
+            profileFor,
+            mutationId: () => newLaunchMutationId(),
+            onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
+            onSpawn: props.onSpawn,
+          }}
         />
       }
     />
   );
+}
+
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  );
+
+  useEffect(() => {
+    const measure = () => setWidth(window.innerWidth);
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  return width;
 }

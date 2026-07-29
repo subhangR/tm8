@@ -1,10 +1,31 @@
 import { useState } from 'react';
-import type { ActivityItem, Connections, EntityDetail, HandoffView, MessageView } from '@tm8/contract';
+import type {
+  ActivityItem,
+  CommandResult,
+  Connections,
+  EntityDetail,
+  HandoffView,
+  MessageView,
+} from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { ActionContext, ActionRef, ContentBlockRef } from '../domain';
 import { getKind } from '../domain';
-import { AuthoringHost, SaveControls, useTaskSave, type AuthoringCommands } from '../authoring';
-import { ActionBar, PanelFooter, PanelHeader, TabStrip, type PanelHost, type PanelTab } from './detail/chrome';
+import {
+  AuthoringHost,
+  SaveControls,
+  useTaskSave,
+  type AuthoringCommands,
+  type TaskSaveHandle,
+} from '../authoring';
+import {
+  ActionBar,
+  PanelFooter,
+  PanelHeader,
+  PanelWindowControls,
+  TabStrip,
+  type PanelHost,
+  type PanelTab,
+} from './detail/chrome';
 import {
   ErrorBody,
   LoadingBody,
@@ -68,6 +89,8 @@ export interface DetailReasons {
 
 export interface EntityDetailPanelProps {
   detail?: EntityDetail | null;
+  /** Same-origin route prefix for the tm8 server hosting this entity. */
+  serverBaseUrl?: string;
   host?: PanelHost;
   breadcrumb?: string;
   reasons: DetailReasons;
@@ -110,9 +133,10 @@ export interface EntityDetailPanelProps {
    * being precisely where an argument gets dropped (D57.1).
    */
   commands?: AuthoringCommands | null;
-  /** A save landed. The live projection already carries the new version in
-      via the durable event; this is for anything a host wants on top. */
-  onSaved?: () => void;
+  /** A save landed. The durable event carries only a summary, so the host
+      must receive this result to reconcile heavy detail fields such as the
+      task description into its detail cache. */
+  onSaved?: (result: CommandResult) => void;
   /** Conflict resolution chose TAKE THEIRS and the node handed back its
       detail. Optional because the event stream has already put their version
       in the store — this is the host's chance to do more than that. */
@@ -175,7 +199,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const save = useTaskSave({
     detail: detail ?? null,
     commands: props.commands ?? null,
-    onSaved: () => props.onSaved?.(),
+    onSaved: (result) => props.onSaved?.(result),
     onReload: (current) => props.onReloadDetail?.(current),
     editRefusal: editableConfig?.panel.capabilityReasons?.canEdit,
   });
@@ -258,29 +282,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         config={config}
         breadcrumb={breadcrumb}
         liveness={props.liveness}
-        pinned={props.pinned}
-        pinRefusal={props.pinRefusal}
-        onPin={props.onPin}
-        onPromote={props.onPromote}
-        onClose={onClose}
-        /*
-          USER RULING 2026-07-29: two-row chrome — the action bar rides inline
-          in the header row; the standalone 32px row is gone and its height
-          belongs to the body (the terminal, on the session screen).
-
-          THE PANEL HOLDS THESE FACTS AND MUST HAND THEM DOWN. Passing the
-          caller's raw context left the liveness gate reading undefined and the
-          capability gate reading null, so a fully-loaded stale session showed
-          "waiting for this entity to load" and "liveness is unverified" while
-          the chrome strip three lines below rendered the verdict correctly. The
-          two consumers never disagreed — one was simply never wired.
-        */
-        /* THE TITLE, only where the registry says this kind's title is
-           inline-editable (`list.inlineEdit.title`) — registry DATA, no kind
-           literal, and it is that field's FIRST consumer (its previous state
-           was 35 sources and zero readers, the D39.2 shape). Where it is
-           absent the title renders plain: a doc whose title the panel cannot
-           write must not wear the dotted underline that says it can. */
+        /* THE TITLE is editable only where registry data and the seam both
+           permit it. The visual treatment stays plain by user direction; the
+           actual click/keyboard editor is still mounted only when writable. */
         titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
         titleLockReason={
           config.list.inlineEdit?.title && save.unavailable
@@ -289,30 +293,6 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         }
         autoFocusTitle={props.justCreated}
         onCommitTitle={(title) => void save.commitNow({ title })}
-        actions={
-          <>
-            <ActionBar
-              detail={detail}
-              config={config}
-              inline
-              ctx={{
-                ...ctx,
-                entityId: ctx.entityId ?? detail.id,
-                kind: ctx.kind ?? detail.kind,
-                capabilities: ctx.capabilities ?? detail.capabilities,
-                liveness: ctx.liveness ?? props.liveness,
-              }}
-              onAction={props.onAction}
-            />
-            {/* D63's inline action slot. Mounted only where an edit surface
-                exists: on a kind with no inline-editable field there is no
-                control being hidden, so a permanently-disabled Save would be
-                a reason attached to nothing. */}
-            {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
-              <SaveControls save={save} />
-            ) : null}
-          </>
-        }
       />
 
       {stalePin ? (
@@ -326,11 +306,33 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           discussion: props.messages?.length,
           connections: countConnections(detail, props.connections),
         }}
+        end={
+          <>
+            <ActionBar
+              config={config}
+              ctx={{
+                ...ctx,
+                entityId: ctx.entityId ?? detail.id,
+                kind: ctx.kind ?? detail.kind,
+                capabilities: ctx.capabilities ?? detail.capabilities,
+                liveness: ctx.liveness ?? props.liveness,
+              }}
+              onAction={props.onAction}
+            />
+            {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
+              <SaveControls save={save} />
+            ) : null}
+            <PanelWindowControls
+              onPromote={props.onPromote}
+              onClose={onClose}
+            />
+          </>
+        }
         onSelect={selectTab}
       />
 
       {/* The error boundary wraps the BODY only: header, tabs and footer stay
-          live so close, pin and Esc keep working through a failed render.
+          live so close, expand and Esc keep working through a failed render.
           TWO layers, honestly distinct: the `error` PROP is the caller
           reporting a data failure; CatchBoundary is the REAL
           componentDidCatch for a body that throws while rendering — until
@@ -348,7 +350,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               at all while the save is clean, so this costs the body no height
               in the ordinary case. */}
           <AuthoringHost save={save}>
-            <PanelBody {...props} detail={detail} tab={tab} />
+            <PanelBody {...props} detail={detail} tab={tab} save={save} />
           </AuthoringHost>
         </CatchBoundary>
       )}
@@ -363,8 +365,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
 }
 
-function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: PanelTab }) {
-  const { detail, tab, reasons, onOpenEntity } = props;
+function PanelBody(
+  props: EntityDetailPanelProps & { detail: EntityDetail; tab: PanelTab; save: TaskSaveHandle },
+) {
+  const { detail, tab, reasons, onOpenEntity, save } = props;
   const config = getKind(detail.kind);
 
   if (tab === 'discussion') {
@@ -404,6 +408,7 @@ function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: 
     return (
       <TerminalBody
         detail={detail}
+        serverBaseUrl={props.serverBaseUrl}
         liveness={props.liveness ?? 'unknown'}
         streaming={props.streaming}
         needsAttention={props.needsAttention}
@@ -428,6 +433,15 @@ function PanelBody(props: EntityDetailPanelProps & { detail: EntityDetail; tab: 
         blocks={config.panel.blocks}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+        descriptionDraft={typeof save.edits.description === 'string' ? save.edits.description : undefined}
+        onDescriptionChange={
+          save.unavailable ? undefined : (description) => save.edit({ description })
+        }
+        descriptionUnavailableReason={
+          save.unavailable
+            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
+            : undefined
+        }
       />
     );
   }

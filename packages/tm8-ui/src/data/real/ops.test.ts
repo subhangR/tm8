@@ -51,6 +51,37 @@ describe('ops: execution.liveness — catalog row A21 (Delta 2, dd41e89)', () =>
   });
 });
 
+describe('ops: launch resources', () => {
+  it('loads projects for the active space through the catalog operation', async () => {
+    const projects = [{ id: 'project-1', name: 'tm8' }];
+    const { ops, f } = harness(projects);
+    await expect(ops.projects('space-1')).resolves.toEqual(projects);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/projects?spaceId=space-1');
+  });
+
+  it('loads space profile defaults through the catalog settings operation', async () => {
+    const settings = { defaultInteractionProfileId: 'profile-1', settingsRevision: 3 };
+    const { ops, f } = harness(settings);
+    await expect(ops.spaceSettings('space-1')).resolves.toEqual(settings);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/spaces/space-1/settings');
+  });
+});
+
+describe('ops: graph hydration', () => {
+  it('posts the complete graph lens through the catalog operation', async () => {
+    const result = { nodes: [], edges: [], clusters: [] };
+    const { ops, f } = harness(result);
+    const query = { spaceId: 'space-1', layout: 'graph' as const, limit: 150 };
+
+    await expect(ops.graph(query)).resolves.toEqual(result);
+    expect(f.last().method).toBe('POST');
+    expect(f.last().url).toBe('/v2/graph/query');
+    expect(f.last().body).toEqual(query);
+  });
+});
+
 describe('ops: divergence 1 — no task route; fields travel inside content', () => {
   it('createTask posts kind:"task" with content-nested payload fields', async () => {
     const { ops, f } = harness({ patches: [] });

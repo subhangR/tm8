@@ -104,11 +104,30 @@ export function refusePublicExecutionPrompt(): never {
  */
 export interface InternalPromptPty {
   hasSession(sessionId: string): boolean;
-  deliverPrompt(sessionId: string, content: string, mode: 'send' | 'paste'): Promise<boolean>;
+  deliverPrompt(
+    sessionId: string,
+    content: string,
+    mode: 'send' | 'paste',
+    deliveryId?: string,
+  ): Promise<boolean>;
+}
+
+/**
+ * The slice of `PromptSettlementWaiter` (`@tm8/execution`) `promptInternal` needs:
+ * register a wait for a deliveryId's REAL outcome, and abandon one that will
+ * never resolve because admission was refused. See that class's own docs for
+ * the full contract (ordering, no-timeout rationale, cancel semantics) — this
+ * interface exists so this file depends on the SHAPE, not the concrete class,
+ * matching how `InternalPromptPty` already narrows `PtyHostService`.
+ */
+export interface InternalPromptDeliverySettlement {
+  awaitOutcome(deliveryId: string): Promise<{ outcome: 'delivered' | 'unknown'; reason?: string }>;
+  cancel(deliveryId: string): void;
 }
 
 export interface InternalPromptDeps {
   readonly pty: InternalPromptPty;
+  readonly promptSettlement: InternalPromptDeliverySettlement;
 }
 
 export interface InternalPromptDelivery extends SystemDeliveryPrincipalBinding {
@@ -171,6 +190,27 @@ function authorizeDeliveryPrincipal(
  * A missing terminal is `refused`, not a throw: the reservation is durable and
  * a target that exited between reserve and write is an ordinary outcome to
  * settle, not an exception to lose.
+ *
+ * WHY THIS AWAITS THE REAL OUTCOME NOW, NOT JUST ADMISSION: delivery and
+ * record are separate truths, and the facet must never claim `delivered`
+ * before the write is actually known to have left the composer — that is the
+ * program's oldest law, and this function was violating it. Measured, not
+ * inferred: driving `messages.post` over real HTTP against a live claude-code
+ * agent, the durable row already read `status: 'delivered'` with `settledAt`
+ * ~84ms after the POST — before the PTY closed loop's readiness gate had even
+ * evaluated its first quiescence check — while the actual agent response
+ * (confirmed independently over the session's raw PTY stream) took several
+ * real seconds. Polled 8 more times over the next 15s; the row never
+ * revisited. Reproduced twice, on two separate spawns. So: admit fast (bound
+ * rejections are still immediate and honest — a full queue or open handoff IS
+ * known instantly), but for an ADMITTED delivery, wait for
+ * `promptSettlement.awaitOutcome` — the two-signal completion PtyHostService
+ * reports once `writePromptToEntry`'s closed loop actually concludes — before
+ * returning anything this function's caller will settle as terminal.
+ *
+ * The wait is registered BEFORE admission is attempted, not after — see
+ * `PromptSettlementWaiter`'s own docs for the same-tick-resolve hazard that
+ * ordering exists to close.
  */
 export async function promptInternal(
   deps: InternalPromptDeps,
@@ -195,14 +235,28 @@ export async function promptInternal(
   if (!deps.pty.hasSession(delivery.targetWorkSessionId)) {
     return { outcome: 'refused', reason: 'no_live_terminal' };
   }
-  const delivered = await deps.pty.deliverPrompt(
+
+  const outcomePromise = deps.promptSettlement.awaitOutcome(delivery.deliveryId);
+  const admitted = await deps.pty.deliverPrompt(
     delivery.targetWorkSessionId,
     delivery.content,
     delivery.mode,
+    delivery.deliveryId,
   );
-  return delivered
+  if (!admitted) {
+    deps.promptSettlement.cancel(delivery.deliveryId);
+    return { outcome: 'refused', reason: 'delivery_queue_refused' };
+  }
+
+  const result = await outcomePromise;
+  return result.outcome === 'delivered'
     ? { outcome: 'delivered' }
-    : { outcome: 'refused', reason: 'delivery_queue_refused' };
+    // Plainly, not a code: the closed loop's own exhausted-retries case already
+    // logs this exact word (PtyHostService.submitWithVerify), and every other
+    // 'unknown' this can carry (session replaced/exited mid-delivery, killed or
+    // exited with the delivery still queued) is likewise free text from that
+    // same seam — never abbreviated, never re-coded here.
+    : { outcome: 'unknown', reason: result.reason ?? 'submit_unverified' };
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +525,9 @@ export const DEFAULT_DELIVERY_LEASE_MS = 5 * 60_000;
 export interface W2ExecutionDeliveryOptions {
   readonly rpc: W2DeliveryRpcPort;
   readonly pty: InternalPromptPty;
+  /** See `InternalPromptDeliverySettlement` — threaded through to `promptInternal`
+   *  so `writeFor` awaits the REAL closed-loop outcome, not admission. */
+  readonly promptSettlement: InternalPromptDeliverySettlement;
   readonly leaseMs?: number;
   /** Injected for tests; production uses the wall clock. */
   readonly now?: () => number;
@@ -580,6 +637,7 @@ function failureFacts(error: unknown, lease: { deliveryId: string; messageId: st
 export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAdapter {
   private readonly rpc: W2DeliveryRpcPort;
   private readonly pty: InternalPromptPty;
+  private readonly promptSettlement: InternalPromptDeliverySettlement;
   private readonly leaseMs: number;
   private readonly now: () => number;
   private readonly newDeliveryId: () => string;
@@ -590,6 +648,7 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
   constructor(options: W2ExecutionDeliveryOptions) {
     this.rpc = options.rpc;
     this.pty = options.pty;
+    this.promptSettlement = options.promptSettlement;
     this.leaseMs = options.leaseMs ?? DEFAULT_DELIVERY_LEASE_MS;
     this.now = options.now ?? (() => Date.now());
     this.newDeliveryId = options.newDeliveryId ?? (() => randomUUID());
@@ -725,7 +784,7 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
     mode: 'send' | 'paste';
   }): Promise<W2DeliveryOutcome> {
     const { principal } = this.requireInFlight(attempt.deliveryId);
-    return promptInternal({ pty: this.pty }, principal, {
+    return promptInternal({ pty: this.pty, promptSettlement: this.promptSettlement }, principal, {
       deliveryId: attempt.deliveryId,
       messageId: attempt.messageId,
       targetWorkSessionId: attempt.targetWorkSessionId,
@@ -786,11 +845,16 @@ export interface W2ExecutionDeliveryWiring {
 export function createW2ExecutionDelivery(options: {
   readonly connectionString: string;
   readonly pty: InternalPromptPty;
+  /** The SAME `PromptSettlementWaiter` `options.pty` was constructed with — see
+   *  `ExecutionRuntime.promptSettlement` (execution-handlers.ts) and
+   *  `InternalPromptDeliverySettlement`'s docs above. */
+  readonly promptSettlement: InternalPromptDeliverySettlement;
   readonly logger?: Logger;
 }): W2ExecutionDeliveryWiring {
   const service = new W2ExecutionDeliveryService({
     rpc: PgW2DeliveryRpcPort.fromConnectionString(options.connectionString),
     pty: options.pty,
+    promptSettlement: options.promptSettlement,
     ...(options.logger ? { logger: options.logger } : {}),
   });
   return {

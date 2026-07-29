@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#F4F2EC}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+<div style="height:100vh;display:flex;flex-direction:column;background:#F4F2EC;color:#23201B;font-family:'Hanken Grotesk',system-ui,sans-serif;font-size:14px;overflow:hidden;position:relative">
+  <!-- space tab bar -->
+  <div style="height:42px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</div>
+    <div style="width:1px;height:18px;background:#E7E3D9"></div>
+    <div style="display:flex;align-items:center;gap:6px;background:#ECE8DF;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600;cursor:default"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span>atelier</div>
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;font-size:12.5px;color:#8E897B;cursor:default"><span style="width:7px;height:7px;border-radius:50%;background:#D8D3C6"></span>playground</div>
+    <div style="color:#B7B2A4;font-size:14px;cursor:default">+</div>
+    <div style="flex:1"></div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;background:#FFFFFF;cursor:default">/ palette · ⌘K</div>
+    <div style="font-size:13px;color:#8E897B;cursor:default">◐</div>
+    <div style="width:22px;height:22px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#5B564C;cursor:default">A</div>
+  </div>
+  <!-- add-server dialog -->
+  <sc-if value="{{addServerOpen}}" hint-placeholder-val="{{false}}">
+    <div onClick="{{closeAddServer}}" style="position:absolute;inset:0;background:rgba(35,32,27,.35);z-index:90;display:flex;align-items:center;justify-content:center">
+      <div onClick="{{eatClick}}" style="width:340px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.14);padding:18px;display:flex;flex-direction:column;gap:12px">
+        <div style="font-size:16px;font-weight:600">Add server</div>
+        <div style="font-size:12px;color:#8E897B;line-height:1.5">Connect another tm8 node. Its spaces and menu appear in the rail as a group.</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">SERVER URL</span>
+          <div style="height:30px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#B7B2A4">wss://</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">NAME</span>
+          <div style="height:30px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">my node</div>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px">
+          <span onClick="{{closeAddServer}}" style="padding:5px 12px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span>
+          <span onClick="{{closeAddServer}}" style="padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Add server</span>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <!-- Z4 full view overlay -->
+  <sc-if value="{{z4on}}" hint-placeholder-val="{{false}}">
+    <div style="position:absolute;top:42px;left:0;right:0;bottom:0;z-index:80;display:flex;flex-direction:column;background:{{zc.zBg}}">
+      <div style="height:44px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;background:{{zc.zHd}};border-bottom:1px solid {{zc.zBr}}">
+        <span onClick="{{z4close}}" title="collapse to panel (esc)" style="display:inline-flex;align-items:center;gap:6px;border:1px solid {{zc.zChipBr}};border-radius:7px;padding:3px 10px;font-size:11.5px;font-weight:600;color:{{zc.zSub}};background:{{zc.zChipBg}};cursor:pointer" style-hover="opacity:.75">⇲ collapse</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{zc.zFaint}}">{{zc.crumb}} · full view</span>
+        <div style="flex:1"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:{{zc.zWc}};background:{{zc.zWs}};border-radius:999px;padding:2px 8px">● {{zc.word}}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:{{zc.zFaint}}">esc</span>
+      </div>
+      <div style="flex:1;display:flex;min-height:0">
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+          <sc-if value="{{zc.isLightCard}}" hint-placeholder-val="{{false}}">
+            <div style="flex:1;overflow:auto">
+              <div style="max-width:820px;margin:0 auto;padding:30px 40px 60px;display:flex;flex-direction:column;gap:18px">
+                <div style="display:flex;align-items:center;gap:11px">
+                  <sc-if value="{{zc.glyphX}}" hint-placeholder-val="{{false}}"><span style="color:{{zc.zGrey}};font-size:19px">{{zc.glyphX}}</span></sc-if>
+                  <sc-if value="{{zc.avX}}" hint-placeholder-val="{{false}}"><span style="width:32px;height:32px;flex:none;border-radius:{{zc.avRX}};background:{{zc.avBgX}};color:{{zc.avCX}};display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600">{{zc.avX}}</span></sc-if>
+                  <span style="font-family:'Newsreader',Georgia,serif;font-size:27px;font-weight:500;color:#23201B">{{zc.title}}</span>
+                  <div style="flex:1"></div>
+                  <sc-if value="{{zc.primaryX}}" hint-placeholder-val="{{false}}"><span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:7px;padding:4px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap" style-hover="background:rgba(178,106,43,.2)">{{zc.primaryX}}</span></sc-if>
+                </div>
+                <sc-if value="{{zc.isTask}}" hint-placeholder-val="{{false}}">
+                  <div style="display:flex;flex-direction:column;gap:18px">
+                    <div style="font-family:'Newsreader',Georgia,serif;font-size:17.5px;line-height:1.7;color:#3A362E;text-wrap:pretty">{{zc.desc}}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border-top:1px solid #E7E3D9;border-bottom:1px solid #E7E3D9;padding:8px 0">{{zc.id}} · {{zc.prio}} · ◯ {{zc.assignee}} · ⬒ tm8-ui · ▲ {{zc.pts}} pts</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+                      <div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">SUBTREE · 2</div>
+                        <div style="display:flex;flex-direction:column">
+                          <div style="display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid #F0EDE4;font-size:12.5px"><span style="width:10px;height:10px;border-radius:50%;background:#3E8E5A;flex:none"></span><span style="flex:1;color:#8E897B;text-decoration:line-through">measure guide x-offsets</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">done</span></div>
+                          <div style="display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid #F0EDE4;font-size:12.5px"><span style="width:10px;height:10px;border-radius:50%;border:2px solid #3E8E5A;flex:none;box-sizing:border-box"></span><span style="flex:1;color:#23201B">port .pn-tree rules</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">working</span></div>
+                          <div style="display:flex;align-items:center;gap:7px;padding:7px 0;font-size:12.5px;color:#B7B2A4;cursor:pointer" style-hover="color:#9A581F">＋ add child…</div>
+                        </div>
+                      </div>
+                      <div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">RUNS · 1 LIVE</div>
+                        <div onClick="{{zc.openForgeZ}}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;cursor:pointer" style-hover="border-color:#D8D3C6"><span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite;flex:none"></span><span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span><span style="font-size:12px;font-weight:600">forge</span><span style="font-size:11px;color:#8E897B">running · 2m · claude-sonnet</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">● live</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{zc.isDoc}}" hint-placeholder-val="{{false}}">
+                  <div style="display:flex;flex-direction:column;gap:16px">
+                    <div style="display:flex;gap:5px;flex-wrap:wrap">
+                      <sc-for list="{{zc.toc}}" as="t2" hint-placeholder-count="3">
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:2px 9px;cursor:pointer;background:#FFFFFF" style-hover="color:#9A581F;border-color:rgba(178,106,43,.4)">{{t2}}</span>
+                      </sc-for>
+                    </div>
+                    <sc-for list="{{zc.paras}}" as="p2" hint-placeholder-count="2">
+                      <div style="font-family:'Newsreader',Georgia,serif;font-size:17.5px;line-height:1.78;color:#3A362E;text-wrap:pretty">{{p2}}</div>
+                    </sc-for>
+                    <div style="border-left:2px solid #E7E3D9;padding:2px 0 2px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:#8E897B">C_min = max(320, V·320 + (V−1)·8)</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{zc.isTm}}" hint-placeholder-val="{{false}}">
+                  <div style="display:flex;flex-direction:column;gap:16px">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border-top:1px solid #E7E3D9;border-bottom:1px solid #E7E3D9;padding:8px 0">agent persona · {{zc.model}} · owned by {{zc.owner}} · profile {{zc.profile}}</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+                      <sc-for list="{{zc.statsX}}" as="st" hint-placeholder-count="3">
+                        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:#23201B">{{st.v}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">{{st.k}}</span></div>
+                      </sc-for>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+                      <div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">DEFAULTS</div>
+                        <div style="display:flex;flex-direction:column;gap:6px;font-size:12.5px">
+                          <div style="display:flex;align-items:center;gap:7px;color:#8E897B">Project <span style="color:#23201B;font-weight:500">⬒ {{zc.defProject}}</span></div>
+                          <div style="display:flex;align-items:center;gap:7px;color:#8E897B">Profile <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5B564C;border:1px solid #E7E3D9;border-radius:5px;padding:1px 7px;background:#FFFFFF">{{zc.profile}}</span></div>
+                          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">immutable on running sessions</div>
+                        </div>
+                      </div>
+                      <div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">RECENT SESSIONS</div>
+                        <div style="display:flex;flex-direction:column;gap:4px">
+                          <sc-for list="{{zc.zRecents}}" as="rs" hint-placeholder-count="2">
+                            <div onClick="{{rs.open}}" style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:11.5px;color:#5B564C;cursor:pointer" style-hover="border-color:#D8D3C6;background:#F2EFE8">▣ {{rs.t}}</div>
+                          </sc-for>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{zc.isMember}}" hint-placeholder-val="{{false}}">
+                  <div style="display:flex;flex-direction:column;gap:16px">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B;border-top:1px solid #E7E3D9;border-bottom:1px solid #E7E3D9;padding:8px 0">human member · {{zc.role}} · ● {{zc.word}}</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+                      <sc-for list="{{zc.statsX}}" as="st" hint-placeholder-count="3">
+                        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;color:#23201B">{{st.v}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">{{st.k}}</span></div>
+                      </sc-for>
+                    </div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">TEAMMATES OWNED</div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap">
+                        <sc-for list="{{zc.zOwns}}" as="e" hint-placeholder-count="2">
+                          <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">{{e.t}}</span>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{zc.isProject}}" hint-placeholder-val="{{false}}">
+                  <div style="display:flex;flex-direction:column;gap:16px">
+                    <div style="display:flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:9px 12px"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#23201B;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{zc.dir}}</span><span style="color:#B7B2A4;font-size:11px;cursor:pointer;flex:none" style-hover="color:#9A581F">⧉</span></div>
+                    <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#8E897B">⑂ <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#5B564C">{{zc.repo}}</span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#9A581F">↗</span></div>
+                    <sc-if value="{{zc.trustedX}}" hint-placeholder-val="{{false}}">
+                      <div style="border:1px solid rgba(62,142,90,.35);background:rgba(62,142,90,.06);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+                        <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 8px">● trusted</span><div style="flex:1"></div><span style="font-size:11px;font-weight:600;color:#5B564C;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">Untrust…</span></div>
+                        <div style="font-size:12px;line-height:1.5;color:#5B564C">Agents may run real terminal sessions in this root. Untrusting terminates nothing but blocks new runs.</div>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{zc.untrustedX}}" hint-placeholder-val="{{false}}">
+                      <div style="border:1px solid rgba(189,138,42,.4);background:rgba(189,138,42,.07);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+                        <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:2px 8px">○ untrusted</span><div style="flex:1"></div><span style="font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Trust project…</span></div>
+                        <div style="font-size:12px;line-height:1.5;color:#5B564C">Agents cannot run here until you trust it. Trusting grants terminal execution in this directory.</div>
+                      </div>
+                    </sc-if>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+                      <div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LINKED SPACES</div>
+                        <div style="display:flex;gap:5px;flex-wrap:wrap">
+                          <sc-for list="{{zc.spacesX}}" as="sp" hint-placeholder-count="2">
+                            <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;font-size:11.5px;color:#5B564C;background:#FFFFFF">{{sp.t}}</span>
+                          </sc-for>
+                        </div>
+                      </div>
+                      <div>
+                        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LIVE SESSIONS IN THIS ROOT</div>
+                        <div style="display:flex;flex-direction:column;gap:4px">
+                          <sc-for list="{{zc.zLiveUse}}" as="lu" hint-placeholder-count="2">
+                            <div onClick="{{lu.open}}" style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:11.5px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#3E8E5A;flex:none;animation:pnPulse 1.6s infinite"></span>▣ {{lu.t}}</div>
+                          </sc-for>
+                          <sc-if value="{{zc.untrustedX}}" hint-placeholder-val="{{false}}"><div style="font-size:11.5px;color:#B7B2A4;padding:2px 0">none — runs are blocked here</div></sc-if>
+                        </div>
+                      </div>
+                    </div>
+                    <sc-if value="{{zc.unlinkNote}}" hint-placeholder-val="{{false}}">
+                      <div style="display:flex;flex-direction:column;gap:3px;border-top:1px solid #E7E3D9;padding-top:10px">
+                        <span style="font-size:11.5px;font-weight:600;color:#B7B2A4;cursor:not-allowed;opacity:.7">Unlink from this space</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#BD8A2A">⚠ {{zc.unlinkNote}}</span>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{zc.isPR}}" hint-placeholder-val="{{false}}">
+                  <div style="display:flex;flex-direction:column;gap:16px">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#5B564C;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;padding:3px 10px">{{zc.branch}}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;color:#3E8E5A">{{zc.added}}</span>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;color:#BB4D3D">{{zc.removed}}</span>
+                    </div>
+                    <div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">CHECKS</div>
+                      <div style="display:flex;flex-direction:column;border:1px solid #E7E3D9;border-radius:8px;overflow:hidden;background:#FFFFFF">
+                        <sc-for list="{{zc.checksX}}" as="ck" hint-placeholder-count="3">
+                          <div style="display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid #F0EDE4;font-size:12px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:{{ck.c}}">{{ck.g}}</span><span style="color:#5B564C">{{ck.t}}</span></div>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </div>
+                </sc-if>
+                <div style="border-top:1px solid #E7E3D9;padding-top:10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{zc.footer}}</div>
+              </div>
+            </div>
+          </sc-if>
+          <sc-if value="{{zc.isSession}}" hint-placeholder-val="{{false}}">
+            <div style="flex:none;display:flex;align-items:center;gap:10px;padding:16px 20px 12px">
+              <span style="width:28px;height:28px;flex:none;border-radius:7px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600">{{zc.init}}</span>
+              <span style="font-family:'Newsreader',Georgia,serif;font-size:24px;font-weight:500;color:#EFE9DB">{{zc.title}}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8C8470">{{zc.prov}}</span>
+              <div style="flex:1"></div>
+              <span style="font-size:12px;color:#BDB5A2;border:1px solid #3B3524;border-radius:7px;padding:3px 11px;cursor:pointer" style-hover="background:#302A1D">Complete</span>
+              <span style="font-size:12px;color:#DA7D6A;border:1px solid rgba(218,125,106,.35);border-radius:7px;padding:3px 11px;cursor:pointer" style-hover="background:rgba(218,125,106,.12)">Terminate</span>
+            </div>
+            <div style="flex:none;display:flex;gap:28px;padding:0 20px 14px;border-bottom:1px solid #2C2719;flex-wrap:wrap">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#665E4C">ASSOCIATED PROJECTS</div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span onClick="{{zc.openProjZ}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;font-size:11px;color:#BDB5A2;background:#1B1810;cursor:pointer" style-hover="border-color:#E0A45A">⬒ tm8-ui</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">launched from · immutable</span>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:280px">
+                <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#665E4C">SHARED CONTEXT · 2</div>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#BDB5A2"><span onClick="{{zc.openDocZ}}" style="cursor:pointer" style-hover="color:#EFE9DB">▤ Layout spec</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:1px 6px">delivered ✓</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#8C8470;background:rgba(122,115,96,.2);border-radius:999px;padding:1px 6px">recorded</span></div>
+                  <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#BDB5A2"><span onClick="{{zc.openTaskZ}}" style="cursor:pointer" style-hover="color:#EFE9DB">◔ T-114</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:1px 6px">delivery unknown ⚠</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#8C8470;background:rgba(122,115,96,.2);border-radius:999px;padding:1px 6px">recorded</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 20px;background:#1B1810;border-bottom:1px solid #2C2719">
+              <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'JetBrains Mono',monospace;font-size:11px;color:#BDB5A2">◈ {{zc.title}} · claude</span>
+              <span style="flex:none;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:{{zc.wcD}}">● {{zc.word}}</span>
+              <sc-if value="{{zc.isLive}}" hint-placeholder-val="{{true}}"><span style="flex:none;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="background:#302A1D">exit terminal ⌃`</span></sc-if>
+              <sc-if value="{{zc.isEnded}}" hint-placeholder-val="{{false}}"><a style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#E0A45A">view transcript</a></sc-if>
+            </div>
+            <sc-if value="{{zc.needsBanner}}" hint-placeholder-val="{{false}}">
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:8px 20px;background:rgba(217,170,73,.18);border-bottom:1px solid #2C2719;font-size:12px;color:#D9AA49"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">⚠ needs you</span><span style="color:#BDB5A2">waiting on your input — approve plan (y/n)</span></div>
+            </sc-if>
+            <sc-if value="{{zc.isLive}}" hint-placeholder-val="{{true}}">
+              <div style="flex:1;background:#131009;padding:16px 20px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.8;overflow:auto;min-height:120px">
+                <sc-for list="{{zc.lines}}" as="l" hint-placeholder-count="6">
+                  <div style="color:{{l.c}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{l.tx}}</div>
+                </sc-for>
+                <span style="display:inline-block;width:7px;height:14px;background:#E0A45A;vertical-align:middle;animation:pnPulse 1.1s infinite"></span>
+              </div>
+            </sc-if>
+            <sc-if value="{{zc.isEnded}}" hint-placeholder-val="{{false}}">
+              <div style="flex:1;background:#1B1810;display:flex;align-items:center;justify-content:center;min-height:120px;padding:20px">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:8px;max-width:320px;text-align:center">
+                  <sc-if value="{{zc.isStale}}" hint-placeholder-val="{{false}}">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:3px 10px">⚠ stale — node restarted</span>
+                    <div style="font-size:12.5px;line-height:1.5;color:#BDB5A2">This session reported running, but its process is gone. Liveness never lies.</div>
+                    <span style="font-size:11.5px;font-weight:600;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:3px 10px;cursor:pointer" style-hover="background:#302A1D">mark exited</span>
+                  </sc-if>
+                  <sc-if value="{{zc.isExited}}" hint-placeholder-val="{{false}}">
+                    <span style="width:14px;height:14px;border-radius:50%;border:2px solid #665E4C"></span>
+                    <div style="font-size:13px;font-weight:600;color:#BDB5A2">exited {{zc.endWhen}}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">{{zc.endMeta}}</div>
+                    <a style="font-size:12px;color:#E0A45A">open transcript →</a>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-if>
+            <div style="height:30px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;padding:0 20px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">{{zc.footer}}</div>
+          </sc-if>
+        </div>
+        <div style="width:360px;flex:none;border-left:1px solid {{zc.zBr}};background:{{zc.zRail}};display:flex;flex-direction:column;min-height:0">
+          <div style="flex:1;overflow:auto;padding:16px 16px 24px;display:flex;flex-direction:column;gap:18px">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{zc.zFaint}}">THREAD · {{zc.disc}}</div>
+              <sc-for list="{{zc.zMsgs}}" as="m" hint-placeholder-count="3">
+                <div style="display:flex;gap:9px">
+                  <span style="width:22px;height:22px;flex:none;border-radius:{{m.avR}};background:{{m.avBgZ}};color:{{m.avCZ}};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">{{m.av}}</span>
+                  <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+                    <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:600;color:{{zc.zTitle}}">{{m.name}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:{{zc.zTagC}};background:{{zc.zTagBg}};border-radius:3px;padding:0 4px">{{m.tag}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:{{zc.zFaint}}">{{m.when}}</span></div>
+                    <div style="font-size:12.5px;line-height:1.55;color:{{zc.zSub}};text-wrap:pretty">{{m.body}}</div>
+                    <sc-if value="{{m.rx}}" hint-placeholder-val="{{false}}"><div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:{{zc.zGrey}};border:1px solid {{zc.zChipBr}};border-radius:999px;padding:1px 7px;background:{{zc.zChipBg}}">{{m.rx}}</span></div></sc-if>
+                  </div>
+                </div>
+              </sc-for>
+              <div style="display:flex;gap:7px;align-items:center">
+                <div style="flex:1;height:30px;display:flex;align-items:center;padding:0 10px;background:{{zc.zChipBg}};border:1px solid {{zc.zChipBr}};border-radius:8px;font-size:12px;color:{{zc.zFaint}}">Reply — @ to mention</div>
+                <div style="width:30px;height:30px;flex:none;border-radius:8px;background:{{zc.zSendBg}};color:{{zc.zSendC}};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer" style-hover="opacity:.85">↑</div>
+              </div>
+            </div>
+            <div style="border-top:1px solid {{zc.zBr}};padding-top:14px;display:flex;flex-direction:column;gap:12px">
+              <sc-for list="{{zc.zConnGroups}}" as="cg" hint-placeholder-count="2">
+                <div>
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{zc.zFaint}};padding-bottom:5px">{{cg.t}}</div>
+                  <div style="display:flex;gap:5px;flex-wrap:wrap">
+                    <sc-for list="{{cg.items}}" as="e" hint-placeholder-count="2">
+                      <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid {{zc.zChipBr}};border-radius:6px;padding:3px 9px;font-size:11.5px;color:{{zc.zSub}};background:{{zc.zChipBg}};cursor:pointer" style-hover="opacity:.75">{{e.t}}</span>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="border-top:1px solid {{zc.zBr}};padding-top:14px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{zc.zFaint}};padding-bottom:3px">ACTIVITY</div>
+              <sc-for list="{{zc.acts}}" as="ac" hint-placeholder-count="4">
+                <div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid {{zc.zHair}}">
+                  <span style="width:8px;height:8px;border-radius:50%;background:{{ac.dot}};flex:none"></span>
+                  <span style="flex:1;font-size:12px;color:{{zc.zSub}}">{{ac.tx}}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:{{zc.zFaint}};flex:none">{{ac.when}}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  <div style="flex:1;display:flex;min-height:0">
+    <!-- unified server+menu rail · collapsed 48 -->
+    <sc-if value="{{railCollapsed}}" hint-placeholder-val="{{true}}">
+      <div style="width:48px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:3px;overflow:auto">
+        <sc-for list="{{railC}}" as="i" hint-placeholder-count="10">
+          <div>
+            <sc-if value="{{i.isServer}}" hint-placeholder-val="{{false}}">
+              <div title="{{i.name}}" onClick="{{i.pick}}" style="width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:{{i.c}};background:{{i.abg}};border:{{i.br}};cursor:pointer;position:relative;margin:2px 0" style-hover="border-color:#B26A2B">{{i.ic}}
+                <sc-if value="{{i.badge}}" hint-placeholder-val="{{false}}"><span style="position:absolute;top:-4px;right:-5px;min-width:15px;height:15px;border-radius:999px;background:#B26A2B;color:#FFFFFF;font-size:9px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 3px;font-family:'JetBrains Mono',monospace">{{i.badge}}</span></sc-if>
+                <sc-if value="{{i.dot}}" hint-placeholder-val="{{false}}"><span style="position:absolute;top:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:#3E8E5A;border:2px solid #FBFAF6"></span></sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{i.isGroup}}" hint-placeholder-val="{{false}}"><div title="{{i.name}}" onClick="{{i.pick}}" style="width:34px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;color:{{i.c}};background:{{i.bg}};box-shadow:{{i.sh}};cursor:pointer" style-hover="background:#F2EFE8">{{i.ic}}</div></sc-if>
+            <sc-if value="{{i.isDiv}}" hint-placeholder-val="{{false}}"><div style="width:24px;height:1px;background:#E7E3D9;margin:5px auto"></div></sc-if>
+          </div>
+        </sc-for>
+        <div style="flex:1"></div>
+        <div title="add server" onClick="{{openAddServer}}" style="width:32px;height:32px;border-radius:9px;border:1px dashed #D8D3C6;display:flex;align-items:center;justify-content:center;color:#8E897B;font-size:14px;cursor:pointer;flex:none" style-hover="background:#F2EFE8">+</div>
+        <div title="expand (⌘\)" onClick="{{toggleRail}}" style="width:32px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:#B7B2A4;cursor:pointer;flex:none" style-hover="background:#F2EFE8">⟩⟩</div>
+      </div>
+    </sc-if>
+    <!-- unified server+menu rail · expanded 220 -->
+    <sc-if value="{{railExpanded}}" hint-placeholder-val="{{false}}">
+      <div style="width:220px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0">
+        <div style="flex:1;overflow:auto;padding:8px 0">
+          <sc-for list="{{railX}}" as="r" hint-placeholder-count="14">
+            <div>
+              <sc-if value="{{r.isServer}}" hint-placeholder-val="{{false}}">
+                <div onClick="{{r.pick}}" style="display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;background:{{r.bg}}" style-hover="background:#F2EFE8">
+                  <span style="width:26px;height:26px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:{{r.c}};background:{{r.abg}};border:{{r.br}}">{{r.ic}}</span>
+                  <span style="flex:1;min-width:0;font-size:13px;font-weight:600;color:#23201B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{r.name}}</span>
+                  <sc-if value="{{r.badge}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px;flex:none">{{r.badge}}</span></sc-if>
+                  <sc-if value="{{r.dot}}" hint-placeholder-val="{{false}}"><span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;flex:none"></span></sc-if>
+                  <span style="color:#B7B2A4;font-size:9px;flex:none">{{r.caret}}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{r.isGroup}}" hint-placeholder-val="{{false}}">
+                <div onClick="{{r.pick}}" style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 20px;cursor:pointer;background:{{r.bg}};border-left:{{r.bar}}" style-hover="background:#F2EFE8">
+                  <span style="width:15px;text-align:center;color:{{r.c}};font-size:12px">{{r.ic}}</span>
+                  <span style="flex:1;font-size:12.5px;font-weight:{{r.fw}};color:{{r.nc}}">{{r.name}}</span>
+                  <span style="color:#B7B2A4;font-size:9px">{{r.caret}}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{r.isItem}}" hint-placeholder-val="{{false}}">
+                <div style="display:flex;align-items:center;gap:8px;padding:4px 12px 4px 42px;cursor:pointer" style-hover="background:#F2EFE8">
+                  <span style="width:14px;text-align:center;color:#B7B2A4;font-size:11px">{{r.ic}}</span>
+                  <span style="flex:1;font-size:12.5px;color:#5B564C">{{r.name}}</span>
+                  <sc-if value="{{r.badge}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px">{{r.badge}}</span></sc-if>
+                  <sc-if value="{{r.live}}" hint-placeholder-val="{{false}}"><span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>{{r.live}}</span></sc-if>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <div onClick="{{openAddServer}}" style="height:32px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:12px;color:#8E897B;cursor:pointer;border-top:1px solid #E7E3D9" style-hover="background:#F2EFE8">＋ add server</div>
+        <div onClick="{{toggleRail}}" style="height:32px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 14px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#B7B2A4;cursor:pointer" style-hover="background:#F2EFE8;color:#5B564C">⟨⟨ collapse · ⌘\</div>
+      </div>
+    </sc-if>
+    <!-- LEFT: EntityListPanel · kind=Tasks -->
+    <div style="flex:0 1 300px;min-width:200px;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0;position:relative">
+      <sc-if value="{{L.kindOpen}}" hint-placeholder-val="{{false}}">
+        <div style="position:absolute;left:10px;top:38px;width:170px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;box-shadow:0 12px 34px rgba(40,34,24,.14);z-index:70;overflow:hidden">
+          <sc-for list="{{L.kinds}}" as="k" hint-placeholder-count="4">
+            <div onClick="{{k.pick}}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:12.5px;color:#5B564C;cursor:pointer;background:{{k.bg}}" style-hover="background:#F2EFE8"><span style="width:16px;text-align:center;color:#8E897B">{{k.ic}}</span>{{k.name}}<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{k.count}}</span></div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+        <div style="display:flex;align-items:center;gap:7px"><span onClick="{{L.kindToggle}}" style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;border-radius:6px;padding:2px 5px;margin:-2px -5px" style-hover="background:#F2EFE8"><span style="color:#8E897B;font-size:13px">{{L.glyph}}</span><span style="font-size:14px;font-weight:600">{{L.kind}}</span><span style="color:#B7B2A4;font-size:9px">▾</span></span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">{{L.create}}</div></div>
+        <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">⌕ {{L.search}}<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px">/</span></div>
+        <div style="display:flex;gap:4px;font-size:12px">
+          <sc-for list="{{L.tabs}}" as="tb" hint-placeholder-count="2">
+            <span style="padding:3px 9px;border-radius:6px;background:{{tb.bg}};color:{{tb.c}};font-weight:{{tb.fw}};cursor:pointer" style-hover="background:#F2EFE8">{{tb.label}}</span>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <sc-for list="{{L.views}}" as="v" hint-placeholder-count="4">
+            <div title="{{v.name}}" onClick="{{v.pick}}" style="width:26px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;color:{{v.c}};background:{{v.bg}};cursor:pointer" style-hover="background:#F2EFE8">{{v.ic}}</div>
+          </sc-for>
+          <div style="flex:1"></div>
+          <div title="filter" onClick="{{L.filterToggle}}" style="height:24px;display:flex;align-items:center;gap:3px;border:1px solid {{L.filterBr}};border-radius:6px;font-size:11px;font-weight:600;background:{{L.filterBg}};color:{{L.filterC}};padding:0 7px;cursor:pointer" style-hover="background:#F2EFE8">▽<sc-if value="{{L.filterOn}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding-left:2px">{{L.filterCount}}</span></sc-if></div>
+          <div title="sort" onClick="{{L.sortToggle}}" style="height:24px;display:flex;align-items:center;border:1px solid {{L.sortBr}};border-radius:6px;font-size:11px;font-weight:600;background:{{L.sortBg}};color:{{L.sortC}};padding:0 7px;cursor:pointer" style-hover="background:#F2EFE8">⇅</div>
+        </div>
+        <sc-if value="{{L.filterOpen}}" hint-placeholder-val="{{false}}">
+          <div style="position:absolute;right:10px;top:146px;width:180px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;box-shadow:0 12px 34px rgba(40,34,24,.14);z-index:70;padding:4px 0">
+            <sc-for list="{{L.filterOpts}}" as="o" hint-placeholder-count="3">
+              <div onClick="{{o.pick}}" style="display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:12px;height:12px;flex:none;border-radius:3px;border:1.5px solid {{o.bxBr}};background:{{o.bxBg}};display:flex;align-items:center;justify-content:center;color:#FFFFFF;font-size:9px;font-weight:700;box-sizing:border-box">{{o.tick}}</span>{{o.name}}</div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{L.sortOpen}}" hint-placeholder-val="{{false}}">
+          <div style="position:absolute;right:10px;top:146px;width:170px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;box-shadow:0 12px 34px rgba(40,34,24,.14);z-index:70;padding:4px 0">
+            <sc-for list="{{L.sortOpts}}" as="o" hint-placeholder-count="4">
+              <div onClick="{{o.pick}}" style="display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8">{{o.name}}<span style="flex:1"></span><span style="color:#9A581F;font-size:11px;font-weight:600">{{o.mark}}</span></div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <sc-if value="{{L.isRows}}" hint-placeholder-val="{{true}}"><div style="flex:1;overflow:auto">
+        <sc-for list="{{L.rows}}" as="s" hint-placeholder-count="12">
+          <div>
+            <sc-if value="{{s.isGrp}}" hint-placeholder-val="{{false}}"><div style="display:flex;align-items:center;gap:8px;padding:12px 12px 5px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{s.gc}}">{{s.name}}</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div></sc-if>
+            <sc-if value="{{s.isRow}}" hint-placeholder-val="{{false}}">
+              <div onClick="{{s.open}}" style="padding:7px 12px 7px {{s.pad}};display:flex;flex-direction:column;gap:3px;background:{{s.bg}};border-left:2px solid {{s.bar}};border-bottom:1px solid #F0EDE4;cursor:pointer" style-hover="background:#F2EFE8">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <sc-if value="{{s.tree}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;color:#D8D3C6;font-size:12px">{{s.tree}}</span></sc-if>
+                  <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{s.dotBg}};border:{{s.dotBr}};animation:{{s.anim}}"></span>
+                  <span style="width:17px;height:17px;flex:none;border-radius:{{s.avR}};background:{{s.avBg}};color:{{s.avC}};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">{{s.init}}</span>
+                  <span style="font-size:13px;font-weight:600;color:{{s.nc}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.name}}</span>
+                  <div style="flex:1"></div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.wc}};background:{{s.ws}};border-radius:999px;padding:1px 6px;flex:none">{{s.word}}</span>
+                </div>
+                <div style="padding-left:{{s.mpad}};display:flex;align-items:center;gap:6px">
+                  <span style="flex:1;font-size:10.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.meta}}</span>
+                  <sc-if value="{{s.x}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.xc}};background:{{s.xb}};border-radius:4px;padding:1px 5px;flex:none">{{s.x}}</span></sc-if>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div></sc-if>
+      <sc-if value="{{L.isBoard}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;overflow:auto;padding:10px;display:flex;gap:8px;align-items:flex-start">
+          <sc-for list="{{L.boardCols}}" as="bc" hint-placeholder-count="3">
+            <div style="flex:1;min-width:88px;display:flex;flex-direction:column;gap:6px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8E897B">{{bc.name}}</div>
+              <sc-for list="{{bc.cards}}" as="cd" hint-placeholder-count="2">
+                <div onClick="{{cd.open}}" style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:7px 8px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+                  <div style="font-size:11.5px;font-weight:600;color:#23201B;line-height:1.3">{{cd.name}}</div>
+                  <div style="display:flex;align-items:center;gap:5px;padding-top:4px"><span style="width:7px;height:7px;border-radius:50%;background:{{cd.dotBg}};border:{{cd.dotBr}};flex:none"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{cd.wc}}">{{cd.word}}</span></div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{L.isGraph}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;position:relative;overflow:hidden">
+          <sc-for list="{{L.gEdges}}" as="ge" hint-placeholder-count="4"><div style="position:absolute;left:{{ge.x}}px;top:{{ge.y}}px;width:{{ge.w}}px;height:1px;background:#D8D3C6;transform:rotate({{ge.r}}deg);transform-origin:0 0"></div></sc-for>
+          <sc-for list="{{L.gNodes}}" as="gn" hint-placeholder-count="5">
+            <div onClick="{{gn.open}}" style="position:absolute;left:{{gn.x}}px;top:{{gn.y}}px;transform:translate(-50%,-50%);display:flex;align-items:center;gap:5px;background:#FFFFFF;border:1px solid {{gn.br}};border-radius:999px;padding:3px 9px;font-size:11px;font-weight:600;color:#23201B;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05);white-space:nowrap" style-hover="border-color:#B26A2B"><span style="width:7px;height:7px;border-radius:50%;background:{{gn.dot}};border:{{gn.dotBr}};flex:none"></span>{{gn.name}}</div>
+          </sc-for>
+          <div style="position:absolute;left:10px;bottom:8px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">typed edges · click a node</div>
+        </div>
+      </sc-if>
+      <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{L.footer}}</div>
+    </div>
+    <!-- CENTER: ink stage -->
+    <div style="flex:1;display:flex;flex-direction:column;min-width:{{centerMin}};background:#1D1912;position:relative">
+      <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #2C2719">
+        <span style="width:8px;height:8px;border-radius:50%;background:#5CB381;animation:pnPulse 1.6s infinite"></span>
+        <span onClick="{{openForge}}" style="font-size:12.5px;font-weight:600;color:#EFE9DB;cursor:pointer" style-hover="color:#E0A45A">forge</span>
+        <span style="font-size:12.5px;color:#8C8470">— 3 live</span>
+        <div style="flex:1"></div>
+        <span onClick="{{toggleRoster}}" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="background:#262117">roster ▾</span>
+      </div>
+      <sc-if value="{{rosterOpen}}" hint-placeholder-val="{{false}}">
+        <div style="position:absolute;right:10px;top:34px;width:280px;background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 16px 44px rgba(0,0,0,.6);z-index:60;overflow:hidden">
+          <div style="padding:9px 12px 5px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">LIVE SESSIONS · 3</div>
+          <sc-for list="{{roster}}" as="r" hint-placeholder-count="4">
+            <div onClick="{{r.open}}" style="display:flex;align-items:center;gap:8px;padding:7px 12px;cursor:pointer" style-hover="background:#262117">
+              <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{r.dotBg}};border:{{r.dotBr}};animation:{{r.anim}}"></span>
+              <span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">{{r.init}}</span>
+              <span style="font-size:12.5px;font-weight:600;color:#EFE9DB">{{r.name}}</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{r.wc}};background:{{r.ws}};border-radius:999px;padding:1px 6px">{{r.word}}</span>
+            </div>
+          </sc-for>
+          <div style="padding:7px 12px 9px;border-top:1px solid #2C2719;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">echo exited 12m · relay stale</div>
+        </div>
+      </sc-if>
+      <sc-if value="{{hasCols}}" hint-placeholder-val="{{true}}">
+        <div style="flex:1;display:flex;gap:8px;padding:8px;min-height:0">
+          <sc-for list="{{cols}}" as="c" hint-placeholder-count="1">
+            <div style="flex:1 1 0;min-width:320px;display:flex">
+              <!-- LIGHT panel: paper card (every kind except session) -->
+              <sc-if value="{{c.isLightCard}}" hint-placeholder-val="{{false}}">
+                <div style="flex:1;min-width:0;background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{c.crumb}}</span><div style="flex:1"></div><sc-if value="{{c.hasVars}}" hint-placeholder-val="{{false}}"><span style="display:flex;align-items:center;gap:2px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">layout<sc-for list="{{c.varsX}}" as="vv" hint-placeholder-count="3"><span onClick="{{vv.pick}}" style="padding:1px 6px;border-radius:4px;font-weight:600;color:{{vv.c}};background:{{vv.bg}};cursor:pointer">{{vv.v}}</span></sc-for></span></sc-if></div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #E7E3D9">
+                    <sc-if value="{{c.glyphX}}" hint-placeholder-val="{{true}}"><span style="color:#8E897B;font-size:13px">{{c.glyphX}}</span></sc-if>
+                    <sc-if value="{{c.avX}}" hint-placeholder-val="{{false}}"><span style="width:20px;height:20px;flex:none;border-radius:{{c.avRX}};background:{{c.avBgX}};color:{{c.avCX}};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">{{c.avX}}</span></sc-if>
+                    <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.title}}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:{{c.wc}};background:{{c.ws}};border-radius:999px;padding:2px 7px;flex:none">● {{c.word}}</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8">⋯</span>
+                    <span title="{{c.pinTitle}}" onClick="{{c.togglePin}}" style="font-size:12px;cursor:{{c.pinCursor}};padding:2px 4px;border-radius:5px;color:{{c.pinColor}};background:{{c.pinBg}};opacity:{{c.pinOpacity}}" style-hover="background:#F2EFE8">⌖</span>
+                    <span title="full view" onClick="{{c.expand}}" style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8">⤢</span>
+                    <span onClick="{{c.close}}" style="color:#8E897B;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#F2EFE8;color:#BB4D3D">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px;color:#5B564C">
+                    <span style="cursor:pointer" style-hover="color:#23201B">▲ {{c.pts}}</span><span style="cursor:pointer" style-hover="color:#23201B">▽</span><span style="width:1px;height:14px;background:#E7E3D9"></span><span style="cursor:pointer" style-hover="color:#23201B">⊕ Link</span><sc-if value="{{c.isTask}}" hint-placeholder-val="{{false}}"><span style="cursor:pointer" style-hover="color:#23201B">Add child</span></sc-if>
+                    <div style="flex:1"></div>
+                    <sc-if value="{{c.primaryX}}" hint-placeholder-val="{{false}}"><span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11.5px;cursor:pointer;white-space:nowrap" style-hover="background:rgba(178,106,43,.2)">{{c.primaryX}}</span></sc-if>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:12px">
+                    <sc-for list="{{c.tabsX}}" as="tb" hint-placeholder-count="4">
+                      <span onClick="{{tb.pick}}" style="display:flex;align-items:center;gap:4px;font-weight:{{tb.fw}};color:{{tb.cL}};border-bottom:{{tb.bL}};cursor:pointer" style-hover="color:#23201B">{{tb.label}}<sc-if value="{{tb.n}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{tb.n}}</span></sc-if></span>
+                    </sc-for>
+                  </div>
+                  <!-- CONTENT tab -->
+                  <sc-if value="{{c.tabContent}}" hint-placeholder-val="{{true}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+                      <!-- task · A rich -->
+                      <sc-if value="{{c.tvA}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;font-size:12px">
+                            <div style="color:#8E897B">Assignee <span style="color:#23201B;font-weight:500">◯ {{c.assignee}}</span></div>
+                            <div style="color:#8E897B">Priority <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:{{c.pc}};background:{{c.pb}};border-radius:4px;padding:1px 5px">{{c.prio}}</span></div>
+                            <div style="color:#8E897B">Project <span style="color:#23201B;font-weight:500">⬒ tm8-ui</span></div>
+                            <div style="color:#8E897B">ID <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5B564C">{{c.id}}</span></div>
+                          </div>
+                          <div style="font-size:12.5px;line-height:1.55;color:#5B564C;text-wrap:pretty">{{c.desc}}</div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">SUBTREE · 2</div>
+                            <div style="display:flex;flex-direction:column">
+                              <div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #F0EDE4;font-size:12px"><span style="width:10px;height:10px;border-radius:50%;background:#3E8E5A;flex:none"></span><span style="flex:1;color:#8E897B;text-decoration:line-through">measure guide x-offsets</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">done</span></div>
+                              <div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #F0EDE4;font-size:12px"><span style="width:10px;height:10px;border-radius:50%;border:2px solid #3E8E5A;flex:none;box-sizing:border-box"></span><span style="flex:1;color:#23201B">port .pn-tree rules</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">working</span></div>
+                              <div style="display:flex;align-items:center;gap:7px;padding:6px 0;font-size:12px;color:#B7B2A4;cursor:pointer" style-hover="color:#9A581F">＋ add child…</div>
+                            </div>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">RUNS · 1 LIVE</div>
+                            <div onClick="{{c.openForgeRow}}" style="display:flex;align-items:center;gap:8px;padding:7px 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;cursor:pointer" style-hover="border-color:#D8D3C6"><span style="width:8px;height:8px;border-radius:50%;background:#3E8E5A;animation:pnPulse 1.6s infinite;flex:none"></span><span style="width:17px;height:17px;flex:none;border-radius:5px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">F</span><span style="font-size:12px;font-weight:600">forge</span><span style="font-size:11px;color:#8E897B">running · 2m · claude-sonnet</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#3E8E5A">● live</span></div>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LINKED</div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap">
+                              <sc-for list="{{c.edgesX}}" as="e" hint-placeholder-count="2">
+                                <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8;border-color:#D8D3C6">{{e.t}}</span>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </div>
+                      </sc-if>
+                      <!-- task · B document-first -->
+                      <sc-if value="{{c.tvB}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="font-family:'Newsreader',Georgia,serif;font-size:15.5px;line-height:1.65;color:#23201B;text-wrap:pretty">{{c.desc}}</div>
+                          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B;border-top:1px solid #E7E3D9;border-bottom:1px solid #E7E3D9;padding:7px 0">{{c.id}} · {{c.prio}} · ◯ {{c.assignee}} · ⬒ tm8-ui · ▲ {{c.pts}} pts</div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LINKED</div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap">
+                              <sc-for list="{{c.edgesX}}" as="e" hint-placeholder-count="2">
+                                <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">{{e.t}}</span>
+                              </sc-for>
+                            </div>
+                          </div>
+                          <div style="font-size:11.5px;color:#8E897B">Subtree: <span style="color:#3E8E5A">1 done</span> · <span style="color:#23201B">1 working</span> — <span style="color:#B26A2B;cursor:pointer">expand ▾</span></div>
+                        </div>
+                      </sc-if>
+                      <!-- task · C table -->
+                      <sc-if value="{{c.tvC}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:flex;flex-direction:column;border:1px solid #E7E3D9;border-radius:8px;overflow:hidden;background:#FFFFFF">
+                            <div style="display:flex;padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px"><span style="width:84px;color:#8E897B;font-family:'JetBrains Mono',monospace;font-size:10px">STATUS</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:{{c.wc}}">● {{c.word}}</span></div>
+                            <div style="display:flex;padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px"><span style="width:84px;color:#8E897B;font-family:'JetBrains Mono',monospace;font-size:10px">ASSIGNEE</span><span style="color:#23201B">◯ {{c.assignee}}</span></div>
+                            <div style="display:flex;padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px"><span style="width:84px;color:#8E897B;font-family:'JetBrains Mono',monospace;font-size:10px">PRIORITY</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:{{c.pc}}">{{c.prio}}</span></div>
+                            <div style="display:flex;padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px"><span style="width:84px;color:#8E897B;font-family:'JetBrains Mono',monospace;font-size:10px">PROJECT</span><span style="color:#23201B">⬒ tm8-ui</span></div>
+                            <div style="display:flex;padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px"><span style="width:84px;color:#8E897B;font-family:'JetBrains Mono',monospace;font-size:10px">POINTS</span><span style="color:#23201B">▲ {{c.pts}}</span></div>
+                            <div style="display:flex;padding:6px 10px;font-size:11.5px"><span style="width:84px;color:#8E897B;font-family:'JetBrains Mono',monospace;font-size:10px">ID</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5B564C">{{c.id}}</span></div>
+                          </div>
+                          <div style="font-size:12px;line-height:1.5;color:#8E897B;text-wrap:pretty">{{c.desc}}</div>
+                          <div style="display:flex;gap:5px;flex-wrap:wrap">
+                            <sc-for list="{{c.edgesX}}" as="e" hint-placeholder-count="2">
+                              <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">{{e.t}}</span>
+                            </sc-for>
+                          </div>
+                        </div>
+                      </sc-if>
+                      <!-- doc reader -->
+                      <sc-if value="{{c.isDoc}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:flex;gap:5px;flex-wrap:wrap">
+                            <sc-for list="{{c.toc}}" as="t2" hint-placeholder-count="3">
+                              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:2px 9px;cursor:pointer;background:#FFFFFF" style-hover="color:#9A581F;border-color:rgba(178,106,43,.4)">{{t2}}</span>
+                            </sc-for>
+                          </div>
+                          <sc-for list="{{c.paras}}" as="p2" hint-placeholder-count="2">
+                            <div style="font-family:'Newsreader',Georgia,serif;font-size:15px;line-height:1.7;color:#3A362E;text-wrap:pretty">{{p2}}</div>
+                          </sc-for>
+                          <div style="border-left:2px solid #E7E3D9;padding:2px 0 2px 12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#8E897B">C_min = max(320, V·320 + (V−1)·8)</div>
+                          <div style="display:flex;align-items:center;gap:8px;border-top:1px solid #E7E3D9;padding-top:9px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{c.footer}}<div style="flex:1"></div><span style="color:#9A581F;cursor:pointer">history ▸</span></div>
+                        </div>
+                      </sc-if>
+                      <!-- teammate profile -->
+                      <sc-if value="{{c.isTm}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:flex;align-items:center;gap:10px">
+                            <span style="width:40px;height:40px;flex:none;border-radius:10px;background:rgba(178,106,43,.11);color:#9A581F;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600;border:1px solid rgba(178,106,43,.3)">{{c.init}}</span>
+                            <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                              <div style="font-size:14px;font-weight:600">{{c.title}} <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:4px;padding:1px 5px">agent</span></div>
+                              <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">{{c.model}} · owned by {{c.owner}}</div>
+                            </div>
+                          </div>
+                          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+                            <sc-for list="{{c.statsX}}" as="st" hint-placeholder-count="3">
+                              <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#23201B">{{st.v}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">{{st.k}}</span></div>
+                            </sc-for>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">DEFAULTS</div>
+                            <div style="display:flex;flex-direction:column;gap:5px;font-size:12px">
+                              <div style="display:flex;align-items:center;gap:7px;color:#8E897B">Project <span style="color:#23201B;font-weight:500">⬒ {{c.defProject}}</span></div>
+                              <div style="display:flex;align-items:center;gap:7px;color:#8E897B">Profile <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#5B564C;border:1px solid #E7E3D9;border-radius:5px;padding:1px 7px;background:#FFFFFF">{{c.profile}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">immutable on running sessions</span></div>
+                            </div>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">RECENT SESSIONS</div>
+                            <div style="display:flex;flex-direction:column;gap:4px">
+                              <sc-for list="{{c.recentsX}}" as="rs" hint-placeholder-count="2">
+                                <div onClick="{{rs.open}}" style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:11.5px;color:#5B564C;cursor:pointer" style-hover="border-color:#D8D3C6;background:#F2EFE8">▣ {{rs.t}}</div>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </div>
+                      </sc-if>
+                      <!-- member profile -->
+                      <sc-if value="{{c.isMember}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:flex;align-items:center;gap:10px">
+                            <span style="width:40px;height:40px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600">{{c.init}}</span>
+                            <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                              <div style="font-size:14px;font-weight:600">{{c.title}} <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#5B564C;background:#ECE8DF;border-radius:4px;padding:1px 5px">{{c.role}}</span></div>
+                              <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">human member · ● {{c.word}}</div>
+                            </div>
+                          </div>
+                          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+                            <sc-for list="{{c.statsX}}" as="st" hint-placeholder-count="3">
+                              <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;color:#23201B">{{st.v}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.08em;color:#B7B2A4;text-transform:uppercase">{{st.k}}</span></div>
+                            </sc-for>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">TEAMMATES OWNED</div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap">
+                              <sc-for list="{{c.ownsX}}" as="e" hint-placeholder-count="2">
+                                <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">{{e.t}}</span>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </div>
+                      </sc-if>
+                      <!-- project / trust -->
+                      <sc-if value="{{c.isProject}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:8px 10px"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#23201B;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{c.dir}}</span><span style="color:#B7B2A4;font-size:11px;cursor:pointer;flex:none" style-hover="color:#9A581F">⧉</span></div>
+                          <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8E897B">⑂ <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5B564C">{{c.repo}}</span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#9A581F">↗</span></div>
+                          <sc-if value="{{c.trustedX}}" hint-placeholder-val="{{false}}">
+                            <div style="border:1px solid rgba(62,142,90,.35);background:rgba(62,142,90,.06);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px">
+                              <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 8px">● trusted</span><div style="flex:1"></div><span style="font-size:11px;font-weight:600;color:#5B564C;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">Untrust…</span></div>
+                              <div style="font-size:11.5px;line-height:1.5;color:#5B564C">Agents may run real terminal sessions in this root. Untrusting terminates nothing but blocks new runs.</div>
+                            </div>
+                          </sc-if>
+                          <sc-if value="{{c.untrustedX}}" hint-placeholder-val="{{false}}">
+                            <div style="border:1px solid rgba(189,138,42,.4);background:rgba(189,138,42,.07);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px">
+                              <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:2px 8px">○ untrusted</span><div style="flex:1"></div><span style="font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Trust project…</span></div>
+                              <div style="font-size:11.5px;line-height:1.5;color:#5B564C">Agents cannot run here until you trust it. Trusting grants terminal execution in this directory.</div>
+                            </div>
+                          </sc-if>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LINKED SPACES</div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap">
+                              <sc-for list="{{c.spacesX}}" as="sp" hint-placeholder-count="2">
+                                <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FFFFFF">{{sp.t}}</span>
+                              </sc-for>
+                            </div>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LIVE SESSIONS IN THIS ROOT</div>
+                            <div style="display:flex;flex-direction:column;gap:4px">
+                              <sc-for list="{{c.liveUseX}}" as="lu" hint-placeholder-count="2">
+                                <div onClick="{{lu.open}}" style="display:flex;align-items:center;gap:7px;padding:6px 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:11.5px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:7px;height:7px;border-radius:50%;background:#3E8E5A;flex:none;animation:pnPulse 1.6s infinite"></span>▣ {{lu.t}}</div>
+                              </sc-for>
+                              <sc-if value="{{c.untrustedX}}" hint-placeholder-val="{{false}}"><div style="font-size:11.5px;color:#B7B2A4;padding:2px 0">none — runs are blocked here</div></sc-if>
+                            </div>
+                          </div>
+                          <sc-if value="{{c.unlinkNote}}" hint-placeholder-val="{{false}}">
+                            <div style="display:flex;flex-direction:column;gap:3px;border-top:1px solid #E7E3D9;padding-top:9px">
+                              <span style="font-size:11.5px;font-weight:600;color:#B7B2A4;cursor:not-allowed;opacity:.7">Unlink from this space</span>
+                              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#BD8A2A">⚠ {{c.unlinkNote}}</span>
+                            </div>
+                          </sc-if>
+                        </div>
+                      </sc-if>
+                      <!-- pull request -->
+                      <sc-if value="{{c.isPR}}" hint-placeholder-val="{{false}}">
+                        <div style="display:flex;flex-direction:column;gap:12px">
+                          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5B564C;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px">{{c.branch}}</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#3E8E5A">{{c.added}}</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#BB4D3D">{{c.removed}}</span>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">CHECKS</div>
+                            <div style="display:flex;flex-direction:column;border:1px solid #E7E3D9;border-radius:8px;overflow:hidden;background:#FFFFFF">
+                              <sc-for list="{{c.checksX}}" as="ck" hint-placeholder-count="3">
+                                <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #F0EDE4;font-size:11.5px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:{{ck.c}}">{{ck.g}}</span><span style="color:#5B564C">{{ck.t}}</span></div>
+                              </sc-for>
+                            </div>
+                          </div>
+                          <div>
+                            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">LINKED</div>
+                            <div style="display:flex;gap:5px;flex-wrap:wrap">
+                              <sc-for list="{{c.edgesX}}" as="e" hint-placeholder-count="1">
+                                <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:2px 8px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">{{e.t}}</span>
+                              </sc-for>
+                            </div>
+                          </div>
+                        </div>
+                      </sc-if>
+                    </div>
+                  </sc-if>
+                  <!-- DISCUSSION tab -->
+                  <sc-if value="{{c.tabDisc}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+                      <sc-for list="{{c.msgs}}" as="m" hint-placeholder-count="3">
+                        <div style="display:flex;gap:9px">
+                          <span style="width:22px;height:22px;flex:none;border-radius:{{m.avR}};background:{{m.avBg}};color:{{m.avC}};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">{{m.av}}</span>
+                          <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+                            <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:600">{{m.name}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.09);border-radius:3px;padding:0 4px">{{m.tag}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">{{m.when}}</span></div>
+                            <div style="font-size:12.5px;line-height:1.55;color:#5B564C;text-wrap:pretty">{{m.body}}</div>
+                            <sc-if value="{{m.rx}}" hint-placeholder-val="{{false}}"><div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #E7E3D9;border-radius:999px;padding:1px 7px;background:#FFFFFF">{{m.rx}}</span></div></sc-if>
+                          </div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="flex:none;border-top:1px solid #E7E3D9;padding:9px 12px;display:flex;gap:7px;align-items:center">
+                      <div style="flex:1;height:30px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;font-size:12px;color:#B7B2A4">Reply — @ to mention</div>
+                      <div style="width:30px;height:30px;flex:none;border-radius:8px;background:#23201B;color:#F4F2EC;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer" style-hover="background:#3A362E">↑</div>
+                    </div>
+                  </sc-if>
+                  <!-- CONNECTIONS tab -->
+                  <sc-if value="{{c.tabConn}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+                      <sc-for list="{{c.connGroups}}" as="cg" hint-placeholder-count="2">
+                        <div>
+                          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:5px">{{cg.t}}</div>
+                          <div style="display:flex;gap:5px;flex-wrap:wrap">
+                            <sc-for list="{{cg.items}}" as="e" hint-placeholder-count="2">
+                              <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #E7E3D9;border-radius:6px;padding:3px 9px;font-size:11.5px;color:#5B564C;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8;border-color:#D8D3C6">{{e.t}}</span>
+                            </sc-for>
+                          </div>
+                        </div>
+                      </sc-for>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#B7B2A4;cursor:pointer;padding-top:2px" style-hover="color:#9A581F">＋ link an entity — or drag one here</div>
+                    </div>
+                  </sc-if>
+                  <!-- ACTIVITY tab -->
+                  <sc-if value="{{c.tabAct}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column">
+                      <sc-for list="{{c.acts}}" as="ac" hint-placeholder-count="4">
+                        <div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #F0EDE4">
+                          <span style="width:8px;height:8px;border-radius:50%;background:{{ac.dot}};flex:none"></span>
+                          <span style="flex:1;font-size:12px;color:#5B564C">{{ac.tx}}</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4;flex:none">{{ac.when}}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <div style="height:28px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{c.footer}}</div>
+                </div>
+              </sc-if>
+              <!-- SESSION panel: dark shell -->
+              <sc-if value="{{c.isSession}}" hint-placeholder-val="{{true}}">
+                <div style="flex:1;min-width:0;background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+                  <div style="padding:8px 12px 0;display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">{{c.crumb}}</span><div style="flex:1"></div><sc-if value="{{c.hasVars}}" hint-placeholder-val="{{false}}"><span style="display:flex;align-items:center;gap:2px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">layout<sc-for list="{{c.varsX}}" as="vv" hint-placeholder-count="2"><span onClick="{{vv.pick}}" style="padding:1px 6px;border-radius:4px;font-weight:600;color:{{vv.c}};background:{{vv.bg}};cursor:pointer">{{vv.v}}</span></sc-for></span></sc-if></div>
+                  <div style="display:flex;align-items:center;gap:7px;padding:4px 12px 9px;border-bottom:1px solid #2C2719">
+                    <span style="width:18px;height:18px;border-radius:5px;background:rgba(224,164,90,.15);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex:none">{{c.init}}</span>
+                    <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{c.title}}</span>
+                    <span style="flex:0 4 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">{{c.prov}}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:{{c.wcD}};background:{{c.wsD}};border-radius:999px;padding:2px 7px;flex:none">● {{c.word}}</span>
+                    <div style="flex:1"></div>
+                    <span style="color:#8C8470;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#302A1D">⋯</span>
+                    <span title="{{c.pinTitle}}" onClick="{{c.togglePin}}" style="font-size:12px;cursor:{{c.pinCursor}};padding:2px 4px;border-radius:5px;color:{{c.pinColorD}};background:{{c.pinBgD}};opacity:{{c.pinOpacity}}" style-hover="background:#302A1D">⌖</span>
+                    <span title="full view" onClick="{{c.expand}}" style="color:#8C8470;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#302A1D">⤢</span>
+                    <span onClick="{{c.close}}" style="color:#8C8470;font-size:12px;cursor:pointer;padding:2px 4px;border-radius:5px" style-hover="background:#302A1D;color:#DA7D6A">✕</span>
+                  </div>
+                  <div style="height:32px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:11.5px;color:#BDB5A2">
+                    <span>▲</span><span>✶</span><span style="width:1px;height:14px;background:#2C2719"></span><span style="cursor:pointer" style-hover="color:#EFE9DB">⊕ Link</span><span style="cursor:pointer" style-hover="color:#EFE9DB">Share ▾</span>
+                    <div style="flex:1"></div>
+                    <span style="cursor:pointer" style-hover="color:#EFE9DB">Complete</span>
+                    <span style="color:#DA7D6A;cursor:pointer" style-hover="color:#E89A89">Terminate</span>
+                  </div>
+                  <div style="height:30px;flex:none;display:flex;align-items:stretch;gap:14px;padding:0 12px;border-bottom:1px solid #2C2719;font-size:12px">
+                    <sc-for list="{{c.tabsX}}" as="tb" hint-placeholder-count="4">
+                      <span onClick="{{tb.pick}}" style="display:flex;align-items:center;gap:4px;font-weight:{{tb.fw}};color:{{tb.cD}};border-bottom:{{tb.bD}};cursor:pointer" style-hover="color:#EFE9DB">{{tb.label}}<sc-if value="{{tb.n}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">{{tb.n}}</span></sc-if></span>
+                    </sc-for>
+                  </div>
+                  <sc-if value="{{c.tabContent}}" hint-placeholder-val="{{true}}">
+                  <sc-if value="{{c.svB}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 12px;border-bottom:1px solid #2C2719">
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#665E4C">ASSOCIATED PROJECTS</div>
+                      <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+                        <span onClick="{{c.openProjX}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;font-size:11px;color:#BDB5A2;background:#1B1810;cursor:pointer" style-hover="border-color:#E0A45A">⬒ tm8-ui</span>
+                        <span style="color:#665E4C;font-size:11px;cursor:pointer" style-hover="color:#E0A45A">＋</span>
+                        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">launched from ⬒ tm8-ui · immutable</span>
+                      </div>
+                      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#665E4C">SHARED CONTEXT · 2</div>
+                      <div style="display:flex;flex-direction:column;gap:4px">
+                        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#BDB5A2"><span onClick="{{c.openDocX}}" style="cursor:pointer" style-hover="color:#EFE9DB">▤ Layout spec</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:1px 6px">delivered ✓</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#8C8470;background:rgba(122,115,96,.2);border-radius:999px;padding:1px 6px">recorded</span></div>
+                        <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#BDB5A2"><span onClick="{{c.openTaskX}}" style="cursor:pointer" style-hover="color:#EFE9DB">◔ T-114</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:1px 6px">delivery unknown ⚠</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#8C8470;background:rgba(122,115,96,.2);border-radius:999px;padding:1px 6px">recorded</span></div>
+                      </div>
+                    </div>
+                  </sc-if>
+                  <div style="height:24px;flex:none;border-bottom:1px dashed #2C2719"></div>
+                  <div style="height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;background:#1B1810;border-bottom:1px solid #2C2719">
+                    <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'JetBrains Mono',monospace;font-size:11px;color:#BDB5A2">◈ {{c.title}} · claude</span>
+                    <span style="flex:none;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:{{c.wcD}}">● {{c.word}}</span>
+                    <sc-if value="{{c.isLive}}" hint-placeholder-val="{{true}}"><span style="flex:none;white-space:nowrap;font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="background:#302A1D">exit terminal ⌃`</span></sc-if>
+                    <sc-if value="{{c.isEnded}}" hint-placeholder-val="{{false}}"><a style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#E0A45A">view transcript</a></sc-if>
+                  </div>
+                  <sc-if value="{{c.needsBanner}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:none;display:flex;align-items:center;gap:8px;padding:7px 12px;background:rgba(217,170,73,.18);border-bottom:1px solid #2C2719;font-size:12px;color:#D9AA49"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600">⚠ needs you</span><span style="color:#BDB5A2">waiting on your input — approve plan (y/n)</span></div>
+                  </sc-if>
+                  <sc-if value="{{c.isLive}}" hint-placeholder-val="{{true}}">
+                    <div style="flex:1;background:#131009;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.75;overflow:auto;min-height:160px">
+                      <sc-for list="{{c.lines}}" as="l" hint-placeholder-count="6">
+                        <div style="color:{{l.c}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{l.tx}}</div>
+                      </sc-for>
+                      <span style="display:inline-block;width:7px;height:13px;background:#E0A45A;vertical-align:middle;animation:pnPulse 1.1s infinite"></span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{c.isEnded}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;background:#1B1810;display:flex;align-items:center;justify-content:center;min-height:160px;padding:20px">
+                      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;max-width:300px;text-align:center">
+                        <sc-if value="{{c.isStale}}" hint-placeholder-val="{{false}}">
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:3px 10px">⚠ stale — node restarted</span>
+                          <div style="font-size:12.5px;line-height:1.5;color:#BDB5A2">This session reported running, but its process is gone. Liveness never lies.</div>
+                          <span style="font-size:11.5px;font-weight:600;color:#BDB5A2;border:1px solid #3B3524;border-radius:6px;padding:3px 10px;cursor:pointer" style-hover="background:#302A1D">mark exited</span>
+                        </sc-if>
+                        <sc-if value="{{c.isExited}}" hint-placeholder-val="{{false}}">
+                          <span style="width:14px;height:14px;border-radius:50%;border:2px solid #665E4C"></span>
+                          <div style="font-size:13px;font-weight:600;color:#BDB5A2">exited {{c.endWhen}}</div>
+                          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8C8470">{{c.endMeta}}</div>
+                          <a style="font-size:12px;color:#E0A45A">open transcript →</a>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </sc-if>
+                  </sc-if>
+                  <sc-if value="{{c.tabDisc}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+                      <sc-for list="{{c.msgs}}" as="m" hint-placeholder-count="3">
+                        <div style="display:flex;gap:9px">
+                          <span style="width:22px;height:22px;flex:none;border-radius:{{m.avR}};background:{{m.avBgD}};color:{{m.avCD}};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600">{{m.av}}</span>
+                          <div style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+                            <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:12px;font-weight:600;color:#EFE9DB">{{m.name}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#E0A45A;background:rgba(224,164,90,.12);border-radius:3px;padding:0 4px">{{m.tag}}</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">{{m.when}}</span></div>
+                            <div style="font-size:12.5px;line-height:1.55;color:#BDB5A2;text-wrap:pretty">{{m.body}}</div>
+                            <sc-if value="{{m.rx}}" hint-placeholder-val="{{false}}"><div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:999px;padding:1px 7px;background:#1B1810">{{m.rx}}</span></div></sc-if>
+                          </div>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="flex:none;border-top:1px solid #2C2719;padding:9px 12px;display:flex;gap:7px;align-items:center">
+                      <div style="flex:1;height:30px;display:flex;align-items:center;padding:0 10px;background:#1B1810;border:1px solid #3B3524;border-radius:8px;font-size:12px;color:#665E4C">Reply — @ to mention</div>
+                      <div style="width:30px;height:30px;flex:none;border-radius:8px;background:#E0A45A;color:#1B1810;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer" style-hover="background:#C98A3E">↑</div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{c.tabConn}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:12px">
+                      <sc-for list="{{c.connGroups}}" as="cg" hint-placeholder-count="2">
+                        <div>
+                          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#665E4C;padding-bottom:5px">{{cg.t}}</div>
+                          <div style="display:flex;gap:5px;flex-wrap:wrap">
+                            <sc-for list="{{cg.items}}" as="e" hint-placeholder-count="2">
+                              <span onClick="{{e.open}}" style="display:inline-flex;align-items:center;gap:5px;border:1px solid #3B3524;border-radius:6px;padding:3px 9px;font-size:11.5px;color:#BDB5A2;background:#1B1810;cursor:pointer" style-hover="border-color:#E0A45A">{{e.t}}</span>
+                            </sc-for>
+                          </div>
+                        </div>
+                      </sc-for>
+                      <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#665E4C;cursor:pointer;padding-top:2px" style-hover="color:#E0A45A">＋ link an entity — or drag one here</div>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{c.tabAct}}" hint-placeholder-val="{{false}}">
+                    <div style="flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column">
+                      <sc-for list="{{c.acts}}" as="ac" hint-placeholder-count="4">
+                        <div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #262117">
+                          <span style="width:8px;height:8px;border-radius:50%;background:{{ac.dot}};flex:none"></span>
+                          <span style="flex:1;font-size:12px;color:#BDB5A2">{{ac.tx}}</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;flex:none">{{ac.when}}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                  <div style="height:28px;flex:none;border-top:1px solid #2C2719;display:flex;align-items:center;gap:10px;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#665E4C">{{c.footer}}</div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{emptyCenter}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center">
+          <div style="display:flex;flex-direction:column;gap:10px;width:340px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8C8470">LIVE SESSIONS</div>
+            <sc-for list="{{roster}}" as="r" hint-placeholder-count="4">
+              <div onClick="{{r.open}}" style="display:flex;align-items:center;gap:9px;padding:8px 10px;background:#221E15;border:1px solid #2C2719;border-radius:8px;cursor:pointer" style-hover="background:#262117">
+                <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{r.dotBg}};border:{{r.dotBr}};animation:{{r.anim}}"></span>
+                <span style="font-size:13px;font-weight:600;color:#EFE9DB">{{r.name}}</span>
+                <span style="font-size:11.5px;color:#8C8470">{{r.meta}}</span>
+                <span style="flex:1"></span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{r.wc}};background:{{r.ws}};border-radius:999px;padding:1px 6px">{{r.word}}</span>
+              </div>
+            </sc-for>
+            <div style="font-size:12.5px;color:#8C8470;text-align:center;padding-top:6px">Click any task or session to open it here.</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#665E4C">Esc closes · p pins · / opens the palette</div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+    <!-- RIGHT: EntityListPanel · kind=Sessions (same anatomy) -->
+    <div style="flex:0 1 300px;min-width:220px;background:#FBFAF6;border-left:1px solid #E7E3D9;display:flex;flex-direction:column;min-height:0;position:relative">
+      <sc-if value="{{R.kindOpen}}" hint-placeholder-val="{{false}}">
+        <div style="position:absolute;left:10px;top:38px;width:170px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;box-shadow:0 12px 34px rgba(40,34,24,.14);z-index:70;overflow:hidden">
+          <sc-for list="{{R.kinds}}" as="k" hint-placeholder-count="4">
+            <div onClick="{{k.pick}}" style="display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:12.5px;color:#5B564C;cursor:pointer;background:{{k.bg}}" style-hover="background:#F2EFE8"><span style="width:16px;text-align:center;color:#8E897B">{{k.ic}}</span>{{k.name}}<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{k.count}}</span></div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div style="padding:12px 12px 10px;display:flex;flex-direction:column;gap:9px;border-bottom:1px solid #E7E3D9">
+        <div style="display:flex;align-items:center;gap:7px"><span onClick="{{R.kindToggle}}" style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;border-radius:6px;padding:2px 5px;margin:-2px -5px" style-hover="background:#F2EFE8"><span style="color:#8E897B;font-size:13px">{{R.glyph}}</span><span style="font-size:14px;font-weight:600">{{R.kind}}</span><span style="color:#B7B2A4;font-size:9px">▾</span></span><div style="flex:1"></div><div style="background:#23201B;color:#F4F2EC;border-radius:7px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">{{R.create}}</div></div>
+        <div style="height:28px;display:flex;align-items:center;gap:7px;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">⌕ {{R.search}}<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px">/</span></div>
+        <div style="display:flex;gap:4px;font-size:12px">
+          <sc-for list="{{R.tabs}}" as="tb" hint-placeholder-count="3">
+            <span style="padding:3px 9px;border-radius:6px;background:{{tb.bg}};color:{{tb.c}};font-weight:{{tb.fw}};cursor:pointer" style-hover="background:#F2EFE8">{{tb.label}}</span>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <sc-for list="{{R.views}}" as="v" hint-placeholder-count="4">
+            <div title="{{v.name}}" onClick="{{v.pick}}" style="width:26px;height:24px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:12px;color:{{v.c}};background:{{v.bg}};cursor:pointer" style-hover="background:#F2EFE8">{{v.ic}}</div>
+          </sc-for>
+          <div style="flex:1"></div>
+          <div title="filter" onClick="{{R.filterToggle}}" style="height:24px;display:flex;align-items:center;gap:3px;border:1px solid {{R.filterBr}};border-radius:6px;font-size:11px;font-weight:600;background:{{R.filterBg}};color:{{R.filterC}};padding:0 7px;cursor:pointer" style-hover="background:#F2EFE8">▽<sc-if value="{{R.filterOn}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding-left:2px">{{R.filterCount}}</span></sc-if></div>
+          <div title="sort" onClick="{{R.sortToggle}}" style="height:24px;display:flex;align-items:center;border:1px solid {{R.sortBr}};border-radius:6px;font-size:11px;font-weight:600;background:{{R.sortBg}};color:{{R.sortC}};padding:0 7px;cursor:pointer" style-hover="background:#F2EFE8">⇅</div>
+        </div>
+        <sc-if value="{{R.filterOpen}}" hint-placeholder-val="{{false}}">
+          <div style="position:absolute;right:10px;top:146px;width:180px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;box-shadow:0 12px 34px rgba(40,34,24,.14);z-index:70;padding:4px 0">
+            <sc-for list="{{R.filterOpts}}" as="o" hint-placeholder-count="3">
+              <div onClick="{{o.pick}}" style="display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:12px;height:12px;flex:none;border-radius:3px;border:1.5px solid {{o.bxBr}};background:{{o.bxBg}};display:flex;align-items:center;justify-content:center;color:#FFFFFF;font-size:9px;font-weight:700;box-sizing:border-box">{{o.tick}}</span>{{o.name}}</div>
+            </sc-for>
+          </div>
+        </sc-if>
+        <sc-if value="{{R.sortOpen}}" hint-placeholder-val="{{false}}">
+          <div style="position:absolute;right:10px;top:146px;width:170px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;box-shadow:0 12px 34px rgba(40,34,24,.14);z-index:70;padding:4px 0">
+            <sc-for list="{{R.sortOpts}}" as="o" hint-placeholder-count="4">
+              <div onClick="{{o.pick}}" style="display:flex;align-items:center;gap:8px;padding:6px 12px;font-size:12px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8">{{o.name}}<span style="flex:1"></span><span style="color:#9A581F;font-size:11px;font-weight:600">{{o.mark}}</span></div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <sc-if value="{{R.isRows}}" hint-placeholder-val="{{true}}"><div style="flex:1;overflow:auto">
+        <sc-for list="{{R.rows}}" as="s" hint-placeholder-count="9">
+          <div>
+            <sc-if value="{{s.isGrp}}" hint-placeholder-val="{{false}}"><div style="display:flex;align-items:center;gap:8px;padding:12px 12px 5px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:{{s.gc}}">{{s.name}}</span><div style="flex:1;height:1px;background:#E7E3D9"></div></div></sc-if>
+            <sc-if value="{{s.isRow}}" hint-placeholder-val="{{false}}">
+              <div onClick="{{s.open}}" style="padding:7px 12px 7px {{s.pad}};display:flex;flex-direction:column;gap:3px;background:{{s.bg}};border-left:2px solid {{s.bar}};border-bottom:1px solid #F0EDE4;cursor:pointer" style-hover="background:#F2EFE8">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <sc-if value="{{s.tree}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;color:#D8D3C6;font-size:12px">{{s.tree}}</span></sc-if>
+                  <span style="width:8px;height:8px;flex:none;border-radius:50%;background:{{s.dotBg}};border:{{s.dotBr}};animation:{{s.anim}}"></span>
+                  <span style="width:17px;height:17px;flex:none;border-radius:{{s.avR}};background:{{s.avBg}};color:{{s.avC}};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600">{{s.init}}</span>
+                  <span style="font-size:13px;font-weight:600;color:{{s.nc}};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.name}}</span>
+                  <div style="flex:1"></div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.wc}};background:{{s.ws}};border-radius:999px;padding:1px 6px;flex:none">{{s.word}}</span>
+                </div>
+                <div style="padding-left:{{s.mpad}};display:flex;align-items:center;gap:6px">
+                  <span style="flex:1;font-size:10.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{s.meta}}</span>
+                  <sc-if value="{{s.x}}" hint-placeholder-val="{{false}}"><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{s.xc}};background:{{s.xb}};border-radius:4px;padding:1px 5px;flex:none">{{s.x}}</span></sc-if>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div></sc-if>
+      <sc-if value="{{R.isBoard}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;overflow:auto;padding:10px;display:flex;gap:8px;align-items:flex-start">
+          <sc-for list="{{R.boardCols}}" as="bc" hint-placeholder-count="3">
+            <div style="flex:1;min-width:88px;display:flex;flex-direction:column;gap:6px">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#8E897B">{{bc.name}}</div>
+              <sc-for list="{{bc.cards}}" as="cd" hint-placeholder-count="2">
+                <div onClick="{{cd.open}}" style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:7px 8px;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05)" style-hover="border-color:#D8D3C6">
+                  <div style="font-size:11.5px;font-weight:600;color:#23201B;line-height:1.3">{{cd.name}}</div>
+                  <div style="display:flex;align-items:center;gap:5px;padding-top:4px"><span style="width:7px;height:7px;border-radius:50%;background:{{cd.dotBg}};border:{{cd.dotBr}};flex:none"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:{{cd.wc}}">{{cd.word}}</span></div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{R.isGraph}}" hint-placeholder-val="{{false}}">
+        <div style="flex:1;position:relative;overflow:hidden">
+          <sc-for list="{{R.gEdges}}" as="ge" hint-placeholder-count="4"><div style="position:absolute;left:{{ge.x}}px;top:{{ge.y}}px;width:{{ge.w}}px;height:1px;background:#D8D3C6;transform:rotate({{ge.r}}deg);transform-origin:0 0"></div></sc-for>
+          <sc-for list="{{R.gNodes}}" as="gn" hint-placeholder-count="5">
+            <div onClick="{{gn.open}}" style="position:absolute;left:{{gn.x}}px;top:{{gn.y}}px;transform:translate(-50%,-50%);display:flex;align-items:center;gap:5px;background:#FFFFFF;border:1px solid {{gn.br}};border-radius:999px;padding:3px 9px;font-size:11px;font-weight:600;color:#23201B;cursor:pointer;box-shadow:0 1px 2px rgba(40,34,24,.05);white-space:nowrap" style-hover="border-color:#B26A2B"><span style="width:7px;height:7px;border-radius:50%;background:{{gn.dot}};border:{{gn.dotBr}};flex:none"></span>{{gn.name}}</div>
+          </sc-for>
+          <div style="position:absolute;left:10px;bottom:8px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">typed edges · click a node</div>
+        </div>
+      </sc-if>
+      <div style="height:34px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">{{R.footer}}</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { railOpen: false, activeServer: 'local', groupOpen: { Workspace: true }, addServerOpen: false, stack: ['s-forge'], pins: [], rosterOpen: false, lKind: 'Tasks', rKind: 'Sessions', kindMenu: null, ctlMenu: null, lSort: 'Default', rSort: 'Default', lFilt: {}, rFilt: {}, lView: 'List', rView: 'List', tab: {}, varTask: 'A', varSess: 'A', z4: null };
+  componentDidMount() {
+    this.kd = (e) => {
+      if (e.key === 'Escape') this.setState(s => s.addServerOpen ? { addServerOpen: false } : (s.ctlMenu ? { ctlMenu: null } : (s.kindMenu ? { kindMenu: null } : (s.rosterOpen ? { rosterOpen: false } : (s.z4 ? { z4: null } : { stack: s.stack.slice(0, -1) })))));
+      else if (e.key === '\\' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.setState(s => ({ railOpen: !s.railOpen })); }
+      else if (e.key === 'p' && !e.metaKey && !e.ctrlKey) this.pinTop();
+    };
+    window.addEventListener('keydown', this.kd);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this.kd); }
+  pinTop() {
+    this.setState(s => {
+      const top = s.stack[s.stack.length - 1];
+      if (!top || s.pins.length >= 3) return {};
+      return { pins: s.pins.concat(top), stack: s.stack.filter(x => x !== top) };
+    });
+  }
+  ents() {
+    const run = '#3E8E5A', runS = 'rgba(62,142,90,.12)', wait = '#BD8A2A', waitS = 'rgba(189,138,42,.14)',
+      block = '#BB4D3D', blockS = 'rgba(187,77,61,.12)', info = '#3F6C90', infoS = 'rgba(63,108,144,.12)',
+      idle = '#B7B2A4', idleS = 'rgba(162,156,142,.16)', grey = '#8E897B';
+    const runD = '#5CB381', runDS = 'rgba(92,179,129,.17)', waitD = '#D9AA49', waitDS = 'rgba(217,170,73,.18)',
+      idleD = '#8C8470', idleDS = 'rgba(122,115,96,.2)';
+    this.C = { run, runS, wait, waitS, block, blockS, info, infoS, idle, idleS, grey, runD, runDS, waitD, waitDS, idleD, idleDS };
+    const PR = { HIGH: { c: block, b: blockS }, MED: { c: grey, b: idleS }, LOW: { c: idle, b: 'transparent' } };
+    const ST = {
+      working: { ring: run, word: 'working', wc: run, ws: runS, dot: run, dotBr: 'none' },
+      open: { ring: idle, word: 'open', wc: grey, ws: idleS, dot: 'transparent', dotBr: '2px solid #B7B2A4' },
+      blocked: { ring: block, word: 'blocked', wc: block, ws: blockS, dot: block, dotBr: 'none' },
+      review: { ring: info, word: 'in review', wc: info, ws: infoS, dot: info, dotBr: 'none' },
+      stale: { ring: wait, word: 'stale', wc: wait, ws: waitS, dot: 'transparent', dotBr: '2px solid #BD8A2A' }
+    };
+    const T = (id, title, prio, st, msgs, pts, desc, edges) => ({
+      kind: 'task', id, title, prio, msgs, pts, desc, edges,
+      pc: PR[prio].c, pb: PR[prio].b, ring: ST[st].ring, dot: ST[st].dot, dotBr: ST[st].dotBr, word: ST[st].word, wc: ST[st].wc, ws: ST[st].ws,
+      disc: msgs, conn: edges.length, assignee: '@ada', crumb: 'atelier › tasks',
+      footer: '◉ 2 viewing · by @ada · v3 · active 2m ago'
+    });
+    const fl = (tx, c) => ({ tx, c });
+    const S = (id, name, o) => Object.assign({ kind: 'session', id, name, title: name, prov: 'claude-sonnet', crumb: 'atelier › sessions', init: name[0].toUpperCase(), disc: 3, conn: 2 }, o);
+    const E = {};
+    [
+      T('T-131', 'Menu rail: config-driven rendering', 'HIGH', 'working', 4, 8, 'Render the space menu from per-space MenuConfig — group headers, plain rows, one caret view row with ≤8 children. No menu item may be hardcoded.', ['▤ Menu spec', '⑂ PR #219']),
+      T('T-114', 'Session tree guide lines', 'MED', 'working', 7, 12, 'Port maestro\'s session-tree guide lines into the generic Sessions list. Depth × 14px x-offsets, hairline in line-2, solid vs pulsing dots per streaming state.', ['⑂ PR #212', '▤ Layout spec', '▣ forge']),
+      T('T-127', 'Panel stack: pin geometry + C_min', 'HIGH', 'working', 3, 6, 'Enforce C_min = max(320, V·320+(V−1)·8). Refuse pin with reason when the center is too narrow; auto-demote the oldest pin on window shrink.', ['▤ Layout spec']),
+      T('T-109', 'Terminal exited fallback', 'HIGH', 'blocked', 5, 4, 'When a session ends, the canvas is replaced by a read-only fallback: status word + transcript link. Blocked: transcript route not built yet.', ['▣ scout', '⑂ PR #217']),
+      T('T-121', 'Inbox read-state model', 'MED', 'review', 2, 3, 'Unread/read model for mentions, assignments, replies and delivery failures; click-through opens the entity panel, never a separate screen.', ['⑂ PR #208']),
+      T('T-098', 'Collection Graph layout', 'MED', 'open', 0, 9, 'The showcase view: Z2 cards as nodes, typed directional edges, hierarchy as containment. Dependency mode renders the blocked path in block-red.', ['▤ Graph concept']),
+      T('T-133', 'Drag-to-session delivery facets', 'MED', 'open', 1, 2, 'Dropping an entity onto a live session shares it into agent context. Render delivery (delivered/refused/unknown) and record as two independent facets.', ['▣ forge', '▤ UX brief']),
+      T('T-136', 'Palette: disabled discovery rows', 'LOW', 'open', 0, 1, 'Deferred features (Leaderboard, Activity) appear in the command palette as visible, labeled, non-clickable "not available yet" rows.', ['▤ UX brief']),
+      T('T-088', 'Dark theme: status ramp audit', 'LOW', 'stale', 2, 5, 'Verify every status color+word pairing on warm graphite. State is never carried by color alone — audit each pill in both themes.', ['▤ Tokens'])
+    ].forEach(t => E[t.id] = t);
+    const D = (id, title, ver, disc, toc, paras, edges) => ({
+      kind: 'doc', id, title, glyph: '▤', word: ver, wc: grey, ws: idleS, disc, conn: edges.length,
+      crumb: 'atelier › docs', footer: ver + ' · autosaved · 2 readers now', toc, paras, edges, primary: 'Edit'
+    });
+    E['DOC-14'] = D('DOC-14', 'Layout spec', 'v3', 6, ['Shell regions', 'C_min formula', 'Floors', 'Responsive'], [
+      'Every shrinkable region states a floor — this app has been broken three separate times by flex tracks with zero minimums, so floors are law, not preference.',
+      'The center hosts pinned panels left-to-right in pin order, with the top of the stack as the rightmost column. C_min = max(320, V·320 + (V−1)·8). When the window shrinks below C_min, the oldest pin demotes onto the stack; widening never auto-restores.'
+    ], ['◔ T-127', '⑂ PR #212']);
+    E['DOC-15'] = D('DOC-15', 'Menu spec', 'v2', 2, ['Row grammar', 'Groups', 'Caret rows'], [
+      'The space menu renders from a per-space config: group headers (labels, never clickable), plain rows, and exactly one caret view row whose children are pre-filtered entity views.',
+      'No menu item may be hardcoded. The collapsed rail therefore requires an icon for every ref — views and kinds alike.'
+    ], ['◔ T-131']);
+    E['DOC-16'] = D('DOC-16', 'Graph concept', 'v1', 3, ['Nodes', 'Typed edges', 'Dependency mode'], [
+      'Any collection can render as an actual graph: Z2 cards as nodes, typed directional edges, hierarchy as containment. Dependency mode runs a topological layout and renders the blocked path in block-red.',
+      'Focus mode shows one entity plus N hops. Clicking any node opens its detail panel — the one rule, everywhere.'
+    ], ['◔ T-098']);
+    E['DOC-17'] = D('DOC-17', 'UX brief', 'v5', 1, ['Mental model', 'Peers', 'Honesty'], [
+      'Entity = component. Two axes always visible: vertical is where it lives, horizontal is what it connects to. Talk where the work is — every entity carries its thread inline.',
+      'Agents are peers with provenance: round avatars for humans, squared for agents, and authorship is never buried. The UI never fakes liveness.'
+    ], ['◔ T-133']);
+    const A = (id, name, active2, model, owner, stats, recents, edges) => ({
+      kind: 'tm', id, title: name, avSq: true, init: name[0].toUpperCase(),
+      word: active2 ? 'active' : 'idle', wc: active2 ? run : grey, ws: active2 ? runS : idleS,
+      disc: 3, conn: edges.length, crumb: 'atelier › teammates', footer: 'agent persona · owned by ' + owner,
+      model, owner, stats, recents, profile: 'standard-agent v2', defProject: 'tm8-ui', edges, primary: 'Launch session ▸'
+    });
+    E['TM-1'] = A('TM-1', 'forge', true, 'claude-sonnet', '@ada', [['sessions', '34'], ['points', '128'], ['approvals', '96%']], [['s-forge', 'forge — running · task T-114 · 2m'], ['s-echo', 'echo — exited · 12m'], ['s-relay', 'relay — stale · 41m']], ['▣ forge', '◔ T-114']);
+    E['TM-2'] = A('TM-2', 'scout', true, 'claude-sonnet', '@ada', [['sessions', '21'], ['points', '64'], ['approvals', '88%']], [['s-scout', 'scout — needs you · task T-109 · 4m']], ['▣ scout', '◔ T-109']);
+    E['TM-3'] = A('TM-3', 'echo', false, 'claude-haiku', '@noa', [['sessions', '12'], ['points', '31'], ['approvals', '91%']], [['s-echo', 'echo — exited · 12m']], ['▣ echo']);
+    E['TM-4'] = A('TM-4', 'relay', false, 'claude-haiku', '@noa', [['sessions', '7'], ['points', '18'], ['approvals', '84%']], [['s-relay', 'relay — stale · 41m']], ['▣ relay']);
+    const M = (id, name, role, on, stats, owns) => ({
+      kind: 'member', id, title: name, round: true, init: name[0].toUpperCase(),
+      word: on ? 'online' : 'away', wc: on ? run : grey, ws: on ? runS : idleS,
+      disc: 2, conn: owns.length, crumb: 'atelier › members', footer: 'human member · joined 2mo ago',
+      role, stats, owns, edges: owns, primary: '@mention'
+    });
+    E['M-ada'] = M('M-ada', 'ada', 'owner', true, [['tasks done', '112'], ['points', '412'], ['teammates', '2']], ['◇ forge', '◇ scout']);
+    E['M-noa'] = M('M-noa', 'noa', 'member', false, [['tasks done', '58'], ['points', '203'], ['teammates', '2']], ['◇ echo', '◇ relay']);
+    const PJ = (id, name, trusted, dir, repo, liveUse, note) => ({
+      kind: 'project', id, title: name, glyph: '⬒',
+      word: trusted ? 'trusted' : 'untrusted', wc: trusted ? run : grey, ws: trusted ? runS : idleS,
+      disc: 1, conn: 2, crumb: 'atelier › projects', footer: 'execution root · registered at node level',
+      trusted, dir, repo, liveUse, unlinkNote: note, spaces: ['atelier', 'playground'],
+      edges: ['▣ forge', '◔ T-114'], primary: trusted ? 'Open terminal ▸' : 'Trust project'
+    });
+    E['P-tm8ui'] = PJ('P-tm8ui', 'tm8-ui', true, '~/code/tm8/packages/ui', 'github.com/ada/tm8', [['s-forge', 'forge — running'], ['s-lint', 'lint-worker — running']], 'unlink blocked: 2 live sessions use this root');
+    E['P-maestro'] = PJ('P-maestro', 'maestro', false, '~/code/maestro', 'github.com/ada/maestro', [], false);
+    const PRX = (id, num, title, st, branch, add, del, checks, edges, foot) => ({
+      kind: 'pr', id, title, glyph: '⑂', prId: num,
+      word: st, wc: st === 'merged' ? run : (st === 'open' ? info : grey), ws: st === 'merged' ? runS : (st === 'open' ? infoS : idleS),
+      disc: 4, conn: edges.length, crumb: 'atelier › pull requests', footer: foot,
+      branch, added: add, removed: del, checks, edges, primary: 'Open diff ↗'
+    });
+    E['PR-212'] = PRX('PR-212', '#212', 'Session tree guide lines', 'open', 'tm8/guide-lines → main', '+214', '−38', [['✓', 'build', run], ['✓', 'lint', run], ['✗', 'e2e — flaky screenshot diff', block]], ['◔ T-114'], 'opened 3h ago by @ada');
+    E['PR-208'] = PRX('PR-208', '#208', 'Inbox read-state model', 'merged', 'tm8/inbox-reads → main', '+96', '−12', [['✓', 'build', run], ['✓', 'lint', run], ['✓', 'e2e', run]], ['◔ T-121'], 'merged yesterday by @noa');
+    E['PR-217'] = PRX('PR-217', '#217', 'Exited-fallback route', 'open', 'tm8/exited-route → main', '+61', '−9', [['✓', 'build', run], ['✗', 'lint — 2 warnings', wait]], ['◔ T-109'], 'opened 1d ago by @noa');
+    E['PR-219'] = PRX('PR-219', '#219', 'MenuConfig renderer', 'open', 'tm8/menu-config → main', '+188', '−141', [['✓', 'build', run], ['✓', 'lint', run]], ['◔ T-131'], 'opened 5h ago by @ada');
+    E['s-forge'] = S('s-forge', 'forge', {
+      live: true, word: 'running', wcL: run, wsL: runS, wcD: runD, wsD: runDS,
+      footer: '◉ 1 viewing · launched from ⬒ tm8-ui · pty alive',
+      lines: [fl('$ tm8 run T-114 --agent forge', '#EFE9DB'), fl('✓ forge started · claude-sonnet · pty 102×34', '#7FBF98'),
+      fl('→ reading packages/ui/src/shell/PanelStack.tsx', '#B9B2A0'), fl('→ measuring maestro .pn-tree guide offsets', '#B9B2A0'),
+      fl('plan: 1) x-offset map  2) port rules  3) shots', '#B9B2A0'), fl('diff --git a/shell/PanelStack.tsx', '#8C8470'),
+      fl('+ const guideX = depth * 14 + 7; // px', '#7FBF98'), fl('running: pnpm test panel-stack …', '#D9AA49')]
+    });
+    E['s-lint'] = S('s-lint', 'lint-worker', {
+      live: true, word: 'running', wcL: run, wsL: runS, wcD: runD, wsD: runDS, prov: 'claude-haiku', footer: '◉ 0 viewing · spawned by forge · pty alive',
+      lines: [fl('$ tm8 worker --parent forge --scope lint', '#EFE9DB'), fl('✓ lint-worker started · claude-haiku', '#7FBF98'), fl('eslint packages/ui/src --fix …', '#B9B2A0'), fl('42 files · 3 warnings · 0 errors', '#B9B2A0')]
+    });
+    E['s-test'] = S('s-test', 'test-worker', {
+      live: true, word: 'running', wcL: run, wsL: runS, wcD: runD, wsD: runDS, prov: 'claude-haiku', footer: '◉ 0 viewing · spawned by forge · pty alive',
+      lines: [fl('$ tm8 worker --parent forge --scope test', '#EFE9DB'), fl('✓ test-worker started · claude-haiku', '#7FBF98'), fl('pnpm vitest run panel-stack …', '#B9B2A0'), fl('12 passed · 1 skipped', '#7FBF98')]
+    });
+    E['s-scout'] = S('s-scout', 'scout', {
+      live: true, needs: true, word: 'needs you', wcL: wait, wsL: waitS, wcD: waitD, wsD: waitDS, footer: '◉ 1 viewing · launched from ⬒ tm8-ui · pty alive · waiting 4m',
+      lines: [fl('$ tm8 run T-109 --agent scout', '#EFE9DB'), fl('✓ scout started · claude-sonnet', '#7FBF98'), fl('→ drafting exited-fallback layout', '#B9B2A0'), fl('plan ready: replace canvas with status card', '#B9B2A0'), fl('? approve plan? (y/n)', '#D9AA49')]
+    });
+    E['s-echo'] = S('s-echo', 'echo', { ended: true, exited: true, word: 'exited', wcL: grey, wsL: idleS, wcD: idleD, wsD: idleDS, endWhen: '12m ago', endMeta: 'exit code 0 · 148 lines · 9m runtime', footer: '○ exited 12m ago · transcript retained' });
+    E['s-relay'] = S('s-relay', 'relay', { ended: true, staleS: true, word: 'stale', wcL: wait, wsL: waitS, wcD: waitD, wsD: waitDS, footer: '⚠ stale — reported running · process gone' });
+    return E;
+  }
+  renderVals() {
+    const E = this.ents(); const C = this.C; const s = this.state;
+    const open = (id) => () => this.setState(st => {
+      if (st.pins.includes(id)) return { rosterOpen: false };
+      return { stack: st.stack.filter(x => x !== id).concat(id), rosterOpen: false };
+    });
+    const close = (id) => (ev) => { ev.stopPropagation(); this.setState(st => ({ stack: st.stack.filter(x => x !== id), pins: st.pins.filter(x => x !== id) })); };
+    const togglePin = (id) => (ev) => {
+      ev.stopPropagation();
+      this.setState(st => {
+        if (st.pins.includes(id)) return { pins: st.pins.filter(x => x !== id), stack: st.stack.filter(x => x !== id).concat(id) };
+        if (st.pins.length >= 3) return {};
+        if (st.stack[st.stack.length - 1] !== id) return {};
+        return { pins: st.pins.concat(id), stack: st.stack.filter(x => x !== id) };
+      });
+    };
+    const top = s.stack[s.stack.length - 1];
+    const visible = s.pins.concat(top ? [top] : []);
+    const EDGE_IDS = { '⑂ PR #212': 'PR-212', '⑂ PR #219': 'PR-219', '⑂ PR #208': 'PR-208', '⑂ PR #217': 'PR-217', '▤ Layout spec': 'DOC-14', '▤ Menu spec': 'DOC-15', '▤ Graph concept': 'DOC-16', '▤ UX brief': 'DOC-17', '▤ Tokens': 'DOC-14', '▣ forge': 's-forge', '▣ scout': 's-scout', '▣ echo': 's-echo', '▣ relay': 's-relay', '◔ T-114': 'T-114', '◔ T-127': 'T-127', '◔ T-131': 'T-131', '◔ T-098': 'T-098', '◔ T-133': 'T-133', '◔ T-121': 'T-121', '◔ T-109': 'T-109', '◇ forge': 'TM-1', '◇ scout': 'TM-2', '◇ echo': 'TM-3', '◇ relay': 'TM-4' };
+    const KLABEL = { task: 'task', session: 'work session', doc: 'doc', tm: 'teammate', member: 'member', project: 'project', pr: 'pull request' };
+    const mkMsgs = (e) => [
+      { av: 'A', avR: '50%', avBg: '#ECE8DF', avC: '#5B564C', avBgD: '#302A1D', avCD: '#BDB5A2', name: 'ada', tag: 'human', when: '2h ago', body: 'Scoping "' + e.title + '" — anything I should fold in before this moves?', rx: false },
+      { av: 'F', avR: '5px', avBg: 'rgba(178,106,43,.11)', avC: '#9A581F', avBgD: 'rgba(224,164,90,.15)', avCD: '#E0A45A', name: 'forge', tag: 'agent', when: '1h ago', body: 'Pulled it into my context. I can take the port once the spec settles — the guide-line offsets are already measured.', rx: '▲ 2 · ✶ 1' },
+      { av: 'N', avR: '50%', avBg: '#ECE8DF', avC: '#5B564C', avBgD: '#302A1D', avCD: '#BDB5A2', name: 'noa', tag: 'human', when: '12m ago', body: 'LGTM. Keep the worst-case titles in the test data.', rx: false }
+    ];
+    const mkActs = (e) => [
+      { dot: C.run, tx: '@ada set status → ' + e.word, when: '2m' },
+      { dot: '#B26A2B', tx: 'forge (agent) linked ⑂ PR #212', when: '1h' },
+      { dot: C.info, tx: '@noa referenced this in #design-crit', when: '3h' },
+      { dot: '#B7B2A4', tx: '@ada created this ' + (KLABEL[e.kind] || 'entity'), when: '2d' }
+    ];
+    const mkCol = (id) => {
+      const e = E[id]; const pinned = s.pins.includes(id); const pinDisabled = !pinned && s.pins.length >= 3;
+      const k = e.kind;
+      const tabName = s.tab[id] || 'Content';
+      const mkTab = (t, n) => ({
+        label: t, n: n || false,
+        cL: tabName === t ? '#23201B' : '#8E897B', bL: tabName === t ? '2px solid #B26A2B' : '2px solid transparent',
+        cD: tabName === t ? '#EFE9DB' : '#8C8470', bD: tabName === t ? '2px solid #E0A45A' : '2px solid transparent',
+        fw: tabName === t ? 600 : 400,
+        pick: () => this.setState(st => ({ tab: Object.assign({}, st.tab, { [id]: t }) }))
+      });
+      const edgesX = (e.edges || []).map(lbl => ({ t: lbl, open: EDGE_IDS[lbl] ? open(EDGE_IDS[lbl]) : (() => { }) }));
+      const connGroups = [
+        { t: 'PARENT', items: [{ t: '◈ atelier · space', open: () => { } }] },
+        { t: 'LINKED · ' + edgesX.length, items: edgesX }
+      ];
+      if (k === 'task') connGroups.push({ t: 'CHILDREN · 2', items: [{ t: '◔ measure guide x-offsets', open: open('T-114') }, { t: '◔ port .pn-tree rules', open: open('T-114') }] });
+      if (k === 'tm') connGroups.push({ t: 'SESSIONS · ' + (e.recents || []).length, items: (e.recents || []).map(r => ({ t: '▣ ' + r[1].split(' — ')[0], open: open(r[0]) })) });
+      const tv = s.varTask, sv = s.varSess;
+      return Object.assign({}, e, {
+        isTask: k === 'task', isSession: k === 'session', isDoc: k === 'doc', isTm: k === 'tm', isMember: k === 'member', isProject: k === 'project', isPR: k === 'pr',
+        isLightCard: k !== 'session',
+        glyphX: e.glyph || (k === 'task' ? '◔' : false),
+        avX: (k === 'tm' || k === 'member') ? e.init : false,
+        avRX: k === 'member' ? '50%' : '5px',
+        avBgX: k === 'member' ? '#ECE8DF' : 'rgba(178,106,43,.11)',
+        avCX: k === 'member' ? '#5B564C' : '#9A581F',
+        primaryX: e.primary || (k === 'task' ? 'Run ▸' : false),
+        isLive: !!e.live, isEnded: !!e.ended, isExited: !!e.exited, isStale: !!e.staleS, needsBanner: !!e.needs,
+        tabContent: tabName === 'Content', tabDisc: tabName === 'Discussion', tabConn: tabName === 'Connections', tabAct: tabName === 'Activity',
+        tabsX: [mkTab('Content'), mkTab('Discussion', e.disc), mkTab('Connections', e.conn), mkTab('Activity')],
+        edgesX, connGroups, msgs: mkMsgs(e), acts: mkActs(e),
+        statsX: (e.stats || []).map(p => ({ k: p[0], v: p[1] })),
+        checksX: (e.checks || []).map(ch => ({ g: ch[0], t: ch[1], c: ch[2] })),
+        liveUseX: (e.liveUse || []).map(u => ({ t: u[1], open: open(u[0]) })),
+        recentsX: (e.recents || []).map(r => ({ t: r[1], open: open(r[0]) })),
+        ownsX: (e.owns || []).map(lbl => ({ t: lbl, open: EDGE_IDS[lbl] ? open(EDGE_IDS[lbl]) : (() => { }) })),
+        spacesX: (e.spaces || []).map(sp => ({ t: '◈ ' + sp })),
+        openForgeRow: open('s-forge'), openProjX: open('P-tm8ui'), openDocX: open('DOC-14'), openTaskX: open('T-114'),
+        hasVars: k === 'task' || k === 'session',
+        varsX: k === 'task' ? ['A', 'B', 'C'].map(v => ({ v, on: tv === v, c: tv === v ? '#9A581F' : '#B7B2A4', bg: tv === v ? 'rgba(178,106,43,.11)' : 'transparent', pick: () => this.setState({ varTask: v }) }))
+          : (k === 'session' ? ['A', 'B'].map(v => ({ v, on: sv === v, c: sv === v ? '#E0A45A' : '#665E4C', bg: sv === v ? 'rgba(224,164,90,.15)' : 'transparent', pick: () => this.setState({ varSess: v }) })) : []),
+        tvA: k === 'task' && tv === 'A', tvB: k === 'task' && tv === 'B', tvC: k === 'task' && tv === 'C',
+        svB: k === 'session' && sv === 'B',
+        trustedX: !!e.trusted, untrustedX: k === 'project' && !e.trusted,
+        pinned, open: open(id), close: close(id), togglePin: togglePin(id),
+        pinColor: pinned ? '#9A581F' : '#8E897B', pinBg: pinned ? 'rgba(178,106,43,.11)' : 'transparent',
+        pinColorD: pinned ? '#E0A45A' : '#8C8470', pinBgD: pinned ? 'rgba(224,164,90,.15)' : 'transparent',
+        pinOpacity: pinDisabled ? .35 : 1, pinCursor: pinDisabled ? 'not-allowed' : 'pointer',
+        pinTitle: pinned ? 'unpin' : (pinDisabled ? 'pin refused — 3 pinned max, unpin one first' : 'pin (p)'),
+        expand: (ev) => { ev.stopPropagation(); this.setState({ z4: id }); }
+      });
+    };
+    const cols = visible.map(mkCol);
+    const tRow = (id, o) => {
+      const e = E[id];
+      return Object.assign({
+        isRow: true, pad: '12px', mpad: '32px', bar: 'transparent', tree: false, nc: '#23201B',
+        anim: 'none', dotBg: e.dot, dotBr: e.dotBr, init: 'A', avR: '50%', avBg: '#ECE8DF', avC: '#5B564C',
+        name: e.title, word: e.word, wc: e.wc, ws: e.ws, meta: e.id + ' · ' + e.msgs + ' msgs · @ada',
+        x: e.prio, xc: e.pc, xb: e.pb, open: open(id),
+        bg: visible.includes(id) ? '#ECE8DF' : 'transparent'
+      }, o);
+    };
+    const TASK_IDS = ['T-109', 'T-088', 'T-131', 'T-114', 'T-127', 'T-121', 'T-098', 'T-133', 'T-136'];
+    const buildTasks = (sort, f) => {
+      const anyF = Object.keys(f).length > 0;
+      if (sort === 'Default' && !anyF) return [
+        { isGrp: true, name: 'NEEDS ATTENTION · 2', gc: C.wait },
+        tRow('T-109', { bg: visible.includes('T-109') ? '#ECE8DF' : 'rgba(187,77,61,.07)', bar: C.block }),
+        tRow('T-088', { bg: visible.includes('T-088') ? '#ECE8DF' : 'rgba(189,138,42,.08)', bar: C.wait }),
+        { isGrp: true, name: 'IN PROGRESS · 4', gc: C.run },
+        tRow('T-131'), tRow('T-114'),
+        tRow('T-114', { tree: '├', pad: '22px', mpad: '58px', name: 'measure guide x-offsets', word: 'done', wc: C.run, ws: C.runS, dotBg: C.run, dotBr: 'none', meta: 'child of T-114', x: false }),
+        tRow('T-114', { tree: '└', pad: '22px', mpad: '58px', name: 'port .pn-tree rules', word: 'working', wc: C.run, ws: C.runS, dotBg: C.run, dotBr: 'none', meta: 'child of T-114', x: false }),
+        tRow('T-127'), tRow('T-121'),
+        { isGrp: true, name: 'OPEN · 3', gc: C.idle },
+        tRow('T-098'), tRow('T-133'), tRow('T-136')
+      ];
+      let ids = TASK_IDS.filter(id => {
+        const e = E[id];
+        if (f.high && e.prio !== 'HIGH') return false;
+        if (f.blocked && e.word !== 'blocked') return false;
+        if (f.working && e.word !== 'working') return false;
+        return true;
+      });
+      const pr = { HIGH: 0, MED: 1, LOW: 2 };
+      if (sort === 'Priority') ids = ids.slice().sort((a, b) => pr[E[a].prio] - pr[E[b].prio]);
+      else if (sort === 'Points') ids = ids.slice().sort((a, b) => E[b].pts - E[a].pts);
+      else if (sort === 'Title') ids = ids.slice().sort((a, b) => E[a].title.localeCompare(E[b].title));
+      const out = ids.map(id => tRow(id));
+      return out.length ? out : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const sRow = (id, o) => Object.assign({
+      isRow: true, pad: '12px', mpad: '32px', bar: 'transparent', tree: false, nc: '#23201B',
+      anim: 'none', dotBg: C.run, dotBr: 'none', name: E[id].name, init: E[id].init,
+      avR: '5px', avBg: 'rgba(178,106,43,.11)', avC: '#9A581F', x: false,
+      word: E[id].word, wc: E[id].wcL, ws: E[id].wsL, open: open(id),
+      bg: visible.includes(id) ? '#ECE8DF' : 'transparent'
+    }, o);
+    const SM = {
+      's-scout': { meta: 'waiting on your input · 4m · task T-109', bg: visible.includes('s-scout') ? '#ECE8DF' : 'rgba(189,138,42,.09)', bar: C.wait, dotBg: C.wait },
+      's-forge': { meta: 'task T-114 · coordinator · 2 workers', anim: 'pnPulse 1.6s infinite' },
+      's-lint': { meta: 'spawned by forge · 8m' },
+      's-test': { meta: 'spawned by forge · 2m' },
+      's-echo': { meta: '12m ago · view transcript', dotBg: 'transparent', dotBr: '2px solid #B7B2A4', nc: '#8E897B' },
+      's-relay': { meta: 'node restarted — looked live · 41m', dotBg: 'transparent', dotBr: '2px solid #BD8A2A', nc: '#8E897B' }
+    };
+    const S_IDS = ['s-scout', 's-forge', 's-lint', 's-test', 's-echo', 's-relay'];
+    const buildSessions = (sort, f) => {
+      const anyF = Object.keys(f).length > 0;
+      if (sort === 'Default' && !anyF) return [
+        { isGrp: true, name: 'NEEDS YOU · 1', gc: C.wait },
+        sRow('s-scout', SM['s-scout']),
+        { isGrp: true, name: 'LIVE · 3', gc: C.run },
+        sRow('s-forge', SM['s-forge']),
+        sRow('s-lint', Object.assign({}, SM['s-lint'], { tree: '├', pad: '22px', mpad: '58px' })),
+        sRow('s-test', Object.assign({}, SM['s-test'], { tree: '└', pad: '22px', mpad: '58px' })),
+        { isGrp: true, name: 'EARLIER', gc: C.idle },
+        sRow('s-echo', SM['s-echo']),
+        sRow('s-relay', SM['s-relay'])
+      ];
+      let ids = S_IDS.filter(id => {
+        const e = E[id];
+        if (f.live && !e.live) return false;
+        if (f.needs && !e.needs) return false;
+        if (f.top && (id === 's-lint' || id === 's-test')) return false;
+        return true;
+      });
+      const rec = { 's-forge': 0, 's-test': 1, 's-scout': 2, 's-lint': 3, 's-echo': 4, 's-relay': 5 };
+      if (sort === 'Recent') ids = ids.slice().sort((a, b) => rec[a] - rec[b]);
+      else if (sort === 'Name') ids = ids.slice().sort((a, b) => E[a].name.localeCompare(E[b].name));
+      const out = ids.map(id => sRow(id, SM[id]));
+      return out.length ? out : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const roster = [
+      { name: 'scout', init: 'S', word: 'needs you', wc: C.waitD, ws: C.waitDS, dotBg: C.waitD, dotBr: 'none', anim: 'none', meta: 'task T-109', open: open('s-scout') },
+      { name: 'forge', init: 'F', word: 'streaming', wc: C.runD, ws: C.runDS, dotBg: C.runD, dotBr: 'none', anim: 'pnPulse 1.6s infinite', meta: 'task T-114 · coordinator', open: open('s-forge') },
+      { name: 'lint-worker', init: 'L', word: 'running', wc: C.runD, ws: C.runDS, dotBg: C.runD, dotBr: 'none', anim: 'none', meta: 'worker of forge', open: open('s-lint') },
+      { name: 'test-worker', init: 'T', word: 'running', wc: C.runD, ws: C.runDS, dotBg: C.runD, dotBr: 'none', anim: 'none', meta: 'worker of forge', open: open('s-test') }
+    ];
+    const SERVERS = [
+      { id: 'local', ic: '◈', name: 'local · this machine', badge: false, dot: false },
+      { id: 'studio', ic: 'S', name: 'studio.tm8.dev', badge: '2', dot: false },
+      { id: 'oss', ic: 'O', name: 'oss.collab', badge: false, dot: true }
+    ];
+    const GROUPS = [
+      { ic: '⌂', name: 'Home', items: [['⌂', 'Dashboard'], ['≋', 'Feed'], ['◲', 'Inbox', '3']] },
+      { ic: '▣', name: 'Workspace', view: true, items: [['◔', 'Tasks'], ['▣', 'Sessions', false, '3'], ['▤', 'Docs'], ['◇', 'Teammates']] },
+      { ic: '⬒', name: 'Tracking', items: [['⬒', 'Projects'], ['⑂', 'Pull requests']] },
+      { ic: '◯', name: 'Collab', items: [['◯', 'Members']] },
+      { ic: '#', name: 'Channels', items: [['#', 'general'], ['#', 'design-crit']] },
+      { ic: '⚙', name: 'Settings', items: [['⚙', 'Space settings']] }
+    ];
+    const pickServer = (id) => () => this.setState({ activeServer: id });
+    const railC = [];
+    SERVERS.forEach(sv => {
+      const act = sv.id === s.activeServer;
+      railC.push({
+        isServer: true, ic: sv.ic, name: sv.name, badge: act ? false : sv.badge, dot: act ? false : sv.dot,
+        c: act ? '#9A581F' : '#5B564C', abg: act ? 'rgba(178,106,43,.11)' : '#ECE8DF',
+        br: act ? '1.5px solid #B26A2B' : '1.5px solid transparent', pick: pickServer(sv.id)
+      });
+      if (act) {
+        GROUPS.forEach(gr => {
+          const gAct = !!gr.view;
+          railC.push({
+            isGroup: true, ic: gr.ic, name: gr.name, c: gAct ? '#9A581F' : '#8E897B',
+            bg: gAct ? 'rgba(178,106,43,.11)' : 'transparent', sh: gAct ? 'inset 3px 0 0 #B26A2B' : 'none',
+            pick: () => this.setState(st => ({ railOpen: true, groupOpen: Object.assign({}, st.groupOpen, { [gr.name]: true }) }))
+          });
+        });
+        railC.push({ isDiv: true });
+      }
+    });
+    const railX = [];
+    SERVERS.forEach(sv => {
+      const act = sv.id === s.activeServer;
+      railX.push({
+        isServer: true, ic: sv.ic, name: sv.name, badge: sv.badge, dot: sv.dot, caret: act ? '▾' : '▸',
+        bg: 'transparent', c: act ? '#9A581F' : '#5B564C', abg: act ? 'rgba(178,106,43,.11)' : '#ECE8DF',
+        br: act ? '1.5px solid #B26A2B' : '1.5px solid transparent', pick: pickServer(sv.id)
+      });
+      if (act) GROUPS.forEach(gr => {
+        const gOpen = !!s.groupOpen[gr.name]; const gAct = !!gr.view;
+        railX.push({
+          isGroup: true, ic: gr.ic, name: gr.name, caret: gOpen ? '▾' : '▸',
+          c: gAct ? '#B26A2B' : '#8E897B', nc: gAct ? '#23201B' : '#5B564C', fw: gAct ? 600 : 400,
+          bg: gAct ? '#F2EFE8' : 'transparent', bar: gAct ? '2px solid #B26A2B' : '2px solid transparent',
+          pick: () => this.setState(st => { const go = Object.assign({}, st.groupOpen); go[gr.name] = !go[gr.name]; return { groupOpen: go }; })
+        });
+        if (gOpen) gr.items.forEach(it => railX.push({ isItem: true, ic: it[0], name: it[1], badge: it[2] || false, live: it[3] || false }));
+      });
+    });
+    const tab = (label, active) => ({ label, bg: active ? '#ECE8DF' : 'transparent', c: active ? '#23201B' : '#8E897B', fw: active ? 600 : 400 });
+    const uRow = (o) => Object.assign({
+      isRow: true, pad: '12px', mpad: '32px', bar: 'transparent', tree: false, nc: '#23201B',
+      anim: 'none', dotBg: 'transparent', dotBr: '2px solid #B7B2A4', init: 'A', avR: '50%',
+      avBg: '#ECE8DF', avC: '#5B564C', x: false, bg: 'transparent'
+    }, o);
+    const dRow = (id, name, word, meta) => uRow({ name, word, wc: C.grey, ws: C.idleS, meta, open: open(id), bg: visible.includes(id) ? '#ECE8DF' : 'transparent' });
+    const DOCS = [['DOC-14', 'Layout spec', 'v3', 'edited 2h ago · @ada'], ['DOC-15', 'Menu spec', 'v2', 'edited 1d ago · @ada'], ['DOC-16', 'Graph concept', 'v1', 'edited 3d ago · @noa'], ['DOC-17', 'UX brief', 'v5', 'edited 6d ago · @ada']];
+    const buildDocs = (sort, f) => {
+      let list = DOCS.filter(d => !f.mine || d[3].indexOf('@ada') >= 0);
+      if (sort === 'Title') list = list.slice().sort((a, b) => a[1].localeCompare(b[1]));
+      const rows = list.map(d => dRow(d[0], d[1], d[2], d[3]));
+      if (sort === 'Default' && !Object.keys(f).length) rows.unshift({ isGrp: true, name: 'RECENT · 4', gc: C.idle });
+      return rows.length ? rows : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const aRow = (id, name, active2, meta) => uRow({
+      name, init: name[0].toUpperCase(), avR: '5px', avBg: 'rgba(178,106,43,.11)', avC: '#9A581F',
+      word: active2 ? 'active' : 'idle', wc: active2 ? C.run : C.grey, ws: active2 ? C.runS : C.idleS,
+      dotBg: active2 ? C.run : 'transparent', dotBr: active2 ? 'none' : '2px solid #B7B2A4',
+      meta, open: open(id), bg: visible.includes(id) ? '#ECE8DF' : 'transparent'
+    });
+    const TMS = [['TM-1', 'forge', true, 'claude-sonnet · owned by @ada · 3 sessions'], ['TM-2', 'scout', true, 'claude-sonnet · owned by @ada · needs you'], ['TM-3', 'echo', false, 'claude-haiku · owned by @noa · exited 12m'], ['TM-4', 'relay', false, 'claude-haiku · owned by @noa · stale']];
+    const buildTm = (sort, f) => {
+      let list = TMS.filter(t => !f.active || t[2]);
+      if (sort === 'Name') list = list.slice().sort((a, b) => a[1].localeCompare(b[1]));
+      const rows = list.map(t => aRow(t[0], t[1], t[2], t[3]));
+      if (sort === 'Default' && !Object.keys(f).length) rows.unshift({ isGrp: true, name: 'AGENTS · 4', gc: C.run });
+      return rows.length ? rows : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const treeTasks = (f) => {
+      const kids = [
+        tRow('T-114', { tree: '├', pad: '22px', mpad: '58px', name: 'measure guide x-offsets', word: 'done', wc: C.run, ws: C.runS, dotBg: C.run, dotBr: 'none', meta: 'child of T-114', x: false }),
+        tRow('T-114', { tree: '└', pad: '22px', mpad: '58px', name: 'port .pn-tree rules', word: 'working', wc: C.run, ws: C.runS, dotBg: C.run, dotBr: 'none', meta: 'child of T-114', x: false })
+      ];
+      const ids = TASK_IDS.filter(id => { const e = E[id]; if (f.high && e.prio !== 'HIGH') return false; if (f.blocked && e.word !== 'blocked') return false; if (f.working && e.word !== 'working') return false; return true; });
+      const out = [];
+      ids.forEach(id => { out.push(tRow(id)); if (id === 'T-114') kids.forEach(k => out.push(k)); });
+      return out.length ? out : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const treeSessions = (f) => {
+      const ids = S_IDS.filter(id => { const e = E[id]; if (f.live && !e.live) return false; if (f.needs && !e.needs) return false; if (f.top && (id === 's-lint' || id === 's-test')) return false; return true; });
+      const out = [];
+      ids.forEach(id => {
+        if (id === 's-lint') out.push(sRow(id, Object.assign({}, SM[id], { tree: '├', pad: '22px', mpad: '58px' })));
+        else if (id === 's-test') out.push(sRow(id, Object.assign({}, SM[id], { tree: '└', pad: '22px', mpad: '58px' })));
+        else out.push(sRow(id, SM[id]));
+      });
+      return out.length ? out : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const treeDocs = (f) => buildDocs('Default', f);
+    const treeTm = (f) => buildTm('Default', f);
+    const gRow = (id, opts) => uRow(Object.assign({ open: open(id), bg: visible.includes(id) ? '#ECE8DF' : 'transparent' }, opts));
+    const buildMembers = (sort, f) => {
+      let list = [['M-ada', 'ada', true, 'owner · 2 teammates · 412 pts'], ['M-noa', 'noa', false, 'member · 2 teammates · 203 pts']];
+      if (f.online) list = list.filter(m => m[2]);
+      if (sort === 'Name') list = list.slice().sort((a, b) => a[1].localeCompare(b[1]));
+      const rows = list.map(m => gRow(m[0], { name: m[1], init: m[1][0].toUpperCase(), word: m[2] ? 'online' : 'away', wc: m[2] ? C.run : C.grey, ws: m[2] ? C.runS : C.idleS, dotBg: m[2] ? C.run : 'transparent', dotBr: m[2] ? 'none' : '2px solid #B7B2A4', meta: m[3] }));
+      if (sort === 'Default' && !Object.keys(f).length) rows.unshift({ isGrp: true, name: 'HUMANS · 2', gc: C.idle });
+      return rows.length ? rows : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const buildProjects = (sort, f) => {
+      let list = [['P-tm8ui', 'tm8-ui', true, '~/code/tm8/packages/ui · 2 live sessions'], ['P-maestro', 'maestro', false, 'agents cannot run here until you trust it']];
+      if (f.trusted) list = list.filter(p => p[2]);
+      if (sort === 'Name') list = list.slice().sort((a, b) => a[1].localeCompare(b[1]));
+      const rows = list.map(p => gRow(p[0], { name: p[1], init: '⬒', avBg: 'transparent', avC: '#8E897B', word: p[2] ? 'trusted' : 'untrusted', wc: p[2] ? C.run : C.wait, ws: p[2] ? C.runS : C.waitS, dotBg: p[2] ? C.run : 'transparent', dotBr: p[2] ? 'none' : '2px solid #BD8A2A', meta: p[3] }));
+      if (sort === 'Default' && !Object.keys(f).length) rows.unshift({ isGrp: true, name: 'EXECUTION ROOTS · 2', gc: C.idle });
+      return rows.length ? rows : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const buildPulls = (sort, f) => {
+      let list = [['PR-212', 'open'], ['PR-219', 'open'], ['PR-217', 'open'], ['PR-208', 'merged']];
+      if (f.openOnly) list = list.filter(p => p[1] === 'open');
+      if (sort === 'Title') list = list.slice().sort((a, b) => E[a[0]].title.localeCompare(E[b[0]].title));
+      const rows = list.map(p => {
+        const e = E[p[0]];
+        return gRow(p[0], { name: e.prId + ' ' + e.title, init: '⑂', avBg: 'transparent', avC: '#8E897B', word: e.word, wc: e.wc, ws: e.ws, dotBg: p[1] === 'open' ? C.info : C.run, dotBr: 'none', meta: e.branch + ' · ' + e.added + ' ' + e.removed });
+      });
+      if (sort === 'Default' && !Object.keys(f).length) rows.unshift({ isGrp: true, name: 'PULL REQUESTS · 4', gc: C.idle });
+      return rows.length ? rows : [{ isGrp: true, name: 'NO MATCHES — CLEAR FILTERS', gc: C.idle }];
+    };
+    const bCard = (id, name, word, wc2, dot, dotBr2) => ({ name, word, wc: wc2, dotBg: dot, dotBr: dotBr2 || 'none', open: open(id) });
+    const boardFor = (kind, f) => {
+      if (kind === 'Tasks') {
+        const col = (name, ids) => ({ name, cards: ids.filter(id => { const e = E[id]; if (f.high && e.prio !== 'HIGH') return false; if (f.blocked && e.word !== 'blocked') return false; if (f.working && e.word !== 'working') return false; return true; }).map(id => bCard(id, E[id].title, E[id].word, E[id].wc, E[id].dot, E[id].dotBr)) });
+        return [col('TO DO', ['T-098', 'T-133', 'T-136']), col('DOING', ['T-131', 'T-114', 'T-127', 'T-121']), col('STUCK', ['T-109', 'T-088'])];
+      }
+      if (kind === 'Sessions') {
+        const dotOf = { 's-scout': [C.wait, 'none'], 's-forge': [C.run, 'none'], 's-lint': [C.run, 'none'], 's-test': [C.run, 'none'], 's-echo': ['transparent', '2px solid #B7B2A4'], 's-relay': ['transparent', '2px solid #BD8A2A'] };
+        const col = (name, ids) => ({ name, cards: ids.filter(id => { const e = E[id]; if (f.live && !e.live) return false; if (f.needs && !e.needs) return false; if (f.top && (id === 's-lint' || id === 's-test')) return false; return true; }).map(id => bCard(id, E[id].name, E[id].word, E[id].wcL, dotOf[id][0], dotOf[id][1])) });
+        return [col('NEEDS YOU', ['s-scout']), col('LIVE', ['s-forge', 's-lint', 's-test']), col('EARLIER', ['s-echo', 's-relay'])];
+      }
+      if (kind === 'Docs') return [{ name: 'RECENT', cards: DOCS.filter(d => !f.mine || d[3].indexOf('@ada') >= 0).map(d => bCard(d[0], d[1], d[2], C.grey, 'transparent', '2px solid #B7B2A4')) }];
+      if (kind === 'Members') return [
+        { name: 'ONLINE', cards: [bCard('M-ada', 'ada', 'online', C.run, C.run)] },
+        { name: 'AWAY', cards: [bCard('M-noa', 'noa', 'away', C.grey, 'transparent', '2px solid #B7B2A4')] }
+      ];
+      if (kind === 'Projects') return [
+        { name: 'TRUSTED', cards: [bCard('P-tm8ui', 'tm8-ui', 'trusted', C.run, C.run)] },
+        { name: 'UNTRUSTED', cards: [bCard('P-maestro', 'maestro', 'untrusted', C.wait, 'transparent', '2px solid #BD8A2A')] }
+      ];
+      if (kind === 'Pulls') return [
+        { name: 'OPEN', cards: ['PR-212', 'PR-219', 'PR-217'].map(id => bCard(id, E[id].prId + ' ' + E[id].title, 'open', C.info, C.info)) },
+        { name: 'MERGED', cards: [bCard('PR-208', E['PR-208'].prId + ' ' + E['PR-208'].title, 'merged', C.run, C.run)] }
+      ];
+      return [
+        { name: 'ACTIVE', cards: TMS.filter(t => t[2]).map(t => bCard(t[0], t[1], 'active', C.run, C.run)) },
+        { name: 'IDLE', cards: TMS.filter(t => !t[2] && !f.active).map(t => bCard(t[0], t[1], 'idle', C.grey, 'transparent', '2px solid #B7B2A4')) }
+      ];
+    };
+    const graphFor = (kind) => {
+      let items;
+      if (kind === 'Tasks') items = TASK_IDS.slice(0, 6).map(id => ({ name: E[id].id, dot: E[id].dot, dotBr: E[id].dotBr, open: open(id) }));
+      else if (kind === 'Sessions') items = S_IDS.map(id => ({ name: E[id].name, dot: id === 's-scout' ? C.wait : (E[id].live ? C.run : 'transparent'), dotBr: E[id].live ? 'none' : '2px solid #B7B2A4', open: open(id) }));
+      else if (kind === 'Docs') items = DOCS.map(d => ({ name: d[1], dot: 'transparent', dotBr: '2px solid #B7B2A4', open: open(d[0]) }));
+      else if (kind === 'Members') items = [['M-ada', 'ada', true], ['M-noa', 'noa', false]].map(m => ({ name: m[1], dot: m[2] ? C.run : 'transparent', dotBr: m[2] ? 'none' : '2px solid #B7B2A4', open: open(m[0]) }));
+      else if (kind === 'Projects') items = [['P-tm8ui', 'tm8-ui', true], ['P-maestro', 'maestro', false]].map(p => ({ name: p[1], dot: p[2] ? C.run : 'transparent', dotBr: p[2] ? 'none' : '2px solid #BD8A2A', open: open(p[0]) }));
+      else if (kind === 'Pulls') items = ['PR-212', 'PR-219', 'PR-217', 'PR-208'].map(id => ({ name: E[id].prId, dot: E[id].word === 'open' ? C.info : C.run, dotBr: 'none', open: open(id) }));
+      else items = TMS.map(t => ({ name: t[1], dot: t[2] ? C.run : 'transparent', dotBr: t[2] ? 'none' : '2px solid #B7B2A4', open: open(t[0]) }));
+      const cx = 134, cy = 165, R = 88;
+      const nodes = [{ name: kind, x: cx, y: cy, br: '#B26A2B', dot: '#B26A2B', dotBr: 'none', open: () => { } }];
+      const edges = [];
+      items.forEach((it, i) => {
+        const a = (-90 + i * (360 / items.length)) * Math.PI / 180;
+        const x = Math.round(cx + R * Math.cos(a)), y = Math.round(cy + R * Math.sin(a) * 1.1);
+        nodes.push({ name: it.name, x, y, br: '#E7E3D9', dot: it.dot, dotBr: it.dotBr, open: it.open });
+        const dx = x - cx, dy = y - cy;
+        edges.push({ x: cx, y: cy, w: Math.round(Math.hypot(dx, dy)), r: Math.round(Math.atan2(dy, dx) * 180 / Math.PI) });
+      });
+      return { nodes, edges };
+    };
+    const KINDS = {
+      Tasks: { glyph: '◔', create: '+ New', search: 'Search tasks', tabs: [tab('Open 9', true), tab('Done 601'), tab('Archived 33')], actions: [{ ic: '●', icC: C.wait, label: '2 need attention', br: 'transparent', bg: C.waitS, c: C.wait, r: '999px', fx: 'none' }], sorts: ['Default', 'Priority', 'Points', 'Title'], filters: [{ id: 'high', label: 'High priority' }, { id: 'blocked', label: 'Blocked' }, { id: 'working', label: 'Working' }], build: buildTasks, tree: treeTasks, footer: '9 open · 601 done · 33 archived', count: '643' },
+      Sessions: { glyph: '▣', create: '+ Launch', search: 'Search sessions', tabs: [tab('Open 4', true), tab('Done 13'), tab('Archived 42')], actions: [{ ic: '●', icC: C.run, label: '3 live', br: 'transparent', bg: C.runS, c: C.run, r: '999px', fx: 'none' }], sorts: ['Default', 'Recent', 'Name'], filters: [{ id: 'live', label: 'Live only' }, { id: 'needs', label: 'Needs you' }, { id: 'top', label: 'Hide workers' }], build: buildSessions, tree: treeSessions, footer: '4 open · 13 done · 42 archived', count: '59' },
+      Docs: { glyph: '▤', create: '+ New', search: 'Search docs', tabs: [tab('Open 4', true), tab('Done 58'), tab('Archived 4')], actions: [{ ic: '●', icC: C.info, label: '2 updated today', br: 'transparent', bg: C.infoS, c: C.info, r: '999px', fx: 'none' }], sorts: ['Default', 'Title'], filters: [{ id: 'mine', label: 'Mine (@ada)' }], build: buildDocs, tree: treeDocs, footer: '4 open · 58 done · 4 archived', count: '66' },
+      Teammates: { glyph: '◇', create: '+ Invite', search: 'Search teammates', tabs: [tab('Open 4', true), tab('Done 0'), tab('Archived 0')], actions: [{ ic: '●', icC: C.run, label: '3 active', br: 'transparent', bg: C.runS, c: C.run, r: '999px', fx: 'none' }], sorts: ['Default', 'Name'], filters: [{ id: 'active', label: 'Active only' }], build: buildTm, tree: treeTm, footer: '4 open · 0 done · 0 archived', count: '4' },
+      Members: { glyph: '◯', create: '+ Invite', search: 'Search members', tabs: [tab('Open 2', true), tab('Done 0'), tab('Archived 0')], actions: [{ ic: '●', icC: C.run, label: '1 online', br: 'transparent', bg: C.runS, c: C.run, r: '999px', fx: 'none' }], sorts: ['Default', 'Name'], filters: [{ id: 'online', label: 'Online only' }], build: buildMembers, tree: (f) => buildMembers('Default', f), footer: '2 open · 0 done · 0 archived', count: '2' },
+      Projects: { glyph: '⬒', create: '+ Register', search: 'Search projects', tabs: [tab('Open 2', true), tab('Done 0'), tab('Archived 0')], actions: [{ ic: '●', icC: C.wait, label: '1 untrusted', br: 'transparent', bg: C.waitS, c: C.wait, r: '999px', fx: 'none' }], sorts: ['Default', 'Name'], filters: [{ id: 'trusted', label: 'Trusted only' }], build: buildProjects, tree: (f) => buildProjects('Default', f), footer: '2 open · 0 done · 0 archived', count: '2' },
+      Pulls: { glyph: '⑂', create: 'GitHub ↗', search: 'Search pull requests', tabs: [tab('Open 3', true), tab('Done 1'), tab('Archived 0')], actions: [{ ic: '●', icC: C.info, label: '3 open', br: 'transparent', bg: C.infoS, c: C.info, r: '999px', fx: 'none' }], sorts: ['Default', 'Title'], filters: [{ id: 'openOnly', label: 'Open only' }], build: buildPulls, tree: (f) => buildPulls('Default', f), footer: '3 open · 1 done · 0 archived', count: '4' }
+    };
+    const mkPanel = (side) => {
+      const cur = side === 'L' ? s.lKind : s.rKind;
+      const K = KINDS[cur];
+      const cfg = Object.assign({ kind: cur }, K);
+      const rawSort = side === 'L' ? s.lSort : s.rSort;
+      const sortVal = K.sorts.includes(rawSort) ? rawSort : 'Default';
+      const fAll = side === 'L' ? s.lFilt : s.rFilt;
+      const fset = {}; K.filters.forEach(ft => { if (fAll[ft.id]) fset[ft.id] = true; });
+      const view = side === 'L' ? s.lView : s.rView;
+      cfg.rows = view === 'Tree' ? K.tree(fset) : K.build(sortVal, fset);
+      cfg.isRows = view === 'List' || view === 'Tree';
+      cfg.isBoard = view === 'Board'; cfg.isGraph = view === 'Graph';
+      cfg.boardCols = cfg.isBoard ? boardFor(cur, fset) : [];
+      const gg = cfg.isGraph ? graphFor(cur) : { nodes: [], edges: [] };
+      cfg.gNodes = gg.nodes; cfg.gEdges = gg.edges;
+      cfg.views = [['≡', 'List'], ['⑂', 'Tree'], ['▥', 'Board'], ['◉', 'Graph']].map(v => ({
+        ic: v[0], name: v[1],
+        c: view === v[1] ? '#9A581F' : '#8E897B', bg: view === v[1] ? 'rgba(178,106,43,.11)' : 'transparent',
+        pick: () => this.setState(side === 'L' ? { lView: v[1] } : { rView: v[1] })
+      }));
+      const nF = Object.keys(fset).length;
+      cfg.filterOn = nF > 0; cfg.filterCount = nF;
+      cfg.filterBr = nF ? 'rgba(178,106,43,.5)' : '#D8D3C6';
+      cfg.kindOpen = s.kindMenu === side;
+      cfg.kindToggle = (ev) => { ev.stopPropagation(); this.setState(st => ({ kindMenu: st.kindMenu === side ? null : side, ctlMenu: null })); };
+      cfg.kinds = Object.keys(KINDS).map(n => ({
+        ic: KINDS[n].glyph, name: n, count: KINDS[n].count,
+        bg: n === cur ? '#ECE8DF' : 'transparent',
+        pick: () => this.setState(side === 'L' ? { lKind: n, kindMenu: null } : { rKind: n, kindMenu: null })
+      }));
+      const mOpen = (t) => s.ctlMenu && s.ctlMenu.side === side && s.ctlMenu.type === t;
+      cfg.sortOpen = mOpen('sort'); cfg.filterOpen = mOpen('filter');
+      const tgl = (t) => (ev) => { ev.stopPropagation(); this.setState(st => ({ ctlMenu: (st.ctlMenu && st.ctlMenu.side === side && st.ctlMenu.type === t) ? null : { side, type: t }, kindMenu: null })); };
+      cfg.sortToggle = tgl('sort'); cfg.filterToggle = tgl('filter');
+      cfg.sortLabel = sortVal === 'Default' ? 'Sort' : sortVal;
+      cfg.filterLabel = nF ? 'Filter · ' + nF : 'Filter';
+      cfg.sortBg = sortVal !== 'Default' ? 'rgba(178,106,43,.11)' : '#FFFFFF';
+      cfg.sortC = sortVal !== 'Default' ? '#9A581F' : '#5B564C';
+      cfg.sortBr = sortVal !== 'Default' ? 'rgba(178,106,43,.5)' : '#D8D3C6';
+      cfg.filterBg = nF ? 'rgba(178,106,43,.11)' : '#FFFFFF';
+      cfg.filterC = nF ? '#9A581F' : '#5B564C';
+      cfg.sortOpts = K.sorts.map(n => ({ name: n, mark: n === sortVal ? '✓' : '', pick: () => this.setState(side === 'L' ? { lSort: n, ctlMenu: null } : { rSort: n, ctlMenu: null }) }));
+      cfg.filterOpts = K.filters.map(ft => ({
+        name: ft.label, bxBr: fAll[ft.id] ? '#B26A2B' : '#D8D3C6', bxBg: fAll[ft.id] ? '#B26A2B' : '#FFFFFF', tick: fAll[ft.id] ? '✓' : '',
+        pick: (ev) => { ev.stopPropagation(); this.setState(st => { const cp = Object.assign({}, side === 'L' ? st.lFilt : st.rFilt); cp[ft.id] = !cp[ft.id]; return side === 'L' ? { lFilt: cp } : { rFilt: cp }; }); }
+      }));
+      return cfg;
+    };
+    const zOpen = (id2) => () => this.setState(st => ({ z4: id2, stack: st.pins.includes(id2) ? st.stack : st.stack.filter(x => x !== id2).concat(id2) }));
+    let zc = false;
+    if (s.z4 && E[s.z4]) {
+      const base = mkCol(s.z4);
+      const dk = base.isSession;
+      const zEdges = (E[s.z4].edges || []).map(lbl => ({ t: lbl, open: EDGE_IDS[lbl] ? zOpen(EDGE_IDS[lbl]) : (() => { }) }));
+      const zConnGroups = [
+        { t: 'PARENT', items: [{ t: '◈ atelier · space', open: () => { } }] },
+        { t: 'LINKED · ' + zEdges.length, items: zEdges }
+      ];
+      if (base.isTask) zConnGroups.push({ t: 'CHILDREN · 2', items: [{ t: '◔ measure guide x-offsets', open: zOpen('T-114') }, { t: '◔ port .pn-tree rules', open: zOpen('T-114') }] });
+      if (base.isTm) zConnGroups.push({ t: 'SESSIONS · ' + (E[s.z4].recents || []).length, items: (E[s.z4].recents || []).map(r => ({ t: '▣ ' + r[1].split(' — ')[0], open: zOpen(r[0]) })) });
+      Object.assign(base, {
+        zBg: dk ? '#1D1912' : '#F4F2EC', zHd: dk ? '#221E15' : '#FBFAF6', zBr: dk ? '#2C2719' : '#E7E3D9',
+        zRail: dk ? '#221E15' : '#FBFAF6', zTitle: dk ? '#EFE9DB' : '#23201B', zSub: dk ? '#BDB5A2' : '#5B564C',
+        zFaint: dk ? '#665E4C' : '#B7B2A4', zGrey: dk ? '#8C8470' : '#8E897B',
+        zChipBr: dk ? '#3B3524' : '#E7E3D9', zChipBg: dk ? '#1B1810' : '#FFFFFF', zHair: dk ? '#262117' : '#F0EDE4',
+        zTagC: dk ? '#E0A45A' : '#9A581F', zTagBg: dk ? 'rgba(224,164,90,.12)' : 'rgba(178,106,43,.09)',
+        zWc: dk ? base.wcD : base.wc, zWs: dk ? base.wsD : base.ws,
+        zSendBg: dk ? '#E0A45A' : '#23201B', zSendC: dk ? '#1B1810' : '#F4F2EC',
+        zPriC: dk ? '#E0A45A' : '#9A581F', zPriBg: dk ? 'rgba(224,164,90,.12)' : 'rgba(178,106,43,.11)', zPriBr: dk ? 'rgba(224,164,90,.4)' : 'rgba(178,106,43,.35)',
+        zMsgs: base.msgs.map(m => Object.assign({}, m, { avBgZ: dk ? m.avBgD : m.avBg, avCZ: dk ? m.avCD : m.avC })),
+        zEdges, zConnGroups,
+        openProjZ: zOpen('P-tm8ui'), openDocZ: zOpen('DOC-14'), openTaskZ: zOpen('T-114'), openForgeZ: zOpen('s-forge'),
+        zRecents: (E[s.z4].recents || []).map(r => ({ t: r[1], open: zOpen(r[0]) })),
+        zLiveUse: (E[s.z4].liveUse || []).map(u => ({ t: u[1], open: zOpen(u[0]) })),
+        zOwns: (E[s.z4].owns || []).map(lbl => ({ t: lbl, open: EDGE_IDS[lbl] ? zOpen(EDGE_IDS[lbl]) : (() => { }) }))
+      });
+      zc = base;
+    }
+    const L = mkPanel('L');
+    const R = mkPanel('R');
+    return {
+      L, R, roster, railC, railX, cols,
+      zc, z4on: !!zc, z4close: () => this.setState({ z4: null }),
+      hasCols: cols.length > 0, emptyCenter: cols.length === 0,
+      centerMin: (cols.length ? cols.length * 320 + (cols.length - 1) * 8 + 16 : 336) + 'px',
+      railCollapsed: !s.railOpen, railExpanded: s.railOpen,
+      rosterOpen: s.rosterOpen, addServerOpen: s.addServerOpen,
+      toggleRail: () => this.setState(st => ({ railOpen: !st.railOpen })),
+      openAddServer: () => this.setState({ addServerOpen: true }),
+      closeAddServer: () => this.setState({ addServerOpen: false }),
+      eatClick: (ev) => ev.stopPropagation(),
+      toggleRoster: () => this.setState(st => ({ rosterOpen: !st.rosterOpen })),
+      openForge: open('s-forge')
+    };
+  }
+}
+</script>
+</body>
+</html>

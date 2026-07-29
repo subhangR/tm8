@@ -30,6 +30,10 @@ export const BASE_PATH = '/v2';
 export const OPERATIONS = [
   // identity & spaces
   { name: 'identity.get',            method: 'GET',    path: '/v2/identity',                                kind: 'read',    status: 'v1' },
+  { name: 'serverConnections.list',  method: 'GET',    path: '/v2/server-connections',                      kind: 'read',    status: 'v1' },
+  { name: 'serverConnections.create', method: 'POST',  path: '/v2/server-connections',                      kind: 'command', status: 'v1' },
+  { name: 'serverConnections.get',   method: 'GET',    path: '/v2/server-connections/:name',                kind: 'read',    status: 'v1' },
+  { name: 'serverConnections.delete', method: 'DELETE', path: '/v2/server-connections/:name',               kind: 'command', status: 'v1' },
   { name: 'spaces.list',             method: 'GET',    path: '/v2/spaces',                                  kind: 'read',    status: 'v1' },
   { name: 'spaces.create',           method: 'POST',   path: '/v2/spaces',                                  kind: 'command', status: 'v1' },
   { name: 'spaces.get',              method: 'GET',    path: '/v2/spaces/:spaceId',                         kind: 'read',    status: 'v1' },

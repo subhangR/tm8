@@ -82,6 +82,17 @@ export interface PromptManifest {
       }
     | undefined;
   project?: { id?: string; name?: string; workingDir?: string } | null | undefined;
+  interactionProfile?:
+    | {
+        profileId?: string | null | undefined;
+        profileVersion?: number | null | undefined;
+        templateKey?: string | undefined;
+        templateVersion?: number | undefined;
+        source?: string | undefined;
+        resolvedHash?: string | undefined;
+        pinRevision?: number | undefined;
+      }
+    | undefined;
   tasks?:
     | ReadonlyArray<{
         id: string;
@@ -500,6 +511,27 @@ export function composePrompt(
     if (project.workingDir) s.push(`    <working_dir>${esc(project.workingDir)}</working_dir>`);
   }
   s.push('  </session_context>');
+
+  const interactionProfile = manifest.interactionProfile;
+  if (interactionProfile) {
+    s.push('  <interaction_profile>');
+    s.push(`    <source>${esc(interactionProfile.source ?? 'unknown')}</source>`);
+    s.push(`    <profile_id>${esc(interactionProfile.profileId ?? 'core-default')}</profile_id>`);
+    if (interactionProfile.profileVersion !== null && interactionProfile.profileVersion !== undefined) {
+      s.push(`    <profile_version>${String(interactionProfile.profileVersion)}</profile_version>`);
+    }
+    if (interactionProfile.templateKey) {
+      s.push(`    <template>${esc(interactionProfile.templateKey)}@${String(interactionProfile.templateVersion ?? 0)}</template>`);
+    }
+    if (interactionProfile.resolvedHash) {
+      s.push(`    <resolved_hash>${esc(interactionProfile.resolvedHash)}</resolved_hash>`);
+    }
+    if (interactionProfile.pinRevision !== undefined) {
+      s.push(`    <pin_revision>${String(interactionProfile.pinRevision)}</pin_revision>`);
+    }
+    s.push('    <instruction>This immutable selection governs the session for its whole life.</instruction>');
+    s.push('  </interaction_profile>');
+  }
 
   const coordinator = manifest.coordinator;
   if (coordinator?.sessionId) {

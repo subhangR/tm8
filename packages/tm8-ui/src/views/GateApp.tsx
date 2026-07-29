@@ -25,7 +25,7 @@ import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds } from '../domain';
 import { getKind } from '../domain';
-import { buildSpawnInput } from '../domain/launch';
+import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DetailReasons } from '../panels';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
@@ -42,12 +42,7 @@ import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { HomeScreen } from '../home';
 import { GraphScreen } from '../graph';
-import {
-  GRAPH_FIXTURE_NOW,
-  graphFixtureEdges,
-  graphFixtureNodes,
-  graphFixtureTimeline,
-} from '../fixtures';
+import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -58,7 +53,14 @@ import {
 const DEFAULT_LEFT_KIND = 'task';
 const DEFAULT_RIGHT_KIND = 'work_session';
 
-export function GateApp() {
+export interface GateAppProps {
+  activeServer?: UiServer;
+  servers?: readonly UiServer[];
+  onSelectServer?(id: string): void;
+  onAddServer?(input: AddServerInput): Promise<unknown>;
+}
+
+export function GateApp(props: GateAppProps = {}) {
   // null when this GateApp is not inside an <AuthGate> — the shell tests, and
   // any host that has not mounted the gate.
   const authAccount = useAuthActions()?.account ?? null;
@@ -68,7 +70,12 @@ export function GateApp() {
   // id only exists once the seam has answered. Passing a placeholder id here
   // would silently disable persistence altogether — the storage key would never
   // match the one the next session reads.
-  const data = useGateData({ leftKind: DEFAULT_LEFT_KIND, rightKind: DEFAULT_RIGHT_KIND });
+  const activeServer = props.activeServer ?? LOCAL_SERVER;
+  const data = useGateData({
+    leftKind: DEFAULT_LEFT_KIND,
+    rightKind: DEFAULT_RIGHT_KIND,
+    serverBaseUrl: activeServer.routeBaseUrl,
+  });
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',
     spaceId: data.spaceId,
@@ -88,8 +95,9 @@ export function GateApp() {
   // Theme: PERSISTED, with a prefers-color-scheme default (LLD §11). It was an
   // unpersisted useState seeded to light, so every reload discarded the
   // viewer's choice. The control's home is still the account menu (D1).
-  const { theme, toggle: toggleTheme } = useTheme();
+  const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [menuCollapsed, setMenuCollapsed] = useState(false);
+  const [addServerOpen, setAddServerOpen] = useState(false);
   const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
     type: 'view',
     ref: 'workspace',
@@ -248,6 +256,10 @@ export function GateApp() {
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
       <div className="shell-root">
         <SpaceTabBar
+          activeServer={{
+            label: activeServer.label,
+            reachability: activeServer.reachability,
+          }}
           spaces={data.spaces}
           activeSpaceId={data.spaceId || null}
           onSelectSpace={(id: SpaceId) => void id}
@@ -260,7 +272,9 @@ export function GateApp() {
           // ACCOUNT. Undefined otherwise, so a GateApp rendered without an
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
-          accountSlot={authAccount ? <AccountMenu /> : undefined}
+          accountSlot={
+            authAccount ? <AccountMenu theme={theme} onThemeChange={setTheme} /> : undefined
+          }
         />
 
         <div className="shell-body">
@@ -271,6 +285,14 @@ export function GateApp() {
             activeTarget={activeTarget}
             onNavigate={setActiveTarget}
             presentKind={presentKind}
+            servers={props.servers}
+            activeServerId={activeServer.id}
+            onSelectServer={(id) => {
+              navStore.getState().applyNormalization({ stack: [], pinned: [] });
+              navStore.getState().setSession(null);
+              props.onSelectServer?.(id);
+            }}
+            onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
           />
 
           {/* The REAL error boundary wraps the whole view region: a crashed
@@ -278,17 +300,21 @@ export function GateApp() {
               tab bar above stay live for navigating away. */}
           <CatchBoundary label="view">
           {data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
-            /* ◉ Graph (revision-2 menu row) follows the D65 pattern exactly:
+            /* ◉ Graph follows the D65 pattern exactly:
                an activated menu view replaces the centre WHOLESALE — full
                width, no side lists; node C1 clicks open the Z3 aside inside
-               the screen. Fixture-backed (GRAPH-VIEW-PLAN §2 P1). */
+               the screen. Its initial lens comes from graph.query; durable
+               entity/edge events keep the projected nodes current. */
             <GraphScreen
               data={data}
+              serverBaseUrl={activeServer.routeBaseUrl}
               reasons={reasons}
-              nodes={graphFixtureNodes}
-              edges={graphFixtureEdges}
-              timeline={graphFixtureTimeline}
-              now={GRAPH_FIXTURE_NOW}
+              nodes={data.graph.nodes}
+              edges={data.graph.edges}
+              now={data.graph.now}
+              loading={data.graph.loading}
+              error={data.graph.error}
+              onRetry={data.graph.refresh}
             />
           ) : data.ready &&
             (activeTarget?.type === 'kind' ||
@@ -300,6 +326,7 @@ export function GateApp() {
                to the workspace silently — the misroute-honesty class). */
             <EntityView
               data={data}
+              serverBaseUrl={activeServer.routeBaseUrl}
               kind={activeTarget.type === 'kind' ? activeTarget.ref : 'channel'}
               reasons={reasons}
               onNotice={notices.push}
@@ -328,11 +355,17 @@ export function GateApp() {
           ) : data.ready ? (
             <WorkspaceView
               data={data}
+              serverBaseUrl={activeServer.routeBaseUrl}
               nav={nav}
               leftKind={kinds.leftKind}
               rightKind={kinds.rightKind}
+              leftWidth={kinds.leftWidth}
+              rightWidth={kinds.rightWidth}
               onLeftKindChange={kinds.setLeftKind}
               onRightKindChange={kinds.setRightKind}
+              onMoveSidePanel={kinds.movePanel}
+              onResizeSidePanel={kinds.resizePanel}
+              onResetSidePanelWidth={kinds.resetPanelWidth}
               onLaunchOpen={(id) => launch.open(id)}
               launchSubjectId={launch.subjectId}
               launchRefusal={launchRefusal}
@@ -351,24 +384,22 @@ export function GateApp() {
                 void data
                   .spawn(
                     buildSpawnInput({
-                      clientMutationId: `launch:${config.subjectId}:${config.teammateId}`,
+                      clientMutationId: newLaunchMutationId(),
                       spaceId: data.spaceId,
-                      config: {
-                        teamMemberId: config.teammateId,
-                        target: config.projectIds.length
-                          ? { kind: 'project', projectId: config.projectIds[0] as never }
-                          : { kind: 'scratch' },
-                      } as never,
+                      config,
                       taskIds: [config.subjectId],
+                      title: data.detailOf(config.subjectId)?.title,
                     }),
                   )
-                  .then(() => {
+                  .then((sessionId) => {
                     launch.close();
+                    setActiveTarget({ type: 'view', ref: 'workspace' });
+                    nav.push(sessionId);
                     notices.push({
                       id: 'launch-done',
                       tone: 'info',
                       title: 'Session launched',
-                      body: 'The session is running and appears in the live set.',
+                      body: 'The live terminal is open in the workspace.',
                       ttlMs: 6000,
                     });
                   })
@@ -383,7 +414,11 @@ export function GateApp() {
                     }),
                   );
               }}
-              onSpawn={(input) => data.spawn(input)}
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
+                setActiveTarget({ type: 'view', ref: 'workspace' });
+                nav.push(sessionId);
+              }}
               menuCollapsed={menuCollapsed}
               reasons={reasons}
               onNotice={notices.push}
@@ -429,6 +464,14 @@ export function GateApp() {
           onDismiss={() => setPaletteOpen(false)}
         />
         <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
+        <AddServerDialog
+          open={addServerOpen}
+          onDismiss={() => setAddServerOpen(false)}
+          onAdd={async (input) => {
+            if (!props.onAddServer) throw new Error('Adding Servers is unavailable.');
+            await props.onAddServer(input);
+          }}
+        />
       </div>
     </div>
   );

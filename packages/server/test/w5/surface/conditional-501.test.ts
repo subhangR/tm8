@@ -1,6 +1,5 @@
 /**
- * W5 Duo C — CONDITIONAL 501s: the reachable ones, and the one that is an
- * epitaph.
+ * W5 Duo C — CONDITIONAL 501s and the create/patch taxonomy.
  *
  * WHY THIS FILE EXISTS AT ALL. `sweep.test.ts` sends ONE schema-valid body per
  * operation and found zero 501s. That green is worth exactly nothing unless the
@@ -11,7 +10,8 @@
  * classification and the same wire path to surface them.
  *
  * It also settles the taxonomy question the close document's canonical example
- * rests on, and the answer is not the one anybody predicted.
+ * rests on. Spawn's former scratch/profile 501s are pinned here as supported
+ * routes so those capabilities cannot regress behind handler-entry refusals.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -61,21 +61,7 @@ describe('W5.C conditional 501s and the create/patch taxonomy', () => {
     await server?.close();
   }, 120_000);
 
-  /**
-   * POSITIVE CONTROL FOR THE ENTIRE SWEEP.
-   *
-   * `execution-handlers.ts:556,559` throw `notImplemented(...)` at handler
-   * entry, before any database work, on inputs their schema fully accepts.
-   * These are genuine, reachable, per-input handler 501s.
-   *
-   * NOTE WHAT THE MESSAGE LOOKS LIKE. Both go through the SAME
-   * `notImplemented()` helper (`errors.ts:135-138`) the ROUTER uses at `:164`,
-   * so a handler 501 and a router 501 are textually identical in format —
-   * `operation <X> is not implemented on this node`. This is the concrete
-   * demonstration that message text could never have been the discriminator,
-   * and it is why the sweep attributes by reading the live registry instead.
-   */
-  it('CONTROL: reachable handler 501s exist and this harness reports them', async () => {
+  it('scratch and profile selection reach graph validation instead of a handler 501', async () => {
     const base = {
       clientMutationId: 'w5c-control',
       spaceId: ABSENT,
@@ -85,24 +71,17 @@ describe('W5.C conditional 501s and the create/patch taxonomy', () => {
     const scratch = await server.request('POST', '/v2/execution/spawn', {
       ...base, workdir: { mode: 'scratch' },
     });
-    expect(scratch.status).toBe(501);
-    expect(scratch.errorCode).toBe('not_implemented');
-    expect(scratch.errorMessage).toBe(
-      'operation execution.spawn workdir.mode=scratch is not implemented on this node',
-    );
+    expect(scratch.status).toBe(404);
+    expect(scratch.errorCode).toBe('not_found');
 
     const profile = await server.request('POST', '/v2/execution/spawn', {
       ...base, interactionProfileId: ABSENT,
     });
-    expect(profile.status).toBe(501);
-    expect(profile.errorCode).toBe('not_implemented');
-    expect(profile.errorMessage).toBe(
-      'operation execution.spawn interactionProfileId is not implemented on this node',
-    );
+    expect(profile.status).toBe(404);
+    expect(profile.errorCode).toBe('not_found');
 
-    // The registry says `execution.spawn` IS mounted, so these 501s are
-    // attributable to the handler — the exact classification the sweep would
-    // have applied. The sweep's zero is therefore an absence, not a blindness.
+    // The registry says execution.spawn is mounted; both optional inputs have
+    // crossed the public handler and reached the absent-teammate lookup.
     expect(server.production.server.registry.has('execution.spawn')).toBe(true);
   });
 

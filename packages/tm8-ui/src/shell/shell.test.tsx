@@ -115,11 +115,11 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     expect(current[0]?.textContent).toContain('Tasks');
   });
 
-  it('is DISCRETE: 220 expanded, 48 collapsed, nothing between', () => {
+  it('is DISCRETE: 165 expanded, 48 collapsed, nothing between', () => {
     const { container: expanded } = renderRail({ collapsed: false });
     const { container: collapsed } = renderRail({ collapsed: true });
     expect((expanded.querySelector('[data-testid="menu-rail"]') as HTMLElement).style.width).toBe(
-      '220px',
+      '165px',
     );
     expect((collapsed.querySelector('[data-testid="menu-rail"]') as HTMLElement).style.width).toBe(
       '48px',
@@ -345,6 +345,15 @@ describe('SpaceTabBar (T0-1, D1)', () => {
     expect(selected[0]?.textContent).toContain('atelier');
     fireEvent.click(getByText('playground'));
     expect(onSelectSpace).toHaveBeenCalledWith('sp_2');
+  });
+
+  it('shows the selected Server immediately after the tm8 mark', () => {
+    const { container, getByLabelText } = renderBar({
+      activeServer: { label: 'ec2 · ubuntu', reachability: 'online' },
+    });
+    expect(getByLabelText('Selected server: ec2 · ubuntu, online')).toBeTruthy();
+    const mark = container.querySelector('.shell-tabbar__mark');
+    expect(mark?.nextElementSibling?.classList.contains('shell-tabbar__server')).toBe(true);
   });
 
   it('renders add-space disabled-with-reason rather than hiding it (L6)', () => {

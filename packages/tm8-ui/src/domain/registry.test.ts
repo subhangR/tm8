@@ -162,22 +162,17 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(task.rowActions).toContain('run');
 
     const session = getKind('work_session').list;
-    expect(session.inlineEdit?.title).toBe(true);
+    expect(session.inlineEdit).toBeUndefined();
     expect(session.rowActions).toEqual(['complete', 'terminate']);
   });
 
-  it("work_session's panel primaries and row actions name the SAME verb pair", () => {
-    // They disagreed for hours: rowActions said complete+terminate while
-    // primaries said prompt-session+terminate, in one row, four lines apart.
-    // Pinned to each other now — where two fields encode the same fact, a test
-    // between them outlives whatever either comment claims.
+  it("keeps both session row verbs but only Terminate in the compact panel toolbar", () => {
+    // USER RULING 2026-07-29: terminal panels use the Task panel's pressure
+    // budget — one primary beside tabs and window controls. Complete remains
+    // reachable on the session row; Terminate is the in-panel session verb.
     const session = getKind('work_session');
-    expect(
-      session.panel.primaries,
-      'T0-4 draws "Complete Terminate" and annotates it; LLD §3.1 names the same pair. Change the CANVAS/spec first, then this.',
-    ).toEqual(['complete', 'terminate']);
     expect(session.list.rowActions).toEqual(['complete', 'terminate']);
-    expect(session.panel.primaries).toEqual(session.list.rowActions);
+    expect(session.panel.primaries).toEqual(['terminate']);
   });
 
   it('4. Run / Coordinate primaries are TASK-KIND ONLY', () => {
@@ -186,6 +181,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       if (row.kind === 'task') continue;
       expect(row.list.primaryActions ?? []).not.toContain('run');
     }
+  });
+
+  it('the task DETAIL toolbar keeps Run only', () => {
+    expect(getKind('task').panel.primaries).toEqual(['run']);
   });
 
   it('5. sessions lifecycle → list.lifecycle, D20 partition RETIRED (D56)', () => {
@@ -343,7 +342,7 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     const projects = [
       { projectId: 'p-1', name: 'vendor-import', trusted: false, untrustedReason: UNTRUSTED_REASON },
     ];
-    const base = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: null });
+    const base = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
     const onUntrusted = { ...base, target: { kind: 'project' as const, projectId: 'p-1' } };
     const refusal = canLaunch(onUntrusted, { projects });
     expect(refusal).toEqual({ ok: false, reason: UNTRUSTED_REASON });
@@ -352,7 +351,7 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
   });
 
   it('refuses on exhausted capacity and names the numbers', () => {
-    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: null });
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' });
     const verdict = canLaunch(config, { projects: [], capacity: { slotsFree: 0, slotsTotal: 4 } });
     expect(verdict.ok).toBe(false);
     if (!verdict.ok) expect(verdict.reason).toContain('0 of 4');
@@ -361,6 +360,20 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
   it('never launches anonymously', () => {
     const config = { ...defaultConfigFor({ id: 'tm-1' }), teamMemberId: null };
     expect(canLaunch(config, { projects: [] }).ok).toBe(false);
+  });
+
+  it('refuses missing or incompatible persisted model/tool values instead of falling back', () => {
+    expect(defaultConfigFor({ id: 'tm-1' })).toMatchObject({ agentToolId: null, model: null });
+    expect(canLaunch(defaultConfigFor({ id: 'tm-1' }), { projects: [] })).toEqual(expect.objectContaining({
+      ok: false,
+      reason: expect.stringContaining('no persisted agent tool'),
+    }));
+    expect(canLaunch(defaultConfigFor({
+      id: 'tm-1', agentTool: 'claude-code', model: 'gpt-5.6-sol',
+    }), { projects: [] })).toEqual(expect.objectContaining({
+      ok: false,
+      reason: expect.stringContaining('not a truthful Claude Code launch option'),
+    }));
   });
 
   it('D46 — a teammate load of NULL and a load of ZERO are different renderings', () => {
@@ -434,7 +447,7 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     // The launch root is genuinely performable; the extras are in_project edges
     // the stamped seam cannot write, so they are refused with the mechanism.
     const config = {
-      ...defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: null }),
+      ...defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-sonnet-5' }),
       target: { kind: 'project' as const, projectId: 'p-root' },
       additionalProjectIds: ['p-two', 'p-three'],
     };
@@ -452,6 +465,18 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
   it('offers no models for a tool it does not know, rather than guessing', () => {
     expect(modelsFor('some-future-tool')).toEqual([]);
     expect(modelsFor('claude-code').length).toBeGreaterThan(0);
+  });
+
+  it('offers the concrete launch model identifiers requested by the node', () => {
+    expect(modelsFor('claude-code')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'claude-opus-5', label: 'Claude Opus 5' }),
+      expect.objectContaining({ id: 'claude-fable-5', label: 'Claude Fable 5' }),
+      expect.objectContaining({ id: 'claude-sonnet-5', label: 'Claude Sonnet 5' }),
+    ]));
+    expect(modelsFor('codex')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'gpt-5.6-sol', label: 'OpenAI GPT 5.6' }),
+      expect.objectContaining({ id: 'gpt-5.6-terra', label: 'OpenAI GPT 5.6 Terra' }),
+    ]));
   });
 });
 

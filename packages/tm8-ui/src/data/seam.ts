@@ -49,6 +49,8 @@ import type {
   ExecutionSpawnInput,
   ExecutionTerminateInput,
   FeedScope,
+  GraphQuery,
+  GraphResult,
   HandoffView,
   MenuConfig,
   MessageBatchResult,
@@ -61,8 +63,10 @@ import type {
   PatchMessageInput,
   PatchTaskInput,
   PostMessageInput,
+  ProjectResource,
   ReactionInput,
   SpaceId,
+  SpaceSettingsView,
   SpaceSummary,
   WorkInput,
   WorkSessionStatus,
@@ -99,6 +103,7 @@ export interface LivenessSnapshot {
   /** Stable per node process. A change between snapshots ⇒ node restarted ⇒ every previously live PTY is gone. */
   nodeBootId: string;
   checkedAt: string;
+  capacity?: { used: number; total: number };
 }
 
 /**
@@ -163,8 +168,12 @@ export interface Seam {
    * versioned default menu (TM8-UI-SPEC-FINAL §4.10). Other codes reject.
    */
   menu(spaceId: SpaceId): Promise<MenuConfig | null>;
+  /** Launch-default provenance and other member-authorized space settings. */
+  spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Both list panels + palette consume this one read (FE gate list item 4). */
   query(input: CollectionQuery): Promise<CollectionResult>;
+  /** Full graph hydration; durable entity/edge events keep this lens current. */
+  graph(input: GraphQuery): Promise<GraphResult>;
   /**
    * FE CONSENSUS RULING (LLD §14, recorded 2026-07-28): this is the
    * CUSTOM-KIND (`c:*`) extension source ONLY — existence + naming metadata.
@@ -172,10 +181,12 @@ export interface Seam {
    * authority for ALL kinds; server kind metadata never carries behavior config.
    */
   entityKinds(spaceId: SpaceId): Promise<EntityKindDef[]>;
+  /** Linked project resources, including trust and graph-owned cwd. */
+  projects(spaceId: SpaceId): Promise<ProjectResource[]>;
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
   /** Connections tab. */
-  connections(id: EntityId): Promise<Page<EdgeView>>;
+  connections(id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>>;
   /** Activity tab. */
   activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>>;
   /** Discussion tab. */

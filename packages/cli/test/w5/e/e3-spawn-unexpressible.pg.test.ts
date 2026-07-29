@@ -1,68 +1,9 @@
 /**
- * W5 DUO E — E-3: `session spawn` CANNOT EXPRESS `model`, `agentTool` OR `title`.
- *
- * ── THE CLAIM, AND THE CLI IS THE ONLY NARROW POINT ───────────────────────
- *
- * Every layer below the CLI carries these three. Verified in the tree for this
- * file rather than inherited:
- *
- *   schemas.ts:1216-1218   ExecutionSpawnInputSchema declares
- *                          `model: z.string().nullable().optional()`,
- *                          `agentTool: …`, `title: z.string().optional()`
- *   execution-handlers.ts:577-579  the handler passes all three into SpawnRequest
- *   manifest.ts:112        `request.model` is FIRST in the resolution chain,
- *                          ahead of the persona's
- *   commands/session.ts    reads NONE of the three — zero occurrences
- *
- * ⚠ THAT ORDERING MATTERS AND IS WHY THIS IS WORTH A WITNESS. This is the
- * INVERSE of the `037` inert-fix shape, where a correct repair was undone by a
- * narrow point ABOVE it. Here the whole path is built and the narrow point is
- * the outermost layer — so the capability exists end to end and no caller can
- * reach it. Found by Duo E's DEVELOPER, which checked the far end FIRST for
- * exactly that reason.
- *
- * ── ⚠ WHAT THIS FILE DELIBERATELY DOES NOT ASSERT ─────────────────────────
- *
- * IT ASSERTS ONLY THE PLAIN VALUE FORM: `--model <x>` must put `model: "<x>"`
- * on the wire.
- *
- * It does NOT pin `--model none` -> `model: null`. `manifest.ts:112` resolves
- * with `||`, so `null` and ABSENT are indistinguishable there and a `none`
- * would fall through to `member.model` rather than to any default. Pinning the
- * advertised `|none>` meaning would therefore pin a behaviour NOBODY HAS RULED
- * ON, and the `|none>` idiom is itself unsettled (three distinct spellings
- * across the package). My developer flagged this before I wrote a line of it.
- *
- * ── THE INSTRUMENT ────────────────────────────────────────────────────────
- *
- * A RECORDING ENDPOINT against the BUILT binary, because the claim is about
- * what the CLI SENDS. A real Server would answer without telling this suite
- * which keys were in the request, and the request IS the subject.
- * **THIS SUITE MAKES NO CLAIM ABOUT SERVER BEHAVIOUR.** The server-side
- * citations above are READ, not measured here.
- *
- * ── DISPOSITION (§3d), AUTHORED NOW ───────────────────────────────────────
- *
- * PRODUCTION-STATE pin, so it ships with one. Whether teaching the CLI three
- * flags the frozen contract already declares is RESTORATION or INVENTION is a
- * coordinator ruling that has NOT been given. The A20 precedent went
- * RESTORATION on a field the kernel already allowlisted; these three are NOT
- * allowlisted, so that precedent does not transfer and I am not borrowing its
- * conclusion without its premise.
- *
- *   IF RESTORATION — tests 3-5 green ON THEIR OWN when the flags are wired.
- *   Their last scheduled act; they assert the correct behaviour and were never
- *   softened. Test 6 (the silent-discard harm) must then be INVERTED BY HAND —
- *   and unlike the A20 file's disposition, WHICH I GOT WRONG, I have checked:
- *   test 6 asserts `identical === true`, i.e. it asserts THE DEFECT, because
- *   here the defect IS the indistinguishability. It is the one test in this
- *   file that does not self-invert.
- *
- *   IF INVENTION — tests 3-5's premise EXPIRES and is RECORDED AS EXPIRED,
- *   never re-pinned to pass. Test 6 becomes primary: accepted-and-silently-
- *   discarded is indefensible under either ruling.
- *
- * Tests 1-2 are controls and stay green in both worlds.
+ * W5 E-3 regression: the built `session spawn` CLI carries model, agentTool,
+ * and title into the strict execution.spawn body. The recorder is deliberately
+ * a local HTTP stub: this measures the wire without starting an agent session.
+ * Plain string values are covered; this suite does not assign semantics to a
+ * hypothetical `--model none` spelling.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
@@ -175,14 +116,14 @@ describe('CONTROL — the recorder is reached and the body is real', () => {
 
 // ── THE ASSERTIONS ────────────────────────────────────────────────────────
 
-const UNEXPRESSIBLE = [
+const EXPRESSIBLE = [
   { field: 'model', flag: '--model', value: 'claude-opus-5', where: 'schemas.ts:1216 · manifest.ts:112' },
   { field: 'agentTool', flag: '--agent-tool', value: 'claude-code', where: 'schemas.ts:1217' },
   { field: 'title', flag: '--title', value: 'W5E spawn title', where: 'schemas.ts:1218' },
 ];
 
-describe('E-3 — three frozen-contract fields no caller can reach', () => {
-  for (const row of UNEXPRESSIBLE) {
+describe('E-3 — frozen-contract spawn fields reach the wire', () => {
+  for (const row of EXPRESSIBLE) {
     it(`${row.flag} <value> puts ${row.field} on the wire (${row.where})`, async () => {
       const r = await drive([row.flag, row.value]);
       const body = bodyOf();
@@ -196,26 +137,7 @@ describe('E-3 — three frozen-contract fields no caller can reach', () => {
     });
   }
 
-  /**
-   * ⚠ THE HARM, AND IT IS INDEFENSIBLE UNDER EITHER RULING.
-   *
-   * A CLI may legitimately not implement a flag. What it may not do is ACCEPT
-   * one and discard it — the caller then cannot tell a flag that did nothing
-   * from a flag that did something, or from a typo. `session.ts` has no
-   * unknown-option guard, so all three parse, exit 0, and change nothing.
-   *
-   * ⚠ THIS TEST ASSERTS THE DEFECT, NOT THE FIX, AND THAT IS DELIBERATE — it is
-   * the one test here that will NOT self-invert. See the header disposition.
-   * It is written this way because the indistinguishability IS the harm, and a
-   * test asserting "the flags change something" would go green the day someone
-   * makes the CLI merely ERROR on them, which is a different outcome.
-   *
-   * ⚠ WHAT IT CAN BE SATISFIED BY: `--mutation-id` is PINNED, so a generated id
-   * cannot manufacture a difference. That pin exists because an unpinned one
-   * produced a FALSE GREEN in this duo's A20 file — the bodies always differed
-   * and the test reported the flag as effective. Do not remove it.
-   */
-  it('all three are accepted and silently discarded — byte-identical to omitting them', async () => {
+  it('all three observably change the body while the mutation id stays pinned', async () => {
     const without = await drive();
     const withoutBody = captures[0]?.body ?? '';
 
@@ -235,7 +157,7 @@ describe('E-3 — three frozen-contract fields no caller can reach', () => {
 
     expect(
       identical,
-      'if this is FALSE the flags now reach the wire — see the header disposition, this test must be inverted by hand',
-    ).toBe(true);
+      'the populated spawn body must differ from one that omits model, agentTool, and title',
+    ).toBe(false);
   });
 });

@@ -1,0 +1,4 @@
+P2: good, that's a clean close -- "not a gap, a stub" in both codebases is the right shape
+for it, and it means the mechanism's correctness was worth proving on its own terms rather
+than as a step toward a feature that doesn't exist yet either side. Nothing further from me
+on this thread. Holding.

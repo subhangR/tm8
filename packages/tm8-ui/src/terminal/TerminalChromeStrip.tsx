@@ -27,6 +27,7 @@ export function TerminalChromeStrip({
   onOpenTranscript,
   initial,
   statusDetail,
+  showFocusControl = true,
 }: {
   /** Persona name — the agent, e.g. "forge". */
   persona: string;
@@ -50,6 +51,9 @@ export function TerminalChromeStrip({
    * fetches it and threads it here.
    */
   statusDetail?: string;
+  /** False when a parent drawer keeps the same exit/transcript control in
+      its always-visible collapsed row. */
+  showFocusControl?: boolean;
 }) {
   const style = presentationStyle(presentation);
   const ended = !style.isLive;
@@ -93,7 +97,7 @@ export function TerminalChromeStrip({
 
         {/* One slot, two occupants: the escape hatch while alive, the record
             once dead. Identical box geometry so nothing shifts on exit. */}
-        {ended ? (
+        {showFocusControl && ended ? (
           <button
             type="button"
             className="term-exit-chip"
@@ -102,7 +106,7 @@ export function TerminalChromeStrip({
           >
             transcript ↗
           </button>
-        ) : (
+        ) : showFocusControl ? (
           <button
             type="button"
             className="term-exit-chip"
@@ -116,7 +120,7 @@ export function TerminalChromeStrip({
               ⌃`
             </span>
           </button>
-        )}
+        ) : null}
       </div>
     </AlwaysDark>
   );

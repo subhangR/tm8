@@ -12,18 +12,12 @@
  *
  * So the default inverted. The rules, in the order they are applied:
  *
- *   1. `MODE === 'production'` → FIXTURE. Kept verbatim from the opt-in era at
- *      the coordinator's direction. STATED PLAINLY BECAUSE IT IS SURPRISING:
- *      it means a production build shows fixture data while a dev build shows
- *      the node — the inverse of what most people would predict. It is a
- *      ruling, not a measurement, and it is flagged in
- *      `src/data/HANDOVER-DataWiring.md` for reversal if that is not intended.
- *   2. an explicit `'1'` → REAL. The old opt-in still works, unchanged.
- *   3. an explicit `'0'` → FIXTURE. **NEW, and it is what makes the flip
+ *   1. an explicit `'1'` → REAL.
+ *   2. an explicit `'0'` → FIXTURE. This is the explicit demo/test composition:
  *      safe**: a default with no off switch is a trap. This is how the launch
  *      sheet's pickers, a demo, or anyone debugging without a node gets the
  *      fixture world back — `localStorage.setItem('tm8-ui:real-seam','0')`.
- *   4. `MODE === 'test'` → FIXTURE. Not a convenience: vitest runs with no
+ *   3. `MODE === 'test'` → FIXTURE. Not a convenience: vitest runs with no
  *      node and no network, so a real default there would make every suite
  *      measure the ENVIRONMENT rather than the code, and 1000 tests would go
  *      red saying nothing about the change that broke them. The browser
@@ -32,7 +26,7 @@
  *      NOTE that `realSeamFlag.test.ts`'s "is OFF by default" case now
  *      measures THIS rule and not the app's default — it is still true, and it
  *      no longer means what its name suggests.
- *   5. otherwise → REAL.
+ *   4. otherwise, including production → REAL.
  *
  * WHAT THE DEFAULT DOES **NOT** DO: fall back. If the node is unreachable the
  * boot read rejects, `useGateData` holds the failure in `bootError`, and the
@@ -95,7 +89,6 @@ export const REAL_SEAM_STORAGE_KEY = 'tm8-ui:real-seam';
  * shape of a green that measures the runner instead of the rule.
  */
 export function resolveSeamSource(env: SeamEnv, flag: string | null): SeamSource {
-  if (env.MODE === 'production') return 'fixture';
   if (flag === '1') return 'real';
   if (flag === '0') return 'fixture';
   if (env.MODE === 'test') return 'fixture';

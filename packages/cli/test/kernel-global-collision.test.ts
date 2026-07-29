@@ -161,6 +161,7 @@ describe('--confirm-agent-generated is expressible', () => {
  * reach the command's OptionBag.
  */
 const GLOBAL_PROBE: Readonly<Record<string, readonly string[]>> = {
+  server: ['--server', 'work'],
   space: ['--space', 'sp_1'],
   as: ['--as', 'tm_1'],
   format: ['--format', 'json'],
@@ -287,8 +288,8 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
   }));
 
   it('sweeps the whole projection, not a subset', () => {
-    // Vacuity guards. The catalog is 101 rows, 99 of which publish syntax.
-    expect(rows.length).toBe(101);
+    // Vacuity guards. The catalog is 106 rows, 104 of which publish syntax.
+    expect(rows.length).toBe(106);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

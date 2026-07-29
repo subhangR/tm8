@@ -98,11 +98,11 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 98 command paths; the registry is an honest subset of them', () => {
-    // 101 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
-    // = 99 rows that have one, and `files.uploadInit` + `files.uploadComplete`
-    // share the single `file upload` composition ⇒ 98 DISTINCT paths.
-    expect(COMMAND_PATHS).toHaveLength(98);
+  it('the projection holds 103 command paths; the registry is an honest subset of them', () => {
+    // 102 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
+    // = 100 rows that have one, and `files.uploadInit` + `files.uploadComplete`
+    // share the single `file upload` composition ⇒ 99 DISTINCT paths.
+    expect(COMMAND_PATHS).toHaveLength(103);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

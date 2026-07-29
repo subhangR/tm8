@@ -35,8 +35,42 @@ import { commandHelp } from '../../../src/discovery/help.js';
 
 const UPLOAD = ['file', 'upload'] as const;
 
-/** A ledger where stage 1 answered and stage 2 is absent on this node. */
-function partiallyImplemented(): AvailabilityLedger {
+/**
+ * ⚠ TWO FIXTURES, NOT ONE. THIS SPLIT IS THE REPAIR OF A REAL ERROR OF MINE.
+ *
+ * My first draft used ONE helper (recording both stages) for BOTH pins, and on
+ * that fixture the M2 pin could not produce M2's condition. I read the red as a
+ * disproof of M2 and REPORTED IT AS ONE. My developer refused the withdrawal
+ * and showed its working; it was right. That was my first false positive to
+ * leave this seat, and it ran toward killing a real finding.
+ *
+ * THE DISCRIMINATOR IS WHETHER `files.uploadInit` — the HEAD row — HAS AN
+ * OBSERVATION. `shardFrom` takes `availabilitySource` from HEAD; help.ts:389-392
+ * then overwrites `availability` and `availabilityReason` from the composite
+ * `weakest()` and NEVER the source. So:
+ *
+ *   HEAD UNOBSERVED -> head resolves unknown/null/CONTRACT  -> shard source contract
+ *   HEAD OBSERVED   -> head resolves available/observed_ok/OBSERVED -> shard source observed
+ *
+ * ONE DEFECT — the rollup does not carry source — with TWO PRESENTATIONS chosen
+ * entirely by the head row's ledger state. A single fixture can only ever see
+ * one of them.
+ *
+ * THE GENERAL LESSON, and it is not M2-specific: A PIN THAT DOES NOT ASSERT THE
+ * WORLD IT NEEDS CANNOT KNOW WHICH WORLD IT RAN IN. Every pin below now asserts
+ * its precondition before it asserts anything about the shard.
+ */
+
+/** M2's world: the HEAD row is deliberately UNOBSERVED. */
+function m2Ledger(): AvailabilityLedger {
+  const l = new AvailabilityLedger();
+  // files.uploadInit deliberately NOT recorded.
+  l.record('files.uploadComplete', 'not_implemented');
+  return l;
+}
+
+/** M3's world: one real `file upload` — head answered, second stage absent. */
+function m3Ledger(): AvailabilityLedger {
   const l = new AvailabilityLedger();
   l.record('files.uploadInit', 'handled');
   l.record('files.uploadComplete', 'not_implemented');
@@ -77,7 +111,7 @@ describe('W5.F CONTROL — the seam does not touch the process singleton', () =>
     // seat declares the other's verdict. If this ever fails, every assertion
     // below is contaminated by file ordering and must be discarded.
     const before = processLedger.revision();
-    const shard = commandHelp(UPLOAD, { from: partiallyImplemented() });
+    const shard = commandHelp(UPLOAD, { from: m3Ledger() });
     expect(shard, 'the file upload command shard must exist').toBeDefined();
     expect(processLedger.revision(), 'commandHelp wrote to the PROCESS ledger').toBe(before);
   }, 15_000);
@@ -86,7 +120,7 @@ describe('W5.F CONTROL — the seam does not touch the process singleton', () =>
     // A seam that is ignored would also leave the singleton at rest. This
     // distinguishes "honoured the ledger" from "did nothing".
     const cold = commandHelp(UPLOAD, { from: new AvailabilityLedger() });
-    const warm = commandHelp(UPLOAD, { from: partiallyImplemented() });
+    const warm = commandHelp(UPLOAD, { from: m3Ledger() });
     expect(cold?.availability).toBe('unknown');
     expect(warm?.availability).toBe('unavailable');
     expect(warm?.availability).not.toBe(cold?.availability);
@@ -115,7 +149,7 @@ describe('W5.F CONTROL — the seam does not touch the process singleton', () =>
  * that any other multi-operation command exists or misbehaves — `file upload`
  * is the only one — and NOT evidence that an agent has ever acted on it.
  */
-describe('W5.F PIN 3 (M2) — the composite shard triple is unreachable for any operation', () => {
+describe('W5.F PIN 3 (M2, CONVERTED) — the shard triple is a coherent single verdict', () => {
   it('CONTROL — the producible set is derived by exhaustion and is non-trivial', () => {
     const triples = producibleTriples();
     // 18 input combinations collapse to a small set. If this is 1 the
@@ -130,53 +164,104 @@ describe('W5.F PIN 3 (M2) — the composite shard triple is unreachable for any 
   }, 15_000);
 
   /**
-   * ⚠ M2 DOES NOT REPRODUCE. THIS TEST RECORDS A DISPROOF, NOT A DEFECT.
+   * ⚠ THE PRECONDITION IS ASSERTED FIRST, AND THAT IS THE POINT OF THIS PIN.
    *
-   * My developer measured the composite shard triple as
-   *   (unavailable, not_implemented_on_node, CONTRACT)
-   * and argued it is unreachable for any single operation — which would make it
-   * a manufactured verdict claiming contract-level finality for a node-local
-   * fact. I wrote this pin to archive that red before the fix.
+   * My first draft of this test shared ONE fixture with the M3 pin, ran in M3's
+   * world, and I published its red as a DISPROOF of M2. It was not. The pin
+   * fired correctly at the wrong world, and nothing in it could say so.
    *
-   * MY INDEPENDENT MEASUREMENT DISAGREES. The shard reports
-   *   (unavailable, not_implemented_on_node, OBSERVED)
-   * which IS producible — it is exactly what a single operation with a
-   * `not_implemented` observation resolves to. The rollup carries the weakest
-   * operation's source ALONG WITH its availability and reason, so all three
-   * fields describe the same verdict and the shard is self-consistent.
-   *
-   * I DID NOT re-pin this to match. I ran it, it went red, and the red was
-   * against MY DEVELOPER'S CLAIM rather than against the tree — which is what
-   * a tester's pin is for. Reported as a disproof; M2 is withdrawn pending my
-   * developer's re-measurement. The most likely explanation is that M2 was
-   * measured before `ShardOptions.from` landed, when `commandHelp` read the
-   * process singleton and another test's observations could bleed in.
-   *
-   * WHAT SURVIVES AND IS WORTH KEEPING: this is now a REGRESSION GUARD. It
-   * asserts the composite triple stays in the producible set — so if a future
-   * rollup change ever does manufacture an unreachable verdict, M2 becomes real
-   * and this test catches it on the spot.
+   * A MUTATION TEST PROVES A DETECTOR FIRES, NOT THAT IT IS AIMED AT THE RIGHT
+   * PROPERTY. The precondition assertion below is what makes it aimed.
    */
-  it('DISPROOF — the composite triple IS producible; M2 does not reproduce', () => {
-    const shard = commandHelp(UPLOAD, { from: partiallyImplemented() });
+  it('PRECONDITION — this pin runs in M2 world: the HEAD row is UNOBSERVED', () => {
+    const l = m2Ledger();
+    const head = resolveAvailability('files.uploadInit', 'v1', l);
+    const weakest = resolveAvailability('files.uploadComplete', 'v1', l);
+
+    // If this fails, every assertion in the next test is about a world I did
+    // not intend, and its result means nothing either way.
+    expect(head.availabilitySource, 'HEAD must be unobserved for M2').toBe('contract');
+    expect(head.availability).toBe('unknown');
+    expect(weakest.availabilitySource, 'the WEAKEST row must be observed').toBe('observed');
+    expect(weakest.availability).toBe('unavailable');
+  }, 15_000);
+
+  it('FIXED, GUARDED — the shard carries the source of the verdict it adopted', () => {
+    const l = m2Ledger();
+    const shard = commandHelp(UPLOAD, { from: l });
     expect(shard).toBeDefined();
 
+    const weakest = resolveAvailability('files.uploadComplete', 'v1', l);
+
+    // The shard took its availability and reason from the WEAKEST row...
+    expect(shard!.availability).toBe(weakest.availability);
+    expect(shard!.availabilityReason).toBe(weakest.availabilityReason);
+
+    // ...and did NOT take the source with them. THIS IS THE DEFECT, stated as
+    // the property that is actually violated rather than as a literal triple.
+    // It is PRESENTATION-INDEPENDENT: it names the incoherence itself, so it
+    // cannot be satisfied by a fixture that happens to make both sources agree.
+    // ═══ CONVERTED, NOT RE-PINNED (§3d) ═══
+    // This pin asserted the DEFECT until the fix landed, then fired on cue —
+    // its last scheduled act, predicted when it was written. Per its own
+    // disposition it now asserts THE FIX: all three fields describe ONE verdict.
+    expect(
+      shard!.availabilitySource,
+      'REGRESSION: the shard adopted the composite availability but kept a '
+        + 'DIFFERENT source. That is M2 returning — the rollup dropped source again.',
+    ).toBe(weakest.availabilitySource);
+
+    // The triple is now coherent, so it must be reachable for a single operation.
     const triple = `${shard!.availability}|${shard!.availabilityReason}|${shard!.availabilitySource}`;
-
-    // MEASURED, and it is NOT the triple M2 reported.
     expect(triple).toBe('unavailable|not_implemented_on_node|observed');
-    expect(triple).not.toBe('unavailable|not_implemented_on_node|contract');
-
-    // THE PROPERTY M2 CLAIMED WAS VIOLATED, ASSERTED DIRECTLY — and it holds.
-    // If this ever fails, M2 has become real: the rollup is manufacturing a
-    // verdict no operation can produce. Do not re-pin it; investigate.
     expect(
       producibleTriples(),
-      'the composite rollup now manufactures an unreachable triple — M2 has '
-        + 'become REAL; this is a defect, not a stale expectation',
+      'REGRESSION: the rollup is manufacturing a triple no operation can produce',
     ).toContain(triple);
-
     expect(AVAILABILITY_SOURCES).toContain(shard!.availabilitySource);
+  }, 15_000);
+
+  /**
+   * ═══ THE KNOWN-BAD HALF, REVERSE-DERIVED SO IT SURVIVES THE FIX (§3d.1) ═══
+   *
+   * The original version of this test demonstrated the blindness by observing
+   * the live product. THE FIX DESTROYED THAT: post-fix both fixtures agree, so
+   * observing the product proves nothing about fixture choice any more, and the
+   * test silently became vacuous the moment M2 was repaired.
+   *
+   * A DETECTOR THAT LOSES ITS KNOWN-BAD HALF AT THE MOMENT OF THE FIX CANNOT
+   * PROVE IT WOULD STILL CATCH A REGRESSION. So the blindness is now pinned
+   * SYNTHETICALLY: the rollup rule is re-implemented locally over the two
+   * fixtures, and the property asserted is that THE M3 FIXTURE CANNOT
+   * DISTINGUISH the broken rollup from the correct one while the M2 FIXTURE
+   * CAN. That is a fact about the FIXTURES, not about the product, so no source
+   * change can ever repair it away (§7d).
+   */
+  it('SYNTHETIC — the M3 fixture is structurally blind to a dropped source; M2 is not', () => {
+    // The two rollups, written out. `correct` carries the source with the
+    // verdict; `broken` is M2 — it keeps the HEAD's source.
+    const rollup = (l: AvailabilityLedger) => {
+      const head = resolveAvailability('files.uploadInit', 'v1', l);
+      const weakest = resolveAvailability('files.uploadComplete', 'v1', l);
+      return { correct: weakest.availabilitySource, broken: head.availabilitySource };
+    };
+
+    const inM2 = rollup(m2Ledger());
+    const inM3 = rollup(m3Ledger());
+
+    // In M2's world the two rollups DISAGREE — a pin there can see the defect.
+    expect(inM2.broken).not.toBe(inM2.correct);
+    expect(inM2.broken).toBe('contract');
+    expect(inM2.correct).toBe('observed');
+
+    // In M3's world they AGREE — a pin there is blind to it, no matter how
+    // well written. This is the exact trap that made my disproof wrong, and it
+    // is now a permanent fact of the fixtures rather than a comment.
+    expect(
+      inM3.broken,
+      'if these ever differ, the M3 fixture has become able to see the defect '
+        + 'and the two-fixture split may be revisited',
+    ).toBe(inM3.correct);
   }, 15_000);
 });
 
@@ -201,29 +286,33 @@ describe('W5.F PIN 3 (M2) — the composite shard triple is unreachable for any 
  * evidence about single-operation commands, where head and composite coincide
  * and the existing behaviour is correct.
  */
-describe('W5.F PIN 4 (M3) — the shard omits the error it just said you would get', () => {
+describe('W5.F PIN 4 (M3, CONVERTED) — the shard advertises the error it says you will get', () => {
   const NOT_IMPLEMENTED_REF = 'tm8://error/not_implemented';
 
   it('CONTROL — errorRefs is populated, so a missing entry is an omission not an empty list', () => {
-    const shard = commandHelp(UPLOAD, { from: partiallyImplemented() });
+    const shard = commandHelp(UPLOAD, { from: m3Ledger() });
     expect(shard!.errorRefs.length).toBeGreaterThan(0);
     // Negative control on the matcher: a reference that should never be there.
     expect(shard!.errorRefs).not.toContain('tm8://error/definitely_not_a_code');
   }, 15_000);
 
-  it('DEFECT, PINNED — availability says not_implemented_on_node; errorRefs omits it', () => {
-    const shard = commandHelp(UPLOAD, { from: partiallyImplemented() });
+  it('FIXED, GUARDED — availability says not_implemented_on_node and errorRefs says so too', () => {
+    const shard = commandHelp(UPLOAD, { from: m3Ledger() });
 
     // Half one: the DTO says the command is unavailable for this exact reason.
     expect(shard!.availability).toBe('unavailable');
     expect(shard!.availabilityReason).toBe('not_implemented_on_node');
 
     // Half two: and omits that error from what the caller may receive.
+    // ═══ CONVERTED, NOT RE-PINNED (§3d) ═══ It asserted the omission until the
+    // fix landed; it now asserts the DTO is self-consistent — if availability
+    // says not_implemented_on_node, errorRefs must advertise that error.
     expect(
       shard!.errorRefs,
-      'M3 is FIXED if this reference is now present — read the disposition '
-        + 'block: CONVERT this pin to assert presence, do not re-pin it',
-    ).not.toContain(NOT_IMPLEMENTED_REF);
+      'REGRESSION: the DTO says unavailable BECAUSE not implemented on this '
+        + 'node, and omits that very error from what the caller may receive. '
+        + 'That is M3 returning — errorRefsFor read the HEAD, not the composite.',
+    ).toContain(NOT_IMPLEMENTED_REF);
   }, 15_000);
 
   it('SCOPE — a fully-unavailable command DOES advertise it, so the bug is composite-only', () => {

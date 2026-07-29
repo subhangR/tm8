@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:26px 28px 90px;background:#F4F2EC;font-family:'Hanken Grotesk',system-ui,sans-serif;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+@keyframes pnPulse{0%,100%{opacity:1}50%{opacity:.35}}
+</style>
+</helmet>
+
+<!-- ============ T2-1 SPACE SETTINGS ============ -->
+<section id="space-settings" data-screen-label="T2-1 — Space settings" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T2-1 · SPACE SETTINGS — PROFILE · MEMBERS · INVITES</span>
+    <span style="font-size:12px;color:#8E897B">a full view (menu › Settings) — section nav left, one section at a time · linked projects and menu editor are sections here (boards below)</span>
+    <div style="flex:1"></div>
+    <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">Tweaks: annotations</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="width:640px;flex:none;background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;overflow:hidden;height:470px">
+        <div style="width:160px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;padding:12px 0">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:0 14px 8px">SPACE · ATELIER</span>
+          <span style="font-size:12px;color:#5B564C;padding:6px 14px;border-left:3px solid transparent;cursor:pointer" style-hover="background:#F2EFE8">Profile</span>
+          <span style="font-size:12px;font-weight:600;padding:6px 14px 6px 11px;border-left:3px solid #B26A2B;background:#ECE8DF;cursor:pointer">Members & roles</span>
+          <span style="font-size:12px;color:#5B564C;padding:6px 14px;border-left:3px solid transparent;cursor:pointer" style-hover="background:#F2EFE8">Invites</span>
+          <span style="font-size:12px;color:#5B564C;padding:6px 14px;border-left:3px solid transparent;cursor:pointer" style-hover="background:#F2EFE8">Task axes</span>
+          <span style="font-size:12px;color:#5B564C;padding:6px 14px;border-left:3px solid transparent;cursor:pointer" style-hover="background:#F2EFE8">Linked projects</span>
+          <span style="font-size:12px;color:#5B564C;padding:6px 14px;border-left:3px solid transparent;cursor:pointer" style-hover="background:#F2EFE8">Menu</span>
+          <span style="font-size:12px;color:#5B564C;padding:6px 14px;border-left:3px solid transparent;cursor:pointer" style-hover="background:#F2EFE8">Custom kinds</span>
+          <div style="flex:1"></div>
+          <span style="font-size:12px;color:#BB4D3D;padding:6px 14px;border-top:1px solid #F0EDE4;cursor:pointer" style-hover="background:#F2EFE8">Danger zone</span>
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden">
+          <div style="padding:16px 18px 12px;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:10px">
+            <span style="font-family:'Newsreader',Georgia,serif;font-size:19px;font-weight:500">Members & roles</span>
+            <div style="flex:1"></div>
+            <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:3px 11px;font-size:11.5px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">＋ Invite</span>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span></sc-if>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:9px 18px;border-bottom:1px solid #F0EDE4">
+            <span style="width:22px;height:22px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600">A</span>
+            <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Ada Osei <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:400;color:#B7B2A4">@ada</span></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:2px 9px">owner ⚿</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">now</span>
+            <span style="color:#B7B2A4;font-size:11px;opacity:.5;cursor:not-allowed" title="you can't remove yourself — transfer ownership first">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:9px 18px;border-bottom:1px solid #F0EDE4">
+            <span style="width:22px;height:22px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600">N</span>
+            <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Noa Lindqvist <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:400;color:#B7B2A4">@noa</span></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5B564C;border:1px solid #D8D3C6;border-radius:999px;padding:2px 9px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">admin ▾</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">2h</span>
+            <span style="color:#8E897B;font-size:11px;cursor:pointer;padding:1px 3px;border-radius:4px" style-hover="background:#F2EFE8;color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:9px 18px;border-bottom:1px solid #F0EDE4">
+            <span style="width:22px;height:22px;flex:none;border-radius:50%;background:#ECE8DF;color:#5B564C;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600">K</span>
+            <span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Kai Tanaka <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:400;color:#B7B2A4">@kai</span></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5B564C;border:1px solid #D8D3C6;border-radius:999px;padding:2px 9px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">member ▾</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">4d</span>
+            <span style="color:#8E897B;font-size:11px;cursor:pointer;padding:1px 3px;border-radius:4px" style-hover="background:#F2EFE8;color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;padding:9px 18px;border-bottom:1px solid #F0EDE4;background:rgba(162,156,142,.06)">
+            <span style="width:22px;height:22px;flex:none;border-radius:50%;border:1px dashed #B7B2A4;color:#B7B2A4;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:600">?</span>
+            <span style="flex:1;min-width:0;font-size:12.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">sam@fig.dev <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">· invited 2d ago</span></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:2px 9px">pending</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;cursor:pointer" style-hover="color:#BB4D3D">revoke</span>
+          </div>
+          <div style="padding:12px 18px;display:flex;flex-direction:column;gap:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">ROLES</span>
+            <span style="font-size:11px;line-height:1.6;color:#8E897B;text-wrap:pretty">owner — everything + transfer/delete · admin — settings, members, trust · member — create/edit entities, run agents · viewer — read-only. Agents are teammates, not members; they hold no role and appear only in Teammates.</span>
+          </div>
+        </div>
+      </div>
+      <div style="width:262px;flex:none;display:flex;flex-direction:column;gap:6px">
+        <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;height:470px;display:flex;flex-direction:column;box-sizing:border-box">
+          <div style="padding:14px 16px 10px;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px">
+            <span style="font-family:'Newsreader',Georgia,serif;font-size:17px;font-weight:500">Invites</span>
+            <div style="flex:1"></div>
+            <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span></sc-if>
+          </div>
+          <div style="padding:12px 16px;border-bottom:1px solid #F0EDE4;display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;gap:6px">
+              <span style="flex:1;display:flex;align-items:center;padding:0 9px;height:28px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C">role: member ▾</span>
+              <span style="display:flex;align-items:center;padding:0 9px;height:28px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C">5 uses ▾</span>
+            </div>
+            <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:4px 0;font-size:11.5px;cursor:pointer;text-align:center" style-hover="background:rgba(178,106,43,.2)">Create invite link</span>
+          </div>
+          <div style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+            <div style="padding:10px 16px 4px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">ACTIVE · 2</div>
+            <div style="padding:7px 16px;border-bottom:1px solid #F0EDE4;display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#23201B">i-7f3c</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">member · 0/5 used</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;cursor:pointer" style-hover="text-decoration:underline">⧉ copy</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;cursor:pointer" style-hover="color:#BB4D3D">revoke</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">created 2d ago by @ada · expires in 5d</span>
+            </div>
+            <div style="padding:7px 16px;border-bottom:1px solid #F0EDE4;display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;color:#23201B">i-a201</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">viewer · 2/10 used</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;cursor:pointer" style-hover="text-decoration:underline">⧉ copy</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;cursor:pointer" style-hover="color:#BB4D3D">revoke</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">created 1w ago by @noa · no expiry</span>
+            </div>
+            <div style="padding:10px 16px 4px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">REVOKED · 1</div>
+            <div style="padding:7px 16px;display:flex;flex-direction:column;gap:3px;opacity:.7">
+              <div style="display:flex;align-items:center;gap:7px"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B;text-decoration:line-through">i-30bb</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">member · 3/5 used</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#BB4D3D">revoked</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">revoked 3d ago by @ada — joins via it now fail with “invite revoked”</span>
+            </div>
+          </div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">invites — create · list · revoke; revoked keeps its audit row</span>
+      </div>
+      <div style="width:298px;flex:none;display:flex;flex-direction:column;gap:6px">
+        <div style="background:#F4F2EC;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);height:470px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:0 28px;box-sizing:border-box;text-align:center;position:relative">
+          <sc-if value="{{notes}}" hint-placeholder-val="{{true}}"><span style="position:absolute;top:12px;right:12px;width:15px;height:15px;border-radius:50%;background:rgba(178,106,43,.15);color:#9A581F;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span></sc-if>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span>
+          <span style="font-family:'Newsreader',Georgia,serif;font-size:22px;font-weight:500;line-height:1.2">You're invited to<br>atelier</span>
+          <span style="font-size:12px;color:#8E897B">@ada invited you · 3 members · node “dockyard”</span>
+          <div style="width:100%;display:flex;flex-direction:column;gap:4px;text-align:left;padding-top:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#8E897B">YOUR NAME</span>
+            <span style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">Sam Rivera</span>
+          </div>
+          <span style="width:100%;padding:7px 0;border-radius:7px;font-size:13px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer;text-align:center" style-hover="background:#3A362E">Join as member</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">invite i-7f3c · expires in 5d · joining creates your account on this node</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">redeem landing — for someone not yet in the space; the only page a stranger ever sees</span>
+      </div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;gap:24px;border-top:1px solid #2C2719;padding-top:12px">
+      <div style="flex:1;display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">1</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Members table.</span> Humans only, round avatars. Role is an inline select; owner is locked (⚿, transfer via Danger zone); self-remove is disabled-with-reason. Pending invitees sit in the same table — dashed avatar, wait pill.</div></div>
+      <div style="flex:1;display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">2</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Invite = link + budget.</span> Role, use count, expiry at creation; copy and revoke afterwards. Revoked rows keep their audit trail struck-through, never deleted.</div></div>
+      <div style="flex:1;display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">3</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Redeem page states:</span> valid (shown) · expired / revoked / used-up — same card, wait/block word + “ask @ada for a new link”. No space content leaks before joining (T4 permission-lost rule).</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ T2-2 PROJECTS & TRUST ============ -->
+<section id="trust" data-screen-label="T2-2 — Projects & trust" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T2-2 · PROJECTS & TRUST — TRUST IS SAFETY UI, NOT A SETTING</span>
+    <span style="font-size:12px;color:#8E897B">space-side linking · node-side registry · the consent moment · session provenance (two different truths)</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;gap:16px;align-items:flex-start">
+      <div style="width:430px;flex:none;display:flex;flex-direction:column;gap:6px">
+        <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column">
+          <div style="padding:12px 14px 10px;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px">
+            <span style="font-family:'Newsreader',Georgia,serif;font-size:16px;font-weight:500">Linked projects</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">space · atelier</span>
+            <div style="flex:1"></div>
+            <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">⊕ Link project</span>
+          </div>
+          <div style="padding:9px 14px;border-bottom:1px solid #F0EDE4;display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="color:#8E897B;font-size:11px">⬒</span><span style="font-size:12.5px;font-weight:600">tm8-ui</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:1px 7px">✓ trusted</span>
+              <div style="flex:1"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;cursor:pointer" style-hover="color:#BB4D3D">unlink</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">/home/ada/work/tm8 · 2 live sessions · 14 total</span>
+          </div>
+          <div style="padding:9px 14px;border-bottom:1px solid #F0EDE4;display:flex;flex-direction:column;gap:4px;background:rgba(187,77,61,.04)">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="color:#8E897B;font-size:11px">⬒</span><span style="font-size:12.5px;font-weight:600">docs-site</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:1px 7px">✓ trusted</span>
+              <div style="flex:1"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4;opacity:.6;cursor:not-allowed">unlink</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#BB4D3D">blocked: 2 live sessions still use this root — exit them first <span style="color:#9A581F;cursor:pointer;text-decoration:underline">view sessions</span></span>
+          </div>
+          <div style="padding:9px 14px;display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="color:#8E897B;font-size:11px">⬒</span><span style="font-size:12.5px;font-weight:600">vendor-scripts</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:1px 7px">⚠ untrusted</span>
+              <div style="flex:1"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;cursor:pointer" style-hover="color:#BB4D3D">unlink</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#BD8A2A">agents cannot run here until someone with admin trusts it <span style="color:#9A581F;cursor:pointer;text-decoration:underline">review & trust</span></span>
+          </div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">space settings › linked projects — unlink refusal states its blocker; untrusted states its consequence</span>
+      </div>
+      <div style="width:430px;flex:none;display:flex;flex-direction:column;gap:6px">
+        <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column">
+          <div style="padding:12px 14px 10px;border-bottom:1px solid #2C2719;display:flex;align-items:center;gap:8px">
+            <span style="font-family:'Newsreader',Georgia,serif;font-size:16px;font-weight:500;color:#EFE9DB">Project registry</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">node admin · dockyard</span>
+            <div style="flex:1"></div>
+            <span style="color:#E0A45A;font-weight:600;background:rgba(224,164,90,.15);border:1px solid rgba(224,164,90,.4);border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer" style-hover="background:rgba(224,164,90,.25)">＋ New project</span>
+          </div>
+          <div style="padding:9px 14px;border-bottom:1px solid #2C2719;display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="color:#8C8470;font-size:11px">⬒</span><span style="font-size:12.5px;font-weight:600;color:#EFE9DB">tm8-ui</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#5CB381;background:rgba(92,179,129,.17);border-radius:999px;padding:1px 7px">✓ trusted</span>
+              <div style="flex:1"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;cursor:pointer" style-hover="color:#EFE9DB">edit</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">/home/ada/work/tm8 · github.com/ada/tm8 · linked by 2 spaces</span>
+          </div>
+          <div style="padding:9px 14px;border-bottom:1px solid #2C2719;display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;align-items:center;gap:7px">
+              <span style="color:#8C8470;font-size:11px">⬒</span><span style="font-size:12.5px;font-weight:600;color:#EFE9DB">experiments</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:1px 7px">⚠ untrusted</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#D9AA49;background:rgba(217,170,73,.18);border-radius:999px;padding:1px 7px">link frozen</span>
+              <div style="flex:1"></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;cursor:pointer" style-hover="color:#EFE9DB">edit</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#D9AA49">over cap: 6 of 5 space links — unlink one to unfreeze: <span style="color:#E0A45A;cursor:pointer;text-decoration:underline">atelier</span> · <span style="color:#E0A45A;cursor:pointer;text-decoration:underline">playground</span> · <span style="color:#E0A45A;cursor:pointer;text-decoration:underline">4 more…</span></span>
+          </div>
+          <div style="padding:11px 14px;display:flex;flex-direction:column;gap:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">EDIT · TM8-UI</span>
+            <div style="display:grid;grid-template-columns:92px 1fr;gap:5px 10px;align-items:center">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470">working dir</span><span style="height:24px;display:flex;align-items:center;padding:0 8px;background:#1B1810;border:1px solid #2C2719;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2">/home/ada/work/tm8</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470">repo url</span><span style="height:24px;display:flex;align-items:center;padding:0 8px;background:#1B1810;border:1px solid #2C2719;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2">github.com/ada/tm8</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470">trust</span>
+              <span style="display:inline-flex;border:1px solid #3B3524;border-radius:5px;overflow:hidden;background:#1B1810;align-self:start;width:fit-content">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;padding:3px 9px;color:#5CB381;background:rgba(92,179,129,.17)">trusted</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:3px 9px;color:#8C8470;border-left:1px solid #2C2719;cursor:pointer">untrusted</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">node admin › project registry — the frozen badge names the spaces holding links (actionable, not a dead end)</span>
+      </div>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+        <div style="background:#FBFAF6;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 12px 34px rgba(0,0,0,.55);padding:15px;display:flex;flex-direction:column;gap:9px">
+          <span style="font-size:13.5px;font-weight:600">Run scout in an untrusted project?</span>
+          <span style="font-size:11.5px;line-height:1.5;color:#5B564C;text-wrap:pretty"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">⬒ vendor-scripts</span> hasn't been reviewed. The agent gets shell access to this directory — it can read, write and execute anything in it.</span>
+          <div style="display:flex;align-items:center;gap:7px;padding:7px 9px;background:rgba(189,138,42,.1);border:1px solid rgba(189,138,42,.35);border-radius:7px">
+            <span style="color:#BD8A2A;font-size:11px">⚠</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;line-height:1.5">untrusted — this run is on you, not the space's trust policy</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;color:#5B564C"><span style="width:13px;height:13px;border:1.5px solid #B26A2B;border-radius:3px;background:#B26A2B;color:#FBFAF6;display:flex;align-items:center;justify-content:center;font-size:9px">✓</span>I understand the risk</div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px">
+            <span style="padding:4px 12px;border:1px solid #D8D3C6;border-radius:7px;font-size:11.5px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span>
+            <span style="padding:4px 12px;border-radius:7px;font-size:11.5px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Run untrusted ▸</span>
+          </div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;margin-top:-6px">the consent moment — consequence first, checkbox, verb names the risk</span>
+        <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">SESSION DETAIL · PROJECTS</span>
+          <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+            <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C;border:1px solid #D8D3C6;border-radius:999px;padding:2px 9px;background:#FFFFFF">⬒ tm8-ui <span style="color:#B7B2A4;cursor:pointer" style-hover="color:#BB4D3D">✕</span></span>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C;border:1px solid #D8D3C6;border-radius:999px;padding:2px 9px;background:#FFFFFF">⬒ docs-site <span style="color:#B7B2A4;cursor:pointer" style-hover="color:#BB4D3D">✕</span></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#9A581F;border:1px dashed rgba(178,106,43,.5);border-radius:999px;padding:2px 9px;cursor:pointer" style-hover="background:rgba(178,106,43,.08)">＋ associate</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;border-top:1px dotted #E7E3D9;padding-top:8px">
+            <span style="color:#B7B2A4;font-size:10px">⚿</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B">launched from ⬒ tm8-ui · /home/ada/work/tm8 · immutable</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:1px 7px">sandboxed · no project</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">← scratch sessions are labeled, never blank</span>
+          </div>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C;margin-top:-6px">many-to-many: associations are editable chips · provenance is one locked mono line — two truths, two treatments</span>
+      </div>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="display:flex;gap:24px;border-top:1px solid #2C2719;padding-top:12px">
+      <div style="flex:1;display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Trust reads as consequence,</span> never as a bare toggle: untrusted rows say what is prevented; the consent modal says what is granted. Wait amber for untrusted, run green ✓ for trusted — block red only for refusals.</div></div>
+      <div style="flex:1;display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Every refusal is actionable:</span> unlink-blocked links to the live sessions; link-frozen names the spaces over cap. T1-4 vocabulary, applied.</div></div>
+      <div style="flex:1;display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Association ≠ provenance.</span> Chips (editable, removable) vs the ⚿ mono line (immutable, set at launch). They never share styling, so history can't be rewritten by editing chips.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+
+<!-- ============ T2-3 MENU EDITOR ============ -->
+<section id="menu-editor" data-screen-label="T2-3 — Menu editor" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T2-3 · MENU EDITOR — THE RAIL'S CONFIG, EDITED IN ITS OWN GRAMMAR</span>
+    <span style="font-size:12px;color:#8E897B">reorder · add view/kind refs · one-level children · rename — with live preview, conflict and version-lock states</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:470px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column;height:460px">
+        <div style="padding:12px 14px 10px;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px">
+          <span style="font-family:'Newsreader',Georgia,serif;font-size:16px;font-weight:500">Menu</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">space · atelier · v12</span>
+          <div style="flex:1"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B;border:1px solid #D8D3C6;border-radius:6px;padding:2px 8px;background:#FFFFFF;cursor:pointer" style-hover="background:#F2EFE8">discard</span>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Save menu</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:8px 0">
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px">
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">WORKSPACE</span>
+            <span style="color:#B7B2A4;font-size:10px;cursor:pointer;padding:1px 4px;border-radius:4px" style-hover="background:#F2EFE8;color:#5B564C">✎</span>
+            <div style="flex:1"></div>
+            <span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px 5px 30px" style-hover="background:#F2EFE8">
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span><span style="color:#8E897B;font-size:11px">⌗</span><span style="flex:1;font-size:12px">Workspace <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">view ref</span></span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px 5px 30px" style-hover="background:#F2EFE8">
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span><span style="color:#8E897B;font-size:11px">◹</span><span style="flex:1;font-size:12px">Inbox <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">view ref</span></span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px;margin-top:4px">
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span>
+            <span style="display:inline-flex;align-items:center;height:22px;padding:0 8px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:5px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#23201B">LIBRARY<span style="display:inline-block;width:1.5px;height:12px;background:#B26A2B;margin-left:1px"></span></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#9A581F">renaming — ⏎ commits · esc cancels</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px 5px 30px" style-hover="background:#F2EFE8">
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span><span style="color:#8E897B;font-size:11px">◔</span><span style="flex:1;font-size:12px">Tasks <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">kind ref</span></span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px 5px 30px;background:rgba(178,106,43,.07);border:1px dashed rgba(178,106,43,.45);border-left:none;border-right:none">
+            <span style="color:#9A581F;font-size:11px;cursor:grabbing">⠿</span><span style="color:#8E897B;font-size:11px">▣</span><span style="flex:1;font-size:12px;font-weight:600">Sessions <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#9A581F">dragging…</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 14px 5px 30px" style-hover="background:#F2EFE8">
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span><span style="color:#8E897B;font-size:11px">⊙</span><span style="flex:1;font-size:12px">Releases <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">view ref · 3 children</span></span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 14px 4px 48px;position:relative">
+            <span style="position:absolute;left:37px;top:0;bottom:0;width:1px;background:#E7E3D9"></span>
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span><span style="flex:1;font-size:11.5px;color:#5B564C">v0.9 punchlist</span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;padding:4px 14px 4px 48px;position:relative">
+            <span style="position:absolute;left:37px;top:0;bottom:0;width:1px;background:#E7E3D9"></span>
+            <span style="color:#B7B2A4;font-size:11px;cursor:grab">⠿</span><span style="flex:1;font-size:11.5px;color:#5B564C">v1.0 gate</span><span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:4px 14px 4px 48px;position:relative">
+            <span style="position:absolute;left:37px;top:0;bottom:0;width:1px;background:#E7E3D9"></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4;opacity:.6;cursor:not-allowed">＋ add child — this row has 8 of 8</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px 4px;margin-top:4px;border-top:1px solid #F0EDE4">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;border:1px dashed rgba(178,106,43,.5);border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="background:rgba(178,106,43,.08)">＋ view ref</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;border:1px dashed rgba(178,106,43,.5);border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="background:rgba(178,106,43,.08)">＋ kind ref</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;border:1px dashed rgba(178,106,43,.5);border-radius:6px;padding:3px 9px;cursor:pointer" style-hover="background:rgba(178,106,43,.08)">＋ group</span>
+          </div>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">the editor — ⠿ drag to reorder, ✎ rename in place, children capped at 8 with the cap stated (T1-4)</span>
+    </div>
+    <div style="width:220px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="width:220px;background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:460px;box-sizing:border-box">
+        <div style="padding:9px 12px 6px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4;border-bottom:1px solid #F0EDE4">LIVE PREVIEW — AS THE RAIL RENDERS IT</div>
+        <div style="flex:1;padding:8px 0">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:2px 12px 4px">WORKSPACE</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 12px 5px 9px;background:#ECE8DF;border-left:3px solid #B26A2B"><span style="color:#9A581F;font-size:11px">⌗</span><span style="font-size:11.5px;font-weight:600">Workspace</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-left:3px solid transparent"><span style="color:#8E897B;font-size:11px">◹</span><span style="font-size:11.5px;color:#5B564C">Inbox</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:0 5px">4</span></div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding:10px 12px 4px">LIBRARY</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-left:3px solid transparent"><span style="color:#8E897B;font-size:11px">◔</span><span style="font-size:11.5px;color:#5B564C">Tasks</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">18</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-left:3px solid transparent"><span style="color:#8E897B;font-size:11px">▣</span><span style="font-size:11.5px;color:#5B564C">Sessions</span><span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#3E8E5A">● 3</span></div>
+          <div style="display:flex;align-items:center;gap:7px;padding:5px 12px;border-left:3px solid transparent"><span style="color:#8E897B;font-size:11px">⊙</span><span style="flex:1;font-size:11.5px;color:#5B564C">Releases</span><span style="color:#8E897B;font-size:8px">▾</span></div>
+          <div style="display:flex;align-items:center;padding:4px 12px 4px 32px;position:relative"><span style="position:absolute;left:20px;top:0;bottom:0;width:1px;background:#E7E3D9"></span><span style="font-size:11px;color:#5B564C">v0.9 punchlist</span></div>
+          <div style="display:flex;align-items:center;padding:4px 12px 4px 32px;position:relative"><span style="position:absolute;left:20px;top:0;bottom:0;width:1px;background:#E7E3D9"></span><span style="font-size:11px;color:#5B564C">v1.0 gate</span></div>
+        </div>
+        <div style="padding:7px 12px;border-top:1px solid #F0EDE4;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">unsaved changes — preview only</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">edits render instantly here, ship on Save</span>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">CONFLICT — SOMEONE SAVED FIRST</span>
+        <div style="background:#262117;border:1px solid rgba(111,159,199,.4);border-radius:8px;padding:9px 11px;display:flex;gap:8px;align-items:flex-start">
+          <span style="color:#6F9FC7;font-size:11px;padding-top:1px">◬</span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:11.5px;font-weight:600;color:#EFE9DB">Menu changed by @noa just now</span>
+            <span style="font-size:10.5px;line-height:1.45;color:#BDB5A2">This editor holds v12; the space is on v13. Reload to edit — your unsaved reorder will be lost.</span>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#6F9FC7;border:1px solid rgba(111,159,199,.4);border-radius:6px;padding:2px 8px;cursor:pointer" style-hover="background:rgba(111,159,199,.12)">Reload v13</span>
+        </div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#665E4C">last-write-wins everywhere else; the editor is the one surface that warns before losing work</span>
+      </div>
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">VERSION-LOCKED — NEWER SCHEMA</span>
+        <div style="background:#262117;border:1px solid rgba(217,170,73,.4);border-radius:8px;padding:9px 11px;display:flex;gap:8px;align-items:flex-start">
+          <span style="color:#D9AA49;font-size:11px;padding-top:1px">⚿</span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="font-size:11.5px;font-weight:600;color:#EFE9DB">Edited by a newer tm8</span>
+            <span style="font-size:10.5px;line-height:1.45;color:#BDB5A2">This menu uses features from v0.9 this build doesn't know. Read-only here — the rail still renders what it understands, and unknown refs fall back to ◇.</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:7px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8C8470;border:1px solid #3B3524;border-radius:6px;padding:3px 9px;opacity:.6;cursor:not-allowed">Save menu</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#8C8470">disabled-with-reason: “read-only — update this node to edit”</span>
+        </div>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+      <div style="font-size:11.5px;line-height:1.5;color:#BDB5A2;text-wrap:pretty;padding-top:2px"><span style="font-weight:600;color:#EFE9DB">Editor speaks rail grammar:</span> the three row types (group / plain / caret view) are the only things it can create — so nothing expressible in the editor can break T1-1's rendering rules. Icons come from the ref's kind or view automatically; only groups are free-text.</div>
+      </sc-if>
+    </div>
+  </div>
+</section>
+
+<!-- ============ T2-4 INTERACTION PROFILES ============ -->
+<section id="profiles" data-screen-label="T2-4 — Interaction profiles" style="display:flex;flex-direction:column;gap:12px;margin-bottom:34px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T2-4 · INTERACTION PROFILES — A RESTRICTED KIND WITH A LIFECYCLE</span>
+    <span style="font-size:12px;color:#8E897B">draft → active → retired · defaults per space and per teammate · sessions pin their profile forever</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:280px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:420px">
+        <div style="height:36px;flex:none;display:flex;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid #E7E3D9">
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600"><span style="color:#8E897B">⊜</span>Profiles <span style="color:#B7B2A4;font-size:10px">▾</span></span>
+          <div style="flex:1"></div>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer">＋ New</span>
+        </div>
+        <div style="flex:1;padding:4px 0">
+          <div style="padding:6px 10px 3px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">ACTIVE · 2</div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:6px 10px;background:#F2EFE8">
+            <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:11px">⊜</span><span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge-default</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A">active</span></div>
+            <div style="display:flex;gap:4px;padding-left:18px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:0 6px">space default</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">v3 · 41 runs</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding:6px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+            <div style="display:flex;align-items:center;gap:7px"><span style="color:#8E897B;font-size:11px">⊜</span><span style="flex:1;min-width:0;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">careful-reviewer</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A">active</span></div>
+            <div style="display:flex;gap:4px;padding-left:18px"><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#3F6C90;background:rgba(63,108,144,.12);border-radius:999px;padding:0 6px">scout's default</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8E897B">v1 · 7 runs</span></div>
+          </div>
+          <div style="padding:8px 10px 3px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">DRAFT · 1</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:6px 10px;cursor:pointer" style-hover="background:#F2EFE8">
+            <span style="color:#B7B2A4;font-size:11px">⊜</span><span style="flex:1;min-width:0;font-size:12.5px;color:#5B564C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">terse-worker</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#8E897B">draft</span>
+          </div>
+          <div style="padding:8px 10px 3px;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">RETIRED · 1</div>
+          <div style="display:flex;align-items:center;gap:7px;padding:6px 10px;cursor:pointer;opacity:.7" style-hover="background:#F2EFE8">
+            <span style="color:#B7B2A4;font-size:11px">⊜</span><span style="flex:1;min-width:0;font-size:12.5px;color:#8E897B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge-default v2</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#A29C8E">retired</span>
+          </div>
+        </div>
+        <div style="height:24px;flex:none;border-top:1px solid #F0EDE4;display:flex;align-items:center;padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4">retired profiles stay referenceable — sessions keep their pin</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">list — the T0-3 primitive, profile-configured; default badges name their scope</span>
+    </div>
+    <div style="width:426px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;height:420px">
+        <div style="display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid #E7E3D9">
+          <span style="color:#8E897B;font-size:13px">⊜</span>
+          <span style="flex:0 1 auto;min-width:64px;font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">forge-default</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:2px 7px;flex:none">● active</span>
+          <div style="flex:1"></div>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px;cursor:pointer;border-radius:5px" style-hover="background:#F2EFE8">⋯</span>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px;cursor:pointer;border-radius:5px" style-hover="background:#F2EFE8">⌖</span>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px;cursor:pointer;border-radius:5px" style-hover="background:#F2EFE8">⤢</span>
+          <span style="color:#8E897B;font-size:12px;padding:2px 4px;cursor:pointer;border-radius:5px" style-hover="background:#F2EFE8;color:#BB4D3D">✕</span>
+        </div>
+        <div style="height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px">
+          <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Duplicate as draft</span>
+          <span style="color:#5B564C;font-weight:600;border:1px solid #D8D3C6;border-radius:6px;padding:2px 9px;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Retire</span>
+          <div style="flex:1"></div>
+          <span style="color:#5B564C;opacity:.5;cursor:not-allowed;font-size:11px" title="profiles are restricted — no free linking">⊕ Link</span>
+          <span style="color:#5B564C;opacity:.5;cursor:not-allowed;font-size:11px" title="profiles don't take children">Add child</span>
+        </div>
+        <div style="height:28px;flex:none;display:flex;align-items:stretch;gap:12px;padding:0 12px;border-bottom:1px solid #E7E3D9;font-size:11.5px">
+          <span style="display:flex;align-items:center;font-weight:600;border-bottom:2px solid #B26A2B">Content</span>
+          <span style="display:flex;align-items:center;color:#8E897B">Discussion</span>
+          <span style="display:flex;align-items:center;color:#8E897B">Connections</span>
+          <span style="display:flex;align-items:center;color:#8E897B">Activity</span>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:11px 12px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;gap:12px;font-size:11.5px">
+            <span style="color:#8E897B">Lifecycle</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:9.5px"><span style="color:#A29C8E">draft</span><span style="color:#D8D3C6">→</span><span style="font-weight:600;color:#3E8E5A;background:rgba(62,142,90,.12);border-radius:999px;padding:1px 7px">active</span><span style="color:#D8D3C6">→</span><span style="color:#A29C8E">retired</span></span>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:4px">PREVIEW · SYSTEM PROMPT v3</div>
+            <div style="background:#1B1810;border-radius:7px;padding:9px 11px;font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.65;color:#BDB5A2">You are forge, a senior engineer on this space. Prefer small diffs. Ask before schema changes. Report progress to your task thread every…<span style="color:#665E4C"> (214 more lines)</span></div>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.12em;color:#B7B2A4;padding-bottom:4px">DEFAULT FOR</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:2px 9px">space · atelier</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#5B564C;border:1px solid #D8D3C6;border-radius:999px;padding:2px 9px;background:#FFFFFF">▣ forge <span style="color:#B7B2A4;cursor:pointer">✕</span></span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;border:1px dashed rgba(178,106,43,.5);border-radius:999px;padding:2px 9px;cursor:pointer">＋ teammate</span>
+            </div>
+          </div>
+        </div>
+        <div style="height:26px;flex:none;border-top:1px solid #E7E3D9;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">v3 · by @ada · 41 sessions pinned to some version</div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">detail — Z3 chrome (T0-4); kind primaries are lifecycle verbs; generic verbs disabled-with-reason</span>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">ON A SESSION — PINNED PROVENANCE</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="color:#8C8470;font-size:10px">⚿</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BDB5A2">profile ⊜ forge-default <span style="color:#8C8470">v3 · pinned at launch</span></span>
+        </div>
+        <span style="font-size:11px;line-height:1.5;color:#8C8470;text-wrap:pretty">Immutable, like “launched from” (T2-2). Editing the profile later never changes what a past session ran with — the pin names the version.</span>
+      </div>
+      <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+      <div style="display:flex;flex-direction:column;gap:11px;padding-top:2px">
+        <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Lifecycle is one-way:</span> draft → active → retired. Activating creates v(n+1); editing an active profile forces “duplicate as draft”. Retired stays visible (idle grey), never deleted.</div></div>
+        <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Restricted kind:</span> no free linking, no children, no drag-share — each disabled affordance carries its reason (T1-4), so the restriction teaches instead of confusing.</div></div>
+        <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Default resolution:</span> teammate default beats space default; the winning badge is brass, the outranked one grey — visible on the list tiles.</div></div>
+      </div>
+      </sc-if>
+    </div>
+  </div>
+</section>
+
+<!-- ============ T2-5 CUSTOM KINDS ============ -->
+<section id="custom-kinds" data-screen-label="T2-5 — Custom-kind authoring" style="display:flex;flex-direction:column;gap:12px">
+  <div style="display:flex;align-items:baseline;gap:14px;width:1264px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">T2-5 · CUSTOM KINDS — DEFINE A SCHEMA, GET THE WHOLE UI FOR FREE</span>
+    <span style="font-size:12px;color:#8E897B">name + glyph + fields → chip, card, panel and list render generically · unknown kinds fall back honestly</span>
+  </div>
+  <div style="width:1264px;background:#1D1912;border-radius:14px;padding:16px;box-sizing:border-box;display:flex;gap:16px;align-items:flex-start">
+    <div style="width:430px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column">
+        <div style="padding:12px 14px 10px;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px">
+          <span style="font-family:'Newsreader',Georgia,serif;font-size:16px;font-weight:500">New kind</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">space · atelier</span>
+          <div style="flex:1"></div>
+          <span style="color:#9A581F;font-weight:600;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.35);border-radius:6px;padding:2px 9px;font-size:11px;cursor:pointer" style-hover="background:rgba(178,106,43,.2)">Create kind</span>
+        </div>
+        <div style="padding:12px 14px;display:flex;flex-direction:column;gap:11px">
+          <div style="display:flex;gap:10px">
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;color:#8E897B">NAME</span>
+              <span style="height:28px;display:flex;align-items:center;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-size:12px">incident</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:4px">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;color:#8E897B">PLURAL · MENU LABEL</span>
+              <span style="height:28px;display:flex;align-items:center;padding:0 9px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-size:12px">Incidents</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;color:#8E897B">GLYPH</span>
+            <div style="display:flex;gap:4px">
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #B26A2B;background:rgba(178,106,43,.11);border-radius:6px;color:#9A581F;font-size:12px;cursor:pointer">◮</span>
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #E7E3D9;border-radius:6px;color:#8E897B;font-size:12px;cursor:pointer;background:#FFFFFF" style-hover="border-color:#D8D3C6">◭</span>
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #E7E3D9;border-radius:6px;color:#8E897B;font-size:12px;cursor:pointer;background:#FFFFFF" style-hover="border-color:#D8D3C6">⊗</span>
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #E7E3D9;border-radius:6px;color:#8E897B;font-size:12px;cursor:pointer;background:#FFFFFF" style-hover="border-color:#D8D3C6">⊘</span>
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #E7E3D9;border-radius:6px;color:#8E897B;font-size:12px;cursor:pointer;background:#FFFFFF" style-hover="border-color:#D8D3C6">◆</span>
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #E7E3D9;border-radius:6px;color:#8E897B;font-size:12px;cursor:pointer;background:#FFFFFF" style-hover="border-color:#D8D3C6">▲</span>
+              <span style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;border:1px solid #E7E3D9;border-radius:6px;color:#8E897B;font-size:10px;cursor:pointer;background:#FFFFFF" style-hover="border-color:#D8D3C6">…</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:5px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;letter-spacing:.12em;color:#8E897B">FIELDS</span>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:#B7B2A4;font-size:10px;cursor:grab">⠿</span>
+              <span style="flex:1;height:26px;display:flex;align-items:center;padding:0 8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10.5px">severity</span>
+              <span style="height:26px;display:flex;align-items:center;padding:0 8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C">enum: sev1·sev2·sev3 ▾</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#9A581F">req</span>
+              <span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:#B7B2A4;font-size:10px;cursor:grab">⠿</span>
+              <span style="flex:1;height:26px;display:flex;align-items:center;padding:0 8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10.5px">service</span>
+              <span style="height:26px;display:flex;align-items:center;padding:0 8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C">text ▾</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">opt</span>
+              <span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="color:#B7B2A4;font-size:10px;cursor:grab">⠿</span>
+              <span style="flex:1;height:26px;display:flex;align-items:center;padding:0 8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10.5px">started</span>
+              <span style="height:26px;display:flex;align-items:center;padding:0 8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#5B564C">datetime ▾</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4">opt</span>
+              <span style="color:#B7B2A4;font-size:10px;cursor:pointer" style-hover="color:#BB4D3D">✕</span>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#9A581F;border:1px dashed rgba(178,106,43,.5);border-radius:6px;padding:3px 9px;cursor:pointer;align-self:flex-start" style-hover="background:rgba(178,106,43,.08)">＋ field</span>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#B7B2A4;border-top:1px dotted #E7E3D9;padding-top:8px">status · title · reactions · points · edges come built-in — every kind gets the universal spine</span>
+        </div>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">authoring — name, glyph, field schema; no layout editor exists, on purpose</span>
+    </div>
+    <div style="width:330px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#221E15;border:1px solid #3B3524;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);padding:13px 14px;display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#665E4C">WHAT YOU GET — RENDERED GENERICALLY</span>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">Z1 CHIP</span>
+          <span style="display:inline-flex;align-items:center;gap:5px;align-self:flex-start;background:#1B1810;border:1px solid #2C2719;border-radius:999px;padding:2px 9px"><span style="color:#8C8470;font-size:10px">◮</span><span style="font-size:11px;font-weight:600;color:#EFE9DB">INC-7 checkout latency</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#DA7D6A">sev1</span></span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">Z2 CARD</span>
+          <div style="background:#1B1810;border:1px solid #2C2719;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:5px">
+            <div style="display:flex;align-items:center;gap:6px"><span style="color:#8C8470;font-size:10px">◮</span><span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;color:#EFE9DB;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">checkout latency spike</span><span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;font-weight:600;color:#DA7D6A;background:rgba(218,125,106,.17);border-radius:999px;padding:0 6px">sev1</span></div>
+            <div style="display:flex;gap:8px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#8C8470"><span>service: payments</span><span>started 06:41</span></div>
+            <div style="display:flex;gap:8px;font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C;border-top:1px solid #2C2719;padding-top:5px"><span>▲ 4</span><span>◔ T-140</span><span>2 msgs</span></div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#665E4C">Z3 PANEL · CONTENT</span>
+          <div style="background:#1B1810;border:1px solid #2C2719;border-radius:8px;padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:10.5px">
+            <span style="color:#8C8470">severity <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#DA7D6A">sev1</span></span>
+            <span style="color:#8C8470">service <span style="color:#EFE9DB;font-weight:500">payments</span></span>
+            <span style="color:#8C8470">started <span style="font-family:'JetBrains Mono',monospace;font-size:9px;color:#BDB5A2">06:41</span></span>
+            <span style="color:#8C8470">status <span style="font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:#5CB381">● working</span></span>
+          </div>
+        </div>
+        <span style="font-size:10.5px;line-height:1.5;color:#8C8470;text-wrap:pretty">Fields render by type: enum → word-chip, text → value, datetime → mono. The universal spine (status, points, edges, discussion) comes from the kind registry, not the schema.</span>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">generic rendering — schema in, chip/card/panel out; zero bespoke UI per kind</span>
+    </div>
+    <div style="width:280px;flex:none;display:flex;flex-direction:column;gap:6px">
+      <div style="background:#FBFAF6;border:1px solid #2C2719;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.5);padding:13px 14px;display:flex;flex-direction:column;gap:9px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.1em;color:#B7B2A4">UNKNOWN KIND — FALLBACK</span>
+        <div style="background:#FFFFFF;border:1px solid #E7E3D9;border-radius:8px;padding:9px 10px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:#8E897B;font-size:11px">◇</span>
+            <span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">release-checklist RC-2</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#BD8A2A;background:rgba(189,138,42,.14);border-radius:999px;padding:0 6px">unknown kind</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:3px;font-family:'JetBrains Mono',monospace;font-size:9px;color:#8E897B">
+            <span>gate: "sign-off"</span>
+            <span>owner: "@noa"</span>
+            <span>blockers: [2]</span>
+          </div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:8.5px;color:#B7B2A4;border-top:1px dotted #E7E3D9;padding-top:5px">defined by a newer tm8 — fields shown raw, nothing hidden</span>
+        </div>
+        <span style="font-size:10.5px;line-height:1.5;color:#8E897B;text-wrap:pretty">◇ glyph, raw key:values, honest caption. Open/discuss/link still work — only typed rendering is missing.</span>
+      </div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#665E4C">pairs with T2-3's version-lock: older nodes degrade, never break</span>
+    </div>
+    <sc-if value="{{notes}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:11px;padding-top:4px">
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Schema, not layout.</span> Authors pick fields; the ATELIER system decides rendering. That's what keeps custom kinds on-palette forever.</div></div>
+      <div style="display:flex;gap:9px"><span style="width:15px;height:15px;flex:none;border-radius:50%;background:rgba(224,164,90,.18);color:#E0A45A;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600">◦</span><div style="font-size:11.5px;line-height:1.5;color:#BDB5A2"><span style="font-weight:600;color:#EFE9DB">Created kinds appear everywhere at once:</span> kind selector (T0-3), menu editor refs (T2-3), palette (T1-2), graph (T3-6) — one registry feeds all of them.</div></div>
+    </div>
+    </sc-if>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1340},&quot;notes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    return { notes: this.props.notes ?? true };
+  }
+}
+</script>
+</body>
+</html>

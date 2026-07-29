@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;padding:0;background:#EDEAE0;color:#23201B}
+a{color:#B26A2B;text-decoration:none}a:hover{color:#9A581F;text-decoration:underline}
+</style>
+</helmet>
+<section style="padding:44px 48px 72px;font-family:'Hanken Grotesk',system-ui,sans-serif">
+  <div style="max-width:880px;display:flex;flex-direction:column;gap:8px;margin-bottom:38px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.12em;color:#8E897B">T3 · AUTH, ONBOARDING &amp; SERVERS · HI-FI STATE BOARDS · TURN 1</div>
+    <div style="font-family:'Newsreader',Georgia,serif;font-size:27px;font-weight:500;line-height:1.18;color:#23201B">Every auth moment, one card grammar</div>
+    <div style="font-size:13px;line-height:1.55;color:#5B564C;text-wrap:pretty">Covers worklist T3-1 (login · first-run owner setup · expiry/logout), T3-2 (orientation), the T2-1 invite redeem landing, T3-3 (account menu + tokens), and the Phase-2 add-remote-server flow (endpoint → resolved Server → auth; gateway enumeration; RULING I: the rail lists Servers, never the gateway). One 380px card carries every moment; all failure copy uses the T1-4 honesty voice — exact reason + consequence, color never alone. Judge: <b>the card grammar</b> (<a href="#1a">1a</a>–<a href="#1i">1i</a>), <b>honesty copy</b> (<a href="#1e">1e</a>, <a href="#1i">1i</a>, <a href="#1n">1n</a>), <b>token-vs-password primary</b> on <a href="#1d">1d</a> (Tweaks), and <b>where add-server lives</b> — dialog over workspace (<a href="#1k">1k</a>–<a href="#1o">1o</a>) vs a full screen. Brass tags are annotations, not UI — toggle in Tweaks. Dark theme + real focus order land with implementation.</div>
+  </div>
+
+  <!-- ═══════════ FLOW A · FIRST RUN ═══════════ -->
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">FLOW A · T3-1</div>
+    <div style="font-size:16px;font-weight:600">First run — claim the server</div>
+    <div style="font-size:12.5px;color:#8E897B;max-width:760px">Today tm8 silently auto-signs-in on localhost. The moment it leaves one machine: first boot serves three steps — you, the server, the first space — then lands in the workspace.</div>
+  </div>
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-bottom:56px">
+
+    <div id="1a" data-screen-label="1a first-run claim" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1a</span><span style="font-size:15px;font-weight:600">Claim — step 1 · you</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">tm8-server v0.9.2 · localhost:8787</span></div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">FIRST RUN · STEP 1 OF 3</span><span style="flex:1"></span><span style="display:flex;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span><span style="width:6px;height:6px;border-radius:50%;background:#D8D3C6"></span><span style="width:6px;height:6px;border-radius:50%;background:#D8D3C6"></span></span></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:23px;font-weight:500;line-height:1.18">This server is unclaimed.</div>
+          <div style="font-size:13px;line-height:1.5;color:#5B564C">tm8 is running with no owner. The first account created here becomes the owner — full admin over accounts, projects, and spaces.</div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">YOUR NAME</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-size:12.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11)">amber<span style="width:1px;height:14px;background:#B26A2B;margin-left:1px"></span></div><span style="font-size:11px;color:#8E897B">handle @amber — how agents and members mention you</span></div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">PASSWORD</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#5B564C;letter-spacing:2px">••••••••••<span style="flex:1"></span><span style="font-size:11px;letter-spacing:0;color:#B7B2A4">show</span></div><span style="font-size:11px;color:#8E897B">8+ characters · stored only on this server</span></div>
+          <div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Create owner account</div>
+          <div style="font-size:11px;color:#B7B2A4;text-align:center">local connection · nothing leaves this machine</div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:210px;line-height:1.45;display:inline-block">first boot only — owner = node admin (T3-1)</span></div></sc-if>
+      </div>
+    </div>
+
+    <div style="align-self:center;display:flex;flex-direction:column;align-items:center;gap:2px;color:#B7B2A4;padding-top:24px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px">owner created</span><span style="font-size:16px">⟶</span></div>
+
+    <div id="1b" data-screen-label="1b first-run name server" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1b</span><span style="font-size:15px;font-weight:600">Claim — step 2 · the server</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">tm8-server v0.9.2 · localhost:8787</span></div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">FIRST RUN · STEP 2 OF 3</span><span style="flex:1"></span><span style="display:flex;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span><span style="width:6px;height:6px;border-radius:50%;background:#D8D3C6"></span></span></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:23px;font-weight:500;line-height:1.18">Name the server.</div>
+          <div style="font-size:13px;line-height:1.5;color:#5B564C">Like a Discord server: the domain everyone connects to. This is how it appears in your rail and to anyone you invite.</div>
+          <div style="display:flex;align-items:center;gap:12px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;padding:12px">
+            <span style="width:38px;height:38px;flex:none;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span>
+            <div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:13.5px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">rail tile preview · glyph from the name</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">SERVER NAME</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-size:12.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11)">forge<span style="width:1px;height:14px;background:#B26A2B;margin-left:1px"></span></div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">TILE COLOR</span><div style="display:flex;gap:8px;align-items:center"><span style="width:22px;height:22px;border-radius:7px;background:rgba(178,106,43,.18);border:2px solid #B26A2B"></span><span style="width:22px;height:22px;border-radius:7px;background:rgba(62,142,90,.16);border:1px solid #D8D3C6"></span><span style="width:22px;height:22px;border-radius:7px;background:rgba(63,108,144,.16);border:1px solid #D8D3C6"></span><span style="width:22px;height:22px;border-radius:7px;background:rgba(189,138,42,.16);border:1px solid #D8D3C6"></span><span style="font-size:11px;color:#8E897B;padding-left:4px">brass, selected</span></div></div>
+          <div style="display:flex;gap:8px;align-items:center;padding-top:2px"><span style="font-size:12px;color:#8E897B;cursor:pointer" style-hover="color:#5B564C">← back</span><span style="flex:1"></span><div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;padding:0 22px;cursor:pointer" style-hover="background:#3A362E">Continue</div></div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:210px;line-height:1.45;display:inline-block">glyph + name feed the rail tile (T0-1 rail)</span></div></sc-if>
+      </div>
+    </div>
+
+    <div style="align-self:center;display:flex;flex-direction:column;align-items:center;gap:2px;color:#B7B2A4;padding-top:24px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px">server named</span><span style="font-size:16px">⟶</span></div>
+
+    <div id="1c" data-screen-label="1c first-run first space" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1c</span><span style="font-size:15px;font-weight:600">Claim — step 3 · first space</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">forge · localhost:8787</span></div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">FIRST RUN · STEP 3 OF 3</span><span style="flex:1"></span><span style="display:flex;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span><span style="width:6px;height:6px;border-radius:50%;background:#B26A2B"></span></span></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:23px;font-weight:500;line-height:1.18">Create your first space.</div>
+          <div style="font-size:13px;line-height:1.5;color:#5B564C">A space is the sharing boundary — its own graph, members, and menu. Everything you and your agents make lives in one. Add more anytime.</div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">SPACE NAME</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-size:12.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11)">atelier<span style="width:1px;height:14px;background:#B26A2B;margin-left:1px"></span></div></div>
+          <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;padding:10px 12px"><span style="width:7px;height:7px;flex:none;border-radius:50%;background:#B26A2B"></span><span style="font-size:12px;color:#5B564C;line-height:1.45">Starts with the default menu — Home · Workspace · Channels · Settings. Admins reshape it later; the menu is data, not chrome.</span></div>
+          <div style="display:flex;gap:8px;align-items:center;padding-top:2px"><span style="font-size:12px;color:#8E897B;cursor:pointer" style-hover="color:#5B564C">← back</span><span style="flex:1"></span><div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;padding:0 22px;cursor:pointer" style-hover="background:#3A362E">Create space &amp; enter</div></div>
+          <div style="font-size:11px;color:#B7B2A4;text-align:center">lands in the workspace → orientation, flow C</div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:230px;line-height:1.45;display:inline-block">default MenuConfig materialized on create (spec §2.3)</span></div></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ FLOW B · SIGN IN & SESSION ═══════════ -->
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">FLOW B · T3-1</div>
+    <div style="font-size:16px;font-weight:600">Sign in, fail, expire, leave</div>
+    <div style="font-size:12.5px;color:#8E897B;max-width:760px">The returning-member login and every session edge: wrong password, mid-work expiry (re-auth in place — the URL keeps panels and pins), and the signed-out landing.</div>
+  </div>
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-bottom:56px">
+
+    <div id="1d" data-screen-label="1d login" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1d</span><span style="font-size:15px;font-weight:600">Login</span><span style="font-size:12.5px;color:#8E897B">primary switches in Tweaks</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">connection secure · tls</span></div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:11px"><span style="width:34px;height:34px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span><div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:14px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">wss://forge.tm8.dev</span></div></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:23px;font-weight:500;line-height:1.18">Welcome back.</div>
+          <sc-if value="{{authPw}}" hint-placeholder-val="{{true}}">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">HANDLE</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#23201B">@amber</div></div>
+              <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">PASSWORD</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#5B564C;letter-spacing:2px">••••••••••<span style="flex:1"></span><span style="font-size:11px;letter-spacing:0;color:#B7B2A4">show</span></div></div>
+              <div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Sign in</div>
+              <div style="font-size:12px;color:#8E897B;text-align:center"><a href="#1q">use an access token instead</a></div>
+            </div>
+          </sc-if>
+          <sc-if value="{{authTok}}" hint-placeholder-val="{{false}}">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">ACCESS TOKEN</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#23201B;overflow:hidden;white-space:nowrap">tm8_tok_9f2kq…</div><span style="font-size:11px;color:#8E897B">created under Account → Access tokens on this server</span></div>
+              <div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Sign in with token</div>
+              <div style="font-size:12px;color:#8E897B;text-align:center"><a href="#1d">use a password instead</a></div>
+            </div>
+          </sc-if>
+          <div style="height:1px;background:#E7E3D9"></div>
+          <div style="font-size:11px;color:#B7B2A4;text-align:center;line-height:1.5">No self-serve signup — accounts on forge are created by invite. Have a link? It opens flow C.</div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:220px;line-height:1.45;display:inline-block">tweak: auth primary = password | token</span></div></sc-if>
+      </div>
+    </div>
+
+    <div style="align-self:center;display:flex;flex-direction:column;align-items:center;gap:2px;color:#B7B2A4;padding-top:24px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px">wrong password</span><span style="font-size:16px">⟶</span></div>
+
+    <div id="1e" data-screen-label="1e login failed" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1e</span><span style="font-size:15px;font-weight:600">Sign-in failed</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">connection secure · tls</span></div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:11px"><span style="width:34px;height:34px;flex:none;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span><div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:14px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">wss://forge.tm8.dev</span></div></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:23px;font-weight:500;line-height:1.18">Welcome back.</div>
+          <div style="display:flex;gap:9px;background:rgba(187,77,61,.09);border:1px solid rgba(187,77,61,.35);border-radius:8px;padding:10px 12px"><span style="color:#BB4D3D;font-size:12px;font-weight:700;flex:none">✕</span><span style="font-size:12px;line-height:1.5;color:#5B564C"><b style="color:#BB4D3D">Sign-in failed</b> — wrong password for @amber. 4 attempts left, then a 5-minute hold on this handle.</span></div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">HANDLE</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#23201B">@amber</div></div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#BB4D3D">PASSWORD · FAILED</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #BB4D3D;border-radius:7px;font-size:12.5px;color:#5B564C;letter-spacing:2px;box-shadow:0 0 0 3px rgba(187,77,61,.09)">••••••••</div></div>
+          <div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Try again</div>
+          <div style="font-size:11px;color:#B7B2A4;text-align:center;line-height:1.5">No email on this server — password resets go through the owner: @amber can reset any account under Members.</div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:220px;line-height:1.45;display:inline-block">honesty voice: exact reason + consequence (T1-4)</span></div></sc-if>
+      </div>
+    </div>
+
+    <div id="1f" data-screen-label="1f session expired" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1f</span><span style="font-size:15px;font-weight:600">Session expired — re-auth in place</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="height:34px;flex:none;background:#FBFAF6;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 12px"><span style="width:44px;height:8px;border-radius:4px;background:#ECE8DF"></span><span style="width:60px;height:14px;border-radius:6px;background:#ECE8DF"></span><span style="width:60px;height:14px;border-radius:6px;background:#F2EFE8"></span></div>
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="width:40px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:8px"><span style="width:24px;height:24px;border-radius:7px;background:#ECE8DF"></span><span style="width:24px;height:24px;border-radius:7px;background:#F2EFE8"></span><span style="width:24px;height:24px;border-radius:7px;background:#F2EFE8"></span></div>
+            <div style="width:120px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;gap:6px;padding:10px 8px"><span style="height:12px;border-radius:5px;background:#ECE8DF"></span><span style="height:34px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span><span style="height:34px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span><span style="height:34px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:8px;padding:10px"><span style="height:22px;border-radius:6px;background:#1B1810;opacity:.85"></span><span style="flex:1;border-radius:8px;background:#FFFFFF;border:1px solid #E7E3D9"></span></div>
+          </div>
+        </div>
+        <div style="position:absolute;inset:0;background:rgba(35,32,27,.38);display:flex;align-items:center;justify-content:center">
+          <div style="width:350px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.22);padding:22px;display:flex;flex-direction:column;gap:13px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:#BD8A2A"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#BD8A2A">SESSION EXPIRED</span></div>
+            <div style="font-family:'Newsreader',Georgia,serif;font-size:21px;font-weight:500;line-height:1.2">Sign back in as amber.</div>
+            <div style="font-size:12.5px;line-height:1.5;color:#5B564C">Your token expired after 30 days. Panels, pins, and tabs live in the URL — nothing is lost, and live sessions kept running.</div>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">PASSWORD</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-size:12.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11)"><span style="width:1px;height:14px;background:#B26A2B"></span></div></div>
+            <div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Sign in &amp; resume</div>
+            <div style="font-size:11.5px;color:#8E897B;text-align:center">not amber? <a href="#1d">sign in as someone else</a> — this clears the kept view</div>
+          </div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:44px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:230px;line-height:1.45;display:inline-block">re-auth over dimmed work — URL keeps panels/pins (spec §2.2)</span></div></sc-if>
+      </div>
+    </div>
+
+    <div id="1g" data-screen-label="1g signed out" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1g</span><span style="font-size:15px;font-weight:600">Signed out</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">forge.tm8.dev</span></div>
+        <div style="width:340px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:13px;align-items:center;text-align:center">
+          <span style="width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:21px;font-weight:500;line-height:1.2">You're signed out of forge.</div>
+          <div style="font-size:12.5px;line-height:1.5;color:#5B564C">This browser's session is cleared. Your entities, spaces, and running agents stay on the server — signing out stops nothing.</div>
+          <div style="height:34px;align-self:stretch;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Sign back in</div>
+          <div style="font-size:11px;color:#B7B2A4">2 live sessions still running · visible after sign-in</div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:220px;line-height:1.45;display:inline-block">honest: sign-out ≠ stopping agents</span></div></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ FLOW C · INVITES & ORIENTATION ═══════════ -->
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">FLOW C · T2-1 REDEEM + T3-2</div>
+    <div style="font-size:16px;font-weight:600">Invited in — redeem, join, orient</div>
+    <div style="font-size:12.5px;color:#8E897B;max-width:760px">Accounts are invite-only. The redeem landing creates the account and the membership in one step; first open gets a three-point orientation — the empty states teach the rest.</div>
+  </div>
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-bottom:56px">
+
+    <div id="1h" data-screen-label="1h invite redeem" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1h</span><span style="font-size:15px;font-weight:600">Invite redeem landing</span></div>
+      <div style="width:500px;height:660px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">forge.tm8.dev/join/K7XM…</span></div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:26px;height:26px;flex:none;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#5B564C">N</span><span style="font-size:12.5px;color:#5B564C"><b>nadia</b> invited you</span></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:23px;font-weight:500;line-height:1.18">You're invited to atelier.</div>
+          <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;padding:10px 12px"><span style="width:7px;height:7px;flex:none;border-radius:50%;background:#B26A2B"></span><span style="font-size:12.5px;font-weight:600">atelier</span><span style="font-size:11px;color:#8E897B">space</span><span style="flex:1"></span><span style="width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B">forge</span></div>
+          <div style="font-size:12.5px;line-height:1.5;color:#5B564C">One account on forge works across every space you're invited to. 4 members and 3 agent teammates are already in atelier.</div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">YOUR NAME</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-size:12.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11)">kit<span style="width:1px;height:14px;background:#B26A2B;margin-left:1px"></span></div><span style="font-size:11px;color:#8E897B">handle @kit</span></div>
+          <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">PASSWORD</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#5B564C;letter-spacing:2px">•••••••••</div></div>
+          <div style="height:34px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12.5px;font-weight:600;cursor:pointer" style-hover="background:#3A362E">Join atelier</div>
+          <div style="font-size:11px;color:#B7B2A4;text-align:center">single use · expires jul 30 · already have an account on forge? <a href="#1d">sign in</a></div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:230px;line-height:1.45;display:inline-block">redeem landing (T2-1): account + membership in one step</span></div></sc-if>
+      </div>
+    </div>
+
+    <div style="align-self:center;display:flex;flex-direction:column;align-items:center;gap:2px;color:#B7B2A4;padding-top:24px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px">joined</span><span style="font-size:16px">⟶</span></div>
+
+    <div id="1j" data-screen-label="1j first-open orientation" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:832px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1j</span><span style="font-size:15px;font-weight:600">First-open orientation</span><span style="font-size:12.5px;color:#8E897B">three points, dismiss forever</span></div>
+      <div style="width:832px;height:660px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="height:38px;flex:none;background:#FBFAF6;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 12px"><span style="width:44px;height:8px;border-radius:4px;background:#ECE8DF"></span><span style="width:70px;height:16px;border-radius:6px;background:#ECE8DF"></span><span style="flex:1"></span><span style="width:90px;height:14px;border-radius:6px;background:#F2EFE8"></span><span style="width:20px;height:20px;border-radius:50%;background:#ECE8DF"></span></div>
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="width:44px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;align-items:center;gap:6px;padding-top:8px"><span style="width:26px;height:26px;border-radius:8px;background:#ECE8DF"></span><span style="width:26px;height:26px;border-radius:8px;background:#F2EFE8"></span><span style="width:26px;height:26px;border-radius:8px;background:#F2EFE8"></span></div>
+            <div style="width:180px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;gap:7px;padding:12px 10px"><span style="height:12px;width:70px;border-radius:5px;background:#ECE8DF"></span><span style="height:40px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span><span style="height:40px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span><span style="height:40px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span><span style="height:40px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span></div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:8px;padding:12px"><span style="height:24px;border-radius:6px;background:#1B1810;opacity:.85"></span><span style="flex:1;border-radius:8px;background:#FFFFFF;border:1px solid #E7E3D9"></span></div>
+            <div style="width:170px;flex:none;background:#FBFAF6;border-left:1px solid #E7E3D9;display:flex;flex-direction:column;gap:7px;padding:12px 10px"><span style="height:12px;width:60px;border-radius:5px;background:#ECE8DF"></span><span style="height:40px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span><span style="height:40px;border-radius:7px;background:#FFFFFF;border:1px solid #E7E3D9"></span></div>
+          </div>
+        </div>
+        <div style="position:absolute;inset:0;background:rgba(35,32,27,.30)"></div>
+        <div style="position:absolute;left:118px;top:52px;width:270px;background:#FFFFFF;border:1px solid #D8D3C6;border-radius:10px;box-shadow:0 12px 34px rgba(40,34,24,.18);padding:14px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;flex:none;border-radius:6px;background:#B26A2B;color:#FFFFFF;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;display:flex;align-items:center;justify-content:center">1</span><span style="font-size:13px;font-weight:600">Spaces are the boundary</span></div>
+          <div style="font-size:12px;line-height:1.5;color:#5B564C">Each space up here has its own graph, members, and menu. You're in <b>atelier</b>.</div>
+        </div>
+        <div style="position:absolute;left:150px;top:250px;width:280px;background:#FFFFFF;border:1px solid #D8D3C6;border-radius:10px;box-shadow:0 12px 34px rgba(40,34,24,.18);padding:14px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;flex:none;border-radius:6px;background:#B26A2B;color:#FFFFFF;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;display:flex;align-items:center;justify-content:center">2</span><span style="font-size:13px;font-weight:600">Agents are teammates</span></div>
+          <div style="font-size:12px;line-height:1.5;color:#5B564C">They plan, run, and reply in the same rooms as you. Sessions are their live terminals — the <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:50%;background:#3E8E5A"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#3E8E5A">live</span></span> dot means one is working right now.</div>
+        </div>
+        <div style="position:absolute;left:340px;top:420px;width:300px;background:#FFFFFF;border:1px solid #D8D3C6;border-radius:10px;box-shadow:0 12px 34px rgba(40,34,24,.18);padding:14px;display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:18px;height:18px;flex:none;border-radius:6px;background:#B26A2B;color:#FFFFFF;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;display:flex;align-items:center;justify-content:center">3</span><span style="font-size:13px;font-weight:600">Click anything</span></div>
+          <div style="font-size:12px;line-height:1.5;color:#5B564C">Every task, doc, session, or person opens as a panel — talk about it right where it lives. Press <span style="font-family:'JetBrains Mono',monospace;font-size:11px;background:#F2EFE8;border:1px solid #E7E3D9;border-radius:4px;padding:0 5px">/</span> for the palette.</div>
+          <div style="display:flex;align-items:center;gap:10px;padding-top:6px"><div style="height:30px;display:flex;align-items:center;justify-content:center;background:#23201B;color:#F4F2EC;border-radius:7px;font-size:12px;font-weight:600;padding:0 16px;cursor:pointer" style-hover="background:#3A362E">Got it</div><span style="font-size:11.5px;color:#8E897B">shown once, never again</span></div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:46px;right:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:220px;line-height:1.45;display:inline-block">T3-2: three points max — empty states teach the rest</span></div></sc-if>
+      </div>
+    </div>
+
+    <div id="1i" data-screen-label="1i invite dead" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1i</span><span style="font-size:15px;font-weight:600">Dead invite — the branch</span></div>
+      <div style="width:500px;height:660px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="position:absolute;top:0;left:0;right:0;height:46px;display:flex;align-items:center;justify-content:space-between;padding:0 18px"><span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#B7B2A4">forge.tm8.dev/join/K7XM…</span></div>
+        <div style="width:360px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:24px;display:flex;flex-direction:column;gap:13px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="color:#BB4D3D;font-size:13px;font-weight:700">✕</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#BB4D3D">INVITE REVOKED</span></div>
+          <div style="font-family:'Newsreader',Georgia,serif;font-size:21px;font-weight:500;line-height:1.2">This invite no longer works.</div>
+          <div style="font-size:12.5px;line-height:1.5;color:#5B564C">nadia's invite to <b>atelier</b> was revoked by <b>@amber</b> on jul 24. Invites are single-use links — ask nadia for a new one.</div>
+          <div style="height:1px;background:#E7E3D9"></div>
+          <div style="display:flex;flex-direction:column;gap:7px">
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8E897B"><span style="width:52px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#BB4D3D">REVOKED</span>pulled back by an admin — this one</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8E897B"><span style="width:52px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#BD8A2A">EXPIRED</span>past its 7-day window</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8E897B"><span style="width:52px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#A29C8E">USED</span>someone already joined with it</div>
+          </div>
+          <div style="font-size:11px;color:#B7B2A4;line-height:1.5">Same card for all three — the word changes, never color alone. No space details leak on a dead link.</div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:56px;left:18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:220px;line-height:1.45;display:inline-block">permission-lost rule: dead links leak nothing (T4)</span></div></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ FLOW D · ADD REMOTE SERVER ═══════════ -->
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">FLOW D · PHASE-2 REMOTE SERVERS</div>
+    <div style="font-size:16px;font-weight:600">Add a server — endpoint → resolved Server → auth</div>
+    <div style="font-size:12.5px;color:#8E897B;max-width:800px">From the rail's ＋ (T0-1). An endpoint is direct or a gateway; the gateway enumerates hosted Servers and is never itself a rail item (RULING I). Auth is per-server: an access token minted there (<a href="#1q">1q</a>) or member credentials.</div>
+  </div>
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-bottom:56px">
+
+    <div id="1k" data-screen-label="1k add server dialog" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1k</span><span style="font-size:15px;font-weight:600">Endpoint</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden">
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+          <div style="height:34px;flex:none;background:#FBFAF6;border-bottom:1px solid #E7E3D9;display:flex;align-items:center;gap:8px;padding:0 12px"><span style="width:44px;height:8px;border-radius:4px;background:#ECE8DF"></span><span style="width:60px;height:14px;border-radius:6px;background:#ECE8DF"></span></div>
+          <div style="flex:1;display:flex;min-height:0">
+            <div style="width:40px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 0"><span style="width:24px;height:24px;border-radius:7px;background:#ECE8DF"></span><span style="width:24px;height:24px;border-radius:7px;background:#F2EFE8"></span><span style="flex:1"></span><span style="width:24px;height:24px;border-radius:7px;border:1px dashed #B26A2B;display:flex;align-items:center;justify-content:center;color:#B26A2B;font-size:12px">＋</span><span style="height:6px"></span></div>
+            <div style="flex:1;background:#F4F2EC"></div>
+          </div>
+        </div>
+        <div style="position:absolute;inset:0;background:rgba(35,32,27,.38);display:flex;align-items:center;justify-content:center">
+          <div style="width:350px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.22);padding:20px;display:flex;flex-direction:column;gap:13px">
+            <div style="font-size:16px;font-weight:600">Add server</div>
+            <div style="font-size:12px;color:#8E897B;line-height:1.5">Connect another tm8 server. Its spaces and menu appear in your rail as a group — one client, many servers.</div>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">ENDPOINT URL</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11)">wss://forge.tm8.dev<span style="width:1px;height:14px;background:#B26A2B;margin-left:1px"></span></div><span style="font-size:11px;color:#8E897B">a server, or a gateway that hosts several — we resolve it</span></div>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">NICKNAME · OPTIONAL</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;font-size:12.5px;color:#B7B2A4">defaults to the server's own name</div></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px"><span style="padding:6px 14px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Cancel</span><span style="padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Connect</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:44px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:220px;line-height:1.45;display:inline-block">same dialog as the T0-1 rail ＋ — grown, not replaced</span></div></sc-if>
+      </div>
+    </div>
+
+    <div style="align-self:center;display:flex;flex-direction:column;align-items:center;gap:2px;color:#B7B2A4;padding-top:24px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px">resolved</span><span style="font-size:16px">⟶</span></div>
+
+    <div id="1l" data-screen-label="1l server resolved auth" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1l</span><span style="font-size:15px;font-weight:600">Resolved → authenticate</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden">
+        <div style="position:absolute;inset:0;background:rgba(35,32,27,.38);display:flex;align-items:center;justify-content:center">
+          <div style="width:350px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.22);padding:20px;display:flex;flex-direction:column;gap:13px">
+            <div style="font-size:16px;font-weight:600">Add server</div>
+            <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;padding:10px 12px">
+              <span style="width:30px;height:30px;flex:none;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span>
+              <div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:13px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">tm8-server v0.9.2 · protocol v3</span></div>
+              <span style="flex:1"></span>
+              <span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>reachable</span>
+            </div>
+            <div style="font-size:12px;color:#8E897B;line-height:1.5">forge asks who you are. Use an access token minted there, or your member credentials.</div>
+            <div style="display:flex;gap:4px;background:#ECE8DF;border-radius:7px;padding:3px">
+              <span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;background:#FBFAF6;font-size:11.5px;font-weight:600;box-shadow:0 1px 2px rgba(40,34,24,.05)">Access token</span>
+              <span style="flex:1;text-align:center;padding:4px 0;border-radius:5px;font-size:11.5px;font-weight:600;color:#8E897B;cursor:pointer" style-hover="color:#5B564C">Password</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">TOKEN</span><div style="height:32px;display:flex;align-items:center;padding:0 10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:7px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#23201B;box-shadow:0 0 0 3px rgba(178,106,43,.11);overflow:hidden;white-space:nowrap">tm8_tok_9f2kq04sh…<span style="width:1px;height:14px;background:#B26A2B;margin-left:1px;flex:none"></span></div><span style="font-size:11px;color:#8E897B">minted on forge under Account → Access tokens (<a href="#1q">1q</a>)</span></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px"><span style="padding:6px 14px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Back</span><span style="padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Add forge</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:14px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:230px;line-height:1.45;display:inline-block">server identifies itself before asking for credentials</span></div></sc-if>
+      </div>
+    </div>
+
+    <div style="align-self:center;display:flex;flex-direction:column;align-items:center;gap:2px;color:#B7B2A4;padding-top:24px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px">auth ok</span><span style="font-size:16px">⟶</span></div>
+
+    <div id="1o" data-screen-label="1o server added rail" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:400px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1o</span><span style="font-size:15px;font-weight:600">Added — the rail result</span></div>
+      <div style="width:400px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex">
+        <div style="width:220px;flex:none;background:#FBFAF6;border-right:1px solid #E7E3D9;display:flex;flex-direction:column;padding:8px 0">
+          <div style="display:flex;align-items:center;gap:9px;padding:6px 12px"><span style="width:26px;height:26px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#5B564C;background:#ECE8DF">◈</span><span style="flex:1;font-size:13px;font-weight:600">home</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#B7B2A4">local</span><span style="color:#B7B2A4;font-size:9px">▸</span></div>
+          <div style="width:190px;height:1px;background:#E7E3D9;margin:5px auto"></div>
+          <div style="display:flex;align-items:center;gap:9px;padding:6px 12px;background:#F2EFE8"><span style="width:26px;height:26px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span><span style="flex:1;font-size:13px;font-weight:600">forge</span><span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>live</span><span style="color:#B7B2A4;font-size:9px">▾</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 24px;background:#F2EFE8;border-left:2px solid #B26A2B"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span><span style="flex:1;font-size:12.5px;font-weight:600">atelier</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px">3</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 24px"><span style="width:7px;height:7px;border-radius:50%;background:#D8D3C6"></span><span style="flex:1;font-size:12.5px;color:#5B564C">playground</span></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 12px 5px 24px;font-size:12px;color:#8E897B"><span style="width:14px;text-align:center;font-size:11px;color:#B7B2A4">＋</span>new space on forge</div>
+          <div style="flex:1"></div>
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:12px;color:#8E897B;border-top:1px solid #E7E3D9">＋ add server</div>
+        </div>
+        <div style="flex:1;position:relative;background:#F4F2EC">
+          <div style="position:absolute;left:12px;right:12px;bottom:16px;background:#23201B;color:#F4F2EC;border-radius:9px;box-shadow:0 12px 34px rgba(40,34,24,.22);padding:10px 12px;display:flex;align-items:flex-start;gap:8px"><span style="color:#5CB381;font-size:12px;font-weight:700;padding-top:1px">✓</span><span style="font-size:11.5px;line-height:1.5;color:#EFE9DB"><b>forge added</b> — signed in as @amber. 2 spaces joined your rail.</span></div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:12px;right:12px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:150px;line-height:1.45;display:inline-block">servers are groups in the one rail (RULING I) — never a second rail</span></div></sc-if>
+      </div>
+    </div>
+
+    <div id="1m" data-screen-label="1m gateway pick" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1m</span><span style="font-size:15px;font-weight:600">Gateway branch — pick a hosted Server</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden">
+        <div style="position:absolute;inset:0;background:rgba(35,32,27,.38);display:flex;align-items:center;justify-content:center">
+          <div style="width:360px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.22);padding:20px;display:flex;flex-direction:column;gap:13px">
+            <div style="font-size:16px;font-weight:600">Add server</div>
+            <div style="font-size:12px;color:#8E897B;line-height:1.5"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#5B564C">hub.tm8.dev</span> is a gateway — it routes to 3 servers. Pick which to add; each signs you in separately.</div>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #B26A2B;border-radius:10px;padding:10px 12px;box-shadow:0 0 0 3px rgba(178,106,43,.11);cursor:pointer"><span style="width:28px;height:28px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4)">F</span><div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:12.5px;font-weight:600">forge</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">2 spaces visible · you're a member</span></div><span style="flex:1"></span><span style="color:#B26A2B;font-size:12px;font-weight:700">✓</span></div>
+              <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;padding:10px 12px;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:28px;height:28px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#3F6C90;background:rgba(63,108,144,.12);border:1px solid rgba(63,108,144,.35)">L</span><div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:12.5px;font-weight:600">lumen</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">invite required — ask a lumen admin</span></div></div>
+              <div style="display:flex;align-items:center;gap:10px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;padding:10px 12px;opacity:.75"><span style="width:28px;height:28px;flex:none;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#8C8470;background:#ECE8DF">D</span><div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:12.5px;font-weight:600">dockyard</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BD8A2A">maintenance — back around 18:00 utc</span></div></div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:2px"><span style="padding:6px 14px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Back</span><span style="padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Continue to forge</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:14px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:240px;line-height:1.45;display:inline-block">rail lists resolved Servers, never the gateway (Phase-2 spec)</span></div></sc-if>
+      </div>
+    </div>
+
+    <div id="1n" data-screen-label="1n connect failures" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1n</span><span style="font-size:15px;font-weight:600">The three ways it fails</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px">
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 2px 6px rgba(40,34,24,.06);padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="color:#BB4D3D;font-size:12px;font-weight:700">✕</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#BB4D3D">UNREACHABLE</span></div>
+          <div style="font-size:12.5px;line-height:1.5;color:#5B564C">Nothing answered at <b>forge.tm8.dev:443</b> — dns resolved, connection refused. Wrong port, or the server is down.</div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#8E897B;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:6px;padding:6px 8px">ECONNREFUSED 203.0.113.7:443 · 3 attempts over 12s</div>
+          <div style="display:flex;gap:8px"><span style="padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Retry</span><span style="padding:5px 12px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Edit URL</span></div>
+        </div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 2px 6px rgba(40,34,24,.06);padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="color:#BB4D3D;font-size:12px;font-weight:700">✕</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#BB4D3D">AUTH REFUSED</span></div>
+          <div style="font-size:12.5px;line-height:1.5;color:#5B564C">forge rejected this token — <b>revoked by @amber on jul 20</b>. Mint a new one on forge under Account → Access tokens.</div>
+          <div style="display:flex;gap:8px"><span style="padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">Try another token</span><span style="padding:5px 12px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Use password</span></div>
+        </div>
+        <div style="width:380px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:12px;box-shadow:0 2px 6px rgba(40,34,24,.06);padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="width:8px;height:8px;border-radius:50%;background:#BD8A2A"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#BD8A2A">VERSION MISMATCH</span></div>
+          <div style="font-size:12.5px;line-height:1.5;color:#5B564C">forge speaks protocol <b>v5</b>; this client speaks <b>v3</b>. Connecting could corrupt state — update the app, then retry.</div>
+          <div style="display:flex;gap:8px"><span style="padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">How to update</span><span style="padding:5px 12px;border:1px solid #D8D3C6;border-radius:7px;font-size:12px;font-weight:600;color:#5B564C;cursor:pointer;background:#FFFFFF" style-hover="background:#F2EFE8">Dismiss</span></div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:14px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:230px;line-height:1.45;display:inline-block">T1-4 honesty family: reason · evidence · next step</span></div></sc-if>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ FLOW E · ACCOUNT & TOKENS ═══════════ -->
+  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#B7B2A4">FLOW E · T3-3 + TOKEN OWNERSHIP</div>
+    <div style="font-size:16px;font-weight:600">Who am I — account menu &amp; access tokens</div>
+    <div style="font-size:12.5px;color:#8E897B;max-width:760px">The "who am I" affordance behind the avatar, the sign-out verb with its honest scope, and the token surface remote logins depend on. The acting-as seam ships disabled-with-reason.</div>
+  </div>
+  <div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-bottom:20px">
+
+    <div id="1p" data-screen-label="1p account menu" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1p</span><span style="font-size:15px;font-weight:600">Account menu</span></div>
+      <div style="width:500px;height:460px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden">
+        <div style="height:42px;display:flex;align-items:center;gap:12px;padding:0 14px;background:#FBFAF6;border-bottom:1px solid #E7E3D9">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:#B26A2B">◈ tm8</span>
+          <span style="width:1px;height:18px;background:#E7E3D9"></span>
+          <span style="display:flex;align-items:center;gap:6px;background:#ECE8DF;border-radius:7px;padding:4px 10px;font-size:12.5px;font-weight:600"><span style="width:7px;height:7px;border-radius:50%;background:#B26A2B"></span>atelier</span>
+          <span style="flex:1"></span>
+          <span style="font-size:13px;color:#8E897B">◐</span>
+          <span style="width:22px;height:22px;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#5B564C;box-shadow:0 0 0 2px #B26A2B">A</span>
+        </div>
+        <div style="position:absolute;top:48px;right:12px;width:250px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:10px;box-shadow:0 12px 34px rgba(40,34,24,.14);overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px;border-bottom:1px solid #E7E3D9">
+            <span style="width:32px;height:32px;flex:none;border-radius:50%;background:#ECE8DF;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:#5B564C">A</span>
+            <div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:13px;font-weight:600">amber</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">@amber · owner of forge</span></div>
+          </div>
+          <div style="padding:4px 0">
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:12.5px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:15px;text-align:center;color:#8E897B;font-size:12px">◎</span>Profile — name, avatar, password</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:12.5px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:15px;text-align:center;color:#8E897B;font-size:12px">◐</span>Appearance<span style="flex:1"></span><span style="display:flex;gap:2px;background:#ECE8DF;border-radius:6px;padding:2px"><span style="padding:1px 8px;border-radius:4px;background:#FBFAF6;font-size:10.5px;font-weight:600;box-shadow:0 1px 2px rgba(40,34,24,.05)">light</span><span style="padding:1px 8px;border-radius:4px;font-size:10.5px;color:#8E897B">dark</span></span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:12.5px;color:#5B564C;cursor:pointer" style-hover="background:#F2EFE8"><span style="width:15px;text-align:center;color:#8E897B;font-size:12px">⌗</span>Access tokens<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border-radius:999px;padding:1px 7px">2</span></div>
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:12.5px;color:#B7B2A4"><span style="width:15px;text-align:center;font-size:12px">⇄</span>Act as teammate…<span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#8E897B;background:#F2EFE8;border:1px solid #E7E3D9;border-radius:999px;padding:1px 7px">phase 2</span></div>
+          </div>
+          <div style="border-top:1px solid #E7E3D9;padding:4px 0">
+            <div style="display:flex;flex-direction:column;gap:1px;padding:7px 12px;cursor:pointer" style-hover="background:#F2EFE8"><span style="font-size:12.5px;color:#5B564C;display:flex;align-items:center;gap:9px"><span style="width:15px;text-align:center;color:#8E897B;font-size:12px">↩</span>Sign out of forge</span><span style="font-size:10.5px;color:#B7B2A4;padding-left:24px">clears this browser only — agents keep running</span></div>
+          </div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:52px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:210px;line-height:1.45;display:inline-block">acting-as seam rendered disabled-with-reason (T3-3)</span></div></sc-if>
+      </div>
+    </div>
+
+    <div id="1q" data-screen-label="1q access tokens" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:10px;max-width:500px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.11);border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px">1q</span><span style="font-size:15px;font-weight:600">Access tokens — remote-login currency</span></div>
+      <div style="width:500px;height:620px;position:relative;background:#F4F2EC;border:1px solid #D8D3C6;border-radius:8px;box-shadow:0 2px 6px rgba(40,34,24,.06),0 8px 24px rgba(40,34,24,.06);overflow:hidden;display:flex;align-items:center;justify-content:center">
+        <div style="width:400px;background:#FBFAF6;border:1px solid #D8D3C6;border-radius:14px;box-shadow:0 12px 34px rgba(40,34,24,.10);padding:22px;display:flex;flex-direction:column;gap:13px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:#8E897B">ACCOUNT · ACCESS TOKENS</span><span style="flex:1"></span><span style="padding:4px 12px;border-radius:7px;font-size:12px;font-weight:600;background:#23201B;color:#F4F2EC;cursor:pointer" style-hover="background:#3A362E">New token</span></div>
+          <div style="font-size:12px;color:#8E897B;line-height:1.5">Tokens sign other clients into forge as you — the laptop at home, the CLI, another tm8 app adding forge as a remote (<a href="#1l">1l</a>). Revoking one signs that client out within 60s.</div>
+          <div style="display:flex;flex-direction:column;gap:8px;background:rgba(178,106,43,.08);border:1px solid rgba(178,106,43,.4);border-radius:10px;padding:12px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:12.5px;font-weight:600">studio-laptop</span><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;color:#9A581F;background:rgba(178,106,43,.14);border-radius:999px;padding:1px 7px">NEW</span></div>
+            <div style="display:flex;align-items:center;gap:8px;background:#FFFFFF;border:1px solid #E7E3D9;border-radius:7px;padding:7px 10px"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#23201B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">tm8_tok_9f2kq04shTe6…vXc1</span><span style="flex:1"></span><span style="font-size:11px;font-weight:600;color:#9A581F;cursor:pointer;flex:none" style-hover="color:#B26A2B">copy</span></div>
+            <div style="font-size:11px;color:#9A581F;line-height:1.45"><b>Shown once.</b> Copy it now — forge stores only a hash.</div>
+          </div>
+          <div style="display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #E7E3D9">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">cli @ workstation</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">created jun 2 · last used 4 min ago</span></div><span style="flex:1"></span><span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#3E8E5A"><span style="width:6px;height:6px;border-radius:50%;background:#3E8E5A"></span>active</span><span style="font-size:11px;font-weight:600;color:#BB4D3D;cursor:pointer" style-hover="text-decoration:underline">revoke</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid #E7E3D9">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;font-weight:600">old-macbook</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">created feb 14 · last used 3 months ago</span></div><span style="flex:1"></span><span style="display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#A29C8E"><span style="width:6px;height:6px;border-radius:50%;background:#A29C8E"></span>idle</span><span style="font-size:11px;font-weight:600;color:#BB4D3D;cursor:pointer" style-hover="text-decoration:underline">revoke</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 2px">
+              <div style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:12.5px;color:#8E897B;text-decoration:line-through">home-desktop</span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8E897B">revoked jul 20 by @amber</span></div><span style="flex:1"></span><span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#BB4D3D">revoked</span>
+            </div>
+          </div>
+        </div>
+        <sc-if value="{{ann}}" hint-placeholder-val="{{true}}"><div style="position:absolute;inset:0;pointer-events:none"><span style="position:absolute;top:14px;left:14px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;color:#9A581F;background:#F2E3CF;border:1px solid rgba(178,106,43,.4);border-radius:5px;padding:2px 7px;max-width:230px;line-height:1.45;display:inline-block">one-time reveal · hash-only storage · revoke = live kill</span></div></sc-if>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;annotations&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Review&quot;},&quot;authPrimary&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;password&quot;,&quot;token&quot;],&quot;default&quot;:&quot;password&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Design&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const ann = this.props.annotations ?? true;
+    const ap = this.props.authPrimary ?? 'password';
+    return { ann, authPw: ap === 'password', authTok: ap === 'token' };
+  }
+}
+</script>
+</body>
+</html>

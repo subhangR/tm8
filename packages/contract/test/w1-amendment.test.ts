@@ -45,9 +45,9 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(-ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the exact 102-row target without changing reserved honesty', () => {
-    expect(OPERATIONS).toHaveLength(102);
-    expect(V1_OPERATIONS).toHaveLength(100);
+  it('reconciles the additive 106-row target without changing reserved honesty', () => {
+    expect(OPERATIONS).toHaveLength(106);
+    expect(V1_OPERATIONS).toHaveLength(104);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -63,12 +63,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 37, POST: 41, PATCH: 9, DELETE: 7, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 39, POST: 42, PATCH: 9, DELETE: 8, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 40, command: 61, stream: 1 });
+    }).toEqual({ read: 42, command: 63, stream: 1 });
   });
 });
 
@@ -106,11 +106,11 @@ describe('W1 frozen-row schema amendments', () => {
   it('accepts the scratch/profile spawn delta and rejects drift', () => {
     const input = {
       clientMutationId: 'mutation-spawn-1',
-      spaceId: 'space-1',
-      teamMemberId: 'teammate-1',
+      spaceId: '11111111-1111-4111-8111-111111111111',
+      teamMemberId: '22222222-2222-4222-8222-222222222222',
       workdir: { mode: 'scratch' },
       confirmUntrusted: true,
-      interactionProfileId: 'profile-1',
+      interactionProfileId: '33333333-3333-4333-8333-333333333333',
     };
     expect(ExecutionSpawnInputSchema.safeParse(input).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...input, permissionMode: 'bypass' }).success).toBe(false);

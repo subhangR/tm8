@@ -1,0 +1,1012 @@
+/* ==========================================================================
+   T3-4 FILES + T3-5 NODE — the lane's stylesheet.
+
+   PROVENANCE. Every value below is EXTRACTED from
+   `T0-1 workspace structure review (1)/T3 Files, Node & Inbox Hi-Fi.dc.html`,
+   cited by line, never eyeballed. Every COLOUR resolves through a token:
+   `src/hex-ban.test.ts` scans this file and fails the package on a raw hex.
+
+   THE HAPPY FINDING, recorded because it is evidence about the token ramp
+   rather than about this lane: the oracle's two frames introduce ZERO new
+   colours. Every literal it paints is already a token —
+
+     light   #F4F2EC --pn-paper   #FBFAF6 --pn-surface  #FFFFFF --pn-card
+             #E7E3D9 --pn-line    #D8D3C6 --pn-line-2   #ECE8DF --pn-active
+             #23201B --pn-ink     #5B564C --pn-ink-2    #8E897B --pn-ink-3
+             #B7B2A4 --pn-ink-4   #B26A2B --pn-brand    #9A581F --pn-brand-2
+             #3E8E5A --pn-run     #BD8A2A --pn-wait     #BB4D3D --pn-block
+             #F0EDE4 --pn-x-hairline-soft
+     dark    #1D1912 --pn-paper   #1B1810 --pn-surface  #221E15 --pn-card
+             #262117 --pn-hover   #2C2719 --pn-line     #3B3524 --pn-line-2
+             #EFE9DB --pn-ink     #BDB5A2 --pn-ink-2    #8C8470 --pn-ink-3
+             #665E4C --pn-ink-4   #E0A45A --pn-brand    #5CB381 --pn-run
+             #D9AA49 --pn-wait    #DA7D6A --pn-block
+
+   so `canvas-extra.css` needed no entry and this lane added no token. The
+   preview card's checkerboard (L101) is `#262117`/`#2C2719` — dark --pn-hover
+   over dark --pn-line, inside an always-dark scope, so even that is derived.
+
+   MICRO TYPE SIZES ARE D5-VERBATIM: the 8.5/9/9.5/10/10.5/11/11.5/12px
+   literals below are the canvas's own and stay as-is. Global scale is the one
+   `zoom: 1.1` lever on `.cv2-root`.
+   ========================================================================== */
+
+/* ── board + columns (oracle L28–L29, L137–L138) ────────────────────────── */
+
+.cv2-root .fn-screen,
+.cv2-root .fn-node {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4); /* L28 gap:14px → nearest token step */
+  background: var(--pn-paper);
+  border-radius: var(--pn-r-lg); /* L28 border-radius:14px */
+  padding: var(--pn-space-4); /* L28 padding:16px */
+  box-sizing: border-box;
+}
+
+/* The oracle's fixed 380/380/408 and 450/400/334 column widths are SPECIMEN
+   measurements (D52's lesson, and D47's): the board is 1264px wide because a
+   review board is. In product these are flexible columns with a floor, so the
+   screen survives a narrow stack instead of clipping. */
+.cv2-root .fn-cols {
+  display: flex;
+  gap: var(--pn-space-4); /* L29 gap:16px */
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.cv2-root .fn-cols > * {
+  flex: 1 1 360px;
+  min-width: 320px;
+}
+
+/* ── cards (L31, L97, L140) ─────────────────────────────────────────────── */
+
+.cv2-root .fn-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2); /* L31 gap:10px */
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md); /* L31 border-radius:10px */
+  box-shadow: var(--pn-sh-md); /* L31 0 2px 8px rgba(0,0,0,.5) */
+  padding: 13px 14px; /* L31 verbatim */
+  box-sizing: border-box;
+}
+
+.cv2-root .fn-card--paper {
+  background: var(--pn-surface); /* L31 #FBFAF6 */
+}
+
+/* The always-dark cards (preview overlay card, every node card) carry their
+   own `data-theme="dark"` scope on the element or an ancestor, so --pn-card
+   and --pn-line-2 already resolve dark here. No hex is restated. */
+.cv2-root .fn-card--dark {
+  background: var(--pn-card); /* L97/L140 #221E15 */
+  border-color: var(--pn-line-2); /* L97/L140 #3B3524 */
+  padding: 0;
+  overflow: hidden;
+}
+
+.cv2-root .fn-card--dark > * {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+
+.cv2-root .fn-card--dark > :first-child {
+  padding-top: 13px;
+}
+
+.cv2-root .fn-card--dark > :last-child {
+  padding-bottom: 13px;
+}
+
+.cv2-root .fn-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2); /* L141 gap:8px */
+  padding-top: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--pn-line); /* L141 #2C2719 — BOUNDS the header */
+}
+
+.cv2-root .fn-card__title {
+  font-family: var(--pn-serif);
+  font-size: 16px; /* L142 */
+  font-weight: 500;
+  color: var(--pn-ink);
+  margin: 0;
+}
+
+.cv2-root .fn-card__sub {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L143 */
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .fn-spacer {
+  flex: 1;
+}
+
+/* ── upload: dropzone + queue (L33–L65) ─────────────────────────────────── */
+
+.cv2-root .fn-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pn-space-1); /* L33 gap:4px */
+  border: 1.5px dashed rgba(var(--pn-brand-rgb), 0.55); /* L33 verbatim alpha */
+  background: rgba(var(--pn-brand-rgb), 0.06); /* L33 */
+  border-radius: var(--pn-r-sm); /* L33 8px → 7px token step */
+  padding: var(--pn-space-4); /* L33 padding:16px */
+  text-align: center;
+}
+
+.cv2-root .fn-drop__glyph {
+  color: var(--pn-brand-2); /* L34 #9A581F */
+  font-size: 14px;
+}
+
+.cv2-root .fn-drop__title {
+  font-size: 12px; /* L35 */
+  font-weight: 600;
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .fn-drop__cap {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L36 */
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .fn-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px; /* L38 */
+}
+
+.cv2-root .fn-qrow {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2); /* L39 gap:8px */
+  padding: 7px 9px; /* L39 verbatim */
+  background: var(--pn-card); /* L39 #FFFFFF */
+  border: 1px solid var(--pn-line); /* L39 #E7E3D9 — BOUNDS the row card */
+  border-radius: var(--pn-r-sm); /* L39 7px */
+}
+
+.cv2-root .fn-qrow--failed {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px; /* L53 */
+  border-color: color-mix(in srgb, var(--pn-block) 40%, transparent); /* L53 rgba(187,77,61,.4) */
+}
+
+.cv2-root .fn-qrow__glyph {
+  color: var(--pn-ink-3);
+  font-size: 11px; /* L40 */
+}
+
+.cv2-root .fn-qrow__glyph--block {
+  color: var(--pn-block); /* L55 */
+}
+
+.cv2-root .fn-qrow__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px; /* L41 */
+}
+
+.cv2-root .fn-qrow__line {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* L42 */
+}
+
+.cv2-root .fn-qrow__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px; /* L42 */
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .fn-qrow__name--flex {
+  flex: 1;
+}
+
+.cv2-root .fn-qrow__name--muted {
+  color: var(--pn-ink-2); /* L56 #5B564C */
+}
+
+.cv2-root .fn-qrow__pct,
+.cv2-root .fn-qrow__size {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L42/L50 */
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .fn-qrow__track {
+  height: 3px; /* L43 */
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-active); /* L43 #ECE8DF */
+  overflow: hidden;
+}
+
+.cv2-root .fn-qrow__fill {
+  height: 100%;
+  background: var(--pn-brand); /* L43 #B26A2B */
+}
+
+.cv2-root .fn-qrow__ok {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pn-run); /* L51 #3E8E5A */
+}
+
+.cv2-root .fn-qrow__failed {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pn-block); /* L57 #BB4D3D */
+}
+
+.cv2-root .fn-qrow__why {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* L59 */
+  padding-left: 19px; /* L59 verbatim — aligns under the name, not the glyph */
+  flex-wrap: wrap;
+}
+
+.cv2-root .fn-qrow__whytext {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L60 */
+  color: var(--pn-ink-3);
+  flex: 1;
+}
+
+.cv2-root .fn-qrow__retry {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--pn-brand-2); /* L62 #9A581F */
+}
+
+.cv2-root .fn-queue-empty,
+.cv2-root .fn-filelist__empty {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+}
+
+/* ── message bubble + chips (L72–L79) ───────────────────────────────────── */
+
+.cv2-root .fn-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 5px; /* L72 */
+  background: var(--pn-card); /* L72 #FFFFFF */
+  border: 1px solid var(--pn-line); /* L72 */
+  border-radius: var(--pn-r-sm); /* L72 8px */
+  padding: 9px 11px; /* L72 */
+}
+
+.cv2-root .fn-bubble__head {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* L73 */
+}
+
+.cv2-root .fn-bubble__author {
+  font-size: 11px; /* L73 */
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .fn-bubble__meta {
+  font-family: var(--pn-mono);
+  font-size: 8.5px; /* L73 */
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .fn-bubble__body {
+  margin: 0;
+  font-size: 11.5px; /* L74 */
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .fn-chips {
+  display: flex;
+  gap: 5px; /* L75 */
+  flex-wrap: wrap;
+  padding-top: 2px;
+  align-items: flex-start;
+}
+
+.cv2-root .fn-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px; /* L76 */
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L76 */
+  color: var(--pn-ink-2);
+  border: 1px solid var(--pn-line-2); /* L76 #D8D3C6 — BOUNDS the chip */
+  border-radius: 6px; /* L76 */
+  padding: 3px 8px; /* L76 */
+  background: var(--pn-surface); /* L76 #FBFAF6 */
+}
+
+.cv2-root button.fn-chip {
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+.cv2-root .fn-chip--live:hover {
+  border-color: var(--pn-brand); /* L76 style-hover */
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .fn-chip__size {
+  color: var(--pn-ink-4); /* L76 #B7B2A4 */
+}
+
+.cv2-root .fn-chip--missing .fn-chip__missing {
+  color: var(--pn-wait); /* L90 #BD8A2A — wait amber, NOT block red (L124) */
+  font-weight: 600;
+}
+
+.cv2-root .fn-chip--ghost {
+  border-style: dashed;
+  color: var(--pn-ink-3);
+}
+
+/* ── FILES · N list (L80–L92) ───────────────────────────────────────────── */
+
+.cv2-root .fn-filelist {
+  display: flex;
+  flex-direction: column;
+}
+
+.cv2-root .fn-filelist__head {
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L82 */
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega); /* L82 .12em */
+  color: var(--pn-ink-4);
+  padding-bottom: var(--pn-space-1); /* L82 4px */
+}
+
+.cv2-root .fn-frow {
+  display: flex;
+  align-items: center;
+  gap: 7px; /* L83 */
+  padding: 5px 0; /* L83 */
+  /* D-law 4: these are REPEATED SIBLINGS inside one list, so the divider is
+     the soft hairline, not --pn-line. The oracle agrees at L83 (#F0EDE4). */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+.cv2-root .fn-frow:last-child {
+  border-bottom: none; /* L89 — the last row carries no rule */
+}
+
+.cv2-root .fn-frow__glyph {
+  color: var(--pn-ink-3);
+  font-size: 10px; /* L84 */
+}
+
+.cv2-root .fn-frow__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px; /* L84 */
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.cv2-root button.fn-frow__name--live {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cv2-root button.fn-frow__name--live:hover {
+  color: var(--pn-brand-2);
+}
+
+.cv2-root .fn-frow__name--muted {
+  color: var(--pn-ink-3); /* L90 */
+}
+
+.cv2-root .fn-frow__meta {
+  font-family: var(--pn-mono);
+  font-size: 8.5px; /* L84 */
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+
+.cv2-root .fn-frow__missing {
+  font-family: var(--pn-mono);
+  font-size: 8.5px; /* L90 */
+  font-weight: 600;
+  color: var(--pn-wait); /* L90 #BD8A2A */
+}
+
+.cv2-root .fn-dl {
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L84/L102 */
+  font-weight: 600;
+  color: var(--pn-brand-2);
+  text-decoration: none;
+}
+
+.cv2-root .fn-dl:hover {
+  text-decoration: underline;
+}
+
+.cv2-root .fn-dl--compact {
+  font-weight: 400;
+}
+
+/* ── preview (L96–L118) ─────────────────────────────────────────────────── */
+
+.cv2-root .fn-preview-row {
+  display: flex;
+  gap: var(--pn-space-2); /* L99 gap:10px */
+}
+
+.cv2-root .fn-ptile {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px; /* L100 */
+}
+
+.cv2-root .fn-pframe {
+  height: 110px; /* L101 */
+  border-radius: var(--pn-r-sm); /* L101 7px */
+  border: 1px solid var(--pn-line-2); /* L101 #3B3524 */
+  background: var(--pn-surface); /* L105 #1B1810 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 8px 9px; /* L105 */
+  box-sizing: border-box;
+}
+
+/* L101's checkerboard, derived: dark --pn-hover over dark --pn-line, inside
+   the always-dark scope. Not a new colour, not a restated hex. */
+.cv2-root .fn-pframe--checker {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--pn-hover),
+    var(--pn-hover) 8px,
+    var(--pn-line) 8px,
+    var(--pn-line) 16px
+  );
+}
+
+.cv2-root .fn-pframe--text {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.cv2-root .fn-pframe__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.cv2-root .fn-pframe__ghost {
+  font-family: var(--pn-mono);
+  font-size: 8.5px; /* L101 */
+  color: var(--pn-ink-3);
+  background: var(--pn-surface);
+  border-radius: var(--pn-r-xs); /* L101 4px → 5px step */
+  padding: 2px 6px; /* L101 */
+}
+
+.cv2-root .fn-ptile__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* L102 */
+}
+
+.cv2-root .fn-ptile__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L102 */
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .fn-ptile__kindnote {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L106 */
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .fn-nopreview {
+  display: flex;
+  align-items: center;
+  gap: 9px; /* L109 */
+  border: 1px solid var(--pn-line-2); /* L109 */
+  border-radius: var(--pn-r-sm); /* L109 7px */
+  background: var(--pn-surface); /* L109 #1B1810 */
+  padding: 10px 12px; /* L109 */
+}
+
+.cv2-root .fn-nopreview__glyph {
+  color: var(--pn-ink-3);
+  font-size: 12px; /* L110 */
+}
+
+.cv2-root .fn-nopreview__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px; /* L111 */
+}
+
+.cv2-root .fn-nopreview__title {
+  font-size: 11px; /* L112 */
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .fn-nopreview__sub {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L113 */
+  color: var(--pn-ink-3);
+}
+
+/* ── the overlay proper (L118: "a Z4-style overlay, esc closes") ─────────── */
+
+.cv2-root .fn-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--pn-brand-rgb), 0.04);
+  backdrop-filter: blur(2px);
+  padding: var(--pn-space-8);
+}
+
+.cv2-root .fn-overlay__panel {
+  width: min(720px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop);
+  padding: var(--pn-space-4);
+}
+
+.cv2-root .fn-overlay__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .fn-overlay__glyph {
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .fn-overlay__name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 11px;
+  color: var(--pn-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .fn-overlay__size {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+.cv2-root .fn-overlay__close {
+  background: none;
+  border: none;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+}
+
+.cv2-root .fn-overlay__close:hover {
+  color: var(--pn-ink);
+}
+
+.cv2-root .fn-overlay__panel .fn-pframe {
+  height: 320px;
+}
+
+.cv2-root .fn-overlay__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .fn-overlay__esc {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* ── node room: subsystem rows (L147–L167) ──────────────────────────────── */
+
+.cv2-root .fn-sub {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2); /* L147 gap:8px */
+  padding-top: 9px; /* L147 */
+  padding-bottom: 9px;
+  /* These are repeated siblings inside one card ⇒ soft hairline (D-law 4).
+     The oracle draws --pn-line here; see HANDOVER "RULED vs DRIFT". */
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+.cv2-root .fn-sub__dot {
+  width: 8px; /* L148 */
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.cv2-root .fn-sub__dot--run {
+  background: var(--pn-run);
+}
+.cv2-root .fn-sub__dot--wait {
+  background: var(--pn-wait);
+}
+.cv2-root .fn-sub__dot--block {
+  background: var(--pn-block);
+}
+.cv2-root .fn-sub__dot--idle {
+  background: var(--pn-idle);
+}
+
+/* L161 animation:pnPulse 1.6s infinite */
+.cv2-root .fn-sub__dot--pulse {
+  animation: fnPulse 1.6s infinite;
+}
+
+@keyframes fnPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.cv2-root .fn-sub__name {
+  width: 76px; /* L149 verbatim */
+  flex: none;
+  font-size: 12px; /* L149 */
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .fn-sub__facts {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L150 */
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .fn-sub__word {
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L151 */
+  font-weight: 600;
+  color: var(--pn-ink-2);
+}
+
+/* ── concurrency (L168–L184) ────────────────────────────────────────────── */
+
+.cv2-root .fn-conc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px; /* L168 */
+  padding-top: 11px; /* L168 */
+  padding-bottom: 11px;
+}
+
+.cv2-root .fn-conc__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2); /* L169 */
+}
+
+.cv2-root .fn-conc__count {
+  font-family: var(--pn-mono);
+  font-size: 10px; /* L171 */
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .fn-conc__pills {
+  display: flex;
+  gap: var(--pn-space-1); /* L173 gap:4px */
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cv2-root .fn-conc__pill {
+  width: 22px; /* L174 */
+  height: 8px;
+  border-radius: var(--pn-r-pill);
+  box-sizing: border-box;
+}
+
+.cv2-root .fn-conc__pill--used {
+  background: var(--pn-run); /* L174 #5CB381 */
+}
+
+.cv2-root .fn-conc__unknown,
+.cv2-root .fn-conc__note {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L183 */
+  color: var(--pn-ink-3);
+  margin: 0;
+}
+
+/* ── agent commands (L188–L215) ─────────────────────────────────────────── */
+
+.cv2-root .fn-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 5px; /* L195 */
+  padding-top: 10px; /* L195 */
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+}
+
+.cv2-root .fn-provider--bad {
+  background: color-mix(in srgb, var(--pn-wait) 5%, transparent); /* L204 rgba(217,170,73,.05) */
+}
+
+.cv2-root .fn-provider__head {
+  display: flex;
+  align-items: center;
+  gap: 7px; /* L196 */
+}
+
+.cv2-root .fn-provider__name {
+  font-size: 12px; /* L197 */
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .fn-provider__cmd {
+  display: block;
+  background: var(--pn-surface); /* L202 #1B1810 */
+  border: 1px solid var(--pn-line); /* L202 #2C2719 */
+  border-radius: 6px; /* L202 */
+  padding: 6px 9px; /* L202 */
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L202 */
+  color: var(--pn-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cv2-root .fn-provider__err {
+  margin: 0;
+  display: block;
+  background: color-mix(in srgb, var(--pn-block) 8%, transparent); /* L212 */
+  border: 1px solid color-mix(in srgb, var(--pn-block) 30%, transparent); /* L212 */
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L212 */
+  line-height: 1.6;
+  color: var(--pn-block);
+  white-space: pre-wrap;
+}
+
+.cv2-root .fn-provider-empty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.cv2-root .fn-provider-empty__line {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .fn-provider-empty__why {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+}
+
+/* ── data & backup (L217–L232) ──────────────────────────────────────────── */
+
+.cv2-root .fn-grid {
+  display: grid;
+  grid-template-columns: 86px 1fr; /* L220 verbatim */
+  gap: 5px 10px; /* L220 */
+  align-items: baseline;
+  margin: 0;
+}
+
+.cv2-root .fn-grid__key {
+  font-family: var(--pn-mono);
+  font-size: 9px; /* L221 */
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .fn-grid__val {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px; /* L221 */
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .fn-btnrow {
+  display: flex;
+  gap: 7px; /* L226 */
+}
+
+.cv2-root .fn-btn {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 6px; /* L227 */
+  padding: 3px 11px; /* L227 */
+  font-size: 11px; /* L227 */
+  font-weight: 600;
+}
+
+.cv2-root .fn-btn--brass {
+  color: var(--pn-brand);
+  background: var(--pn-brand-soft); /* L227 rgba(224,164,90,.15) */
+  border: 1px solid color-mix(in srgb, var(--pn-brand) 40%, transparent); /* L227 */
+}
+
+.cv2-root .fn-btn--ghost {
+  color: var(--pn-ink-2);
+  background: var(--pn-surface); /* L228 #1B1810 */
+  border: 1px solid var(--pn-line-2); /* L228 #3B3524 */
+}
+
+.cv2-root .fn-consent {
+  margin: 0;
+  font-size: 10.5px; /* L230 */
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+/* ── the annotation band (L121–L127, L235–L241) ─────────────────────────── */
+
+.cv2-root .fn-legend {
+  display: flex;
+  gap: var(--pn-space-6); /* L122 gap:24px */
+  border-top: 1px solid var(--pn-line); /* L122 — BOUNDS the band */
+  padding-top: var(--pn-space-3); /* L122 12px */
+  flex-wrap: wrap;
+}
+
+.cv2-root .fn-legend__item {
+  flex: 1 1 240px;
+  display: flex;
+  gap: 9px; /* L123 */
+}
+
+.cv2-root .fn-legend__bullet {
+  width: 15px; /* L123 */
+  height: 15px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--pn-brand) 18%, transparent); /* L123 */
+  color: var(--pn-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.cv2-root .fn-legend__text {
+  margin: 0;
+  font-size: 11.5px; /* L123 */
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .fn-legend__text strong {
+  color: var(--pn-ink);
+  font-weight: 600;
+}
+
+.cv2-root .fn-note {
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 9.5px; /* L67/L94/L118 */
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .fn-note--dark {
+  color: var(--pn-ink-4); /* L186/L215/L232 #665E4C */
+}
+
+/* ── the review board (dev only) ────────────────────────────────────────── */
+
+.fn-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-8);
+  background: var(--pn-paper);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  padding: 26px 28px 90px; /* the oracle's own page padding */
+  box-sizing: border-box;
+}
+
+.fn-board__both {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+}
+
+.fn-board__frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+}
+
+.fn-board__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.fn-board__id {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+.fn-board__sub {
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
