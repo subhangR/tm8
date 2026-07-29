@@ -1,0 +1,552 @@
+/*
+ * T10 CHAT SURFACE — the channel destination.
+ *
+ * SCOPE OF THIS SHEET, so nobody reads more into it than is here: it is
+ * TOKENISED and PLAUSIBLE, not canvas-diffed. Geometry and micro-type literals
+ * are transcribed from the oracle's inline styles where the oracle states them
+ * (cited per rule below); everything else is the package's existing idiom. A
+ * later parity session owns fidelity, and no value here is a pixel claim.
+ *
+ * COLOUR: tokens only — `src/hex-ban.test.ts` scans this file and will fail the
+ * package on a raw hex. The oracle's dark literals map onto the palette
+ * one-for-one, which is why no `--pn-x-*` extension was needed:
+ *   #221E15 → --pn-card      #1B1810 → --pn-surface   #2C2719 → --pn-line
+ *   #3B3524 → --pn-line-2    #EFE9DB → --pn-ink       #BDB5A2 → --pn-ink-2
+ *   #8C8470 → --pn-ink-3     #665E4C → --pn-ink-4     #E0A45A → --pn-brand
+ *   #5CB381 → --pn-run       #D9AA49 → --pn-wait      #DA7D6A → --pn-block
+ *   #6F9FC7 → --pn-info      #7A7360 → --pn-idle
+ * Every one of those pairs is the DARK value of the token, and each token's
+ * light value inverts with the theme — which is the whole reason this surface
+ * needs no per-theme override (design law 8).
+ *
+ * MICRO TYPE is D5-verbatim: the 8.5/9/9.5/10/10.5/11/11.5/12/12.5px family
+ * stays as literals. The single global lever is `zoom: 1.1` on `.cv2-root`.
+ * If this reads small, the answer is never a per-element bump here.
+ *
+ * HAIRLINES follow the D-ledgered rule: `--pn-line` BOUNDS a component (the
+ * composer's top edge, the refusal card); `--pn-x-hairline-soft` SEPARATES
+ * repeated siblings. Feed rows get NEITHER — the oracle separates them with
+ * gap alone (hero line 78, `gap:3px`), and adding a rule the canvas does not
+ * draw would be drift in the direction that looks tidier.
+ */
+
+.chs-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+}
+
+/* --- the feed region ------------------------------------------------------ */
+
+.chs-feed {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 16px 14px; /* oracle hero line 78 */
+}
+
+.chs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px; /* oracle hero line 78 */
+}
+
+.chs-row {
+  border-radius: var(--pn-r-sm);
+}
+
+.chs-row__grid {
+  display: flex;
+  gap: 10px; /* oracle hero line 86 */
+  padding: 2px 0;
+}
+
+/* --- the margin rail (provenance treatment 1a, the hero default) ---------- */
+
+.chs-rail {
+  width: 88px; /* oracle hero line 88 */
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+  text-align: right;
+  font-family: var(--pn-mono);
+}
+
+.chs-rail__dir {
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/*
+ * Direction reads in MONOCHROME first — the oracle's own rule for this row
+ * ("Colour and tint are secondary … each treatment reads in monochrome").
+ * The word carries the fact; these tints only reinforce it.
+ */
+.chs-rail__dir--inbound { color: var(--pn-ink-3); }
+.chs-rail__dir--outbound { color: var(--pn-brand); }
+.chs-rail__dir--elsewhere { color: var(--pn-info); }
+
+.chs-rail__via,
+.chs-rail__time {
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+.chs-rail__via {
+  font-size: 8.5px;
+  cursor: default;
+}
+
+.chs-row__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* --- message rows --------------------------------------------------------- */
+
+.chs-byline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.chs-byline__who {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.chs-byline__gap { flex: 1; }
+
+/*
+ * 25px is the oracle's body indent (hero line 115): the text hangs under the
+ * NAME, not under the avatar, so a wrapped paragraph keeps one left edge.
+ */
+.chs-text {
+  margin: 0;
+  padding-left: 25px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  text-wrap: pretty;
+  user-select: text;
+  white-space: pre-wrap;
+}
+
+.chs-parent {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 0 25px;
+  padding: 2px 8px;
+  border-left: 2px solid var(--pn-line-2);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-3);
+}
+
+.chs-parent__id {
+  font-size: 10.5px;
+  color: var(--pn-ink-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chs-delivery { display: inline-flex; }
+
+/* --- per-target delivery (S20) -------------------------------------------- */
+
+.chs-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  padding-left: 25px;
+}
+
+.chs-targets__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.chs-targets__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+}
+
+.chs-targets__name { color: var(--pn-ink-2); }
+
+/* Tones mirror the badge exactly — one status must never read two ways. */
+.chs-targets__state--run { color: var(--pn-run); }
+.chs-targets__state--wait { color: var(--pn-wait); }
+.chs-targets__state--block { color: var(--pn-block); }
+.chs-targets__state--info { color: var(--pn-info); }
+.chs-targets__state--idle { color: var(--pn-idle); }
+.chs-targets__state--brand { color: var(--pn-brand); }
+
+/* --- activity rows -------------------------------------------------------- */
+
+.chs-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--pn-ink-3);
+}
+
+.chs-state__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pn-idle);
+  flex: none;
+}
+
+.chs-state__from,
+.chs-state__to {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 5px;
+}
+
+.chs-state__from { color: var(--pn-ink-4); }
+.chs-state__to { color: var(--pn-ink-2); }
+.chs-state__arrow { color: var(--pn-ink-4); font-size: 10px; }
+
+/*
+ * The safe card (S15). Dashed, because a dashed edge reads as "provisional"
+ * in this palette's existing vocabulary — the same signal the tombstone uses.
+ * It is deliberately NOT alarming: an unknown variant is the feed being newer
+ * than the renderer, which is expected, not broken.
+ */
+.chs-unknown,
+.chs-tomb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  padding: 7px 10px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-4);
+}
+
+.chs-unknown__label { font-family: var(--pn-ui); font-size: 11px; color: var(--pn-ink-3); }
+
+.chs-unknown__variant {
+  font-size: 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 5px;
+}
+
+.chs-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chs-group__glyph { color: var(--pn-ink-4); font-size: 11px; }
+.chs-group__text { font-size: 11.5px; color: var(--pn-ink-3); }
+
+.chs-group__rows {
+  list-style: none;
+  margin: 0 0 0 5px;
+  padding-left: 19px;
+  border-left: 1px solid var(--pn-line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+
+/* --- the client-local new-since divider ----------------------------------- */
+
+.chs-mark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--pn-brand);
+}
+
+.chs-mark::before,
+.chs-mark::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pn-brand-soft);
+}
+
+/* --- states --------------------------------------------------------------- */
+
+.chs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.chs-empty__glyph { font-size: 18px; color: var(--pn-ink-4); }
+.chs-empty__headline { margin: 0; font-size: 13px; font-weight: 600; color: var(--pn-ink-2); }
+
+.chs-empty__note {
+  margin: 0;
+  max-width: 42ch;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-3);
+  text-wrap: pretty;
+}
+
+.chs-hollow,
+.chs-notice {
+  margin: 0;
+  padding: 6px 0;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+.chs-notice { color: var(--pn-wait); }
+
+.chs-skeleton {
+  height: 34px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-hover);
+}
+
+.chs-root--refused { justify-content: center; }
+
+.chs-refusal {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 44ch;
+  padding: 24px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  text-align: center;
+}
+
+.chs-refusal__glyph { font-size: 20px; color: var(--pn-ink-4); }
+.chs-refusal__headline { margin: 0; font-size: 13px; font-weight: 600; color: var(--pn-ink-2); }
+.chs-refusal__note { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--pn-ink-3); }
+
+.chs-earlier {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 8px; /* oracle hero line 79 */
+}
+
+.chs-provenance {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--pn-line);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-4);
+}
+
+/* --- the composer --------------------------------------------------------- */
+
+.chs-composer {
+  flex: none;
+  border-top: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  padding: 9px 12px; /* oracle hero line 203 */
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.chs-composer__row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.chs-composer__input {
+  flex: 1;
+  height: 46px; /* oracle hero line 219 */
+  resize: none;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 7px 10px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.chs-composer__input:focus { border-color: var(--pn-brand); }
+
+.chs-composer__send {
+  height: 30px;
+  flex: none;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-brand);
+  color: var(--pn-paper);
+  font-family: var(--pn-ui);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chs-composer__send:disabled {
+  background: var(--pn-active);
+  color: var(--pn-ink-4);
+  cursor: default;
+}
+
+/*
+ * The exited-session warning is WAIT-toned, not BLOCK-toned, and that is a
+ * deliberate reading of S21: storing a message on an exited session is a
+ * permitted, successful write whose consequence is smaller than the user might
+ * assume. Colouring it as an error would refuse something we are in fact doing.
+ */
+.chs-composer__warn {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--pn-wait-soft);
+  border: 1px solid var(--pn-wait-soft);
+  border-radius: var(--pn-r-sm);
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: var(--pn-wait);
+}
+
+.chs-composer__error {
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.chs-replying {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--pn-line-2);
+  border-left: 2px solid var(--pn-brand);
+  border-radius: var(--pn-r-sm);
+  padding: 4px 9px;
+  background: var(--pn-surface);
+}
+
+.chs-replying__label {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-brand);
+  flex: none;
+}
+
+.chs-replying__excerpt {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chs-composer__hint {
+  margin: 0;
+  display: flex;
+  gap: 10px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+/* --- shared small controls ------------------------------------------------ */
+
+.chs-chip-btn {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.chs-chip-btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
+.chs-chip-btn:disabled { color: var(--pn-ink-4); cursor: default; }
+
+.chs-linkbtn {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-brand);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.chs-iconbtn {
+  color: var(--pn-ink-4);
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--pn-r-xs);
+  cursor: pointer;
+  flex: none;
+}
+
+.chs-iconbtn:hover { color: var(--pn-brand); }
