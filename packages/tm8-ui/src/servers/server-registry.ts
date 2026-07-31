@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ServerConnectionSchema,
+  TM8_CLIENT_HEADER,
+  TM8_CLIENT_HEADER_VALUE,
   type ServerConnection,
 } from '@tm8/contract';
 
@@ -69,8 +71,20 @@ function persistActiveServer(id: string): void {
   }
 }
 
+/**
+ * This registry talks to the node directly rather than through
+ * `src/data/real/http.ts`, so it needs its own S6 header — the gate does not
+ * care which module the request came from. Merged here, once, so no caller has
+ * to remember it.
+ */
 async function jsonData<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init?.headers as Record<string, string> | undefined),
+      [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+    },
+  });
   const body = await response.json().catch(() => undefined) as
     | { data?: unknown; error?: { message?: string } }
     | undefined;
@@ -146,6 +160,27 @@ export function useServerRegistry(): ServerRegistryState {
 
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+
+  /**
+   * Without this the list is fetched exactly once, at mount. A Server
+   * registered afterwards — by the CLI, or from another tab — stays invisible
+   * for the whole life of this tab, and nothing on screen suggests the list is
+   * stale: the rail looks complete while it is simply old. Revalidating when
+   * the tab regains focus keeps a long-lived workspace honest without polling
+   * the node on a timer.
+   */
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState === 'hidden') return;
+      void refresh();
+    };
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+    };
   }, [refresh]);
 
   const selectServer = useCallback((id: string) => {

@@ -8,7 +8,7 @@
  * holds. Unread counts are read from the seed, never hard-coded — the mock owns
  * that arithmetic.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Thread, ThreadGallery, discussionSlot } from '../../subsystems/thread';
 import { EntityPanel } from '../../entity';
@@ -258,6 +258,68 @@ describe('Thread — composing', () => {
     const staged = await screen.findByLabelText('Staged attachments');
     expect(staged).toBeTruthy();
     expect((composerInput() as HTMLTextAreaElement).value).not.toContain('{{embed:');
+  });
+
+  it('discovers any workspace entity and adds it as a live card without requiring prose', async () => {
+    await renderThread(facade.ids.chBuild, { variant: 'feed' });
+    const before = messageRows().length;
+
+    fireEvent.click(screen.getByRole('button', { name: /add entity/i }));
+    const picker = await screen.findByRole('dialog', { name: /add an entity/i });
+    fireEvent.change(within(picker).getByRole('searchbox', { name: /find an entity/i }), {
+      target: { value: 'T-105' },
+    });
+    const option = await waitFor(() => {
+      const row = within(picker).getAllByRole('listitem')
+        .find((item) => item.textContent?.includes('T-105'));
+      expect(row).toBeTruthy();
+      return row as HTMLElement;
+    });
+    fireEvent.click(within(option).getByRole('button', { name: 'Add card' }));
+
+    expect(await screen.findByLabelText('Staged entities')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(messageRows()).toHaveLength(before + 1));
+    const posted = messageRows()[messageRows().length - 1];
+    expect(posted.querySelector(`[data-embed-id="${facade.ids.t105}"] .cv2-card`)).not.toBeNull();
+  });
+
+  it('adds an entity as an inline reference from the same picker', async () => {
+    await renderThread(facade.ids.chBuild, { variant: 'feed' });
+    const before = messageRows().length;
+
+    fireEvent.click(screen.getByRole('button', { name: /add entity/i }));
+    const picker = await screen.findByRole('dialog', { name: /add an entity/i });
+    fireEvent.change(within(picker).getByRole('searchbox'), { target: { value: 'T-105' } });
+    const option = await waitFor(() => within(picker).getAllByRole('listitem')
+      .find((item) => item.textContent?.includes('T-105')) as HTMLElement);
+    fireEvent.click(within(option).getByRole('button', { name: 'Reference' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => expect(messageRows()).toHaveLength(before + 1));
+    const posted = messageRows()[messageRows().length - 1];
+    expect(posted.querySelector(`[data-ref-id="${facade.ids.t105}"]`)).not.toBeNull();
+  });
+
+  it('uploads a native image, attaches it to the channel, and stages the returned file entity', async () => {
+    const uploadFile = vi.fn(async () => facade.getEntity(facade.ids.fileWireframes));
+    Object.assign(facade, {
+      uploadFile,
+      fileDownloadUrl: (id: string) => `/v2/files/${id}/download`,
+    });
+    await renderThread(facade.ids.chBuild, { variant: 'feed' });
+
+    const image = new File(['pixels'], 'proof.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Choose files to attach'), { target: { files: [image] } });
+
+    const staged = await screen.findByLabelText('Staged attachments');
+    expect(staged.textContent).toMatch(/wireframes/i);
+    expect(uploadFile).toHaveBeenCalledWith(expect.objectContaining({
+      spaceId: expect.any(String),
+      file: image,
+      targetIds: [facade.ids.chBuild],
+    }));
+    expect(screen.getByRole('button', { name: 'Send' })).not.toBeDisabled();
   });
 
   it('posts a reply into the right subtree', async () => {

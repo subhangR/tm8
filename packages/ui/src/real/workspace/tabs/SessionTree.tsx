@@ -12,7 +12,7 @@ interface TreeNode {
   children: TreeNode[];
 }
 
-function buildForest(sessions: EntitySummary[]): TreeNode[] {
+export function buildSessionForest(sessions: EntitySummary[]): TreeNode[] {
   const byId = new Map(sessions.map((session) => [session.id, { session, children: [] as TreeNode[] }]));
   const roots: TreeNode[] = [];
   for (const session of sessions) {
@@ -46,7 +46,7 @@ function SessionNode({ node, depth, links, active, onOpen, lifecycle }: {
   const title = related?.agent?.title || session.title || 'Session';
   const done = !live;
   const archived = Boolean(session.deletedAt);
-  const visibleChildren = depth < 2 ? children : [];
+  const visibleChildren = children;
 
   return (
     <div className={`sessionTreeNode${depth > 0 ? ' sessionTreeNode--child' : ''}`} data-session-node={session.id}>
@@ -128,11 +128,11 @@ export function SessionTree({ sessions, links, active, onOpen, lifecycle, liveOn
   lifecycle: SessionLifecycleFilter;
   liveOnly: boolean;
 }) {
-  const filtered = sessions.filter((session) => {
+  const filtered = useMemo(() => sessions.filter((session) => {
     if (liveOnly && !isLive(session)) return false;
     return lifecycle === 'done' ? !isLive(session) : true;
-  });
-  const forest = useMemo(() => buildForest(filtered), [filtered]);
+  }), [sessions, lifecycle, liveOnly]);
+  const forest = useMemo(() => buildSessionForest(filtered), [filtered]);
 
   const groups = useMemo(() => {
     const map = new Map<string, { task: EntitySummary | null; roots: TreeNode[] }>();
@@ -187,7 +187,7 @@ export function SessionTree({ sessions, links, active, onOpen, lifecycle, liveOn
         })}
       </div>
       <Note testId="session-parent-projection-note">
-        Spawn-chain parents are not projected on this node; sessions without a real parent link stay at the root.
+        Spawned sessions nest beneath the session that launched them; sessions launched by a person stay at the root.
       </Note>
       <HollowNote field="work_session.content.transcriptDoc">
         Scrollback is not a saved transcript — no transcript store on this node.

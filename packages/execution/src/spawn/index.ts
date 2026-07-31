@@ -13,9 +13,15 @@ export {
   resolveLaunchConfig,
   resolveWorkdir,
   shellQuote,
+  withAgentResume,
   type ComposeManifestInput,
   type ResolvedLaunchConfig,
 } from './manifest.js';
+export {
+  extractCodexRolloutIdentity,
+  resolveCodexNativeSessionId,
+  type CodexRolloutIdentity,
+} from './native-session.js';
 export { SpawnError } from './types.js';
 export type {
   AgentMode,
@@ -29,6 +35,8 @@ export type {
   ResolvedInteractionProfileContext,
   InteractionProfilePinContext,
   RecordCommandInput,
+  ResumeRequest,
+  ResumeWorkSessionResult,
   SpawnContext,
   SpawnRequest,
   SpawnResult,
@@ -37,5 +45,6 @@ export type {
   Tm8Manifest,
   TransitionInput,
   WorkdirMode,
+  WorkSessionResumeInfo,
   WorkSessionStatus,
 } from './types.js';

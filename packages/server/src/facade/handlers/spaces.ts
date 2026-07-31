@@ -12,6 +12,7 @@ import {
   type CollectionResult,
   type HomeSnapshot,
   type NavChannelNode,
+  type SpaceKindCounts,
   type SpaceNavigation,
   type SpaceSummary,
 } from '@tm8/contract';
@@ -310,6 +311,48 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
         activity: { items: activityPage.items, nextCursor: null },
       };
       return home;
+    });
+  };
+}
+
+/**
+ * `spaces.counts` — the menu rail's per-kind numbers, in one round trip.
+ *
+ * WHY A DEDICATED READ. `Page` already carries an optional `total` that
+ * `collections.query` never fills in, and populating it would look cheaper.
+ * It is not: the browser hydrates only a handful of kinds at boot, so a
+ * `total`-driven rail would leave most rows blank until the user visited each
+ * section — a counter that appears only after you have already looked is not
+ * doing its job. One grouped scan answers every kind before any list is
+ * fetched.
+ *
+ * The RPC is `security definer` and re-checks membership plus per-entity
+ * readability itself (063), so a counter can never disclose that a restricted
+ * entity exists when the corresponding list would hide it. That is also why
+ * this does NOT go through `queryCollection`: counting is not paging, and
+ * running it as a capped page would either be wrong or read the whole table.
+ */
+export function spacesCounts(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const spaceId = requireUuidParam(ctx, 'spaceId');
+    const claims = claimsFor(owner, ctx);
+
+    return deps.db.tx(claims, async (q) => {
+      const rows = await q.rpc<Array<{ kind: string; total: number; unseen: number }>>(
+        'space_kind_counts',
+        [spaceId],
+      );
+      // Absent rather than zero for a kind with no rows: the shape is a
+      // Partial record, and the client renders a missing key as "no entities".
+      const counts: SpaceKindCounts = {};
+      for (const row of rows) {
+        counts[row.kind as keyof SpaceKindCounts] = {
+          total: Number(row.total),
+          unseen: Number(row.unseen),
+        };
+      }
+      return counts;
     });
   };
 }

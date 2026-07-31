@@ -60,13 +60,13 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operations: number;
       implemented: number;
     };
-    expect(OPERATIONS).toHaveLength(106);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(105);
+    expect(OPERATIONS).toHaveLength(117);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(116);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 105,
-      implemented: 103,
+      operations: 116,
+      implemented: 114,
     });
   });
 
@@ -100,8 +100,11 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       && responses.get(operation.name)?.status !== 501);
     // GENERATIONS, kept with cause: 98 (as authored — 100 non-WS rows minus
     // the 2 permanently reserved, 101-row catalog era) -> 99 (Delta 2 / A21:
-    // `execution.liveness` joined `OPERATIONS`, the 101->102 family).
-    expect(implemented).toHaveLength(103);
+    // `execution.liveness` joined `OPERATIONS`, the 101->102 family) -> 108
+    // (voice.token.create joined `OPERATIONS`, the 110->111 family) -> 114
+    // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
+    // are mounted, so none answers 501).
+    expect(implemented).toHaveLength(114);
   });
 
   /**

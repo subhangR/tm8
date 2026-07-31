@@ -20,8 +20,10 @@ import { fileURLToPath } from 'node:url';
 import { existsSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
+  AccessMode,
   AgentMode,
   PermissionMode,
+  ReasoningEffort,
   SpawnContext,
   SpawnRequest,
   Tm8Manifest,
@@ -88,6 +90,33 @@ export interface ResolvedLaunchConfig {
   model: string | null;
   agentTool: string;
   permissionMode: PermissionMode;
+  accessMode: AccessMode;
+  reasoningEffort: ReasoningEffort | null;
+}
+
+function asReasoningEffort(value: string | null | undefined): ReasoningEffort | null {
+  if (!value) return null;
+  return ['low', 'medium', 'high', 'xhigh', 'max'].includes(value)
+    ? (value as ReasoningEffort)
+    : null;
+}
+
+function permissionModeForAccessMode(mode: AccessMode): PermissionMode {
+  switch (mode) {
+    case 'fullAccess': return 'bypassPermissions';
+    case 'acceptEdits': return 'acceptEdits';
+    case 'plan': return 'readOnly';
+    case 'safe': return 'interactive';
+  }
+}
+
+function accessModeForPermissionMode(mode: PermissionMode): AccessMode {
+  switch (mode) {
+    case 'bypassPermissions': return 'fullAccess';
+    case 'acceptEdits': return 'acceptEdits';
+    case 'readOnly': return 'plan';
+    case 'interactive': return 'safe';
+  }
 }
 
 /**
@@ -118,12 +147,16 @@ export function resolveLaunchConfig(
   // The env override is last and highest, mirroring old maestro's
   // MAESTRO_PERMISSION_MODE (manifest-generator.ts:814-817). It is how an
   // operator forces a whole node's posture without touching any persona.
-  const permissionMode =
-    asPermissionMode(env.TM8_PERMISSION_MODE?.trim()) ??
-    asPermissionMode(member.permissionMode) ??
-    DEFAULT_PERMISSION_MODE;
+  const requestedAccessMode = request.accessMode ?? null;
+  const permissionMode = requestedAccessMode
+    ? permissionModeForAccessMode(requestedAccessMode)
+    : asPermissionMode(env.TM8_PERMISSION_MODE?.trim()) ??
+      asPermissionMode(member.permissionMode) ??
+      DEFAULT_PERMISSION_MODE;
+  const accessMode = requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
+  const reasoningEffort = asReasoningEffort(request.reasoningEffort);
 
-  return { mode, model, agentTool, permissionMode };
+  return { mode, model, agentTool, permissionMode, accessMode, reasoningEffort };
 }
 
 /**
@@ -226,6 +259,17 @@ const AGENT_TOOL_BINARIES: Readonly<Record<string, string>> = {
 export function buildAgentCommand(
   launch: ResolvedLaunchConfig,
   env: NodeJS.ProcessEnv = process.env,
+  opts: {
+    /**
+     * The PRE-MINTED native session id (maestro's claude-spawner pattern):
+     * `--session-id <uuid>` forces Claude to adopt tm8's uuid as its own
+     * conversation id, which is what makes `--resume <uuid>` possible later
+     * without ever parsing a transcript. Claude-only — Codex cannot be
+     * pre-seeded (its CLI mints its own rollout id), and an operator wrapper's
+     * flag vocabulary is unknown, so both ignore this.
+     */
+    claudeSessionId?: string | null;
+  } = {},
 ): string {
   const override = env.TM8_AGENT_CMD?.trim();
   const raw = override || AGENT_TOOL_BINARIES[launch.agentTool];
@@ -243,39 +287,116 @@ export function buildAgentCommand(
   if (raw === 'codex') {
     const args: string[] = [];
     if (launch.model) args.push('--model', shellQuote(launch.model));
+
+    // Codex's approval prompts are the SAME unattended-hang hazard the Claude
+    // branch below documents at length, and this branch used to ignore them
+    // entirely: it emitted `--model` and nothing else, so a launched Codex
+    // stopped at its first approval request with no human at the terminal.
+    // Same authorization argument, same conclusion — tm8's spawn-time project
+    // TRUST gate (`execution_spawn` refuses an untrusted project) is the human
+    // authorization, so by the time we launch, an operator has vouched for this
+    // working directory. Mirrors maestro's codex-spawner buildCodexArgs.
+    if (launch.permissionMode === 'bypassPermissions') {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    } else {
+      args.push('--ask-for-approval', mapCodexApprovalPolicy(launch.permissionMode));
+      args.push('--sandbox', mapCodexSandboxMode(launch.permissionMode));
+    }
+
+    // This PTY is always server-hosted and rendered into a browser xterm, so
+    // Codex must stay INLINE. Its default alternate-screen mode continuously
+    // redraws, which a reconnecting xterm client replays as a garbled buffer
+    // instead of ordinary scrollback. maestro gates this on
+    // `MAESTRO_PTY_HOST === 'server'`; in tm8 there is no other host.
+    args.push('--no-alt-screen');
+
+    if (launch.reasoningEffort) {
+      args.push('-c', shellQuote(`model_reasoning_effort=${JSON.stringify(launch.reasoningEffort)}`));
+    }
+
+    // NOT passed: `--cd`. The PTY spawns the child with `cwd` already set to the
+    // resolved working directory (SpawnService step 5), and naming it twice is
+    // two places for a future edit to disagree about.
     return ['codex', ...args].join(' ');
   }
 
   if (raw !== 'claude') return raw;
 
   const args: string[] = [];
-  // ALWAYS skip permissions for a tm8-spawned Claude, whatever the persona's
-  // configured permissionMode says.
-  //
-  // An unattended agent must not be able to hang on an interactive prompt, and
-  // TWO separate dialogs can block it forever: Claude's "do you trust this
-  // folder?" gate on first access, and per-tool-use confirmations. A blocked
-  // agent produces no output, never reports, and burns a slot against the
-  // concurrency cap until a human notices — indistinguishable from a hung agent.
-  // Pre-trusting the folder alone does NOT cover the tool prompts.
-  //
-  // The human-authorization layer is tm8's own spawn-time PROJECT TRUST gate:
-  // `execution_spawn` refuses an untrusted project, so by the time we launch an
-  // operator has explicitly vouched for this working directory. Mirrors old
-  // maestro's proven worker spawn.
-  //
-  // DELIBERATE TRADE-OFF: this overrides a MORE RESTRICTIVE configured mode — a
-  // `readOnly` persona still launches with full access, so `permissionMode` is
-  // currently advisory for Claude. Honouring it needs a launch path that cannot
-  // deadlock; that is post-Slice-1 work, and `mapClaudePermissionMode` is kept
-  // for it rather than deleted.
-  args.push('--dangerously-skip-permissions');
+  if (launch.permissionMode === 'bypassPermissions') {
+    args.push('--dangerously-skip-permissions');
+  } else {
+    args.push('--permission-mode', mapClaudePermissionMode(launch.permissionMode));
+  }
   if (launch.model) args.push('--model', shellQuote(launch.model));
+  if (launch.reasoningEffort) args.push('--effort', launch.reasoningEffort);
+  if (opts.claudeSessionId) args.push('--session-id', shellQuote(opts.claudeSessionId));
   return ['claude', ...args].join(' ');
 }
 
 /**
- * Append the composed system prompt to an agent command line.
+ * Turn a base agent command into the RESUME invocation for `nativeSessionId`.
+ *
+ * Ported from maestro's proven resume builders (claude-spawner/codex-spawner
+ * buildResumeArgs), including the two facts that make resume correct:
+ *   - The SYSTEM prompt is re-appended. `--resume` / `codex resume` restore
+ *     conversation HISTORY, not the invocation's own configuration — an agent
+ *     resumed without it comes back with its memory and no identity.
+ *   - The TASK prompt is NOT re-sent. It is already the first user turn of the
+ *     restored conversation; sending it again duplicates the assignment. No
+ *     positional argument also happens to be what keeps both CLIs in the
+ *     interactive session the PTY needs.
+ * Exact-id only: no `--continue`, no `--last` — both mean "most recent", which
+ * resumes the WRONG conversation the moment two sessions share a cwd.
+ *
+ * Refusals are loud and typed. An operator wrapper (`TM8_AGENT_CMD`) has a
+ * private flag vocabulary tm8 must not guess a resume flag into, and a tool
+ * with no resume-by-id contract (echo-agent, gemini, hermes) must never be
+ * silently restarted fresh and presented as resumed.
+ */
+export function withAgentResume(
+  command: string,
+  systemPrompt: string,
+  launch: ResolvedLaunchConfig,
+  nativeSessionId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const override = env.TM8_AGENT_CMD?.trim();
+  if (override) {
+    throw new SpawnError(
+      'resume is not supported under a TM8_AGENT_CMD operator wrapper — tm8 cannot know its resume flags',
+      'not_implemented',
+      { override },
+    );
+  }
+  const raw = AGENT_TOOL_BINARIES[launch.agentTool];
+  const system = systemPrompt.trim();
+
+  if (raw === 'claude') {
+    const parts = [command];
+    if (system !== '') parts.push(`--append-system-prompt ${shellQuote(system)}`);
+    parts.push(`--resume ${shellQuote(nativeSessionId)}`);
+    return parts.join(' ');
+  }
+  if (raw === 'codex') {
+    // `resume` is a SUBCOMMAND and must come before the flags; the rollout id
+    // is positional and must come after them.
+    const parts = [command.replace(/^codex\b/, 'codex resume')];
+    if (system !== '') {
+      parts.push(`-c ${shellQuote(`developer_instructions=${JSON.stringify(system)}`)}`);
+    }
+    parts.push(shellQuote(nativeSessionId));
+    return parts.join(' ');
+  }
+  throw new SpawnError(
+    `agent tool '${launch.agentTool}' has no resume-by-id contract`,
+    'invalid_input',
+    { agentTool: launch.agentTool },
+  );
+}
+
+/**
+ * Append the composed prompts to an agent command line.
  *
  * SEPARATE from {@link buildAgentCommand} because of an ordering constraint that
  * looks circular and is not: the prompt is composed FROM the manifest, and the
@@ -291,29 +412,94 @@ export function buildAgentCommand(
  * smoke stub (`echo-agent`) DOES read the manifest, so the loop passed on a path
  * the product never takes.
  *
- * Delivery is PER-TOOL: Claude takes `--append-system-prompt`; Codex takes
- * `-c developer_instructions=<json>` (`instructions` is reserved and ignored),
- * and the manifest-reading smoke agent needs no prompt flag. Operator wrappers
- * are returned unchanged because tm8 cannot know their private flag vocabulary.
+ * THE TWO PROMPTS TRAVEL ON DIFFERENT CHANNELS, and conflating them was the
+ * second half of the same bug. The system prompt configures the agent; the task
+ * prompt is the agent's FIRST USER TURN — the thing that makes it start working.
+ * This function used to take one string, and its only caller passed
+ * `${envelope.system}\n\n${envelope.task}`, so the task block landed inside
+ * `--append-system-prompt` and no positional argument was emitted at all.
+ * Measured 2026-07-30 on a live spawn (`ps -p <pid> -o command=`): the argv
+ * ended `...</tm8_system_prompt>\n\n<tm8_task_prompt count="0">...`, with
+ * nothing after it. Both CLIs treat an invocation with no positional prompt as
+ * an INTERACTIVE session, so every tm8-launched agent booted to an idle REPL
+ * with its assignment buried in its own configuration, reported `running`, and
+ * never emitted a token. A session row that exists is not an agent that started.
+ *
+ * Delivery is PER-TOOL, and matches maestro's proven spawners
+ * (`maestro-cli/src/services/{claude,codex}-spawner.ts`) flag for flag:
+ *   - Claude: `--append-system-prompt <system>` then `<task>` positional
+ *   - Codex:  `-c developer_instructions=<json>` then `<task>` positional
+ *     (`instructions` is reserved by Codex and silently ignored)
+ * The manifest-reading smoke agent needs neither: it reads the typed manifest.
+ * Operator wrappers (`TM8_AGENT_CMD`) are returned unchanged because tm8 cannot
+ * know their private flag vocabulary — including whether a bare positional would
+ * be read as a prompt or as a path.
+ *
+ * The positional goes LAST, after every flag, because both CLIs stop parsing
+ * options at the first non-option argument.
  */
 export function withAgentPrompt(
   command: string,
-  systemPrompt: string,
+  prompts: { system: string; task: string },
   launch: ResolvedLaunchConfig,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  if (systemPrompt.trim() === '') return command;
+  const system = prompts.system.trim();
+  const task = prompts.task.trim();
+  if (system === '' && task === '') return command;
   const raw = env.TM8_AGENT_CMD?.trim() || AGENT_TOOL_BINARIES[launch.agentTool];
-  if (raw === 'claude') {
-    return `${command} --append-system-prompt ${shellQuote(systemPrompt)}`;
-  }
-  if (raw === 'codex') {
-    const config = `developer_instructions=${JSON.stringify(systemPrompt)}`;
-    return `${command} -c ${shellQuote(config)}`;
-  }
+
   // echo-agent reads the typed manifest directly. An operator-provided wrapper
   // is a complete command whose private flag vocabulary tm8 must not guess.
-  return command;
+  if (raw !== 'claude' && raw !== 'codex') return command;
+
+  const parts = [command];
+  if (system !== '') {
+    parts.push(
+      raw === 'claude'
+        ? `--append-system-prompt ${shellQuote(system)}`
+        : `-c ${shellQuote(`developer_instructions=${JSON.stringify(system)}`)}`,
+    );
+  }
+  if (task !== '') parts.push(shellQuote(task));
+  return parts.join(' ');
+}
+
+/**
+ * tm8's four postures → Codex's `--ask-for-approval` policy.
+ *
+ * `interactive` maps to `untrusted` and NOT to `on-request`, which is the honest
+ * answer for an unattended launch: a policy that stops to ask is a policy that
+ * hangs, and `untrusted` at least confines what runs without asking. The pairing
+ * with the sandbox below is what makes it usable. Mirrors maestro's
+ * `mapApprovalPolicy` (codex-spawner.ts:101).
+ */
+function mapCodexApprovalPolicy(mode: PermissionMode): string {
+  switch (mode) {
+    case 'acceptEdits':
+      return 'never';
+    case 'readOnly':
+    case 'interactive':
+      return 'untrusted';
+    case 'bypassPermissions':
+      // Unreachable — the caller emits
+      // --dangerously-bypass-approvals-and-sandbox instead.
+      return 'never';
+  }
+}
+
+/** tm8's four postures → Codex's `--sandbox` mode (maestro: mapSandboxMode). */
+function mapCodexSandboxMode(mode: PermissionMode): string {
+  switch (mode) {
+    case 'acceptEdits':
+    case 'interactive':
+      return 'workspace-write';
+    case 'readOnly':
+      return 'read-only';
+    case 'bypassPermissions':
+      // Unreachable — see mapCodexApprovalPolicy.
+      return 'danger-full-access';
+  }
 }
 
 /** tm8's four postures → the three `--permission-mode` values Claude accepts. */
@@ -432,7 +618,74 @@ export function composeEnv(
     env.PATH = inherited === '' ? binDir : `${binDir}:${inherited}`;
   }
 
+  // …and then make sure the AGENT binary itself is reachable.
+  //
+  // tm8-server does not always inherit a developer's PATH. Under the macOS
+  // launchd agent that runs it as a service, `PATH` is the bare
+  // `/usr/bin:/bin:/usr/sbin:/sbin` — while `claude` lives in
+  // `/opt/homebrew/bin` and `codex` in `~/.local/bin`. Measured 2026-07-30:
+  // every launch from the UI died with `exitCode 127` (command not found) while
+  // the identical request against a hand-started server in a login shell
+  // succeeded, because that one inherited an interactive PATH. The launch flow
+  // must not depend on who started the server.
+  //
+  // APPENDED, never prepended: these are FALLBACKS. An operator who has put a
+  // specific `claude` earlier on PATH keeps it, and tm8 does not silently
+  // reorder a resolution the machine's owner already arranged. Non-existent
+  // directories are filtered out rather than added blindly, so PATH stays
+  // meaningful in `describePtyExit` evidence and in the manifest's env record.
+  env.PATH = withAgentBinDirs(env.PATH ?? '', parentEnv);
+
   return env;
+}
+
+/**
+ * Directories where the agent CLIs are actually installed on a developer Mac,
+ * in the order a login shell would normally have them.
+ *
+ * Deliberately a SHORT, EXPLICIT list of package-manager bin dirs rather than a
+ * filesystem search: a search would be slower, order-unstable, and could pick up
+ * an arbitrary binary named `claude` from somewhere nobody intended. Anything
+ * more exotic than these is what `TM8_AGENT_CMD` exists for.
+ */
+function agentBinDirCandidates(parentEnv: NodeJS.ProcessEnv): string[] {
+  const home = parentEnv['HOME'];
+  const dirs = ['/opt/homebrew/bin', '/usr/local/bin'];
+  if (home) {
+    dirs.push(join(home, '.local', 'bin'), join(home, '.bun', 'bin'), join(home, '.volta', 'bin'));
+  }
+  return dirs;
+}
+
+/** Append any candidate bin dir that exists and is not already on `path`. */
+function withAgentBinDirs(path: string, parentEnv: NodeJS.ProcessEnv): string {
+  const present = new Set(path.split(':').filter((p) => p !== ''));
+  const additions = agentBinDirCandidates(parentEnv).filter(
+    (dir) => !present.has(dir) && existsSync(dir),
+  );
+  if (additions.length === 0) return path;
+  return path === '' ? additions.join(':') : `${path}:${additions.join(':')}`;
+}
+
+/**
+ * Absolute path to `binary` as resolved against `path`, or null.
+ *
+ * Exists so the spawn flow can REFUSE with the true reason instead of launching
+ * a child that exits 127 a moment later. A 127 surfaces as
+ * `agent process exited during the boot settlement window`, which is honest
+ * about the symptom and silent about the cause — the operator still has to guess
+ * whether the CLI is missing, unlicensed, crashing, or misconfigured.
+ */
+export function resolveAgentBinary(binary: string, path: string): string | null {
+  // A caller-supplied path (`TM8_AGENT_CMD=/opt/mine/agent`) is not a PATH
+  // lookup at all, and must not be rewritten into one.
+  if (binary.includes('/')) return existsSync(binary) ? binary : null;
+  for (const dir of path.split(':')) {
+    if (dir === '') continue;
+    const candidate = join(dir, binary);
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
 }
 
 /**
@@ -531,10 +784,12 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       tool: launch.agentTool,
       model: launch.model,
       permissionMode: launch.permissionMode,
+      accessMode: launch.accessMode,
+      reasoningEffort: launch.reasoningEffort,
       command,
     },
     session: {
-      title: request.title?.trim() || defaultTitle(context),
+      title: resolveSessionTitle(request, context),
       workingDirectory: workdir.path,
       workdirMode: workdir.mode,
     },
@@ -558,7 +813,17 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   };
 }
 
-function defaultTitle(context: SpawnContext): string {
+/**
+ * One title for both the durable work_session row and its launch manifest.
+ * Keeping this resolution in one place prevents the list/event projection
+ * from showing an empty title while the terminal manifest names the session.
+ */
+export function resolveSessionTitle(
+  request: Pick<SpawnRequest, 'title'>,
+  context: SpawnContext,
+): string {
+  const explicit = request.title?.trim();
+  if (explicit) return explicit;
   const first = context.tasks[0];
   if (first) return first.title;
   return `${context.teamMember.name} session`;

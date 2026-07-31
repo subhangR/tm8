@@ -30,6 +30,11 @@
 import {
   bindPath,
   type ActivityItem,
+  type ArtifactPreviewSession,
+  type ArtifactsPreviewStartInput,
+  type AttentionRequestListQuery,
+  type AttentionRequestMutationResult,
+  type AttentionRequestPage,
   type CollectionQuery,
   type CollectionResult,
   type CommandContext,
@@ -47,6 +52,10 @@ import {
   type ExecutionPromptInput,
   type ExecutionSpawnInput,
   type ExecutionTerminateInput,
+  type FileUploadAbortInput,
+  type FileUploadCompleteInput,
+  type FileUploadGrant,
+  type FileUploadInitInput,
   type GraphQuery,
   type GraphResult,
   type HandoffView,
@@ -63,7 +72,9 @@ import {
   type PostMessageInput,
   type ProjectResource,
   type ReactionInput,
+  type ResolveEntityAttentionInput,
   type SpaceId,
+  type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
   type WorkInput,
@@ -151,6 +162,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SpaceSettingsView>('spaces.settings', { params: { spaceId } });
     },
 
+    /**
+     * Per-kind rail counters. Kinds with no rows are ABSENT from the payload
+     * rather than present with zeroes, so callers read a missing key as "none".
+     */
+    counts(spaceId: SpaceId): Promise<SpaceKindCounts> {
+      return http.call<SpaceKindCounts>('spaces.counts', { params: { spaceId } });
+    },
+
     /** `cursor`/`limit` are BODY fields on this op, carried inside the query object. */
     query(input: CollectionQuery): Promise<CollectionResult> {
       return http.call<CollectionResult>('collections.query', { body: input });
@@ -197,10 +216,30 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<Page<NotificationItem>>('inbox.list', { query: pageQuery(opts) });
     },
 
+    /** Every field rides the query string; `compact` keeps optional filters off
+     *  the wire so the server's strict schema never sees a phantom key. */
+    attentionRequests(input: AttentionRequestListQuery): Promise<AttentionRequestPage> {
+      return http.call<AttentionRequestPage>('attentionRequests.list', {
+        query: compact({
+          spaceId: input.spaceId,
+          entityId: input.entityId,
+          status: input.status,
+          minPoints: input.minPoints,
+          limit: input.limit,
+          cursor: input.cursor,
+        }) as QueryParams,
+      });
+    },
+
     feed(id: EntityId, opts?: FeedOpts): Promise<EntityFeedPage> {
       return http.call<EntityFeedPage>('entities.feed', {
         params: { id },
-        query: { ...pageQuery(opts), scope: opts?.scope },
+        query: {
+          ...pageQuery(opts),
+          scope: opts?.scope,
+          order: opts?.order,
+          around: opts?.around,
+        },
       });
     },
 
@@ -266,6 +305,15 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('entities.patch', { params: { id }, body: input });
     },
 
+    resolveAttention(
+      id: EntityId,
+      input: ResolveEntityAttentionInput,
+    ): Promise<AttentionRequestMutationResult> {
+      return http.call<AttentionRequestMutationResult>('attentionRequests.resolveEntity', {
+        params: { entityId: id }, body: input,
+      });
+    },
+
     /** Note 1 again: `update_task_content` reads every task field off `content`. */
     patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult> {
       const body: PatchEntityInput = {
@@ -312,6 +360,22 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
     },
 
+    fileUploadInit(input: FileUploadInitInput): Promise<FileUploadGrant> {
+      return http.call<FileUploadGrant>('files.uploadInit', { body: input });
+    },
+
+    fileUploadBytes(grant: FileUploadGrant, bytes: BodyInit): Promise<void> {
+      return http.putGrantedBytes(grant.uploadUrl, grant.token, bytes);
+    },
+
+    fileUploadComplete(uploadId: string, input: FileUploadCompleteInput): Promise<CommandResult> {
+      return http.call<CommandResult>('files.uploadComplete', { params: { uploadId }, body: input });
+    },
+
+    fileUploadAbort(uploadId: string, input: FileUploadAbortInput): Promise<CommandResult> {
+      return http.call<CommandResult>('files.uploadAbort', { params: { uploadId }, body: input });
+    },
+
     /** Answers `MessageBatchResult` — the seam's union member, passed through. */
     postMessage(input: PostMessageInput): Promise<MessageBatchResult> {
       return http.call<MessageBatchResult>('messages.post', { body: input });
@@ -340,6 +404,13 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       await http.call<unknown>('readMarks.upsert', {
         params: { anchorId },
         body: { clientMutationId: newId('mark') },
+      });
+    },
+
+    previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession> {
+      return http.call<ArtifactPreviewSession>('artifacts.preview.start', {
+        params: { artifactId: id },
+        body: input,
       });
     },
 

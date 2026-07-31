@@ -434,7 +434,17 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
 
   /** Build a port over its own pool, authenticating as the delivery worker. */
   static fromConnectionString(connectionString: string, max = 4): PgW2DeliveryRpcPort {
-    return new PgW2DeliveryRpcPort(new Pool({ connectionString, max }), true);
+    // Same guards as db/client.ts: a delivery transaction that wedges must be
+    // killed by Postgres, not hold one of `max` clients until a restart.
+    return new PgW2DeliveryRpcPort(
+      new Pool({
+        connectionString,
+        max,
+        statement_timeout: 30_000,
+        idle_in_transaction_session_timeout: 30_000,
+      }),
+      true,
+    );
   }
 
 

@@ -20,6 +20,7 @@
  */
 import type { Terminal } from '@xterm/xterm';
 
+import { markTerminalActivity } from '../activity.js';
 import { ptyTransport } from './ptyTransport.js';
 import {
   dropTerminalOutput,
@@ -74,7 +75,10 @@ export function ensureTerminalRuntime(): void {
     resume: (id) => ptyTransport.resume(id),
   });
 
-  ptyTransport.onOutput((id, data) => queueTerminalOutput(id, data));
+  ptyTransport.onOutput((id, data) => {
+    markTerminalActivity(id);
+    queueTerminalOutput(id, data);
+  });
 
   // The single display-only replay frame. It is NOT counted toward the resume
   // offset (attached.next already accounts for it) and it arrives AFTER any

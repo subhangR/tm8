@@ -981,6 +981,20 @@ export function registryFor(kind: EntityKind | string): KindEntry {
   return KIND_REGISTRY[kind as EntityKind] ?? fallbackKindEntry(kind);
 }
 
+/**
+ * How an entity participates in a message composer. This decision belongs in
+ * the registry: unknown/custom kinds remain valid live-card references, while
+ * messages cannot recursively reference themselves and files may also use the
+ * typed attachment lane.
+ */
+export type MessageAddMode = 'none' | 'entity' | 'file';
+export function messageAddMode(kind: EntityKind | string): MessageAddMode {
+  const resolved = registryFor(kind).kind;
+  if (resolved === 'message') return 'none';
+  if (resolved === 'file') return 'file';
+  return 'entity';
+}
+
 /** `registryFor(kind).capabilities[flag]`, as a one-call lookup. */
 export function kindCan(kind: EntityKind, flag: BooleanCapability): boolean {
   return KIND_REGISTRY[kind].capabilities[flag];

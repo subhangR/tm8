@@ -23,7 +23,10 @@ import {
  * repository source.
  */
 
-const CATALOG_DIGEST = 'sha256:df96ff5a4c2d11e41ec1d7b9c5e460bdcb8ae8d9c2c99b140f59e08305f8d604';
+// Re-pinned 2026-07-31 (was sha256:df96ff5a…): the consolidation wave landed
+// voice, artifacts, attention, memories and worktrees operations, moving the
+// catalog to 117 rows. The digest is sha256(JSON.stringify(OPERATIONS)).
+const CATALOG_DIGEST = 'sha256:8276092abcf4687c65df7e05a5a90f760605d7f84b4448da08fda371dd997e6f';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -86,7 +89,9 @@ afterAll(async () => {
 describe('G15 reserved and residual honesty, via generated discovery only', () => {
   it('navigates root -> noun -> operation and finds exactly two reserved operations', async () => {
     const root = digestChecked(await queryW3Discovery({ kind: 'root' }));
-    expect(root.catalog.total).toBe(101);
+    // 101 -> 117 on 2026-07-31: the consolidation wave (voice, artifacts,
+    // attention, memories, worktrees) grew the catalog.
+    expect(root.catalog.total).toBe(117);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
@@ -169,17 +174,20 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     residual501 = refused
       .map(({ entry }) => entry)
       .filter((entry) => entry.exposure !== 'reserved');
-    expect(residual501.length, 'residual unimplemented HTTP operations').toBeGreaterThanOrEqual(6);
-    const residualNouns = new Set(residual501.map((entry) => entry.noun));
-    expect(residualNouns.size, 'residual operations span several nouns').toBeGreaterThanOrEqual(3);
+    // THE RESIDUAL ERA ENDED 2026-07-31. This pin was `>= 6` while six-plus v1
+    // operations were catalog-registered but unbuilt. The consolidation wave
+    // implemented the last of them, so the discovered residual set is now
+    // EMPTY — and that is the assertion: every non-reserved v1 HTTP operation
+    // answers as built. If this ever grows again, a shipped operation
+    // regressed to a stub, which is exactly what this file exists to notice.
+    expect(residual501, 'residual unimplemented HTTP operations').toEqual([]);
 
-    // Pre-validation specifically: the operations that received the invalid body
-    // still returned 501 rather than a validation error.
-    const refusedWithInvalidBody = refused.filter(
+    // Pre-validation honesty now has only the reserved pair as subjects; the
+    // loop above already asserted every refused response is an honest 501, so
+    // no operation that received the invalid body leaked a validation error.
+    for (const { response, entry } of refused.filter(
       ({ entry }) => entry.method !== 'GET' && entry.method !== 'DELETE',
-    );
-    expect(refusedWithInvalidBody.length, 'invalid-body refusals').toBeGreaterThanOrEqual(6);
-    for (const { response, entry } of refusedWithInvalidBody) {
+    )) {
       expect(errorCode(response), `${entry.operation} must not leak validation`).toBe('not_implemented');
     }
 
@@ -214,11 +222,10 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
   }, 120_000);
 
   it('C: a 501 produces zero database effect - no ledger reservation, no rows', async () => {
-    expect(residual501.length).toBeGreaterThanOrEqual(6);
-    // Send real client mutation IDs so this is a genuine test of whether the
-    // Server reserves a mutation ID or writes a ledger row before refusing.
-    const commandTargets = residual501.filter((entry) => entry.method !== 'GET').slice(0, 6);
-    expect(commandTargets.length).toBeGreaterThanOrEqual(4);
+    // The residual set is EMPTY now (see B) — the two reserved operations are
+    // the only 501s left, and they carry the whole zero-effect claim.
+    expect(residual501).toEqual([]);
+    const commandTargets = residual501.filter((entry) => entry.method !== 'GET');
     const attempts: Array<{ operation: string; clientMutationId: string }> = [];
     const plan = [
       ...reserved.map((entry) => ({ entry, viaQuery: true })),

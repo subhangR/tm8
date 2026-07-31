@@ -178,3 +178,98 @@
   width: 1px;
   background: var(--pn-line);
 }
+
+/* --- BootLoader — the centred BOOT wait state (kit/BootLoader.tsx) --------
+   Scoped to boot on purpose: panels use geometry-true skeletons and never
+   this. See the component's header for why the two states differ.
+
+   The mark is a nib tracing a ring — hairline strokes on the warm ramp, one
+   brass arc, no glow. Motion follows the token note (fast, mechanical, no
+   bounce): a linear sweep carrying an eased draw/retract. */
+@keyframes kitBootSweep {
+  to { transform: rotate(360deg); }
+}
+
+/* r=21 → circumference ≈ 131.9. The dash figures below are that length. */
+@keyframes kitBootDraw {
+  0%   { stroke-dasharray: 3 129; stroke-dashoffset: 0; }
+  50%  { stroke-dasharray: 62 70; stroke-dashoffset: -30; }
+  100% { stroke-dasharray: 3 129; stroke-dashoffset: -131; }
+}
+
+/* Boot resolves in well under a second on a warm node. Holding the mark back
+   briefly means a fast boot shows nothing at all instead of a spinner that
+   flashes and vanishes — the flicker is worse than the wait. */
+@keyframes kitBootEnter {
+  to { opacity: 1; }
+}
+
+.cv2-root .kit-boot {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-10) var(--pn-space-6);
+  opacity: 0;
+  animation: kitBootEnter var(--pn-dur-slow) var(--pn-ease-out) 180ms forwards;
+}
+
+.cv2-root .kit-boot__mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cv2-root .kit-boot__ring {
+  display: block;
+  transform-origin: 50% 50%;
+  animation: kitBootSweep 2s linear infinite;
+}
+
+.cv2-root .kit-boot__track,
+.cv2-root .kit-boot__arc {
+  fill: none;
+  stroke-width: 1.25;
+}
+
+.cv2-root .kit-boot__track {
+  stroke: var(--pn-line-2);
+}
+
+.cv2-root .kit-boot__arc {
+  stroke: var(--pn-brand);
+  stroke-linecap: round;
+  animation: kitBootDraw 1.6s var(--pn-ease-standard) infinite;
+}
+
+.cv2-root .kit-boot__label {
+  font-family: var(--pn-mono);
+  font-weight: 600;
+  font-size: var(--pn-fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .kit-boot__detail {
+  max-width: 34ch;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-4);
+  text-align: center;
+}
+
+/* Reduced motion: the ring stops entirely. A slow, low-amplitude fade on the
+   arc alone is the activity signal — enough to read as "working", nothing
+   that sweeps or redraws. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .kit-boot { opacity: 1; animation: none; }
+  .cv2-root .kit-boot__ring { animation: none; }
+  .cv2-root .kit-boot__arc {
+    stroke-dasharray: 62 70;
+    animation: pnPulse 2.4s var(--pn-ease-standard) infinite;
+  }
+}

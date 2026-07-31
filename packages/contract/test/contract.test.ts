@@ -200,6 +200,52 @@ describe('DTO schemas', () => {
     expect(MessageViewSchema.safeParse(msg).success).toBe(true);
   });
 
+  it('preserves the optional message redaction timestamp without breaking legacy views', () => {
+    const baseMessage = {
+      ...taskSummary,
+      id: 'ent_msg_redaction',
+      kind: 'message' as const,
+      state: {
+        kind: 'message' as const,
+        anchorId: 'ent_task_1',
+        rootMessageId: null,
+        author: actor,
+        messageBatchId: null,
+      },
+      content: { kind: 'message' as const, body: '', mentions: [], attachments: [] },
+      replyCount: 0,
+    };
+
+    const legacy = MessageViewSchema.safeParse(baseMessage);
+    expect(legacy.success).toBe(true);
+    if (legacy.success && legacy.data.state.kind === 'message') {
+      expect(legacy.data.state).not.toHaveProperty('redactedAt');
+    }
+
+    const explicitNull = MessageViewSchema.safeParse({
+      ...baseMessage,
+      state: { ...baseMessage.state, redactedAt: null },
+    });
+    expect(explicitNull.success).toBe(true);
+    if (explicitNull.success && explicitNull.data.state.kind === 'message') {
+      expect(explicitNull.data.state.redactedAt).toBeNull();
+    }
+
+    const timestamp = '2026-07-30T03:45:00.000Z';
+    const redacted = MessageViewSchema.safeParse({
+      ...baseMessage,
+      state: { ...baseMessage.state, redactedAt: timestamp },
+    });
+    expect(redacted.success).toBe(true);
+    if (redacted.success && redacted.data.state.kind === 'message') {
+      expect(redacted.data.state.redactedAt).toBe(timestamp);
+    }
+    expect(MessageViewSchema.safeParse({
+      ...baseMessage,
+      state: { ...baseMessage.state, redactedAt: 42 },
+    }).success).toBe(false);
+  });
+
   it('validates WorkspaceEvent unions with the AM-2 §3 envelope + clientMutationId threading (DEV-9)', () => {
     const envelope = { spaceId: 'space_1', seq: 41, occurredAt: '2026-07-25T12:00:00.000Z', schemaVersion: 1 };
     const ev: WorkspaceEvent = { ...envelope, type: 'entity.upsert', entity: taskSummary, clientMutationId: 'cmid-1' };
@@ -247,6 +293,12 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       mode: 'worker',
     };
     expect(ExecutionSpawnInputSchema.safeParse(ok).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, parentSessionId: '55555555-5555-4555-8555-555555555555',
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, parentSessionId: 'not-a-session-id',
+    }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, mode: 'boss' }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: ok.spaceId }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({

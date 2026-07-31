@@ -24,9 +24,12 @@
  */
 import {
   CollabError,
+  FILE_MAX_SIZE_BYTES_DEFAULT,
   WORKSPACE_EVENT_SCHEMA_VERSION,
   type ActivityItem,
   type ActorSummary,
+  type AttentionRequest,
+  type AttentionRequestPage,
   type CollectionQuery,
   type CollectionResult,
   type CommandContext,
@@ -49,6 +52,8 @@ import {
   type ExecutionSpawnInput,
   type ExecutionTerminateInput,
   type FeedItem,
+  type FileUploadGrant,
+  type FileUploadInitInput,
   type GraphQuery,
   type GraphResult,
   type HandoffView,
@@ -67,6 +72,7 @@ import {
   type ProjectResource,
   type ReactionInput,
   type SpaceId,
+  type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
   type WorkInput,
@@ -165,6 +171,28 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         kind: 'interaction_profile', status: state.status, templateKey: 'fixture-template',
         templateVersion: 1, resolvedHash: state.activeHash, generatedByTeamMemberId: null,
       };
+    case 'memory':
+      return {
+        kind: 'memory', statement: s.excerpt ?? s.title, mechanism: state.mechanism,
+        subjectScope: state.subjectScope, doesNotEstablish: state.doesNotEstablish,
+        measuredAt: state.measuredAt,
+      };
+    case 'artifact':
+      // Manifest facts are publish-time server values; the fixture supplies a
+      // minimal coherent bundle so the strict content shape is satisfied.
+      return {
+        kind: 'artifact', description: s.excerpt ?? null,
+        currentRevisionNumber: state.revisionNumber, entrypoint: 'index.html',
+        manifestSha256: 'f'.repeat(64), fileCount: 1, totalSizeBytes: 1024,
+      };
+    case 'worktree':
+      // Path is server-computed in the real system; the fixture derives a
+      // plausible one from the branch so the strict content shape is satisfied.
+      return {
+        kind: 'worktree', projectId: state.projectId, path: `/data/worktrees/${state.branch}`,
+        branch: state.branch, baseRef: state.baseRef, baseCommitOid: state.baseCommitOid,
+        status: state.status, statusChangedAt: null,
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };
@@ -186,6 +214,7 @@ export function createFixtureSeam(): FixtureSeam {
   const openSpaces = new Set<SpaceId>();
   const seqBySpace = new Map<SpaceId, number>();
   const readMarks = new Map<EntityId, string>();
+  const uploadSlots = new Map<string, { input: FileUploadInitInput; grant: FileUploadGrant; uploaded: boolean }>();
 
   const eventSubs = new Set<(e: DurableWorkspaceEvent) => void>();
   const connectionSubs = new Set<(s: ConnectionState) => void>();
@@ -383,6 +412,11 @@ export function createFixtureSeam(): FixtureSeam {
         };
       case 'channel':
         return { kind: 'channel', topic: (c.topic as string) ?? '', unreadCount: 0, workingAgentCount: 0 };
+      // A freshly created voice room is EMPTY. `participantCount` is the whole
+      // state arm — there is no topic and no unread axis to seed. Nothing here
+      // reads the create input, because the content arm carries no field.
+      case 'voice_channel':
+        return { kind: 'voice_channel', participantCount: 0 };
       case 'doc':
         return { kind: 'doc', format: (c.format as 'markdown') ?? 'markdown', childCount: 0 };
       case 'team_member':
@@ -516,6 +550,27 @@ export function createFixtureSeam(): FixtureSeam {
         defaultInteractionProfileId: 'ip-house-style',
         settingsRevision: 1,
       });
+    },
+    /**
+     * Counted from the fixture dataset and the fixture's OWN read marks, so
+     * the demo rail behaves like the real one: opening a row clears its unseen
+     * mark here too, rather than showing a frozen number that never responds.
+     */
+    async counts(spaceId): Promise<SpaceKindCounts> {
+      if (spaceId !== FIXTURE_SPACE_ID) throw new CollabError('not_found', `space ${spaceId} not found`);
+      const counts: SpaceKindCounts = {};
+      for (const summary of summaries.values()) {
+        if (summary.deletedAt) continue;
+        const key = summary.kind as keyof SpaceKindCounts;
+        const row = counts[key] ?? { total: 0, unseen: 0 };
+        const mark = readMarks.get(summary.id);
+        // Same predicate as the server RPC (063): never opened, or changed
+        // since it was last opened.
+        if (!mark || summary.activityAt > mark) row.unseen += 1;
+        row.total += 1;
+        counts[key] = row;
+      }
+      return counts;
     },
     /** C-4: the dataset ships no menu row — resolve null, UI uses its default. */
     async menu(_spaceId): Promise<MenuConfig | null> {
@@ -672,6 +727,59 @@ export function createFixtureSeam(): FixtureSeam {
       // The dataset carries no notification rows: the inbox is honestly empty.
       return clone(pageOf<NotificationItem>([], opts));
     },
+    /**
+     * The fixture stores the AGGREGATE (`badges.attention`), never individual
+     * requests, because that is the only shape the server hands the UI on a
+     * summary. So the per-request rows here are SYNTHESIZED to reproduce their
+     * own aggregate exactly — count, sum, and max all round-trip. Individual
+     * ids and timestamps are fixture inventions and mean nothing.
+     */
+    async attentionRequests(input): Promise<AttentionRequestPage> {
+      const rows: AttentionRequest[] = [];
+      for (const s of summaries.values()) {
+        if (s.deletedAt !== null) continue;
+        if (s.spaceId !== input.spaceId) continue;
+        if (input.entityId && s.id !== input.entityId) continue;
+        const agg = s.badges.attention;
+        if (!agg || agg.pendingCount <= 0) continue;
+
+        // Spread totalPoints across pendingCount rows, with the largest row
+        // pinned to maxPoints so the panel's max matches the server's.
+        const rest = Math.max(0, agg.totalPoints - agg.maxPoints);
+        const others = Math.max(0, agg.pendingCount - 1);
+        const each = others > 0 ? Math.max(1, Math.round(rest / others)) : 0;
+        for (let i = 0; i < agg.pendingCount; i += 1) {
+          const first = i === 0;
+          rows.push({
+            id: `att-${s.id}-${i}`,
+            spaceId: s.spaceId,
+            entityId: s.id,
+            reason: first ? agg.latestReason : `${agg.latestReason} (${i + 1})`,
+            points: first ? agg.maxPoints : Math.min(each, 100),
+            status: 'open',
+            version: 1,
+            requestedBy: s.createdBy,
+            acknowledgedBy: null,
+            resolvedBy: null,
+            resolutionNote: null,
+            createdAt: agg.oldestRequestedAt,
+            updatedAt: agg.oldestRequestedAt,
+            acknowledgedAt: null,
+            resolvedAt: null,
+          });
+        }
+      }
+      // Only 'open' rows exist above, so any other status filter is empty —
+      // truthfully, since the fixture cannot represent an acknowledged request.
+      const filtered = rows
+        .filter((r) => (input.status ? r.status === input.status : true))
+        .filter((r) => (input.minPoints ? r.points >= input.minPoints : true))
+        // The server's order, mirrored: points desc, createdAt asc, id asc.
+        .sort((a, b) => b.points - a.points
+          || a.createdAt.localeCompare(b.createdAt)
+          || a.id.localeCompare(b.id));
+      return clone(pageOf(filtered, { limit: input.limit, cursor: input.cursor }));
+    },
     async feed(id, opts?: FeedOpts): Promise<EntityFeedPage> {
       const anchor = requireSummary(id);
       const items: FeedItem[] = [...summaries.values()]
@@ -712,6 +820,63 @@ export function createFixtureSeam(): FixtureSeam {
         message: toMessageView(s),
         deliveries: deliveriesByMessage.get(messageId) ?? [],
       });
+    },
+
+    files: {
+      async uploadInit(input) {
+        if (input.sizeBytes > FILE_MAX_SIZE_BYTES_DEFAULT) {
+          throw new CollabError('payload_too_large', `${input.name} exceeds the fixture upload limit`);
+        }
+        const uploadId = nextId('upload');
+        const grant: FileUploadGrant = {
+          uploadId,
+          uploadUrl: `/v2/files/uploads/${encodeURIComponent(uploadId)}/content`,
+          token: `fixture-grant-${uploadId}`,
+          expiresAt: new Date(FIXTURE_BASE_MS + 60 * 60 * 1000).toISOString(),
+          maxSizeBytes: FILE_MAX_SIZE_BYTES_DEFAULT,
+        };
+        uploadSlots.set(uploadId, { input: clone(input), grant, uploaded: false });
+        return clone(grant);
+      },
+      async putBytes(grant, bytes) {
+        const slot = uploadSlots.get(grant.uploadId);
+        if (slot === undefined) throw new CollabError('not_found', `upload ${grant.uploadId} not found`);
+        if (!(bytes instanceof Blob)) throw new CollabError('invalid_input', 'fixture uploads require a Blob body');
+        if (bytes.size !== slot.input.sizeBytes) {
+          throw new CollabError('invalid_input', `uploaded size does not match ${slot.input.sizeBytes}`);
+        }
+        slot.uploaded = true;
+      },
+      async complete(uploadId, input) {
+        const slot = uploadSlots.get(uploadId);
+        if (slot === undefined) throw new CollabError('not_found', `upload ${uploadId} not found`);
+        if (!slot.uploaded) throw new CollabError('conflict', `upload ${uploadId} has no bytes`);
+        for (const target of input.targets ?? []) requireSummary(target);
+        const file = insertSummary({
+          id: nextId('file'),
+          kind: 'file',
+          title: slot.input.name,
+          spaceId: slot.input.spaceId,
+          state: {
+            kind: 'file',
+            name: slot.input.name,
+            mimeType: slot.input.mime,
+            sizeBytes: slot.input.sizeBytes,
+          },
+        });
+        extras.set(file.id, {
+          content: { kind: 'file' },
+          connections: clone(NO_CONNECTIONS),
+          capabilities: { ...CAPS_FULL },
+        });
+        uploadSlots.delete(uploadId);
+        emit(file.spaceId, { type: 'entity.upsert', entity: clone(file) }, input);
+        return commandResult(file);
+      },
+      async abort(uploadId) {
+        if (!uploadSlots.delete(uploadId)) throw new CollabError('not_found', `upload ${uploadId} not found`);
+        return { patches: [] };
+      },
     },
 
     commands: {
@@ -770,6 +935,17 @@ export function createFixtureSeam(): FixtureSeam {
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      async resolveAttention(id, input) {
+        const s = requireSummary(id);
+        const affectedCount = s.badges.attention?.pendingCount ?? 0;
+        if (affectedCount > 0) {
+          const { attention: _attention, ...badges } = s.badges;
+          s.badges = badges;
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        }
+        return { request: null, entity: clone(s), affectedCount };
       },
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);
@@ -925,6 +1101,12 @@ export function createFixtureSeam(): FixtureSeam {
       async upsertReadMark(anchorId, lastReadAt) {
         requireSummary(anchorId);
         readMarks.set(anchorId, lastReadAt);
+      },
+      async previewArtifact(id: string) {
+        requireSummary(id);
+        // The fixture has no preview listener and no bundle bytes — a fake
+        // URL here would render a broken iframe that reads as a product bug.
+        throw new CollabError('not_implemented', 'fixture data cannot execute artifact previews');
       },
       async spawn(input: ExecutionSpawnInput) {
         requireSummary(input.teamMemberId);

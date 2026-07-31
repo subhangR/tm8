@@ -50,11 +50,14 @@ import { SESSION_COMMANDS } from './session.js';
 import { INTERACTION_PROFILE_COMMANDS } from './interaction-profile.js';
 import { PROFILE_DEFAULT_COMMANDS } from './teammate.js';
 import { ENTITY_COMMANDS } from './entity.js';
+import { ATTENTION_COMMANDS } from './attention.js';
 import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
 import { GRAPH_COMMANDS } from './graph.js';
 import { UNDO_COMMANDS } from './undo.js';
 import { SERVER_COMMANDS } from './server.js';
+import { ARTIFACT_COMMANDS } from './artifact.js';
+import { VOICE_COMMANDS } from './voice.js';
 
 /**
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
@@ -103,10 +106,13 @@ export const COMMANDS: CommandModule[] = [
   ...INTERACTION_PROFILE_COMMANDS,
   ...PROFILE_DEFAULT_COMMANDS,
   ...ENTITY_COMMANDS,
+  ...ATTENTION_COMMANDS,
   ...TASK_COMMANDS,
   ...TRACKING_COMMANDS,
   ...GRAPH_COMMANDS,
   ...UNDO_COMMANDS,
+  ...ARTIFACT_COMMANDS,
+  ...VOICE_COMMANDS,
 ];
 
 const REGISTERED = new Map<string, CommandModule>(COMMANDS.map((c) => [c.path.join(' '), c]));

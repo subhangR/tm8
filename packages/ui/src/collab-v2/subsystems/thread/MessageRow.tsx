@@ -9,9 +9,10 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Avatar, IconBtn } from '../../kit';
-import { ChipById, Tombstone } from '../../entity';
+import { Tombstone } from '../../entity';
 import { isTombstoned, relTime } from '../../registry';
-import type { ActorSummary, EntityId, Mention, MessageView } from '../../types/contract';
+import type { ActorSummary, EntityId, FileAttachment, Mention, MessageView } from '../../types/contract';
+import { AttachmentGallery } from './AttachmentPreview';
 import { MessageBody } from './MessageBody';
 import { draftFromMarkup, markupFromBody } from './body';
 import type { MessageNode } from './types';
@@ -131,15 +132,7 @@ export function MessageRow({
           <MessageBody body={message.content.body} mentions={message.content.mentions} compact={compact} />
         )}
 
-        {message.content.attachments.length > 0 && (
-          <div className="cv2-thread__attachments" aria-label="Attachments">
-            {message.content.attachments.map((a) => (
-              <span key={a.fileEntityId} className="cv2-thread__attachment" title={`${a.name} · ${a.mime}`}>
-                <ChipById entityId={a.fileEntityId} />
-              </span>
-            ))}
-          </div>
-        )}
+        <AttachmentGallery attachments={message.content.attachments} />
 
         <footer className="cv2-thread__foot">
           {reactionsSlot ? reactionsSlot(message) : <ReactionsReadout message={message} />}
@@ -168,10 +161,11 @@ export function MessageRow({
 
 /** The optimistic row: what you typed, dimmed, until the command lands. */
 export function PendingRow({
-  body, mentions, author, failed, onRetry, onDiscard,
+  body, mentions, attachments, author, failed, onRetry, onDiscard,
 }: {
   body: string;
   mentions: readonly Mention[];
+  attachments: readonly FileAttachment[];
   author?: ActorSummary;
   failed?: { code: string; message: string };
   onRetry: () => void;
@@ -190,6 +184,7 @@ export function PendingRow({
           <span className="cv2-thread__time">{failed ? 'failed' : 'sending…'}</span>
         </header>
         <MessageBody body={body} mentions={mentions} compact />
+        <AttachmentGallery attachments={attachments} />
         {failed && (
           <div className="cv2-thread__failed" role="alert">
             <span className="t-code">{failed.code}</span>

@@ -1,7 +1,7 @@
 /**
  * Test-mode command input normalization.
  *
- * `TM8_IDEMPOTENCY_ENABLED=false` deliberately makes each HTTP command a new
+ * Idempotency is off by default, deliberately making each HTTP command a new
  * mutation. Supplying a fresh id here keeps every existing strict DTO and RPC
  * signature usable while the database's command ledger is disabled for the
  * same server pool. It is intentionally applied before zod validation: some

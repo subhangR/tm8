@@ -10,6 +10,7 @@ const SPACE = '11111111-1111-4111-8111-111111111111';
 const TEAMMATE = '22222222-2222-4222-8222-222222222222';
 const PROJECT = '33333333-3333-4333-8333-333333333333';
 const SESSION = '44444444-4444-4444-8444-444444444444';
+const PARENT_SESSION = '55555555-5555-4555-8555-555555555555';
 
 class SpawnDb implements Db {
   readonly rpcCalls: Array<{ fn: string; args: readonly unknown[] }> = [];
@@ -105,6 +106,7 @@ describe('server spawn integration with a stub PTY', () => {
       {
         spaceId: SPACE,
         teamMemberId: TEAMMATE,
+        parentSessionId: PARENT_SESSION,
         projectId: PROJECT,
         workdir: { mode: 'project' },
         mode: 'worker',
@@ -119,7 +121,9 @@ describe('server spawn integration with a stub PTY', () => {
     expect(spawnIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: SESSION,
       cwd: process.cwd(),
-      command: expect.stringMatching(/^codex --model 'gpt-5\.6-sol' -c /),
+      command: expect.stringMatching(
+        /^codex --model 'gpt-5\.6-sol' --ask-for-approval never --sandbox workspace-write --no-alt-screen -c /,
+      ),
       env: expect.objectContaining({
         TM8_MODEL: 'gpt-5.6-sol',
         TM8_AGENT_TOOL: 'codex',
@@ -128,5 +132,7 @@ describe('server spawn integration with a stub PTY', () => {
     }));
     expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args)
       .toEqual(expect.arrayContaining([PROJECT, 'project', 'gpt-5.6-sol', 'codex']));
+    expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args.at(-1))
+      .toBe(PARENT_SESSION);
   });
 });

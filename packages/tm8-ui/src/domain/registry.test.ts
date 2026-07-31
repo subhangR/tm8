@@ -44,9 +44,14 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 15 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 16 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
-    expect(CORE_KINDS.length).toBe(15);
+    // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
+    // then `memory`, `worktree` and `artifact` landed the same day → 19.
+    // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
+    // .options.length` here would make the assertion tautological and the row
+    // below could silently drift from the contract again.
+    expect(CORE_KINDS.length).toBe(19);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -80,6 +85,7 @@ describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () =
     commit: 'commits',
     project: 'projects',
     interaction_profile: 'interaction-profiles',
+    artifact: 'artifacts',
     channel: null,
     message: null,
   };
@@ -612,8 +618,8 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     }
   });
 
-  it('ships contentSurfaces on work_session only, and Phase 1 is terminal-only (D12)', () => {
-    expect(getKind('work_session').panel.contentSurfaces).toEqual(['terminal']);
+  it('ships Terminal and Chat on work_session only', () => {
+    expect(getKind('work_session').panel.contentSurfaces).toEqual(['terminal', 'chat']);
     for (const row of allKinds()) {
       if (row.kind === 'work_session') continue;
       expect(row.panel.contentSurfaces).toBeUndefined();

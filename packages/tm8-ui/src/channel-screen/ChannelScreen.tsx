@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
-import type { Cursor, EntityFeedPage, EntityId, MessageView } from '@tm8/contract';
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { Cursor, EntityFeedPage, EntityId, FeedItem, MessageView } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
 import { DisabledAction, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import { HollowInline } from '../panels/honesty/HollowValue';
-import { Composer } from './Composer';
+import { Composer, type ComposerProps } from './Composer';
+import type { ComposerMentionOption } from './Composer';
+import type { ChatAttachmentUploadTask } from './chat-attachments';
 import { FeedRowGroup } from './FeedRow';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import './channel-screen.css';
@@ -64,6 +66,16 @@ export interface ChannelScreenProps {
   sessionExited?: boolean;
   /** Client-local divider: the first item that arrived after this surface opened. */
   newSinceItemId?: string | null;
+  /** Controlled production draft; omitted keeps the standalone local fallback. */
+  draft?: string;
+  onDraftChange?: (body: string) => void;
+  /** Controlled reply target; omitted keeps the standalone local fallback. */
+  replyState?: { value: MessageView | null; onChange: (message: MessageView | null) => void };
+  uncertainSubmission?: ComposerProps['uncertainSubmission'];
+  onStartAttachmentUpload?: (file: File) => ChatAttachmentUploadTask;
+  mentionOptions?: readonly ComposerMentionOption[];
+  /** Workspace entities (tasks, docs, people) the attach picker offers. */
+  attachEntityOptions?: readonly ComposerMentionOption[];
 
   /** The seam command. Absent ⇒ Send and Send-again refuse with their reason. */
   onPost?: (input: ChannelPostInput) => Promise<void> | void;
@@ -91,14 +103,111 @@ export function ChannelScreen({
   connection,
   sessionExited = false,
   newSinceItemId = null,
+  draft,
+  onDraftChange,
+  replyState,
+  uncertainSubmission,
+  onStartAttachmentUpload,
+  mentionOptions,
+  attachEntityOptions,
   onPost,
   onLoadEarlier,
   onOpenEntity,
   onSwitchToTerminal,
 }: ChannelScreenProps) {
-  const [replyTo, setReplyTo] = useState<MessageView | null>(null);
+  const feedElement = useRef<HTMLDivElement>(null);
+  const scrollSnapshot = useRef<{
+    first: string | null;
+    last: string | null;
+    count: number;
+    height: number;
+    top: number;
+    nearNewest: boolean;
+  } | null>(null);
+  const [newItemCount, setNewItemCount] = useState(0);
+  const [localReplyTo, setLocalReplyTo] = useState<MessageView | null>(null);
+  const replyTo = replyState ? replyState.value : localReplyTo;
+  const setReplyTo = replyState ? replyState.onChange : setLocalReplyTo;
 
   const groups = useMemo(() => groupByOperation(page?.items ?? []), [page]);
+  const plan = useMemo(() => planRows(groups, newSinceItemId), [groups, newSinceItemId]);
+  const loadedMessages = useMemo(() => new Map(
+    (page?.items ?? [])
+      .filter((item): item is Extract<FeedItem, { itemKind: 'message' }> => item.itemKind === 'message')
+      .map((item) => [item.message.id, item.message] as const),
+  ), [page]);
+  const itemIds = useMemo(() => (page?.items ?? []).map((item) => item.itemId), [page]);
+  const virtualized = itemIds.length >= 100;
+
+  const rememberScroll = useCallback(() => {
+    const element = feedElement.current;
+    if (!element) return;
+    scrollSnapshot.current = {
+      first: itemIds[0] ?? null,
+      last: itemIds[itemIds.length - 1] ?? null,
+      count: itemIds.length,
+      height: element.scrollHeight,
+      top: element.scrollTop,
+      nearNewest: element.scrollHeight - element.scrollTop - element.clientHeight <= 48,
+    };
+  }, [itemIds]);
+
+  useLayoutEffect(() => {
+    const element = feedElement.current;
+    if (!element) return;
+    const previous = scrollSnapshot.current;
+    const first = itemIds[0] ?? null;
+    const last = itemIds[itemIds.length - 1] ?? null;
+    if ((previous?.count ?? 0) === 0 && itemIds.length > 0) {
+      // A chat OPENS at the newest message. The feed is chronological, so the
+      // newest is at the bottom — the first painted page lands there, and only
+      // user scrolling moves the viewport away from it.
+      element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+    } else if (previous && itemIds.length > previous.count) {
+      if (previous.last === last && previous.first !== first) {
+        element.scrollTop = previous.top + Math.max(0, element.scrollHeight - previous.height);
+      } else if (previous.first === first && previous.last !== last) {
+        const added = itemIds.length - previous.count;
+        if (previous.nearNewest) {
+          element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+          setNewItemCount(0);
+        } else {
+          setNewItemCount((count) => count + added);
+        }
+      }
+    }
+    rememberScroll();
+  }, [itemIds, rememberScroll]);
+
+  useLayoutEffect(() => {
+    const list = feedElement.current?.querySelector<HTMLElement>('.chs-list');
+    if (!virtualized || !list || typeof ResizeObserver === 'undefined') return;
+    let measured = 0;
+    let total = 0;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        if (height > 0) {
+          total += height;
+          measured += 1;
+        }
+      }
+      if (measured > 0) list.style.setProperty('--chs-measured-row-size', `${Math.round(total / measured)}px`);
+    });
+    for (const row of list.querySelectorAll<HTMLElement>('.chs-row')) observer.observe(row);
+    return () => observer.disconnect();
+  }, [itemIds, virtualized]);
+
+  const focusMessage = useCallback((id: EntityId) => {
+    const rows = feedElement.current?.querySelectorAll<HTMLElement>('[data-feed-message-id]') ?? [];
+    const row = [...rows].find((candidate) => candidate.dataset.feedMessageId === id);
+    if (row) {
+      row.scrollIntoView?.({ block: 'center' });
+      row.focus({ preventScroll: true });
+      return;
+    }
+    onOpenEntity?.(id);
+  }, [onOpenEntity]);
 
   /*
    * S12 / S13 — a refusal REPLACES everything, composer included.
@@ -128,7 +237,29 @@ export function ChannelScreen({
 
   return (
     <section className="chs-root" data-testid="chs-root">
-      <div className="chs-feed">
+      <div
+        ref={feedElement}
+        className="chs-feed"
+        role="region"
+        aria-label="Chat history"
+        onScroll={rememberScroll}
+      >
+        <div className="chs-feed__spacer" aria-hidden />
+        {newItemCount > 0 ? (
+          <button
+            type="button"
+            className="chs-new-items"
+            aria-live="polite"
+            onClick={() => {
+              const element = feedElement.current;
+              if (element) element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+              setNewItemCount(0);
+              rememberScroll();
+            }}
+          >
+            {`${newItemCount} new ${newItemCount === 1 ? 'item' : 'items'} · jump to newest`}
+          </button>
+        ) : null}
         {refreshedFromNewest ? (
           <p className="chs-notice" data-testid="chs-refreshed">
             history refreshed from newest — the cursor expired · your draft is untouched
@@ -163,22 +294,32 @@ export function ChannelScreen({
         ) : page.items.length === 0 ? (
           <EmptyFeed onSwitchToTerminal={onSwitchToTerminal} />
         ) : (
-          <ul className="chs-list" aria-label="Messages and activity">
-            {groups.map((group) => {
-              const first = group.kind === 'operation' ? group.items[0] : group.item;
-              return (
+          <ul
+            className="chs-list"
+            aria-label="Messages and activity"
+            aria-busy={loadingEarlier}
+            data-virtualized={virtualized ? 'true' : 'false'}
+          >
+            {plan.map((row) => (
+              <Fragment key={row.firstId}>
+                {row.dayLabel ? (
+                  <li className="chs-day" data-testid="chs-day">
+                    <span className="chs-day__label">{row.dayLabel}</span>
+                  </li>
+                ) : null}
                 <FeedRowGroupWithMark
-                  key={first.itemId}
-                  mark={newSinceItemId === first.itemId}
-                  group={group}
+                  mark={newSinceItemId === row.firstId}
+                  group={row.group}
+                  clustered={row.clustered}
                   anchorId={anchorId}
-                  anchorNoun={anchorNoun}
                   onPost={onPost}
                   onOpenEntity={onOpenEntity}
                   onReply={setReplyTo}
+                  onFocusMessage={focusMessage}
+                  loadedMessages={loadedMessages}
                 />
-              );
-            })}
+              </Fragment>
+            ))}
           </ul>
         )}
 
@@ -193,27 +334,121 @@ export function ChannelScreen({
         sessionExited={sessionExited}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
+        draft={draft}
+        onDraftChange={onDraftChange}
+        uncertainSubmission={uncertainSubmission}
+        onStartAttachmentUpload={onStartAttachmentUpload}
+        mentionOptions={mentionOptions}
+        attachEntityOptions={attachEntityOptions}
       />
+      <p className="chs-visually-hidden" role="status" aria-live="polite">
+        {connection?.phase === 'offline'
+          ? 'Chat is offline. Drafts remain available, but messages cannot be sent.'
+          : connection?.phase === 'polling'
+            ? 'Chat is reconnecting. Cached history remains available.'
+            : connection?.phase === 'connecting'
+              ? 'Chat is connecting.'
+              : 'Chat is connected.'}
+      </p>
     </section>
   );
+}
+
+/**
+ * The chat's render plan — where the presentation-only chrome is decided.
+ *
+ * A DAY DIVIDER goes before the first row of each calendar day. A row is
+ * CLUSTERED (no repeated byline) when it continues the author run directly
+ * above it: same author, same day, within seven minutes, and carrying no
+ * facts of its own that live in the byline — a reply target, an edit, a
+ * pending state or any delivery facet all break the run, because collapsing
+ * a row would otherwise hide the place those facts are shown.
+ */
+interface RowPlan {
+  group: ReturnType<typeof groupByOperation>[number];
+  clustered: boolean;
+  dayLabel: string | null;
+  firstId: string;
+}
+
+const CLUSTER_WINDOW_MS = 7 * 60 * 1000;
+
+function planRows(
+  groups: ReturnType<typeof groupByOperation>,
+  newSinceItemId: string | null,
+): RowPlan[] {
+  const out: RowPlan[] = [];
+  let previous: FeedItem | null = null;
+  let previousDay: string | null = null;
+  for (const group of groups) {
+    const first = group.kind === 'operation' ? group.items[0] : group.item;
+    const day = dayKey(first.createdAt);
+    const dayLabel = day !== null && day !== previousDay ? formatDay(first.createdAt) : null;
+    const clustered = !dayLabel
+      && newSinceItemId !== first.itemId
+      && group.kind === 'single'
+      && continuesRun(previous, group.item);
+    out.push({ group, clustered, dayLabel, firstId: first.itemId });
+    previousDay = day ?? previousDay;
+    previous = group.kind === 'operation' ? group.items[group.items.length - 1] : group.item;
+  }
+  return out;
+}
+
+function continuesRun(previous: FeedItem | null, current: FeedItem): boolean {
+  if (!previous || previous.itemKind !== 'message' || current.itemKind !== 'message') return false;
+  const a = previous.message;
+  const b = current.message;
+  if (a.state.redactedAt || b.state.redactedAt) return false;
+  if (b.state.rootMessageId || b.state.editedAt || b.pending) return false;
+  if (current.delivery.length > 0) return false;
+  const authorA = a.state.author?.id ?? a.createdBy?.id ?? null;
+  const authorB = b.state.author?.id ?? b.createdBy?.id ?? null;
+  if (!authorA || authorA !== authorB) return false;
+  const delta = new Date(current.createdAt).getTime() - new Date(previous.createdAt).getTime();
+  return Number.isFinite(delta) && delta >= 0 && delta <= CLUSTER_WINDOW_MS;
+}
+
+function dayKey(iso: string): string | null {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d.toDateString();
+}
+
+function formatDay(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
 }
 
 function FeedRowGroupWithMark({
   mark,
   group,
+  clustered,
   anchorId,
-  anchorNoun,
   onPost,
   onOpenEntity,
   onReply,
+  onFocusMessage,
+  loadedMessages,
 }: {
   mark: boolean;
   group: ReturnType<typeof groupByOperation>[number];
+  clustered: boolean;
   anchorId: EntityId;
-  anchorNoun: string;
   onPost?: (input: ChannelPostInput) => Promise<void> | void;
   onOpenEntity?: (id: EntityId) => void;
   onReply: (m: MessageView) => void;
+  onFocusMessage: (id: EntityId) => void;
+  loadedMessages: ReadonlyMap<EntityId, MessageView>;
 }) {
   return (
     <>
@@ -229,10 +464,12 @@ function FeedRowGroupWithMark({
       <FeedRowGroup
         group={group}
         anchorId={anchorId}
-        anchorNoun={anchorNoun}
+        clustered={clustered}
         handlers={{
           onOpenEntity,
           onReply,
+          onFocusMessage,
+          loadedMessages,
           onPost: onPost
             ? (body, parentMessageId) => void onPost({ anchorIds: [anchorId], body, parentMessageId })
             : undefined,

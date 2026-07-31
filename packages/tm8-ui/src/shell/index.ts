@@ -42,7 +42,17 @@ export {
   type WorkspacePanelSide,
 } from './WorkspaceGrid';
 export { Z4Host, type Z4HostProps } from './Z4Host';
-export { MenuRail, ADD_SERVER_DISABLED_REASON, type KindPresenter, type MenuRailProps, type MenuTarget, type RefPresentation, type ServerRailItem } from './MenuRail';
+export {
+  MenuRail,
+  ADD_SERVER_DISABLED_REASON,
+  type KindPresenter,
+  type MenuDynamicGroup,
+  type MenuEntityRow,
+  type MenuRailProps,
+  type MenuTarget,
+  type RefPresentation,
+  type ServerRailItem,
+} from './MenuRail';
 export { SpaceTabBar, ADD_SPACE_DISABLED_REASON, type SpaceTabBarProps } from './SpaceTabBar';
 export { NoticeHost, useNotices, type NoticeHostHandle, type NoticeHostProps } from './NoticeHost';
 export {

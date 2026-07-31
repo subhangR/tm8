@@ -527,6 +527,7 @@ These flows are specified by this LLD but their ops are **absent from the stampe
 | `handoffs.send` + `handoffs.withdraw` commands | §8 share-into-session drop; withdraw control on own handoffs | post-gate fan-out | drop targets + withdraw control disabled-with-reason; the two-facet **state** rendering ships NOW on the seam's `handoffs()` read |
 | `spaces.menu.update` command | §4.4 menu editor | Phase-3 settings screen precondition | menu editor renders read-only with disabled-with-reason save |
 | `spaces.home` read | HomeView (T5-1) | Phase-3 home fan-out precondition | Home collections + “load earlier” capability-gated per D7.1 |
+| `createVoiceToken` command + `onVoiceParticipants` subscription | voice channels: joining a `voice_channel` room, and the rail's live participant roster (`docs/plans/2026-07-31-voice-channels-plan.md` §4.6) | voice fan-out; server half is BUILT and verified (`voice.token.create` is catalogued and implemented; LiveKit webhook → ephemeral `voice.participants.changed` proven against a real SFU) | voice room renders its join control disabled-with-reason; rail rows render with no participant count rather than a fabricated zero |
 
 ---
 

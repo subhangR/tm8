@@ -215,8 +215,10 @@ describe('E-5 — the projection and handler now agree on the supported modes', 
     // direction. The in-tree idiom is `.find(...)`, per
     // `discovery-operations.test.ts:72`.
     const row = DISCOVERY.find((d) => d.operation === 'execution.spawn');
-    expect(row?.syn).toContain('--workdir project|scratch');
-    expect(row?.syn).not.toContain('project|worktree|scratch');
+    // The projection field is `syntax` (the source table's `syn` is internal —
+    // asserting on `syn` returned undefined, a false all-clear).
+    expect(row?.syntax).toContain('--workdir project|scratch');
+    expect(row?.syntax).not.toContain('project|worktree|scratch');
     expect(row?.notes.some((note) => /worktree is not advertised/.test(note))).toBe(true);
   });
 });

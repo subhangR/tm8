@@ -52,6 +52,7 @@ import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entiti
 import { registerW2EntityKindsProfileHandlers } from './handlers/w2/entity-kinds-profiles.js';
 import { registerW2FeedContextHandlers } from './handlers/w2/feed-context.js';
 import { registerW2FileHandlers } from './handlers/w2/files.js';
+import { registerW2ArtifactHandlers } from './handlers/w2/artifacts.js';
 import { registerW2CollectionsGraphUndoHandlers } from './handlers/w2/graph-undo.js';
 import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.js';
 import { registerW2InboxReadMarksHandlers } from './handlers/w2/inbox-read-marks.js';
@@ -63,6 +64,7 @@ import {
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
+import { registerVoiceHandlers } from './handlers/voice.js';
 
 export interface RegisterFacadeHandlersDeps {
   readonly db: Db;
@@ -125,7 +127,11 @@ export function registerFacadeHandlers(
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
+  // Voice reads its LiveKit deployment off the already-resolved config rather
+  // than the environment: one place decides what this node is pointed at.
+  registerVoiceHandlers(registry, facade, deps.config.livekit);
   if (deps.files) registerW2FileHandlers(registry, facade, deps.files);
+  if (deps.files) registerW2ArtifactHandlers(registry, facade, { blobStore: deps.files.blobStore });
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);
 

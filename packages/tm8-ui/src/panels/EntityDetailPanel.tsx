@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type {
   ActivityItem,
   CommandResult,
@@ -6,8 +6,10 @@ import type {
   EntityDetail,
   HandoffView,
   MessageView,
+  WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
+import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef } from '../domain';
 import { getKind } from '../domain';
 import {
@@ -35,14 +37,16 @@ import {
 } from './detail/PanelStates';
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
-import { GenericBody } from './bodies/GenericBody';
+import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
-import { ReaderBody } from './bodies/ReaderBody';
+import { ReaderSurface } from './bodies/ReaderSurface';
+import type { DocCommands } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
 import { ProfileBody } from './bodies/ProfileBody';
 import { GovernedBody } from './bodies/GovernedBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
+import { WorkSessionContent } from './bodies/WorkSessionContent';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -121,6 +125,11 @@ export interface EntityDetailPanelProps {
   streaming?: boolean;
   needsAttention?: boolean;
   attentionDetail?: string;
+  /** Viewer-local presentation state for the two work-session Content panes. */
+  contentSurface?: ContentSurface | null;
+  viewerMemberId?: string | null;
+  chatSurface?: ReactNode;
+  onContentSurfaceChange?: (surface: ContentSurface) => void;
 
   /**
    * THE EXECUTOR FOR EDITS. Absent ⇒ every save affordance on a kind that CAN
@@ -131,8 +140,15 @@ export interface EntityDetailPanelProps {
    * `AuthoringCommands` is a structural subset of `Seam['commands']`, so a
    * host assigns `seam.commands` with NO cast and no adapter — an adapter
    * being precisely where an argument gets dropped (D57.1).
+   *
+   * `patchEntity` rides along as OPTIONAL rather than required because the two
+   * flows are genuinely different commands: `patchTask` writes a task's state
+   * axes, `patchEntity` writes a doc's title and body. `Seam['commands']`
+   * carries both, so every real host assigns it unchanged; a host that wires
+   * only the task half gets a reader panel whose `Edit` is
+   * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: AuthoringCommands | null;
+  commands?: (AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -175,6 +191,21 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
   const [uncontrolledTab, setUncontrolledTab] = useState<PanelTab>('content');
   const tab = activeTab ?? uncontrolledTab;
+
+  /**
+   * USER RULING 2026-07-31 — the [ TERMINAL | CHAT ] switch belongs on the top
+   * row's right edge, not on a row of its own above the canvas. The panel bar
+   * is rendered here and the switch is owned by WorkSessionContent two levels
+   * down, so the bar publishes an empty slot NODE and the body portals into
+   * it. A callback ref into STATE, not a plain ref: the portal target has to be
+   * a rendered value, and a ref mutation would not re-render the body, so the
+   * slot would sit empty until something unrelated happened to update.
+   *
+   * ABOVE EVERY EARLY RETURN, for the reason the save flow below states — hooks
+   * do. Placed next to the archetype check it serves, this was a live React
+   * #310 the moment a permission-lost or detail-less panel rendered first.
+   */
+  const [surfaceSlot, setSurfaceSlot] = useState<HTMLDivElement | null>(null);
   const selectTab = (t: PanelTab) => {
     setUncontrolledTab(t);
     onTabChange?.(t);
@@ -246,7 +277,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    *
    * Keyed on the ARCHETYPE, a registry field: no kind literal (§15.2).
    */
-  const alwaysDark = config.panel.archetype === 'terminal';
+  const isTerminal = config.panel.archetype === 'terminal';
+  const alwaysDark = isTerminal;
 
   return (
     <section
@@ -308,6 +340,13 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         }}
         end={
           <>
+            {isTerminal ? (
+              <div
+                className="pn-panelbar__surface"
+                ref={setSurfaceSlot}
+                data-testid="panel-surface-slot"
+              />
+            ) : null}
             <ActionBar
               config={config}
               ctx={{
@@ -350,23 +389,37 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               at all while the save is clean, so this costs the body no height
               in the ordinary case. */}
           <AuthoringHost save={save}>
-            <PanelBody {...props} detail={detail} tab={tab} save={save} />
+            <PanelBody {...props} detail={detail} tab={tab} save={save} surfaceSlot={surfaceSlot} />
           </AuthoringHost>
         </CatchBoundary>
       )}
 
-      <PanelFooter
-        detail={detail}
-        presenceHollowReason={reasons.presenceHollow}
-        versionHistoryReason={reasons.versionHistory}
-      />
+      {/* USER RULING 2026-07-31 — "terminal all the way, till the component
+          bottom." The footer is the last strip between the canvas and the
+          panel edge, so terminal panels do without it. It stays for every
+          other archetype: the reading it carries (presence · author · version)
+          is honest chrome for a document, and only the terminal has a primary
+          surface whose whole value is the pixels this row was taking. */}
+      {isTerminal ? null : (
+        <PanelFooter
+          detail={detail}
+          presenceHollowReason={reasons.presenceHollow}
+          versionHistoryReason={reasons.versionHistory}
+        />
+      )}
     </section>
   );
 
 }
 
 function PanelBody(
-  props: EntityDetailPanelProps & { detail: EntityDetail; tab: PanelTab; save: TaskSaveHandle },
+  props: EntityDetailPanelProps & {
+    detail: EntityDetail;
+    tab: PanelTab;
+    save: TaskSaveHandle;
+    /** The panel bar's slot node for the terminal/chat switch. Null elsewhere. */
+    surfaceSlot?: HTMLElement | null;
+  },
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
   const config = getKind(detail.kind);
@@ -405,20 +458,40 @@ function PanelBody(
    * registry field, not on kind. Fifteen kinds, six archetypes, one switch.
    */
   if (config.panel.archetype === 'terminal') {
+    const interactionProfile = (
+      detail.content as unknown as {
+        interactionProfile?: WorkSessionInteractionProfileProjection | null;
+      }
+    ).interactionProfile ?? null;
     return (
-      <TerminalBody
-        detail={detail}
-        serverBaseUrl={props.serverBaseUrl}
-        liveness={props.liveness ?? 'unknown'}
-        streaming={props.streaming}
-        needsAttention={props.needsAttention}
-        attentionDetail={props.attentionDetail}
-        handoffs={props.handoffs}
-        shareUnavailableReason={reasons.shareUnavailable}
-        withdrawUnavailableReason={reasons.withdrawUnavailable}
-        livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
-        livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
-        onOpenEntity={onOpenEntity}
+      <WorkSessionContent
+        sessionId={detail.id}
+        viewerMemberId={props.viewerMemberId}
+        profile={interactionProfile}
+        requestedSurface={props.contentSurface}
+        onSurfaceChange={props.onContentSurfaceChange}
+        switchSlot={props.surfaceSlot}
+        terminal={
+          <TerminalBody
+            detail={detail}
+            serverBaseUrl={props.serverBaseUrl}
+            liveness={props.liveness ?? 'unknown'}
+            streaming={props.streaming}
+            needsAttention={props.needsAttention}
+            attentionDetail={props.attentionDetail}
+            handoffs={props.handoffs}
+            shareUnavailableReason={reasons.shareUnavailable}
+            withdrawUnavailableReason={reasons.withdrawUnavailable}
+            livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
+            livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
+            onOpenEntity={onOpenEntity}
+          />
+        }
+        chat={props.chatSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            Chat is enabled for this session, but its feed host is unavailable.
+          </p>
+        )}
       />
     );
   }
@@ -446,12 +519,20 @@ function PanelBody(
     );
   }
   if (config.panel.archetype === 'reader') {
+    /* T5-3 MOUNT: the reader archetype is read AND write. `ReaderSurface`
+       holds the doc save handle (a hook, so it cannot live in this switch) and
+       renders ReaderBody or DocEditor depending on stance. Absent `commands`
+       ⇒ Edit is disabled-with-reason, which is the pre-mount behaviour
+       preserved rather than a new dead control. */
     return (
-      <ReaderBody
+      <ReaderSurface
         detail={detail}
         blocks={config.panel.blocks ?? []}
         historyUnavailableReason={reasons.versionHistory}
         onOpenEntity={onOpenEntity}
+        commands={props.commands ?? null}
+        onSaved={props.onSaved}
+        onReloadDetail={props.onReloadDetail}
       />
     );
   }
@@ -501,6 +582,7 @@ function PanelBody(
       detail={detail}
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
+      commands={props.commands}
     />
   );
 }

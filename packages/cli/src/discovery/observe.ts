@@ -79,34 +79,21 @@ const PROVES_A_HANDLER_RAN: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * ⚠⚠ THE NARROWED RULE ABOVE IS **NOT APPLIED**. IT IS PARKED, DELIBERATELY.
+ * THE NARROWED RULE ABOVE IS **APPLIED** (2026-07-31). It was parked awaiting
+ * a ruling while every transport check was a deferred no-op — under that
+ * precondition the unsound rule was harmless, and changing the availability
+ * projection's contract was not a duo's call. The precondition expired: the
+ * origin-split wave closed S2/S3 (`http/security.ts` now refuses hostile
+ * hosts), which is exactly the trigger the scheduled-inversion pin in
+ * `packages/server/test/w5/agentic/observation-soundness.test.ts` was armed
+ * for. From that point a `forbidden` really can be authored at pipeline
+ * step 2, and continuing to record it as `handled` would manufacture
+ * `available` out of a hostile-host refusal.
  *
- * `observedInvoke` below still ships the ORIGINAL, UNSOUND rule. That is a
- * KNOWN DEFECT, not an oversight, and this comment exists so nobody "fixes"
- * the inconsistency by deleting the analysis above.
- *
- * WHY IT IS PARKED. Applying it is a CHANGE TO THE AVAILABILITY PROJECTION'S
- * CONTRACT, not a defect repair. The rule it replaces is a deliberate premise
- * expressed in SIX places across FOUR files — `availability.ts:26`,
- * `availability.ts:107`, this header, `commands/file.ts:375`,
- * `test/space.test.ts:516` (a test NAMED for it, which drives a 403 `forbidden`
- * specifically), and `test/discovery-availability.test.ts:12,:86`. Four of the
- * six chose `forbidden` as the worked example — the one code measured as
- * decided at pipeline step 2. A duo cannot ratify that between themselves.
- *
- * AND THE FIX WOULD BE INCOMPLETE ANYWAY: `commands/file.ts:378-391` is a
- * SECOND, INDEPENDENT copy of this classification (`observedDownload`) in
- * another duo's module. Applying it here alone leaves two implementations
- * DISAGREEING, which is worse than either consistent state.
- *
- * THE EVIDENCE IS NOT LOST BY PARKING IT: the defect is pinned by Duo F's
- * tester in `packages/server/test/w5/agentic/observation-soundness.test.ts`,
- * which drives a real Server and shows an unmounted operation answering
- * BYTE-IDENTICALLY to a mounted one under overflow and malformed-JSON.
- *
- * TO APPLY: swap the two marked lines in the catch block below, fix
- * `file.ts:378-391` to match under a grant, and re-pin the three sites above.
- * Blocked on a ruling from W5 Advisor 2 (R0/R4).
+ * Applied everywhere the old rule lived, in the same change: this catch
+ * block, the `observedDownload` twin in `commands/file.ts`, and the pinned
+ * expectations in `test/space.test.ts` and
+ * `test/discovery-availability.test.ts`.
  */
 
 /**
@@ -126,11 +113,14 @@ export async function observedInvoke<T = unknown>(
     return data;
   } catch (err) {
     if (err instanceof ApiError) {
-      // ── SHIPPED RULE — KNOWN-UNSOUND, ruling pending. See PROVES_A_HANDLER_RAN. ──
-      into.record(name, err.code === 'not_implemented' ? 'not_implemented' : 'handled');
-      // ── NARROWED RULE — swap the line above for these two when R0/R4 lands: ──
-      // if (err.code === 'not_implemented') into.record(name, 'not_implemented');
-      // else if (PROVES_A_HANDLER_RAN.has(err.code)) into.record(name, 'handled');
+      // ── NARROWED RULE, APPLIED 2026-07-31. The trigger the disposition named
+      // fired: S2/S3 transport checks went live server-side, so a `forbidden`
+      // can now genuinely originate at pipeline step 2 and the old
+      // any-code-means-handled rule would mark unmounted operations available
+      // off a hostile-host refusal. See PROVES_A_HANDLER_RAN and
+      // packages/server/test/w5/agentic/observation-soundness.test.ts. ──
+      if (err.code === 'not_implemented') into.record(name, 'not_implemented');
+      else if (PROVES_A_HANDLER_RAN.has(err.code)) into.record(name, 'handled');
     }
     // A TransportError teaches NOTHING about the operation: the node never
     // answered, so recording anything here would be inventing a capability

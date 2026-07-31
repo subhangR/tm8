@@ -329,6 +329,8 @@ function emptyConfig(defaultProjectId: LaunchProjectOption['projectId'] | null):
     teamMemberId: null,
     agentToolId: null,
     model: null,
+    reasoningEffort: null,
+    accessMode: null,
     mode: 'worker',
     target: defaultLaunchTarget(defaultProjectId),
   };

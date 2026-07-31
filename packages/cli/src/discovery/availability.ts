@@ -145,7 +145,7 @@ export class AvailabilityLedger {
   private advertised: AdvertisedCapabilitySet | null = null;
   /**
    * Bumped on every change. Readers that cache a resolved projection compare
-   * this instead of re-resolving 106 rows on each access — and, crucially, a
+   * this instead of re-resolving 107 rows on each access — and, crucially, a
    * cache keyed on it cannot serve a stale `unknown` after an observation.
    */
   private rev = 0;

@@ -20,6 +20,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
+  AttentionRequestMutationResult,
   CollectionQuery,
   CommandResult,
   EdgeView,
@@ -31,20 +32,42 @@ import type {
   EntitySummary,
   MenuConfig,
   SpaceId,
+  SpaceKindCounts,
   SpaceSummary,
   ProjectResource,
 } from '@tm8/contract';
 import { launchModel } from '@tm8/contract';
 import type { ConnectionState, LivenessSnapshot, Seam, SessionLiveness } from '../data/seam';
-import { browserWebSocketFactory, createFixtureSeam, createRealSeam } from '../data';
+import {
+  browserWebSocketFactory,
+  createFixtureSeam,
+  createRealSeam,
+  type RealControls,
+} from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
 import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/project/domain-store';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
-import type { LaunchCapacity, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
+import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
+import {
+  CORE_CHAT_LAUNCH_PRESENTATION,
+  type LaunchCapacity,
+  type LaunchProfile,
+  type LaunchProject,
+  type LaunchTeammate,
+} from '../domain/launch';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
+
+/**
+ * How long the rail's counters wait out an event burst before re-reading.
+ *
+ * Long enough that a spawn or an agent's run of writes costs ONE query rather
+ * than dozens; short enough that a number the user just caused to change has
+ * settled by the time they look back at the rail.
+ */
+const COUNTS_DEBOUNCE_MS = 400;
 
 export interface GateGraphData {
   nodes: readonly EntitySummary[];
@@ -79,6 +102,17 @@ export interface GateData {
   livenessOf: (id: string) => SessionLiveness;
   /** Rows for a (kind, filter) pair — hydrated once, then served from memory. */
   rowsFor: (kind: string) => (filter?: unknown) => readonly EntitySummary[];
+  /**
+   * The rail's counters for one kind, or `undefined` when there is no answer
+   * yet (not read, or a node that cannot serve them).
+   *
+   * `undefined` and `{ total: 0 }` are DIFFERENT and both are meaningful: the
+   * first draws no number at all, the second draws a real zero. Collapsing
+   * them would let an unavailable counter read as "this space is empty".
+   */
+  countsFor: (kind: string) => { total: number; unseen: number } | undefined;
+  /** Re-read the counters now — after a local action that changed what is seen. */
+  refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
@@ -93,6 +127,8 @@ export interface GateData {
   };
   /** Hydrate a kind the viewer selected after boot. Idempotent. */
   ensureKind: (kind: string) => void;
+  /** Switch the active space and hydrate its own menu, channels, and data. */
+  selectSpace: (spaceId: SpaceId) => void;
   /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
@@ -105,7 +141,7 @@ export interface GateData {
   /** The thread for an entity, hydrated by pull(). Absent = no read ran. */
   messagesOf: (id: string) => readonly MessageView[] | undefined;
   /** Reconcile a command's authoritative detail and every summary patch. */
-  reconcileCommand: (result: CommandResult) => void;
+  reconcileCommand: (result: CommandResult | AttentionRequestMutationResult) => void;
   seam: Seam;
   domain: DomainStoreHandle;
 }
@@ -182,6 +218,11 @@ export function useGateData(options: GateOptions): GateData {
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
   const [liveIds, setLiveIds] = useState<readonly string[]>([]);
+  // Undefined until the first successful read, and again for a node that
+  // cannot serve them — DISTINCT from `{}` (a space that genuinely has no
+  // entities). The rail draws no number in the first case and a real zero in
+  // the second, so an unavailable counter never masquerades as an empty space.
+  const [kindCounts, setKindCounts] = useState<SpaceKindCounts | undefined>(undefined);
   const [executionCapacity, setExecutionCapacity] = useState<LivenessSnapshot['capacity']>();
   const [linkedProjects, setLinkedProjects] = useState<readonly ProjectResource[]>([]);
   const [spaceDefaultProfileId, setSpaceDefaultProfileId] = useState<EntityId | null>(null);
@@ -208,8 +249,7 @@ export function useGateData(options: GateOptions): GateData {
    * entity changes the list, with no read and nothing to invalidate.
    */
   const [rows, setRows] = useState<Record<string, readonly EntityId[]>>({});
-  const [threads, setThreads] = useState<Record<string, readonly MessageView[]>>({});
-  const [activity] = useState<Readonly<Record<string, boolean>>>({});
+  const activity = useTerminalActivityMap(terminalActivitySource);
 
   /**
    * The event stream's own projection, subscribed. `useSyncExternalStore` and
@@ -228,6 +268,10 @@ export function useGateData(options: GateOptions): GateData {
   const edgeProjection = useSyncExternalStore(
     domain.store.subscribe,
     () => domain.store.getState().edges,
+  );
+  const messagesByAnchor = useSyncExternalStore(
+    domain.store.subscribe,
+    () => domain.store.getState().messagesByAnchor,
   );
 
   /** Every read lands in the store FIRST, then leaves its ordering here. Both
@@ -268,7 +312,7 @@ export function useGateData(options: GateOptions): GateData {
    */
   const hydrate = useCallback(
     async (space: SpaceId) => {
-      const [menuRaw, snapshot, projects, settings] = await Promise.all([
+      const [menuRaw, snapshot, projects, settings, , counts] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
           setMenu(resolveMenu(undefined, error));
           return undefined;
@@ -280,6 +324,17 @@ export function useGateData(options: GateOptions): GateData {
         seam.projects(space),
         seam.spaceSettings(space),
         loadGraph(space),
+        // SOFT-FAILS to `undefined`, like `menu` above and unlike the reads
+        // that gate boot. The rail's numbers are an enhancement: a node that
+        // cannot answer this should render a rail with no counts, never a
+        // workspace that refuses to open. Absent counters are also why the
+        // rail draws nothing rather than `0` on a miss — see `countsFor`.
+        // `Promise.resolve().then(...)` rather than a bare call: it converts a
+        // SYNCHRONOUS throw into a rejection the `.catch` can absorb. A direct
+        // `seam.counts(...)` that threw before returning a promise would take
+        // the whole `Promise.all` down and leave the workspace stuck at
+        // `ready === false` — the counters failing must never cost the boot.
+        Promise.resolve().then(() => seam.counts(space)).catch(() => undefined),
       ]);
       if (menuRaw !== undefined) setMenu(resolveMenu(menuRaw as MenuConfig | null));
       if (snapshot) {
@@ -288,6 +343,7 @@ export function useGateData(options: GateOptions): GateData {
       }
       setLinkedProjects(projects);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
+      if (counts) setKindCounts(counts);
 
       const load = async (kind: string) => {
         const query = { spaceId: space, kinds: [kind] } as unknown as CollectionQuery;
@@ -303,6 +359,18 @@ export function useGateData(options: GateOptions): GateData {
             return { kind, items };
           }),
       );
+      const unnamedProfiles = loaded
+        .filter((entry) => entry.kind === 'interaction_profile')
+        .flatMap((entry) => entry.items)
+        .filter((profile) => profile.state.kind === 'interaction_profile' && profile.title.trim().length === 0);
+      // Older nodes returned Interaction Profile collection rows with an empty
+      // envelope title even though the canonical entity detail already knew
+      // the versioned draft name. Resolve only those compatibility rows. A
+      // current node returns the name in the summary and pays zero extra reads.
+      await Promise.all(unnamedProfiles.map(async (profile) => {
+        const detail = await seam.entity(profile.id).catch(() => undefined);
+        if (detail) domain.store.getState().ingestDetail(detail);
+      }));
       const teammateRows = loaded
         .filter((entry) => entry.kind === 'team_member')
         .flatMap((entry) => entry.items);
@@ -314,53 +382,149 @@ export function useGateData(options: GateOptions): GateData {
       }));
       setTeammateProfileDefaults(Object.fromEntries(defaults));
     },
-    [seam, options.leftKind, options.rightKind, absorb, loadGraph],
+    [seam, options.leftKind, options.rightKind, absorb, loadGraph, domain],
   );
 
   const [bootError, setBootError] = useState<string | null>(null);
 
+  // Fetch the viewer's spaces. Opening and hydrating the selected space
+  // is a separate effect below so the tab bar is a real switch, not a painted
+  // control whose handler discards the id.
+  //
+  // THE READ RETRIES FOREVER, backoff capped at 15s. An unreachable node is a
+  // NORMAL state (see the bootError note below), and it is also usually a
+  // TRANSIENT one — the node restarts, the pool un-wedges, the laptop wakes.
+  // A boot that tries once turns every transient into a permanent error card
+  // that only a manual reload clears. The error is still surfaced on every
+  // failed attempt (`bootError` renders while the retry loop keeps working),
+  // so honesty and self-healing are not traded against each other. The HTTP
+  // transport bounds each attempt (DEFAULT_REQUEST_TIMEOUT_MS), so this loop
+  // can never stack concurrent requests.
   useEffect(() => {
     let cancelled = false;
+    let delayHandle: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
-      try {
-        const list = await seam.spaces();
-        if (cancelled) return;
-        const first = list[0];
-        if (!first) return;
-        setSpaces(list);
-        setSpaceId(first.id);
-        await seam.openSpace(first.id);
-        await hydrate(first.id);
-        if (!cancelled) setReady(true);
-      } catch (error: unknown) {
-        // AN UNREACHABLE NODE IS A NORMAL STATE, not a crash.
-        //
-        // With the fixture seam this could never happen, so boot had no catch
-        // and the rejection was invisible. Point the real-seam flag at a node
-        // that is down — the case that flag exists to exercise — and the boot
-        // promise rejects UNHANDLED: an uncaught rejection in the browser, and
-        // a runner exit code of 1 with every test still reporting green, which
-        // is how it was found.
-        //
-        // `ready` stays false and the failure is HELD rather than swallowed:
-        // the shell keeps its loading state and the reason is available, which
-        // is the honest rendering of "we could not reach the node" — never an
-        // empty workspace that looks like a space with nothing in it.
-        if (cancelled) return;
-        setBootError(String((error as { message?: string })?.message ?? error));
+      for (let attempt = 0; !cancelled; attempt++) {
+        try {
+          const list = await seam.spaces();
+          if (cancelled) return;
+          setSpaces(list);
+          const first = list[0];
+          if (!first) {
+            // ZERO SPACES IS A STATE, NOT A WAIT. This used to `return` and
+            // leave the spinner up forever — an empty node looked identical
+            // to a hung one. There is nothing to open, so say so and stop.
+            setBootError(
+              'this node has no spaces yet — the workspace has nothing to open. Create a space, then reload.',
+            );
+            return;
+          }
+          setBootError(null);
+          setSpaceId(first.id);
+          return;
+        } catch (error: unknown) {
+          // AN UNREACHABLE NODE IS A NORMAL STATE, not a crash.
+          //
+          // `ready` stays false and the failure is HELD rather than swallowed:
+          // the shell keeps its loading state and the reason is available,
+          // which is the honest rendering of "we could not reach the node" —
+          // never an empty workspace that looks like a space with nothing in
+          // it. (With the fixture seam this could never happen; found as an
+          // unhandled rejection the first time the real flag met a down node.)
+          if (cancelled) return;
+          setBootError(String((error as { message?: string })?.message ?? error));
+          await new Promise<void>((resolve) => {
+            delayHandle = setTimeout(resolve, Math.min(1_000 * 2 ** attempt, 15_000));
+          });
+        }
       }
     })();
     return () => {
       cancelled = true;
+      if (delayHandle !== undefined) clearTimeout(delayHandle);
     };
-  }, [seam, hydrate]);
+  }, [seam]);
+
+  const openedSpace = useRef<SpaceId | null>(null);
+  useEffect(() => {
+    if (!spaceId) return;
+    let cancelled = false;
+    const previous = openedSpace.current;
+    if (previous && previous !== spaceId) seam.closeSpace(previous);
+    openedSpace.current = spaceId;
+
+    setReady(false);
+    setBootError(null);
+    setRows({});
+    setMenu(resolveMenu(null));
+    setLiveIds([]);
+    // Back to "unknown", not to `{}`: the previous space's numbers must not
+    // survive the switch, and a zero would be a claim about the new space we
+    // have not read yet.
+    setKindCounts(undefined);
+    setLinkedProjects([]);
+    setTeammateProfileDefaults({});
+
+    // Same retry law as the spaces read above: hydration failure is surfaced
+    // immediately AND retried with capped backoff, because "the node blinked
+    // while I switched spaces" must not strand the workspace on an error card
+    // (or, before the transport timeout existed, on a spinner) until reload.
+    let delayHandle: ReturnType<typeof setTimeout> | undefined;
+    void (async () => {
+      for (let attempt = 0; !cancelled; attempt++) {
+        try {
+          await seam.openSpace(spaceId);
+          await hydrate(spaceId);
+          if (!cancelled) {
+            setBootError(null);
+            setReady(true);
+          }
+          return;
+        } catch (error: unknown) {
+          if (cancelled) return;
+          setBootError(String((error as { message?: string })?.message ?? error));
+          await new Promise<void>((resolve) => {
+            delayHandle = setTimeout(resolve, Math.min(1_000 * 2 ** attempt, 15_000));
+          });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (delayHandle !== undefined) clearTimeout(delayHandle);
+    };
+  }, [seam, spaceId, hydrate]);
+
+  const selectSpace = useCallback((next: SpaceId) => {
+    if (next === spaceId || !spaces.some((space) => space.id === next)) return;
+    setSpaceId(next);
+  }, [spaceId, spaces]);
 
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
   useEffect(() => seam.onConnection(setConnection), [seam]);
 
-  // The live set changes without us asking; `onChange` is the push half of the
-  // liveness surface and keeps the held snapshot from going quietly stale.
+  /**
+   * Keep the real seam's liveness evidence fresh for the lifetime of this data
+   * shell. Liveness is consumed globally (session rows, the live bar, home,
+   * graph and terminal gating), so the shell itself is the correct visibility
+   * boundary: tying this only to LiveTerminal would let its 90s snapshot expire,
+   * classify the selected session as `unknown`, and unmount the very terminal
+   * that would otherwise have kept the cadence alive.
+   *
+   * `RealControls` is deliberately an implementation extension rather than a
+   * widening of the transport-neutral Seam. Fixture/injected seams simply have
+   * no control and need no interval. The cleanup is StrictMode-safe because the
+   * liveness manager's setter is idempotent.
+   */
+  useEffect(() => {
+    const controls = (seam as Seam & { realControls?: RealControls }).realControls;
+    if (!controls) return undefined;
+    controls.setSessionSurfaceVisible(true);
+    return () => controls.setSessionSurfaceVisible(false);
+  }, [seam]);
+
+  // Each cadence read publishes the fresh live set through this subscription.
   useEffect(
     () => seam.liveness.onChange((snapshot) => {
       setLiveIds(snapshot.liveEntityIds);
@@ -368,6 +532,36 @@ export function useGateData(options: GateOptions): GateData {
     }),
     [seam],
   );
+
+  /**
+   * Counters follow the DURABLE STREAM, which is what makes them live: any
+   * entity event can change a total (a create, a delete) or flip a row back to
+   * unseen (an update to something you had already read).
+   *
+   * Debounced with a TRAILING timer rather than issuing one read per event. A
+   * burst is the normal case here — a spawn, a bulk import, or an agent
+   * writing a run of messages — and one count query per event would turn a
+   * busy space into a self-inflicted request flood for a number that is only
+   * ever read at a glance.
+   */
+  useEffect(() => {
+    if (!spaceId) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = seam.onEvent(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        void Promise.resolve()
+          .then(() => seam.counts(spaceId))
+          .then(setKindCounts)
+          .catch(() => undefined);
+      }, COUNTS_DEBOUNCE_MS);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [seam, spaceId]);
 
   // Catch-up integrity lost ⇒ re-run hydration. Idempotent by construction.
   useEffect(
@@ -377,7 +571,8 @@ export function useGateData(options: GateOptions): GateData {
         // Detail reads are re-armed with everything else: a resync means the
         // catch-up gap could have swallowed anything, including whatever made
         // a detail read fail.
-        pulled.current.clear();
+        pulledDetails.current.clear();
+        pulledMessages.current.clear();
         void hydrate(space);
       }),
     [seam, spaceId, hydrate],
@@ -415,8 +610,15 @@ export function useGateData(options: GateOptions): GateData {
    * re-render mid-flight does not issue a second query.
    */
   const inFlight = useRef(new Set<string>());
-  /** Ids whose detail read has been issued. See `pull` for why it is a ref. */
-  const pulled = useRef(new Set<string>());
+  /** Detail and Discussion hydrate independently. A command can populate the
+      detail cache before the panel ever reads its messages, so one shared id
+      guard would make that thread permanently look empty. */
+  const pulledDetails = useRef(new Set<string>());
+  /** Last message-count generation requested per anchor. Unlike detail, a
+      thread can become stale while its panel remains open. Recording the
+      observed count permits one new read when the server counter advances,
+      without turning a failed read into a render-time request loop. */
+  const pulledMessages = useRef(new Map<string, number>());
   const ensureKind = useCallback(
     (kind: string) => {
       if (!spaceId || rows[`${kind}::*`] || inFlight.current.has(kind)) return;
@@ -490,6 +692,15 @@ export function useGateData(options: GateOptions): GateData {
         version: row.state.activeVersion ?? row.state.currentDraftVersion,
         status: row.state.status,
         isSpaceDefault: row.id === spaceDefaultProfileId,
+        /* The template facts stay constant — one static template ships, and
+           profiles are validated against it before launch. The SURFACE does
+           not: it is the profile's own choice now, so the picker reads it
+           from the projection instead of asserting Chat for everyone. A draft
+           with no opinion still falls back to the template's Chat, which is
+           what it will actually do once pinned. */
+        ...CORE_CHAT_LAUNCH_PRESENTATION,
+        initialContentSurface:
+          row.state.initialContentSurface ?? CORE_CHAT_LAUNCH_PRESENTATION.initialContentSurface,
       }];
     });
     const projects: LaunchProject[] = linkedProjects.map((project, index) => ({
@@ -516,13 +727,22 @@ export function useGateData(options: GateOptions): GateData {
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty
      class on the board. Same passthrough shape as spawn: the seam command,
-     then idempotent re-hydration so the thread shows the echo. */
+     then the anchor's own thread re-read (postAndRefresh below) so the echo
+     is on screen.
+
+     THIS USED TO RE-RUN hydrate() — the FULL boot read set (menu, liveness,
+     projects, settings, graph, four kind queries, one connections read per
+     teammate) after EVERY message sent. Against a pool of 8 that is a
+     self-inflicted burst of a dozen-plus transactions per keystrokeful of
+     chat, and it is redundant: the durable event stream (message.created,
+     counter.changed) converges every summary a post can touch, and the
+     thread re-read shows the echo. The command result plus the stream IS the
+     convergence path — the same rule spawn() already follows. */
   const postMessage = useCallback(
     async (input: PostMessageInput) => {
       await seam.commands.postMessage(input);
-      if (spaceId) await hydrate(spaceId);
     },
-    [seam, spaceId, hydrate],
+    [seam],
   );
 
   /**
@@ -616,8 +836,12 @@ export function useGateData(options: GateOptions): GateData {
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
 
   const reconcileCommand = useCallback(
-    (result: CommandResult) => {
+    (result: CommandResult | AttentionRequestMutationResult) => {
       const store = domain.store.getState();
+      if ('affectedCount' in result) {
+        store.ingestSummaries([result.entity]);
+        return;
+      }
       if (result.patches.length > 0) store.ingestSummaries(result.patches);
       if (result.entity) store.ingestDetail(result.entity);
     },
@@ -626,15 +850,26 @@ export function useGateData(options: GateOptions): GateData {
 
   const pull = useCallback(
     async (id: string) => {
-      if (pulled.current.has(id)) return;
-      pulled.current.add(id);
+      const state = domain.store.getState();
+      const needsDetail = state.details[id as EntityId] === undefined
+        && !pulledDetails.current.has(id);
+      const cachedMessages = state.messagesByAnchor[id as EntityId];
+      const messageCount = state.entities[id as EntityId]?.counters.messages
+        ?? state.details[id as EntityId]?.counters.messages
+        ?? cachedMessages?.length
+        ?? -1;
+      const messagesStale = cachedMessages === undefined || cachedMessages.length < messageCount;
+      const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
+      if (!needsDetail && !needsMessages) return;
+      if (needsDetail) pulledDetails.current.add(id);
+      if (needsMessages) pulledMessages.current.set(id, messageCount);
       const [detail, thread] = await Promise.all([
-        seam.entity(id as never).catch(() => undefined),
+        needsDetail ? seam.entity(id as never).catch(() => undefined) : Promise.resolve(undefined),
         // The thread rides the same pull: a composer that posts into a tab
         // that never READS is only half a fix (Surface Audit). A read error
         // leaves the id absent — the tab renders its designed empty state
         // rather than a fabricated zero.
-        seam.messages(id as never).catch(() => undefined),
+        needsMessages ? seam.messages(id as never).catch(() => undefined) : Promise.resolve(undefined),
       ]);
       /* THE DETAIL GOES INTO THE STORE, not beside it. `entity.upsert` then
          overlays the fresher envelope onto it (reducers.mergeSummary keeps the
@@ -648,11 +883,12 @@ export function useGateData(options: GateOptions): GateData {
          RENDER whenever the detail is missing, so clearing the guard on
          failure turns one unreadable entity into an unbounded request loop
          against the node — the fixture seam could never fail, so the shape was
-         invisible before the default flipped. The id stays claimed; `onResync`
-         clears the whole set, which is the same "catch-up integrity was lost,
-         re-run the reads" rule the rest of this hook obeys. */
+         invisible before the default flipped. Each read stays claimed
+         independently; `onResync` clears both sets, which is the same
+         "catch-up integrity was lost, re-run the reads" rule the rest of this
+         hook obeys. */
       if (detail) domain.store.getState().ingestDetail(detail);
-      if (thread) setThreads((current) => ({ ...current, [id]: thread.items }));
+      if (thread) domain.store.getState().ingestMessages(id as EntityId, [...thread.items]);
     },
     [seam, domain],
   );
@@ -664,9 +900,9 @@ export function useGateData(options: GateOptions): GateData {
       const anchor = input.anchorIds[0];
       if (!anchor) return;
       const thread = await seam.messages(anchor as never).catch(() => undefined);
-      if (thread) setThreads((current) => ({ ...current, [anchor]: thread.items }));
+      if (thread) domain.store.getState().ingestMessages(anchor, [...thread.items]);
     },
-    [postMessage, seam],
+    [postMessage, seam, domain],
   );
 
   const graphNodes = useMemo(
@@ -699,6 +935,19 @@ export function useGateData(options: GateOptions): GateData {
   );
 
   // Exposed through the returned object so views can request a panel's detail
+  const countsFor = useCallback(
+    (kind: string) => kindCounts?.[kind as keyof SpaceKindCounts],
+    [kindCounts],
+  );
+
+  const refreshCounts = useCallback(() => {
+    if (!spaceId) return;
+    void Promise.resolve()
+      .then(() => seam.counts(spaceId))
+      .then(setKindCounts)
+      .catch(() => undefined);
+  }, [seam, spaceId]);
+
   // without reaching for the seam themselves.
   const data = useMemo<GateData & { pull: (id: string) => void }>(
     () => ({
@@ -711,20 +960,23 @@ export function useGateData(options: GateOptions): GateData {
       liveIds,
       livenessOf,
       rowsFor,
+      countsFor,
+      refreshCounts,
       detailOf,
       activity,
       graph,
       launch,
       ensureKind,
+      selectSpace,
       spawn,
       postMessage: postAndRefresh,
-      messagesOf: (id: string) => threads[id],
+      messagesOf: (id: string) => messagesByAnchor[id as EntityId],
       reconcileCommand,
       seam,
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, detailOf, activity, graph, launch, ensureKind, spawn, postAndRefresh, threads, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

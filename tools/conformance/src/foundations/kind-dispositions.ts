@@ -27,6 +27,8 @@ export type CapabilityProfile =
   | 'work-session-execution'
   | 'project-restricted'
   | 'interaction-profile-lifecycle'
+  | 'worktree-lifecycle'
+  | 'artifact-lifecycle'
   | 'custom-scalar'
   | 'static-no-authority';
 
@@ -44,6 +46,10 @@ export type MigrationStrategy =
   | 'baseline-session-plus-w1'
   | 'w1-project-projection'
   | 'w1-interaction-profile'
+  | 'voice-channel-detail'
+  | 'memory-detail'
+  | 'worktree-detail'
+  | 'artifact-detail'
   | 'custom-registry'
   | 'none';
 
@@ -172,6 +178,56 @@ function capabilities(profile: CapabilityProfile): CapabilityDisposition {
           'interactionProfiles.retire',
         ],
       };
+    case 'worktree-lifecycle':
+      // Everything generic EXCEPT creation: a worktree entity is born only from
+      // the server's provisioning saga (create_worktree, ledgered under
+      // execution.spawn) — `worktree` is excluded from CreateEntityInput.kind
+      // and the createEntity dispatch. The patch door IS generic-shaped on
+      // purpose (worktree stays OFF the restricted-lifecycle set), but accepts
+      // exactly one thing: the forward-only status transition.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: true,
+        genericMove: true,
+        genericHierarchy: true,
+        genericDeleteRestore: true,
+        genericPoints: true,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: ['execution.spawn'],
+      };
+    case 'artifact-lifecycle':
+      // Everything generic EXCEPT creation, mirroring worktree: an artifact
+      // entity is born only from its named writer (artifacts.create publishes
+      // the first bundle revision) — `artifact` is excluded from
+      // CreateEntityInput.kind and refuses generic entities.create. Patch,
+      // move, hierarchy, delete/restore and points stay generic: reads and
+      // soft-delete + purge reuse the envelope (§8.1), and the four universal
+      // capabilities (message, edge, hierarchy, point) all pay rent. Bundle
+      // versioning rides the non-debounced artifacts.publish writer, not
+      // generic patch.
+      return {
+        profile,
+        genericCreate: false,
+        genericPatch: true,
+        genericMove: true,
+        genericHierarchy: true,
+        genericDeleteRestore: true,
+        genericPoints: true,
+        messages: true,
+        reactions: true,
+        connections: true,
+        lifecycleOperations: [
+          'artifacts.create',
+          'artifacts.publish',
+          'artifacts.revisions.list',
+          'artifacts.preview.start',
+          'artifacts.export',
+          'artifacts.restore',
+        ],
+      };
     case 'static-no-authority':
       return {
         profile,
@@ -264,6 +320,44 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: { strategy: 'interaction-profile-sanitized' },
     capabilities: { profile: 'interaction-profile-lifecycle' },
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'w1-interaction-profile' },
+  }),
+  // Voice channels (LiveKit SFU). Shaped like `channel` — a rail-visible,
+  // generically-created container — but WITHOUT `channel-special` routing: a
+  // voice room has no message feed, so it is an ordinary typed collection.
+  // Its detail table arrives in its own migration, not the W1 baseline.
+  voice_channel: core('voice_channel', 'voice-channels', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'default' }, migration: { strategy: 'voice-channel-detail' },
+  }),
+  // Memories (TM8-MEMORY-DESIGN-FINAL). Generic lifecycle on purpose — staying
+  // OFF the restricted set is what makes the feature zero-catalog-operation.
+  // Registered-not-default in menus: memories are authored deliberately, not a
+  // default container. Hierarchy is refused at the data layer (056), not here.
+  memory: core('memory', 'memories', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'memory-detail' },
+  }),
+  // Worktrees (TM8-WORKTREE-DESIGN). Not menu-addressable and not client-
+  // creatable: the entity is born only from the server's provisioning saga.
+  // The semantic lifecycle transition rides generic entities.patch through
+  // update_worktree; operational disk state (worktree_allocations) is not an
+  // entity and has no disposition here.
+  worktree: core('worktree', 'worktrees', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'worktree-lifecycle' },
+    menu: { strategy: 'not-addressable' }, migration: { strategy: 'worktree-detail' },
+  }),
+  // Artifacts (TM8-ARTIFACTS-DESIGN). Restricted creation only — excluded from
+  // CreateEntityInput.kind, born from the named artifacts.create writer that
+  // publishes its first bundle revision; further revisions ride the
+  // non-debounced artifacts.publish writer. Reads, soft-delete and purge reuse
+  // the generic envelope (§8.1). Menu-addressable but registered-not-default:
+  // an artifact is published deliberately, like file/memory, not a default
+  // container. Its detail tables arrive in its own migration.
+  artifact: core('artifact', 'artifacts', {
+    collection: typedCollection, projection: universal,
+    capabilities: { profile: 'artifact-lifecycle' },
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'artifact-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

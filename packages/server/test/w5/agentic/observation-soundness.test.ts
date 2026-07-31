@@ -329,7 +329,18 @@ describe('W5.F observation soundness — a refusal decided before handler lookup
  * evidence about any CLI behaviour — that half is cited, never measured here.
  */
 describe('W5.F scheduled inversion — `forbidden` is a PRE-handler refusal slot', () => {
-  it('is inert TODAY: all three transport checks allow everything', () => {
+  /**
+   * THE INVERSION FIRED (2026-07-31). This test asserted the three transport
+   * checks were deferred no-ops — the precondition that made the CLI's old
+   * any-code-means-handled rule harmless. The origin-split wave closed S2/S3,
+   * the pin went red exactly as scheduled, and the disposition was executed:
+   * the CLI rule is NARROWED (cli/src/discovery/observe.ts — only
+   * `version_conflict`/`invariant_violation` record `handled`;
+   * `commands/file.ts` observedDownload matches). Per the disposition, the
+   * file now guards the NEW reality in both directions: a pre-handler
+   * `forbidden` really exists, and legitimate loopback traffic still passes.
+   */
+  it('is LIVE now: a hostile host is refused at step 2, before any handler could run', () => {
     const config = {
       host: '127.0.0.1',
       port: 0,
@@ -343,20 +354,20 @@ describe('W5.F scheduled inversion — `forbidden` is a PRE-handler refusal slot
       cookie: 'tm8_session=x',
     };
 
-    for (const [label, decision] of [
-      ['S2 host', checkHost(hostile, config)],
-      ['S3/S4 origin', checkOrigin(hostile, config)],
-      ['S6 csrf', checkCsrf('POST', hostile, config)],
-      ['composed', checkTransport('POST', hostile, config)],
-    ] as const) {
-      expect(
-        decision.refusal,
-        `${label} now REFUSES. Read this file's disposition block before touching it: `
-          + 'a step-2 `forbidden` is recorded by the CLI as `handled` '
-          + '(cli/src/discovery/observe.ts:51) and resolves to `available` '
-          + '(cli/src/discovery/availability.ts:234-240) for operations this node '
-          + 'may not implement. Narrow the CLI rule, do not re-pin this test.',
-      ).toBeUndefined();
-    }
+    // The step-2 refusal is REAL: this is precisely why a `forbidden` must
+    // never teach the availability ledger that a handler exists.
+    const composed = checkTransport('POST', hostile, config);
+    expect(composed.refusal?.code).toBe('forbidden');
+    expect(checkHost(hostile, config).refusal?.code).toBe('forbidden');
+    expect(checkOrigin(hostile, config).refusal?.code).toBe('forbidden');
+
+    // And the checks discriminate — loopback traffic with no foreign Origin
+    // passes all three, so the refusal above is about hostility, not a
+    // blanket veto that would break every legitimate caller.
+    const loopback = { host: '127.0.0.1', origin: undefined, cookie: undefined };
+    expect(checkHost(loopback, config).refusal).toBeUndefined();
+    expect(checkOrigin(loopback, config).refusal).toBeUndefined();
+    expect(checkCsrf('POST', loopback, config).refusal).toBeUndefined();
+    expect(checkTransport('POST', loopback, config).refusal).toBeUndefined();
   }, 15_000);
 });

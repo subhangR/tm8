@@ -1,5 +1,5 @@
 /**
- * EXHAUSTIVENESS: every one of the 106 catalog rows resolves through the
+ * EXHAUSTIVENESS: every one of the 107 catalog rows resolves through the
  * kernel — binding, response shape, and error mapping — with no row unhandled.
  *
  * Everything here iterates `OPERATIONS` from `@tm8/contract`. Nothing is
@@ -30,15 +30,15 @@ import { ApiError, StreamOperationError, exitCodeFor } from '../src/errors.js';
 import { isExitCode } from '../src/exit.js';
 
 /** The coordinator-verified shape of the frozen catalog. */
-const EXPECTED_ROWS = 106;
+const EXPECTED_ROWS = 119;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('106 rows = 104 v1 + 2 reserved, 105 HTTP + 1 WS', () => {
+  it('119 rows = 117 v1 + 2 reserved, 118 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(104);
+    expect(V1_OPERATIONS.length).toBe(117);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -66,8 +66,8 @@ describe('every row binds', () => {
     ]);
     for (const op of OPERATIONS) byMode.get(responseMode(op.name))?.push(op.name);
     expect(byMode.get('stream')).toEqual(['events.subscribe']);
-    expect(byMode.get('bytes')?.sort()).toEqual(['bridge.fetchBlob', 'files.download']);
-    expect(byMode.get('envelope')).toHaveLength(EXPECTED_ROWS - 3);
+    expect(byMode.get('bytes')?.sort()).toEqual(['artifacts.export', 'bridge.fetchBlob', 'files.download']);
+    expect(byMode.get('envelope')).toHaveLength(EXPECTED_ROWS - 4);
     expect([...byMode.values()].reduce((n, list) => n + list.length, 0)).toBe(EXPECTED_ROWS);
   });
 });
@@ -112,17 +112,20 @@ describe('every row resolves through the client and the error mapping', () => {
     }
 
     expect(resolved.size).toBe(EXPECTED_ROWS);
-    // 101 HTTP rows produced an honest 8; the single WS row produced usage 2
+    // 118 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(105);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(118);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(105);
+    expect(requested).toHaveLength(118);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
     const blob = new Uint8Array([1, 2, 3]);
     const fetchImpl = (async (input: RequestInfo | URL) => {
-      const isBlob = String(input).includes('/download') || String(input).includes('/bridge/blobs/');
+      const isBlob =
+        String(input).includes('/download') ||
+        String(input).includes('/bridge/blobs/') ||
+        String(input).includes('/export');
       return isBlob
         ? new Response(blob, { status: 200 })
         : new Response(JSON.stringify({ data: { echoed: String(input) }, requestId: 'req_ok' }), {
@@ -146,7 +149,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(105);
+    expect(httpRows).toBe(118);
   });
 });
 

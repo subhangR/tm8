@@ -3,6 +3,7 @@ import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
+import { Markdown, headingsIn } from '../../kit';
 import './reader-body.css';
 
 /**
@@ -26,11 +27,18 @@ import './reader-body.css';
  * .tsx), fixed for every kind, and D63 supersedes the canvas's three-row form
  * with two rows by user ruling. This file owns the interior only.
  *
- * THE READING COLUMN HAS NO HEADING STYLE, and that is a decision rather than
- * an omission: the oracle's in-panel column draws prose and quote only, so a
- * heading size here would be eyeballed, which D5/§1 forbids. Headings in the
- * source text are promoted into the OUTLINE — the place the oracle actually
- * gives them — rather than restated in a size nobody measured.
+ * THE READING COLUMN RENDERS MARKDOWN (user ruling 2026-07-31), which reverses
+ * an earlier decision recorded here. It used to draw prose and quote only, on
+ * the reasoning that the oracle's in-panel column drew no headings and a
+ * heading size would therefore be eyeballed. The cost of that floor showed in
+ * use: lists collapsed into one paragraph, `**bold**` rendered as asterisks,
+ * tables as pipes, and code fences as a chip that said "not rendered". Docs
+ * ARE markdown — every record carries `format: 'markdown'`. The sizes are no
+ * longer eyeballed either; `kit/markdown.css` maps headings onto the package's
+ * own `--pn-fs-*` scale, so nothing here invents a measure.
+ *
+ * Headings are now in BOTH places on purpose: the outline chips above are
+ * NAVIGATION, the rendered body is the DOCUMENT.
  */
 
 export interface ReaderBodyProps {
@@ -61,7 +69,7 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
   const state = detail.state as unknown as Record<string, unknown>;
 
   const source = firstString(content.body, content.description);
-  const { headings, segments } = readDocument(source ?? '');
+  const headings = headingsIn(source ?? '');
 
   const outlineSource = blocks.find((b) => b.block === 'items')?.params?.source;
   const declared = typeof outlineSource === 'string' ? content[outlineSource] : undefined;
@@ -85,7 +93,8 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
     .map((b) => (typeof b.params?.text === 'string' ? b.params.text : null))
     .filter((t): t is string => t != null);
 
-  if (outline.length === 0 && segments.length === 0 && !(chapterCount != null && chapterCount > 0)) {
+  const hasProse = (source ?? '').trim() !== '';
+  if (outline.length === 0 && !hasProse && !(chapterCount != null && chapterCount > 0)) {
     /*
      * A designed empty. The facts line goes with it: an empty document has no
      * chapters and no format worth a rule, and the deferred version-history
@@ -112,17 +121,13 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
     >
       <Outline entries={outline} chapterCount={chapterCount} onOpenEntity={onOpenEntity} />
 
-      {segments.map((segment, i) =>
-        segment.type === 'quote' ? (
-          <blockquote className="rd-quote" data-testid="reader-quote" key={`s${i}`}>
-            {segment.text}
-          </blockquote>
-        ) : (
-          <p className="rd-prose" data-testid="reader-prose" key={`s${i}`}>
-            {segment.text}
-          </p>
-        ),
-      )}
+      {/* THE DOCUMENT, RENDERED (user ruling 2026-07-31). This used to be a
+          flat run of <p>/<blockquote> from a four-shape hand parser, which
+          turned every list into one run-on paragraph and printed `**bold**`
+          as asterisks. `Markdown` is CommonMark + GFM; the headings it draws
+          in place are the SAME ones the outline above lists, which is
+          deliberate — the outline is navigation, the body is the document. */}
+      <Markdown source={source ?? ''} className="rd-md" testId="reader-markdown" />
 
       {notices.map((text) => (
         <p className="pn-notice" data-testid="reader-notice" key={text}>
@@ -235,51 +240,7 @@ function OutlineChip({ entry, onOpenEntity }: { entry: OutlineEntry; onOpenEntit
 
 // ---------------------------------------------------------------------------
 
-interface ReadSegment {
-  type: 'prose' | 'quote';
-  text: string;
-}
 
-/**
- * The reading column's parse: headings out, quotes ruled, everything else
- * prose. Deliberately SMALL — this is not a markdown renderer and does not
- * claim to be one; it is the three shapes the oracle's column actually draws.
- * A doc whose format is not markdown still lands here and reads as prose,
- * which is the honest floor: unstyled real text beats a "cannot render".
- */
-function readDocument(source: string): { headings: string[]; segments: ReadSegment[] } {
-  const headings: string[] = [];
-  const segments: ReadSegment[] = [];
-  let buffer: string[] = [];
-  let mode: ReadSegment['type'] | null = null;
-
-  const flush = () => {
-    if (mode != null && buffer.length > 0) segments.push({ type: mode, text: buffer.join(' ') });
-    buffer = [];
-    mode = null;
-  };
-
-  for (const raw of source.split('\n')) {
-    const line = raw.trim();
-    if (line === '') {
-      flush();
-      continue;
-    }
-    const heading = /^#{1,6}\s+(.+)$/.exec(line);
-    if (heading != null) {
-      flush();
-      headings.push(heading[1].trim());
-      continue;
-    }
-    const quoted = /^>\s?(.*)$/.exec(line);
-    const next: ReadSegment['type'] = quoted != null ? 'quote' : 'prose';
-    if (mode != null && mode !== next) flush();
-    mode = next;
-    buffer.push(quoted != null ? quoted[1].trim() : line);
-  }
-  flush();
-  return { headings, segments };
-}
 
 /**
  * The facts the record actually carries, in the oracle's order. A count we do

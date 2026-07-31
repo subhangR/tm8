@@ -15,6 +15,13 @@
  * spaces.menu.update stay OUT of this seam until their phase; adding either is
  * a deferred amendment requiring dual re-consensus.
  *
+ * Amendment 2 (2026-07-31, artifacts preview): commands gains
+ * `previewArtifact` — the user RATIFIED the two decisions that gated artifact
+ * preview execution (second origin + accepted iframe residual,
+ * TM8-ARTIFACTS-DESIGN §9/§12.1), so the Run button stops being inert and
+ * needs its one command. Additive, zero caller churn; contract types
+ * verbatim like every other command.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -30,6 +37,11 @@
  */
 import type {
   ActivityItem,
+  ArtifactPreviewSession,
+  ArtifactsPreviewStartInput,
+  AttentionRequestListQuery,
+  AttentionRequestMutationResult,
+  AttentionRequestPage,
   CollectionQuery,
   CollectionResult,
   CommandContext,
@@ -48,6 +60,10 @@ import type {
   ExecutionPromptInput,
   ExecutionSpawnInput,
   ExecutionTerminateInput,
+  FileUploadAbortInput,
+  FileUploadCompleteInput,
+  FileUploadGrant,
+  FileUploadInitInput,
   FeedScope,
   GraphQuery,
   GraphResult,
@@ -65,7 +81,9 @@ import type {
   PostMessageInput,
   ProjectResource,
   ReactionInput,
+  ResolveEntityAttentionInput,
   SpaceId,
+  SpaceKindCounts,
   SpaceSettingsView,
   SpaceSummary,
   WorkInput,
@@ -134,6 +152,8 @@ export interface PageOpts {
 
 export interface FeedOpts extends PageOpts {
   scope?: FeedScope;
+  order?: 'newest' | 'oldest';
+  around?: `message:${string}` | `activity:${string}`;
 }
 
 export interface Seam {
@@ -172,6 +192,14 @@ export interface Seam {
   spaceSettings(spaceId: SpaceId): Promise<SpaceSettingsView>;
   /** Both list panels + palette consume this one read (FE gate list item 4). */
   query(input: CollectionQuery): Promise<CollectionResult>;
+  /**
+   * The menu rail's per-kind counters — total, and how many the viewer has not
+   * seen. Its own read rather than a derivation over `query` results, because
+   * the rail must show every kind's number BEFORE any of those lists has been
+   * fetched (the gate hydrates only a handful of kinds at boot), and because a
+   * page length is not a total.
+   */
+  counts(spaceId: SpaceId): Promise<SpaceKindCounts>;
   /** Full graph hydration; durable entity/edge events keep this lens current. */
   graph(input: GraphQuery): Promise<GraphResult>;
   /**
@@ -192,6 +220,17 @@ export interface Seam {
   /** Discussion tab. */
   messages(anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>>;
   handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>>;
+  /**
+   * The space-wide attention queue — the ONLY way to discover *which* entities
+   * are waiting on a human. `collections.query` has neither an attention filter
+   * nor an attention sort (contract.ts CollectionQuery), so the alternative
+   * would be scanning every entity to find a handful.
+   *
+   * Rows are per-REQUEST and carry no title or kind; the server orders them
+   * `points desc, createdAt asc, id asc`. Callers that want one row per entity
+   * group them and hydrate names separately.
+   */
+  attentionRequests(input: AttentionRequestListQuery): Promise<AttentionRequestPage>;
   // kept in seam, not gate-critical (LLD §4):
   inbox(opts?: PageOpts): Promise<Page<NotificationItem>>;
   /** Chat feed (Phase 2 surface). */
@@ -202,6 +241,14 @@ export interface Seam {
    * UNCOLLAPSED; 'unknown' is never styled as success.
    */
   delivery(messageId: EntityId): Promise<MessageDeliveryView>;
+
+  /** Canonical file grant lifecycle; raw bytes remain outside JSON commands. */
+  files: {
+    uploadInit(input: FileUploadInitInput): Promise<FileUploadGrant>;
+    putBytes(grant: FileUploadGrant, bytes: BodyInit): Promise<void>;
+    complete(uploadId: string, input: FileUploadCompleteInput): Promise<CommandResult>;
+    abort(uploadId: string, input: FileUploadAbortInput): Promise<CommandResult>;
+  };
 
   // -- commands (contract input types VERBATIM; the caller supplies
   //    clientMutationId so stores can journal before the promise settles;
@@ -219,8 +266,16 @@ export interface Seam {
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
+    resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
     markRead(notificationId: string): Promise<void>;
     upsertReadMark(anchorId: EntityId, lastReadAt: string): Promise<void>;
+    /**
+     * Mint a short-lived, viewer-bound preview capability (Amendment 2).
+     * `previewUrl` is present only when the node runs the second-origin
+     * preview listener; callers must treat its absence as "this node cannot
+     * render previews", never fabricate a URL.
+     */
+    previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;

@@ -27,17 +27,18 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 2;
+export const SHIPPED_DEFAULT_MENU_REVISION = 4;
 
 /**
  * WLT §2, encoded literally:
  *
  *   Home        → Dashboard · Feed · Inbox
  *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
- *                 Tasks · Sessions · Docs · Teammates
- *   Tracking    → Projects · Pull requests
+ *                 Tasks · Sessions · Docs · Teammates · Memories · Artifacts
+ *   Tracking    → Projects · Pull requests · Worktrees
  *   Collab      → Members
- *   Channels    → channel list
+ *   Channels    → live per-space channel rows injected beneath this label
+ *   Voice       → live per-space voice_channel rows injected beneath this label
  *   Settings    → Space settings
  *
  * Workspace is the one caret VIEW item (RULING E) — it is a `type:'view'`
@@ -69,6 +70,11 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
             { type: 'kind', ref: 'work_session' },
             { type: 'kind', ref: 'doc' },
             { type: 'kind', ref: 'team_member' },
+            // Revision 4 (2026-07-31): Memories and Artifacts — both shipped
+            // features whose lists were unreachable from the rail. Caret
+            // children cap is 8; this brings the count to 6.
+            { type: 'kind', ref: 'memory' },
+            { type: 'kind', ref: 'artifact' },
           ],
         },
         // Revision 2 (2026-07-29): the ◉ Graph view — no longer deferred, the
@@ -82,10 +88,27 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       items: [
         { type: 'kind', ref: 'project' },
         { type: 'kind', ref: 'pull_request' },
+        // Revision 4 (2026-07-31): Worktrees live with the git-adjacent rows.
+        // Menu-visible only — creation stays with the provisioning saga
+        // (contract MenuKindRef note; registry row has quickCreate: false).
+        { type: 'kind', ref: 'worktree' },
       ],
     },
     { id: 'collab', label: 'Collab', items: [{ type: 'kind', ref: 'member' }] },
+    // The config keeps the closed-union route ref for menu editing/deep links.
+    // GateApp replaces this authored item with the active space's live channel
+    // entities, so viewers see the Collab v2 grammar: a plain Channels label
+    // followed by #channel rows.
     { id: 'channels', label: 'Channels', items: [{ type: 'view', ref: 'channels' }] },
+    // Revision 3 (2026-07-31): the Voice group. Deliberately items-EMPTY —
+    // there is no `voice` member of the closed `MenuViewRef` union to author,
+    // and `voice_channel` is `strategy: 'special'` so it is not a menu-eligible
+    // kind ref either. The group exists purely as the LABEL that GateApp's
+    // dynamic group hangs the space's live voice rooms beneath, exactly as
+    // Channels works once its authored item is replaced. With no rooms it
+    // renders its header and the dynamic group's empty line — honest, not a
+    // promise the app cannot keep.
+    { id: 'voice', label: 'Voice', items: [] },
     { id: 'settings', label: 'Settings', items: [{ type: 'view', ref: 'settings' }] },
   ],
 };

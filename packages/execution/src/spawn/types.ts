@@ -26,6 +26,8 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
  * and an import must not have to translate them.
  */
 export type PermissionMode = 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
+export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type AccessMode = 'safe' | 'acceptEdits' | 'plan' | 'fullAccess';
 
 /** Working-directory semantics (contract `SpawnWorkdir`). */
 export type WorkdirMode = 'project' | 'scratch';
@@ -103,6 +105,7 @@ export interface SpawnContext {
 export interface CreateWorkSessionInput {
   spaceId: string;
   teamMemberId: string;
+  parentSessionId: string | null;
   taskIds: string[];
   projectId: string | null;
   workdirMode: WorkdirMode;
@@ -156,6 +159,47 @@ export interface RecordCommandInput {
 }
 
 /**
+ * The stored facts of an existing work_session, as resume needs them. This is
+ * what the graph REMEMBERS about the launch — resume re-resolves everything
+ * else (persona defaults, project cwd) through the same reads spawn uses, so
+ * the two paths cannot drift.
+ */
+export interface WorkSessionResumeInfo {
+  sessionId: string;
+  spaceId: string;
+  /** From the `relates_to` edge; null if the edge is somehow gone. */
+  teamMemberId: string | null;
+  projectId: string | null;
+  taskIds: string[];
+  workdirMode: WorkdirMode;
+  workdirPath: string | null;
+  mode: AgentMode | null;
+  model: string | null;
+  agentTool: string | null;
+  title: string;
+  status: WorkSessionStatus;
+  /**
+   * The PROVIDER-OWNED conversation id — Claude's session uuid (pre-minted at
+   * spawn) or Codex's rollout id (captured from ~/.codex/sessions). Null means
+   * this session predates capture, or its Codex rollout has not been located
+   * yet.
+   */
+  nativeSessionId: string | null;
+}
+
+export interface ResumeWorkSessionResult {
+  commandResult: unknown;
+  replayed: boolean;
+}
+
+export interface ResumeRequest {
+  sessionId: string;
+  clientMutationId?: string | null;
+  cols?: number;
+  rows?: number;
+}
+
+/**
  * The graph, as the spawn flow needs it. Implemented over `Db` in
  * packages/server/src/facade/execution-handlers.ts; faked in tests.
  *
@@ -188,6 +232,23 @@ export interface GraphPort {
   ): Promise<void>;
   /** `public.work_session_transition` — R29's single writer. Never UPDATE directly. */
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
+  /** Read the stored launch facts of an existing session, for resume. */
+  loadWorkSessionForResume(auth: GraphAuth, sessionId: string): Promise<WorkSessionResumeInfo>;
+  /**
+   * `public.execution_resume` — the ONE legal path back from `exited`/`failed`
+   * to `spawning`. Enforces persona authorization, the concurrency cap, and
+   * clears the previous run's exit evidence, all inside the single-writer guard.
+   */
+  resumeWorkSession(
+    auth: GraphAuth,
+    input: { sessionId: string; clientMutationId: string | null },
+  ): Promise<ResumeWorkSessionResult>;
+  /** `public.execution_record_native_session` — write-once native-id capture. */
+  recordNativeSessionId(
+    auth: GraphAuth,
+    sessionId: string,
+    nativeSessionId: string,
+  ): Promise<void>;
   /** `public.record_execution_command` — the ledger row for prompt/terminate. */
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**
@@ -260,6 +321,8 @@ export interface Tm8Manifest {
     tool: string;
     model: string | null;
     permissionMode: PermissionMode;
+    accessMode: AccessMode;
+    reasoningEffort: ReasoningEffort | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
   };
@@ -299,6 +362,8 @@ export interface Tm8Manifest {
 export interface SpawnRequest {
   spaceId: string;
   teamMemberId: string;
+  /** Session that invoked this spawn; null/absent means a human-launched root. */
+  parentSessionId?: string | null;
   taskIds?: string[];
   projectId?: string | null;
   workdir?: { mode?: WorkdirMode; baseRef?: string | null };
@@ -306,6 +371,8 @@ export interface SpawnRequest {
   mode?: AgentMode | null;
   model?: string | null;
   agentTool?: string | null;
+  reasoningEffort?: ReasoningEffort | null;
+  accessMode?: AccessMode | null;
   title?: string | null;
   promptExtra?: string | null;
   /** S12: untrusted projects require per-spawn consent. */

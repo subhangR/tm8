@@ -1,7 +1,7 @@
 /**
  * The CLI-owned `OperationDiscovery` projection — harness §7.1.
  *
- * One row per catalog operation, TOTAL over all 106 including internal and
+ * One row per catalog operation, TOTAL over all 107 including internal and
  * reserved. Everything the CLI knows about a command — its noun, its verb, its
  * exposure, its side effect, whether it needs a mutation id or a version guard,
  * and whether this node can actually run it — is derived from here, so help,
@@ -45,7 +45,6 @@
  * including A01-A20). Where the two agree they agree exactly; nothing here is
  * invented.
  */
-import { createHash } from 'node:crypto';
 import { OPERATIONS, getOperation, isOperationName, type OperationName } from '@tm8/contract';
 import {
   ledger,
@@ -246,6 +245,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'none',
   },
+  'spaces.counts': {
+    cmd: ['space', 'counts', 'get'],
+    syn: 'tm8 space counts get [<space-id>]',
+    sum: 'Read per-kind entity counts for a Space (total and unseen-by-you)',
+    authz: 'space',
+    input: 'none',
+    tags: ['counts', 'unseen', 'badges'],
+  },
   'spaces.settings': {
     cmd: ['space', 'settings', 'get'],
     syn: 'tm8 space settings get [<space-id>]',
@@ -362,6 +369,33 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     ver: 'expectedVersion',
     tags: ['edit', 'rename', 'patch'],
+  },
+  'attentionRequests.create': {
+    cmd: ['entity', 'attention'],
+    syn: 'tm8 entity attention <entity-id> --reason <text> --points <1-100> [--mutation-id <id>]',
+    sum: 'Request scored attention for any entity',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['attention', 'needs-attention', 'triage'],
+    examples: ['tm8 entity attention <entity-id> --reason "Need a decision" --points 80'],
+  },
+  'attentionRequests.list': {
+    cmd: ['attention', 'list'],
+    syn: 'tm8 attention list [--entity <entity-id>] [--status <status>] [--min-points <1-100>] [--limit <count>] [--cursor <cursor>]',
+    sum: 'List the generic attention queue, highest score first',
+    authz: 'space', input: 'none', tags: ['attention', 'queue', 'dashboard'],
+  },
+  'attentionRequests.update': {
+    cmd: ['attention', 'update'],
+    syn: 'tm8 attention update <request-id> --expect-version <n> [--reason <text>] [--points <1-100>] [--status <status>] [--note <text>] [--mutation-id <id>]',
+    sum: 'Edit, acknowledge, resolve, or dismiss one attention request',
+    authz: 'entity', input: 'bound', ver: 'expectedVersion', tags: ['attention', 'update', 'resolve'],
+  },
+  'attentionRequests.resolveEntity': {
+    cmd: ['attention', 'resolve-entity'],
+    syn: 'tm8 attention resolve-entity <entity-id> [--note <text>] [--mutation-id <id>]',
+    sum: 'Resolve every pending attention request for one entity',
+    authz: 'entity', input: 'bound', tags: ['attention', 'resolve', 'clear'],
   },
   'entities.move': {
     cmd: ['entity', 'move'],
@@ -938,6 +972,20 @@ const ROWS: Record<OperationName, Row> = {
       'to reach a live session, store a durable message addressed to it — persistence first, delivery second',
     ],
   },
+  'execution.resume': {
+    cmd: ['session', 'resume'],
+    syn: 'tm8 session resume <work-session-id> [--mutation-id <id>]',
+    sum: 'Resume an exited or failed work session — its agent relaunches with the full prior conversation restored',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['resume', 'restart', 'continue', 'revive', 'restore'],
+    notes: [
+      'exact-conversation resume via the provider-native session id the Server recorded; never a fresh restart presented as a resume',
+      'refused for sessions whose agent tool has no resume-by-id contract, and for Codex sessions whose rollout cannot be located',
+      'persona, project, tasks, model and cwd are re-read from the graph — the caller supplies nothing but the session id',
+    ],
+  },
   'execution.terminate': {
     cmd: ['session', 'terminate'],
     syn: 'tm8 session terminate <work-session-id> [--force] --yes [--mutation-id <id>]',
@@ -1202,6 +1250,99 @@ const ROWS: Record<OperationName, Row> = {
       'the guard is spelled `--expect-settings-revision` because `SetSpaceProfileDefaultInput` requires `expectedSettingsRevision` — the Space settings row carries the revision',
     ],
   },
+
+  // ── voice channels (LiveKit) ─────────────────────────────────────────────
+  'voice.token.create': {
+    cmd: ['voice', 'token'],
+    syn: 'tm8 voice token <voice-channel-id> [--mutation-id <id>]',
+    sum: 'Mint a room-join grant for a voice_channel — a LiveKit access token, never audio bytes',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['livekit', 'audio', 'join', 'webrtc'],
+    notes: [
+      'audio never touches tm8-server — the browser connects directly to LiveKit with this grant',
+      'the grant expires in 10 minutes; call again to reconnect',
+    ],
+  },
+
+  // ── artifacts (versioned, viewable static-web bundles) ────────────────────
+  // `artifact publish` is a COMPOSED command over two catalog rows exactly as
+  // `file upload` composes uploadInit/uploadComplete: create for a new artifact,
+  // publish for a further revision under a version guard. Both map to the ONE
+  // command path `artifact publish`; the command index uses the head (create)
+  // row's syntax, so the two syntaxes are kept identical to avoid drift.
+  'artifacts.create': {
+    cmd: ['artifact', 'publish'],
+    // NO `--expect-version` here: creating a new artifact has no prior version to
+    // guard against, and the guard-honesty invariant (a row advertises a guard
+    // flag IFF its `ver:` is `expectedVersion`) turns a stray one red. The
+    // revision-mode flags live on the `artifacts.publish` row's syntax and are
+    // named in the note below so the shared command help still documents them.
+    syn: 'tm8 artifact publish <dir> [--space <space-id>] [--name <name>] [--description <text>] [--entrypoint <path>] [--mutation-id <id>]',
+    sum: 'Publish a directory of HTML/JS/CSS as a NEW artifact with its first immutable bundle revision',
+    authz: 'space',
+    input: 'bound',
+    tags: ['artifact', 'bundle', 'web', 'html', 'publish', 'deploy'],
+    notes: [
+      '`artifact publish` is a composition: it walks the directory, builds and hashes the strict model-agnostic manifest, then calls artifacts.create (or artifacts.publish with --artifact + --expect-version)',
+      'to publish a FURTHER revision of an existing artifact instead of creating a new one, pass `--artifact <artifact-id>` and `--expect-version <n>` together',
+      'blob upload wiring is Phase-1-incomplete: the Server may answer unknown_blob (invalid_input) because a referenced blob is not yet stored; that refusal is surfaced honestly rather than pre-swallowed',
+    ],
+    examples: ['tm8 artifact publish ./site --name "My App" --space <space-id>'],
+  },
+  'artifacts.publish': {
+    cmd: ['artifact', 'publish'],
+    syn: 'tm8 artifact publish <dir> --artifact <artifact-id> --expect-version <n> [--entrypoint <path>] [--mutation-id <id>]',
+    sum: 'Publish a further immutable revision of an existing artifact, under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['artifact', 'revision', 'republish'],
+  },
+  'artifacts.revisions.list': {
+    cmd: ['artifact', 'revisions'],
+    syn: 'tm8 artifact revisions <artifact-id>',
+    sum: 'List the immutable bundle revisions of an artifact, newest first',
+    authz: 'entity',
+    input: 'none',
+    tags: ['artifact', 'revisions', 'history'],
+  },
+  'artifacts.preview.start': {
+    cmd: ['artifact', 'preview'],
+    syn: 'tm8 artifact preview <artifact-id> [--revision <n>] [--mutation-id <id>]',
+    sum: 'Mint a viewer-bound, expiring preview session for a revision and PRINT what the Server returns — opens no browser',
+    authz: 'entity',
+    input: 'bound',
+    tags: ['artifact', 'preview', 'view', 'run'],
+    notes: [
+      'this prints exactly what the Server returns (session id, token, expiry); it never opens a browser',
+      'a usable preview URL does not exist until the preview-origin isolation decision lands (design §9.1-§9.3); until then only the session fields are returned',
+    ],
+  },
+  'artifacts.export': {
+    cmd: ['artifact', 'export'],
+    syn: 'tm8 artifact export <artifact-id> [--revision <n>] [--out <path>]',
+    sum: 'Download one revision as a deterministic application/zip bundle',
+    authz: 'entity',
+    input: 'none',
+    tags: ['artifact', 'export', 'zip', 'download'],
+    notes: [
+      'answers with raw zip bytes, so it is mutually exclusive with structured output',
+      '`--revision` defaults to the artifact current revision, resolved with one `entity get`',
+    ],
+  },
+  'artifacts.restore': {
+    cmd: ['artifact', 'restore'],
+    syn: 'tm8 artifact restore <artifact-id> --revision <n> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Publish an older revision anew as the latest revision, under a version guard',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['artifact', 'restore', 'revert', 'revision'],
+    notes: [
+      'restore is append-only: it creates a NEW revision whose provenance records the source revision, never mutating history',
+    ],
+  },
 };
 
 /**
@@ -1219,6 +1360,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   serverConnections: 'server',
   spaces: 'space',
   entities: 'entity',
+  attentionRequests: 'attention',
   tracking: 'tracking',
   edges: 'edge',
   edgeTypes: 'edge-type',
@@ -1242,6 +1384,8 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   handoffs: 'handoff',
   interactionProfiles: 'interaction-profile',
   teamMembers: 'teammate',
+  voice: 'voice',
+  artifacts: 'artifact',
 };
 
 function nounFor(operation: OperationName): string {
@@ -1276,10 +1420,23 @@ function exposureFor(operation: OperationName): Exposure {
   return 'public';
 }
 
-/** The digest every help shard carries, computed from the catalog it describes. */
-export const CATALOG_DIGEST = `sha256:${createHash('sha256')
-  .update(JSON.stringify(OPERATIONS))
-  .digest('hex')}`;
+/**
+ * The digest every help shard carries — `sha256(JSON.stringify(OPERATIONS))`.
+ *
+ * PINNED RATHER THAN COMPUTED, and the reason is reach, not performance. This
+ * module is the largest body of agent-facing prose in the repo (107 rows of
+ * summaries, syntax, notes and examples), and the prompt catalog screen shows
+ * it to operators. `node:crypto` was the ONE import in the whole `discovery/`
+ * tree that a browser bundle cannot resolve, so computing the digest here made
+ * every row unreachable from the UI to save a constant.
+ *
+ * It cannot drift: the digest is a pure function of static contract data, and
+ * `test/discovery-operations.test.ts` recomputes it with `node:crypto` and
+ * fails on any mismatch. Change the contract and that test tells you the new
+ * value to paste here.
+ */
+export const CATALOG_DIGEST =
+  'sha256:98aab261b790efa84dc5441fd9939f3597ed4c54f9b76848b719db53a4c4562e';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -1336,7 +1493,7 @@ function withAvailability(row: BaseRow, from?: AvailabilityLedger): OperationDis
  * Memoized against the DEFAULT ledger's revision only. An explicitly passed
  * ledger is always re-resolved, because a cache keyed on the wrong ledger is
  * how a projection starts answering for a node the caller is no longer talking
- * to — and a stale availability claim is worse than recomputing 106 rows.
+ * to — and a stale availability claim is worse than recomputing 107 rows.
  */
 let cached: { rev: number; rows: readonly OperationDiscovery[] } | undefined;
 
@@ -1364,7 +1521,7 @@ export const DISCOVERY: readonly OperationDiscovery[] = new Proxy([] as Operatio
     Reflect.getOwnPropertyDescriptor(discovery(), prop),
 }) as readonly OperationDiscovery[];
 
-/** Exact-operation lookup. TOTAL over all 106 rows, internal and reserved included. */
+/** Exact-operation lookup. TOTAL over all 107 rows, internal and reserved included. */
 export function discoveryFor(operation: OperationName, from?: AvailabilityLedger): OperationDiscovery {
   const row = BY_NAME.get(operation);
   /* c8 ignore next */
@@ -1499,6 +1656,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   server: 'Named routes to other tm8 Servers',
   space: 'Spaces — the authorization and event boundary, and their members, invites, axes, and menus',
   entity: 'Every entity kind: read, create, update, move, query, and relate',
+  attention: 'Scored requests for human attention across every entity kind',
   task: 'Task lifecycle: transition, complete, and link pull requests or commits',
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
@@ -1523,6 +1681,8 @@ const NOUN_SUMMARY: Record<string, string> = {
   handoff: 'Project a bounded entity snapshot into a work session',
   'interaction-profile': 'Interaction Profile lifecycle and defaults',
   teammate: 'Teammate-scoped configuration',
+  voice: 'Mint LiveKit room-join grants for voice channels',
+  artifact: 'Versioned, viewable static-web bundles: publish, revisions, preview, export',
 };
 
 /** Family nouns ∪ command nouns, sorted. Both resolve through `tm8 help <noun>`. */

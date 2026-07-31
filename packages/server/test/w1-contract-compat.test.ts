@@ -115,6 +115,10 @@ function row(overrides: Partial<EntityRow>): EntityRow {
     stars: 0,
     points: 0,
     messages: 0,
+    ws_pin_revision: null,
+    ws_pin_template_key: null,
+    ws_pin_template_version: null,
+    ws_pin_resolved_snapshot: null,
     ...overrides,
   } as EntityRow;
 }
@@ -128,6 +132,7 @@ const assembly: AssemblyContext = {
     pulls: new Map(),
     workingOn: new Map(),
     itemCounts: new Map(),
+    marks: new Map(),
   },
   viewerReactions: new Map(),
 };
@@ -271,6 +276,25 @@ describe('W1 contract-to-Server DTO compatibility', () => {
     expect(recipients).toEqual([member, teammate]);
   });
 
+  it('projects an explicit message redaction timestamp from storage', () => {
+    const messageSummary = toEntitySummary(
+      row({
+        id: MESSAGE,
+        kind: 'message',
+        anchor_id: SOURCE,
+        root_message_id: null,
+        author_id: MEMBER,
+        message_body: '',
+        message_redacted_at: '2026-07-30T03:45:00.000Z',
+      }),
+      assembly,
+    );
+    expect(messageSummary.state).toMatchObject({
+      kind: 'message',
+      redactedAt: '2026-07-30T03:45:00.000Z',
+    });
+  });
+
   it('projects message batch correlation and immutable launch-project provenance from storage', () => {
     const messageSummary = toEntitySummary(
       row({
@@ -398,6 +422,41 @@ describe('W1 contract-to-Server DTO compatibility', () => {
       kind: 'message',
       messageBatchId: 'mutation-batch-2',
     });
+  });
+
+  it('keeps an untitled work session named across live projection and reload', async () => {
+    const sessionRow = {
+      id: SOURCE,
+      space_id: SPACE,
+      kind: 'work_session',
+      parent_id: null,
+      position: 1,
+      visibility: 'space',
+      version: 1,
+      activity_at: NOW,
+      created_at: NOW,
+      updated_at: NOW,
+      deleted_at: null,
+      created_by: MEMBER,
+      ws_title: '',
+      ws_status: 'running',
+      ws_agent_tool: 'codex',
+      ws_model: 'gpt-5.6-sol',
+      ws_share_mode: 'none',
+      ws_started_at: NOW,
+      ws_exited_at: null,
+    };
+    const q = {
+      query: vi.fn(async (sql: string, params?: readonly unknown[]) => {
+        if (sql.includes('from public.edges')) return [];
+        const ids = (params?.[0] ?? []) as string[];
+        return ids.includes(SOURCE) ? [sessionRow] : [];
+      }),
+      rpc: vi.fn(),
+    } as unknown as Querier;
+
+    const projected = await new PgEntityProjector().entitySummaries(q, [SOURCE]);
+    expect(projected.get(SOURCE)?.title).toBe('Session');
   });
 });
 

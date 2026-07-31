@@ -176,3 +176,37 @@ export function hasConnectionControl(facade: CollabFacade): facade is CollabFaca
   const c = facade as Partial<ConnectionControl>;
   return typeof c.isConnected === 'function' && typeof c.subscribeConnection === 'function';
 }
+
+/**
+ * Browser file shape used by the optional upload capability. Keeping this
+ * structural makes the facade testable without constructing a DOM `File`.
+ */
+export interface UploadableFile {
+  readonly name: string;
+  readonly type: string;
+  readonly size: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+export interface UploadFileInput extends CommandContext {
+  spaceId: SpaceId;
+  file: UploadableFile;
+  /** Entities the completed file should be attached to atomically. */
+  targetIds?: EntityId[];
+}
+
+/**
+ * OPTIONAL raw-file capability. File bytes use a server-minted upload grant,
+ * so this cannot be expressed as one of the JSON-only CollabFacade commands.
+ */
+export interface FileAttachmentControl {
+  uploadFile(input: UploadFileInput): Promise<EntityDetail>;
+  fileDownloadUrl(fileEntityId: EntityId): string;
+}
+
+export function hasFileAttachmentControl(
+  facade: CollabFacade,
+): facade is CollabFacade & FileAttachmentControl {
+  const files = facade as Partial<FileAttachmentControl>;
+  return typeof files.uploadFile === 'function' && typeof files.fileDownloadUrl === 'function';
+}

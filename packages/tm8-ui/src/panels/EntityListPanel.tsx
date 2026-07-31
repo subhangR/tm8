@@ -29,6 +29,7 @@ import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { MaestroTaskTile } from './list/MaestroTaskTile';
+import { MaestroSessionTile } from './list/MaestroSessionTile';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
 
@@ -77,6 +78,8 @@ export interface EntityListPanelProps {
   liveIds?: readonly string[];
   /** Server capability truth per row. Absent ⇒ unknown ⇒ NOT permitted. */
   capabilitiesOf?: (id: string) => EntityCapabilities | undefined;
+  /** Real `working_on` targets for session tiles, projected by the shell. */
+  linkedTasksOf?: (id: string) => readonly EntitySummary[];
 
   selectedId?: string | null;
   /** True at the 200/220px floors: metas drop, badges abbreviate. */
@@ -90,6 +93,8 @@ export interface EntityListPanelProps {
   searchInputRef?: React.Ref<HTMLInputElement>;
   onSelect?: (id: string) => void;
   onAction?: (ref: ActionRef, entityId: string) => void;
+  /** Session-row close command; separate from generic header/list actions. */
+  onTerminate?: (entityId: string) => void;
   onCreate?: () => void;
   /** Authoring 7a: the host's REAL create control (NewTaskControl). */
   createSlot?: React.ReactNode;
@@ -819,12 +824,12 @@ function Band({
 
   return (
     <>
-      {/* NEEDS YOU sorts above idle (R8-dormant predicate). It is its own band
-          with its own amber eyebrow, because "an agent is waiting on you" is a
+      {/* NEEDS ATTENTION sorts above the ordinary band. It is its own amber band
+          because an explicit request for human attention is a
           different class of fact from "these are your open items". */}
       {attention.length > 0 ? (
         <>
-          <div className="lp__eyebrow lp__eyebrow--attention">{`NEEDS YOU · ${attention.length}`}</div>
+          <div className="lp__eyebrow lp__eyebrow--attention">{`NEEDS ATTENTION · ${attention.length}`}</div>
           {/* Same tree class as the main band — a control-card kind must not
               render its NEEDS-YOU rows as gapped cards and its ordinary rows
               as an attached column. */}
@@ -870,10 +875,10 @@ function Band({
 }
 
 /**
- * The NEEDS-YOU split. The predicate is registry data and takes the seam
- * verdict as a PARAMETER — it never computes liveness. Without a verdict
- * source the group simply does not fire, which is the correct dormant
- * behaviour rather than a guess.
+ * Explicit attention is universal entity-envelope data and therefore works
+ * for every kind. A kind may additionally contribute a registry predicate
+ * (currently session liveness); that predicate remains dormant without its
+ * authoritative liveness source.
  */
 function splitAttention(
   rows: readonly EntitySummary[],
@@ -881,12 +886,14 @@ function splitAttention(
   config: KindConfig,
 ): { attention: EntitySummary[]; rest: EntitySummary[] } {
   const predicate = config.list.needsAttentionGroup;
-  if (!predicate || !props.livenessOf) return { attention: [], rest: [...rows] };
 
   const attention: EntitySummary[] = [];
   const rest: EntitySummary[] = [];
   for (const row of rows) {
-    (predicate(toRowFacts(row), props.livenessOf(row.id)) ? attention : rest).push(row);
+    const derivedAttention = Boolean(
+      predicate && props.livenessOf && predicate(toRowFacts(row), props.livenessOf(row.id)),
+    );
+    (row.badges.attention || derivedAttention ? attention : rest).push(row);
   }
   return { attention, rest };
 }
@@ -973,7 +980,9 @@ function TreeRows({
 
 /** Control cards are an attached column; every other anatomy stays gapped. */
 function treeClass(config: KindConfig): string {
-  return config.list.tile.anatomy === 'control-card' ? 'lp__tree lp__tree--control' : 'lp__tree';
+  if (config.list.tile.anatomy === 'control-card') return 'lp__tree lp__tree--control';
+  if (config.list.tile.anatomy === 'session-tree') return 'lp__tree lp__tree--session';
+  return 'lp__tree';
 }
 
 interface TileTreeNode {
@@ -1037,6 +1046,7 @@ function Tile({
 }) {
   const list = config.list;
   const controlCard = list.tile.anatomy === 'control-card';
+  const sessionTree = list.tile.anatomy === 'session-tree';
   const verdict = props.livenessOf?.(row.id);
   const treatment: LiveTreatment | null =
     list.liveTreatment && verdict ? list.liveTreatment(verdict) : null;
@@ -1091,6 +1101,37 @@ function Tile({
   const controlExpanded = controlCard && (detailsExpanded || flowRef !== null);
   const controlFacts = controlCard ? factsForControlCard(row) : null;
 
+  if (sessionTree) {
+    const state = row.state as unknown as Record<string, unknown>;
+    const recordedStatus = typeof state.status === 'string' ? state.status : 'idle';
+    const agentTool = typeof state.agentTool === 'string' ? state.agentTool : null;
+    const model = typeof state.model === 'string' ? state.model : null;
+    const live = verdict === 'live';
+    return (
+      <MaestroSessionTile
+        id={row.id}
+        title={row.title || 'Session'}
+        agentTool={agentTool}
+        model={model}
+        status={recordedStatus}
+        attention={attention}
+        selected={selected}
+        archived={row.deletedAt != null}
+        completed={recordedStatus === 'exited'}
+        live={live}
+        streaming={streaming}
+        statusTone={statusTone}
+        statusTitle={statusTitle}
+        tasks={props.linkedTasksOf?.(row.id) ?? []}
+        childCount={childCount}
+        childrenExpanded={expanded}
+        onToggleChildren={onToggleChildren}
+        onSelect={() => props.onSelect?.(row.id)}
+        onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
+      />
+    );
+  }
+
   if (controlCard && controlFacts) {
     return (
       <MaestroTaskTile
@@ -1100,6 +1141,7 @@ function Tile({
         depth={depth}
         selected={selected}
         attention={attention}
+        attentionReason={row.badges.attention?.latestReason}
         completed={done || statusWord === 'done'}
         childCount={childCount}
         childrenExpanded={expanded}
@@ -1290,6 +1332,11 @@ function Tile({
           {/* The badge slot YIELDS to the action cluster on hover — the card
               never grows, so hovering cannot reflow the list under the cursor. */}
           <span className="lp__badges">
+            {attention ? (
+              <span className="lp__attention-label" title={row.badges.attention?.latestReason}>
+                Needs attention
+              </span>
+            ) : null}
             {statusWord ? (
               <span className={`lp__word kit-pill--${statusTone}`} title={statusTitle}>
                 {statusWord}

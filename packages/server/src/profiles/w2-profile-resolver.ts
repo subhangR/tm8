@@ -13,6 +13,7 @@ export interface StaticChatTemplateRegistryEntry {
   readonly schemaVersion: number;
   readonly composerSchemaRef: string;
   readonly allowedOperationBindings: readonly string[];
+  readonly initialContentSurface: 'terminal' | 'chat';
 }
 
 const CORE_TEMPLATE: StaticChatTemplateRegistryEntry = Object.freeze({
@@ -20,8 +21,12 @@ const CORE_TEMPLATE: StaticChatTemplateRegistryEntry = Object.freeze({
   version: 1,
   schemaVersion: 1,
   composerSchemaRef: 'tm8.composer.v1',
+  initialContentSurface: 'chat',
   allowedOperationBindings: Object.freeze([
     'messages.post',
+    'files.uploadInit',
+    'files.uploadComplete',
+    'files.uploadAbort',
     'messages.attachments.add',
     'messages.attachments.remove',
     'readMarks.upsert',

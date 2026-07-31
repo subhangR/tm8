@@ -33,11 +33,14 @@ import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { loadConfig, resolveServerDataDir, type ServerConfig } from './http/config.js';
+import { createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
+import { createVoiceWebhookRoute } from './http/voice-webhook.js';
+import { InMemoryVoiceRosterStore } from './voice/roster.js';
 import { createPtyWsServer, isPtyUpgrade } from './pty/index.js';
 
 export interface BootstrapOptions {
@@ -71,6 +74,12 @@ export interface BootstrappedServer {
    * nothing else.
    */
   readonly delivery: { close(): Promise<void> } | undefined;
+  /**
+   * The artifact-preview listener (design §9, second origin), when the node
+   * is configured with one AND has a database to resolve capabilities
+   * against. Narrowed to `url` + `close` for the same reason `delivery` is.
+   */
+  readonly preview: { readonly url: string; close(): Promise<void> } | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -92,6 +101,8 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * connection error that looks like an outage.
    */
   const db = config.databaseUrl
+    // `!== false`, not `=== true`: an absent field means "not overridden", and
+    // must inherit the ON default rather than read as off.
     ? createDb(config.databaseUrl, { idempotencyEnabled: config.idempotencyEnabled !== false })
     : undefined;
   const dataDir = config.dataDir ?? resolveServerDataDir();
@@ -133,6 +144,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // Declared before the registration block because `presence.get` is only
   // mounted when a presence source exists — see registerEventHandlers.
   const presence = new InMemoryPresenceStore();
+
+  // Voice-channel roster (voice plan §2). Ephemeral for the same reason
+  // presence is, but sourced from LiveKit webhooks rather than from client
+  // claims — see voice/roster.ts on why they are two stores and not one.
+  const voiceRoster = new InMemoryVoiceRosterStore();
 
   /**
    * W2 B2's live delivery, and THE ONE PLACE A SECOND DATABASE IDENTITY IS
@@ -311,17 +327,99 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
 
+  /**
+   * The LiveKit webhook, and the FIRST PRODUCTION CALLER `publishPresence` has
+   * ever had.
+   *
+   * Everything the ephemeral channel needs was already built — the seq source,
+   * the validated envelope, the separate presence fan-out — and none of it was
+   * wired to anything: `publishPresence` appeared exactly once in
+   * `packages/server/src`, at its own definition, and every caller was a test.
+   * Voice is what connects it. Nothing about presence changes here.
+   *
+   * The room→space lookup runs under the NODE OWNER's claims, not a caller's:
+   * there is no request identity on a server-to-server callback, and the
+   * webhook has already been proven to come from the SFU by its signature.
+   */
+  const voiceWebhook = config.livekit && db && owner
+    ? createVoiceWebhookRoute({
+        livekit: config.livekit,
+        roster: voiceRoster,
+        spaceOf: async (voiceChannelId) => {
+          const nodeOwner = await owner();
+          const rows = await db.query<{ space_id: string }>(
+            { identityId: nodeOwner.identityId, nodeAdmin: nodeOwner.isNodeAdmin },
+            `select space_id from public.voice_channels where entity_id = $1`,
+            [voiceChannelId],
+          );
+          return rows[0]?.space_id;
+        },
+        publish: async (spaceId, voiceChannelId, participants) => {
+          // No `spaceId` in the body: it is an envelope key, and
+          // `publishPresence` stamps it along with the channel-local seq.
+          // Passing it here would be the one place the two could disagree.
+          await events.publishPresence(spaceId, {
+            type: 'voice.participants.changed',
+            voiceChannelId,
+            participants: [...participants],
+          });
+        },
+        log: (message) => console.warn(message),
+      })
+    : undefined;
+
   const server = createFacadeServer({
     config,
     registry,
     upgrades,
+    // `select 1` through the SAME claim-binding pool the reads use — the only
+    // probe that goes red when the pool is exhausted, which is the one outage
+    // /health has actually failed to report.
+    ...(db ? { healthProbe: async () => { await db.query({ nodeAdmin: false }, 'select 1'); } } : {}),
     ...(identityResolver ? { identityResolver } : {}),
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
+    ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
   const { url } = await server.listen();
+
+  /**
+   * The SECOND listener (design §9.2/§9.3): untrusted bundle content, on its
+   * own origin, sharing no middleware with the app pipeline above. Started
+   * only when the config carries a preview origin — loadConfig has already
+   * refused to produce one that collides with the app origin — and only when
+   * a database exists to resolve capabilities against: a preview listener
+   * that can authenticate nothing should not be listening.
+   */
+  let preview: BootstrappedServer['preview'];
+  if (config.preview && db && blobStore && owner) {
+    const previewServer = createArtifactPreviewServer({
+      preview: {
+        ...config.preview,
+        // An ephemeral APP port is the test harnesses' fingerprint (loadConfig
+        // refuses 0 from an operator; tests substitute it after validation).
+        // The preview listener follows suit so parallel harness boots never
+        // race each other for 4613.
+        port: config.port === 0 ? 0 : config.preview.port,
+      },
+      bindHost: config.host,
+      db,
+      blobStore,
+      owner,
+    });
+    const listening = await previewServer.listen();
+    preview = { url: listening.url, close: () => previewServer.close() };
+    // Ride the composed server's close: every existing caller — harnesses
+    // included — tears down with `server.close()` and must not leak the
+    // second listener for not knowing it exists.
+    const composedClose = server.close.bind(server);
+    (server as { close: FacadeServer['close'] }).close = async () => {
+      await previewServer.close().catch(() => undefined);
+      await composedClose();
+    };
+  }
 
   /**
    * Retire the sessions this node left behind when it last died.
@@ -344,14 +442,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
-  return { server, subscriptions, events, url, db, delivery };
+  return { server, subscriptions, events, url, db, delivery, preview };
 }
 
 export async function main(): Promise<void> {
   try {
-    const { server, url, db, delivery } = await bootstrap();
+    const { server, url, db, delivery, preview } = await bootstrap();
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
+    console.log(
+      `  artifact preview: ${preview ? `${preview.url} (second origin, design §9)` : 'NOT RUNNING (needs a database and TM8_PREVIEW_ENABLED not 0)'}`,
+    );
     console.log(
       `  catalog: ${router.mounted().length} HTTP operations mounted · ` +
         `${registry.size} implemented · the rest answer 501 not_implemented (DEV-13)`,
@@ -367,6 +468,7 @@ export async function main(): Promise<void> {
       console.log(`\n${signal} — shutting down`);
       void server
         .close()
+        .then(() => preview?.close())
         .then(() => delivery?.close())
         .then(() => db?.end())
         .then(

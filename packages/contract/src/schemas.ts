@@ -14,6 +14,11 @@ import { z } from 'zod';
 import { isOperationName } from './catalog.js';
 import type { OperationName } from './catalog.js';
 import { MAX_CONTROL_FRAME_SPACES, SHA256_HEX_RE } from './contract.js';
+import { ArtifactManifestSchema } from './artifact-manifest.js';
+import type {
+  ArtifactsCreateInput, ArtifactsPreviewStartInput,
+  ArtifactsPublishInput, ArtifactsRestoreInput,
+} from './artifact-manifest.js';
 import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
@@ -21,14 +26,14 @@ import type {
   ClosedPromptPolicy, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
-  CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput,
+  CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
   EntityContextQuery, EntityContextView, EntityCounters, EntityDetail,
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
-  EntityKindDef, EntityKindUpdateInput, EntityState, EntitySummary, ErrorCode,
-  ErrorDetails, ExecutionPromptInput, ExecutionSpawnInput,
+  EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
+  ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
@@ -48,13 +53,16 @@ import type {
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
   ServerConnection, ServerConnectionCreateInput, ServerConnectionDeleteInput,
   SetDefaultChannelInput, SetSpaceProfileDefaultInput,
+  AttentionRequest, AttentionRequestListQuery, AttentionRequestMutationResult,
+  CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
+  KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
-  UpdateSpaceInput, ValidateInteractionProfileInput, WithdrawHandoffInput,
-  WorkInput, WorkSessionShareMode, WorkSessionStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
+  WorkInput, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -81,6 +89,10 @@ export const CoreEntityKindSchema = z.enum([
   'channel', 'task', 'message', 'member', 'team_member',
   'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
   'work_session', 'collection', 'project', 'interaction_profile',
+  'voice_channel',
+  'memory',
+  'worktree',
+  'artifact',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -98,6 +110,8 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
+export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
+  z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
 // ---------------------------------------------------------------------------
 // Actors, counters
@@ -165,6 +179,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     author: ActorSummarySchema,
     messageBatchId: z.string().nullable(),
     editedAt: z.string().nullable().optional(),
+    redactedAt: z.string().nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('member'),
@@ -232,6 +247,30 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     activeVersion: z.number().int().positive().nullable(),
     activeHash: z.string().nullable(),
     retiredAt: IsoTimestamp.nullable(),
+    initialContentSurface: z.enum(['terminal', 'chat']).optional(),
+  }).strict(),
+  z.object({
+    kind: z.literal('voice_channel'),
+    participantCount: z.number().int().nonnegative(),
+  }).strict(),
+  z.object({
+    kind: z.literal('memory'),
+    mechanism: z.string(),
+    subjectScope: z.string(),
+    doesNotEstablish: z.string(),
+    measuredAt: z.string().nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('worktree'),
+    status: WorktreeStatusSchema,
+    branch: z.string().min(1),
+    baseRef: z.string().min(1),
+    baseCommitOid: z.string().regex(/^[0-9a-f]{40}$/),
+    projectId: z.string().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('artifact'),
+    revisionNumber: z.number().int().positive(),
   }).strict(),
   z.object({
     kind: CustomEntityKindSchema,
@@ -257,6 +296,13 @@ export const LiveWorkSchema: z.ZodType<LiveWork> = z.lazy(() => z.object({
 }).strict());
 
 export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object({
+  attention: z.object({
+    pendingCount: z.number().int().positive(),
+    totalPoints: z.number().int().positive(),
+    maxPoints: z.number().int().min(1).max(100),
+    latestReason: z.string().min(1).max(500),
+    oldestRequestedAt: IsoTimestamp,
+  }).strict().optional(),
   blocked: z.object({
     unresolvedHardDependencyCount: z.number().int().nonnegative(),
     waitingOn: z.array(EntitySummarySchema),
@@ -264,7 +310,34 @@ export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object
   pulls: z.array(PullStateSchema).optional(),
   workingActors: z.array(LiveWorkSchema).optional(),
   restricted: z.boolean().optional(),
+  staleness: EntityStalenessSchema.optional(),
 }).strict());
+
+/**
+ * Derived at read time from mark edges and versions; never stored. ABSENT
+ * MEANS UNFLAGGED — it does NOT mean verified or current. `reasons` is never
+ * emitted empty: a memory with nothing to report carries no badge at all.
+ */
+export const EntityStalenessSchema: z.ZodType<EntityStaleness> = z.object({
+  reasons: z.array(z.enum(['superseded', 'disputed', 'basisDeleted', 'basisMoved'])).min(1),
+  superseded: z.object({
+    byId: EntityIdSchema,
+    headId: EntityIdSchema.nullable(),
+    depthTruncated: z.boolean(),
+  }).strict().optional(),
+  disputed: z.object({
+    openCount: z.number().int().positive(),
+    latestAt: IsoTimestamp,
+  }).strict().optional(),
+  basisDeleted: z.object({ count: z.number().int().positive() }).strict().optional(),
+  basisMoved: z.object({ count: z.number().int().positive() }).strict().optional(),
+  verified: z.object({
+    at: IsoTimestamp,
+    atVersion: z.number().int().positive(),
+    current: z.boolean(),
+    independenceBasis: z.enum(['session', 'actor']),
+  }).strict().optional(),
+}).strict();
 
 /** Raw field set of EntitySummary — reused by MessageView and EntityDetail. */
 function entitySummaryShape() {
@@ -401,6 +474,7 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     launchProjectId: z.string().nullable(),
     workingOn: z.array(EntitySummarySchema),
     transcriptDoc: EntitySummarySchema.nullable(),
+    interactionProfile: z.lazy(() => WorkSessionInteractionProfileProjectionSchema).nullable().optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -420,6 +494,36 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     templateVersion: z.number().int().positive(),
     resolvedHash: z.string().nullable(),
     generatedByTeamMemberId: EntityIdSchema.nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('voice_channel'),
+  }).strict(),
+  z.object({
+    kind: z.literal('memory'),
+    statement: z.string(),
+    mechanism: z.string(),
+    subjectScope: z.string(),
+    doesNotEstablish: z.string(),
+    measuredAt: z.string().nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('worktree'),
+    projectId: z.string().min(1),
+    path: z.string().min(1),
+    branch: z.string().min(1),
+    baseRef: z.string().min(1),
+    baseCommitOid: z.string().regex(/^[0-9a-f]{40}$/),
+    status: WorktreeStatusSchema,
+    statusChangedAt: IsoTimestamp.nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('artifact'),
+    description: z.string().nullable(),
+    currentRevisionNumber: z.number().int().positive(),
+    entrypoint: z.string().min(1),
+    manifestSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    fileCount: z.number().int().positive(),
+    totalSizeBytes: z.number().int().nonnegative(),
   }).strict(),
   z.object({
     kind: CustomEntityKindSchema,
@@ -556,6 +660,7 @@ const MessageStateSchema = z.object({
   author: ActorSummarySchema,
   messageBatchId: z.string().nullable(),
   editedAt: z.string().nullable().optional(),
+  redactedAt: z.string().nullable().optional(),
 }).strict();
 
 const MessageContentSchema = z.object({
@@ -594,6 +699,12 @@ export const PresenceSnapshotSchema: z.ZodType<PresenceSnapshot> = z.object({
   viewers: z.array(ActorSummarySchema),
   typingActorIds: z.array(EntityIdSchema),
   updatedAt: IsoTimestamp,
+}).strict();
+
+export const VoiceParticipantSchema: z.ZodType<VoiceParticipant> = z.object({
+  memberId: EntityIdSchema,
+  name: z.string(),
+  muted: z.boolean().optional(),
 }).strict();
 
 export const NotificationItemSchema: z.ZodType<NotificationItem> = z.lazy(() => z.object({
@@ -738,6 +849,13 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     anchorId: EntityIdSchema,
     typingActorIds: z.array(EntityIdSchema),
   }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('voice.participants.changed'),
+    voiceChannelId: EntityIdSchema,
+    spaceId: SpaceIdSchema,
+    participants: z.array(VoiceParticipantSchema),
+  }).strict(),
 ]));
 
 // ---------------------------------------------------------------------------
@@ -802,7 +920,15 @@ export const ServerConnectionNameSchema = z.string()
   .regex(/^[a-z][a-z0-9-]*$/, 'name must start with a letter and contain only lowercase letters, digits, and hyphens');
 
 export const ServerConnectionBaseUrlSchema = z.string().min(1).max(2048).url().superRefine((value, ctx) => {
-  const url = new URL(value);
+  // `.url()` records its issue without ABORTING, so this refinement still runs
+  // on a non-URL — and an unguarded `new URL(value)` then THROWS out of
+  // safeParse (TypeError, not a ZodError). Refine only what parses.
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return;
+  }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'baseUrl must use http or https' });
   }
@@ -907,7 +1033,7 @@ export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   clientMutationId: z.string().min(1),
   spaceId: SpaceIdSchema,
   kind: z.union([
-    CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile']),
+    CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact']),
     CustomEntityKindSchema,
   ]),
   title: z.string().min(1),
@@ -924,6 +1050,107 @@ export const PatchEntityInputSchema: z.ZodType<PatchEntityInput> = z.object({
   title: z.string().optional(),
   content: z.record(z.unknown()).optional(),
 }).strict();
+
+// artifacts — command inputs (TM8-ARTIFACTS-DESIGN §8.1). The manifest is the
+// strict, model-agnostic bundle descriptor; see artifact-manifest.ts.
+const ArtifactInlineFilesSchema = z.array(
+  z.object({ path: z.string().min(1), contentBase64: z.string().min(1) }).strict(),
+).min(1).max(128);
+export const ArtifactsCreateInputSchema: z.ZodType<ArtifactsCreateInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpaceIdSchema,
+  name: z.string().trim().min(1).max(200),
+  description: z.string().max(2000).optional(),
+  manifest: ArtifactManifestSchema,
+  files: ArtifactInlineFilesSchema.optional(),
+  sourceWorkSessionId: EntityIdSchema.nullable().optional(),
+  parentId: EntityIdSchema.nullable().optional(),
+  position: z.number().optional(),
+}).strict();
+
+export const ArtifactsPublishInputSchema: z.ZodType<ArtifactsPublishInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  manifest: ArtifactManifestSchema,
+  files: ArtifactInlineFilesSchema.optional(),
+  sourceWorkSessionId: EntityIdSchema.nullable().optional(),
+}).strict();
+
+export const ArtifactsPreviewStartInputSchema: z.ZodType<ArtifactsPreviewStartInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  revisionNumber: z.number().int().positive().optional(),
+}).strict();
+
+export const ArtifactsRestoreInputSchema: z.ZodType<ArtifactsRestoreInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  revisionNumber: z.number().int().positive(),
+}).strict();
+
+export const AttentionRequestStatusSchema = z.enum(['open', 'acknowledged', 'resolved', 'dismissed']);
+
+export const AttentionRequestSchema: z.ZodType<AttentionRequest> = z.object({
+  id: z.string().uuid(),
+  spaceId: EntityIdSchema,
+  entityId: EntityIdSchema,
+  reason: z.string().min(1).max(500),
+  points: z.number().int().min(1).max(100),
+  status: AttentionRequestStatusSchema,
+  version: z.number().int().positive(),
+  requestedBy: ActorSummarySchema,
+  acknowledgedBy: ActorSummarySchema.nullable(),
+  resolvedBy: ActorSummarySchema.nullable(),
+  resolutionNote: z.string().max(1000).nullable(),
+  createdAt: IsoTimestamp,
+  updatedAt: IsoTimestamp,
+  acknowledgedAt: IsoTimestamp.nullable(),
+  resolvedAt: IsoTimestamp.nullable(),
+}).strict();
+
+export const AttentionRequestListQuerySchema: z.ZodType<AttentionRequestListQuery> = z.object({
+  spaceId: EntityIdSchema,
+  entityId: EntityIdSchema.optional(),
+  status: AttentionRequestStatusSchema.optional(),
+  minPoints: z.number().int().min(1).max(100).optional(),
+  limit: z.number().int().positive().max(200).optional(),
+  cursor: z.string().optional(),
+}).strict();
+
+export const CreateAttentionRequestInputSchema: z.ZodType<CreateAttentionRequestInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  reason: z.string().trim().min(1).max(500),
+  points: z.number().int().min(1).max(100),
+}).strict();
+
+export const UpdateAttentionRequestInputSchema: z.ZodType<UpdateAttentionRequestInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  expectedVersion: z.number().int().positive(),
+  reason: z.string().trim().min(1).max(500).optional(),
+  points: z.number().int().min(1).max(100).optional(),
+  status: AttentionRequestStatusSchema.optional(),
+  resolutionNote: z.string().trim().max(1000).optional(),
+}).strict().refine(
+  (value) => value.reason !== undefined || value.points !== undefined || value.status !== undefined || value.resolutionNote !== undefined,
+  { message: 'at least one attention request field must be updated' },
+);
+
+export const ResolveEntityAttentionInputSchema: z.ZodType<ResolveEntityAttentionInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  resolutionNote: z.string().trim().max(1000).optional(),
+}).strict();
+
+export const AttentionRequestMutationResultSchema: z.ZodType<AttentionRequestMutationResult> = z.lazy(() => z.object({
+  request: AttentionRequestSchema.nullable(),
+  entity: EntitySummarySchema,
+  affectedCount: z.number().int().nonnegative(),
+}).strict());
 
 export const MoveEntityInputSchema: z.ZodType<MoveEntityInput> = z.object({
   ...commandContextShape,
@@ -1088,6 +1315,8 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 // ---------------------------------------------------------------------------
 
 export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'settings']);
+// `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
+// menu-visible, still not menu-creatable (creation stays with the saga).
 export const MenuKindRefSchema = z.union([
   CoreEntityKindSchema.exclude(['channel', 'message']),
   CustomEntityKindSchema,
@@ -1265,6 +1494,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   clientMutationId: z.string().min(1),
   spaceId: SpawnUuidSchema,
   teamMemberId: SpawnUuidSchema,
+  parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
@@ -1273,6 +1503,8 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
+  reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
+  accessMode: z.enum(['safe', 'acceptEdits', 'plan', 'fullAccess']).optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
 }).strict();
@@ -1287,6 +1519,11 @@ export const ExecutionTerminateInputSchema: z.ZodType<ExecutionTerminateInput> =
   force: z.boolean().optional(),
 }).strict();
 
+export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({
   ...commandContextShape,
   mode: z.enum(['view', 'drive']),
@@ -1298,6 +1535,19 @@ export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({
   protocol: z.literal('ws'),
   mode: z.enum(['view', 'drive']),
   token: z.string().nullable().optional(),
+  expiresAt: IsoTimestamp,
+}).strict();
+
+export const CreateVoiceTokenInputSchema: z.ZodType<CreateVoiceTokenInput> = z.object({
+  ...commandContextShape,
+}).strict();
+
+export const VoiceTokenGrantSchema: z.ZodType<VoiceTokenGrant> = z.object({
+  voiceChannelId: EntityIdSchema,
+  url: z.string().min(1),
+  token: z.string().min(1),
+  roomName: z.string().min(1),
+  identity: z.string().min(1),
   expiresAt: IsoTimestamp,
 }).strict();
 
@@ -1536,6 +1786,19 @@ export const ComposerInteractionPolicySchema: z.ZodType<ComposerInteractionPolic
   operationBindings: uniqueArray(OperationNameSchema),
 }).strict();
 
+export const WorkSessionInteractionProfileProjectionSchema: z.ZodType<
+  import('./contract.js').WorkSessionInteractionProfileProjection
+> = z.object({
+  pinRevision: z.number().int().positive(),
+  templateKey: z.string().min(1),
+  templateVersion: z.number().int().positive(),
+  compatibility: z.enum(['supported', 'unknown_template']),
+  chatEnabled: z.boolean(),
+  initialContentSurface: z.enum(['terminal', 'chat']),
+  feedPolicy: FeedPolicySchema,
+  composerPolicy: ComposerInteractionPolicySchema,
+}).strict();
+
 export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> = z.object({
   name: z.string().min(1).max(80),
   templateKey: z.string().min(1),
@@ -1545,6 +1808,11 @@ export const InteractionProfileDraftSchema: z.ZodType<InteractionProfileDraft> =
   feedPolicy: FeedPolicySchema,
   providerCaptureMode: z.literal('explicit-only'),
   composerPolicy: ComposerInteractionPolicySchema,
+  /* Which Content surface this profile opens on. OPTIONAL on purpose: every
+     draft written before this field existed stays valid, and an absent value
+     means "defer to the pinned static template" — exactly the behaviour those
+     drafts already had. Authors who set it are choosing, not overriding. */
+  initialContentSurface: z.enum(['terminal', 'chat']).optional(),
 }).strict();
 
 export const ProposeInteractionProfileInputSchema: z.ZodType<ProposeInteractionProfileInput> = z.object({
@@ -1742,6 +2010,17 @@ export const SpaceNavigationSchema: z.ZodType<SpaceNavigation> = z.lazy(() => z.
   unreadTotal: z.number().int().nonnegative(),
   channels: z.array(NavChannelNodeSchema),
 }).strict());
+
+export const KindCountsSchema: z.ZodType<KindCounts> = z.object({
+  total: z.number().int().nonnegative(),
+  unseen: z.number().int().nonnegative(),
+}).strict();
+
+// Keyed by kind, and PARTIAL: kinds with no rows are absent, not zero. A
+// record keyed by `EntityKindSchema` rather than an enum-keyed object is what
+// lets a custom `c:*` kind carry counters without a schema change.
+export const SpaceKindCountsSchema: z.ZodType<SpaceKindCounts> =
+  z.record(EntityKindSchema, KindCountsSchema);
 
 export const HomeSnapshotSchema: z.ZodType<HomeSnapshot> = z.lazy(() => z.object({
   readyToPull: CollectionResultSchema,

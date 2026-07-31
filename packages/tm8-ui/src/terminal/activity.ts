@@ -70,6 +70,24 @@ export function createScriptedActivitySource(
 }
 
 /**
+ * Runtime terminal activity, using Maestro's two-second idle debounce. The PTY
+ * transport calls `markTerminalActivity` only for live output frames; replay
+ * hydration never makes a session appear to be actively streaming.
+ */
+export const terminalActivitySource = createScriptedActivitySource();
+const terminalActivityTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+export function markTerminalActivity(sessionId: string): void {
+  terminalActivitySource.setActive(sessionId, true);
+  const previous = terminalActivityTimers.get(sessionId);
+  if (previous) clearTimeout(previous);
+  terminalActivityTimers.set(sessionId, setTimeout(() => {
+    terminalActivityTimers.delete(sessionId);
+    terminalActivitySource.setActive(sessionId, false);
+  }, 2_000));
+}
+
+/**
  * Subscribe one session's activity. Returns raw activity — NOT a licence to
  * render "streaming"; pass it through `presentSession`, which applies the
  * live-verdict gate.

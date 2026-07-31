@@ -3,7 +3,7 @@
  *
  * One module drives routes, origin validation, palette entries, menu-ref
  * validation, both universal primitives, and the Z4 layouts. Totality over
- * `CoreEntityKindSchema` (15 kinds) is asserted by `registry.test.ts` — the
+ * `CoreEntityKindSchema` (16 kinds) is asserted by `registry.test.ts` — the
  * WLT §2.1 law — plus the single `c:*` fallback row that makes every custom
  * kind land on the generic archetype for free.
  *
@@ -338,6 +338,7 @@ const ROWS: readonly KindConfig[] = [
       lifecycle: SESSION_TIERS,
       tree: { by: 'hierarchy', guideLines: true },
       tile: {
+        anatomy: 'session-tree',
         badges: [
           { source: 'sessionStatus' },
           { source: 'agentTool' },
@@ -369,8 +370,9 @@ const ROWS: readonly KindConfig[] = [
         source: 'sessionStatus',
         tones: { spawning: 'wait', running: 'run', idle: 'info', exited: 'idle', failed: 'block' },
       },
-      // Phase 1 ships ['terminal'] — the field IS the RULING-K seam (D12).
-      contentSurfaces: ['terminal'],
+      // Availability is still pin-projected at the panel mount: the registry
+      // declares the complete work-session surface vocabulary, not permission.
+      contentSurfaces: ['terminal', 'chat'],
       z4: { immersive: true },
     },
     palette: { createLabel: 'Launch session', primaryAction: 'launch-session' },
@@ -420,6 +422,44 @@ const ROWS: readonly KindConfig[] = [
     palette: { createLabel: 'New channel' },
   },
 
+  // -- voice_channel (special strategy — a ROOM, not a feed) ----------------
+  //
+  // Deliberately `special` + `slug: null`, exactly like `channel`: that keeps
+  // it OUT of `collectionKinds()`, so it is neither a list-kind switcher entry
+  // nor a menu-editor row. The rail supplies voice rows from a DYNAMIC group
+  // over the space's live voice entities, the same way Collab v2 supplies
+  // channel rows — a `k/` collection list would be a second, divergent home.
+  //
+  // Adapted from `channel` rather than copied: a voice channel carries NO
+  // message feed and NO topic (its contract content arm is `{ kind }` and
+  // nothing else), so `channelTopic` / `unread` / `messages` have no honest
+  // source here and are absent instead of rendering empty.
+  {
+    kind: 'voice_channel',
+    label: 'Voice channel',
+    labelPlural: 'Voice channels',
+    // A placeholder in the canvases' own monochrome text idiom (see the module
+    // header): a speaker glyph from the pictograph block tofus in the system
+    // font, so the audio note stands in until the canvas-extracted set lands.
+    icon: '♪',
+    slug: null,
+    strategy: 'special',
+    routeBuilder: (spaceId, id) => `#/s/${spaceId}/voice/${id}`,
+    defaultMode: 'list',
+    hiddenModes: ['board', 'gallery'],
+    chip: { glyph: '♪', tintBy: 'none' },
+    card: { fields: ['workingActors', 'activityAt'] },
+    list: baseList({
+      tree: { by: 'hierarchy', guideLines: true },
+      tile: { badges: [{ source: 'workingActors' }] },
+      inlineEdit: { title: true },
+    }),
+    // `hub` matches `channel`'s archetype, but WITHOUT `add-child`: a voice
+    // room has no child-authoring surface to promise.
+    panel: { archetype: 'hub' },
+    palette: { createLabel: 'New voice channel' },
+  },
+
   // -- message (anchored strategy — no k/ view) -----------------------------
   {
     kind: 'message',
@@ -465,6 +505,21 @@ const ROWS: readonly KindConfig[] = [
     panel: {
       archetype: 'profile',
       statusPill: { source: 'memberRole', tones: { owner: 'brand', admin: 'info', member: 'idle' } },
+      /* T0-4 MEMBER frame (oracle lines 400–448). The anatomy IS this list —
+         ProfileBody carries no kind branch, so the human frame and the agent
+         frame below differ only in the blocks their row declares. */
+      blocks: [
+        {
+          block: 'identity',
+          params: { provenance: 'human', tagKey: 'role', caption: 'human member', presence: true },
+        },
+        {
+          block: 'stat-tiles',
+          params: { tiles: 'taskDoneCount=tasks done,score=points,teamMembers=teammates' },
+        },
+        { block: 'items', label: 'TEAMMATES OWNED', params: { source: 'teamMembers' } },
+        { block: 'items', label: 'CURRENT WORK', params: { source: 'work', statusKey: 'workStatus' } },
+      ],
     },
   },
 
@@ -477,14 +532,43 @@ const ROWS: readonly KindConfig[] = [
     slug: 'teammates',
     strategy: 'collection',
     defaultMode: 'list',
-    hiddenModes: ['board', 'tree'],
+    /* `tree` is NOT hidden: db/migrations/002_identity.sql:110 rules that the
+       org tree IS the entity hierarchy (leader = parent), so the generic
+       EntityTree — which builds from `parentId` and roots orphans rather than
+       dropping them — renders the team structure with no teammate-specific
+       code. A flat team draws one flat level, which is the honest picture of a
+       team nobody has given a leader. */
+    hiddenModes: ['board'],
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
       tile: { badges: [{ source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
       inlineEdit: { title: true },
+      tree: { by: 'hierarchy', guideLines: true },
     }),
-    panel: { archetype: 'profile', primaries: ['coordinate'] },
+    panel: {
+      archetype: 'profile',
+      primaries: ['coordinate'],
+      /* T0-4 AGENT frame (oracle lines 452–496), verbatim in order… */
+      blocks: [
+        { block: 'bio', params: { source: 'identity' } },
+        {
+          block: 'field-grid',
+          params: { fields: 'model=Model,agentTool=Tool,owner=Owner,memories=Memories' },
+        },
+        { block: 'live-work', params: { source: 'liveWork' } },
+        { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+        {
+          block: 'session-rows',
+          label: 'RECENT SESSIONS',
+          params: { edgeType: 'relates_to', direction: 'incoming' },
+        },
+        /* …then one ADDITION the oracle does not draw, appended so the frame
+           above stays contiguous and oracle-exact: this teammate's place in
+           the org tree, read from `hierarchy` and never written. */
+        { block: 'org-tree', label: 'TEAM' },
+      ],
+    },
     palette: { createLabel: 'New teammate' },
   },
 
@@ -733,6 +817,93 @@ const ROWS: readonly KindConfig[] = [
         canEdit:
           'Interaction profiles change through their own lifecycle operations (draft → activate → retire), not through generic edits.',
         canDelete: 'Interaction profiles are retired, never deleted — the version history is the record.',
+      },
+    },
+  },
+
+  // -- memory (scope-carrying claims; staleness derived server-side) --------
+  {
+    kind: 'memory',
+    label: 'Memory',
+    labelPlural: 'Memories',
+    icon: '◈',
+    slug: 'memories',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '◈', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [
+        { block: 'fields', label: 'SCOPE' },
+      ],
+    },
+    palette: { createLabel: 'New memory' },
+  },
+
+  // -- artifact (versioned bundle; bytes served via preview/export, not here) --
+  {
+    kind: 'artifact',
+    label: 'Artifact',
+    labelPlural: 'Artifacts',
+    icon: '❖',
+    slug: 'artifacts',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '❖', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    // Generic create is refused for artifacts server-side (contract create
+    // resource excludes the kind) — they are born from a publish RPC, so no
+    // quickCreate and no generic palette create, exactly like `project`.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      // Same shape `file` uses: a preview block first, then the detail fields.
+      archetype: 'generic',
+      blocks: [
+        { block: 'artifact-preview', label: 'PREVIEW' },
+        { block: 'fields', label: 'DETAILS' },
+      ],
+    },
+  },
+
+  // -- worktree (server-provisioned Git checkout; lifecycle rides patch) ----
+  {
+    kind: 'worktree',
+    label: 'Worktree',
+    labelPlural: 'Worktrees',
+    icon: '⎇',
+    slug: 'worktrees',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '⎇', tintBy: 'none' },
+    card: { fields: ['activityAt', 'createdBy'] },
+    // Worktrees are born only from the server's provisioning saga (generic
+    // create is refused server-side, same posture as `artifact`/`project`):
+    // no quickCreate, no palette create. Status pill deferred with Phase 5 —
+    // it needs a `worktreeStatus` StatusSource wired through the shared
+    // status-key maps, which is UI-lane work, not registry data.
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [
+        { block: 'fields', label: 'CHECKOUT' },
+      ],
+      capabilityReasons: {
+        canEdit:
+          'A worktree accepts exactly one edit: the forward-only status transition (merged / abandoned / deleted). Every other field is immutable after creation.',
       },
     },
   },

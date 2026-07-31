@@ -77,6 +77,11 @@ export class TmClient {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
 
+  resolveUrl(path: string): string {
+    if (/^https?:\/\//i.test(path)) return path;
+    return `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+  }
+
   isConnected(): boolean {
     return this.connected;
   }
@@ -156,5 +161,41 @@ export class TmClient {
 
   put<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>('PUT', path, body ?? {});
+  }
+
+  /** Raw-byte transfer to a server-minted upload grant (not a JSON operation). */
+  async putGrantedBytes(uploadUrl: string, token: string | null | undefined, body: BodyInit): Promise<void> {
+    if (!token) {
+      throw new CollabError('unauthenticated', 'the upload grant has no bearer token');
+    }
+
+    const url = this.resolveUrl(uploadUrl);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'PUT',
+        headers: { authorization: `Bearer ${token}` },
+        body,
+      });
+    } catch (cause) {
+      this.setConnected(false);
+      throw new CollabError('upstream_unavailable', `cannot reach the upload target: ${String(cause)}`, {
+        details: { url },
+      });
+    }
+
+    this.setConnected(true);
+    if (res.ok) return;
+
+    const text = await res.text();
+    let parsed: unknown;
+    try {
+      parsed = text ? JSON.parse(text) : undefined;
+    } catch {
+      throw new CollabError('upstream_unavailable', `upload target returned non-JSON (HTTP ${res.status})`, {
+        details: { url, status: res.status },
+      });
+    }
+    throw toCollabError(res.status, parsed);
   }
 }

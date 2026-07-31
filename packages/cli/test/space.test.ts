@@ -183,6 +183,7 @@ const ROWS: ReadonlyArray<{
   { op: 'spaces.update', argv: ['space', 'update', '--name', 'x'], method: 'PATCH', params: { spaceId: SPACE } },
   { op: 'spaces.navigation', argv: ['space', 'navigation', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.home', argv: ['space', 'home', 'get'], method: 'GET', params: { spaceId: SPACE } },
+  { op: 'spaces.counts', argv: ['space', 'counts', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.settings', argv: ['space', 'settings', 'get'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.members.list', argv: ['space', 'member', 'list'], method: 'GET', params: { spaceId: SPACE } },
   { op: 'spaces.invites.list', argv: ['space', 'invite', 'list'], method: 'GET', params: { spaceId: SPACE } },
@@ -246,9 +247,9 @@ const READS = [
 ] as const;
 
 describe('the registered command set', () => {
-  it('registers all 21 Space rows and nothing that is not in the projection', async () => {
+  it('registers all 22 Space rows and nothing that is not in the projection', async () => {
     const paths = (await spaceCommands()).map((c) => c.path.join(' '));
-    expect(paths).toHaveLength(21);
+    expect(paths).toHaveLength(22);
     expect(new Set(paths).size).toBe(paths.length);
     for (const p of paths) {
       expect(isCommandPath(p.split(' ')), `${p} is wired but absent from the projection`).toBe(true);
@@ -273,7 +274,7 @@ describe('the registered command set', () => {
 });
 
 describe('every row binds its path from the catalog', () => {
-  it('sends the exact method and bound path for all 21 rows', async () => {
+  it('sends the exact method and bound path for all 22 rows', async () => {
     let checked = 0;
     for (const row of ROWS) {
       seen = [];
@@ -285,8 +286,8 @@ describe('every row binds its path from the catalog', () => {
       checked++;
     }
     // Vacuity guard: a loop that silently iterates zero rows passes everything.
-    expect(checked).toBe(21);
-    expect(ROWS).toHaveLength(21);
+    expect(checked).toBe(22);
+    expect(ROWS).toHaveLength(22);
   });
 });
 
@@ -513,10 +514,29 @@ describe('per-node availability is derived, never assumed', () => {
     expect(resolveAvailability('spaces.list', 'v1').availability).toBe('available');
   });
 
-  it('a refusal that is NOT not_implemented still proves a handler exists', async () => {
+  it('an ambiguous refusal teaches NOTHING — the narrowed rule (2026-07-31)', async () => {
+    // This test used to assert the opposite ("a refusal that is NOT
+    // not_implemented still proves a handler exists") with `forbidden` as its
+    // worked example. That premise died when S2/S3 transport checks went live
+    // server-side: a `forbidden` can now be authored at pipeline step 2,
+    // before handler lookup, so recording it as handled would resolve
+    // `available` for operations this node may not implement. See
+    // observe.ts PROVES_A_HANDLER_RAN — only version_conflict and
+    // invariant_violation still prove a handler ran.
     reply = {
       status: 403,
       body: { error: { code: 'forbidden', message: 'no', requestId: 'r', retryable: false } },
+    };
+    await drive(['space', 'settings', 'get']);
+    expect(resolveAvailability('spaces.settings', 'v1').availability).toBe('unknown');
+  });
+
+  it('a handler-only refusal code still proves a handler exists', async () => {
+    // The positive half the narrowing keeps: version_conflict is only ever
+    // authored by a handler comparing expectedVersion against a row it read.
+    reply = {
+      status: 409,
+      body: { error: { code: 'version_conflict', message: 'no', requestId: 'r', retryable: false } },
     };
     await drive(['space', 'settings', 'get']);
     expect(resolveAvailability('spaces.settings', 'v1').availability).toBe('available');

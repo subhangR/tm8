@@ -6,6 +6,16 @@
   "bin": {
     "tm8": "./dist/index.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./discovery": {
+      "types": "./dist/discovery/index.d.ts",
+      "default": "./dist/discovery/index.js"
+    }
+  },
   "scripts": {
     "build": "tsc -b && chmod +x dist/index.js && ln -sf index.js dist/tm8",
     "test": "vitest run"

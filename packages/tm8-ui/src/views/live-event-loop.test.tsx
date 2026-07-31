@@ -54,7 +54,9 @@ import type {
   CollectionQuery,
   DurableWorkspaceEvent,
   EdgeView,
+  EntityDetail,
   EntitySummary,
+  MessageView,
   SpaceId,
 } from '@tm8/contract';
 import type { Seam } from '../data/seam';
@@ -86,6 +88,31 @@ function task(id: string, over: Partial<EntitySummary> = {}): EntitySummary {
   } as EntitySummary;
 }
 
+function discussionMessage(id: string, anchorId: string, body: string): MessageView {
+  const createdAt = '2026-07-29T11:05:00.000Z';
+  const base = task(id, {
+    kind: 'message' as EntitySummary['kind'],
+    title: body,
+    activityAt: createdAt,
+    createdAt,
+    updatedAt: createdAt,
+  });
+  return {
+    ...base,
+    state: {
+      kind: 'message',
+      anchorId,
+      rootMessageId: null,
+      author: base.createdBy,
+      messageBatchId: null,
+      editedAt: null,
+      redactedAt: null,
+    },
+    content: { kind: 'message', body, mentions: [], attachments: [] },
+    replyCount: 0,
+  } as MessageView;
+}
+
 function edge(id: string, source: EntitySummary, target: EntitySummary): EdgeView {
   return {
     id,
@@ -105,6 +132,8 @@ interface Harness {
   seam: Seam;
   emit: (event: DurableWorkspaceEvent) => void;
   queryCalls: () => number;
+  countsCalls: () => number;
+  visibilityCalls: () => readonly boolean[];
 }
 
 /**
@@ -116,6 +145,8 @@ interface Harness {
 function harness(seeded: EntitySummary[]): Harness {
   const subs = new Set<(e: DurableWorkspaceEvent) => void>();
   let queryCalls = 0;
+  let countsCalls = 0;
+  const visibilityCalls: boolean[] = [];
 
   const seam = {
     async openSpace() {},
@@ -149,6 +180,19 @@ function harness(seeded: EntitySummary[]): Harness {
     async projects() {
       return [];
     },
+    async counts() {
+      countsCalls += 1;
+      // Shaped like the server's: grouped by kind, and kinds with no rows are
+      // ABSENT rather than zero.
+      const out: Record<string, { total: number; unseen: number }> = {};
+      for (const row of seeded) {
+        const cell = out[row.kind] ?? { total: 0, unseen: 0 };
+        cell.total += 1;
+        cell.unseen += 1;
+        out[row.kind] = cell;
+      }
+      return out as never;
+    },
     async query(input: CollectionQuery) {
       queryCalls += 1;
       const kinds = input.kinds ?? [];
@@ -178,6 +222,13 @@ function harness(seeded: EntitySummary[]): Harness {
         return 'unknown' as const;
       },
     },
+    // RealSeam-only extension. The production hook must activate this cadence;
+    // fixture seams omit it and remain transport-neutral.
+    realControls: {
+      setSessionSurfaceVisible(visible: boolean) {
+        visibilityCalls.push(visible);
+      },
+    },
     commands: {},
   } as unknown as Seam;
 
@@ -187,12 +238,27 @@ function harness(seeded: EntitySummary[]): Harness {
       for (const cb of subs) cb(event);
     },
     queryCalls: () => queryCalls,
+    countsCalls: () => countsCalls,
+    visibilityCalls: () => visibilityCalls,
   };
 }
 
 const OPEN = { workStatus: ['open'], deleted: 'exclude' };
 
 describe('the live event loop — an event moves the screen, alone', () => {
+  it('keeps the liveness cadence active while the data shell is mounted', async () => {
+    const h = harness([task('ent-liveness-cadence')]);
+    const { result, unmount } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(h.visibilityCalls()).toEqual([true]);
+
+    unmount();
+    expect(h.visibilityCalls()).toEqual([true, false]);
+  });
+
   it('hydrates graph.query once, then projects entity and edge events without fixtures', async () => {
     const first = task('ent-graph-first');
     const second = task('ent-graph-second');
@@ -355,6 +421,61 @@ describe('the live event loop — an event moves the screen, alone', () => {
 
     expect(read()).toEqual(['ent-task-seeded']);
   });
+
+  it('projects a remote message event into Discussion without a reread', async () => {
+    const anchor = task('ent-task-discussion');
+    const h = harness([anchor]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    const before = h.queryCalls();
+
+    act(() => {
+      h.emit({
+        type: 'message.created',
+        spaceId: SPACE,
+        seq: 6,
+        anchorId: anchor.id,
+        message: discussionMessage('msg-remote', anchor.id, 'arrived from another session'),
+      } as unknown as DurableWorkspaceEvent);
+    });
+
+    expect(result.current.messagesOf(anchor.id)?.map((item) => item.content.body))
+      .toEqual(['arrived from another session']);
+    expect(h.queryCalls(), 'Discussion must render the event payload, not poll the database again')
+      .toBe(before);
+  });
+
+  it('hydrates Discussion even when the entity detail is already cached', async () => {
+    const base = task('ent-task-cached-detail');
+    const anchor = task('ent-task-cached-detail', {
+      counters: { ...base.counters, messages: 2 },
+    });
+    const old = discussionMessage('msg-old', anchor.id, 'already cached');
+    const stored = discussionMessage('msg-stored', anchor.id, 'already in the thread');
+    const h = harness([anchor]);
+    const entityRead = vi.fn(async () => anchor as unknown as EntityDetail);
+    const messageRead = vi.fn(async () => ({ items: [old, stored], nextCursor: null }));
+    Object.assign(h.seam, { entity: entityRead, messages: messageRead });
+
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.domain.store.getState().ingestDetail(anchor as unknown as EntityDetail);
+      result.current.domain.store.getState().ingestMessages(anchor.id, [old]);
+      (result.current as typeof result.current & { pull(id: string): void }).pull(anchor.id);
+    });
+
+    await waitFor(() => {
+      expect(result.current.messagesOf(anchor.id)?.map((item) => item.id)).toEqual([old.id, stored.id]);
+    });
+    expect(entityRead, 'cached detail must not be fetched again').not.toHaveBeenCalled();
+    expect(messageRead, 'the missing Discussion thread still needs its own read').toHaveBeenCalledOnce();
+  });
 });
 
 describe('the loop does not cost the read path', () => {
@@ -409,5 +530,54 @@ describe('liveness stays the seam’s verdict', () => {
 
     expect(result.current.livenessOf('ent-task-seeded')).toBe('not-running');
     expect(statusOf).toHaveBeenCalled();
+  });
+});
+
+describe('rail counters are live, and honest when absent', () => {
+  it('exposes the per-kind total and unseen count after hydration', async () => {
+    const h = harness([task('ent-task-seeded'), task('ent-task-2')]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.countsFor('task')).toBeDefined());
+    expect(result.current.countsFor('task')).toEqual({ total: 2, unseen: 2 });
+  });
+
+  it('a kind ABSENT from the payload reads undefined, never a zero', async () => {
+    // The distinction the rail depends on: `undefined` draws no number at all,
+    // while `{ total: 0 }` would assert the space genuinely has none.
+    const h = harness([task('ent-task-seeded')]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.countsFor('task')).toBeDefined());
+    expect(result.current.countsFor('doc')).toBeUndefined();
+  });
+
+  it('an event BURST costs exactly one re-read, not one per event', async () => {
+    const h = harness([task('ent-task-seeded')]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.countsFor('task')).toBeDefined());
+    const before = h.countsCalls();
+
+    // A spawn or an agent's run of writes is the normal case; one count query
+    // per event would turn a busy space into a request flood.
+    act(() => {
+      for (let i = 0; i < 8; i += 1) {
+        h.emit({
+          type: 'entity.upsert',
+          spaceId: SPACE,
+          seq: 100 + i,
+          entity: task(`ent-burst-${i}`),
+        } as unknown as DurableWorkspaceEvent);
+      }
+    });
+    await waitFor(() => expect(h.countsCalls()).toBeGreaterThan(before));
+    expect(h.countsCalls() - before).toBe(1);
   });
 });

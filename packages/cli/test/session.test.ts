@@ -162,9 +162,9 @@ const body = (): Record<string, unknown> => (seen[0]?.body ?? {}) as Record<stri
 // ── registration and the anti-drift binding ─────────────────────────────────
 
 describe('registration', () => {
-  it('registers exactly the four caller-facing execution rows', async () => {
+  it('registers exactly the five caller-facing execution rows', async () => {
     const paths = (await sessionCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['session attach', 'session liveness', 'session spawn', 'session terminate']);
+    expect(paths).toEqual(['session attach', 'session liveness', 'session resume', 'session spawn', 'session terminate']);
   });
 
   it('every registered path is in the frozen projection', async () => {
@@ -286,6 +286,17 @@ describe('session spawn', () => {
     expect(b.promptExtra).toBe('extra manifest context');
     expect(b.confirmUntrusted).toBe(true);
     expect(String(b.clientMutationId)).toMatch(UUID_PATTERN);
+  });
+
+  it('uses the current work session as the spawned session parent', async () => {
+    const r = await drive([
+      'session', 'spawn',
+      '--space', SPACE,
+      '--teammate', TEAMMATE,
+    ], { TM8_SESSION_ID: SESSION });
+
+    expect(r.code).toBe(0);
+    expect(body().parentSessionId).toBe(SESSION);
   });
 
   it('omits every optional field the caller did not give', async () => {

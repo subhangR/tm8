@@ -6,7 +6,12 @@
  * positive control for that claim.
  */
 import { describe, expect, it } from 'vitest';
-import { CollabError, bindPath } from '@tm8/contract';
+import {
+  CollabError,
+  TM8_CLIENT_HEADER,
+  TM8_CLIENT_HEADER_VALUE,
+  bindPath,
+} from '@tm8/contract';
 import { createHttpClient } from './http';
 import { fakeFetch } from './test-support';
 
@@ -54,6 +59,37 @@ describe('http: catalog-derived URLs', () => {
   });
 });
 
+/**
+ * The S6 CSRF header. This is a REGRESSION suite: the server has required
+ * `X-TM8-Client` on cookie-carrying mutations since the artifacts Phase 0, and
+ * no client ever sent it — so the moment a cookie reached the node, every
+ * mutation came back 403 ("Launch refused"). A custom header is the defence
+ * itself (a cross-site page cannot set one without a preflight, which the node
+ * refuses), so presence on the wire is the whole assertion.
+ */
+describe('http: S6 client header', () => {
+  it('sends X-TM8-Client on mutations AND on reads', async () => {
+    const f = fakeFetch(() => ({ data: {} }));
+    const http = createHttpClient({ fetch: f.fetch });
+
+    await http.call('entities.patch', { params: { id: 'e-1' }, body: { expectedVersion: 1 } });
+    expect(f.last().headers).toMatchObject({
+      'x-tm8-client': 'tm8-ui',
+      'content-type': 'application/json',
+    });
+
+    await http.call('identity.get');
+    expect(f.last().headers).toMatchObject({ 'x-tm8-client': 'tm8-ui' });
+  });
+
+  it('spells the header exactly as the contract does', async () => {
+    const f = fakeFetch(() => ({ data: {} }));
+    await createHttpClient({ fetch: f.fetch }).call('identity.get');
+    const sent = f.last().headers as Record<string, string> | undefined;
+    expect(sent?.[TM8_CLIENT_HEADER]).toBe(TM8_CLIENT_HEADER_VALUE);
+  });
+});
+
 describe('http: envelope unwrap', () => {
   it('returns data and never leaks the envelope', async () => {
     const f = fakeFetch(() => ({ data: { identityId: 'i-1', username: 'ada' } }));
@@ -62,6 +98,39 @@ describe('http: envelope unwrap', () => {
     expect(out).toEqual({ identityId: 'i-1', username: 'ada' });
     expect(out).not.toHaveProperty('requestId');
     expect(out).not.toHaveProperty('data');
+  });
+});
+
+describe('http: server-granted raw upload', () => {
+  it('PUTs bytes only to the grant URL with the grant bearer token', async () => {
+    const f = fakeFetch(() => ({ status: 204, raw: '' }));
+    const http = createHttpClient({ fetch: f.fetch, baseUrl: 'http://example.test/' });
+    const bytes = new Blob(['hello'], { type: 'text/plain' });
+    await http.putGrantedBytes('/v2/files/uploads/upload-1/content', 'grant-secret', bytes);
+    expect(f.last().method).toBe('PUT');
+    expect(f.last().url).toBe('http://example.test/v2/files/uploads/upload-1/content');
+    expect(f.last().rawBody).toBe(bytes);
+    expect(f.last().headers).toEqual({
+      authorization: 'Bearer grant-secret',
+      'x-tm8-client': 'tm8-ui',
+    });
+  });
+
+  it('omits the S6 header on an absolute grant URL — that store is not our node', async () => {
+    const f = fakeFetch(() => ({ status: 204, raw: '' }));
+    const http = createHttpClient({ fetch: f.fetch, baseUrl: 'http://example.test/' });
+    await http.putGrantedBytes('https://blobs.example/put/abc', 'grant-secret', new Blob(['x']));
+    expect(f.last().url).toBe('https://blobs.example/put/abc');
+    expect(f.last().headers).toEqual({ authorization: 'Bearer grant-secret' });
+  });
+
+  it('refuses a grant with no bearer token before touching the network', async () => {
+    const f = fakeFetch(() => ({ status: 204, raw: '' }));
+    const http = createHttpClient({ fetch: f.fetch });
+    await expect(http.putGrantedBytes('/v2/files/uploads/u/content', null, new Blob())).rejects.toMatchObject({
+      code: 'unauthenticated',
+    });
+    expect(f.calls).toHaveLength(0);
   });
 });
 

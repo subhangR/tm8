@@ -267,11 +267,10 @@ export function attachedFiles(detail: EntityDetail): FileRow[] {
 
 /**
  * The three queue states the oracle draws. This type exists even though NO
- * upload can be started in this build, and that is deliberate: the states are
- * contract-real (`FileUploadGrant` → PUT → `uploadComplete`, with
- * `payload_too_large` above the grant's `maxSizeBytes`), so they are built and
- * unreachable rather than unbuilt. The upload control that would produce them
- * renders disabled-with-reason.
+ * upload can be started by this standalone Files card without a host-supplied
+ * task. The states are contract-real (`FileUploadGrant` → PUT →
+ * `uploadComplete`, with `payload_too_large` above the grant's
+ * `maxSizeBytes`) and are live in the Chat composer.
  */
 export type UploadItem =
   | { phase: 'uploading'; name: string; mime: string; percent: number }

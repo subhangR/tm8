@@ -146,6 +146,10 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
     spaceId,
     teamMemberId,
   };
+  // A spawned agent already carries its own work_session id in process
+  // context. Forwarding it makes the server-created session a real child of
+  // the spawner; an ordinary human shell has no session id and stays a root.
+  if (cmd.ctx.sessionId) body.parentSessionId = cmd.ctx.sessionId;
   if (taskIds.length > 0) body.taskIds = taskIds;
   if (projectId !== undefined) body.projectId = projectId;
   // `SpawnWorkdir` is a discriminated union, not a bare string.
@@ -165,6 +169,29 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.spawn', { body });
+  cmd.out.data(data, renderSpawned);
+  return EXIT_OK;
+}
+
+/**
+ * `tm8 session resume <work-session-id>` — bring an exited session back with
+ * its agent's conversation restored. Everything about WHAT gets resumed
+ * (persona, project, model, the provider-native session id) is Server-owned
+ * graph truth; the CLI sends nothing but the target and the mutation id, so
+ * there is nothing here for a caller to get wrong.
+ */
+async function sessionResume(cmd: CommandContext): Promise<ExitCode> {
+  const id = requireSessionId('session resume', cmd.args[0]);
+
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.resume', {
+    params: { id },
+    body,
+  });
   cmd.out.data(data, renderSpawned);
   return EXIT_OK;
 }
@@ -371,12 +398,13 @@ function renderLiveness(dto: ExecutionLivenessDto): string {
 }
 
 /**
- * The registry contribution. Four caller-facing rows, deliberately —
+ * The registry contribution. Five caller-facing rows, deliberately —
  * `execution.prompt` has no entry here and must never gain one.
  */
 export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'liveness'], run: sessionLiveness },
   { path: ['session', 'spawn'], run: sessionSpawn },
+  { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },
   { path: ['session', 'attach'], run: sessionAttach },
 ];

@@ -1,10 +1,14 @@
 import {
   ActionDiscoveryResultSchema,
+  AttentionRequestListQuerySchema,
+  AttentionRequestMutationResultSchema,
+  AttentionRequestSchema,
   ActivateInteractionProfileInputSchema,
   AddMessageAttachmentsInputSchema,
   CommandResultSchema,
   CorrectProjectAssociationInputSchema,
   CreateEntityInputSchema,
+  CreateAttentionRequestInputSchema,
   DeleteMessageInputSchema,
   EdgeCorrectionResultSchema,
   EntityConnectionsPageSchema,
@@ -40,6 +44,7 @@ import {
   RetireInteractionProfileInputSchema,
   SendHandoffInputSchema,
   SetDefaultChannelInputSchema,
+  ResolveEntityAttentionInputSchema,
   SetSpaceProfileDefaultInputSchema,
   SetTeammateProfileDefaultInputSchema,
   SpaceProfileDefaultViewSchema,
@@ -47,6 +52,7 @@ import {
   TeammateProfileDefaultViewSchema,
   UpdateInteractionProfileDraftInputSchema,
   UpdateMenuInputSchema,
+  UpdateAttentionRequestInputSchema,
   ValidateInteractionProfileInputSchema,
   WithdrawHandoffInputSchema,
   WorkspaceEventSchema,
@@ -57,14 +63,19 @@ import type { ZodTypeAny } from 'zod';
 
 const PageOfHandoffViewSchema = pageOf(HandoffViewSchema);
 const PageOfNotificationItemSchema = pageOf(NotificationItemSchema);
+const PageOfAttentionRequestSchema = pageOf(AttentionRequestSchema);
 
 export const SCHEMA_REGISTRY = {
   ActionDiscoveryResultSchema,
+  AttentionRequestListQuerySchema,
+  AttentionRequestMutationResultSchema,
+  AttentionRequestSchema,
   ActivateInteractionProfileInputSchema,
   AddMessageAttachmentsInputSchema,
   CommandResultSchema,
   CorrectProjectAssociationInputSchema,
   CreateEntityInputSchema,
+  CreateAttentionRequestInputSchema,
   DeleteMessageInputSchema,
   EdgeCorrectionResultSchema,
   EntityConnectionsPageSchema,
@@ -93,6 +104,7 @@ export const SCHEMA_REGISTRY = {
   NotificationItemSchema,
   PageOfHandoffViewSchema,
   PageOfNotificationItemSchema,
+  PageOfAttentionRequestSchema,
   PatchMessageInputSchema,
   PostMessageInputSchema,
   PreviewInteractionProfileInputSchema,
@@ -102,6 +114,7 @@ export const SCHEMA_REGISTRY = {
   RetireInteractionProfileInputSchema,
   SendHandoffInputSchema,
   SetDefaultChannelInputSchema,
+  ResolveEntityAttentionInputSchema,
   SetSpaceProfileDefaultInputSchema,
   SetTeammateProfileDefaultInputSchema,
   SpaceProfileDefaultViewSchema,
@@ -109,6 +122,7 @@ export const SCHEMA_REGISTRY = {
   TeammateProfileDefaultViewSchema,
   UpdateInteractionProfileDraftInputSchema,
   UpdateMenuInputSchema,
+  UpdateAttentionRequestInputSchema,
   ValidateInteractionProfileInputSchema,
   WithdrawHandoffInputSchema,
   WorkspaceEventSchema,
@@ -146,6 +160,10 @@ export const ADDITIVE_SCHEMA_DISPOSITIONS = {
 } as const satisfies Readonly<Partial<Record<OperationName, OperationSchemaDisposition>>>;
 
 export const FROZEN_SCHEMA_DISPOSITIONS = {
+  'attentionRequests.list': { requestSchema: 'AttentionRequestListQuerySchema', resultSchema: 'PageOfAttentionRequestSchema' },
+  'attentionRequests.create': { requestSchema: 'CreateAttentionRequestInputSchema', resultSchema: 'AttentionRequestMutationResultSchema' },
+  'attentionRequests.update': { requestSchema: 'UpdateAttentionRequestInputSchema', resultSchema: 'AttentionRequestMutationResultSchema' },
+  'attentionRequests.resolveEntity': { requestSchema: 'ResolveEntityAttentionInputSchema', resultSchema: 'AttentionRequestMutationResultSchema' },
   'messages.post': { requestSchema: 'PostMessageInputSchema', resultSchema: 'MessageBatchResultSchema' },
   'messages.edit': { requestSchema: 'PatchMessageInputSchema', resultSchema: 'MessageViewSchema' },
   'messages.delete': { requestSchema: 'DeleteMessageInputSchema', resultSchema: 'MessageViewSchema' },

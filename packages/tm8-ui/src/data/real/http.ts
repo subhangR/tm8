@@ -26,6 +26,8 @@
 import {
   CollabError,
   ERROR_STATUS,
+  TM8_CLIENT_HEADER,
+  TM8_CLIENT_HEADER_VALUE,
   bindPath,
   getOperation,
   type CommandErrorCode,
@@ -63,7 +65,21 @@ export interface HttpOptions {
    * evidence of reachability, not of disconnection.
    */
   onTransport?: (reachable: boolean) => void;
+  /**
+   * Ceiling on any single request, headers-to-body. Without one, a node whose
+   * pool is wedged (accepts the socket, never answers) produces a promise that
+   * NEVER SETTLES — no catch runs, no `bootError` is set, and the UI shows
+   * `loading workspace` forever. This was the observed field failure, so the
+   * default is on, not opt-in. A timeout reads as transport failure: the node
+   * did not answer, which is the same honest fact as "connection refused",
+   * only slower.
+   */
+  timeoutMs?: number;
 }
+
+export const DEFAULT_REQUEST_TIMEOUT_MS = 15_000;
+/** Uploads move real bytes; they get a proportionally longer leash. */
+export const UPLOAD_TIMEOUT_MS = 120_000;
 
 export interface RequestOptions {
   /** `:param` substitutions for the catalog path template. */
@@ -140,6 +156,8 @@ export interface HttpClient {
    * not a generic op-name dispatcher and must not grow one.
    */
   callPath<T>(method: string, path: string, opts?: RequestOptions): Promise<T>;
+  /** Raw upload to the server-minted grant URL, authorized by its bearer token. */
+  putGrantedBytes(uploadUrl: string, token: string | null | undefined, body: BodyInit): Promise<void>;
   readonly baseUrl: string;
 }
 
@@ -147,6 +165,26 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
   const baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
   const doFetch: FetchLike | undefined = options.fetch;
   const onTransport = options.onTransport;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+
+  /**
+   * The timeout covers the WHOLE exchange — connect, headers, and body — via
+   * one AbortController. Headers-then-stalled-body is the same wedge as
+   * never-connected as far as a caller awaiting `data` is concerned.
+   */
+  function armTimeout(ms: number): { signal: AbortSignal; timedOut: () => boolean; disarm: () => void } {
+    const controller = new AbortController();
+    let fired = false;
+    const timer = setTimeout(() => {
+      fired = true;
+      controller.abort();
+    }, ms);
+    return {
+      signal: controller.signal,
+      timedOut: () => fired,
+      disarm: () => clearTimeout(timer),
+    };
+  }
 
   async function callPath<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
     if (doFetch === undefined) {
@@ -156,44 +194,134 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     }
     const url = `${baseUrl}${path}${buildQuery(opts.query)}`;
     const hasBody = opts.body !== undefined;
+    const guard = armTimeout(timeoutMs);
 
+    try {
+      let res: Response;
+      try {
+        res = await doFetch(url, {
+          method,
+          // S6 on EVERY request, not just mutations. The gate only applies to
+          // state-changing methods, but there is no list of "the mutating
+          // calls" in this file to keep in sync with the server's — sending it
+          // unconditionally makes the client correct by construction, and the
+          // header is inert on a read.
+          headers: {
+            [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+            ...(hasBody ? { 'content-type': 'application/json' } : {}),
+          },
+          ...(hasBody ? { body: JSON.stringify(opts.body) } : {}),
+          signal: guard.signal,
+        });
+      } catch (cause) {
+        // The node is unreachable — a transport fact, distinct from any refusal
+        // the server might have expressed. A timeout is the same fact observed
+        // more slowly: nothing answered.
+        onTransport?.(false);
+        throw new CollabError(
+          'upstream_unavailable',
+          guard.timedOut()
+            ? `the tm8 node did not answer within ${timeoutMs}ms`
+            : `cannot reach the tm8 node: ${String(cause)}`,
+          { retryable: true, details: { url } },
+        );
+      }
+
+      // It answered. A refusal is still an answer.
+      onTransport?.(true);
+
+      let text: string;
+      try {
+        text = await res.text();
+      } catch (cause) {
+        if (!guard.timedOut()) throw cause;
+        onTransport?.(false);
+        throw new CollabError('upstream_unavailable', `the tm8 node did not answer within ${timeoutMs}ms`, {
+          retryable: true,
+          details: { url },
+        });
+      }
+      let parsed: unknown;
+      try {
+        parsed = text === '' ? undefined : JSON.parse(text);
+      } catch {
+        throw new CollabError('upstream_unavailable', `tm8 returned non-JSON (HTTP ${res.status})`, {
+          details: { url, status: res.status },
+        });
+      }
+
+      if (!res.ok) throw toCollabError(res.status, parsed);
+
+      return (parsed as { data?: T } | undefined)?.data as T;
+    } finally {
+      guard.disarm();
+    }
+  }
+
+  async function putGrantedBytes(
+    uploadUrl: string,
+    token: string | null | undefined,
+    body: BodyInit,
+  ): Promise<void> {
+    if (token === null || token === undefined || token === '') {
+      throw new CollabError('unauthenticated', 'the upload grant has no bearer token');
+    }
+    if (doFetch === undefined) {
+      throw new CollabError('upstream_unavailable', 'no fetch implementation was provided to createHttpClient()');
+    }
+
+    // An absolute grant URL points at a foreign store, not at our node. S6 is
+    // ours, so the header goes only on the relative (same-node) form — adding
+    // a custom header to a cross-origin PUT buys nothing here and would put a
+    // preflight in front of somebody else's bucket.
+    const foreign = /^https?:\/\//i.test(uploadUrl);
+    const url = foreign
+      ? uploadUrl
+      : `${baseUrl}${uploadUrl.startsWith('/') ? uploadUrl : `/${uploadUrl}`}`;
+    const guard = armTimeout(UPLOAD_TIMEOUT_MS);
     let res: Response;
     try {
       res = await doFetch(url, {
-        method,
-        headers: hasBody ? { 'content-type': 'application/json' } : {},
-        ...(hasBody ? { body: JSON.stringify(opts.body) } : {}),
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          ...(foreign ? {} : { [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE }),
+        },
+        body,
+        signal: guard.signal,
       });
     } catch (cause) {
-      // The node is unreachable — a transport fact, distinct from any refusal
-      // the server might have expressed.
       onTransport?.(false);
-      throw new CollabError('upstream_unavailable', `cannot reach the tm8 node: ${String(cause)}`, {
-        details: { url },
-      });
+      throw new CollabError(
+        'upstream_unavailable',
+        guard.timedOut()
+          ? `the upload target did not answer within ${UPLOAD_TIMEOUT_MS}ms`
+          : `cannot reach the upload target: ${String(cause)}`,
+        { retryable: true, details: { url } },
+      );
+    } finally {
+      guard.disarm();
     }
 
-    // It answered. A refusal is still an answer.
     onTransport?.(true);
+    if (res.ok) return;
 
     const text = await res.text();
     let parsed: unknown;
     try {
       parsed = text === '' ? undefined : JSON.parse(text);
     } catch {
-      throw new CollabError('upstream_unavailable', `tm8 returned non-JSON (HTTP ${res.status})`, {
+      throw new CollabError('upstream_unavailable', `upload target returned non-JSON (HTTP ${res.status})`, {
         details: { url, status: res.status },
       });
     }
-
-    if (!res.ok) throw toCollabError(res.status, parsed);
-
-    return (parsed as { data?: T } | undefined)?.data as T;
+    throw toCollabError(res.status, parsed);
   }
 
   return {
     baseUrl,
     callPath,
+    putGrantedBytes,
     call<T>(op: OperationName, opts: RequestOptions = {}): Promise<T> {
       const binding = getOperation(op);
       return callPath<T>(binding.method, bindPath(op, opts.params ?? {}), opts);

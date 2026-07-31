@@ -1,12 +1,12 @@
 /* ==========================================================================
-   ENTITY VIEW — the per-kind screen (D65, refined 2026-07-29): the page is
-   RESPONSIVE and the list never leaves the screen.
-     list  — tree centered in the middle;
-     aside — Z3 panel (peek ≈440 / floor 320, canvas-T0-4) opens right, tree
-             stays centered in the remainder;
-     full  — tree yields to a narrow LEFT column, the entity takes the whole
-             remaining width; the Z4 header (⇲ collapse · crumb · esc) rides
-             the expanded region.
+   ENTITY VIEW — the per-kind screen (USER RULING 2026-07-31, superseding the
+   wide-list-with-a-peek layout). THREE REGIONS, left to right:
+
+     ev-list    the EntityListPanel rail — fixed, it is a navigator
+     ev-detail  the complete entity — takes everything that is left
+     ev-aux     the third column, only while something in the centre asked
+                for it; it never reserves width it is not using.
+
    Colors are tokens only (the package hex guard scans this file).
    ========================================================================== */
 
@@ -18,65 +18,36 @@
   background: var(--pn-paper);
 }
 
-.cv2-root .ev-split {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-}
-
-/* --- the list column, three widths --------------------------------------- */
+/* --- LEFT: the list rail --------------------------------------------------
+   Fixed rather than flexible: this column's job is to stay put while the
+   centre changes under it, and a list that resizes every time a longer
+   document opens is a list you stop trusting to be in the same place. */
 .cv2-root .ev-list {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  /* The centering: the COLUMN flexes, the TREE inside is measure-capped and
-     auto-margined, so "centered" survives every mode change for free. */
-  flex: 1 1 auto;
-}
-.cv2-root .ev-list > .evt-root {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  max-width: 880px;
-  margin: 0 auto;
-}
-/* full: the list is a narrow left rail of the same tree — no re-centering,
-   no measure cap, fixed width, hairline boundary. */
-.cv2-root .ev-list--full {
   flex: none;
   width: 320px;
-  border-right: 1px solid var(--pn-line);
-}
-.cv2-root .ev-list--full > .evt-root {
-  max-width: none;
-  margin: 0;
-}
-
-/* --- Z3 aside -------------------------------------------------------------- */
-.cv2-root .ev-aside {
-  flex: none;
-  width: 440px; /* Z3 peek (canvas) */
-  min-width: 320px; /* Z3 floor (canvas) */
+  /* A flex item defaults to `min-width: auto`, which lets a wide tile's
+     min-content width push the rail past its declared width. Pinned so the
+     rail cannot be widened by its own contents.
+     NOTE for anyone measuring this in a browser: `.cv2-root` carries
+     `zoom: 1.1` (D60), so 320 here is ~352 device px on screen. That is the
+     zoom lever doing its job, not the rail drifting. */
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--pn-line);
+  border-right: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
-.cv2-root .ev-aside > * {
+.cv2-root .ev-list > * {
   flex: 1;
   min-height: 0;
 }
-@media (max-width: 1100px) {
-  .cv2-root .ev-aside {
-    width: 320px;
-  }
-}
 
-/* --- expanded region (the user's "entire right space is for entity") ------- */
-.cv2-root .ev-expanded {
+/* --- CENTRE: the complete entity ------------------------------------------
+   No measure cap here. The panel keeps its OWN internal reading measures, and
+   capping at this level would also shrink a terminal body — which inverts D63
+   ("nothing outbids the terminal"). */
+.cv2-root .ev-detail {
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -84,33 +55,36 @@
   flex-direction: column;
   background: var(--pn-paper);
 }
-.cv2-root .ev-full__head {
+.cv2-root .ev-detail > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- RIGHT: the aux column ------------------------------------------------
+   Z3 geometry from the canvas — 440 peek, 320 floor — because this column is
+   the same READING WIDTH the workspace's stacked panel uses, and the content
+   in it (a related entity, a thread, a set of backlinks) is the same content. */
+.cv2-root .ev-aux {
   flex: none;
-  height: 42px; /* canvas: full-view header */
+  width: 420px;
+  min-width: 320px;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--pn-line);
+  flex-direction: column;
+  border-left: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
-.cv2-root .ev-full__collapse {
-  appearance: none;
-  font-family: var(--pn-mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--pn-ink-2);
+.cv2-root .ev-aux__head {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--pn-line);
   background: var(--pn-card);
-  border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-pill);
-  padding: 3px 10px;
-  cursor: pointer;
-  white-space: nowrap;
 }
-.cv2-root .ev-full__collapse:hover {
-  background: var(--pn-hover);
-}
-.cv2-root .ev-full__crumb {
+.cv2-root .ev-aux__crumb {
   font-family: var(--pn-mono);
   font-size: 10.5px;
   color: var(--pn-ink-3);
@@ -118,11 +92,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cv2-root .ev-full__spacer {
+.cv2-root .ev-aux__spacer {
   flex: 1;
   min-width: 0;
 }
-.cv2-root .ev-full__esc {
+.cv2-root .ev-aux__esc {
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-4);
@@ -130,14 +104,46 @@
   border-radius: 4px;
   padding: 1px 6px;
 }
-/* The entity gets the WHOLE region. The panel keeps its own internal reading
-   measures; capping here would shrink the terminal, which inverts D63. */
-.cv2-root .ev-full__body {
+.cv2-root .ev-aux__close {
+  appearance: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.cv2-root .ev-aux__close:hover {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+.cv2-root .ev-aux__body {
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
 }
-.cv2-root .ev-full__body > * {
+.cv2-root .ev-aux__body > * {
   flex: 1;
   min-height: 0;
+}
+
+/* --- narrow ---------------------------------------------------------------
+   Both side columns drop to their floors before the CENTRE gives up any
+   width, because the centre is the subject of the screen. Below 1240 with an
+   aux column open there is not enough room for three, and the aux — the
+   region the viewer opened last and can reopen with one click — is the one
+   that yields. It is HIDDEN, not narrowed to something unreadable. */
+@media (max-width: 1400px) {
+  .cv2-root .ev-aux { width: 360px; }
+}
+@media (max-width: 1240px) {
+  .cv2-root .ev-list { width: 260px; }
+  .cv2-root .ev-aux { width: 320px; }
+}
+@media (max-width: 1040px) {
+  .cv2-root .ev-root[data-aux='none'] .ev-list { width: 260px; }
+  .cv2-root .ev-root:not([data-aux='none']) .ev-list { display: none; }
 }

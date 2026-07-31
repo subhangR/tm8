@@ -1,6 +1,7 @@
 import type {
   DeliverySummary,
   EntityId,
+  EntitySummary,
   FeedItem,
   FeedVia,
   MessageDeliveryStatus,
@@ -186,6 +187,83 @@ export function canSendAgain(rows: readonly DeliverySummary[]): boolean {
   return rows.some((r) => r.status === 'failed_retryable');
 }
 
+const SAFE_DELIVERY_REASONS: Readonly<Record<string, string>> = {
+  no_live_terminal: 'No live terminal was available',
+  delivery_queue_refused: 'The live delivery queue refused the write',
+  automated_wake_limit: 'The automated wake limit was reached',
+  message_deleted: 'The message was redacted before delivery',
+  session_not_live: 'The target session is no longer live',
+  pending_ttl_expired: 'The delivery window expired before dispatch',
+  restart_during_dispatch: 'Node restarted during delivery',
+  write_attempt_failed: 'The write attempt ended without a safe delivery verdict',
+  session_replaced_or_exited: 'The target session was replaced or exited during delivery',
+  submit_unverified: 'The terminal submission could not be verified',
+};
+
+/**
+ * Delivery reasons cross a transport boundary and may contain implementation
+ * details. Only stable, server-owned reason codes are translated for display;
+ * arbitrary strings are never echoed into the browser.
+ */
+export function safeDeliveryReason(reason: string | null): string | null {
+  if (reason === null) return null;
+  return SAFE_DELIVERY_REASONS[reason] ?? 'Details unavailable';
+}
+
+// ---------------------------------------------------------------------------
+// Typed activity presentation — exact verb/field checks, never prose parsing.
+// ---------------------------------------------------------------------------
+
+export type ActivityPresentation =
+  | { kind: 'entity-change'; entity: EntitySummary; verb: 'created' | 'updated' }
+  | { kind: 'state'; label: string; from: string | null; to: string }
+  | { kind: 'event'; label: string }
+  | { kind: 'unknown' };
+
+const EVENT_LABELS: Readonly<Record<string, string>> = {
+  linked: 'Linked an entity',
+  unlinked: 'Unlinked an entity',
+  reacted: 'Changed a reaction',
+  awarded: 'Awarded points',
+};
+
+function summaryString(summary: Record<string, unknown>, key: string): string | null {
+  const value = summary[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+export function activityPresentation(
+  item: Extract<FeedItem, { itemKind: 'activity' }>,
+): ActivityPresentation {
+  const { activity } = item;
+  if ((activity.verb === 'created' || activity.verb === 'updated') && item.anchor) {
+    return { kind: 'entity-change', entity: item.anchor, verb: activity.verb };
+  }
+  if (activity.verb === 'work.changed') {
+    const status = summaryString(activity.summary, 'status');
+    return status ? { kind: 'state', label: 'Work status', from: null, to: status } : { kind: 'unknown' };
+  }
+  if (activity.verb === 'moved') {
+    const from = summaryString(activity.summary, 'fromParentId');
+    const to = summaryString(activity.summary, 'toParentId') ?? 'top level';
+    return { kind: 'state', label: 'Parent', from: from ?? 'top level', to };
+  }
+  const terminalState: Readonly<Record<string, string>> = {
+    completed: 'Completed',
+    deleted: 'Deleted',
+    restored: 'Restored',
+    joined: 'Joined',
+    pulled: 'Pulled',
+    'pr.linked': 'Pull request linked',
+    unblocked: 'Unblocked',
+  };
+  const to = terminalState[activity.verb];
+  if (to) return { kind: 'state', label: 'State', from: null, to };
+  const label = EVENT_LABELS[activity.verb];
+  if (label) return { kind: 'event', label };
+  return { kind: 'unknown' };
+}
+
 // ---------------------------------------------------------------------------
 // Grouping — S16. By the operation key, and by nothing else.
 // ---------------------------------------------------------------------------
@@ -249,6 +327,10 @@ export interface ChannelPostInput {
   anchorIds: EntityId[];
   body: string;
   parentMessageId: EntityId | null;
+  mentionIds?: EntityId[];
+  attachmentIds?: EntityId[];
+  /** Client-only Channel routing selections; the host resolves these to anchors. */
+  tagTargetIds?: EntityId[];
 }
 
 /** A read that was refused, as a replacement state rather than an overlay. */
@@ -262,4 +344,11 @@ export function clockTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Full timestamp for assistive text; the compact rail still shows HH:MM. */
+export function accessibleDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'long' });
 }

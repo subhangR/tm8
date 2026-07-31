@@ -3,7 +3,7 @@
 // REAL agent CLI (codex / claude), burns real API tokens, and takes 30-100s
 // per case. Run explicitly:
 //
-//   npx vitest run test/live-agent-prompt-submit.manual.test.ts --testTimeout=180000
+//   TM8_LIVE_AGENT_TEST=1 npx vitest run test/live-agent-prompt-submit.manual.test.ts --testTimeout=180000
 //
 // It asserts the property unit tests structurally cannot: that a prompt
 // written into a COLD (just-spawned) or WARM (actively streaming) agent PTY
@@ -13,6 +13,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
+import { composePrompt } from '@tm8/prompt';
+import { buildAgentCommand, composeManifest, withAgentPrompt } from '../src/spawn/manifest.js';
+import type { ResolvedLaunchConfig } from '../src/spawn/manifest.js';
 
 const logger = {
   info: () => {},
@@ -35,7 +38,115 @@ function marker(tag: string): string {
   return `PTYVERIFY_${tag}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-describe('LIVE agent prompt-injection verification (manual only)', () => {
+function childEnv(): Record<string, string> {
+  return Object.fromEntries(
+    ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'LANG', 'LC_ALL', 'TERM', 'COLORTERM', 'TMPDIR']
+      .map((key) => [key, process.env[key]])
+      .filter((pair): pair is [string, string] => typeof pair[1] === 'string'),
+  );
+}
+
+async function verifyInitialArgv(
+  provider: 'claude-code' | 'codex',
+  model: string,
+  tag: string,
+): Promise<void> {
+  const host = new PtyHostService({ logger });
+  const chunks: Buffer[] = [];
+  const sessionId = `initial-${provider}`;
+  const m = marker(tag);
+  const launch: ResolvedLaunchConfig = {
+    mode: 'worker',
+    model,
+    agentTool: provider,
+    permissionMode: 'bypassPermissions',
+    accessMode: 'fullAccess',
+    reasoningEffort: 'low',
+  };
+  const baseCommand = buildAgentCommand(launch, {});
+  const manifest = composeManifest({
+    sessionId,
+    request: {
+      spaceId: '00000000-0000-4000-8000-000000000001',
+      teamMemberId: '00000000-0000-4000-8000-000000000002',
+      taskIds: ['00000000-0000-4000-8000-000000000003'],
+      title: `Initial argv verification ${m}`,
+    },
+    context: {
+      spaceId: '00000000-0000-4000-8000-000000000001',
+      project: {
+        id: '00000000-0000-4000-8000-000000000004',
+        name: 'tm8',
+        workingDir: process.cwd(),
+        trust: 'trusted',
+      },
+      teamMember: {
+        id: '00000000-0000-4000-8000-000000000002',
+        name: 'PTY verifier',
+        role: 'verification',
+        identity: 'Follow the assigned verification task exactly.',
+        memories: [],
+        model,
+        agentTool: provider,
+        mode: 'worker',
+        permissionMode: 'bypassPermissions',
+        avatar: null,
+        capabilities: {},
+        commandPermissions: {},
+      },
+      tasks: [{
+        id: '00000000-0000-4000-8000-000000000003',
+        title: 'Prove the initial user turn runs',
+        description: `Reply with exactly the single token ${m} and nothing else.`,
+        priority: 'low',
+        workStatus: 'todo',
+        acceptanceCriteria: [`Terminal output contains ${m}`],
+      }],
+    },
+    launch,
+    workdir: { mode: 'project', path: process.cwd() },
+    command: baseCommand,
+    baseUrl: 'http://127.0.0.1:4610',
+  });
+  const envelope = composePrompt(manifest, { sessionId, baseUrl: manifest.baseUrl });
+  const command = withAgentPrompt(baseCommand, envelope, launch, {});
+  const transcript = () => Buffer.concat(chunks).toString('utf8')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\r/g, '')
+    .slice(-6000);
+
+  try {
+    host.spawn({ sessionId, command, cwd: process.cwd(), env: childEnv() });
+    await host.attach(sessionId, {
+      send: (data) => chunks.push(Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8')),
+      close: () => {},
+      readyState: 1,
+    }, 0);
+    const bootExit = await host.waitForBootSettlement(sessionId, 1000);
+    if (bootExit) {
+      throw new Error(`agent exited during boot: ${JSON.stringify(bootExit)}`);
+    }
+    const seen = () => Buffer.concat(chunks).toString('utf8');
+    const timeoutMs = Number(process.env.TM8_LIVE_INITIAL_TIMEOUT_MS ?? '120000');
+    await waitFor(() => seen().split(m).length > 2, timeoutMs);
+    console.log(`[${provider} initial argv PTY]\n${transcript()}`);
+  } catch (error) {
+    console.log(`[${provider} initial argv PTY — failed]\n${transcript()}`);
+    throw error;
+  } finally {
+    host.kill(sessionId, false);
+  }
+}
+
+describe.skipIf(process.env.TM8_LIVE_AGENT_TEST !== '1')('LIVE agent prompt-injection verification (manual only)', () => {
+  it('claude-haiku: initial argv carries system prompt plus task user turn and starts work', async () => {
+    await verifyInitialArgv('claude-code', 'claude-haiku-4-5-20251001', 'INITIAL_CLAUDE');
+  }, 150000);
+
+  it('codex-luna: initial argv carries developer instructions plus task user turn and starts work', async () => {
+    await verifyInitialArgv('codex', 'gpt-5.6-luna', 'INITIAL_CODEX');
+  }, 150000);
+
   it('codex: cold-spawn message lands and submits', async () => {
     const host = new PtyHostService({ logger });
     const chunks: Buffer[] = [];

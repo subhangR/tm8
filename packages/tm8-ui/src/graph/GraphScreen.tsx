@@ -12,7 +12,14 @@
  * views/, and the port names exactly what this screen consumes.
  */
 import { useEffect, useMemo, useState } from 'react';
-import type { EdgeView, EntityDetail, EntityId, EntitySummary } from '@tm8/contract';
+import type {
+  EdgeView,
+  EntityDetail,
+  EntityId,
+  EntitySummary,
+  MessageView,
+  PostMessageInput,
+} from '@tm8/contract';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { ActionContext } from '../domain/types';
 import type { SessionLiveness } from '../data/seam';
@@ -21,6 +28,8 @@ import { GraphView, type GraphTimelineStep } from './GraphView';
 export interface GraphScreenData {
   spaceId: string;
   detailOf(id: string): EntityDetail | undefined;
+  messagesOf(id: string): readonly MessageView[] | undefined;
+  postMessage(input: PostMessageInput): Promise<void>;
   livenessOf(id: string): SessionLiveness;
   activity: Readonly<Record<string, boolean>>;
   pull?(id: string): void;
@@ -65,7 +74,10 @@ export function GraphScreen(props: GraphScreenProps) {
   }, [selectedId, mode]);
 
   const detail = selectedId ? data.detailOf(selectedId) : null;
-  if (selectedId && !detail) data.pull?.(selectedId);
+  const messages = selectedId ? data.messagesOf(selectedId) : undefined;
+  if (selectedId && (
+    !detail || messages === undefined || messages.length < detail.counters.messages
+  )) data.pull?.(selectedId);
 
   const detailPanel = selectedId ? (
     <EntityDetailPanel
@@ -80,6 +92,12 @@ export function GraphScreen(props: GraphScreenProps) {
       // so the pin verb is refused with the true reason, never hidden (L6).
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
+      messages={messages}
+      onPostMessage={(body) => data.postMessage({
+        clientMutationId: `graph-post:${selectedId}:${Date.now()}`,
+        anchorIds: [selectedId],
+        body,
+      })}
       streaming={data.activity[selectedId] ?? false}
       onPromote={() => setMode((m) => (m === 'aside' ? 'full' : 'aside'))}
       onClose={() => {

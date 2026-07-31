@@ -1,2 +1,4 @@
-export type { CollabFacade, ConnectionControl } from './CollabFacade';
-export { hasConnectionControl } from './CollabFacade';
+export type {
+  CollabFacade, ConnectionControl, FileAttachmentControl, UploadableFile, UploadFileInput,
+} from './CollabFacade';
+export { hasConnectionControl, hasFileAttachmentControl } from './CollabFacade';

@@ -15,9 +15,11 @@ import type {
   LoadSpawnContextInput,
   RecordCommandInput,
   ResolvedInteractionProfileContext,
+  ResumeWorkSessionResult,
   SpawnContext,
   Tm8Manifest,
   TransitionInput,
+  WorkSessionResumeInfo,
   WorkSessionStatus,
 } from '../src/spawn/types.js';
 
@@ -188,5 +190,46 @@ export class FakeGraph implements GraphPort {
 
   statusesFor(sessionId: string): string[] {
     return this.transitions.filter((t) => t.sessionId === sessionId).map((t) => t.status);
+  }
+
+  // --- resume seam -----------------------------------------------------------
+
+  /** The stored session facts `loadWorkSessionForResume` answers with. Set by the test. */
+  resumeInfo: WorkSessionResumeInfo | null = null;
+  /** Resume calls the RPC saw. */
+  readonly resumes: Array<{ sessionId: string; clientMutationId: string | null }> = [];
+  /** Native ids recorded, in order. */
+  readonly nativeIds: Array<{ sessionId: string; nativeSessionId: string }> = [];
+
+  async loadWorkSessionForResume(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<WorkSessionResumeInfo> {
+    this.authSeen.push(auth);
+    if (!this.resumeInfo || this.resumeInfo.sessionId !== sessionId) {
+      throw new Error(`work session ${sessionId} not found`);
+    }
+    return this.resumeInfo;
+  }
+
+  async resumeWorkSession(
+    auth: GraphAuth,
+    input: { sessionId: string; clientMutationId: string | null },
+  ): Promise<ResumeWorkSessionResult> {
+    this.authSeen.push(auth);
+    this.resumes.push(input);
+    return {
+      commandResult: { entityId: input.sessionId, patches: [input.sessionId] },
+      replayed: false,
+    };
+  }
+
+  async recordNativeSessionId(
+    auth: GraphAuth,
+    sessionId: string,
+    nativeSessionId: string,
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    this.nativeIds.push({ sessionId, nativeSessionId });
   }
 }

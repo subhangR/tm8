@@ -40,15 +40,24 @@ function renderBody(over: Partial<React.ComponentProps<typeof TerminalBody>> = {
 }
 
 describe('everything below the canvas starts in one collapsed drawer', () => {
-  it('renders only the summary bar and the terminal canvas by default', () => {
+  /**
+   * USER RULING 2026-07-31 — "remove the bottom strip … terminal all the way,
+   * till the component bottom." Collapsed is now ZERO height: the drawer is
+   * unmounted, not merely closed, and its toggle floats on the canvas. These
+   * assertions moved from "the bar reads X" to "nothing below the canvas has
+   * a box, and X is still stated" — which is the same honesty claim measured
+   * where the facts now live.
+   */
+  it('renders no strip below the canvas at all by default', () => {
     const { getByTestId, queryByTestId } = renderBody();
-    expect(getByTestId('terminal-bottom-drawer').getAttribute('data-expanded')).toBe('false');
+    expect(queryByTestId('terminal-bottom-drawer')).toBeNull();
     expect(queryByTestId('terminal-chrome-strip')).toBeNull();
     expect(queryByTestId('session-context-header')).toBeNull();
+    expect(getByTestId('terminal-details-toggle').getAttribute('aria-expanded')).toBe('false');
     expect(getByTestId('terminal-host-placeholder')).toBeTruthy();
   });
 
-  it('keeps project and share facts on the collapsed line', () => {
+  it('keeps project and share facts on the collapsed toggle', () => {
     const detail = sessionDetail();
     const projectId = (detail.content as unknown as Record<string, unknown>).launchProjectId;
     expect(typeof projectId).toBe('string');
@@ -57,16 +66,35 @@ describe('everything below the canvas starts in one collapsed drawer', () => {
       { handoffId: 'h2', sourceEntityId: 'e2', sourceTitle: 'b', targetSessionId: detail.id },
     ] as never;
     const { getByTestId } = renderBody({ handoffs });
-    const summary = getByTestId('terminal-bottom-drawer').textContent ?? '';
+    // The facts have no pixels of their own any more, so they are asserted
+    // where a viewer and a screen reader can still reach them.
+    const summary = getByTestId('terminal-details-toggle').getAttribute('aria-label') ?? '';
     expect(summary).toContain(projectId as string);
     expect(summary).toMatch(/2 shared/);
+    expect(getByTestId('terminal-details-toggle').getAttribute('title')).toContain(
+      projectId as string,
+    );
   });
 
-  it('states the absence of a project on that same collapsed line', () => {
+  it('states the absence of a project on that same collapsed toggle', () => {
     const detail = sessionDetail();
     const withoutProject = { ...detail, content: { ...detail.content, launchProjectId: undefined } };
     const { getByTestId } = renderBody({ detail: withoutProject as typeof detail });
-    expect(getByTestId('terminal-bottom-drawer').textContent).toMatch(/no project/);
+    expect(getByTestId('terminal-details-toggle').getAttribute('aria-label')).toMatch(/no project/);
+  });
+
+  /**
+   * The exit chip is the ONE visible instruction for getting the keyboard back
+   * out of a focused terminal (C6 layer 3). Moving it onto a hover-revealed
+   * overlay is only legitimate while it stays MOUNTED and focusable — CSS
+   * opacity, never `display: none` and never a conditional render. jsdom
+   * cannot see the opacity; it can see the element, which is the half that
+   * would actually break the contract if it regressed.
+   */
+  it('keeps the exit-focus instruction mounted with the strip gone', () => {
+    const { getByTestId } = renderBody();
+    const chip = getByTestId('exit-terminal-chip');
+    expect(chip.getAttribute('aria-label')).toMatch(/Control and backtick/);
   });
 
   it('reveals the session strip and context controls on demand', () => {
@@ -88,40 +116,47 @@ describe('dropping must not require expanding first', () => {
    * drop target reachable only after expanding would make drag-share dead on
    * arrival for every session — a feature removed by a layout decision.
    */
-  it('surfaces the drop target on dragover while still collapsed', () => {
+  /**
+   * With the drawer unmounted while collapsed there is no bar left to drag
+   * onto, so the STAGE — the canvas and its overlay — is the region that
+   * listens. If it stopped listening, drag-share would be dead on arrival for
+   * every session again, which is the exact failure this carve-out exists to
+   * prevent.
+   */
+  it('surfaces the drop target on dragover the canvas while still collapsed', () => {
     const { getByTestId, queryByTestId } = renderBody();
-    const drawer = getByTestId('terminal-bottom-drawer');
+    const stage = getByTestId('terminal-stage');
     expect(queryByTestId('share-drop-target')).toBeNull();
 
-    fireEvent.dragEnter(drawer);
-    fireEvent.dragOver(drawer);
+    fireEvent.dragEnter(stage);
+    fireEvent.dragOver(stage);
     expect(queryByTestId('share-drop-target')).not.toBeNull();
   });
 
   it('returns to the viewer’s own choice when the drag leaves, rather than staying open behind them', () => {
     const { getByTestId, queryByTestId } = renderBody();
-    const drawer = getByTestId('terminal-bottom-drawer');
+    const stage = getByTestId('terminal-stage');
 
-    fireEvent.dragEnter(drawer);
+    fireEvent.dragEnter(stage);
     expect(queryByTestId('share-drop-target')).not.toBeNull();
 
     // relatedTarget outside the region — a child-boundary crossing must NOT
     // close it, which is what the contains() check in the handler is for.
-    fireEvent.dragLeave(drawer, { relatedTarget: document.body });
-    expect(drawer.getAttribute('data-expanded')).toBe('false');
+    fireEvent.dragLeave(stage, { relatedTarget: document.body });
+    expect(queryByTestId('terminal-bottom-drawer')).toBeNull();
     expect(queryByTestId('session-context-header')).toBeNull();
   });
 
   it('leaves an explicitly expanded header open after a drag passes through', () => {
     // Drag state and viewer state are separate; a drag must not silently undo
     // a choice the viewer made.
-    const { getByTestId } = renderBody();
-    const drawer = getByTestId('terminal-bottom-drawer');
+    const { getByTestId, queryByTestId } = renderBody();
     fireEvent.click(getByTestId('terminal-details-toggle'));
-    expect(drawer.getAttribute('data-expanded')).toBe('true');
+    expect(getByTestId('terminal-bottom-drawer').getAttribute('data-expanded')).toBe('true');
 
-    fireEvent.dragEnter(drawer);
-    fireEvent.dragLeave(drawer, { relatedTarget: document.body });
-    expect(drawer.getAttribute('data-expanded')).toBe('true');
+    const stage = getByTestId('terminal-stage');
+    fireEvent.dragEnter(stage);
+    fireEvent.dragLeave(stage, { relatedTarget: document.body });
+    expect(queryByTestId('terminal-bottom-drawer')).not.toBeNull();
   });
 });

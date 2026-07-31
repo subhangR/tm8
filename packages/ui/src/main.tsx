@@ -12,10 +12,12 @@
  * empty — that the emptiness is a real answer from a real server rather than
  * a screen that has not finished.
  */
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { CollabV2App } from './collab-v2/CollabV2App';
+import { ChannelTaggingProvider } from './collab-v2/subsystems/thread/tags';
 import type { SpaceSummary } from './collab-v2/types/contract';
+import { createRealChannelTaggingController } from './real/channelTags';
 import { ModeBanner } from './real/ModeBanner';
 import { createRealFacade, type RealFacade } from './real/RealFacade';
 import { SessionsScreen } from './real/sessions/SessionsScreen';
@@ -66,6 +68,9 @@ function RealApp({ facade }: { facade: RealFacade }) {
   const [boot, setBoot] = useState<Boot>({ phase: 'loading' });
   const [spaceId, setSpaceId] = useState<string | null>(null);
   const [connected, setConnected] = useState(true);
+  const channelTagging = useMemo(() => createRealChannelTaggingController(facade, {
+    postBatch: async (input) => { await facade.postMessageBatch(input); },
+  }), [facade]);
 
   useEffect(() => facade.subscribeConnection(setConnected), [facade]);
 
@@ -116,7 +121,7 @@ function RealApp({ facade }: { facade: RealFacade }) {
   }
 
   return (
-    <>
+    <ChannelTaggingProvider controller={channelTagging}>
       <CollabV2App
         key={spaceId}
         facade={facade}
@@ -129,7 +134,7 @@ function RealApp({ facade }: { facade: RealFacade }) {
         fullBleedViews={FULL_BLEED_VIEWS}
       />
       <SpawnDialog facade={facade} />
-    </>
+    </ChannelTaggingProvider>
   );
 }
 

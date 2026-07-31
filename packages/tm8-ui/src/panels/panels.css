@@ -35,6 +35,98 @@
 }
 
 /* --- work_session body --------------------------------------------------- */
+.cv2-root .pn-work-session-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .pn-surface-switch {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+/* USER RULING 2026-07-31 — the switch rides the panel bar's right edge as two
+   chips instead of owning a 52px row above the canvas. Everything the row
+   supplied (its own background, bottom rule, 44px touch height) belongs to the
+   row and not to the control, so the modifier takes those back off: inside a
+   30px bar they would paint a second toolbar on top of the first. The 44px
+   target is knowingly traded for the bar's 30px — the same trade Terminate,
+   ⤢ and ✕ already made to sit there. */
+.cv2-root .pn-surface-switch--bar {
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: none;
+  gap: 1px;
+}
+.cv2-root .pn-surface-switch__tab {
+  min-width: 76px;
+  min-height: 44px;
+  padding: 3px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font: 600 10px/1 var(--pn-mono);
+  letter-spacing: var(--pn-track-wide);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.cv2-root .pn-surface-switch--bar .pn-surface-switch__tab {
+  min-width: 0;
+  min-height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  font-size: 9.5px;
+}
+.cv2-root .pn-surface-switch__tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-root .pn-surface-switch__tab[aria-selected='true'] {
+  color: var(--pn-ink);
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+}
+.cv2-root .pn-surface-switch__tab:focus-visible {
+  outline: 3px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+.cv2-root .pn-surface-compat {
+  flex: none;
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-wait);
+  background: var(--pn-surface);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+.cv2-root .pn-surface-compat__diag { color: var(--pn-ink-2); }
+.cv2-root .pn-surface-compat__diag code {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink);
+}
+.cv2-root .pn-work-session-content__surface {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cv2-root .pn-work-session-content__surface[data-active='true'] {
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .pn-work-session-content__surface[data-active='false'] { display: none; }
+.cv2-root .pn-surface-host-missing,
+.cv2-root .chs-host-error {
+  margin: 12px;
+  color: var(--pn-block);
+  font-size: 11px;
+}
+.cv2-root .chs-host-error { display: grid; gap: 8px; }
+.cv2-root .chs-host-error button { justify-self: start; }
 .cv2-root .pn-terminal-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -42,37 +134,90 @@
   flex-direction: column;
 }
 /* USER RULING 2026-07-29: all session metadata lives in one collapsed drawer
-   BELOW the canvas. The bar is the only default cost; opening it lets its
-   content shrink the canvas temporarily rather than reserving space forever. */
+   BELOW the canvas.
+   USER RULING 2026-07-31: and the collapsed state costs NOTHING — the drawer
+   is unmounted while closed, so the canvas reaches the panel's bottom edge.
+   Opening it still shrinks the canvas temporarily rather than reserving space
+   forever. */
 .cv2-root .pn-terminal-drawer {
   flex: none;
   border-top: 1px solid var(--pn-line);
   background: var(--pn-surface);
 }
-.cv2-root .pn-terminal-drawer__bar {
-  min-width: 0;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-}
-.cv2-root .pn-terminal-drawer__toggle {
-  appearance: none;
+
+/* THE STAGE — the canvas plus the controls that float ON it.
+   `position: relative` is the whole point: it is the containing block the
+   overlay is pinned to, so the overlay costs zero layout height and the black
+   box below it runs edge to edge. */
+.cv2-root .pn-terminal-stage {
+  position: relative;
   flex: 1 1 auto;
-  min-width: 0;
-  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* THE FLOATING CONTROLS — hover/focus-revealed, never removed.
+   Opacity, NOT display/visibility: the exit chip is the only visible
+   instruction for escaping a focused terminal (C6 layer 3), so it must stay
+   in the tab order at all times. `:focus-within` is what makes that honest —
+   a keyboard user who tabs to a chip they cannot see reveals it by landing on
+   it. `pointer-events` is off on the ROW so an invisible strip can never eat a
+   click meant for the terminal's last line, and back on for the chips
+   themselves once they are showing. */
+.cv2-root .pn-terminal-overlay {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0;
-  border: 0;
-  background: none;
+  /* At the 320px panel floor (L4) the two chips are wider than the canvas.
+     Absolutely-positioned overflow would run off the LEFT edge and be cut by
+     the panel's `overflow: hidden` — which is exactly backwards, because the
+     leftmost chip is the details toggle and the one that must survive is the
+     exit chip on the right. Capping the row and letting the details chip be
+     the only thing that shrinks makes the squeeze deterministic. */
+  max-width: calc(100% - 16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.cv2-root .pn-terminal-overlay > .term-exit-chip { flex: none; }
+.cv2-root .pn-terminal-overlay__chip { min-width: 0; }
+.cv2-root .pn-terminal-overlay .pn-terminal-drawer__label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .pn-terminal-stage:hover .pn-terminal-overlay,
+.cv2-root .pn-terminal-overlay:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cv2-root .pn-terminal-overlay__chip {
+  appearance: none;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  background: var(--pn-card);
   color: var(--pn-ink-2);
   cursor: pointer;
   text-align: left;
 }
-.cv2-root .pn-terminal-drawer__toggle:hover { color: var(--pn-ink); }
+.cv2-root .pn-terminal-overlay__chip:hover { color: var(--pn-ink); border-color: var(--pn-ink-4); }
+.cv2-root .pn-terminal-overlay__chip:focus-visible {
+  outline: 1px solid var(--pn-brand);
+  outline-offset: 1px;
+}
 .cv2-root .pn-terminal-drawer__caret {
   flex: none;
   color: var(--pn-ink-4);
@@ -80,21 +225,11 @@
 .cv2-root .pn-terminal-drawer__label {
   flex: none;
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: var(--pn-track-wide);
 }
-.cv2-root .pn-terminal-drawer__summary {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--pn-mono);
-  font-size: 9.5px;
-  color: var(--pn-ink-4);
-}
-.cv2-root .pn-terminal-drawer__bar > .term-exit-chip { flex: none; }
 .cv2-root .pn-terminal-drawer__content {
   max-height: 224px;
   overflow-y: auto;
@@ -346,7 +481,12 @@
   min-width: 320px;
   background: var(--pn-surface);
   border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-md);
+  /* USER RULING 2026-07-31: "decrease the overall border radius of all 4
+     corners." Local to the panel rather than a re-tune of `--pn-r-md`, which
+     also rounds cards, chips and menus the ruling did not touch. `overflow:
+     hidden` below is what makes this cut the terminal's black box, so the
+     canvas corners follow this number and no other. */
+  border-radius: 6px;
   box-shadow: var(--pn-sh-md);
   overflow: hidden;
 }
@@ -500,6 +640,11 @@
   gap: 7px;
   padding: 0 8px 0 6px;
 }
+/* The portal target for the terminal/chat switch (USER RULING 2026-07-31).
+   `display: contents` so an EMPTY slot — every non-chat session — costs the
+   bar no box and no gap at all, and a filled one lets the switch's own flex
+   row be the bar's child directly. */
+.cv2-root .pn-panelbar__surface { display: contents; }
 .cv2-root .pn-tab {
   appearance: none;
   border: 0;
@@ -1100,6 +1245,101 @@
   padding-left: 0;
   border-left: 0;
 }
+.cv2-root .lp__tree--session { gap: 0; }
+.cv2-root .lp__tree--session .lp__children {
+  gap: 0;
+  margin: 0 0 0 19px;
+  padding-left: 0;
+  border-left: 1px solid var(--pn-line);
+}
+
+/* Maestro SessionListItem anatomy. The live-dot markup and ping animation are
+   copied verbatim; tm8's seam verdict decides whether it exists, and only PTY
+   output activity adds the ping class. */
+.cv2-root .pn-st {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--pn-line);
+  transition:
+    background var(--pn-dur-base) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-base) var(--pn-ease-out);
+}
+.cv2-root .pn-st:hover {
+  background: var(--pn-hover);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--pn-brand) 58%, transparent);
+}
+.cv2-root .pn-st--selected { background: var(--pn-active); }
+.cv2-root .pn-st--attention { background: var(--pn-wait-soft); }
+.cv2-root .pn-st--archived { opacity: 0.62; }
+.cv2-root .pn-st__main { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px 6px 7px; cursor: pointer; }
+.cv2-root .pn-st__arrow {
+  position: relative; width: 16px; height: 16px; flex: 0 0 auto; display: grid; place-items: center;
+  padding: 0; color: var(--pn-ink-4); background: none; border: none; border-radius: 4px; cursor: pointer;
+}
+.cv2-root .pn-st__arrow:hover:not(:disabled) { color: var(--pn-ink-2); background: var(--pn-active); }
+.cv2-root .pn-st__arrow svg { width: 13px; height: 13px; transition: transform 140ms; }
+.cv2-root .pn-st__arrow--expanded svg { transform: rotate(90deg); }
+.cv2-root .pn-st__arrow--empty { color: var(--pn-line); }
+.cv2-root .pn-st__arrowCount { flex: 0 0 auto; font-family: var(--pn-mono); font-size: 8.5px; font-weight: 600; color: var(--pn-ink-3); }
+.cv2-root .pn-st__title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; cursor: pointer; }
+.cv2-root .pn-st__titleText { min-width: 0; overflow: hidden; color: var(--pn-ink); font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cv2-root .pn-st__model { max-width: 88px; flex: 0 1 auto; overflow: hidden; color: var(--pn-ink-3); font-family: var(--pn-mono); font-size: 9px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cv2-root .pn-st__tag { flex: 0 0 auto; padding: 2px 6px; color: var(--pn-ink-3); background: var(--pn-active); border-radius: var(--pn-r-xs); font-family: var(--pn-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.cv2-root .pn-st__tag--done { color: var(--pn-run); background: var(--pn-run-soft); }
+.cv2-root .pn-st__tag--attention { color: var(--pn-wait); background: var(--pn-wait-soft); }
+.cv2-root .pn-st__statusglyph { width: 16px; height: 16px; flex: 0 0 auto; }
+.cv2-root .pn-st__actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 7px;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--pn-hover);
+  transform: translate(3px, -50%);
+  transition: opacity var(--pn-dur-base) var(--pn-ease-standard), transform var(--pn-dur-base) var(--pn-ease-out);
+}
+.cv2-root .pn-st:hover .pn-st__actions,
+.cv2-root .pn-st:focus-within .pn-st__actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+.cv2-root .pn-st__btn { width: 22px; height: 22px; display: grid; place-items: center; padding: 0; color: var(--pn-ink-4); background: transparent; border: 1px solid transparent; border-radius: var(--pn-r-sm); cursor: pointer; transition: color var(--pn-dur-fast), background var(--pn-dur-fast); }
+.cv2-root .pn-st__btn:hover { color: var(--pn-ink); background: var(--pn-active); }
+.cv2-root .pn-st__btn--danger:hover { color: var(--pn-block); }
+.cv2-root .pn-st__btn svg { transition: transform var(--pn-dur-fast) var(--pn-ease-out); }
+.cv2-root .pn-st__tasklines { display: flex; flex-direction: column; gap: 3px; padding: 0 10px 6px 35px; cursor: pointer; }
+.cv2-root .pn-st__taskline { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cv2-root .pn-st__tasklineLabel { min-width: 0; overflow: hidden; color: var(--pn-ink-2); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.cv2-root .pn-agent { width: 17px; height: 17px; flex: 0 0 auto; display: grid; place-items: center; background: transparent; border: 0; cursor: pointer; }
+.cv2-root .pn-agent__mark { color: var(--pn-ink-4); font-size: 14px; line-height: 1; opacity: 0.72; transition: color var(--pn-dur-base), opacity var(--pn-dur-base), transform var(--pn-dur-base); }
+.cv2-root .pn-agent[data-agent-kind='claude'] .pn-agent__mark { color: var(--pn-brand); }
+.cv2-root .pn-agent[data-agent-kind='codex'] .pn-agent__mark { color: white; filter: drop-shadow(0 0 1px var(--pn-ink-3)); }
+.cv2-root .pn-agent--live .pn-agent__mark { opacity: 1; }
+.cv2-root .pn-agent--streaming .pn-agent__mark { animation: pn-agent-glitter 1.65s ease-in-out infinite; }
+@keyframes pn-agent-glitter {
+  0%, 100% { transform: scale(0.9) rotate(-5deg); opacity: 0.58; }
+  45% { transform: scale(1.08) rotate(4deg); opacity: 1; }
+  70% { transform: scale(0.98) rotate(0); opacity: 0.82; }
+}
+.cv2-root .pn-agent[data-agent-kind='gemini'] .pn-agent__mark { color: var(--pn-info); }
+.cv2-root .pn-agent[data-agent-kind='hermes'] .pn-agent__mark { color: var(--pn-wait); }
+.cv2-root .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
+.cv2-root .pn-stat--running, .cv2-root .pn-stat--working, .cv2-root .pn-stat--exited, .cv2-root .pn-stat--done { color: var(--pn-run); }
+.cv2-root .pn-stat--spawning, .cv2-root .pn-stat--pulled, .cv2-root .pn-stat--in_review { color: var(--pn-info); }
+.cv2-root .pn-stat--failed, .cv2-root .pn-stat--blocked { color: var(--pn-block); }
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-agent--streaming .pn-agent__mark { animation: none; }
+}
 @keyframes lp-children-in {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1135,6 +1375,16 @@
 .cv2-root .lp__tile--attention {
   border-color: color-mix(in srgb, var(--pn-wait) 42%, var(--pn-line));
   background: color-mix(in srgb, var(--pn-wait) 6%, var(--pn-card));
+}
+.cv2-root .lp__attention-label,
+.cv2-root .pn-tt__attention {
+  color: var(--pn-wait);
+  background: var(--pn-wait-soft);
+  border-radius: 999px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 .cv2-root .lp__tile[data-flow='open']:hover { transform: none; }
 .cv2-root .lp__tile-main {
@@ -1660,3 +1910,49 @@
 }
 .cv2-root .lq__refusal-label { font-weight: 600; color: var(--pn-block); }
 .cv2-root .lq__launch:disabled { opacity: 0.6; cursor: default; }
+
+/* ==========================================================================
+   READER SURFACE — the reader archetype's two stances (T5-3 mount).
+   The bar is the oracle's `Edit` primary row above the prose column; the body
+   is whichever stance is showing, and it OWNS the scroll so the bar stays put
+   while a long document moves under it.
+   Tokens only (the package hex guard scans this file).
+   ========================================================================== */
+.cv2-root .rs-root {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .rs-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .rs-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .rs-body > * {
+  flex: 1;
+  min-height: 0;
+}
+.cv2-root .rs-exit {
+  appearance: none;
+  font-family: var(--pn-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cv2-root .rs-exit:hover { background: var(--pn-hover); }

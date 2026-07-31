@@ -287,9 +287,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
   });
 
   it('sweeps exactly the 98 v1 non-WS operations, derived from the catalog', () => {
-    expect(SURFACE).toHaveLength(98);
-    expect(rows).toHaveLength(98);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(98);
+    // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
+    // artifacts, attention, voice et al) grew the v1 non-WS surface.
+    expect(SURFACE).toHaveLength(114);
+    expect(rows).toHaveLength(114);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(114);
   });
 
   /**
@@ -376,7 +378,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
    * `shasum`, never a value copied from a message.
    */
   it('applies the FULL migration chain, enumerated rather than hand-listed', () => {
-    expect(server.appliedMigrations.length).toBe(39);
+    // 39 -> 57 on 2026-07-31: migrations 040-060 landed with the wave.
+    expect(server.appliedMigrations.length).toBe(57);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -563,7 +566,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
  * Update ONLY to new exact literals, with before-and-after recorded — never to a
  * range and never to a live-computed value.
  */
-const EXPECTED_HANDLER_501: readonly string[] = [];
+const EXPECTED_HANDLER_501: readonly string[] = [
+  // 2026-07-31: voice.token.create is MOUNTED and REACHED, and on a node with
+  // no TM8_LIVEKIT_* configured its handler answers an honest not_implemented
+  // naming the env vars to set (services/voice.ts). A refusal authored by the
+  // handler on real configuration grounds, not a stub.
+  'voice.token.create',
+];
 
 /**
  * The operations that answered `400 invalid_input` from their OWN validation,
@@ -576,6 +585,11 @@ const EXPECTED_HANDLER_501: readonly string[] = [];
  * regression would first appear as a shift rather than as a failure.
  */
 const HANDLER_AUTHORED_400: readonly string[] = [
+  // 2026-07-31: artifacts.export refuses its own unimplemented format choice
+  // in-handler, and attentionRequests.list validates its query in-handler —
+  // both handler-reached 400s, recorded when the wave landed them.
+  'artifacts.export',
+  'attentionRequests.list',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',

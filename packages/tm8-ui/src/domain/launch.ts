@@ -303,9 +303,41 @@ export interface LaunchProfile {
   status: InteractionProfileStatus;
   isSpaceDefault?: boolean;
   isServerDefault?: boolean;
+  /** Safe launch-time presentation; profiles never grant these operations. */
+  templateKey: string;
+  contentSurfaces: readonly ['terminal', 'chat'];
+  initialContentSurface: 'terminal' | 'chat';
 }
 
+/**
+ * The only static interaction template shipped by the current node. Active
+ * profiles are validated against this closed registry before launch, so these
+ * are safe presentation facts rather than inferred permissions.
+ */
+export const CORE_CHAT_LAUNCH_PRESENTATION = Object.freeze({
+  templateKey: 'tm8.chat.core',
+  contentSurfaces: Object.freeze(['terminal', 'chat']) as readonly ['terminal', 'chat'],
+  initialContentSurface: 'chat' as const,
+});
+
+/**
+ * `TM8_SESSION_CAP=unlimited` reports its total as int4's maximum, because the
+ * `execution.spawn` RPC takes an `integer` cap and has no way to say "no limit".
+ * Rendered literally that reads "2147483647 of 2147483647 session slots free",
+ * which looks like a bug rather than a configuration. Show the live count and
+ * name the state instead — the number that still carries information is `used`.
+ *
+ * The threshold is a large FLOOR rather than an equality test on int4-max: the
+ * operator may equally have written `TM8_SESSION_CAP=100000`, which is the same
+ * intent expressed with a number, and should read the same way.
+ */
+const EFFECTIVELY_UNLIMITED_SLOTS = 100_000;
+
 export function describeCapacity(c: LaunchCapacity): string {
+  if (c.slotsTotal >= EFFECTIVELY_UNLIMITED_SLOTS) {
+    const used = c.slotsTotal - c.slotsFree;
+    return `${used} live · no session limit`;
+  }
   return `${c.slotsFree} of ${c.slotsTotal} session slots free`;
 }
 
@@ -357,6 +389,8 @@ export interface LaunchConfig {
   teamMemberId: EntityId | null;
   agentToolId: string | null;
   model: string | null;
+  reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
+  accessMode: 'safe' | 'acceptEdits' | 'plan' | 'fullAccess' | null;
   mode: LaunchMode;
   target: LaunchTarget;
   /**
@@ -391,6 +425,10 @@ export function defaultConfigFor(teammate: {
     // record is what has been running, and overriding it silently would make
     // the quick config change behaviour just by being opened.
     model: teammate.model ?? null,
+    // Quick launch does not expose these advanced controls, so null preserves
+    // the teammate/node defaults instead of silently overriding them.
+    reasoningEffort: null,
+    accessMode: null,
     mode: 'worker',
     target: defaultLaunchTarget(defaultProjectId),
   };
@@ -486,6 +524,8 @@ export function buildSpawnInput(args: {
     model: config.model,
     agentTool: config.agentToolId,
   };
+  if (config.reasoningEffort) input.reasoningEffort = config.reasoningEffort;
+  if (config.accessMode) input.accessMode = config.accessMode;
   if (args.taskIds?.length) input.taskIds = [...args.taskIds];
   if (args.title) input.title = args.title;
   if (config.interactionProfileId) input.interactionProfileId = config.interactionProfileId;

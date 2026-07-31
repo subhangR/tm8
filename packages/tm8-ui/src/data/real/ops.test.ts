@@ -69,6 +69,47 @@ describe('ops: launch resources', () => {
   });
 });
 
+describe('ops: canonical file upload lifecycle', () => {
+  it('uses the three catalog operations and the server-granted raw PUT', async () => {
+    const replies = [
+      {
+        uploadId: 'upload-1',
+        uploadUrl: '/v2/files/uploads/upload-1/content',
+        token: 'grant-1',
+        expiresAt: '2026-07-30T12:00:00.000Z',
+        maxSizeBytes: 1024,
+      },
+      undefined,
+      { patches: [], entity: { id: 'file-1' } },
+      { patches: [] },
+    ];
+    const f = fakeFetch(() => {
+      const reply = replies.shift();
+      return reply === undefined ? { status: 204, raw: '' } : { data: reply };
+    });
+    const ops = createOps(createHttpClient({ fetch: f.fetch }));
+    const grant = await ops.fileUploadInit({
+      clientMutationId: 'init-1',
+      spaceId: 'space-1',
+      name: 'plan.txt',
+      mime: 'text/plain',
+      sizeBytes: 4,
+      checksumSha256: 'a'.repeat(64),
+    });
+    await ops.fileUploadBytes(grant, new Blob(['plan']));
+    await ops.fileUploadComplete('upload-1', { clientMutationId: 'complete-1' });
+    await ops.fileUploadAbort('upload-1', { clientMutationId: 'abort-1' });
+
+    expect(f.calls.map((call) => [call.method, call.url])).toEqual([
+      ['POST', '/v2/files/uploads'],
+      ['PUT', '/v2/files/uploads/upload-1/content'],
+      ['POST', '/v2/files/uploads/upload-1/complete'],
+      ['POST', '/v2/files/uploads/upload-1/abort'],
+    ]);
+    expect(f.calls[2]?.body).toEqual({ clientMutationId: 'complete-1' });
+  });
+});
+
 describe('ops: graph hydration', () => {
   it('posts the complete graph lens through the catalog operation', async () => {
     const result = { nodes: [], edges: [], clusters: [] };
@@ -202,9 +243,16 @@ describe('ops: paged reads carry cursor + limit', () => {
     expect(f.last().url).toBe('/v2/work-sessions/ws-1/handoffs');
   });
 
-  it('feed carries scope beside the page opts', async () => {
+  it('feed carries scope, order, and around beside the page opts', async () => {
     const { ops, f } = harness({ items: [], nextCursor: null, previousCursor: null });
-    await ops.feed('e-1', { scope: 'session_chat_v1', limit: 20 });
-    expect(f.last().url).toBe('/v2/entities/e-1/feed?limit=20&scope=session_chat_v1');
+    await ops.feed('e-1', {
+      scope: 'session_chat_v1',
+      order: 'oldest',
+      around: 'message:01900000-0000-7000-8000-000000000010',
+      limit: 20,
+    });
+    expect(f.last().url).toBe(
+      '/v2/entities/e-1/feed?limit=20&scope=session_chat_v1&order=oldest&around=message%3A01900000-0000-7000-8000-000000000010',
+    );
   });
 });

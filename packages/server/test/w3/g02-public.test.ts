@@ -1451,16 +1451,17 @@ describe.sequential('W3.G02 universal entities, commands and tracking through th
   // Composition boundary — G02 is the right SET, not merely the right COUNT
   // -------------------------------------------------------------------------
 
-  it('X: entities.feed and entities.context belong to G13 and still answer an honest 501', async () => {
+  it('X: entities.feed and entities.context are COMPOSED now that G13 landed', async () => {
+    // This test used to pin both at an honest 501 while they belonged to an
+    // unbuilt G13. feed-context.ts now registers both (2026-07-31), so the
+    // honest pin inverts: they answer 200 on a real entity, same as the
+    // composed G02 read beside them.
     const anchor = await createTask('composition-anchor');
     for (const suffix of ['feed', 'context']) {
       const response = await harness.request('GET', `/v2/entities/${anchor}/${suffix}`);
-      expect({ suffix, status: response.status, code: errorCode(response) })
-        .toEqual({ suffix, status: 501, code: 'not_implemented' });
+      expect({ suffix, status: response.status }).toEqual({ suffix, status: 200 });
     }
 
-    // PROBE-RED: a G02 read on the SAME entity is composed and answers 200, so
-    // the 501s above are about those two operations and not about the path.
     const composed = await harness.request('GET', `/v2/entities/${anchor}/connections`);
     expect(composed.status).toBe(200);
   }, 60_000);

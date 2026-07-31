@@ -1,7 +1,8 @@
 /**
  * `tm8 entity …` — the universal entity surface (§4.3, §4.4).
  *
- * SIXTEEN commands over sixteen catalog rows: the twelve `entities.*` rows,
+ * SEVENTEEN commands over seventeen catalog rows: the twelve `entities.*` rows
+ * plus `attentionRequests.create`,
  * the two W0 additive reads (`entities.feed`, `entities.context`),
  * `entities.commands.pull` — which is a kind-command wearing an `entity`
  * command path — and `collections.query`, which is a `collections` row whose
@@ -264,6 +265,24 @@ export function renderCommandResult(dto: unknown): string {
   if (r?.undo && typeof r.undo.token === 'string') lines.push(`undo-token: ${r.undo.token}`);
   const rendered = lines.filter((l) => l !== '');
   return rendered.length > 0 ? rendered.join('\n') : 'ok';
+}
+
+function renderAttentionMutation(dto: unknown): string {
+  const result = dto as {
+    request?: { id?: unknown; status?: unknown; points?: unknown; reason?: unknown } | null;
+    entity?: SummaryLike;
+    affectedCount?: unknown;
+  };
+  const lines: string[] = [];
+  if (result.request?.id) {
+    lines.push(
+      `attention  ${String(result.request.id)}  ${String(result.request.status ?? '')}  `
+      + `${String(result.request.points ?? '')}pt  ${String(result.request.reason ?? '')}`,
+    );
+  }
+  if (result.entity) lines.push(summaryLine(result.entity));
+  lines.push(`affected: ${String(result.affectedCount ?? 0)}`);
+  return lines.join('\n');
 }
 
 function renderEntity(dto: unknown): string {
@@ -565,6 +584,27 @@ async function entityUpdate(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+async function entityAttention(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['reason', 'points', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<entity-id>');
+  const reason = cmd.options.value('reason');
+  const points = cmd.options.integer('points');
+  if (!reason?.trim()) throw new CliError('`tm8 entity attention` requires --reason <text>', EXIT_USAGE);
+  if (points === undefined || points < 1 || points > 100) {
+    throw new CliError('`tm8 entity attention` requires --points <1-100>', EXIT_USAGE);
+  }
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'attentionRequests.create', {
+    params: { entityId: id },
+    body: withActor(cmd, {
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      reason: reason.trim(),
+      points,
+    }),
+  });
+  cmd.out.data(data, renderAttentionMutation);
+  return EXIT_OK;
+}
+
 async function entityMove(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, ['parent', 'position', 'expect-version', 'mutation-id']);
   const id = requireArg(cmd, 0, '<entity-id>');
@@ -693,6 +733,7 @@ export const ENTITY_COMMANDS: CommandModule[] = [
   { path: ['entity', 'get'], run: entityGet },
   { path: ['entity', 'create'], run: entityCreate },
   { path: ['entity', 'update'], run: entityUpdate },
+  { path: ['entity', 'attention'], run: entityAttention },
   { path: ['entity', 'move'], run: entityMove },
   { path: ['entity', 'delete'], run: entityDelete },
   { path: ['entity', 'restore'], run: entityRestore },

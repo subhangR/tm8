@@ -21,6 +21,7 @@ import {
   recordInteractionProfilePin,
   resolveInteractionProfileForLaunch,
 } from '../../src/profiles/w2-profile-resolver.js';
+import { projectInteractionProfileForBrowser } from '../../src/profiles/browser-projection.js';
 import type { RequestContext } from '../../src/http/types.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
@@ -194,6 +195,82 @@ describe('W2.G12 registration and static-template boundary', () => {
     expect(Object.isFrozen(STATIC_CHAT_TEMPLATE_REGISTRY)).toBe(true);
     expect(Object.isFrozen(STATIC_CHAT_TEMPLATE_REGISTRY[0])).toBe(true);
     expect('id' in STATIC_CHAT_TEMPLATE_REGISTRY[0]!).toBe(false);
+  });
+
+  it('projects only safe browser policy from the immutable pin snapshot', () => {
+    const projection = projectInteractionProfileForBrowser({
+      pinRevision: 4,
+      templateKey: 'tm8.chat.core',
+      templateVersion: 1,
+      snapshot: {
+        browserProjection: {
+          templateKey: 'tm8.chat.core',
+          templateVersion: 1,
+          feedPolicy: DRAFT.feedPolicy,
+          composerPolicy: DRAFT.composerPolicy,
+        },
+        agentProjection: {
+          promptPolicy: DRAFT.promptPolicy,
+          toolDiscoveryPolicy: DRAFT.toolDiscoveryPolicy,
+          providerSecret: 'must-not-leak',
+        },
+      },
+    });
+
+    expect(projection).toEqual({
+      pinRevision: 4,
+      templateKey: 'tm8.chat.core',
+      templateVersion: 1,
+      compatibility: 'supported',
+      chatEnabled: true,
+      initialContentSurface: 'chat',
+      feedPolicy: DRAFT.feedPolicy,
+      composerPolicy: DRAFT.composerPolicy,
+    });
+    expect(projection).not.toHaveProperty('agentProjection');
+    expect(JSON.stringify(projection)).not.toContain('must-not-leak');
+  });
+
+  it('keeps an unknown pinned template visible through the safe core renderer', () => {
+    expect(projectInteractionProfileForBrowser({
+      pinRevision: 2,
+      templateKey: 'removed.chat.template',
+      templateVersion: 9,
+      snapshot: {
+        browserProjection: {
+          templateKey: 'removed.chat.template',
+          templateVersion: 9,
+          feedPolicy: DRAFT.feedPolicy,
+          composerPolicy: DRAFT.composerPolicy,
+        },
+      },
+    })).toMatchObject({
+      templateKey: 'removed.chat.template',
+      templateVersion: 9,
+      compatibility: 'unknown_template',
+      chatEnabled: true,
+      initialContentSurface: 'terminal',
+    });
+  });
+
+  it('the shipped core browser policy discovers the canonical upload lifecycle', () => {
+    const projection = projectInteractionProfileForBrowser({
+      pinRevision: 1,
+      templateKey: 'tm8.chat.core',
+      templateVersion: 1,
+      snapshot: {},
+    });
+    expect(projection.composerPolicy.operationBindings).toEqual(expect.arrayContaining([
+      'messages.post',
+      'files.uploadInit',
+      'files.uploadComplete',
+      'files.uploadAbort',
+    ]));
+    expect(STATIC_CHAT_TEMPLATE_REGISTRY[0]?.allowedOperationBindings).toEqual(expect.arrayContaining([
+      'files.uploadInit',
+      'files.uploadComplete',
+      'files.uploadAbort',
+    ]));
   });
 });
 

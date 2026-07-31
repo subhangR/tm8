@@ -24,6 +24,12 @@ export interface SpaceTabBarProps {
   /** Account menu — theme's home per D1. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
+  /**
+   * Opens the prompt catalog — every system prompt tm8 sends an agent.
+   * Optional like the rest of the bar's callbacks, so a bar rendered without a
+   * host (every existing shell test) simply does not show the control.
+   */
+  onOpenPrompts?(): void;
   /** Monogram for the account avatar. */
   accountInitial?: string;
   /**
@@ -100,6 +106,18 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
       </div>
 
       <div className="shell-tabbar__spacer" />
+
+      {props.onOpenPrompts ? (
+        <button
+          type="button"
+          className="shell-tabbar__prompts"
+          onClick={props.onOpenPrompts}
+          data-testid="open-prompts"
+          title="System prompts — everything tm8 says to an agent"
+        >
+          prompts
+        </button>
+      ) : null}
 
       <button type="button" className="shell-tabbar__palette" onClick={props.onOpenPalette}>
         / palette · ⌘K

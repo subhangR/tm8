@@ -317,6 +317,66 @@ export const BODY_OVERRIDES: Readonly<Record<string, unknown>> = {
     anchorIds: [ABSENT_ID],
     body: 'w5surface',
   },
+
+  /**
+   * `ServerConnectionBaseUrlSchema` superRefines the STRING into a URL and
+   * requires a bare origin — no path, query, credentials or fragment. A shape
+   * walk can produce "a valid URL string" but cannot see the origin-only
+   * predicate, so the candidate it finds carries a path and is rejected.
+   */
+  'serverConnections.create': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    name: 'w5surfac',
+    baseUrl: 'https://example.invalid',
+  },
+
+  /**
+   * `UpdateAttentionRequestInputSchema` refines "at least one of
+   * reason/points/status/resolutionNote present" over four OPTIONAL fields —
+   * the minimal walk omits all four, which is precisely what it rejects.
+   */
+  'attentionRequests.update': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    expectedVersion: 1,
+    reason: 'w5 surface sweep probe',
+  },
+
+  /**
+   * `ArtifactManifestSchema` requires ≥1 file AND `entrypoint` to be one of
+   * the file paths — a cross-field predicate over an array the minimal walk
+   * leaves empty. One canonical single-file bundle serves both operations.
+   */
+  'artifacts.create': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    spaceId: '01900000-0000-7000-8000-000000000001',
+    name: 'w5surfac',
+    manifest: {
+      schema: 'tm8.web-artifact/1',
+      runtime: 'web-static-v1',
+      entrypoint: 'index.html',
+      files: [{
+        path: 'index.html',
+        mediaType: 'text/html',
+        size: 0,
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      }],
+    },
+  },
+  'artifacts.publish': {
+    clientMutationId: 'w5-surface-sweep-cmid',
+    expectedVersion: 1,
+    manifest: {
+      schema: 'tm8.web-artifact/1',
+      runtime: 'web-static-v1',
+      entrypoint: 'index.html',
+      files: [{
+        path: 'index.html',
+        mediaType: 'text/html',
+        size: 0,
+        sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      }],
+    },
+  },
 };
 
 export function bodyFor(opName: string, schema: ZodTypeAny): unknown {

@@ -6,7 +6,7 @@
  * prevent.
  */
 import { describe, expect, it } from 'vitest';
-import { MenuConfigSchema, type MenuConfig } from '@tm8/contract';
+import { DEFAULT_MENU_GROUP_SPINE, MenuConfigSchema, type MenuConfig } from '@tm8/contract';
 import {
   SHIPPED_DEFAULT_MENU,
   SHIPPED_DEFAULT_MENU_REVISION,
@@ -29,22 +29,31 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(unrenderableKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([]);
   });
 
-  it('encodes the WLT §2 diagram', () => {
-    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).toEqual([
-      'home',
-      'workspace',
-      'tracking',
-      'collab',
-      'channels',
-      'settings',
-    ]);
+  it('encodes the WLT §2 diagram, pinned to the contract spine', () => {
+    // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
+    // seeder (db/migrations/061, tested by
+    // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
+    // to. Before the spine existed the two carried unjoined hand-copies, and
+    // migration 059 dropped the voice group with every suite green — the
+    // stable deployment caught it. A group change now edits the spine, where
+    // BOTH parity tests see it.
+    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).toEqual(
+      DEFAULT_MENU_GROUP_SPINE.map((g) => g.clientId),
+    );
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([
       'task',
       'work_session',
       'doc',
       'team_member',
+      // Revision 4 (2026-07-31): Memories and Artifacts under the Workspace
+      // caret, Worktrees beside the git-adjacent Tracking rows. All three
+      // shipped with registry rows but no menu named them — unreachable
+      // features, not deferred ones.
+      'memory',
+      'artifact',
       'project',
       'pull_request',
+      'worktree',
       'member',
     ]);
   });
@@ -52,6 +61,11 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   it('always contains settings (the fail-closed floor)', () => {
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
     expect(refs).toContain('settings');
+  });
+
+  it('keeps the Channels route ref for config/deep links', () => {
+    const channels = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'channels');
+    expect(channels?.items).toEqual([{ type: 'view', ref: 'channels' }]);
   });
 
   it('keeps depth at exactly ≤1 with Workspace as the one caret VIEW item', () => {

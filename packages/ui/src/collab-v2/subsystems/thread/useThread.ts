@@ -87,6 +87,11 @@ function asMessageView(detail: EntityDetail, prev?: MessageView): MessageView | 
   return { ...detail, state, content, replyCount: prev?.replyCount ?? 0 };
 }
 
+function messagePatch(result: { patches: EntitySummary[] }): MessageView | null {
+  const candidate = result.patches.find((patch) => 'content' in patch);
+  return candidate ? asMessageView(candidate as EntityDetail) : null;
+}
+
 /** Roots plus every inline reply page, flattened for ingestion. */
 function flattenPage(items: readonly MessageView[]): MessageView[] {
   const out: MessageView[] = [];
@@ -320,7 +325,7 @@ export function useThread({
         useGraphStore.getState().reconcile(entry.clientMutationId);
         // The created message normally arrives by event; ingest defensively so
         // a facade without a live stream still shows what it just wrote.
-        const created = res.entity ? asMessageView(res.entity) : null;
+        const created = res.entity ? asMessageView(res.entity) : messagePatch(res);
         if (created) ingest([created]);
         setPending((prev) => prev.filter((p) => p.clientMutationId !== entry.clientMutationId));
       })

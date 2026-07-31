@@ -68,6 +68,7 @@ export const PROFILE_BLOCKS = [
   'items',
   'live-work',
   'session-rows',
+  'org-tree',
 ] as const;
 
 export type ProfileBlockName = (typeof PROFILE_BLOCKS)[number];
@@ -181,6 +182,8 @@ function ProfileBlock({
         return <ItemsBlock detail={detail} params={params} onOpenEntity={onOpenEntity} />;
       case 'live-work':
         return <LiveWorkBlock detail={detail} params={params} now={now} onOpenEntity={onOpenEntity} />;
+      case 'org-tree':
+        return <OrgTreeBlock detail={detail} params={params} onOpenEntity={onOpenEntity} />;
       case 'session-rows':
         return (
           <SessionRowsBlock
@@ -481,6 +484,119 @@ function LiveWorkBlock({
       <HollowInline caption="Unverified: this record names a task but no session, so there is nothing to ask the node about. A liveness verdict is never inferred from a stored record.">
         — unverified
       </HollowInline>
+    </div>
+  );
+}
+
+/**
+ * ORG TREE — this entity's place in the team structure. NOT an oracle frame:
+ * an addition, appended after the oracle's last block so the drawn frame above
+ * stays contiguous.
+ *
+ * WHERE THE STRUCTURE COMES FROM, and why there is no teammate-shaped edge
+ * here: `db/migrations/002_identity.sql:110` rules it outright — "the org tree
+ * is the entity hierarchy (leader = parent)". So this reads `detail.hierarchy`
+ * — the same parent/children/path every other body reads — and a leader is
+ * simply a parent. There is no `member_of` traversal because that edge type is
+ * named in a comment but is NOT in the seeded `edge_types` table; reading it
+ * would draw structure the database cannot answer for.
+ *
+ * STRICTLY READ-ONLY. No re-parenting control is rendered, not even disabled:
+ * the deferred-control law covers a control the design calls for, and the
+ * design does not call for one here.
+ *
+ * IT DEGRADES BY SAYING SO. A teammate with no leader and no reports is the
+ * common case in a team nobody has arranged, and that is a real fact about the
+ * team rather than a rendering failure — so it states the absence and names
+ * what would change it, instead of drawing a lone node in a tree that implies
+ * structure was measured and found empty.
+ */
+function OrgTreeBlock({
+  detail,
+  params,
+  onOpenEntity,
+}: {
+  detail: EntityDetail;
+  params: Params;
+  onOpenEntity?: (id: string) => void;
+}) {
+  const { parent, children } = detail.hierarchy;
+  const reports = children.items;
+
+  if (!parent && reports.length === 0) {
+    const empty =
+      typeof params.empty === 'string'
+        ? params.empty
+        : 'No leader and no reports — this teammate sits outside any team structure. The org tree is the entity hierarchy, so giving it a parent places it here.';
+    return <p className="pn-section__empty">{empty}</p>;
+  }
+
+  // Leader, then this entity, then its reports — depth is the only thing that
+  // encodes the relation, and each row says its role in words as well.
+  const rows: Array<{ node: EntitySummary; depth: number; role: string; self: boolean }> = [];
+  if (parent) rows.push({ node: parent, depth: 0, role: 'leads', self: false });
+  rows.push({
+    node: detail as EntitySummary,
+    depth: parent ? 1 : 0,
+    role: 'this teammate',
+    self: true,
+  });
+  for (const child of reports) {
+    rows.push({ node: child, depth: parent ? 2 : 1, role: 'reports to', self: false });
+  }
+
+  const total = children.total;
+  return (
+    <div className="pn-profile__org">
+      {rows.map(({ node, depth, role, self }) => {
+        const glyph = (
+          <span aria-hidden className="pn-profile__row-glyph">
+            {getKind(node.kind).chip.glyph}
+          </span>
+        );
+        const label = (
+          <>
+            <span className="pn-profile__row-name">{node.title}</span>
+            <span aria-hidden className="pn-profile__sep">
+              ·
+            </span>
+            <span className="pn-profile__org-role">{role}</span>
+          </>
+        );
+        return self ? (
+          // The current entity is not a link to itself — that is a control
+          // that looks live and does nothing.
+          <div
+            key={node.id}
+            className="pn-profile__org-row pn-profile__org-row--self"
+            data-depth={depth}
+            aria-current="true"
+          >
+            {glyph}
+            {label}
+          </div>
+        ) : (
+          <button
+            type="button"
+            key={node.id}
+            className="pn-profile__org-row"
+            data-depth={depth}
+            title={node.title}
+            onClick={() => onOpenEntity?.(node.id)}
+          >
+            {glyph}
+            {label}
+          </button>
+        );
+      })}
+      {typeof total === 'number' && total > reports.length ? (
+        /* The count is of what we HOLD versus what the server says exists —
+           SubtreeBody's precedent. A truncated tree that looks complete is the
+           same defect class as an unverified `live`. */
+        <p className="pn-section__empty">
+          {reports.length} of {total} reports loaded.
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -111,25 +111,40 @@ export function TerminalBody({
    * surfaces on dragover exactly as before. The needs-you banner stays above
    * the canvas: it is conditional, rare, and its whole job is to interrupt.
    * This supersedes the top-stacked order the T0-2 canvas draws; the
-   * divergence is user-ruled (D63). */
+   * divergence is user-ruled (D63).
+   *
+   * USER RULING 2026-07-31 (D63 extended) — "remove the bottom strip …
+   * terminal all the way, till the component bottom." The 28px drawer BAR is
+   * gone as a permanent cost. Nothing it carried is gone WITH it, which is
+   * what keeps this a move and not a deletion:
+   *   · its toggle and the exit chip became a FLOATING overlay on the canvas
+   *     itself — zero layout height, so the black box now reaches the panel's
+   *     bottom edge exactly as ruled;
+   *   · the drawer's content (chrome strip · projects · shared context) still
+   *     opens from that toggle, and still auto-opens on dragover so
+   *     drag-share never depended on expanding first;
+   *   · the collapsed SUMMARY line ("<name> · ⬒<project> · nothing shared")
+   *     is the one thing with no pixels left to live in. It moves onto the
+   *     toggle's `title`/aria-label, so the facts are still one hover — and
+   *     one screen-reader stop — away rather than silently dropped.
+   *
+   * THE OVERLAY IS HOVER/FOCUS-REVEALED, not always-on (see panels.css). It
+   * may never be display:none or removed at a narrow width, though: the exit
+   * chip is the only visible instruction for getting the keyboard back out of
+   * a focused terminal (C6 layer 3), so it is opacity-hidden and keyboard-
+   * reachable, and `:focus-within` brings it back the instant a tab lands on
+   * it. */
+  const summary = `${row.name} · ${launchProjectId ? `⬒ ${launchProjectId}` : 'no project'} · ${
+    handoffs.length === 0 ? 'nothing shared' : `${handoffs.length} shared`
+  }`;
+
   return (
     <div className="pn-terminal-body" data-testid="terminal-body">
       {needsAttention && style.isLive ? <NeedsYouBanner detail={attentionDetail} /> : null}
 
-      <SessionCanvas
-        presentation={presentation}
-        sessionId={detail.id}
-        serverBaseUrl={serverBaseUrl}
-        livenessLabel={livenessLabel}
-        livenessReason={livenessReason}
-        onOpenTranscript={onOpenTranscript}
-        liveTerminalRef={liveTerminalRef}
-      />
-
       <div
-        className={detailsOpen ? 'pn-terminal-drawer pn-terminal-drawer--open' : 'pn-terminal-drawer'}
-        data-testid="terminal-bottom-drawer"
-        data-expanded={detailsOpen ? 'true' : 'false'}
+        className="pn-terminal-stage"
+        data-testid="terminal-stage"
         onDragEnter={() => setDetailsDragging(true)}
         onDragOver={() => setDetailsDragging(true)}
         onDragLeave={(event) => {
@@ -139,22 +154,30 @@ export function TerminalBody({
         }}
         onDrop={() => setDetailsDragging(false)}
       >
-        <div className="pn-terminal-drawer__bar">
+        <SessionCanvas
+          presentation={presentation}
+          sessionId={detail.id}
+          serverBaseUrl={serverBaseUrl}
+          livenessLabel={livenessLabel}
+          livenessReason={livenessReason}
+          onOpenTranscript={onOpenTranscript}
+          liveTerminalRef={liveTerminalRef}
+        />
+
+        <div className="pn-terminal-overlay">
           <button
             type="button"
-            className="pn-terminal-drawer__toggle"
+            className="pn-terminal-overlay__chip"
             data-testid="terminal-details-toggle"
             aria-expanded={detailsOpen}
+            title={summary}
+            aria-label={`Session details — ${summary}`}
             onClick={() => setDetailsExpanded((open) => !open)}
           >
             <span className="pn-terminal-drawer__caret" aria-hidden>
               {detailsOpen ? '▾' : '▸'}
             </span>
             <span className="pn-terminal-drawer__label">Session details</span>
-            <span className="pn-terminal-drawer__summary">
-              {row.name} · {launchProjectId ? `⬒ ${launchProjectId}` : 'no project'} ·{' '}
-              {handoffs.length === 0 ? 'nothing shared' : `${handoffs.length} shared`}
-            </span>
           </button>
 
           {style.isLive ? (
@@ -181,8 +204,22 @@ export function TerminalBody({
             </button>
           )}
         </div>
+      </div>
 
-        {detailsOpen ? (
+      {detailsOpen ? (
+        <div
+          className="pn-terminal-drawer pn-terminal-drawer--open"
+          data-testid="terminal-bottom-drawer"
+          data-expanded="true"
+          onDragEnter={() => setDetailsDragging(true)}
+          onDragOver={() => setDetailsDragging(true)}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setDetailsDragging(false);
+            }
+          }}
+          onDrop={() => setDetailsDragging(false)}
+        >
           <div className="pn-terminal-drawer__content">
             <TerminalChromeStrip
               persona={row.name}
@@ -205,8 +242,8 @@ export function TerminalBody({
               forceOpen={detailsDragging}
             />
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

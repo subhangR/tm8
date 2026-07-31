@@ -197,6 +197,36 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     expect(within(picker).getByText(/retired — kept for sessions already pinned/)).toBeTruthy();
   });
 
+  it('always exposes the real Core Chat node default and an honest empty profile state', () => {
+    const onLaunch = vi.fn();
+    const { getAllByText, getByRole, getByText } = renderSheet({ profiles: [], onLaunch });
+    const change = getByRole('button', { name: 'Change interaction profile' });
+
+    expect(change.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(change);
+    expect(change.getAttribute('aria-expanded')).toBe('true');
+    expect(getByRole('radio', { name: /Core Chat — node default/ }).getAttribute('aria-checked')).toBe('true');
+    expect(getByText('No authored profiles yet. Core Chat remains available.')).toBeTruthy();
+    expect(getAllByText(/Terminal \+ Chat · starts in Chat/).length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(getByText('Launch ▸'));
+    const submitted = onLaunch.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(submitted).not.toHaveProperty('interactionProfileId');
+  });
+
+  it('labels authored profile options with their Chat surfaces and initial surface', () => {
+    const { getAllByText, getByRole, getByText } = renderSheet();
+    fireEvent.click(getByRole('button', { name: 'Change interaction profile' }));
+
+    expect(getByRole('radio', { name: /Use resolved default — standard-agent v2/ })).toBeTruthy();
+    const profile = getByRole('radio', { name: /house-style/ });
+    expect(profile.textContent).toContain('Terminal + Chat');
+    expect(profile.textContent).toContain('starts in Chat');
+    expect(getAllByText(/Terminal \+ Chat · starts in Chat/).length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(profile);
+    expect(getByText('house-style')).toBeTruthy();
+  });
+
   it('shows the resolution chain with BRASS on the winner (D51 + D53)', () => {
     const { container } = renderSheet();
     const won = container.querySelectorAll('.ls__step--won');

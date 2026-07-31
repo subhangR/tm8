@@ -24,6 +24,7 @@ export function DocSplitView({
   save,
   detail,
   onCollapse,
+  collapseRefusal,
   onOpenBlock,
   conflictActor,
 }: {
@@ -31,6 +32,16 @@ export function DocSplitView({
   detail: EntityDetail;
   /** ⇲ — back to the panel. Absent ⇒ disabled-with-reason, never hidden. */
   onCollapse?: () => void;
+  /**
+   * Why collapse is refused, when the HOST is the one refusing it.
+   *
+   * Without this the absent-`onCollapse` branch could only say "this view was
+   * mounted without a collapse dispatch" — true when nobody wired it, and a
+   * LIE when the real reason is an unsaved draft. A host that withholds
+   * `onCollapse` for a reason of its own supplies that reason here, so the
+   * control states the actual cause rather than the structural one.
+   */
+  collapseRefusal?: { cause: string; remedy: string };
   onOpenBlock?: (block: DocBlock) => void;
   conflictActor?: string | null;
 }) {
@@ -46,7 +57,7 @@ export function DocSplitView({
         ) : (
           <DisabledIconControl
             label="Collapse back to the panel"
-            reason={{
+            reason={collapseRefusal ?? {
               cause: 'Collapse isn’t connected here',
               remedy: 'this view was mounted without a collapse dispatch',
             }}

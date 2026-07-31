@@ -1,8 +1,9 @@
 /** Registry barrel — the entity component system's single source of kind truth. */
 export {
   KIND_ORDER, KIND_REGISTRY, TOMBSTONE, creatableKinds, isTombstoned, kindCan,
-  kindsWhere, paletteCreatableKinds, registryFor,
+  kindsWhere, messageAddMode, paletteCreatableKinds, registryFor,
 } from './KindRegistry';
+export type { MessageAddMode } from './KindRegistry';
 export type {
   ActionDeps, BooleanCapability, CreationField, CreationFieldType,
   CreationSchema, FullLayoutVariant, KindCapabilities, KindCreateInput,

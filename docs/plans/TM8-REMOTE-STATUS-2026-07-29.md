@@ -1,5 +1,17 @@
 # tm8 remote status — 2026-07-29
 
+> ### ⚠ PARTIALLY SUPERSEDED — verified 2026-07-31
+>
+> Specific claims below were re-checked against the tree and found **false or stale**. The body is left unedited: it was accurate when written, and it remains the historical record. Corrections, with `file:line`, are tabulated in **`docs/plans/TM8-IDENTITY-OPEN-THREADS.md` §3**; the verified current state is **`docs/plans/TM8-AUTH-AND-IDENTITY-VERIFIED-STATE.md`**.
+>
+> - "A's bearer token is deliberately not forwarded to B" — **true of the CLI path only**; `http/remote-proxy.ts:38-47` forwards `authorization` and `cookie`.
+> - "Add server is visible but disabled" / "Unavailable remote UI is honest" — **no longer true**; the UI server switcher is real and mounted.
+> - "The catalog currently has 106 operations" — **stale**; measured 110 / 108 `v1` / 2 reserved.
+> - "`PgIdentityRepository` … auth-session row names differ" — **understated 2–3×**; ~24 defects, and it also needs a new migration.
+>
+> **Do not cite this document for current behaviour without re-verifying against code.** Three claims were published as verified during a 2026-07-31 investigation purely by trusting it; all three were wrong.
+
+
 **Scope:** current working tree at `HEAD 1a1b70e`, including uncommitted work present during the audit.
 
 ## Implementation update — local named-Server slice

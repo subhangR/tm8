@@ -275,6 +275,12 @@ function deliveryEnv(dbUrl: URL): Record<string, string> {
         TM8_DATA_DIR: dataDir,
         TM8_BIND: '127.0.0.1',
         TM8_PORT: String(port),
+        // The artifact-preview second listener defaults to a FIXED 4613; a
+        // child process cannot use the in-process port-0 substitution, so
+        // every harness boot raced the long-lived local node for 4613 and
+        // died EADDRINUSE (ten files at once, 2026-07-31). Explicit 0 is the
+        // config's documented ephemeral opt-in for exactly this shape.
+        TM8_PREVIEW_PORT: '0',
         TM8_ENV: 'dev',
         // DELIVERY WIRING — derived, never inherited verbatim.
         //

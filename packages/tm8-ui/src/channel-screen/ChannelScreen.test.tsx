@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { EntityFeedPage, FeedItem, MessageView } from '@tm8/contract';
 import { ChannelScreen } from './ChannelScreen';
 
@@ -43,7 +43,7 @@ function msg(over: Partial<MessageView> = {}): MessageView {
       author: { id: 'act-1', displayName: 'alex', isAgent: false },
       messageBatchId: null,
     },
-    content: { kind: 'message', body: 'Focus on the guide x-offsets first.' },
+    content: { kind: 'message', body: 'Focus on the guide x-offsets first.', mentions: [], attachments: [] },
     replyCount: 0,
     ...over,
   } as unknown as MessageView;
@@ -62,6 +62,34 @@ function messageItem(over: Partial<FeedItem> = {}, message = msg()): FeedItem {
     itemKind: 'message',
     message,
     delivery: [],
+    ...over,
+  } as FeedItem;
+}
+
+function activityItem(
+  verb: string,
+  summary: Record<string, unknown>,
+  over: Partial<FeedItem> = {},
+): FeedItem {
+  return {
+    itemId: `feed-activity-${verb}`,
+    createdAt: '2026-07-29T11:33:00.000Z',
+    sortId: `2026-07-29T11:33:00.000Z#${verb}`,
+    via: ['caused'],
+    actor: { id: 'act-2', displayName: 'forge', isAgent: true },
+    sourceWorkSessionId: 'ws-forge',
+    anchor: null,
+    logicalOperationId: null,
+    itemKind: 'activity',
+    activity: {
+      id: `activity-${verb}`,
+      entityId: null,
+      actor: { id: 'act-2', displayName: 'forge', isAgent: true },
+      verb,
+      summary,
+      createdAt: '2026-07-29T11:33:00.000Z',
+      workSessionId: 'ws-forge',
+    },
     ...over,
   } as FeedItem;
 }
@@ -90,11 +118,58 @@ describe('the feed region', () => {
     expect(within(feed).getAllByRole('article')).toHaveLength(1);
   });
 
-  it('shows the direction, the author, and the body as TEXT', () => {
+  it('shows the author and the body as TEXT, without per-row boilerplate', () => {
     render(<ChannelScreen {...base} page={page([messageItem()])} />);
-    expect(screen.getByText('to this channel')).toBeTruthy();
     expect(screen.getByText('alex')).toBeTruthy();
     expect(screen.getByText(/Focus on the guide x-offsets/)).toBeTruthy();
+    // A message posted to this channel, shown in this channel, repeats no
+    // direction rail and no canonical-anchor line — cross-surface provenance
+    // renders only when it is news (foreign anchor or source session).
+    expect(screen.queryByText(/to this channel/i)).toBeNull();
+    expect(screen.queryByTestId('chs-message-meta')).toBeNull();
+  });
+
+  it('clusters an author run into one byline and opens each day with a divider', () => {
+    const first = msg({ id: 'msg-first' });
+    const follow = msg({
+      id: 'msg-follow',
+      createdAt: '2026-07-29T11:26:00.000Z',
+      content: { kind: 'message', body: 'And the y-offsets after.', mentions: [], attachments: [] },
+    });
+    const nextDay = msg({
+      id: 'msg-next-day',
+      createdAt: '2026-07-30T09:00:00.000Z',
+      content: { kind: 'message', body: 'Fresh morning thread.', mentions: [], attachments: [] },
+    });
+    render(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'f-first' }, first),
+      messageItem({ itemId: 'f-follow' }, follow),
+      messageItem({ itemId: 'f-next-day' }, nextDay),
+    ])} />);
+    // The 2-minute follow-up repeats no byline; the new day starts a new run.
+    expect(screen.getAllByText('alex')).toHaveLength(2);
+    expect(screen.getAllByTestId('chs-day')).toHaveLength(2);
+    // Every message keeps its own article — clustering is presentation only.
+    expect(screen.getAllByRole('article')).toHaveLength(3);
+    expect(screen.getByText('And the y-offsets after.')).toBeTruthy();
+  });
+
+  it('renders a mention the body carries INLINE once, not repeated as a trailing chip', () => {
+    const onOpenEntity = vi.fn();
+    const rich = msg({
+      content: {
+        kind: 'message',
+        body: 'Thanks @Noor — ship it.',
+        mentions: [{ entityId: 'member-noor', kind: 'member', display: 'Noor' }],
+        attachments: [],
+      },
+    });
+    render(<ChannelScreen {...base} page={page([messageItem({}, rich)])} onOpenEntity={onOpenEntity} />);
+    // Exactly ONE control for the mention — getByRole throws on a duplicate.
+    const control = screen.getByRole('button', { name: /open mention noor/i });
+    expect(control.textContent).toBe('@Noor');
+    fireEvent.click(control);
+    expect(onOpenEntity).toHaveBeenCalledWith('member-noor');
   });
 
   it('distinguishes a read that found nothing from a read that never ran', () => {
@@ -111,12 +186,112 @@ describe('the feed region', () => {
     expect(screen.getByTestId('chs-unread')).toBeTruthy();
   });
 
-  it('renders a redacted message as a tombstone that keeps its place (S14)', () => {
-    const removed = msg({ id: 'msg-dead', deletedAt: '2026-07-29T11:42:00.000Z' });
+  it('renders only an explicitly redacted message as a tombstone with no content leak (S14)', () => {
+    const removed = msg({
+      id: 'msg-dead',
+      deletedAt: null,
+      state: {
+        ...msg().state,
+        redactedAt: '2026-07-29T11:42:00.000Z',
+      },
+      content: {
+        kind: 'message',
+        body: 'SECRET body from stale cache',
+        mentions: [{ entityId: 'member-secret', kind: 'member', display: 'Secret Person' }],
+        attachments: [{ fileEntityId: 'file-secret', name: 'secret.txt', mime: 'text/plain' }],
+      },
+    });
     render(<ChannelScreen {...base} page={page([messageItem({ itemId: 'f-dead' }, removed)])} />);
     expect(screen.getByTestId('chs-tombstone')).toBeTruthy();
-    // The body must NOT survive redaction — a cached excerpt would leak it.
-    expect(screen.queryByText(/Focus on the guide x-offsets/)).toBeNull();
+    expect(screen.queryByText(/SECRET body/)).toBeNull();
+    expect(screen.queryByText(/Secret Person/)).toBeNull();
+    expect(screen.queryByText(/secret\.txt/)).toBeNull();
+  });
+
+  it('does not infer redaction from an empty body, deletedAt, or a legacy omission', () => {
+    const empty = msg({
+      id: 'msg-empty',
+      deletedAt: '2026-07-29T11:42:00.000Z',
+      state: { ...msg().state, redactedAt: null },
+      content: { kind: 'message', body: '', mentions: [], attachments: [] },
+    });
+    const legacy = msg({ id: 'msg-legacy' });
+    render(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'f-empty' }, empty),
+      messageItem({ itemId: 'f-legacy' }, legacy),
+    ])} />);
+    expect(screen.queryByTestId('chs-tombstone')).toBeNull();
+    expect(screen.getByText(/Focus on the guide x-offsets/)).toBeTruthy();
+  });
+
+  it('shows edited, source-session, canonical-anchor, and full timestamp details with canonical navigation', () => {
+    const onOpenEntity = vi.fn();
+    const item = messageItem({
+      sourceWorkSessionId: 'ws-forge',
+      anchor: { id: 'task-114', kind: 'task', title: 'T-114 · Align the rail' } as never,
+    }, msg({ state: { ...msg().state, editedAt: '2026-07-29T11:30:00.000Z' } }));
+    render(<ChannelScreen {...base} page={page([item])} onOpenEntity={onOpenEntity} />);
+    expect(screen.getByText('edited')).toBeTruthy();
+    expect(screen.getByText(/from session/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /open canonical anchor/i }).textContent).toContain('T-114 · Align the rail');
+    expect(screen.getByRole('time').getAttribute('aria-label')).toContain('2026');
+    fireEvent.click(screen.getByRole('button', { name: /open source session/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open canonical anchor/i }));
+    expect(onOpenEntity.mock.calls).toEqual([['ws-forge'], ['task-114']]);
+  });
+
+  it('hydrates a reply preview from the loaded page and focuses its parent', () => {
+    const onOpenEntity = vi.fn();
+    const parent = msg({
+      id: 'msg-parent',
+      content: { kind: 'message', body: 'Parent context', mentions: [], attachments: [] },
+    });
+    const reply = msg({
+      id: 'msg-reply',
+      state: { ...msg().state, rootMessageId: 'msg-parent' },
+      content: { kind: 'message', body: 'Reply body', mentions: [], attachments: [] },
+    });
+    render(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'f-parent' }, parent),
+      messageItem({ itemId: 'f-reply' }, reply),
+    ])} onOpenEntity={onOpenEntity} />);
+    const preview = screen.getByTestId('chs-parent');
+    expect(preview.textContent).toContain('alex');
+    expect(preview.textContent).toContain('Parent context');
+    fireEvent.click(within(preview).getByRole('button', { name: /focus parent message/i }));
+    expect((document.activeElement as HTMLElement).dataset.feedMessageId).toBe('msg-parent');
+    expect(onOpenEntity).not.toHaveBeenCalled();
+  });
+
+  it('renders mentions and attachments as canonical entity controls', () => {
+    const onOpenEntity = vi.fn();
+    const rich = msg({
+      content: {
+        kind: 'message',
+        body: 'See the attached plan.',
+        mentions: [{ entityId: 'member-noor', kind: 'member', display: 'Noor' }],
+        attachments: [{ fileEntityId: 'file-plan', name: 'plan.pdf', mime: 'application/pdf' }],
+      },
+    });
+    render(<ChannelScreen {...base} page={page([messageItem({}, rich)])} onOpenEntity={onOpenEntity} />);
+    fireEvent.click(screen.getByRole('button', { name: /open mention noor/i }));
+    fireEvent.click(screen.getByRole('button', { name: /open attachment plan\.pdf/i }));
+    expect(onOpenEntity.mock.calls).toEqual([['member-noor'], ['file-plan']]);
+  });
+
+  it('renders created entities as artifact cards and typed work changes as state rows', () => {
+    const onOpenEntity = vi.fn();
+    const artifact = activityItem('created', { kind: 'doc' }, {
+      anchor: { id: 'doc-layout', kind: 'doc', title: 'Layout specification', excerpt: 'Panel geometry' } as never,
+    });
+    const changed = activityItem('work.changed', { status: 'in_review' }, { itemId: 'feed-work' });
+    render(<ChannelScreen {...base} page={page([artifact, changed])} onOpenEntity={onOpenEntity} />);
+    const card = screen.getByTestId('chs-artifact');
+    expect(card.textContent).toContain('Layout specification');
+    expect(card.textContent).toContain('doc');
+    fireEvent.click(within(card).getByRole('button', { name: /open layout specification/i }));
+    expect(onOpenEntity).toHaveBeenCalledWith('doc-layout');
+    expect(screen.getByTestId('chs-state').textContent).toMatch(/work status.*in_review/i);
   });
 
   it('renders an activity variant it does not understand rather than dropping it (S15)', () => {
@@ -203,6 +378,36 @@ describe('delivery is a FACET on the row, never a row of its own', () => {
     const targets = screen.getByTestId('chs-targets');
     expect(within(targets).getByText(/unknown/)).toBeTruthy();
     expect(within(targets).getByText(/delivered/)).toBeTruthy();
+  });
+
+  it('renders all eight target states and only allowlisted safe reason text', () => {
+    const statuses = [
+      'pending', 'dispatching', 'delivered', 'failed_retryable',
+      'failed_permanent', 'unknown', 'expired', 'cancelled',
+    ] as const;
+    const item = messageItem({
+      delivery: statuses.map((status, index) => ({
+        deliveryId: `d-${status}`,
+        targetWorkSessionId: `ws-${index}`,
+        status,
+        attemptNo: 1,
+        failureReason: status === 'unknown'
+          ? 'restart_during_dispatch'
+          : status === 'failed_permanent'
+            ? 'postgres://user:secret@example.invalid/private'
+            : null,
+        updatedAt: '2026-07-29T11:24:05.000Z',
+      })),
+    });
+    render(<ChannelScreen {...base} page={page([item])} />);
+    fireEvent.click(screen.getByRole('button', { name: /delivery · 1 of 8 delivered/i }));
+    const targets = screen.getByTestId('chs-targets');
+    for (const status of statuses) {
+      expect(targets.querySelector(`[data-delivery-status="${status}"]`)).toBeTruthy();
+    }
+    expect(targets.textContent).toContain('Node restarted during delivery');
+    expect(targets.textContent).not.toContain('user:secret');
+    expect(targets.textContent).toContain('Details unavailable');
   });
 });
 
@@ -299,6 +504,258 @@ describe('the composer', () => {
     expect(attach.getAttribute('aria-disabled')).toBe('true');
   });
 
+  it('stages a canonical uploaded file and includes its entity id only when Send stores', async () => {
+    const onPost = vi.fn().mockResolvedValue(undefined);
+    const onStartAttachmentUpload = vi.fn().mockReturnValue({
+      cancel: vi.fn(),
+      result: Promise.resolve({
+        fileEntityId: 'file-plan',
+        name: 'plan.txt',
+        mime: 'text/plain',
+        sizeBytes: 4,
+        maxSizeBytes: 1024,
+      }),
+    });
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={onPost}
+        onStartAttachmentUpload={onStartAttachmentUpload}
+      />,
+    );
+    const file = new File(['plan'], 'plan.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText(/choose files to attach/i), { target: { files: [file] } });
+    expect(onStartAttachmentUpload).toHaveBeenCalledWith(file);
+    await screen.findByText(/uploaded/i);
+    fireEvent.change(screen.getByRole('textbox', { name: /message/i }), { target: { value: 'See plan' } });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    expect(onPost).toHaveBeenCalledWith({
+      anchorIds: [ANCHOR],
+      body: 'See plan',
+      parentMessageId: null,
+      attachmentIds: ['file-plan'],
+    });
+  });
+
+  it('keeps a failed upload with safe copy, retries it, and cancels through its task', async () => {
+    const firstCancel = vi.fn();
+    const secondCancel = vi.fn();
+    const onStartAttachmentUpload = vi.fn()
+      .mockImplementationOnce(() => ({
+        cancel: firstCancel,
+        result: Promise.reject(new Error('s3://private-bucket/grant-secret')),
+      }))
+      .mockImplementationOnce(() => ({
+        cancel: secondCancel,
+        result: Promise.resolve({
+          fileEntityId: 'file-retry', name: 'plan.txt', mime: 'text/plain', sizeBytes: 4, maxSizeBytes: 1024,
+        }),
+      }));
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={vi.fn()}
+        onStartAttachmentUpload={onStartAttachmentUpload}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText(/choose files to attach/i), {
+      target: { files: [new File(['plan'], 'plan.txt', { type: 'text/plain' })] },
+    });
+    const failure = await screen.findByRole('alert');
+    expect(failure.textContent).toContain('Upload failed. Try again.');
+    expect(failure.textContent).not.toContain('private-bucket');
+    fireEvent.click(screen.getByRole('button', { name: /try plan\.txt again/i }));
+    await screen.findByText(/uploaded/i);
+    fireEvent.click(screen.getByRole('button', { name: /remove plan\.txt/i }));
+    expect(secondCancel).toHaveBeenCalled();
+    expect(screen.queryByText('plan.txt')).toBeNull();
+  });
+
+  it('opens available options when @ is typed and posts the selected canonical member id', async () => {
+    const onPost = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={onPost}
+        mentionOptions={[
+          { id: 'member-noor', kind: 'member', display: 'Noor' },
+          { id: 'team-forge', kind: 'team_member', display: 'Forge' },
+        ]}
+      />,
+    );
+    const textarea = screen.getByRole('textbox', { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '@', selectionStart: 1 } });
+    expect(screen.getByRole('listbox', { name: /available @tag options/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole('option', { name: /noor/i }));
+    expect(textarea.value).toBe('@Noor ');
+    fireEvent.change(textarea, { target: { value: `${textarea.value.trimEnd()} please review` } });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(onPost).toHaveBeenCalledWith({
+      anchorIds: [ANCHOR],
+      body: '@Noor please review',
+      parentMessageId: null,
+      mentionIds: ['member-noor'],
+    }));
+  });
+
+  it('filters the @ list by what was typed as a PREFIX, not a substring', () => {
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={vi.fn()}
+        mentionOptions={[
+          { id: 'member-noor', kind: 'member', display: 'Noor' },
+          { id: 'team-forge', kind: 'team_member', display: 'Forge' },
+          // Shares the letters "or" with Noor and Forge but starts with
+          // neither — a substring filter would wrongly keep all three.
+          { id: 'team-scout', kind: 'team_member', display: 'Scout Orion' },
+        ]}
+      />,
+    );
+    const textarea = screen.getByRole('textbox', { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '@no', selectionStart: 3 } });
+
+    const names = screen.getAllByRole('option').map((option) => option.textContent);
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/Noor/);
+
+    // A later word is still a legal starting point, so a surname or the second
+    // word of a session title reaches its row.
+    fireEvent.change(textarea, { target: { value: '@ori', selectionStart: 4 } });
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toHaveLength(1);
+    expect(screen.getByRole('option').textContent).toMatch(/Scout Orion/);
+  });
+
+  it('walks the @ list with the arrow keys and commits the highlighted row with Enter', () => {
+    const onPost = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={onPost}
+        mentionOptions={[
+          { id: 'member-noor', kind: 'member', display: 'Noor' },
+          { id: 'member-alex', kind: 'member', display: 'Alex' },
+          { id: 'member-remy', kind: 'member', display: 'Remy' },
+        ]}
+      />,
+    );
+    const textarea = screen.getByRole('textbox', { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '@', selectionStart: 1 } });
+
+    const active = (): string | null =>
+      screen.getAllByRole('option').find((o) => o.getAttribute('data-active') === 'true')?.textContent ?? null;
+
+    expect(active()).toMatch(/Noor/);
+    fireEvent.keyDown(textarea, { key: 'ArrowDown' });
+    expect(active()).toMatch(/Alex/);
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+    expect(active()).toMatch(/Noor/);
+    // Wraps rather than dead-ending at the first row.
+    fireEvent.keyDown(textarea, { key: 'ArrowUp' });
+    expect(active()).toMatch(/Remy/);
+
+    // Enter takes the highlighted target; it must NOT send the message while
+    // the picker owns the key.
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+    expect(onPost).not.toHaveBeenCalled();
+    expect(textarea.value).toBe('@Remy ');
+    expect(screen.queryByRole('listbox', { name: /available @tag options/i })).toBeNull();
+  });
+
+  it('emits a work-session @Tag as a Channel routing target, not an invalid mention', async () => {
+    const onPost = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={onPost}
+        mentionOptions={[{
+          id: 'session-review',
+          kind: 'work_session',
+          display: 'Review session',
+          group: 'Work sessions',
+          meta: 'Live · message this session',
+          route: { kind: 'existing-session', sessionId: 'session-review' },
+        }]}
+      />,
+    );
+    const textarea = screen.getByRole('textbox', { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: '@', selectionStart: 1 } });
+    fireEvent.click(screen.getByRole('option', { name: /review session/i }));
+    fireEvent.change(textarea, { target: { value: '@Review session please inspect' } });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+
+    await waitFor(() => expect(onPost).toHaveBeenCalledWith({
+      anchorIds: [ANCHOR],
+      body: '@Review session please inspect',
+      parentMessageId: null,
+      tagTargetIds: ['session-review'],
+    }));
+  });
+
+  it('attaches a task as a message anchor and a person as a mention, from the workspace picker', async () => {
+    const onPost = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([])}
+        onPost={onPost}
+        attachEntityOptions={[
+          { id: 'task-114', kind: 'task', display: 'Align the rail', group: 'Tasks', attach: 'anchor' },
+          { id: 'member-noor', kind: 'member', display: 'Noor', group: 'People' },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /attach from workspace/i }));
+    fireEvent.click(screen.getByRole('option', { name: /align the rail/i }));
+    fireEvent.click(screen.getByRole('button', { name: /attach from workspace/i }));
+    fireEvent.click(screen.getByRole('option', { name: /noor/i }));
+
+    const staged = screen.getByRole('list', { name: /attached workspace entities/i });
+    expect(within(staged).getByText('Align the rail')).toBeTruthy();
+
+    const ta = screen.getByRole('textbox', { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'Please review against the spec.' } });
+    // Attaching never edits the draft — the words stay the user's own.
+    expect(ta.value).toBe('Please review against the spec.');
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await waitFor(() => expect(onPost).toHaveBeenCalledWith({
+      anchorIds: [ANCHOR, 'task-114'],
+      body: 'Please review against the spec.',
+      parentMessageId: null,
+      mentionIds: ['member-noor'],
+    }));
+  });
+
+  it('refuses to attach a workspace entity on a REPLY, keeping the draft', async () => {
+    const onPost = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ChannelScreen
+        {...base}
+        page={page([messageItem()])}
+        onPost={onPost}
+        attachEntityOptions={[
+          { id: 'task-114', kind: 'task', display: 'Align the rail', group: 'Tasks', attach: 'anchor' },
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /attach from workspace/i }));
+    fireEvent.click(screen.getByRole('option', { name: /align the rail/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reply to alex/i }));
+    const ta = screen.getByRole('textbox', { name: /message/i }) as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'reply with a task attached' } });
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }));
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert').textContent).toMatch(/top-level/i);
+    expect(onPost).not.toHaveBeenCalled();
+    expect(ta.value).toBe('reply with a task attached');
+  });
+
   it('holds the failure beside the text that failed, and keeps the draft (S17)', async () => {
     const onPost = vi.fn().mockRejectedValue(new Error('Mention @relay isn’t permitted here'));
     render(<ChannelScreen {...base} page={page([])} onPost={onPost} />);
@@ -361,5 +818,104 @@ describe('paging and the honest absences', () => {
     // "Nothing about its contents is shown" — the cached rows must not survive.
     expect(screen.queryByText(/Focus on the guide x-offsets/)).toBeNull();
     expect(screen.queryByRole('textbox', { name: /message/i })).toBeNull();
+  });
+
+  it('preserves the visible scroll anchor when an older page is prepended', () => {
+    const b = msg({ id: 'msg-b' });
+    const c = msg({ id: 'msg-c' });
+    const a = msg({ id: 'msg-a' });
+    const view = render(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'feed-b' }, b),
+      messageItem({ itemId: 'feed-c' }, c),
+    ])} />);
+    const region = screen.getByRole('region', { name: /chat history/i });
+    let height = 1000;
+    Object.defineProperty(region, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(region, 'clientHeight', { configurable: true, get: () => 200 });
+    region.scrollTop = 300;
+    fireEvent.scroll(region);
+    height = 1200;
+    view.rerender(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'feed-a' }, a),
+      messageItem({ itemId: 'feed-b' }, b),
+      messageItem({ itemId: 'feed-c' }, c),
+    ])} />);
+    expect(region.scrollTop).toBe(500);
+  });
+
+  it('auto-follows only near newest and otherwise offers a non-disruptive new-items control', () => {
+    const a = msg({ id: 'msg-a' });
+    const b = msg({ id: 'msg-b' });
+    const c = msg({ id: 'msg-c' });
+    const view = render(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'feed-a' }, a),
+      messageItem({ itemId: 'feed-b' }, b),
+    ])} />);
+    const region = screen.getByRole('region', { name: /chat history/i });
+    let height = 1000;
+    Object.defineProperty(region, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(region, 'clientHeight', { configurable: true, get: () => 200 });
+    region.scrollTop = 100;
+    fireEvent.scroll(region);
+    height = 1100;
+    view.rerender(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'feed-a' }, a),
+      messageItem({ itemId: 'feed-b' }, b),
+      messageItem({ itemId: 'feed-c' }, c),
+    ])} />);
+    expect(region.scrollTop).toBe(100);
+    const jump = screen.getByRole('button', { name: /1 new item/i });
+    fireEvent.click(jump);
+    expect(region.scrollTop).toBe(900);
+  });
+
+  it('enables measured content virtualization only at the long-feed threshold', () => {
+    const observed: Element[] = [];
+    const prior = globalThis.ResizeObserver;
+    globalThis.ResizeObserver = class {
+      observe(element: Element) { observed.push(element); }
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const items = Array.from({ length: 100 }, (_, index) => {
+        const message = msg({ id: `msg-${index}` });
+        return messageItem({ itemId: `feed-${index}` }, message);
+      });
+      render(<ChannelScreen {...base} page={page(items)} />);
+      const list = screen.getByRole('list', { name: /messages and activity/i });
+      expect(list.getAttribute('data-virtualized')).toBe('true');
+      expect(observed.length).toBe(100);
+      expect(screen.getAllByRole('article')).toHaveLength(100);
+    } finally {
+      globalThis.ResizeObserver = prior;
+    }
+  });
+
+  it('announces connection changes and supports Escape for picker and reply cancellation', () => {
+    const view = render(
+      <ChannelScreen
+        {...base}
+        page={page([messageItem()])}
+        onPost={vi.fn()}
+        connection={{ phase: 'offline', disconnectedSince: '2026-07-30T00:00:00.000Z' }}
+        mentionOptions={[{ id: 'member-noor', kind: 'member', display: 'Noor' }]}
+      />,
+    );
+    expect(screen.getByRole('status').textContent).toMatch(/offline/i);
+    // The picker has no field of its own: the toolbar `@` types the trigger
+    // into the message and leaves focus there, so Escape is pressed on the
+    // textarea — the same key the typed-`@` path answers to.
+    fireEvent.click(screen.getByRole('button', { name: /mention someone/i }));
+    expect(screen.getByRole('listbox', { name: /available @tag options/i })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('textbox', { name: /message/i }), { key: 'Escape' });
+    expect(screen.queryByRole('listbox', { name: /available @tag options/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /reply to alex/i }));
+    fireEvent.keyDown(screen.getByRole('textbox', { name: /message/i }), { key: 'Escape' });
+    expect(screen.queryByTestId('chs-replying')).toBeNull();
+    view.rerender(
+      <ChannelScreen {...base} page={page([messageItem()])} onPost={vi.fn()} connection={{ phase: 'live' }} />,
+    );
+    expect(screen.getByRole('status').textContent).toMatch(/connected/i);
   });
 });

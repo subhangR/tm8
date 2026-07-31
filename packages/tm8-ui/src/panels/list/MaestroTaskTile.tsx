@@ -11,6 +11,7 @@ export interface MaestroTaskTileProps {
   depth: number;
   selected: boolean;
   attention: boolean;
+  attentionReason?: string;
   completed: boolean;
   childCount: number;
   childrenExpanded: boolean;
@@ -44,6 +45,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     depth,
     selected,
     attention,
+    attentionReason,
     completed,
     childCount,
     childrenExpanded,
@@ -144,6 +146,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           </div>
         ) : null}
 
+        {attention ? <span className="pn-tt__attention" title={attentionReason}>Needs attention</span> : null}
+
         <div className="pn-tt__actions">
           {actions}
           <button
@@ -174,7 +178,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
  * The status mark is a DOT, not a ring.
  *
  * It used to be a 16px ring with a smaller ring or centre pip inside it, which
- * read as a heavy checkbox and dominated a 13.5px title. A running task now
+ * read as a heavy checkbox and dominated a 13px title. A running task now
  * shows exactly what the eye is looking for — one green dot — and a not-yet-
  * started one shows the same dot hollowed out. Tone carries the meaning
  * (`run` is green), so nothing here hard-codes a colour.

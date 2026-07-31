@@ -264,3 +264,69 @@
 .cv2-root .pn-profile__word[data-tone='idle'] {
   color: var(--pn-ink-3);
 }
+
+/*
+ * ORG TREE — this teammate's place in the entity hierarchy.
+ *
+ * NOT an oracle frame (T0-4 draws no org tree on the AGENT card), so the
+ * geometry is borrowed rather than invented: the 17px-per-level indent and the
+ * guide hairline in --pn-line-2 are T0-3's tree spec, already extracted in
+ * `entity-tree.css`. Borrowing the measured value keeps the two tree surfaces
+ * reading as one idea instead of two eyeballed ones.
+ *
+ * The row shell deliberately matches `.pn-profile__row` (session rows) — same
+ * body, same card idiom; only the indent and the self-marking differ.
+ */
+.cv2-root .pn-profile__org {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cv2-root .pn-profile__org-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+}
+/* A button row is clickable; the self row is a div and must not pretend. */
+.cv2-root button.pn-profile__org-row {
+  cursor: pointer;
+}
+.cv2-root button.pn-profile__org-row:hover {
+  background: var(--pn-hover);
+}
+/* T0-3 tree geometry: 17px per level. */
+.cv2-root .pn-profile__org-row[data-depth='1'] {
+  margin-left: 17px;
+}
+.cv2-root .pn-profile__org-row[data-depth='2'] {
+  margin-left: 34px;
+}
+/*
+ * THE CURRENT ENTITY, marked without color alone: a heavier left edge in the
+ * brand tint AND the words "this teammate" in the row itself, so the marking
+ * survives both themes and a monochrome reading.
+ */
+.cv2-root .pn-profile__org-row--self {
+  border-color: var(--pn-brand-2);
+  background: var(--pn-active);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+.cv2-root .pn-profile__org-role {
+  flex: none;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

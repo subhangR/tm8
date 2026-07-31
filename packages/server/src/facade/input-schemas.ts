@@ -20,12 +20,18 @@
  */
 import {
   AddMessageAttachmentsInputSchema,
+  ArtifactsCreateInputSchema,
+  ArtifactsPreviewStartInputSchema,
+  ArtifactsPublishInputSchema,
+  ArtifactsRestoreInputSchema,
   CollectionQuerySchema,
+  CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
   CompleteTaskInputSchema,
   DeleteMessageInputSchema,
   CreateEdgeInputSchema,
   CreateEntityInputSchema,
+  CreateVoiceTokenInputSchema,
   CreateSpaceInputSchema,
   EntityIdSchema,
   EntityKindCreateInputSchema,
@@ -56,11 +62,13 @@ import {
   RemoveMessageAttachmentsInputSchema,
   SavedViewInputSchema,
   SendHandoffInputSchema,
+  ResolveEntityAttentionInputSchema,
   ServerConnectionCreateInputSchema,
   ServerConnectionDeleteInputSchema,
   TaskAxisInputSchema,
   TrackingRefreshInputSchema,
   UpdateSpaceInputSchema,
+  UpdateAttentionRequestInputSchema,
   WithdrawHandoffInputSchema,
   WorkInputSchema,
   type OperationName,
@@ -110,7 +118,14 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // entities — uniform operations
   'entities.create': CreateEntityInputSchema,
+  // Body is the bare command envelope — the voice channel is named by the path
+  // param, so there is nothing else to send. Bound anyway rather than left
+  // unbound, so an unexpected field is refused instead of ignored.
+  'voice.token.create': CreateVoiceTokenInputSchema,
   'entities.patch': PatchEntityInputSchema,
+  'attentionRequests.create': CreateAttentionRequestInputSchema,
+  'attentionRequests.update': UpdateAttentionRequestInputSchema,
+  'attentionRequests.resolveEntity': ResolveEntityAttentionInputSchema,
   'entities.move': MoveEntityInputSchema,
   // The catalog names no 1:1 DTO for delete/restore (matrices §3 rows 24–25):
   // they are path-addressed commands carrying only a command context, bound the
@@ -157,6 +172,13 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'projects.link': ProjectLinkInputSchema,
   'projects.unlink': RequiredCommandContextSchema,
   'projects.associations.correct': CorrectProjectAssociationInputSchema,
+
+  // artifacts (TM8-ARTIFACTS-DESIGN §8.1). Reads (revisions.list, export) are
+  // path-addressed GETs and carry no body to bind.
+  'artifacts.create': ArtifactsCreateInputSchema,
+  'artifacts.publish': ArtifactsPublishInputSchema,
+  'artifacts.preview.start': ArtifactsPreviewStartInputSchema,
+  'artifacts.restore': ArtifactsRestoreInputSchema,
 
   // files (AM-2 §2)
   'files.uploadInit': FileUploadInitInputSchema,

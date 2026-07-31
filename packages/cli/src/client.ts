@@ -46,6 +46,11 @@ export type ResponseMode = 'envelope' | 'bytes' | 'stream';
 const BYTES_OPERATIONS: ReadonlySet<string> = new Set<OperationName>([
   'files.download',
   'bridge.fetchBlob',
+  // `artifacts.export` answers a deterministic `application/zip` bundle from the
+  // privileged origin (TM8-ARTIFACTS-DESIGN §9.6): raw bytes, never the JSON
+  // envelope. It joins the closed bytes set so `artifact export` reads it
+  // through `download()` and never utf8-decodes a blob.
+  'artifacts.export',
 ]);
 
 export function responseMode(name: OperationName): ResponseMode {

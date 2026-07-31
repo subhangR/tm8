@@ -7,7 +7,11 @@ import {
   isCollabError,
   type ActivityItem,
   type ActorSummary,
+  type AttentionRequest,
+  type AttentionRequestMutationResult,
+  type AttentionRequestPage,
   type CommandResult,
+  type CreateAttentionRequestInput,
   type CreateEntityInput,
   type CustomFieldValue,
   type EdgeView,
@@ -23,7 +27,9 @@ import {
   type PatchEntityInput,
   type PullInput,
   type ReactionInput,
+  type ResolveEntityAttentionInput,
   type TrackingRefreshInput,
+  type UpdateAttentionRequestInput,
 } from '@tm8/contract';
 
 import type { Querier } from '../../../db/types.js';
@@ -39,6 +45,7 @@ import {
   ENTITY_COLUMNS,
   ENTITY_FROM,
   iso,
+  isoOrNull,
   loadActors,
   type EntityRow,
 } from '../../entity-read.js';
@@ -52,8 +59,12 @@ const RESTRICTED_LIFECYCLE_KINDS = new Set([
   'work_session',
   'project',
   'interaction_profile',
+  'artifact',
 ]);
-const HIERARCHY_DISABLED_KINDS = new Set(['message', 'project', 'interaction_profile']);
+// `memory` is here to HIDE hierarchy on the read surfaces; the actual refusal
+// of a memory parent lives at the data layer (056's entities trigger), because
+// this set is not checked at create/move time.
+const HIERARCHY_DISABLED_KINDS = new Set(['message', 'project', 'interaction_profile', 'memory']);
 
 interface EnrichmentRow {
   id: string;
@@ -91,6 +102,32 @@ interface ActivityRow {
   created_at: Date | string;
   /** Microsecond TEXT from `to_char`, REQUIRED — see edges-placements.ts. */
   cursor_created_at: string;
+}
+
+interface AttentionRequestRow {
+  id: string;
+  space_id: string;
+  entity_id: string;
+  reason: string;
+  points: number;
+  status: AttentionRequest['status'];
+  version: number;
+  requested_by: string;
+  acknowledged_by: string | null;
+  resolved_by: string | null;
+  resolution_note: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+  acknowledged_at: Date | string | null;
+  resolved_at: Date | string | null;
+  /** Microsecond cursor key, selected only on queue reads. */
+  cursor_created_at?: string;
+}
+
+interface AttentionMutationRpcResult {
+  attentionRequestId: string | null;
+  entityId: string;
+  affectedCount: number;
 }
 
 interface VersionRow {
@@ -683,6 +720,61 @@ async function activityById(q: Querier, id: string): Promise<ActivityItem | unde
   };
 }
 
+const ATTENTION_COLUMNS = `
+  id, space_id, entity_id, reason, points, status, version,
+  requested_by, acknowledged_by, resolved_by, resolution_note,
+  created_at, updated_at, acknowledged_at, resolved_at
+`;
+
+async function attentionRequestsOf(
+  q: Querier,
+  rows: readonly AttentionRequestRow[],
+): Promise<AttentionRequest[]> {
+  const actors = await loadActors(q, rows.flatMap((row) => [
+    row.requested_by,
+    row.acknowledged_by ?? '',
+    row.resolved_by ?? '',
+  ]));
+  return rows.map((row) => ({
+    id: row.id,
+    spaceId: row.space_id,
+    entityId: row.entity_id,
+    reason: row.reason,
+    points: Number(row.points),
+    status: row.status,
+    version: Number(row.version),
+    requestedBy: actorOf(actors, row.requested_by),
+    acknowledgedBy: row.acknowledged_by ? actorOf(actors, row.acknowledged_by) : null,
+    resolvedBy: row.resolved_by ? actorOf(actors, row.resolved_by) : null,
+    resolutionNote: row.resolution_note,
+    createdAt: iso(row.created_at),
+    updatedAt: iso(row.updated_at),
+    acknowledgedAt: isoOrNull(row.acknowledged_at),
+    resolvedAt: isoOrNull(row.resolved_at),
+  }));
+}
+
+async function attentionMutationResult(
+  q: Querier,
+  raw: AttentionMutationRpcResult,
+  viewerIdentityId: string,
+): Promise<AttentionRequestMutationResult> {
+  const entityRows = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM} where e.id = $1 and e.deleted_at is null`,
+    [raw.entityId],
+  );
+  const entity = (await loadUniversalSummaries(q, entityRows, viewerIdentityId))[0];
+  if (!entity) throw new CollabError('not_found', `no such entity: ${raw.entityId}`);
+  const requestRows = raw.attentionRequestId
+    ? await q.query<AttentionRequestRow>(
+      `select ${ATTENTION_COLUMNS} from public.attention_requests where id = $1`,
+      [raw.attentionRequestId],
+    )
+    : [];
+  const request = (await attentionRequestsOf(q, requestRows))[0] ?? null;
+  return { request, entity, affectedCount: Number(raw.affectedCount) };
+}
+
 async function commandResult(
   q: Querier,
   raw: RpcCommandResult,
@@ -896,6 +988,13 @@ export class W2EntitiesCommandsTrackingService {
           raw = await q.rpc('create_channel', [input.spaceId, input.title, envelope.actorId ?? null,
             content.topic ?? '', input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
           break;
+        // A voice channel has no topic and no feed, so the title IS the whole
+        // content. The RPC lowercases and trims it into the same slug grammar
+        // channels use (053), which is why nothing is normalised here.
+        case 'voice_channel':
+          raw = await q.rpc('create_voice_channel', [input.spaceId, input.title, envelope.actorId ?? null,
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
         case 'collection':
           raw = await q.rpc('create_collection', [input.spaceId, input.title, envelope.actorId ?? null,
             content.description ?? '', content.collectionType ?? 'manual', input.parentId ?? null,
@@ -934,6 +1033,18 @@ export class W2EntitiesCommandsTrackingService {
             content.provider ?? 'github', content.url ?? null, content.repository ?? content.repo ?? null,
             content.sha ?? null, content.author ?? null, content.committedAt ?? null,
             input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
+        case 'memory':
+          // No title argument: the title is derived from the statement (056).
+          // No parentId: memories are outside hierarchy, refused at the data
+          // layer. `workSessionId` is validated server-side against the
+          // actor's participates_in edge — provenance is never client-drawn.
+          raw = await q.rpc('create_memory', [input.spaceId,
+            content.statement ?? input.title ?? '', content.mechanism ?? '',
+            content.subjectScope ?? '', content.doesNotEstablish ?? '',
+            content.measuredAt ?? null, envelope.actorId ?? null,
+            input.position ?? null, content.workSessionId ?? null,
+            envelope.clientMutationId ?? null]);
           break;
         default:
           if (!input.kind.startsWith('c:')) {
@@ -1014,6 +1125,43 @@ export class W2EntitiesCommandsTrackingService {
               input.title ?? null, content.url ?? null, content.author ?? null, content.committedAt ?? null,
               envelope.clientMutationId ?? null]);
             break;
+          case 'memory':
+            // Edits are for typos: any material edit bumps the version and
+            // un-pins every inbound verification. Wrong memories are
+            // superseded, never edited. Title is derived — input.title is
+            // deliberately NOT forwarded.
+            raw = await q.rpc('update_memory', [id, input.expectedVersion, envelope.actorId ?? null,
+              content.statement ?? null, content.mechanism ?? null,
+              content.subjectScope ?? null, content.doesNotEstablish ?? null,
+              content.measuredAt ?? null, content.measuredAt === null,
+              envelope.clientMutationId ?? null]);
+            break;
+          case 'worktree': {
+            // The door accepts EXACTLY a status transition (+ an optional
+            // preflight token). Everything else is refused BY NAME with
+            // invalid_input — never a silent drop (worktree design §2.5).
+            // `worktree` stays OUT of RESTRICTED_LIFECYCLE_KINDS on purpose:
+            // restricting it would make this door unreachable.
+            if (input.title !== undefined) {
+              throw new CollabError('invalid_input', 'worktree title is derived from the branch and cannot be patched');
+            }
+            const immutable = ['path', 'branch', 'baseRef', 'baseCommitOid', 'projectId']
+              .filter((field) => field in content);
+            if (immutable.length > 0) {
+              throw new CollabError('invalid_input', `worktree ${immutable.join(', ')} is immutable after creation`);
+            }
+            const unknown = Object.keys(content).filter((k) => k !== 'status' && k !== 'preflightToken');
+            if (unknown.length > 0) {
+              throw new CollabError('invalid_input', `worktree patch does not accept: ${unknown.join(', ')}`);
+            }
+            if (typeof content.status !== 'string') {
+              throw new CollabError('invalid_input', 'worktree patch requires content.status');
+            }
+            raw = await q.rpc('update_worktree', [id, input.expectedVersion, content.status,
+              envelope.actorId ?? null, envelope.clientMutationId ?? null,
+              typeof content.preflightToken === 'string' ? content.preflightToken : null]);
+            break;
+          }
           default:
             if (!kind.startsWith('c:')) throw new CollabError('not_implemented', `entities.patch does not support ${kind}`);
             raw = await q.rpc('update_custom_entity', [id, input.expectedVersion, input.title ?? null,
@@ -1037,6 +1185,122 @@ export class W2EntitiesCommandsTrackingService {
       }
       throw error;
     }
+  };
+
+  readonly listAttentionRequests = async (ctx: RequestContext): Promise<AttentionRequestPage> => {
+    const owner = await this.deps.owner();
+    const spaceId = ctx.query.get('spaceId') ?? '';
+    if (!UUID_RE.test(spaceId)) throw new CollabError('invalid_input', 'spaceId must be a uuid');
+    const entityId = ctx.query.get('entityId');
+    if (entityId !== null && !UUID_RE.test(entityId)) {
+      throw new CollabError('invalid_input', 'entityId must be a uuid');
+    }
+    const status = ctx.query.get('status');
+    const statuses = new Set(['open', 'acknowledged', 'resolved', 'dismissed']);
+    if (status !== null && !statuses.has(status)) {
+      throw new CollabError('invalid_input', 'invalid attention request status');
+    }
+    const minPointsRaw = ctx.query.get('minPoints');
+    const minPoints = minPointsRaw === null ? null : Number(minPointsRaw);
+    if (minPoints !== null && (!Number.isInteger(minPoints) || minPoints < 1 || minPoints > 100)) {
+      throw new CollabError('invalid_input', 'minPoints must be an integer from 1 to 100');
+    }
+    const limit = limitOf(ctx.query.get('limit'));
+    const fp = fingerprint('attentionRequests.list', { spaceId, entityId, status, minPoints });
+    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
+      const values: unknown[] = [spaceId];
+      const where = ['space_id = $1'];
+      if (entityId) { values.push(entityId); where.push(`entity_id = $${values.length}`); }
+      if (status) { values.push(status); where.push(`status = $${values.length}`); }
+      if (minPoints !== null) { values.push(minPoints); where.push(`points >= $${values.length}`); }
+      const cursor = ctx.query.get('cursor');
+      if (cursor) {
+        const decoded = decodeCursor(cursor);
+        if (decoded.k[0] !== fp || decoded.k.length !== 5) {
+          throw new CollabError('invalid_cursor', 'attention cursor does not match this query');
+        }
+        const points = Number(decoded.k[1]);
+        const at = cursorIso(decoded.k[2]);
+        const id = cursorUuid(decoded.k[3]);
+        if (!Number.isInteger(points)) throw new CollabError('invalid_cursor', 'invalid attention points cursor');
+        values.push(points, at, id);
+        const pointParam = `$${values.length - 2}`;
+        const atParam = `$${values.length - 1}`;
+        const idParam = `$${values.length}`;
+        where.push(`(points < ${pointParam} or (points = ${pointParam} and (created_at, id) > (${atParam}::timestamptz, ${idParam}::uuid)))`);
+      }
+      const rows = await q.query<AttentionRequestRow>(
+        `select ${ATTENTION_COLUMNS}, ${MICROS('created_at')} cursor_created_at
+           from public.attention_requests
+          where ${where.join(' and ')}
+          order by points desc, created_at asc, id asc
+          limit ${limit + 1}`,
+        values,
+      );
+      const hasMore = rows.length > limit;
+      const pageRows = hasMore ? rows.slice(0, limit) : rows;
+      const items = await attentionRequestsOf(q, pageRows);
+      const last = pageRows.at(-1);
+      return {
+        items,
+        nextCursor: hasMore && last
+          ? encodeCursor([fp, Number(last.points), last.cursor_created_at!, last.id, 'attention'])
+          : null,
+      };
+    });
+  };
+
+  readonly createAttentionRequest = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
+    const owner = await this.deps.owner();
+    const entityId = requireUuidParam(ctx, 'entityId');
+    const input = ctx.body as CreateAttentionRequestInput;
+    const envelope = commandEnvelope(ctx);
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<AttentionMutationRpcResult>('create_attention_request', [
+        entityId,
+        input.reason,
+        input.points,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return attentionMutationResult(q, raw, owner.identityId);
+    });
+  };
+
+  readonly updateAttentionRequest = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
+    const owner = await this.deps.owner();
+    const requestId = requireUuidParam(ctx, 'requestId');
+    const input = ctx.body as UpdateAttentionRequestInput;
+    const envelope = commandEnvelope(ctx);
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<AttentionMutationRpcResult>('update_attention_request', [
+        requestId,
+        input.expectedVersion,
+        input.reason ?? null,
+        input.points ?? null,
+        input.status ?? null,
+        input.resolutionNote ?? null,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return attentionMutationResult(q, raw, owner.identityId);
+    });
+  };
+
+  readonly resolveEntityAttention = async (ctx: RequestContext): Promise<AttentionRequestMutationResult> => {
+    const owner = await this.deps.owner();
+    const entityId = requireUuidParam(ctx, 'entityId');
+    const input = ctx.body as ResolveEntityAttentionInput;
+    const envelope = commandEnvelope(ctx);
+    return this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<AttentionMutationRpcResult>('resolve_entity_attention', [
+        entityId,
+        input.resolutionNote ?? null,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return attentionMutationResult(q, raw, owner.identityId);
+    });
   };
 
   readonly moveEntity = async (ctx: RequestContext): Promise<CommandResult> => {

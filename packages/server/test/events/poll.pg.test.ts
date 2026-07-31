@@ -384,6 +384,7 @@ describeIfPg('events.poll over the captured log (real Postgres)', () => {
       expect(e.message.content.mentions).toEqual([]);
       expect(e.message.content.attachments).toEqual([]);
       expect(e.message.excerpt, 'a redacted message has no excerpt').toBeUndefined();
+      expect(e.message.state.redactedAt, 'redaction must be explicit to the renderer').toBeTruthy();
     }
   });
 

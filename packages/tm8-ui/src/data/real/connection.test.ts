@@ -635,3 +635,89 @@ describe('toCursor: explicit coercion, because Number("") is 0', () => {
     expect(toCursor('0')).toBe(0);
   });
 });
+
+describe('connection: half-open watchdog — silence is probed, not trusted', () => {
+  const cfg = { idleProbeAfterMs: 90_000, idleCheckIntervalMs: 45_000 };
+
+  it('a quiet-but-alive socket stays live: the probe finds nothing and believes the quiet', async () => {
+    const h = mk(cfg);
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    await flush();
+    const pollsAfterOpen = h.polls.length;
+
+    // Two checks pass before silence crosses the 90s threshold; the third probes.
+    h.clock.advance(45_000);
+    await flush();
+    expect(h.polls.length).toBe(pollsAfterOpen); // 45s silent: below threshold, no probe
+
+    h.clock.advance(45_000);
+    await flush();
+    expect(h.polls.length).toBe(pollsAfterOpen + 1); // 90s silent: probed once
+
+    // Empty probe = quiet really was quiet: still live, socket untouched.
+    expect(h.conn.getConnection()).toEqual({ phase: 'live' });
+    expect(h.pool.last().closeCalls).toBe(0);
+
+    // And the clean probe RESET the silence clock: the next check does not probe.
+    h.clock.advance(45_000);
+    await flush();
+    expect(h.polls.length).toBe(pollsAfterOpen + 1);
+    h.conn.dispose();
+  });
+
+  it('a dead socket is detected: the log advanced while the socket sat silent → reconnect machinery engages', async () => {
+    const h = mk(cfg);
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    h.pool.last().deliver(ev('sp-1', 10));
+    await flush();
+    const firstSocket = h.pool.last();
+
+    // The socket goes half-open: no close event, no frames — but the durable
+    // log advances to 12 behind its back.
+    h.setPoll(() => ({ items: [ev('sp-1', 11), ev('sp-1', 12)], nextCursor: '12' }));
+
+    // Two steps with a flush between: the recurring check re-arms itself in a
+    // microtask, which the manual clock cannot see inside one advance().
+    h.clock.advance(45_000);
+    await flush();
+    h.clock.advance(45_000);
+    await flush();
+
+    // The probe's findings were dispatched through the ordinary path…
+    expect(h.events.map((e) => e.seq)).toEqual([10, 11, 12]);
+    expect(h.conn.cursorOf('sp-1')).toBe(12);
+    // …the dead socket was closed, and the normal fallback took over.
+    expect(firstSocket.closeCalls).toBe(1);
+    expect(h.conn.getConnection().phase).toBe('polling');
+
+    // Backoff then reconnect: the fresh socket resumes from the probed cursor.
+    h.clock.advance(1_000);
+    const fresh = h.pool.last();
+    expect(fresh).not.toBe(firstSocket);
+    fresh.openIt();
+    expect(fresh.frames()).toEqual([
+      { type: 'subscribe', spaceIds: ['sp-1'] },
+      { type: 'resume', spaceId: 'sp-1', since: 12 },
+    ]);
+    h.conn.dispose();
+  });
+
+  it('frames arriving keep resetting the silence clock: no probe while events flow', async () => {
+    const h = mk(cfg);
+    h.conn.openSpace('sp-1');
+    h.pool.last().openIt();
+    await flush();
+    const pollsAfterOpen = h.polls.length;
+
+    for (let seq = 1; seq <= 4; seq++) {
+      h.clock.advance(45_000);
+      h.pool.last().deliver(ev('sp-1', seq));
+      await flush();
+    }
+    expect(h.polls.length).toBe(pollsAfterOpen); // 3 minutes elapsed, never 90s silent
+    expect(h.conn.getConnection()).toEqual({ phase: 'live' });
+    h.conn.dispose();
+  });
+});

@@ -58,6 +58,10 @@ export const ADDITIVE_OPERATION_NAMES = [
 ] as const satisfies readonly OperationName[];
 
 export const FROZEN_SCHEMA_OPERATION_NAMES = [
+  'attentionRequests.list',
+  'attentionRequests.create',
+  'attentionRequests.update',
+  'attentionRequests.resolveEntity',
   'messages.post',
   'messages.edit',
   'messages.delete',
@@ -187,6 +191,7 @@ function nounForOperation(operation: OperationName): string {
     case 'serverConnections': return 'server';
     case 'spaces': return 'space';
     case 'entities': return 'entity';
+    case 'attentionRequests': return 'attention';
     case 'tracking': return 'tracking';
     case 'edges': return 'edge';
     case 'edgeTypes': return 'edge-type';
@@ -210,6 +215,8 @@ function nounForOperation(operation: OperationName): string {
     case 'handoffs': return 'handoff';
     case 'interactionProfiles': return 'interaction-profile';
     case 'teamMembers': return 'teammate';
+    case 'voice': return 'voice';
+    case 'artifacts': return 'artifact';
     default: throw new Error(`operation ${operation} has no noun/help disposition`);
   }
 }
@@ -295,19 +302,23 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
     OPERATIONS.map(({ kind }) => kind),
     ['read', 'command', 'stream'],
   );
-  const additive = OPERATIONS.slice(-ADDITIVE_OPERATION_NAMES.length);
+  // W1 amendments A01-A21 are no longer the catalog tail once feature ops
+  // (artifacts, …) append after them, so extract them by name in catalog order
+  // rather than by trailing slice.
+  const additiveNames = new Set<string>(ADDITIVE_OPERATION_NAMES);
+  const additive = OPERATIONS.filter(({ name }) => additiveNames.has(name));
 
   // A21 (execution.liveness) is the +1 on the catalog, GET, read, router and
   // execution-handler axes — the first IMPLEMENTED additive operation.
-  assertEqual(names.length, 106, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 104, 'v1 total');
+  assertEqual(names.length, 119, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 117, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 39, POST: 42, PATCH: 9, DELETE: 8, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 42, command: 63, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 105, 'server router HTTP total');
+  assertEqual(methods, { GET: 43, POST: 50, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 46, command: 72, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 118, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

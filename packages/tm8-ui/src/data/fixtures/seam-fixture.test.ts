@@ -263,6 +263,41 @@ describe('fixture seam — commands + echo events', () => {
     expect(msgs.items.some((m) => m.content.body === 'hello from the seam test')).toBe(true);
   });
 
+  it('file uploads use the same grant → raw bytes → complete lifecycle as the real seam', async () => {
+    const seam = await openSeam();
+    const grant = await seam.files.uploadInit({
+      clientMutationId: 'cmid-file-init',
+      spaceId: FIXTURE_SPACE_ID,
+      name: 'plan.txt',
+      mime: 'text/plain',
+      sizeBytes: 4,
+      checksumSha256: 'a'.repeat(64),
+    });
+    await seam.files.putBytes(grant, new Blob(['plan']));
+    const completed = await seam.files.complete(grant.uploadId, {
+      clientMutationId: 'cmid-file-complete',
+      targets: [taskGuideLines.id],
+    });
+    expect(completed.entity).toMatchObject({
+      kind: 'file',
+      title: 'plan.txt',
+      state: { kind: 'file', name: 'plan.txt', mimeType: 'text/plain', sizeBytes: 4 },
+    });
+    await expect(seam.entity(completed.entity!.id)).resolves.toMatchObject({ kind: 'file' });
+
+    const abandoned = await seam.files.uploadInit({
+      clientMutationId: 'cmid-file-init-2',
+      spaceId: FIXTURE_SPACE_ID,
+      name: 'scratch.txt',
+      mime: 'text/plain',
+      sizeBytes: 0,
+      checksumSha256: 'b'.repeat(64),
+    });
+    await expect(seam.files.abort(abandoned.uploadId, { clientMutationId: 'cmid-file-abort' }))
+      .resolves.toMatchObject({ patches: [] });
+    await expect(seam.files.putBytes(abandoned, new Blob())).rejects.toMatchObject({ code: 'not_found' });
+  });
+
   it('spawn/terminate drive the live set; prompt refuses a non-running session', async () => {
     const seam = await openSeam();
     const snaps: LivenessSnapshot[] = [];

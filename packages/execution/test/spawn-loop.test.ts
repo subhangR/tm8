@@ -88,11 +88,14 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     const result = await service.spawn(AUTH, {
       spaceId: SPACE_ID,
       teamMemberId: MEMBER_ID,
+      parentSessionId: '55555555-5555-4555-8555-555555555555',
       taskIds: [TASK_ID],
       projectId: '44444444-4444-4444-8444-444444444444',
     });
 
     expect(result.reused).toBe(false);
+    expect(graph.created[0]?.parentSessionId).toBe('55555555-5555-4555-8555-555555555555');
+    expect(graph.created[0]?.title).toBe('fixture task 1');
     expect(pty.hasSession(result.sessionId)).toBe(true);
     expect(result.cwd).toBe(projectDir);
 

@@ -5,6 +5,7 @@ import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { identityGet } from '../identity.js';
 import {
+  spacesCounts,
   spacesCreate,
   spacesGet,
   spacesHome,
@@ -53,6 +54,7 @@ export function registerW2IdentitySpacesHandlers(
     'spaces.update': service.spacesUpdate,
     'spaces.navigation': spacesNavigation(deps),
     'spaces.home': spacesHome(deps),
+    'spaces.counts': spacesCounts(deps),
     'spaces.settings': service.spacesSettings,
     'spaces.members.list': service.spacesMembersList,
     'spaces.invites.list': service.spacesInvitesList,

@@ -33,9 +33,21 @@ export const BYTE_BUDGETS = {
 
 export type BudgetName = keyof typeof BYTE_BUDGETS;
 
-/** UTF-8 byte length. `'🛠'.length` is 2 JS code units and 4 UTF-8 bytes. */
+/**
+ * UTF-8 byte length. `'🛠'.length` is 2 JS code units and 4 UTF-8 bytes.
+ *
+ * `Buffer` is preferred where it exists (it is the faster path and the one the
+ * spawn/CLI callers hit), but this package is also imported by the browser
+ * bundle — the prompt catalog screen renders these same prompts and reports
+ * their sizes — and `Buffer` is not defined there. `TextEncoder` is the
+ * standard fallback and agrees byte-for-byte.
+ */
+const textEncoder = typeof TextEncoder === 'undefined' ? null : new TextEncoder();
+
 export function utf8Bytes(text: string): number {
-  return Buffer.byteLength(text, 'utf8');
+  if (typeof Buffer !== 'undefined') return Buffer.byteLength(text, 'utf8');
+  if (textEncoder) return textEncoder.encode(text).length;
+  throw new Error('utf8Bytes: neither Buffer nor TextEncoder is available');
 }
 
 export class BudgetExceededError extends Error {

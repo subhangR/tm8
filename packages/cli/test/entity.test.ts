@@ -1,7 +1,7 @@
 /**
  * `tm8 entity …` — the universal entity surface (W4 group 3).
  *
- * SIXTEEN command paths, projecting sixteen catalog rows: the twelve
+ * SEVENTEEN command paths, projecting seventeen catalog rows: the thirteen
  * `entities.*` rows this slot owns, the two W0 additive rows (`entities.feed`,
  * `entities.context`), `entities.commands.pull`, and `collections.query` —
  * which is a `collections` row wearing an `entity` command path, exactly as the
@@ -45,6 +45,10 @@ import type { CommandModule } from '../src/run.js';
 /** Imported lazily so a missing module fails each TEST, not only the FILE. */
 async function entityCommands(): Promise<CommandModule[]> {
   return (await import('../src/commands/entity.js')).ENTITY_COMMANDS;
+}
+
+async function attentionCommands(): Promise<CommandModule[]> {
+  return (await import('../src/commands/attention.js')).ATTENTION_COMMANDS;
 }
 
 // ── the stub Server ─────────────────────────────────────────────────────────
@@ -172,6 +176,10 @@ async function drive(argv: readonly string[]): Promise<Ran> {
   return driveWith(await entityCommands(), argv);
 }
 
+async function driveAttention(argv: readonly string[]): Promise<Ran> {
+  return driveWith(await attentionCommands(), argv);
+}
+
 // ── every row, bound through the catalog ────────────────────────────────────
 
 interface RowCase {
@@ -189,6 +197,12 @@ const ROWS: readonly RowCase[] = [
     argv: ['entity', 'update', ENT, '--expect-version', '3', '--title', 'x'],
     method: 'PATCH',
     params: { id: ENT },
+  },
+  {
+    op: 'attentionRequests.create',
+    argv: ['entity', 'attention', ENT, '--reason', 'Need approval', '--points', '80'],
+    method: 'POST',
+    params: { entityId: ENT },
   },
   {
     op: 'entities.move',
@@ -220,12 +234,13 @@ const ROWS: readonly RowCase[] = [
   { op: 'collections.query', argv: ['entity', 'query'], method: 'POST' },
 ];
 
-describe('the sixteen rows this slot owns', () => {
-  it('registers exactly the sixteen command paths, and no others', async () => {
+describe('the seventeen rows this slot owns', () => {
+  it('registers exactly the seventeen command paths, and no others', async () => {
     const paths = (await entityCommands()).map((m) => m.path.join(' ')).sort();
     expect(paths).toEqual(
       [
         'entity activity',
+        'entity attention',
         'entity children',
         'entity context',
         'entity create',
@@ -706,5 +721,36 @@ describe('server refusals map onto the frozen §7.6 table', () => {
     expect(r.code).toBe(8);
     expect(r.stderr).toContain('not implemented on this node');
     expect(r.stdout).toBe('');
+  });
+});
+
+describe('generic attention queue commands', () => {
+  it('lists with generic entity, status, and score filters', async () => {
+    const r = await driveAttention([
+      'attention', 'list', '--entity', ENT, '--status', 'open', '--min-points', '60', '--limit', '10',
+    ]);
+    expect(r.code).toBe(0);
+    expect(seen[0]).toMatchObject({ method: 'GET', pathname: '/v2/attention-requests' });
+    const query = new URLSearchParams(seen[0]!.query);
+    expect(Object.fromEntries(query)).toMatchObject({ spaceId: SPACE, entityId: ENT, status: 'open', minPoints: '60', limit: '10' });
+  });
+
+  it('updates one request under its version guard', async () => {
+    const r = await driveAttention([
+      'attention', 'update', ENT, '--expect-version', '2', '--status', 'acknowledged', '--points', '75',
+    ]);
+    expect(r.code).toBe(0);
+    expect(seen[0]).toMatchObject({ method: 'PATCH', pathname: bindPath('attentionRequests.update', { requestId: ENT }) });
+    expect(seen[0]!.body).toMatchObject({ expectedVersion: 2, status: 'acknowledged', points: 75 });
+  });
+
+  it('resolves every pending request for an entity', async () => {
+    const r = await driveAttention(['attention', 'resolve-entity', ENT, '--note', 'Opened in UI']);
+    expect(r.code).toBe(0);
+    expect(seen[0]).toMatchObject({
+      method: 'POST',
+      pathname: bindPath('attentionRequests.resolveEntity', { entityId: ENT }),
+    });
+    expect(seen[0]!.body).toMatchObject({ resolutionNote: 'Opened in UI' });
   });
 });

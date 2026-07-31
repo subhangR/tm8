@@ -21,7 +21,7 @@
  * `useLaunchSheet` below for two of them; the third is that no cMin contract
  * exists, which is enforced by there being no import of it in this file.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import {
   agentTool,
@@ -99,6 +99,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
     return project ? { kind: 'project', projectId: project.id } : { kind: 'scratch' };
   });
   const [mode, setMode] = useState<LaunchMode>('worker');
+  const [reasoningEffort, setReasoningEffort] = useState<NonNullable<LaunchConfig['reasoningEffort']>>('low');
+  const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('acceptEdits');
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
 
@@ -111,16 +113,30 @@ export function LaunchSheet(props: LaunchSheetProps) {
    * phrase, so the chain itself is an authored addition (ledgered) rendering
    * the order the canvas states in prose.
    */
-  const resolution = useMemo(() => {
-    if (profileId) {
-      return { profile: profiles.find((p) => p.id === profileId), from: 'your pick', step: -1 };
-    }
+  const defaultResolution = useMemo(() => {
     const byTeammate = profiles.find((p) => p.id === teammate?.defaultProfileId);
     if (byTeammate) return { profile: byTeammate, from: `${teammate?.name}'s default`, step: 0 };
     const bySpace = profiles.find((p) => p.isSpaceDefault);
     if (bySpace) return { profile: bySpace, from: 'space default', step: 1 };
     return { profile: profiles.find((p) => p.isServerDefault), from: 'node default', step: 2 };
-  }, [profileId, profiles, teammate]);
+  }, [profiles, teammate]);
+  const resolution = useMemo(() => {
+    if (profileId) {
+      return { profile: profiles.find((p) => p.id === profileId), from: 'your pick', step: -1 };
+    }
+    return defaultResolution;
+  }, [defaultResolution, profileId, profiles]);
+  const profilePickerId = `launch-interaction-profile-${useId()}`;
+  const selectedProfile = resolution.profile;
+  const selectedProfileDescription = selectedProfile
+    ? `${profileSurfaceDescription(selectedProfile)} · resolved from ${resolution.from}`
+    : 'Terminal + Chat · starts in Chat · resolved from node default';
+  const defaultOptionName = defaultResolution.profile
+    ? `Use resolved default — ${defaultResolution.profile.name}`
+    : 'Core Chat — node default';
+  const defaultOptionDescription = defaultResolution.profile
+    ? `${profileSurfaceDescription(defaultResolution.profile)} · resolved from ${defaultResolution.from}`
+    : 'Terminal + Chat · starts in Chat · no authored override';
 
   const atCapacity = props.capacity !== undefined && props.capacity.slotsFree <= 0;
 
@@ -188,6 +204,37 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 {models.map((option) => (
                   <option key={option.id} value={option.id}>{option.label}</option>
                 ))}
+              </select>
+            </span>
+          </label>
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">Reasoning effort</span>
+              <span className="ls__rowsub">passed to the selected provider</span>
+              <select
+                value={reasoningEffort}
+                data-testid="launch-reasoning-effort"
+                onChange={(event) => setReasoningEffort(event.target.value as NonNullable<LaunchConfig['reasoningEffort']>)}
+              >
+                {['low', 'medium', 'high', 'xhigh', 'max'].map((effort) => (
+                  <option key={effort} value={effort}>{effort}</option>
+                ))}
+              </select>
+            </span>
+          </label>
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">Access</span>
+              <span className="ls__rowsub">approval and sandbox posture</span>
+              <select
+                value={accessMode}
+                data-testid="launch-access-mode"
+                onChange={(event) => setAccessMode(event.target.value as NonNullable<LaunchConfig['accessMode']>)}
+              >
+                <option value="safe">Safe · ask for untrusted actions</option>
+                <option value="acceptEdits">Accept edits · workspace write</option>
+                <option value="plan">Plan · read only</option>
+                <option value="fullAccess">Full access · bypass safeguards</option>
               </select>
             </span>
           </label>
@@ -262,12 +309,19 @@ export function LaunchSheet(props: LaunchSheetProps) {
           <div className="ls__row ls__row--inert">
             <span className="ls__glyph" aria-hidden="true">⛭</span>
             <span className="ls__rowtext">
-              <span className="ls__rowname">{resolution.profile?.name ?? 'resolved by node at commit'}</span>
+              <span className="ls__rowname">{selectedProfile?.name ?? 'Core Chat — node default'}</span>
               <span className="ls__rowsub">
-                resolved from {resolution.from} · profiles narrow, never grant
+                {selectedProfileDescription} · profiles narrow, never grant
               </span>
             </span>
-            <button type="button" className="ls__change" onClick={() => setProfileOpen((o) => !o)}>
+            <button
+              type="button"
+              className="ls__change"
+              aria-label="Change interaction profile"
+              aria-expanded={profileOpen}
+              aria-controls={profilePickerId}
+              onClick={() => setProfileOpen((o) => !o)}
+            >
               change ▾
             </button>
           </div>
@@ -286,13 +340,44 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </div>
 
           {profileOpen && (
-            <div className="ls__picker">
+            <div
+              id={profilePickerId}
+              className="ls__picker"
+              role="radiogroup"
+              aria-label="Interaction profile options"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={profileId === ''}
+                className={`ls__row ${profileId === '' ? 'ls__row--on' : ''}`}
+                onClick={() => {
+                  setProfileId('');
+                  setProfileOpen(false);
+                }}
+              >
+                <span className="ls__glyph" aria-hidden="true">◉</span>
+                <span className="ls__rowtext">
+                  <span className="ls__rowname">{defaultOptionName}</span>
+                  <span className="ls__rowsub">{defaultOptionDescription}</span>
+                </span>
+                <span className={`ls__check ${profileId === '' ? 'ls__check--on' : 'ls__check--off'}`} aria-hidden="true">
+                  {profileId === '' ? '✓' : ''}
+                </span>
+              </button>
+              {profiles.length === 0 ? (
+                <p className="ls__profile-empty" role="status">
+                  No authored profiles yet. Core Chat remains available.
+                </p>
+              ) : null}
               {profiles.map((p) => (
                 <button
                   key={p.id}
                   type="button"
+                  role="radio"
+                  aria-checked={profileId === p.id}
                   aria-disabled={p.status !== 'active' || undefined}
-                  className={`ls__row ${p.status === 'active' ? '' : 'ls__row--refused'}`}
+                  className={`ls__row ${profileId === p.id ? 'ls__row--on' : ''} ${p.status === 'active' ? '' : 'ls__row--refused'}`}
                   onClick={(e) => {
                     if (p.status !== 'active') return e.preventDefault();
                     setProfileId(p.id);
@@ -304,8 +389,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
                   <span className="ls__rowtext">
                     <span className="ls__rowname">{p.name}</span>
                     <span className={`ls__rowsub ${p.status === 'active' ? '' : 'ls__rowsub--bad'}`}>
-                      {p.status === 'active' ? `v${p.version}` : statusReason(p.status)}
+                      {p.status === 'active'
+                        ? `v${p.version} · ${profileSurfaceDescription(p)}`
+                        : `v${p.version} · ${statusReason(p.status)}`}
                     </span>
+                  </span>
+                  <span className={`ls__check ${profileId === p.id ? 'ls__check--on' : 'ls__check--off'}`} aria-hidden="true">
+                    {profileId === p.id ? '✓' : ''}
                   </span>
                 </button>
               ))}
@@ -357,6 +447,8 @@ export function LaunchSheet(props: LaunchSheetProps) {
               teamMemberId: teammate.id,
               agentToolId: agentToolId || null,
               model: model || null,
+              reasoningEffort,
+              accessMode,
               mode,
               target,
               ...(profileId ? { interactionProfileId: profileId } : {}),
@@ -381,4 +473,11 @@ function statusReason(status: 'draft' | 'retired'): string {
   return status === 'draft'
     ? 'draft — not activated yet · activate it in Settings ↗'
     : 'retired — kept for sessions already pinned to it · pick an active profile';
+}
+
+function profileSurfaceDescription(profile: LaunchProfile): string {
+  const surfaces = profile.contentSurfaces.map((surface) =>
+    surface === 'terminal' ? 'Terminal' : 'Chat').join(' + ');
+  const initial = profile.initialContentSurface === 'terminal' ? 'Terminal' : 'Chat';
+  return `${surfaces} · starts in ${initial}`;
 }

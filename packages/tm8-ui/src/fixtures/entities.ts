@@ -98,6 +98,29 @@ export const channelDesign = summary({
 });
 
 // ---------------------------------------------------------------------------
+// voice_channel — the rail's dynamic Voice group needs something to show
+// ---------------------------------------------------------------------------
+
+/**
+ * TWO rooms on purpose, covering both halves of the `live` treatment: the rail
+ * renders the green "● n" only when `participantCount > 0`, and a fixture set
+ * with occupied rooms only would make the empty case unobservable.
+ */
+export const voiceStandup = summary({
+  id: 'vc-standup',
+  kind: 'voice_channel',
+  title: 'standup',
+  state: { kind: 'voice_channel', participantCount: 3 },
+});
+
+export const voiceLounge = summary({
+  id: 'vc-lounge',
+  kind: 'voice_channel',
+  title: 'lounge',
+  state: { kind: 'voice_channel', participantCount: 0 },
+});
+
+// ---------------------------------------------------------------------------
 // tasks — worst case, NEEDS YOU, live work, blocked, tombstone
 // ---------------------------------------------------------------------------
 
@@ -537,7 +560,7 @@ export const customRitual = summary({
 // ---------------------------------------------------------------------------
 
 export const fixtureSummaries: EntitySummary[] = [
-  channelDesign,
+  channelDesign, voiceStandup, voiceLounge,
   taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed,
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,

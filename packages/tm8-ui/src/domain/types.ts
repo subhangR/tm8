@@ -401,7 +401,7 @@ export interface ListConfig {
      * work surface: a strong command row with an expandable facts/config
      * region. The component still knows presentation data, never entity kinds.
      */
-    anatomy?: 'standard' | 'control-card';
+    anatomy?: 'standard' | 'control-card' | 'session-tree';
     /** The two-source law: pool activity signal, gated on a `live` verdict (F1). */
     pulse?: PulseBinding;
   };
@@ -456,6 +456,10 @@ export type ContentBlockKind =
   | 'fields'
   | 'link-summary'
   | 'file-preview'
+  // Artifact wave: metadata-only preview for the `artifact` kind. Execution of
+  // the bundle (the iframe) is release-gated on two open security decisions and
+  // is deliberately NOT part of this block.
+  | 'artifact-preview'
   | 'items'
   | 'lifecycle'
   | 'notice'
@@ -469,7 +473,19 @@ export type ContentBlockKind =
   | 'preview'
   | 'field-rows'
   | 'restrictions'
-  | 'pin-provenance';
+  | 'pin-provenance'
+  // Profile wave: the six blocks ProfileBody draws (T0-4 MEMBER lines 400–448,
+  // AGENT lines 452–496). `items` above is reused deliberately — one block
+  // name, one meaning, two renderers (GenericBody and ProfileBody).
+  | 'identity'
+  | 'bio'
+  | 'stat-tiles'
+  | 'field-grid'
+  | 'live-work'
+  | 'session-rows'
+  // …plus the org tree: a teammate's place in the entity hierarchy, which
+  // db/migrations/002_identity.sql:110 rules IS the org tree (leader = parent).
+  | 'org-tree';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;
@@ -479,7 +495,7 @@ export interface ContentBlockRef {
   params?: Readonly<Record<string, string | number | boolean>>;
 }
 
-/** Phase-1 ships `['terminal']`; the field IS the RULING-K seam (D12). */
+/** Complete work-session Content vocabulary; pin projection gates Chat. */
 export type ContentSurfaces = readonly ['terminal'] | readonly ['terminal', 'chat'];
 
 export interface PanelConfig {

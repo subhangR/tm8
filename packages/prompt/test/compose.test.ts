@@ -76,7 +76,7 @@ describe('four-mode identity', () => {
       }
     }
     // Every advertised usage names a frozen-grammar command path.
-    const grammar = ['help', 'action list', 'entity context', 'message send', 'session spawn'];
+    const grammar = ['help', 'action list', 'entity context', 'entity attention', 'attention resolve-entity', 'message send', 'session spawn'];
     for (const { usage } of commandSurface(true)) {
       const path = usage.replace(/^tm8 /, '');
       expect(

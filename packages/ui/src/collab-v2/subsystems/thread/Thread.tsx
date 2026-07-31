@@ -22,6 +22,7 @@ import type {
 } from '../../types/contract';
 import { Composer } from './Composer';
 import { MessageRow, PendingRow } from './MessageRow';
+import { useChannelTagging, type ChannelTagTarget } from './tags';
 import { VirtualList, type VirtualListHandle } from './VirtualList';
 import { useThread } from './useThread';
 import type { MentionCandidate, MessageNode, ThreadProps, ThreadRow } from './types';
@@ -175,10 +176,41 @@ export function Thread({
   ariaLabel,
 }: ThreadProps) {
   const t = useThread({ anchorId, variant, viewer, unreadCount: unreadProp, live });
+  const channelTagging = useChannelTagging();
   const [replyTo, setReplyTo] = useState<MessageView | null>(null);
+  const [tagTargets, setTagTargets] = useState<ChannelTagTarget[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagLoadError, setTagLoadError] = useState<string | null>(null);
   const listRef = useRef<VirtualListHandle | null>(null);
   const markedRef = useRef(false);
   const candidates = useCandidates(t.nodes, mentionCandidates);
+  const tagSpaceId = variant === 'feed' ? t.anchor?.spaceId : undefined;
+
+  useEffect(() => {
+    if (!channelTagging || !tagSpaceId) {
+      setTagTargets([]);
+      setTagsLoading(false);
+      setTagLoadError(null);
+      return;
+    }
+    let cancelled = false;
+    setTagsLoading(true);
+    setTagLoadError(null);
+    channelTagging.loadTargets(tagSpaceId).then(
+      (targets) => {
+        if (cancelled) return;
+        setTagTargets(targets);
+        setTagsLoading(false);
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        setTagTargets([]);
+        setTagsLoading(false);
+        setTagLoadError(error instanceof Error && error.message ? error.message : 'unavailable');
+      },
+    );
+    return () => { cancelled = true; };
+  }, [channelTagging, tagSpaceId]);
 
   // Comment threads read as one conversation, so their subtrees start open.
   // A first page carries only ONE level of replies inline, so anything deeper
@@ -247,8 +279,31 @@ export function Thread({
     body: string;
     mentions: MessageView['content']['mentions'];
     attachments: MessageView['content']['attachments'];
-  }): void => {
-    t.post({ ...draft, parentMessageId: replyTo?.id ?? null });
+    selectedTagTargetIds: EntityId[];
+  }): Promise<void> => (async () => {
+    if (draft.selectedTagTargetIds.length > 0) {
+      if (replyTo) {
+        throw new Error('Team and session @Tags are available only on top-level channel messages');
+      }
+      if (!channelTagging || !tagSpaceId) {
+        throw new Error('Team and session @Tags are not available for this discussion');
+      }
+      await channelTagging.send({
+        spaceId: tagSpaceId,
+        channelId: anchorId,
+        body: draft.body,
+        selectedTagIds: draft.selectedTagTargetIds,
+        mentionIds: draft.mentions.map((mention) => mention.entityId),
+        attachmentIds: draft.attachments.map((attachment) => attachment.fileEntityId),
+      });
+    } else {
+      t.post({
+        body: draft.body,
+        mentions: draft.mentions,
+        attachments: draft.attachments,
+        parentMessageId: replyTo?.id ?? null,
+      });
+    }
     if (replyTo) {
       // A reply must be visible where it lands.
       const rootId = replyTo.state.rootMessageId ?? replyTo.id;
@@ -257,7 +312,7 @@ export function Thread({
       setReplyTo(null);
     }
     markRead();
-  }, [t, replyTo, markRead]);
+  })(), [t, replyTo, markRead, channelTagging, tagSpaceId, anchorId]);
 
   const renderRow = useCallback((row: ThreadRow) => {
     switch (row.kind) {
@@ -278,6 +333,7 @@ export function Thread({
           <PendingRow
             body={row.pending.body}
             mentions={row.pending.mentions}
+            attachments={row.pending.attachments}
             author={row.pending.author}
             failed={row.pending.failed}
             onRetry={() => t.retry(row.pending.clientMutationId)}
@@ -358,12 +414,18 @@ export function Thread({
 
       {composer && (
         <Composer
+          anchorId={anchorId}
+          spaceId={t.anchor?.spaceId}
           candidates={candidates}
+          tagTargets={tagTargets}
+          tagSuggestionsEnabled={!replyTo}
+          tagsLoading={!replyTo && tagsLoading}
+          tagLoadError={!replyTo ? tagLoadError : null}
           contextLabel={replyTo ? `Replying to ${replyTo.state.author.displayName}` : undefined}
           onCancel={replyTo ? () => setReplyTo(null) : undefined}
           onSubmit={onSubmit}
           placeholder={t.anchor
-            ? `Message ${t.anchor.title} — @ mentions, # entities, drop a chip to embed`
+            ? `Message ${t.anchor.title} — @ mentions, # entities, or add anything`
             : undefined}
         />
       )}

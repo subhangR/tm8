@@ -1,33 +1,26 @@
 /*
- * T10 CHAT SURFACE — the channel destination.
+ * T10 CHAT SURFACE — the channel destination, in chat grammar.
  *
- * SCOPE OF THIS SHEET, so nobody reads more into it than is here: it is
- * TOKENISED and PLAUSIBLE, not canvas-diffed. Geometry and micro-type literals
- * are transcribed from the oracle's inline styles where the oracle states them
- * (cited per rule below); everything else is the package's existing idiom. A
- * later parity session owns fidelity, and no value here is a pixel claim.
+ * LAYOUT: a chronological feed (oldest at top, newest at the bottom where the
+ * composer is), a 38px avatar gutter, bylines only on the first message of an
+ * author run, day dividers, and hover-revealed row actions. Density is the
+ * point: a row's resting height is its text, and everything else (actions,
+ * follow-row timestamps) surfaces on hover/focus without reflowing the feed.
  *
  * COLOUR: tokens only — `src/hex-ban.test.ts` scans this file and will fail the
- * package on a raw hex. The oracle's dark literals map onto the palette
- * one-for-one, which is why no `--pn-x-*` extension was needed:
- *   #221E15 → --pn-card      #1B1810 → --pn-surface   #2C2719 → --pn-line
- *   #3B3524 → --pn-line-2    #EFE9DB → --pn-ink       #BDB5A2 → --pn-ink-2
- *   #8C8470 → --pn-ink-3     #665E4C → --pn-ink-4     #E0A45A → --pn-brand
- *   #5CB381 → --pn-run       #D9AA49 → --pn-wait      #DA7D6A → --pn-block
- *   #6F9FC7 → --pn-info      #7A7360 → --pn-idle
- * Every one of those pairs is the DARK value of the token, and each token's
- * light value inverts with the theme — which is the whole reason this surface
- * needs no per-theme override (design law 8).
+ * package on a raw hex. The palette maps used here are the package tokens:
+ * card/surface/line/ink scales, brand, and the status tones (run/wait/block/
+ * info/idle). Every token's light value inverts with the theme — which is the
+ * whole reason this surface needs no per-theme override (design law 8).
  *
- * MICRO TYPE is D5-verbatim: the 8.5/9/9.5/10/10.5/11/11.5/12/12.5px family
- * stays as literals. The single global lever is `zoom: 1.1` on `.cv2-root`.
- * If this reads small, the answer is never a per-element bump here.
+ * MICRO TYPE stays in the D5 8.5–13px family as literals. The single global
+ * lever is `zoom: 1.1` on `.cv2-root`. If this reads small, the answer is
+ * never a per-element bump here.
  *
  * HAIRLINES follow the D-ledgered rule: `--pn-line` BOUNDS a component (the
- * composer's top edge, the refusal card); `--pn-x-hairline-soft` SEPARATES
- * repeated siblings. Feed rows get NEITHER — the oracle separates them with
- * gap alone (hero line 78, `gap:3px`), and adding a rule the canvas does not
- * draw would be drift in the direction that looks tidier.
+ * composer's top edge, the refusal card); soft hairlines SEPARATE repeated
+ * siblings. Feed rows get NEITHER — whitespace and the hover tint carry the
+ * row boundary; day dividers are the only ruled lines inside the feed.
  */
 
 .chs-root {
@@ -38,6 +31,7 @@
   background: var(--pn-card);
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
+  container-type: inline-size;
 }
 
 /* --- the feed region ------------------------------------------------------ */
@@ -48,8 +42,13 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 10px 16px 14px; /* oracle hero line 78 */
+  padding: 10px 12px 8px;
 }
+
+/* The bottom anchor: history grows upward from the composer, so a short feed
+   sits at the BOTTOM of the viewport like every chat, not floating at the top.
+   The spacer absorbs the free height and collapses to zero once the feed fills. */
+.chs-feed__spacer { flex: 1 0 0; }
 
 .chs-list {
   list-style: none;
@@ -57,120 +56,241 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px; /* oracle hero line 78 */
+}
+
+/* Browser-native virtualization: after the measured threshold, offscreen rows
+   retain DOM/focus semantics while layout and paint are skipped. ResizeObserver
+   replaces the fallback with the feed's measured mean row height. */
+.chs-list[data-virtualized='true'] > .chs-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--chs-measured-row-size, 72px);
 }
 
 .chs-row {
+  position: relative;
+  margin-top: 10px;
   border-radius: var(--pn-r-sm);
+  padding: 1px 6px;
 }
+
+.chs-row--follow { margin-top: 0; }
+.chs-row--activity { margin-top: 6px; }
+.chs-row:first-child { margin-top: 0; }
+
+.chs-row:hover,
+.chs-row:focus-within { background: var(--pn-hover); }
 
 .chs-row__grid {
   display: flex;
-  gap: 10px; /* oracle hero line 86 */
-  padding: 2px 0;
+  gap: 10px;
+  padding: 1px 0;
 }
 
-/* --- the margin rail (provenance treatment 1a, the hero default) ---------- */
+/* --- the avatar gutter ---------------------------------------------------- */
 
-.chs-rail {
-  width: 88px; /* oracle hero line 88 */
+.chs-gutter {
+  width: 38px;
   flex: none;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  justify-content: flex-end;
+  align-items: flex-start;
   padding-top: 2px;
-  text-align: right;
+}
+
+.chs-gutter__time {
   font-family: var(--pn-mono);
-}
-
-.chs-rail__dir {
-  font-size: 8.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/*
- * Direction reads in MONOCHROME first — the oracle's own rule for this row
- * ("Colour and tint are secondary … each treatment reads in monochrome").
- * The word carries the fact; these tints only reinforce it.
- */
-.chs-rail__dir--inbound { color: var(--pn-ink-3); }
-.chs-rail__dir--outbound { color: var(--pn-brand); }
-.chs-rail__dir--elsewhere { color: var(--pn-info); }
-
-.chs-rail__via,
-.chs-rail__time {
   font-size: 9px;
   color: var(--pn-ink-4);
+  line-height: 18px;
+  white-space: nowrap;
 }
 
-.chs-rail__via {
-  font-size: 8.5px;
-  cursor: default;
-}
+/* A follow row's timestamp is hover-detail, not resting noise. Activity rows
+   keep theirs visible — they have no byline to answer "when" anywhere else. */
+.chs-row--follow .chs-gutter__time { opacity: 0; }
+.chs-row--follow:hover .chs-gutter__time,
+.chs-row--follow:focus-within .chs-gutter__time { opacity: 1; }
 
 .chs-row__body {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* --- hover actions -------------------------------------------------------- */
+
+.chs-actions {
+  position: absolute;
+  top: -12px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chs-row:hover .chs-actions,
+.chs-row:focus-within .chs-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* --- message rows --------------------------------------------------------- */
 
 .chs-byline {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 7px;
   min-width: 0;
 }
 
 .chs-byline__who {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--pn-ink);
 }
 
+/* Provenance as TEXT beside the avatar's shape — never shape alone. */
+.chs-byline__kind {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pn-info);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 4px;
+}
+
+.chs-byline__time,
+.chs-byline__edited {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
 .chs-byline__gap { flex: 1; }
 
-/*
- * 25px is the oracle's body indent (hero line 115): the text hangs under the
- * NAME, not under the avatar, so a wrapped paragraph keeps one left edge.
- */
 .chs-text {
   margin: 0;
-  padding-left: 25px;
-  font-size: 12.5px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--pn-ink-2);
   text-wrap: pretty;
   user-select: text;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.chs-parent {
+/* A canonical mention, in place in the sentence it was typed in. */
+.chs-mention-inline {
+  display: inline;
+  border: none;
+  margin: 0;
+  padding: 0 3px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-brand-soft);
+  color: var(--pn-brand);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chs-mention-inline:hover { text-decoration: underline; }
+
+/* The reply quote — one compact line, all of it the jump control. */
+.chs-parent { display: flex; min-width: 0; }
+
+.chs-parent__jump {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin: 0 0 0 25px;
+  min-width: 0;
+  max-width: 100%;
+  border: none;
+  border-left: 2px solid var(--pn-brand);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
   padding: 2px 8px;
-  border-left: 2px solid var(--pn-line-2);
-  font-family: var(--pn-mono);
-  font-size: 9px;
+  font-family: var(--pn-ui);
+  font-size: 11px;
   color: var(--pn-ink-3);
+  text-align: left;
+  cursor: pointer;
 }
 
-.chs-parent__id {
-  font-size: 10.5px;
-  color: var(--pn-ink-4);
+.chs-parent__glyph { color: var(--pn-ink-4); font-size: 10px; }
+.chs-parent__author { color: var(--pn-ink-2); font-weight: 600; flex: none; }
+
+.chs-parent__excerpt {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.chs-delivery { display: inline-flex; }
+/* Cross-surface provenance — rendered only when it is news (foreign anchor or
+   source session), so it reads as context, not as boilerplate. */
+.chs-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+
+.chs-message-meta__part,
+.chs-references,
+.chs-mentions,
+.chs-attachments {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chs-references { margin-top: 2px; }
+.chs-mentions,
+.chs-attachments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chs-ref-chip,
+.chs-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: transparent;
+  color: var(--pn-ink-2);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chs-ref-chip:hover,
+.chs-attachment:hover { background: var(--pn-hover); border-color: var(--pn-line); }
+
+.chs-ref-chip { color: var(--pn-brand); }
+
+.chs-attachment__mime { color: var(--pn-ink-4); font-family: var(--pn-mono); font-size: 9px; }
+
+.chs-delivery { display: inline-flex; align-self: center; }
 
 /* --- per-target delivery (S20) -------------------------------------------- */
 
@@ -179,7 +299,7 @@
   flex-direction: column;
   gap: 3px;
   align-items: flex-start;
-  padding-left: 25px;
+  margin-top: 2px;
 }
 
 .chs-targets__list {
@@ -200,6 +320,7 @@
 }
 
 .chs-targets__name { color: var(--pn-ink-2); }
+.chs-targets__reason { color: var(--pn-ink-4); overflow-wrap: anywhere; }
 
 /* Tones mirror the badge exactly — one status must never read two ways. */
 .chs-targets__state--run { color: var(--pn-run); }
@@ -214,19 +335,23 @@
 .chs-state {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0;
-  font-size: 11.5px;
+  padding-top: 1px;
+  font-size: 11px;
   color: var(--pn-ink-3);
 }
 
 .chs-state__dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--pn-idle);
   flex: none;
 }
+
+.chs-state__actor { color: var(--pn-ink-2); font-weight: 600; }
 
 .chs-state__from,
 .chs-state__to {
@@ -240,6 +365,32 @@
 .chs-state__from { color: var(--pn-ink-4); }
 .chs-state__to { color: var(--pn-ink-2); }
 .chs-state__arrow { color: var(--pn-ink-4); font-size: 10px; }
+
+.chs-artifact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  padding: 7px 10px;
+}
+
+.chs-artifact__kind {
+  grid-row: 1 / span 2;
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  padding: 0 7px;
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-hover);
+  color: var(--pn-ink-3);
+  font: 9px var(--pn-mono);
+}
+.chs-artifact__title { color: var(--pn-ink); font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__excerpt { color: var(--pn-ink-3); font-size: 11px; min-width: 0; overflow-wrap: anywhere; }
+.chs-artifact__provenance { grid-column: 2; color: var(--pn-ink-4); font: 9px var(--pn-mono); }
 
 /*
  * The safe card (S15). Dashed, because a dashed edge reads as "provisional"
@@ -255,7 +406,7 @@
   margin: 0;
   border: 1px dashed var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  padding: 7px 10px;
+  padding: 5px 10px;
   font-family: var(--pn-mono);
   font-size: 10px;
   color: var(--pn-ink-4);
@@ -277,7 +428,7 @@
 }
 
 .chs-group__glyph { color: var(--pn-ink-4); font-size: 11px; }
-.chs-group__text { font-size: 11.5px; color: var(--pn-ink-3); }
+.chs-group__text { font-size: 11px; color: var(--pn-ink-3); }
 
 .chs-group__rows {
   list-style: none;
@@ -290,6 +441,34 @@
   font-family: var(--pn-mono);
   font-size: 9.5px;
   color: var(--pn-ink-4);
+}
+
+/* --- day dividers --------------------------------------------------------- */
+
+.chs-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 2px 6px 6px;
+}
+
+.chs-day:first-child { margin-top: 0; }
+
+.chs-day::before,
+.chs-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--pn-line);
+}
+
+.chs-day__label {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--pn-ink-3);
 }
 
 /* --- the client-local new-since divider ----------------------------------- */
@@ -311,6 +490,21 @@
   flex: 1;
   height: 1px;
   background: var(--pn-brand-soft);
+}
+
+.chs-new-items {
+  position: sticky;
+  z-index: 3;
+  top: 4px;
+  align-self: center;
+  min-height: 44px;
+  border: 1px solid var(--pn-brand);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  color: var(--pn-brand);
+  padding: 5px 14px;
+  font: 10px var(--pn-mono);
+  cursor: pointer;
 }
 
 /* --- states --------------------------------------------------------------- */
@@ -353,6 +547,8 @@
   background: var(--pn-hover);
 }
 
+.chs-list--skeleton { gap: 8px; }
+
 .chs-root--refused { justify-content: center; }
 
 .chs-refusal {
@@ -375,15 +571,15 @@
 .chs-earlier {
   display: flex;
   justify-content: center;
-  padding: 2px 0 8px; /* oracle hero line 79 */
+  padding: 2px 0 8px;
 }
 
 .chs-provenance {
-  margin: 10px 0 0;
-  padding-top: 8px;
+  margin: 12px 0 0;
+  padding-top: 6px;
   border-top: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: 9px;
   color: var(--pn-ink-4);
 }
 
@@ -391,9 +587,13 @@
 
 .chs-composer {
   flex: none;
+  /* The positioning context for `.chs-mention-picker`, which pins itself to
+     this element's top edge with `bottom: 100%`. Without this the popover
+     resolves against a distant ancestor and lands nowhere near the composer. */
+  position: relative;
   border-top: 1px solid var(--pn-line);
   background: var(--pn-surface);
-  padding: 9px 12px; /* oracle hero line 203 */
+  padding: 9px 12px;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -405,9 +605,177 @@
   align-items: flex-end;
 }
 
+.chs-upload-list,
+.chs-mention-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chs-upload,
+.chs-mention-list > li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 3px 5px 3px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+.chs-upload[data-phase='failed'] { border-color: var(--pn-block); }
+.chs-upload__name { color: var(--pn-ink-2); overflow-wrap: anywhere; }
+.chs-upload__error { color: var(--pn-block); }
+.chs-upload button,
+.chs-mention-list button {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--pn-r-xs);
+  background: transparent;
+  color: var(--pn-brand);
+  cursor: pointer;
+}
+
+/**
+ * A POPOVER, not a block in the composer's flow. It floats above the composer
+ * so opening it never reflows the message being written — the textarea does
+ * not move under the caret mid-sentence. `bottom: 100%` pins it to the top
+ * edge of `.chs-composer`, which is `position: relative` for this reason.
+ */
+.chs-mention-picker {
+  position: absolute;
+  bottom: 100%;
+  left: 12px;   /* matches .chs-composer's 12px side padding */
+  right: 12px;
+  /* Anchored left and capped, rather than stretched edge to edge: a name and
+     its one-line reason belong together, and a full-width row strands the
+     reason a screen away from the name it explains. `right` stays set so the
+     cap yields on containers narrower than it. */
+  max-width: 420px;
+  z-index: 30;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  box-shadow: var(--pn-sh-pop);
+  overflow: hidden;
+}
+
+.chs-mention-picker__query {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-4);
+  font-size: 10.5px;
+}
+
+/* The workspace-attach picker's own search field — unlike the `@` list, this
+   popover is not driven from the textarea, so it carries its own input. */
+.chs-attach-search {
+  margin: 6px;
+  min-height: 32px;
+  padding: 4px 9px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink);
+  font-family: var(--pn-ui);
+  font-size: 11.5px;
+  outline: none;
+}
+
+.chs-attach-search:focus { border-color: var(--pn-brand); }
+
+/* The kind tag on an attached-entity chip ("task" / "doc"). */
+.chs-attach-kind {
+  font-family: var(--pn-mono);
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--pn-ink-4);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  padding: 0 4px;
+}
+
+/**
+ * ONE COLUMN. A grid put targets side by side, which reads as a palette of
+ * chips and makes ↑/↓ ambiguous — with two columns "down" has two meanings.
+ * A single column gives the arrow keys exactly one axis.
+ *
+ * The height is cut to ~5 rows (5 × 44px targets + gaps) so the list always
+ * announces itself as scrollable rather than growing until it covers the feed.
+ */
+.chs-mention-picker [role='listbox'] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 238px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+}
+
+.chs-mention-picker button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-2);
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.chs-mention-picker button:hover { border-color: var(--pn-line-2); background: var(--pn-hover); }
+
+/**
+ * THE KEYBOARD HIGHLIGHT. Without this the arrow keys move an invisible
+ * cursor and Enter commits a row the user cannot see — the navigation is
+ * only as useful as this rule. Toned with the brand accent so it outranks
+ * the hover tint when the mouse happens to rest on a different row.
+ */
+.chs-mention-picker button[data-active='true'] {
+  border-color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  color: var(--pn-ink);
+}
+
+.chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: 9px var(--pn-mono); }
+.chs-mention-picker__empty {
+  margin: 0;
+  padding: 10px;
+  color: var(--pn-ink-4);
+  font-size: 11px;
+}
+
+.chs-visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
 .chs-composer__input {
   flex: 1;
-  height: 46px; /* oracle hero line 219 */
+  height: 46px;
   resize: none;
   background: var(--pn-surface);
   border: 1px solid var(--pn-line-2);
@@ -424,7 +792,7 @@
 .chs-composer__input:focus { border-color: var(--pn-brand); }
 
 .chs-composer__send {
-  height: 30px;
+  min-height: 44px;
   flex: none;
   padding: 0 16px;
   border: none;
@@ -470,6 +838,28 @@
   color: var(--pn-block);
   font-size: 11.5px;
   line-height: 1.45;
+}
+
+.chs-composer__uncertain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-wait);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.chs-composer__uncertain span { flex: 1; }
+.chs-composer__uncertain button {
+  min-height: 44px;
+  border: 1px solid currentColor;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
 .chs-replying {
@@ -520,10 +910,15 @@
   border-radius: var(--pn-r-pill);
   padding: 2px 10px;
   cursor: pointer;
+  min-height: 24px;
 }
 
 .chs-chip-btn:hover { color: var(--pn-ink-2); background: var(--pn-hover); }
 .chs-chip-btn:disabled { color: var(--pn-ink-4); cursor: default; }
+
+/* The load-earlier control keeps a full touch target — it stands alone. */
+.chs-earlier .chs-chip-btn,
+.chs-earlier .hon-disabled { min-height: 44px; min-width: 44px; }
 
 .chs-linkbtn {
   font-family: var(--pn-mono);
@@ -531,22 +926,107 @@
   color: var(--pn-brand);
   background: transparent;
   border: none;
-  padding: 0;
+  padding: 0 4px;
   cursor: pointer;
   text-decoration: underline;
-  white-space: nowrap;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  white-space: normal;
 }
 
 .chs-iconbtn {
   color: var(--pn-ink-4);
   background: transparent;
   border: none;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 4px;
   border-radius: var(--pn-r-xs);
   cursor: pointer;
   flex: none;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .chs-iconbtn:hover { color: var(--pn-brand); }
+
+.chs-actions .hon-disabled {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chs-composer__row .hon-disabled {
+  min-width: 44px;
+  min-height: 44px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where(
+  .chs-iconbtn,
+  .chs-linkbtn,
+  .chs-chip-btn,
+  .chs-composer__send,
+  .chs-new-items,
+  .chs-upload button,
+  .chs-mention-list button,
+  .chs-mention-picker button,
+  .chs-mention-picker input,
+  .chs-composer__input,
+  .chs-ref-chip,
+  .chs-attachment,
+  .chs-mention-inline,
+  .chs-parent__jump
+):focus-visible {
+  outline: 3px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+@container (max-width: 440px) {
+  .chs-feed { padding-inline: 6px; }
+  .chs-gutter { width: 30px; }
+  .chs-byline { flex-wrap: wrap; }
+  .chs-message-meta { flex-wrap: wrap; }
+  .chs-parent__jump { flex-wrap: wrap; }
+  .chs-targets__row { flex-wrap: wrap; }
+  /* No hover on touch: actions stay reachable as a permanent overlay. */
+  .chs-actions { opacity: 1; pointer-events: auto; top: -8px; right: 2px; }
+  .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
+  .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
+  .chs-composer { padding-inline: 8px; }
+  .chs-composer__row { flex-wrap: wrap; align-items: center; }
+  .chs-composer__input { order: -1; flex-basis: 100%; width: 100%; }
+  .chs-composer__send { margin-left: auto; }
+  .chs-composer__uncertain { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chs-root *,
+  .chs-root *::before,
+  .chs-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .chs-root { forced-color-adjust: auto; }
+  .chs-artifact,
+  .chs-upload,
+  .chs-mention-picker,
+  .chs-ref-chip,
+  .chs-attachment,
+  .chs-actions,
+  .chs-parent__jump,
+  .chs-tomb,
+  .chs-unknown { border-color: CanvasText; }
+  .chs-new-items,
+  .chs-composer__send { border: 1px solid ButtonText; }
+  :where(button, textarea, input):focus-visible { outline: 3px solid Highlight; }
+}

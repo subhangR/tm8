@@ -31,26 +31,24 @@ function reason(cause: string, remedy: string): UnavailableReason {
 // ===========================================================================
 
 /**
- * SEAM GAP. `catalog.ts:106-108` lists `files.uploadInit` (POST
- * /v2/files/uploads), `files.uploadComplete` and `files.uploadAbort`, all
- * `status: 'v1'`, and `contract.ts:1142-1176` defines every DTO the flow
- * needs. `seam.commands` carries 18 verbs and not one of them is a file verb.
- * So the whole upload card is built against a real, finished server feature
- * that the UI has no handle on.
+ * HOST GAP. The canonical grant lifecycle now exists at `seam.files` and is
+ * used by the Chat composer. This standalone specimen card still receives no
+ * dispatcher prop, so it refuses at this mount point without denying that the
+ * application has an uploader elsewhere.
  */
 export const UPLOAD_UNAVAILABLE = reason(
-  'Uploading has no executor in this build',
-  'files.uploadInit / uploadComplete / uploadAbort are contract-v1 routes, but seam.commands carries no file verb — a seam amendment, not a missing server capability.',
+  'Uploading is not connected to this Files card',
+  'the Chat composer uses the canonical seam.files grant lifecycle; this card still needs its host to pass that dispatcher',
 );
 
 export const UPLOAD_RETRY_UNAVAILABLE = reason(
-  'Retrying an upload has no executor in this build',
-  'a retry re-runs files.uploadInit, which this build cannot call. The failure and its cause stay on screen either way.',
+  'Retrying is not connected to this Files card',
+  'a retry starts a fresh canonical upload task; this standalone card has no task factory from its host',
 );
 
 export const UPLOAD_CANCEL_UNAVAILABLE = reason(
-  'Cancelling an upload has no executor in this build',
-  'files.uploadAbort releases the grant server-side; the seam exposes no way to reach it.',
+  'Cancelling is not connected to this Files card',
+  'seam.files.abort releases an active grant; this standalone card has no active task from its host',
 );
 
 /**
@@ -168,7 +166,7 @@ export const CONCURRENCY_CAP_UNKNOWN =
   'no cap read exists — the contract has a `capacity` refusal code but no operation reports the ceiling';
 
 export const FILE_CAP_UNKNOWN =
-  'the per-file ceiling is deployment-configured and travels on an upload grant; no grant can be obtained in this build';
+  'the per-file ceiling is deployment-configured and travels on an upload grant; this card has not requested one';
 
 // ===========================================================================
 // The audit list
@@ -202,9 +200,6 @@ export const ALL_FILES_NODE_REASONS: readonly UnavailableReason[] = [
  * be diffed when the seam grows.
  */
 export const MISSING_FILE_OPS: readonly { op: string; kind: 'seam-gap' | 'capability' }[] = [
-  { op: 'files.uploadInit', kind: 'seam-gap' },
-  { op: 'files.uploadComplete', kind: 'seam-gap' },
-  { op: 'files.uploadAbort', kind: 'seam-gap' },
   { op: 'files.download', kind: 'seam-gap' },
   { op: 'messages.attachments.add', kind: 'seam-gap' },
   { op: 'messages.attachments.remove', kind: 'seam-gap' },

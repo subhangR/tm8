@@ -1,0 +1,57 @@
+# LiveKit SFU — tm8 development configuration.
+#
+# Start with:  livekit-server --config docs/ops/livekit-dev.yaml
+#
+# WHY A CONFIG FILE AND NOT `livekit-server --dev`. `--dev` gives you the same
+# devkey/secret pair and nothing else — in particular it has NO WAY to declare a
+# webhook URL, and without webhooks the participant roster never reaches tm8, so
+# the rail shows an empty voice channel that people are audibly talking in. The
+# `keys` block below reproduces exactly what `--dev` sets up, so this file is a
+# superset of it rather than a different mode.
+#
+# THESE CREDENTIALS ARE PUBLIC AND DEVELOPMENT-ONLY. Anyone who can reach this
+# port can mint a token. That is acceptable ONLY because this binds loopback.
+# For any deployment reachable from another machine, generate a real pair
+# (`livekit-server generate-keys`) and put it in the environment, not in a file
+# in a git repository.
+#
+# NOT `devkey`/`secret`. Every LiveKit quickstart — and tm8's own voice plan §3
+# — names that pair, but livekit-server 1.13.4 REFUSES it:
+#     ERROR  secret is too short, should be at least 32 characters for security
+# Measured on 1.13.4: the server logs that as an ERROR with a stack trace and
+# then carries on listening, so the port answers 200 and everything looks fine
+# until a token is actually presented. The secret below is 32+ characters for
+# that reason. If you copy a dev secret from any older doc, expect this.
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50100
+  # Loopback/LAN development: skip the STUN round-trip that discovers a public
+  # IP. Set this to true for any host behind NAT that remote participants must
+  # reach, or the SFU will advertise an address only it can see.
+  use_external_ip: false
+
+keys:
+  devkey: tm8devsecret0123456789abcdefghij
+
+webhook:
+  # Signed with the key named here, using the matching secret above. tm8-server
+  # verifies BOTH the signature and the body digest before it will publish a
+  # roster event (packages/server/src/voice/livekit-token.ts).
+  api_key: devkey
+  urls:
+    # tm8-server binds loopback only, by design (10-SECURITY S1). LiveKit runs
+    # on the same host, so this reaches it. If you ever move the SFU to another
+    # machine, this URL stops working and that is the CORRECT failure — it means
+    # the callback would have had to cross a network boundary tm8 refuses to
+    # listen on.
+    #
+    # Point this at whichever tm8-server you are actually testing: :4610 is the
+    # launchd-managed INSTALLED SNAPSHOT, which lags the working tree. A tree
+    # server started on another port needs that port here.
+    - http://127.0.0.1:4610/v2/voice/webhook
+
+logging:
+  level: info

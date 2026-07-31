@@ -9,8 +9,13 @@
  * admission or demotion: it measures the centre, calls the engine, and hands
  * the settled result to the store (the direction A1a's DAG correction fixed).
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { EntityId, ExecutionSpawnInput } from '@tm8/contract';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type {
+  EntityId,
+  EntitySummary,
+  ExecutionSpawnInput,
+  WorkSessionInteractionProfileProjection,
+} from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import type { ActionContext } from '../domain/types';
 import {
@@ -27,16 +32,24 @@ import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
-import { getKind } from '../domain/registry';
+import { allKinds, getKind } from '../domain/registry';
 import { newLaunchMutationId, type ProfileResolution } from '../domain/launch';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
+import { openEntityAndResolve } from './open-entity';
+import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
+
+/** The session collection is selected by capability, never by panel position
+    or a kind literal. The empty centre must keep showing terminals after both
+    side panels switch to unrelated collections. */
+const TERMINAL_ROSTER_KIND = allKinds().find((kind) => kind.list.liveTreatment != null)?.kind;
 
 export interface WorkspaceViewProps {
   data: GateData & { pull?: (id: string) => void };
   serverBaseUrl?: string;
-  nav: NavPort & { tabOf?: (id: EntityId) => never };
+  nav: NavPort;
+  viewerMemberId?: string | null;
   leftKind: string;
   rightKind: string;
   menuCollapsed: boolean;
@@ -66,6 +79,11 @@ export interface WorkspaceViewProps {
 
 export function WorkspaceView(props: WorkspaceViewProps) {
   const { data, nav, leftKind, rightKind, menuCollapsed, reasons } = props;
+  const resolvingAttention = useRef(new Set<EntityId>());
+  // Separate from `resolvingAttention`: a read mark is written on every open,
+  // an attention resolve only sometimes, so one shared set would let either
+  // suppress the other.
+  const markingRead = useRef(new Set<EntityId>());
 
   // The measurement the whole engine hangs on. `null` until a real
   // ResizeObserver fires — never 0, which would be a claim that the centre is
@@ -98,6 +116,47 @@ export function WorkspaceView(props: WorkspaceViewProps) {
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
 
+  const handleSessionClose = useCallback((entityId: string) => {
+    void data.seam.commands.terminate(entityId as EntityId, {
+      clientMutationId: `terminate:${entityId}:${Date.now()}`,
+    }).then(data.reconcileCommand).catch((error: unknown) => {
+      props.onNotice({
+        id: 'session-close-failed',
+        tone: 'error',
+        title: 'Session could not be closed',
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 6_000,
+      });
+    });
+  }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
+
+  /** Opening is never blocked on the mutation. Resolve only when the rendered
+      summary says attention is pending, and coalesce rapid repeated clicks. */
+  const openEntity = useCallback((entityId: string) => {
+    const id = entityId as EntityId;
+    const summary = data.detailOf(id)
+      ?? data.rowsFor(leftKind)(undefined).find((row) => row.id === id)
+      ?? data.rowsFor(rightKind)(undefined).find((row) => row.id === id)
+      ?? data.graph.nodes.find((row) => row.id === id);
+    openEntityAndResolve({
+      entityId: id,
+      needsAttention: summary?.badges.attention != null,
+      open: (id) => nav.push(id),
+      commands: data.seam.commands,
+      reconcile: data.reconcileCommand,
+      resolving: resolvingAttention.current,
+      marking: markingRead.current,
+      onRead: data.refreshCounts,
+      onError: (error) => props.onNotice({
+          id: `attention-resolve-failed:${entityId}`,
+          tone: 'error',
+          title: 'Attention could not be resolved',
+          body: String((error as { message?: string })?.message ?? error),
+          ttlMs: 6_000,
+        }),
+    });
+  }, [data, leftKind, nav, props.onNotice, rightKind]);
+
   /** Panels at the side-panel floors drop metas and abbreviate badges. */
   const leftCompact = layout.left <= 220;
   const rightCompact = layout.right <= 240;
@@ -105,11 +164,18 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
-      // Ask for it if we do not have it; the panel renders its designed
-      // loading state meanwhile rather than an empty frame.
-      if (!detail) props.data.pull?.(id);
+      const messages = data.messagesOf(id);
+      // Detail and Discussion are independent reads. A command result can
+      // prefill the detail while the thread is still absent.
+      if (!detail || messages === undefined || messages.length < detail.counters.messages) {
+        props.data.pull?.(id);
+      }
 
       const admission = engine.canPin(id);
+      const content = detail?.content as unknown as {
+        interactionProfile?: WorkSessionInteractionProfileProjection | null;
+      } | undefined;
+      const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
       return (
         <EntityDetailPanel
           detail={detail ?? null}
@@ -128,7 +194,24 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           }
           liveness={data.livenessOf(id)}
           livenessOf={data.livenessOf}
-          messages={data.messagesOf(id)}
+          viewerMemberId={props.viewerMemberId}
+          contentSurface={nav.surfaceOf?.(id) ?? null}
+          onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
+          chatSurface={detail ? (
+            <LazySessionChatSurface
+              seam={data.seam}
+              sessionId={id}
+              spaceId={data.spaceId}
+              viewerMemberId={props.viewerMemberId ?? 'anonymous'}
+              connection={data.connection}
+              sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
+              defaultLimit={content?.interactionProfile?.feedPolicy.pageSize}
+              composerPolicy={content?.interactionProfile?.composerPolicy}
+              onOpenEntity={openEntity}
+              onSwitchToTerminal={() => nav.setContentSurface?.(id, 'terminal')}
+            />
+          ) : undefined}
+          messages={messages}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
           /* GAP-2 (data-wiring handover): hand the seam commands down so the
              save path is live in the workspace panels too. */
@@ -145,28 +228,37 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           }}
           onPromote={() => nav.promote(id)}
           onClose={() => nav.close(id)}
+          onOpenEntity={openEntity}
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props],
+    [data, engine, nav, ctx, reasons, props, openEntity],
   );
 
-  /**
-   * Roster rows for the empty centre, LIVE FIRST. Ordering is presentation, so
-   * it happens here rather than in the component — and it reads the seam's live
-   * set rather than sorting on any summary field, which would be the forbidden
-   * inference (D6).
-   */
-  const rosterKind = useMemo(
-    () =>
-      [leftKind, rightKind].find((kind) => getKind(kind).list.liveTreatment != null) ?? rightKind,
-    [leftKind, rightKind],
-  );
+  /** Keep the server's recent-activity order; EmptyCenter applies the bounded
+      status groups without turning this summary into a second full list. */
   const rosterRows = useMemo(() => {
-    const rows = data.rowsFor(rosterKind)(undefined).map((summary) => toSessionRow(summary));
-    const live = new Set(data.liveIds);
-    return [...rows].sort((a, b) => Number(live.has(b.id)) - Number(live.has(a.id)));
-  }, [data, rosterKind]);
+    if (!TERMINAL_ROSTER_KIND) return [];
+    return data.rowsFor(TERMINAL_ROSTER_KIND)(undefined).map((summary) => toSessionRow(summary));
+  }, [data]);
+
+  /** Session task rows come from durable `working_on` edges already projected
+      by the gate graph. The map updates with edge events and is shared by both
+      side panels, so a moved panel keeps the same task evidence. */
+  const linkedTasksBySession = useMemo(() => {
+    const bySession = new Map<string, EntitySummary[]>();
+    const currentById = new Map(data.graph.nodes.map((node) => [node.id, node]));
+    for (const edge of data.graph.edges) {
+      if (edge.type !== 'working_on' || edge.target.state.kind !== 'task') continue;
+      const task = currentById.get(edge.target.id) ?? edge.target;
+      bySession.set(edge.source.id, [...(bySession.get(edge.source.id) ?? []), task]);
+    }
+    return bySession;
+  }, [data.graph.edges, data.graph.nodes]);
+  const linkedTasksOf = useCallback(
+    (id: string) => linkedTasksBySession.get(id) ?? [],
+    [linkedTasksBySession],
+  );
 
   const profileFor = useCallback((teamMemberId: string | null): ProfileResolution => {
     const teammate = data.launch.teammates.find((candidate) => candidate.id === teamMemberId);
@@ -227,8 +319,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          linkedTasksOf={linkedTasksOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
-          onSelect={(id) => nav.push?.(id as EntityId)}
+          onSelect={openEntity}
+          onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -297,7 +391,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               liveIds={data.liveIds}
               rows={rosterRows}
               livenessOf={data.livenessOf}
-              onFocusSession={(id) => nav.push(id as EntityId)}
+              onFocusSession={openEntity}
             />
           ) : (
             <PanelStack nav={nav} renderPanel={renderPanel} isKeyboardOwnedAbove={props.isModalOpen} />
@@ -321,8 +415,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          linkedTasksOf={linkedTasksOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
-          onSelect={(id) => nav.push?.(id as EntityId)}
+          onSelect={openEntity}
+          onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           launch={{

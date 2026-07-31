@@ -46,6 +46,103 @@ describe('envelope unwrapping (DEV-6)', () => {
   });
 });
 
+describe('Channel message and attachment adapters', () => {
+  it('maps UI message references and attachments to the canonical batch DTO', async () => {
+    let sent: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', stubFetch((_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return { body: { data: {
+        messageBatchId: 'batch-1',
+        messages: [{ id: 'msg-1', kind: 'message', content: { body: 'ship it' } }],
+      } } };
+    }));
+
+    const result = await new RealFacade(new TmClient()).postMessage({
+      anchorId: 'channel-1',
+      body: 'ship it',
+      mentions: [{ entityId: 'member-1', kind: 'member', display: 'Mira' }],
+      attachments: [{ fileEntityId: 'file-1', name: 'proof.png', mime: 'image/png' }],
+      clientMutationId: 'cm-post',
+    });
+
+    expect(sent).toEqual({
+      clientMutationId: 'cm-post',
+      anchorIds: ['channel-1'],
+      body: 'ship it',
+      mentionIds: ['member-1'],
+      attachmentIds: ['file-1'],
+    });
+    expect(result.patches.map((patch) => patch.id)).toEqual(['msg-1']);
+  });
+
+  it('uses the server reply query name while keeping the UI facade option stable', async () => {
+    let seenUrl = '';
+    vi.stubGlobal('fetch', stubFetch((url) => {
+      seenUrl = url;
+      return { body: { data: { items: [], nextCursor: null } } };
+    }));
+
+    await new RealFacade(new TmClient()).getMessages('channel-1', { rootId: 'root-1' });
+    expect(seenUrl).toContain('rootMessageId=root-1');
+    expect(seenUrl).not.toContain('rootId=');
+  });
+
+  it('runs upload grant, raw transfer, and completion with the channel target', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal('crypto', {
+      subtle: { digest: vi.fn(async () => new Uint8Array(32).buffer) },
+    });
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      if (String(url) === '/v2/files/uploads') {
+        return {
+          ok: true, status: 200,
+          text: async () => JSON.stringify({ data: {
+            uploadId: 'upload-1', uploadUrl: '/v2/files/uploads/upload-1/content',
+            token: 'grant-token', expiresAt: '2026-07-30T00:00:00.000Z', maxSizeBytes: 1024,
+          } }),
+        } as Response;
+      }
+      if (init?.method === 'PUT') {
+        return { ok: true, status: 204, text: async () => '' } as Response;
+      }
+      return {
+        ok: true, status: 200,
+        text: async () => JSON.stringify({ data: {
+          entity: { id: 'file-1', kind: 'file', state: {
+            kind: 'file', name: 'proof.png', mimeType: 'image/png', sizeBytes: 6,
+          } },
+          patches: [],
+        } }),
+      } as Response;
+    }));
+
+    const bytes = new TextEncoder().encode('pixels');
+    const detail = await new RealFacade(new TmClient()).uploadFile({
+      spaceId: 'space-1',
+      file: {
+        name: 'proof.png', type: 'image/png', size: bytes.byteLength,
+        arrayBuffer: async () => bytes.buffer,
+      },
+      targetIds: ['channel-1'],
+      clientMutationId: 'cm-upload',
+    });
+
+    expect(detail.id).toBe('file-1');
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual(expect.objectContaining({
+      name: 'proof.png', mime: 'image/png', sizeBytes: 6,
+      checksumSha256: '0'.repeat(64), clientMutationId: 'cm-upload:init',
+    }));
+    expect(calls[1]).toMatchObject({
+      url: '/v2/files/uploads/upload-1/content',
+      init: { method: 'PUT', headers: { authorization: 'Bearer grant-token' } },
+    });
+    expect(JSON.parse(String(calls[2].init?.body))).toEqual({
+      clientMutationId: 'cm-upload:complete', targets: ['channel-1'],
+    });
+  });
+});
+
 describe('error taxonomy', () => {
   it('maps tm8-only limit_exceeded onto the UI\'s frozen set, preserving the original', async () => {
     // The UI's CommandErrorCode predates tm8's governance-cap code. It must be

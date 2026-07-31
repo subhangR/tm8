@@ -217,7 +217,10 @@ describe('the reading column', () => {
   it('renders the prose paragraphs in document order', () => {
     const { getAllByTestId } = renderReader();
     const body = getAllByTestId('reader-body')[0]!;
-    const paragraphs = within(body).getAllByTestId('reader-prose').map((el) => el.textContent);
+    const md = within(body).getAllByTestId('reader-markdown')[0]!;
+    // DIRECT children only: a blockquote renders its own inner <p>, so an
+    // unscoped `p` query counts the quote as a third paragraph.
+    const paragraphs = [...md.querySelectorAll(':scope > p')].map((el) => el.textContent);
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0]).toContain('Every shrinkable region states a floor');
     expect(paragraphs[1]).toContain('The center hosts pinned panels');
@@ -226,22 +229,50 @@ describe('the reading column', () => {
   it('gives a quoted line the rule treatment, outside the prose flow', () => {
     const { getAllByTestId } = renderReader();
     const body = getAllByTestId('reader-body')[0]!;
-    const quote = within(body).getAllByTestId('reader-quote')[0]!;
-    expect(quote.textContent).toBe('C_min = max(320, V·320 + (V−1)·8)');
-    for (const p of within(body).getAllByTestId('reader-prose')) {
+    const md = within(body).getAllByTestId('reader-markdown')[0]!;
+    const quote = md.querySelector('blockquote')!;
+    expect(quote.textContent).toContain('C_min = max(320, V·320 + (V−1)·8)');
+    // The quote is its own block, never folded back into a sibling paragraph.
+    for (const p of md.querySelectorAll(':scope > p')) {
       expect(p.textContent).not.toContain('C_min');
     }
   });
 
-  it('promotes a heading to the outline rather than restating it as prose', () => {
-    // Deliberate, and the reason is D5-shaped: the oracle's in-panel column
-    // draws prose and quote only — there is no MEASURED in-panel heading
-    // style to ship, and an eyeballed one is exactly what D5 forbids.
+  it('renders a heading AS a heading, and lists it in the outline too', () => {
+    // REVERSES the earlier rule that a heading was promoted out of the column
+    // and never restated (user ruling 2026-07-31). Headings now live in both
+    // places on purpose: the outline is navigation, the body is the document.
+    // What must never happen is the `#` leaking through as literal text, which
+    // is the failure a non-renderer produces.
     const { getAllByTestId } = renderReader();
-    for (const p of getAllByTestId('reader-prose')) {
-      expect(p.textContent).not.toBe('Layout spec');
+    const md = getAllByTestId('reader-markdown')[0]!;
+    const heading = md.querySelector('h1, h2, h3')!;
+    expect(heading).not.toBeNull();
+    expect(heading.textContent).toBe('Layout spec');
+    for (const p of md.querySelectorAll('p')) {
       expect(p.textContent).not.toContain('#');
     }
+  });
+
+  it('renders the markdown shapes the old four-shape parser destroyed', () => {
+    // The regression this renderer exists to prevent: a list rendered as one
+    // run-on paragraph, `**bold**` printed as asterisks, a fence hidden behind
+    // a "not rendered" placeholder.
+    const { getAllByTestId } = renderReader({
+      detail: docDetail(
+        '- alpha\n- beta\n\nA **bold** word and `code`.\n\n```ts\nconst x = 1;\n```',
+        { childCount: 0, children: [] },
+      ),
+    });
+    const md = getAllByTestId('reader-markdown')[0]!;
+    expect(md.querySelectorAll('li')).toHaveLength(2);
+    expect(md.querySelector('strong')!.textContent).toBe('bold');
+    expect(md.querySelector('code')!.textContent).toBe('code');
+    const fence = md.querySelector('[data-testid="markdown-fence"]')!;
+    expect(fence.getAttribute('data-lang')).toBe('ts');
+    expect(fence.textContent).toContain('const x = 1;');
+    expect(md.textContent).not.toContain('not rendered');
+    expect(md.textContent).not.toContain('**');
   });
 
   it('renders the designed empty when the document has no content at all', () => {
@@ -249,7 +280,7 @@ describe('the reading column', () => {
       detail: docDetail('', { childCount: 0, children: [] }),
     });
     expect(getAllByTestId('panel-empty')).toHaveLength(2);
-    expect(queryAllByTestId('reader-prose')).toHaveLength(0);
+    expect(queryAllByTestId('reader-markdown')).toHaveLength(0);
   });
 });
 
@@ -307,8 +338,9 @@ describe('§15.2 — this is an ARCHETYPE body, not a doc body', () => {
       capabilities: CAPS,
     };
     const { getAllByTestId } = renderReader({ detail });
-    expect(getAllByTestId('reader-prose')[0]!.textContent).toContain('Everything the floors argument');
-    expect(getAllByTestId('reader-quote')[0]!.textContent).toBe('floors are law, not preference');
+    const md = getAllByTestId('reader-markdown')[0]!;
+    expect(md.querySelector('p')!.textContent).toContain('Everything the floors argument');
+    expect(md.querySelector('blockquote')!.textContent).toContain('floors are law, not preference');
     expect(getAllByTestId('reader-facts')).toHaveLength(2);
   });
 });

@@ -53,10 +53,14 @@ export const LAUNCH_PROJECTS: readonly LaunchProject[] = [
 ];
 
 export const LAUNCH_PROFILES: readonly LaunchProfile[] = [
-  { id: 'pf-standard', name: 'standard-agent v2', version: 2, status: 'active', isSpaceDefault: true },
-  { id: 'pf-house', name: 'house-style', version: 3, status: 'active', isServerDefault: true },
-  { id: 'pf-terse', name: 'terse-worker', version: 1, status: 'draft' },
-  { id: 'pf-old', name: 'forge-default v1', version: 1, status: 'retired' },
+  { id: 'pf-standard', name: 'standard-agent v2', version: 2, status: 'active', isSpaceDefault: true,
+    templateKey: 'tm8.chat.core', contentSurfaces: ['terminal', 'chat'], initialContentSurface: 'chat' },
+  { id: 'pf-house', name: 'house-style', version: 3, status: 'active', isServerDefault: true,
+    templateKey: 'tm8.chat.core', contentSurfaces: ['terminal', 'chat'], initialContentSurface: 'chat' },
+  { id: 'pf-terse', name: 'terse-worker', version: 1, status: 'draft',
+    templateKey: 'tm8.chat.core', contentSurfaces: ['terminal', 'chat'], initialContentSurface: 'chat' },
+  { id: 'pf-old', name: 'forge-default v1', version: 1, status: 'retired',
+    templateKey: 'tm8.chat.core', contentSurfaces: ['terminal', 'chat'], initialContentSurface: 'chat' },
 ];
 
 /**

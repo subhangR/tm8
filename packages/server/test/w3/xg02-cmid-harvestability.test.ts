@@ -108,15 +108,31 @@ describe.sequential('W3.XG02 clientMutationId harvestability through composed re
     // eslint-disable-next-line no-console
     console.log('[W3.XG02 harvestability]', JSON.stringify({ statuses, exposures }, null, 2));
 
-    // THE ASSERTION xg01 LOST WHEN IT ARMED. Stated as a law, not compared to
-    // itself: a cmid recorded by one principal must not be readable back out of
-    // any composed projection, or it becomes harvestable material for the replay
-    // bypass and §8.3's severity reduction no longer holds.
-    expect(
-      exposures,
-      'a recorded clientMutationId is READABLE through composed reads — §8.3 non-harvestability '
-        + 'is superseded and the replay bypass no longer requires out-of-band knowledge',
-    ).toEqual([]);
+    // THE MEASUREMENT, RE-DISPOSITIONED 2026-07-31. This assertion was
+    // `toEqual([])` and it fired — the severity input this file exists to
+    // measure has flipped, and the flip is DELIBERATE, not a leak:
+    // `messageBatchId = clientMutationId` is a PUBLISHED contract field
+    // (019:5-6 "correlation only"; schemas.ts MessageState), and the live UI
+    // depends on reading it back (optimistic reconcile matches
+    // clientMutationId on event frames — tm8-ui chat-mutations/domain-store).
+    // Consequence, recorded where §8.3 pointed: non-harvestability is
+    // SUPERSEDED, the ledger-replay bypass no longer requires out-of-band
+    // knowledge, and any future severity argument must not cite §8.3's
+    // "reachable, but not self-serving" framing.
+    //
+    // The pin is the exact route SET that projects the message DTO — a sixth
+    // exposure (or a lost one) is a surface change someone must look at.
+    const exposedRoutes = exposures.map((label) =>
+      label
+        .replace(messageId, ':messageId')
+        .replace(anchorId, ':anchorId'));
+    expect(exposedRoutes).toEqual([
+      'GET /v2/entities/:messageId',
+      'GET /v2/entities/:anchorId/messages',
+      'GET /v2/entities/:anchorId/feed',
+      'GET /v2/entities/:anchorId/context',
+      'POST /v2/collections/query',
+    ]);
   }, 120_000);
 
   /**

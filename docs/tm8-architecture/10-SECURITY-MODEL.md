@@ -1,5 +1,16 @@
 # tm8 — Security Model (v1: the local node, server + web)
 
+> ### ⚠ PARTIALLY SUPERSEDED — verified 2026-07-31
+>
+> Specific claims below were re-checked against the tree and found **false or stale**. The body is left unedited: it was accurate when written, and it remains the historical record. Corrections, with `file:line`, are tabulated in **`docs/plans/TM8-IDENTITY-OPEN-THREADS.md` §3**; the verified current state is **`docs/plans/TM8-AUTH-AND-IDENTITY-VERIFIED-STATE.md`**.
+>
+> - **S9 is NOT satisfied.** The server connects to Postgres as a **superuser with `rolbypassrls`** (measured `tm8|tm8|t|t`) and `PgDb.tx` never issues `set local role`, so migration 008's RLS is largely **inert on the read path**. Writes are unaffected (SECURITY DEFINER RPCs carry their own guards). This also contradicts T-L11.
+> - **S14 is NOT satisfied.** The PTY WebSocket gates on nothing but `?sessionId=`, answers at any path, and returns byte-identical tokenless URLs for view vs drive.
+> - S2/S3/S4/S6 remain the named no-ops this document anticipated (`http/security.ts`) — accurate as written, still open.
+>
+> **Do not cite this document for current behaviour without re-verifying against code.** Three claims were published as verified during a 2026-07-31 investigation purely by trusting it; all three were wrong.
+
+
 **Status:** DRAFT v1 (2026-07-25) — authored by Vega per AM-2 P0-4 (adopted implementation review). Scope: Phase 1 local node under AM-1/T-D21 (no Tauri; browser UI on 4611/served bundle + tm8-server on 4610 + sidecar PG on 5442; server-side PTY execution). Phase 2 (gateway/hub/hosted) inherits the seams named in §9 and gets its own hardening pass.
 
 **The core fact this document exists for:** tm8 v1 is a *browser-controlled arbitrary-code-execution system*. The web UI spawns agent sessions that run real shells with the user's credentials on the user's machine. RLS answers "who may read/write which graph rows"; everything else here answers "who may reach the server at all, and what can a reached server be made to do."

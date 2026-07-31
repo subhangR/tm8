@@ -187,7 +187,7 @@ function UploadCard({
         /* D-law 9: an empty section states its absence in one quiet line
            rather than expanding to fill the card with nothing. */
         <p className="fn-queue-empty" data-testid="queue-empty">
-          Nothing in the queue — no upload can start in this build.
+          Nothing in the queue — no upload action is wired to this card.
         </p>
       ) : (
         <div className="fn-queue">

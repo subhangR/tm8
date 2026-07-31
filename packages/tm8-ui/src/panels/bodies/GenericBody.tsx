@@ -1,8 +1,24 @@
-import type { EntityDetail, EntitySummary } from '@tm8/contract';
+import { useState } from 'react';
+import type {
+  ArtifactPreviewSession,
+  ArtifactsPreviewStartInput,
+  EntityDetail,
+  EntitySummary,
+} from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import { Chip, Eyebrow } from '../../kit';
 import { EmptyBody } from '../detail/PanelStates';
+
+/**
+ * The one command this body can execute (threaded from the host's seam
+ * assignment, like `AuthoringCommands`): mint a preview capability so the
+ * artifact-preview block's Run button renders the bundle. Structural subset
+ * of `Seam['commands']` — a host assigns `seam.commands` with no cast.
+ */
+export interface ArtifactPreviewCommands {
+  previewArtifact(id: string, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
+}
 
 /**
  * THE GENERIC ARCHETYPE — a renderer over an ORDERED LIST OF CONTENT BLOCKS.
@@ -25,10 +41,12 @@ export function GenericBody({
   detail,
   blocks,
   onOpenEntity,
+  commands,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
+  commands?: Partial<ArtifactPreviewCommands> | null;
 }) {
   if (blocks.length === 0) {
     return (
@@ -43,7 +61,7 @@ export function GenericBody({
   return (
     <div className="pn-body" id="tabpanel-content" role="tabpanel" aria-labelledby="tab-content">
       {blocks.map((block, i) => (
-        <ContentBlock key={`${block.block}:${i}`} detail={detail} block={block} onOpenEntity={onOpenEntity} />
+        <ContentBlock key={`${block.block}:${i}`} detail={detail} block={block} onOpenEntity={onOpenEntity} commands={commands} />
       ))}
     </div>
   );
@@ -53,10 +71,12 @@ function ContentBlock({
   detail,
   block,
   onOpenEntity,
+  commands,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
   onOpenEntity?: (id: string) => void;
+  commands?: Partial<ArtifactPreviewCommands> | null;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -66,6 +86,8 @@ function ContentBlock({
         return <LinkSummaryBlock detail={detail} />;
       case 'file-preview':
         return <FilePreviewBlock detail={detail} />;
+      case 'artifact-preview':
+        return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
       case 'items':
         return <ItemsBlock detail={detail} block={block} onOpenEntity={onOpenEntity} />;
       case 'lifecycle':
@@ -185,6 +207,111 @@ function FilePreviewBlock({ detail }: { detail: EntityDetail }) {
       ) : null}
     </div>
   );
+}
+
+/**
+ * ARTIFACT-PREVIEW — metadata, and a Run button that EXECUTES (the two
+ * security decisions that gated this — second origin + accepted iframe
+ * residual — were ratified 2026-07-31; TM8-ARTIFACTS-DESIGN §9/§12.1).
+ *
+ * Preview never autoruns (§9.5): the iframe does not exist until the user
+ * clicks Run, so list and feed rendering execute nothing and the metadata is
+ * visible BEFORE execution. The frame is `sandbox="allow-scripts"` and
+ * NOTHING else — never `allow-same-origin` (with allow-scripts a frame could
+ * strip its own sandbox), never top-navigation/popups/downloads/forms — and
+ * the src is the server-minted capability URL on the PREVIEW origin,
+ * verbatim. This file never builds a preview URL itself: a node without the
+ * second-origin listener answers without `previewUrl`, and the honest render
+ * is the refusal text, not a broken frame.
+ */
+function ArtifactPreviewBlock({
+  detail,
+  previewArtifact,
+}: {
+  detail: EntityDetail;
+  previewArtifact?: ArtifactPreviewCommands['previewArtifact'];
+}) {
+  const state = detail.state as unknown as Record<string, unknown>;
+  const content = detail.content as unknown as Record<string, unknown>;
+  const description = typeof content.description === 'string' ? content.description : null;
+  const revision = typeof state.revisionNumber === 'number' ? state.revisionNumber : null;
+  const fileCount = typeof content.fileCount === 'number' ? content.fileCount : null;
+  const totalBytes = typeof content.totalSizeBytes === 'number' ? content.totalSizeBytes : null;
+
+  const [run, setRun] = useState<
+    | { phase: 'idle' }
+    | { phase: 'starting' }
+    | { phase: 'running'; previewUrl: string; expiresAt: string }
+    | { phase: 'error'; message: string }
+  >({ phase: 'idle' });
+
+  const facts: string[] = [];
+  if (revision != null) facts.push(`revision ${revision}`);
+  if (fileCount != null) facts.push(`${fileCount} file${fileCount === 1 ? '' : 's'}`);
+  if (totalBytes != null) facts.push(formatBytes(totalBytes));
+
+  const onRun = async () => {
+    if (!previewArtifact) return;
+    setRun({ phase: 'starting' });
+    try {
+      const session = await previewArtifact(detail.id, {
+        clientMutationId: crypto.randomUUID(),
+      });
+      if (session.previewUrl) {
+        setRun({ phase: 'running', previewUrl: session.previewUrl, expiresAt: session.expiresAt });
+      } else {
+        setRun({ phase: 'error', message: 'This node does not run a preview origin, so the bundle cannot be rendered here.' });
+      }
+    } catch (err) {
+      setRun({ phase: 'error', message: err instanceof Error ? err.message : 'preview could not be started' });
+    }
+  };
+
+  return (
+    <div className="pn-preview">
+      {run.phase === 'running' ? (
+        <iframe
+          className="pn-preview__frame"
+          title={`artifact preview · ${detail.title}`}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          src={run.previewUrl}
+          style={{ width: '100%', minHeight: '320px', border: '1px solid var(--border, #444)', borderRadius: '4px', background: '#fff' }}
+        />
+      ) : (
+        <div className="pn-preview__box pn-preview__box--none">
+          <span className="pn-preview__label">
+            {detail.title}
+            {facts.length > 0 ? ` · ${facts.join(' · ')}` : ''}
+          </span>
+        </div>
+      )}
+      {description ? <p className="pn-prose">{description}</p> : null}
+      {run.phase === 'error' ? <p className="pn-section__empty">{run.message}</p> : null}
+      <button
+        type="button"
+        className="pn-btn"
+        disabled={previewArtifact === undefined || run.phase === 'starting'}
+        title={previewArtifact === undefined ? 'Preview is not wired here.' : 'Render this bundle in a sandboxed frame.'}
+        onClick={() => void onRun()}
+      >
+        {run.phase === 'running' ? 'Restart ▷' : run.phase === 'starting' ? 'Starting…' : 'Run ▷'}
+      </button>
+    </div>
+  );
+}
+
+/** Human-readable byte size — kept local so the block stays self-contained. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
 /**

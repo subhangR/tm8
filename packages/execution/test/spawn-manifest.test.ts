@@ -65,7 +65,7 @@ describe('resolveLaunchConfig', () => {
     expect(resolved.agentTool).toBe('hermes');
   });
 
-  it('lets TM8_PERMISSION_MODE override the persona, and nothing override it', () => {
+  it('uses explicit access over the node override, then persona/default posture', () => {
     expect(resolveLaunchConfig(base, context({ permissionMode: 'readOnly' }), {}).permissionMode).toBe(
       'readOnly',
     );
@@ -74,6 +74,16 @@ describe('resolveLaunchConfig', () => {
         TM8_PERMISSION_MODE: 'bypassPermissions',
       }).permissionMode,
     ).toBe('bypassPermissions');
+    const explicit = resolveLaunchConfig(
+      { ...base, accessMode: 'plan', reasoningEffort: 'low' },
+      context({ permissionMode: 'bypassPermissions' }),
+      { TM8_PERMISSION_MODE: 'bypassPermissions' },
+    );
+    expect(explicit).toMatchObject({
+      permissionMode: 'readOnly',
+      accessMode: 'plan',
+      reasoningEffort: 'low',
+    });
   });
 
   it('ignores permission and mode values that are not in the enum', () => {
@@ -119,6 +129,8 @@ describe('buildAgentCommand', () => {
     model: 'opus',
     agentTool: 'claude-code',
     permissionMode: 'acceptEdits' as const,
+    accessMode: 'acceptEdits' as const,
+    reasoningEffort: null,
   };
 
   it('resolves the built-in echo agent to a runnable node command', () => {
@@ -126,37 +138,28 @@ describe('buildAgentCommand', () => {
     expect(cmd).toMatch(/^node '.*harness\/echo-agent\.mjs'$/);
   });
 
-  it('always skips permissions so an unattended agent cannot hang on a prompt', () => {
-    // Claude can block forever on TWO dialogs — the folder-trust gate and
-    // per-tool-use confirmations — and a blocked agent produces no output,
-    // never reports, and burns a slot against the concurrency cap. The human
-    // authorization layer is tm8's spawn-time project-trust gate, which has
-    // already refused untrusted directories by the time we get here.
+  it('maps the resolved access posture to Claude flags without escalating it', () => {
     expect(buildAgentCommand(launch, {})).toBe(
-      "claude --dangerously-skip-permissions --model 'opus'",
+      "claude --permission-mode acceptEdits --model 'opus'",
     );
     expect(
       buildAgentCommand({ ...launch, permissionMode: 'bypassPermissions' }, {}),
     ).toBe("claude --dangerously-skip-permissions --model 'opus'");
   });
 
-  it('overrides a MORE RESTRICTIVE permissionMode — deliberate, and worth knowing', () => {
-    // `readOnly` used to map to `--permission-mode plan`. It no longer does:
-    // permissionMode is currently ADVISORY for Claude. Honouring it needs a
-    // launch path that cannot deadlock, which is post-Slice-1 work. Pinned as a
-    // test so the trade-off stays visible rather than being rediscovered.
+  it('honours restrictive Claude access and provider reasoning effort', () => {
     expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).toBe(
-      "claude --dangerously-skip-permissions --model 'opus'",
+      "claude --permission-mode plan --model 'opus'",
     );
-    expect(buildAgentCommand({ ...launch, permissionMode: 'readOnly' }, {})).not.toContain(
-      '--permission-mode',
+    expect(buildAgentCommand({ ...launch, reasoningEffort: 'low' }, {})).toBe(
+      "claude --permission-mode acceptEdits --model 'opus' --effort low",
     );
   });
 
   it('appends the composed system prompt for claude, shell-quoted', () => {
     const base = buildAgentCommand(launch, {});
     const prompt = "<tm8_system_prompt>it's \"quoted\"\nand multiline</tm8_system_prompt>";
-    const cmd = withAgentPrompt(base, prompt, launch, {});
+    const cmd = withAgentPrompt(base, { system: prompt, task: '' }, launch, {});
     expect(cmd.startsWith(base)).toBe(true);
     expect(cmd).toContain('--append-system-prompt');
     // POSIX single-quote escaping: the embedded apostrophe MUST be broken out,
@@ -165,14 +168,77 @@ describe('buildAgentCommand', () => {
     expect(cmd).toContain(`'\\''`);
   });
 
+  /**
+   * THE REGRESSION THIS FILE DID NOT CATCH. Every assertion above passed while
+   * the task prompt was being concatenated into `--append-system-prompt` and no
+   * positional argument was emitted, which left every real agent idle at an
+   * interactive REPL. `toContain('--append-system-prompt')` cannot see that; the
+   * shape of the argv TAIL is what matters, so it is pinned here.
+   */
+  it('sends the task prompt as the positional first user turn, after every flag', () => {
+    const base = buildAgentCommand(launch, {});
+    const cmd = withAgentPrompt(base, { system: 'SYS', task: '<tm8_task_prompt/>' }, launch, {});
+    expect(cmd).toBe(`${base} --append-system-prompt 'SYS' '<tm8_task_prompt/>'`);
+    // A positional is what makes both CLIs run once instead of waiting for input,
+    // so it must be LAST — both stop parsing options at the first non-option arg.
+    expect(cmd.endsWith(`'<tm8_task_prompt/>'`)).toBe(true);
+
+    const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5-codex' };
+    const codexCmd = withAgentPrompt(
+      buildAgentCommand(codexLaunch, {}),
+      { system: 'SYS', task: 'TASK' },
+      codexLaunch,
+      {},
+    );
+    expect(codexCmd).toContain('developer_instructions=');
+    expect(codexCmd.endsWith(`'TASK'`)).toBe(true);
+    // The system prompt must NOT carry the task: that was the bug.
+    expect(codexCmd).toContain(`developer_instructions="SYS"`);
+  });
+
   it('uses Codex developer_instructions and leaves complete operator wrappers unchanged', () => {
     const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5-codex' };
     const codex = buildAgentCommand(codexLaunch, {});
     expect(codex).toContain("codex --model 'gpt-5-codex'");
-    expect(withAgentPrompt(codex, 'PROMPT', codexLaunch, {})).toContain('developer_instructions=');
+    expect(
+      withAgentPrompt(codex, { system: 'PROMPT', task: '' }, codexLaunch, {}),
+    ).toContain('developer_instructions=');
     const echo = buildAgentCommand(launch, { TM8_AGENT_CMD: 'echo-agent' });
-    expect(withAgentPrompt(echo, 'PROMPT', launch, { TM8_AGENT_CMD: 'echo-agent' })).toBe(echo);
-    expect(withAgentPrompt('my-agent', 'PROMPT', launch, { TM8_AGENT_CMD: 'my-agent' })).toBe('my-agent');
+    expect(
+      withAgentPrompt(echo, { system: 'PROMPT', task: 'TASK' }, launch, { TM8_AGENT_CMD: 'echo-agent' }),
+    ).toBe(echo);
+    // An operator wrapper gets NEITHER flag NOR a bare positional: tm8 cannot
+    // know whether the wrapper would read it as a prompt or as a path.
+    expect(
+      withAgentPrompt('my-agent', { system: 'PROMPT', task: 'TASK' }, launch, { TM8_AGENT_CMD: 'my-agent' }),
+    ).toBe('my-agent');
+  });
+
+  /**
+   * Codex used to get `--model` and nothing else — no approval policy, no
+   * sandbox — so a launched Codex stopped at its first approval request with no
+   * human at the terminal. Same unattended-hang class as Claude's, which this
+   * file already pins via `--dangerously-skip-permissions`.
+   */
+  it('gives codex an approval policy and a sandbox so it cannot hang unattended', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5-codex' };
+    const bypass = buildAgentCommand({ ...codexLaunch, permissionMode: 'bypassPermissions' }, {});
+    expect(bypass).toContain('--dangerously-bypass-approvals-and-sandbox');
+    expect(bypass).not.toContain('--ask-for-approval');
+
+    const accept = buildAgentCommand({ ...codexLaunch, permissionMode: 'acceptEdits' }, {});
+    expect(accept).toContain('--ask-for-approval never');
+    expect(accept).toContain('--sandbox workspace-write');
+
+    const readOnly = buildAgentCommand({ ...codexLaunch, permissionMode: 'readOnly' }, {});
+    expect(readOnly).toContain('--sandbox read-only');
+
+    const low = buildAgentCommand({ ...codexLaunch, reasoningEffort: 'low' }, {});
+    expect(low).toContain(`-c 'model_reasoning_effort="low"'`);
+
+    // Server-hosted PTY rendered into a browser xterm: Codex must stay inline,
+    // or a reconnecting client replays a redrawn alternate screen as garbage.
+    expect(accept).toContain('--no-alt-screen');
   });
 
   it('rejects unsupported tools instead of silently launching Claude', () => {
@@ -191,7 +257,12 @@ describe('buildAgentCommand', () => {
 
   it('appends nothing when the composed prompt is empty', () => {
     const base = buildAgentCommand(launch, {});
-    expect(withAgentPrompt(base, '   ', launch, {})).toBe(base);
+    expect(withAgentPrompt(base, { system: '   ', task: '  ' }, launch, {})).toBe(base);
+    // Each half is independently omittable — a whitespace-only task must not
+    // become an empty positional, which both CLIs would read as an empty prompt.
+    expect(withAgentPrompt(base, { system: 'SYS', task: '   ' }, launch, {})).toBe(
+      `${base} --append-system-prompt 'SYS'`,
+    );
   });
 
   it('puts a RESOLVABLE `tm8` on the agent PATH, not merely a plausible directory', () => {
@@ -219,9 +290,56 @@ describe('buildAgentCommand', () => {
     expect(first).not.toBe('');
     expect(existsSync(join(first, 'tm8'))).toBe(true);
     // PREPENDED: a stale globally-installed tm8 must not shadow the build this
-    // server actually shipped with.
+    // server actually shipped with. The inherited PATH must survive INTACT and
+    // in order — agent-binary fallbacks may follow it, but nothing may reorder
+    // or drop what the operator already had.
     expect(env.PATH).toContain('/usr/bin:/bin');
-    expect(env.PATH?.endsWith('/usr/bin:/bin')).toBe(true);
+    const segments = (env.PATH ?? '').split(':');
+    expect(segments.indexOf('/usr/bin')).toBeLessThan(segments.indexOf('/bin'));
+    expect(segments.indexOf('/usr/bin')).toBe(1);
+  });
+
+  /**
+   * The launchd bug. tm8-server run as a macOS service gets
+   * `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, but `claude` lives in
+   * `/opt/homebrew/bin` and `codex` in `~/.local/bin`, so every launch from the
+   * UI died with `exitCode 127` while the same request against a hand-started
+   * server in a login shell succeeded. Launch must not depend on who started
+   * the server.
+   */
+  it('adds the standard agent install dirs to PATH without disturbing the inherited order', () => {
+    const manifest = composeManifest({
+      sessionId: 's-path2',
+      request: { spaceId: 'space-1', teamMemberId: 'tm-1' } as SpawnRequest,
+      context: context(),
+      launch,
+      workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+      command: 'claude',
+      baseUrl: 'http://127.0.0.1:4620',
+    });
+    const launchdPath = '/usr/bin:/bin:/usr/sbin:/sbin';
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4620', {
+      PATH: launchdPath,
+      HOME: '/Users/nobody-xyz',
+    });
+    const segments = (env.PATH ?? '').split(':');
+    // The inherited PATH stays contiguous and in order at the front (after the
+    // prepended tm8 bin dir): additions are FALLBACKS, not a reordering.
+    expect(env.PATH).toContain(launchdPath);
+    // Whatever of the candidate list exists on this machine is appended AFTER
+    // the inherited entries — never before, or tm8 would silently override a
+    // resolution the machine's owner arranged.
+    for (const dir of ['/opt/homebrew/bin', '/usr/local/bin']) {
+      if (existsSync(dir)) {
+        expect(segments.indexOf(dir)).toBeGreaterThan(segments.indexOf('/sbin'));
+      }
+    }
+    // A directory that does not exist is never added — PATH stays meaningful as
+    // evidence in exit diagnostics and in the manifest's env record.
+    expect(env.PATH).not.toContain('/Users/nobody-xyz/.local/bin');
+    // Idempotent: an entry already present is not duplicated.
+    const homebrewCount = segments.filter((s) => s === '/opt/homebrew/bin').length;
+    expect(homebrewCount).toBeLessThanOrEqual(1);
   });
 
   it('uses any other TM8_AGENT_CMD verbatim rather than guessing its flags', () => {

@@ -7,7 +7,7 @@
  *   tm8 help <noun>                   noun shard       12 KiB hard
  *   tm8 help <noun> <verb>            command shard    16 KiB hard
  *   tm8 help --query <intent>         intent search    16 KiB and 5 matches
- *   tm8 help --operation <Operation>  exact lookup, TOTAL over all 106 rows
+ *   tm8 help --operation <Operation>  exact lookup, TOTAL over all 107 rows
  *   tm8 <command> --help              the same command shard
  *   tm8 completion bash|zsh|fish      see ./completion.ts
  *
@@ -309,7 +309,7 @@ export function nounHelp(noun: string, opts: ShardOptions = {}): NounHelp | unde
 
 /**
  * Trust labelling (§18.2). Only where the operation genuinely carries content
- * authored elsewhere — a blanket "everything is untrusted" note on all 106 rows
+ * authored elsewhere — a blanket "everything is untrusted" note on all 107 rows
  * would be noise that teaches nothing.
  */
 function trustNotesFor(rows: readonly OperationDiscovery[]): string[] {
@@ -446,7 +446,7 @@ export function commandHelp(path: readonly string[], opts: ShardOptions = {}): C
 }
 
 /**
- * Exact `--operation` lookup. TOTAL over all 106 rows including composite,
+ * Exact `--operation` lookup. TOTAL over all 107 rows including composite,
  * internal, and reserved (conformance D2/D7).
  *
  * For a row with no public invocation this returns `command: null` and

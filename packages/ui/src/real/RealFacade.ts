@@ -45,7 +45,9 @@ import {
   type TaskAxis, type TaskAxisInput, type TrackingRefreshInput, type UndoToken,
   type Unsubscribe, type WorkInput, type WorkspaceEvent,
 } from '../collab-v2/types/contract';
-import type { CollabFacade, ConnectionControl } from '../collab-v2/facade/CollabFacade';
+import type {
+  CollabFacade, ConnectionControl, FileAttachmentControl, UploadFileInput,
+} from '../collab-v2/facade/CollabFacade';
 import { EventPoller } from './events';
 import { TmClient } from './TmClient';
 
@@ -91,6 +93,43 @@ function unwrapCommand(raw: unknown): CommandResult {
   return { ...r, patches: r.patches ?? [] } as CommandResult;
 }
 
+interface FileUploadGrant {
+  uploadId: string;
+  uploadUrl: string;
+  token?: string | null;
+  expiresAt: string;
+  maxSizeBytes: number;
+}
+
+export interface MessageBatchResult {
+  messageBatchId: string;
+  messages: MessageView[];
+}
+
+/** Canonical tm8 multi-anchor message command used by Channel @Tags. */
+export interface PostMessageBatchInput extends CommandContext {
+  anchorIds: EntityId[];
+  body: string;
+  parentMessageId?: EntityId | null;
+  mentionIds?: EntityId[];
+  attachmentIds?: EntityId[];
+}
+
+let generatedMutationSeq = 0;
+
+function mutationRoot(prefix: string): string {
+  generatedMutationSeq += 1;
+  return `${prefix}_${Date.now().toString(36)}_${generatedMutationSeq}`;
+}
+
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new CollabError('upstream_unavailable', 'this browser cannot compute the file checksum');
+  }
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
 /**
  * The execution family has no home on CollabFacade — that interface was frozen
  * against the Collab V2 contract, which predates tm8's `execution.*` operations
@@ -131,7 +170,7 @@ export function hasExecutionControl(f: CollabFacade): f is CollabFacade & Execut
   return typeof (f as Partial<ExecutionControl>).spawnSession === 'function';
 }
 
-export class RealFacade implements CollabFacade, ConnectionControl, ExecutionControl {
+export class RealFacade implements CollabFacade, ConnectionControl, ExecutionControl, FileAttachmentControl {
   private readonly client: TmClient;
   private readonly pollers = new Map<SpaceId, EventPoller>();
 
@@ -246,7 +285,7 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
   ): Promise<Page<MessageView>> {
     return this.client.get<Page<MessageView>>(
       `/v2/entities/${anchorId}/messages${qs({
-        cursor: opts?.cursor, order: opts?.order, rootId: opts?.rootId,
+        cursor: opts?.cursor, order: opts?.order, rootMessageId: opts?.rootId,
       })}`,
     );
   }
@@ -335,8 +374,83 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
     return unwrapCommand(await this.client.post('/v2/edges', input));
   }
 
+  async postMessageBatch(input: PostMessageBatchInput): Promise<MessageBatchResult> {
+    return this.client.post<MessageBatchResult>('/v2/messages', {
+      actorId: input.actorId,
+      clientMutationId: input.clientMutationId ?? mutationRoot('message-batch'),
+      anchorIds: input.anchorIds,
+      body: input.body,
+      parentMessageId: input.parentMessageId,
+      mentionIds: input.mentionIds,
+      attachmentIds: input.attachmentIds,
+    });
+  }
+
   async postMessage(input: PostMessageInput): Promise<CommandResult> {
-    return unwrapCommand(await this.client.post('/v2/messages', input));
+    const batch = await this.postMessageBatch({
+      actorId: input.actorId,
+      clientMutationId: input.clientMutationId,
+      anchorIds: [input.anchorId],
+      body: input.body,
+      parentMessageId: input.parentMessageId,
+      mentionIds: input.mentions?.map((mention) => mention.entityId),
+      attachmentIds: input.attachments?.map((attachment) => attachment.fileEntityId),
+    });
+    return {
+      patches: [...batch.messages],
+    };
+  }
+
+  /** The complete grant → bytes → finalize lifecycle behind Channel attachments. */
+  async uploadFile(input: UploadFileInput): Promise<EntityDetail> {
+    if (input.file.size <= 0) {
+      throw new CollabError('invalid_input', 'empty files cannot be uploaded');
+    }
+
+    const root = input.clientMutationId ?? mutationRoot('upload');
+    const bytes = await input.file.arrayBuffer();
+    const checksumSha256 = await sha256Hex(bytes);
+    let grant: FileUploadGrant | null = null;
+
+    try {
+      grant = await this.client.post<FileUploadGrant>('/v2/files/uploads', {
+        actorId: input.actorId,
+        clientMutationId: `${root}:init`,
+        spaceId: input.spaceId,
+        name: input.file.name,
+        mime: input.file.type || 'application/octet-stream',
+        sizeBytes: input.file.size,
+        checksumSha256,
+      });
+      if (input.file.size > grant.maxSizeBytes) {
+        throw new CollabError('payload_too_large', `file exceeds the ${grant.maxSizeBytes}-byte upload limit`);
+      }
+      await this.client.putGrantedBytes(grant.uploadUrl, grant.token, bytes);
+      const result = unwrapCommand(await this.client.post(
+        `/v2/files/uploads/${grant.uploadId}/complete`,
+        {
+          actorId: input.actorId,
+          clientMutationId: `${root}:complete`,
+          targets: [...new Set(input.targetIds ?? [])],
+        },
+      ));
+      if (!result.entity || result.entity.kind !== 'file') {
+        throw new CollabError('upstream_unavailable', 'upload completed without a file entity');
+      }
+      return result.entity;
+    } catch (error) {
+      if (grant) {
+        await this.client.post(`/v2/files/uploads/${grant.uploadId}/abort`, {
+          actorId: input.actorId,
+          clientMutationId: `${root}:abort`,
+        }).catch(() => undefined);
+      }
+      throw error;
+    }
+  }
+
+  fileDownloadUrl(fileEntityId: EntityId): string {
+    return this.client.resolveUrl(`/v2/files/${encodeURIComponent(fileEntityId)}/download`);
   }
 
   /**

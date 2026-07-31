@@ -176,18 +176,25 @@
   pointer-events: none;
 }
 
+/* ROW HEIGHT IS SET BY THE TALLEST COLUMN, NOT BY THE TITLE. The 24px action
+   buttons, not the 18px caret or the text, were what made a task row half again
+   as tall as a session row (43px vs 29px) — they sit in the layout at rest (see
+   `pn-tt__actions`) so their height is the row's floor whether or not they are
+   visible. Trimming the pad, the glyph columns and the buttons together brings
+   the run of rows down to ~37px: denser and closer to Sessions, without giving
+   up the 24px-class hit target that a 22px button still just clears. */
 .cv2-root .pn-tt__main {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   min-width: 0;
-  padding: 9px 12px 9px calc(10px + var(--tt-indent));
+  padding: 7px 10px 7px calc(9px + var(--tt-indent));
   cursor: pointer;
 }
 .cv2-root .pn-tt__arrow {
   position: relative;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
@@ -215,8 +222,8 @@
   color: var(--pn-ink-3);
 }
 .cv2-root .pn-tt__status {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
@@ -244,10 +251,10 @@
   background: transparent;
   color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   letter-spacing: -0.005em;
-  line-height: 1.35;
+  line-height: 1.3;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -298,9 +305,9 @@
 .cv2-root .pn-tt__actions .lp__rowaction,
 .cv2-root .pn-tt__actions .hon-checking,
 .cv2-root .pn-tt__actions .hon-disabled {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -323,8 +330,8 @@
   border-color: var(--pn-brand);
 }
 .cv2-root .pn-tt__ind {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -342,15 +349,15 @@
 }
 .cv2-root .pn-tt__ind--open svg { transform: rotate(180deg); }
 
-/* Expanded facts hang off the STATUS column, not the tile edge: 10px row pad +
-   18px caret + 9px gap. The chips therefore start on the same vertical as the
+/* Expanded facts hang off the STATUS column, not the tile edge: 9px row pad +
+   16px caret + 8px gap. The chips therefore start on the same vertical as the
    dot at every depth and every panel width (the indent and the narrow-container
    overrides move both together). */
 .cv2-root .pn-tt__meta {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 1px 12px 11px calc(37px + var(--tt-indent));
+  padding: 1px 10px 10px calc(33px + var(--tt-indent));
 }
 .cv2-root .pn-tt__metarow {
   display: flex;
@@ -408,7 +415,7 @@
 @container task-tile (max-width: 480px) {
   .cv2-root .pn-tt__main {
     gap: 7px;
-    padding-inline: calc(8px + var(--tt-indent)) 9px;
+    padding-inline: calc(7px + var(--tt-indent)) 8px;
   }
 
   .cv2-root .pn-tt__title {
@@ -419,10 +426,10 @@
     display: none;
   }
 
-  /* Still hung off the status column — 8px pad + 18px caret + 7px gap. The
+  /* Still hung off the status column — 7px pad + 16px caret + 7px gap. The
      chips must not jump to the tile edge just because the panel narrowed. */
   .cv2-root .pn-tt__meta {
-    padding-inline: calc(33px + var(--tt-indent)) 10px;
+    padding-inline: calc(30px + var(--tt-indent)) 9px;
   }
 
   .cv2-root .pn-tt[data-depth='3'] { --tt-indent: 40px; }
@@ -448,8 +455,9 @@
     gap: 1px;
   }
 
+  /* 6px pad + 16px caret + 5px gap. */
   .cv2-root .pn-tt__meta {
-    padding-inline: calc(29px + var(--tt-indent)) 8px;
+    padding-inline: calc(27px + var(--tt-indent)) 8px;
   }
 
   /* Depth costs title width, and at this size the title is all there is. */
@@ -463,7 +471,7 @@
 /* Run is the point of hovering a task row, so it survives almost to the floor.
    It used to drop at 480px-wide panels (the threshold was 300px and a docked
    Tasks panel is ~260px), which is why hover revealed only a caret. Below 200px
-   two 24px buttons plus the caret leave the title nothing, so Run yields — the
+   two 22px buttons plus the caret leave the title nothing, so Run yields — the
    details caret is the one control that must never disappear. */
 @container task-tile (max-width: 200px) {
   .cv2-root .pn-tt__actions > :first-child:not(.pn-tt__ind) {

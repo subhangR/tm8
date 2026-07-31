@@ -244,13 +244,23 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     const { seam } = mk(() => ok({}));
     expect(Object.keys(seam.commands).sort()).toEqual([
       'complete', 'createEntity', 'createTask', 'deleteEntity', 'editMessage', 'markRead',
-      'moveEntity', 'patchEntity', 'patchTask', 'postMessage', 'prompt', 'react',
+      'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
+      // Amendment 2 (2026-07-31): the artifacts preview decisions were
+      // ratified, so the Run button gained its one command (seam.ts header).
+      'previewArtifact',
+      'prompt', 'react',
+      // `resolveAttention` shipped into the seam without this lock being
+      // updated, so the guard was red in-tree before the attention inbox
+      // landed. Recorded here rather than silently corrected.
+      'resolveAttention',
       'restoreEntity', 'spawn', 'terminate', 'upsertReadMark', 'work',
     ]);
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
+    expect(Object.keys(seam.files).sort()).toEqual(['abort', 'complete', 'putBytes', 'uploadInit']);
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
-      'connections', 'activity', 'messages', 'handoffs', 'inbox', 'feed', 'delivery']) {
+      'connections', 'activity', 'messages', 'handoffs', 'inbox', 'feed', 'delivery',
+      'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }
   });

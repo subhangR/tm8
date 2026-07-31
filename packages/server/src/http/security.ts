@@ -1,45 +1,57 @@
 /**
  * The security middleware seam.
  *
- * SCOPE, HONESTLY STATED. Per a CTO scope trim (2026-07-25, user-directed —
- * speed to the working loop), exactly ONE rule from 10-SECURITY-MODEL is
- * enforced in this pass:
+ * SCOPE. Rules from 10-SECURITY-MODEL enforced in this file as of the
+ * artifacts Phase 0 (2026-07-31; previously every rule below was a named
+ * no-op — see git history for the deferral rationale):
  *
  *   S1 — tm8-server binds 127.0.0.1 only. Enforced in ./config.ts, which
  *        REFUSES TO START on a non-loopback `TM8_BIND` rather than binding
  *        wide open without the token auth (S8) that would make it safe.
- *
- * Everything else in §2–§3 of the security model is DEFERRED to post-G1A and
- * slots into this file. It is not implemented, and this file does not pretend
- * otherwise — each rule below is a named no-op with its acceptance test
- * already written down (10-SECURITY §10), so landing it later is filling in a
- * body, not rediscovering a requirement:
- *
- *   S2 — Host-header allowlist (DNS-rebinding defense). `Host` must be
- *        `localhost:<port>`, `127.0.0.1:<port>`, or a configured hostname;
- *        otherwise 403. Applies to HTTP and the WS upgrade.
- *   S3 — WS Origin check on `/v2/ws` and PTY sockets: reject browser origins
- *        other than the served UI origin(s). A request with NO Origin is a
- *        non-browser client (CLI, rigs) and is allowed — it authenticates per
- *        S8 instead.
- *   S4 — CORS: same-origin only. Never `Access-Control-Allow-Origin: *`,
- *        never a reflected origin. The UI is served by tm8-server (or proxied
- *        by the Vite dev server) precisely so cross-origin access is never
- *        needed.
+ *   S2 — Host-header allowlist (DNS-rebinding defense). The Host's hostname
+ *        must be loopback (`127.0.0.1`, `localhost`, `::1`) or a configured
+ *        hostname; otherwise 403. Applies to HTTP AND the WS upgrade — the
+ *        upgrade listener has its own wiring in ./server.ts because it never
+ *        passes through the ordinary request handler (design C3: two wiring
+ *        changes, not one).
+ *   S3 — Origin check: a request that CARRIES an Origin header is a browser
+ *        context and its origin's hostname must be in the same allowlist. A
+ *        request with NO Origin is a non-browser client (CLI, rigs) and is
+ *        allowed — it authenticates per S8 instead. `Origin: null` (opaque
+ *        origins: sandboxed iframes — exactly an artifact preview frame — and
+ *        `file:` pages) is REFUSED: no legitimate caller of the privileged
+ *        API is an opaque-origin document.
+ *   S4 — CORS: same-origin only. This server never emits
+ *        `Access-Control-Allow-Origin` — not `*`, not a reflected origin
+ *        (grep: this file and ./server.ts set no ACAO header anywhere). A
+ *        cross-site page therefore cannot READ responses; S3 above is what
+ *        stops its mutations from LANDING. A CORS preflight (OPTIONS with
+ *        Access-Control-Request-Method) announces a cross-origin intent and
+ *        is refused outright.
  *   S6 — `X-TM8-Client` required on state-changing requests that carry a
- *        browser session cookie; bearer-token clients are exempt by
- *        construction.
+ *        TM8 browser cookie. No tm8 cookie exists today, so this branch is
+ *        inert until one does — wired now so the moment a session cookie
+ *        appears the CSRF gate is already standing (the alternative is a
+ *        cookie shipping before anyone remembers this file). "TM8 cookie" is
+ *        load-bearing and was learned the hard way: cookies are host-scoped,
+ *        not port-scoped, so gating on *any* Cookie header 403s every mutation
+ *        as soon as an unrelated app on this loopback host sets one. See
+ *        `carriesTm8Cookie`.
  *
- * WHY IT IS SAFE TO DEFER *RIGHT NOW*, and only right now: with S1 enforced
- * the socket is unreachable from the network. The residual exposure is a
- * malicious page in the user's own browser (adversary A1) reaching
- * `127.0.0.1:4610` — which is real, and which S2/S3/S4/S6 exist to close.
- * This must not ship to G1A unclosed.
- *
- * The check functions are wired into the request pipeline TODAY as pass-through
- * calls, so enabling a rule is a change to this file alone.
+ * THE PREVIEW-ORIGIN PARTITION (design §9.2/§9.3, user-ratified 2026-07-31):
+ * when the artifact-preview listener is configured, its hostname is REMOVED
+ * from the app allowlist below — the loopback trio included. A hostname is
+ * only distinct if the other listener refuses it: the node binds loopback and
+ * answers to every loopback name it is reached by, so leaving `localhost` in
+ * the app's allowlist while the preview claims `localhost:4613` would be two
+ * names for one socket and no separation at all. The preview listener's own
+ * (inverse) Host check lives with it in ./artifact-preview.ts; the boot
+ * refusal that keeps the two origins disjoint lives in ./config.ts.
+ * Consequence, deliberate: the app is reached at `http://127.0.0.1:4610`,
+ * never `http://localhost:4610` — that name now belongs to the preview.
  */
 import type { IncomingHttpHeaders } from 'node:http';
+import { TM8_CLIENT_HEADER } from '@tm8/contract';
 import type { ServerConfig } from './config.js';
 import type { IdentityResolver, RequestIdentity } from './types.js';
 
@@ -50,22 +62,124 @@ export interface SecurityDecision {
 
 const ALLOWED: SecurityDecision = {};
 
-/** S2 — Host allowlist. DEFERRED: currently allows everything. */
-export function checkHost(_headers: IncomingHttpHeaders, _config: ServerConfig): SecurityDecision {
+/** Loopback names every tm8 node answers to. Mirrors config.ts LOOPBACK. */
+const LOOPBACK_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+function refuse(message: string): SecurityDecision {
+  return { refusal: { code: 'forbidden', message } };
+}
+
+/**
+ * Hostname out of a Host header value: strips the port without breaking
+ * bracketed IPv6 (`[::1]:4610` → `[::1]`), lowercases. Returns null for
+ * values that cannot be a hostname at all.
+ */
+function hostnameOfHostHeader(host: string): string | null {
+  const trimmed = host.trim().toLowerCase();
+  if (trimmed.length === 0) return null;
+  if (trimmed.startsWith('[')) {
+    const close = trimmed.indexOf(']');
+    if (close === -1) return null;
+    return trimmed.slice(0, close + 1);
+  }
+  const colon = trimmed.indexOf(':');
+  return colon === -1 ? trimmed : trimmed.slice(0, colon);
+}
+
+function allowedHostnames(config: ServerConfig): Set<string> {
+  const set = new Set(LOOPBACK_HOSTNAMES);
+  for (const name of config.extraAllowedHostnames ?? []) set.add(name.toLowerCase());
+  // The preview-origin partition (header note): the preview hostname is the
+  // OTHER listener's name, and this socket must refuse it — Host and Origin
+  // both, since both checks read this set.
+  if (config.preview) set.delete(config.preview.host);
+  return set;
+}
+
+/** S2 — Host allowlist. A Host that names anything but this node is a
+ * DNS-rebinding attempt (evil.com resolving to 127.0.0.1 still sends
+ * `Host: evil.com`). An ABSENT Host is allowed: browsers always send one, so
+ * absence proves a non-browser client, which S8 owns. */
+export function checkHost(headers: IncomingHttpHeaders, config: ServerConfig): SecurityDecision {
+  const host = headers.host;
+  if (host === undefined) return ALLOWED;
+  const hostname = hostnameOfHostHeader(host);
+  if (hostname === null || !allowedHostnames(config).has(hostname)) {
+    return refuse(`Host ${JSON.stringify(host)} is not this node (S2 host allowlist)`);
+  }
   return ALLOWED;
 }
 
-/** S3/S4 — Origin allowlist for HTTP + the WS upgrade. DEFERRED. */
-export function checkOrigin(_headers: IncomingHttpHeaders, _config: ServerConfig): SecurityDecision {
+/** S3/S4 — Origin allowlist for HTTP + the WS upgrade. See the header note. */
+export function checkOrigin(headers: IncomingHttpHeaders, config: ServerConfig): SecurityDecision {
+  const origin = headers.origin;
+  if (origin === undefined) return ALLOWED; // non-browser client
+  const value = Array.isArray(origin) ? origin[0] : origin;
+  if (value === 'null') {
+    return refuse('opaque-origin documents may not call this API (S3)');
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return refuse(`unparseable Origin ${JSON.stringify(value)} (S3)`);
+  }
+  const hostname = parsed.hostname.toLowerCase();
+  // URL.hostname strips IPv6 brackets; the allowlist stores both forms.
+  if (!allowedHostnames(config).has(hostname) && !allowedHostnames(config).has(`[${hostname}]`)) {
+    return refuse(`cross-origin request from ${parsed.origin} refused (S3/S4 same-origin only)`);
+  }
   return ALLOWED;
 }
 
-/** S6 — `X-TM8-Client` on cookie-authenticated mutations. DEFERRED. */
+/**
+ * Does this request carry a cookie *tm8 itself* set?
+ *
+ * "Has a Cookie header" is NOT the same question, and conflating the two is
+ * what turned S6 from a dormant gate into a hard block on every mutation:
+ * cookies are scoped by host, NOT by port, so every cookie any other app on
+ * this loopback host has ever set — some unrelated dev server on
+ * `127.0.0.1:3000`, an OAuth callback, a notebook — is delivered to this node
+ * too. A foreign cookie authenticates nothing here, so it must not arm a
+ * CSRF gate that no tm8 client could satisfy.
+ *
+ * Matched by NAME, and matched loosely: any cookie name containing `tm8`
+ * counts, so `tm8_session`, `tm8-sid` and the `__Host-tm8…` form are all
+ * covered without this file having to predict the exact spelling a future
+ * cookie-auth layer picks. That keeps the gate standing-by-default — the
+ * property the deferral was protecting — while ignoring cookies that are none
+ * of our business.
+ */
+function carriesTm8Cookie(header: IncomingHttpHeaders['cookie']): boolean {
+  if (header === undefined) return false;
+  const raw = Array.isArray(header) ? header.join(';') : header;
+  return raw.split(';').some((pair) => (pair.split('=')[0] ?? '').trim().toLowerCase().includes('tm8'));
+}
+
+/**
+ * S6 — `X-TM8-Client` on cookie-authenticated mutations. No tm8 session cookie
+ * exists yet, so this is inert in practice; see the header note and
+ * `carriesTm8Cookie` for why "inert" has to mean *tm8's* cookies specifically.
+ */
 export function checkCsrf(
-  _method: string,
-  _headers: IncomingHttpHeaders,
+  method: string,
+  headers: IncomingHttpHeaders,
   _config: ServerConfig,
 ): SecurityDecision {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return ALLOWED;
+  // bearer/no-auth clients are exempt by construction
+  if (!carriesTm8Cookie(headers.cookie)) return ALLOWED;
+  if (headers[TM8_CLIENT_HEADER] === undefined) {
+    return refuse('state-changing requests with a browser cookie require X-TM8-Client (S6)');
+  }
+  return ALLOWED;
+}
+
+/** S4 — a CORS preflight announces a cross-origin caller; there are none. */
+function checkPreflight(method: string, headers: IncomingHttpHeaders): SecurityDecision {
+  if (method === 'OPTIONS' && headers['access-control-request-method'] !== undefined) {
+    return refuse('cross-origin use of this API is not supported (S4 same-origin only)');
+  }
   return ALLOWED;
 }
 
@@ -81,12 +195,29 @@ export function checkTransport(
   for (const check of [
     () => checkHost(headers, config),
     () => checkOrigin(headers, config),
+    () => checkPreflight(method, headers),
     () => checkCsrf(method, headers, config),
   ]) {
     const decision = check();
     if (decision.refusal) return decision;
   }
   return ALLOWED;
+}
+
+/**
+ * S2 + S3 for the WS upgrade path. The upgrade listener in ./server.ts never
+ * reaches the ordinary request handler, so it calls THIS — forgetting that
+ * wiring is exactly the C3 under-scoping the design doc warns about. CSRF
+ * does not apply to upgrades (no cookie auth exists on sockets), and a
+ * preflight cannot precede one.
+ */
+export function checkUpgradeTransport(
+  headers: IncomingHttpHeaders,
+  config: ServerConfig,
+): SecurityDecision {
+  const host = checkHost(headers, config);
+  if (host.refusal) return host;
+  return checkOrigin(headers, config);
 }
 
 /**

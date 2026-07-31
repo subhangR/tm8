@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { Avatar, Chip, Eyebrow, IconBtn, Kbd, Pill } from './index';
+import { Avatar, BootLoader, Chip, Eyebrow, IconBtn, Kbd, Pill } from './index';
 
 describe('kit primitives', () => {
   it('Pill carries tone class and the word (never color alone)', () => {
@@ -53,5 +53,30 @@ describe('kit primitives', () => {
     const { container } = render(<Avatar provenance="agent" label="forge" size={15} />);
     expect(container.textContent).toBe('F');
     expect(container.querySelector('.kit-avatar--mono')).not.toBeNull();
+  });
+
+  it('BootLoader announces itself as a live status, never a silent wait', () => {
+    const { getByRole } = render(<BootLoader />);
+    const status = getByRole('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent).toContain('loading workspace');
+  });
+
+  it('BootLoader mark is decorative — the label is the accessible name', () => {
+    const { container } = render(<BootLoader />);
+    // The ring carries no meaning a reader needs; the label does.
+    expect(container.querySelector('.kit-boot__mark')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.kit-boot__label')?.textContent).toBe('loading workspace');
+  });
+
+  it('BootLoader states the stage when the caller knows it', () => {
+    const { container } = render(<BootLoader label="opening space" detail="reading the graph" />);
+    expect(container.querySelector('.kit-boot__label')?.textContent).toBe('opening space');
+    expect(container.querySelector('.kit-boot__detail')?.textContent).toBe('reading the graph');
+  });
+
+  it('BootLoader omits the detail line entirely when there is nothing to say', () => {
+    const { container } = render(<BootLoader />);
+    expect(container.querySelector('.kit-boot__detail')).toBeNull();
   });
 });

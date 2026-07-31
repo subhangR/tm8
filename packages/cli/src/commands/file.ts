@@ -370,10 +370,12 @@ async function fileDownload(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
- * `observedInvoke` for the BYTES path. Same rule, same reason: an honest 501 is
- * decided before any handler runs, so learning from it costs the caller nothing
- * they had not already spent, and every other outcome proves a handler exists.
- * A transport failure teaches nothing and records nothing.
+ * `observedInvoke` for the BYTES path. Same NARROWED rule as observe.ts
+ * (applied 2026-07-31, when live S2/S3 transport checks made pre-handler
+ * `forbidden` real): an honest 501 records `not_implemented`; only codes a
+ * handler alone can author (`version_conflict`, `invariant_violation`) record
+ * `handled`; every ambiguous refusal teaches nothing. A transport failure
+ * teaches nothing and records nothing.
  */
 async function observedDownload(
   cmd: CommandContext,
@@ -386,7 +388,10 @@ async function observedDownload(
     return { bytes: res.bytes, contentType: res.contentType };
   } catch (err) {
     if (err instanceof ApiError) {
-      ledger.record(name, err.code === 'not_implemented' ? 'not_implemented' : 'handled');
+      if (err.code === 'not_implemented') ledger.record(name, 'not_implemented');
+      else if (err.code === 'version_conflict' || err.code === 'invariant_violation') {
+        ledger.record(name, 'handled');
+      }
     }
     throw err;
   }

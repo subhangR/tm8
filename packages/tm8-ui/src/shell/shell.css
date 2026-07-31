@@ -278,6 +278,13 @@
   font-weight: 600;
   color: var(--pn-ink);
 }
+.cv2-root .shell-rail__empty {
+  padding: 5px 12px 7px 36px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
 .cv2-root .shell-rail__badge {
   font-family: var(--pn-mono);
   font-size: 10px;
@@ -287,6 +294,31 @@
   border-radius: var(--pn-r-pill);
   padding: 1px 7px;
   flex: none;
+}
+/* Unseen is emphasis on the TOTAL, not a second number (see CountBadge). The
+   badge goes from the quiet brand-soft pill to the solid brand fill, so an
+   untouched kind reads as foreground and a fully-read one recedes. It uses the
+   BRAND ramp, never --pn-run: green means "running" everywhere in this
+   product, and an unread doc is not running. */
+.cv2-root .shell-rail__badge--unseen {
+  color: var(--pn-surface);
+  background: var(--pn-brand);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cv2-root .shell-rail__unseen-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--pn-surface);
+  flex: none;
+}
+/* Collapsed, the pill is already solid brand, so the unseen state cannot be
+   carried by fill alone — it gets a ring against the rail instead. The count
+   itself stays legible at the 8.5px type floor. */
+.cv2-root .shell-rail__badge-corner--unseen {
+  box-shadow: 0 0 0 1.5px var(--pn-surface), 0 0 0 3px var(--pn-brand);
 }
 .cv2-root .shell-rail__live {
   display: flex;
@@ -611,11 +643,18 @@
 }
 
 /* --- Panel stack (§5.3) --------------------------------------------------- */
+/* USER RULING 2026-07-31 — "the padding or space to the left and right panel
+   should be decreased a bit … i want more space for the terminal." 8px → 3px
+   on every side: 10px back to the panel horizontally and 10px vertically, for
+   the price of a tighter (not absent) inset off the rails. The GAP is left
+   alone deliberately — it is the resize-handle track (`.shell-ws__gap`), and
+   narrowing a drag target to buy 2px trades pixels for a control the user
+   still has to hit. */
 .cv2-root .shell-stack {
   flex: 1;
   display: flex;
   gap: var(--ws-gap, 8px);
-  padding: 8px;
+  padding: 3px;
   min-height: 0;
 }
 .cv2-root .shell-stack__col {
@@ -794,9 +833,34 @@
   color: var(--pn-ink-3);
   margin: 0;
 }
+.cv2-root .shell-empty__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.cv2-root .shell-empty__group {
+  min-width: 0;
+}
+.cv2-root .shell-empty__group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 8px 3px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+.cv2-root .shell-empty__group-count {
+  color: var(--pn-ink-3);
+  font-variant-numeric: tabular-nums;
+}
 .cv2-root .shell-empty__roster {
   list-style: none;
-  margin: 0 0 6px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -827,6 +891,7 @@
 }
 .cv2-root .shell-empty__dot--run  { background: var(--pn-run); }
 .cv2-root .shell-empty__dot--wait { background: var(--pn-wait); }
+.cv2-root .shell-empty__dot--block { background: var(--pn-block); }
 .cv2-root .shell-empty__dot--idle { background: transparent; border: 1.5px solid var(--pn-ink-4); }
 .cv2-root .shell-empty__name {
   font-size: 12.5px;
@@ -843,6 +908,7 @@
 }
 .cv2-root .shell-empty__word--run  { color: var(--pn-run); }
 .cv2-root .shell-empty__word--wait { color: var(--pn-wait); }
+.cv2-root .shell-empty__word--block { color: var(--pn-block); }
 .cv2-root .shell-empty__word--idle { color: var(--pn-ink-3); }
 .cv2-root .shell-empty__meta,
 .cv2-root .shell-empty__record {
@@ -853,6 +919,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cv2-root .shell-empty__more {
+  margin: 3px 8px 0 26px;
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
 }
 .cv2-root .shell-empty__keys {
   display: flex;
@@ -970,6 +1042,12 @@
 }
 .cv2-root .ls__arrow { color: var(--pn-line-2); font-size: 9px; }
 .cv2-root .ls__picker { display: flex; flex-direction: column; gap: 4px; }
+.cv2-root .ls__profile-empty {
+  margin: 2px 0 0; padding: 8px 10px;
+  border: 1px dashed var(--pn-line-2); border-radius: 8px;
+  font-family: var(--pn-mono); font-size: 9px; line-height: 1.5;
+  color: var(--pn-ink-3); background: var(--pn-hover);
+}
 .cv2-root .ls__pinned {
   font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-4);
   line-height: 1.5; padding: 0 2px;

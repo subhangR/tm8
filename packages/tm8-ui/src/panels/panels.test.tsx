@@ -117,6 +117,70 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(getByTestId('terminal-body')).toBeTruthy();
   });
 
+  /**
+   * USER RULING 2026-07-31 — "terminal all the way, till the component bottom."
+   * The footer is the LAST strip between the canvas and the panel's edge, so
+   * terminal panels do without it. Both halves are asserted together because
+   * the risk is symmetric: dropping it everywhere would silently delete honest
+   * chrome (D7.2's hollow "— viewing") from every document panel.
+   */
+  it('drops the footer for the terminal archetype, and only for it', () => {
+    const session = render(
+      <EntityDetailPanel
+        detail={fixtureDetails[sessionStale.id]!}
+        reasons={REASONS}
+        ctx={ctx}
+        liveness="stale"
+      />,
+    );
+    expect(session.queryByTestId('panel-footer')).toBeNull();
+
+    const task = render(
+      <EntityDetailPanel detail={fixtureDetails[taskUuidTitle.id]!} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(task.queryByTestId('panel-footer')).not.toBeNull();
+  });
+
+  /**
+   * USER RULING 2026-07-31 — "the terminal, chat tab should be at the top row
+   * at the right with two switchable chips."
+   *
+   * The switch is owned two levels down (WorkSessionContent) and portals into
+   * a slot the panel bar publishes. That indirection is exactly what a test
+   * has to pin: the switch rendering AT ALL proves nothing about WHERE, and
+   * "where" is the whole ruling. Asserted by containment in `.pn-panelbar`,
+   * not by a testid on the slot, so moving the slot inside the bar stays free
+   * and moving it OUT of the bar fails.
+   */
+  it('mounts the terminal/chat switch inside the panel bar, not above the canvas', () => {
+    const detail = fixtureDetails[sessionStale.id]!;
+    const withChat = {
+      ...detail,
+      content: {
+        ...detail.content,
+        interactionProfile: {
+          chatEnabled: true,
+          initialContentSurface: 'terminal',
+          compatibility: 'compatible',
+          templateKey: 'session_chat_v1',
+          templateVersion: 1,
+        },
+      },
+    } as typeof detail;
+    const { container, getByTestId } = render(
+      <EntityDetailPanel detail={withChat} reasons={REASONS} ctx={ctx} liveness="stale" />,
+    );
+    const bar = container.querySelector('.pn-panelbar');
+    const surfaceSwitch = getByTestId('work-session-surface-switch');
+    expect(bar).not.toBeNull();
+    expect(bar!.contains(surfaceSwitch)).toBe(true);
+    expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
+    // Still the two chips, still switchable — relocating a control may not
+    // quietly cost it its behaviour.
+    const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
+    expect(tabs).toEqual(['Terminal', 'Chat']);
+  });
+
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
     const { getByTestId } = render(
       <EntityDetailPanel detail={fixtureDetails[taskUuidTitle.id]!} reasons={REASONS} ctx={ctx} />,
@@ -261,6 +325,29 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     for (const id of ['open', 'done', 'archived']) expect(footer).toContain(id);
   });
 
+  it('sorts a generic attention request above ordinary rows and renders its yellow label', () => {
+    const attention = {
+      ...taskGuideLines,
+      badges: {
+        ...taskGuideLines.badges,
+        attention: {
+          pendingCount: 2,
+          totalPoints: 130,
+          maxPoints: 90,
+          latestReason: 'Choose the API shape',
+          oldestRequestedAt: '2026-07-30T00:00:00.000Z',
+        },
+      },
+    } satisfies EntitySummary;
+    const view = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle, attention])} ctx={ctx} />,
+    );
+    expect(view.getByText('NEEDS ATTENTION · 1')).toBeTruthy();
+    const first = view.getAllByTestId('list-tile')[0]!;
+    expect(first.textContent).toContain(attention.title);
+    expect(within(first).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
+  });
+
   it('THE GATE: activity on a NON-LIVE row never streams and never pulses', () => {
     // sessionStale's record says running; the seam says stale. Bytes are
     // (impossibly) attributed to it. It must still not look alive.
@@ -275,12 +362,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const tile = getAllByTestId('list-tile')[0]!;
     expect(tile.getAttribute('data-streaming')).toBe('false');
-    expect(tile.querySelector('.lp__dot--pulse')).toBeNull();
-    expect(tile.textContent).toContain('stale');
-    expect(tile.textContent).not.toContain('streaming');
+    expect(tile.querySelector('.pn-agent--live')).toBeNull();
+    expect(tile.querySelector('.pn-agent--streaming')).toBeNull();
+    expect(tile.querySelector('.pn-st__statusglyph')?.getAttribute('title')).toContain('node restarted');
   });
 
-  it('a LIVE row with activity streams; the same row without activity says running', () => {
+  it('merges liveness and streaming into the subtle agent character', () => {
     const streaming = render(
       <EntityListPanel
         kind="work_session"
@@ -292,7 +379,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const hot = streaming.getAllByTestId('list-tile')[0]!;
     expect(hot.getAttribute('data-streaming')).toBe('true');
-    expect(hot.textContent).toContain('streaming');
+    expect(hot.querySelector('.pn-agent--live.pn-agent--streaming .pn-agent__mark')).not.toBeNull();
+    expect(hot.querySelector('.pn-dot')).toBeNull();
     streaming.unmount();
 
     const quiet = render(
@@ -306,7 +394,38 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const cold = quiet.getAllByTestId('list-tile')[0]!;
     expect(cold.getAttribute('data-streaming')).toBe('false');
-    expect(cold.textContent).toContain('running');
+    expect(cold.querySelector('.pn-agent--live .pn-agent__mark')).not.toBeNull();
+    expect(cold.querySelector('.pn-agent--streaming')).toBeNull();
+  });
+
+  it('renders a spark character, compact model, and hover actions; details reveal linked tasks', () => {
+    const exited = {
+      ...sessionLive,
+      id: 'session-codex-exited',
+      state: { ...sessionLive.state, agentTool: 'codex', model: 'gpt-5.6-sol', status: 'exited' },
+    } as EntitySummary;
+    const onTerminate = vi.fn();
+    const { getByTestId, getByRole, queryByText } = render(
+      <EntityListPanel
+        kind="work_session"
+        rowsFor={rowsFor([exited])}
+        ctx={ctx}
+        livenessOf={() => 'not-running'}
+        linkedTasksOf={() => [taskGuideLines]}
+        onTerminate={onTerminate}
+      />,
+    );
+    const tile = getByTestId('list-tile');
+    expect(tile.querySelector('[data-agent-kind="codex"] .pn-agent__mark')?.textContent).toBe('✦');
+    expect(tile.querySelector('img')).toBeNull();
+    expect(tile.textContent).toContain('gpt-5.6-sol');
+    expect(tile.querySelector('.pn-st__radio')).toBeNull();
+    expect(queryByText(taskGuideLines.title)).toBeNull();
+    fireEvent.click(getByRole('button', { name: 'Expand details' }));
+    expect(tile.textContent).toContain(taskGuideLines.title);
+    fireEvent.click(getByRole('button', { name: 'Close session' }));
+    expect(onTerminate).toHaveBeenCalledWith(exited.id);
+    expect(getByRole('button', { name: 'Copy session ID' })).toBeTruthy();
   });
 
   it('unknown liveness renders neutral and never as live', () => {
@@ -321,7 +440,8 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const tile = getAllByTestId('list-tile')[0]!;
     expect(tile.getAttribute('data-streaming')).toBe('false');
-    expect(tile.textContent).toContain('unverified');
+    expect(tile.querySelector('.pn-agent--live')).toBeNull();
+    expect(tile.querySelector('.pn-st__statusglyph')?.getAttribute('title')).toContain('unverified');
   });
 
   it('the live COUNT is rows ∩ the seam live set — not rows whose record claims running', () => {
@@ -352,12 +472,7 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(within(tile).getAllByTestId('disabled-with-reason').length).toBeGreaterThan(0);
   });
 
-  it('D34: at the floor the row renders the SHORT word, and the title survives', () => {
-    // The defect this guards: 'running per record · unverified' is 31 chars in
-    // a nowrap flex:none slot, wider than the whole 200px content box, so the
-    // title — the ONE element meant to absorb the loss — collapses instead.
-    // The short word comes from the registry (shortLabel), not from a local
-    // abbreviation table.
+  it('D34: at the floor the one-line title and model survive without a status metadata row', () => {
     const compact = render(
       <EntityListPanel
         kind="work_session"
@@ -368,31 +483,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     const tile = compact.getAllByTestId('list-tile')[0]!;
-    const word = tile.querySelector('.lp__word')!;
-    expect(word.textContent).toBe('unverified');
-    expect(word.textContent).not.toContain('per record');
-    // The long sentence is not lost — it is on the element for pointer and AT.
-    expect(word.getAttribute('title')).toBeTruthy();
-    // And the title still has its text.
-    expect(tile.querySelector('.lp__title')?.textContent).toBe(sessionStale.title);
-    compact.unmount();
-
-    // Full width keeps the long form: the abbreviation is a floor behaviour,
-    // not a permanent downgrade of the sentence.
-    const wide = render(
-      <EntityListPanel
-        kind="work_session"
-        rowsFor={rowsFor([sessionStale])}
-        ctx={ctx}
-        livenessOf={() => 'unknown'}
-      />,
-    );
-    expect(wide.getAllByTestId('list-tile')[0]!.querySelector('.lp__word')?.textContent).toContain(
-      'per record',
-    );
+    expect(tile.querySelector('.pn-st__titleText')?.textContent).toBe(sessionStale.title);
+    expect(tile.querySelector('.pn-st__model')?.textContent).toBe(sessionStale.state.kind === 'work_session' ? sessionStale.state.model : null);
+    expect(tile.querySelector('.pn-st__inforow')).toBeNull();
   });
 
-  it('D34: a compact STREAMING row keeps its own word — "streaming" fits any floor', () => {
+  it('D34: a compact streaming row animates the agent mark without adding a text row', () => {
     const { getAllByTestId } = render(
       <EntityListPanel
         kind="work_session"
@@ -403,7 +499,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         compact
       />,
     );
-    expect(getAllByTestId('list-tile')[0]!.textContent).toContain('streaming');
+    const tile = getAllByTestId('list-tile')[0]!;
+    expect(tile.querySelector('.pn-agent--streaming')).not.toBeNull();
+    expect(tile.querySelector('.pn-st__inforow')).toBeNull();
   });
 
   it('the filter ROW is bounded by construction — one trigger, never one chip per option', () => {
@@ -643,9 +741,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         livenessOf={() => 'stale'}
       />,
     );
-    const word = getAllByTestId('list-tile')[0]!.querySelector('.lp__word')?.textContent ?? '';
-    expect(word).toContain('stale');
-    expect(word).not.toBe('running');
+    const tile = getAllByTestId('list-tile')[0]!;
+    expect(tile.querySelector('.pn-agent--live')).toBeNull();
+    expect(tile.querySelector('.pn-st__statusglyph')?.getAttribute('title')).toContain('node restarted');
   });
 
   it('R5 #2: in-panel search narrows rows client-side, and says WHY when nothing matches', () => {

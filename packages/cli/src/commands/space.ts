@@ -445,6 +445,27 @@ function renderHome(dto: unknown): string {
   );
 }
 
+/**
+ * `spaces.counts` is a bare kind→counters map, not a `{ rows: [...] }`
+ * projection, so it renders by walking its own keys rather than through
+ * `rowsOf`. Kinds absent from the payload have no entities and are omitted
+ * here too — printing a zero row for every unused kind would bury the ones
+ * that matter.
+ */
+function renderCounts(dto: unknown): string {
+  if (typeof dto !== 'object' || dto === null) return fallback(dto);
+  const lines = Object.entries(dto as Record<string, unknown>)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([kind, counters]) => {
+      const total = field(counters, 'total') ?? '0';
+      const unseen = field(counters, 'unseen') ?? '0';
+      // "unseen" is spelled out because a bare second number would read as an
+      // unlabelled quantity; the total is the headline and comes first.
+      return `${kind.padEnd(20)} ${total.padStart(6)}  ${unseen === '0' ? '' : `${unseen} unseen`}`.trimEnd();
+    });
+  return joinLines(lines, fallback(dto));
+}
+
 // ── the commands ────────────────────────────────────────────────────────────
 
 async function spaceList(cmd: CommandContext): Promise<ExitCode> {
@@ -523,7 +544,7 @@ async function spaceUpdate(cmd: CommandContext): Promise<ExitCode> {
 /** The three read-only Space projections, which differ only in row and renderer. */
 function spaceProjection(
   command: string,
-  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings',
+  operation: 'spaces.navigation' | 'spaces.home' | 'spaces.settings' | 'spaces.counts',
   render: (dto: unknown) => string,
 ): (cmd: CommandContext) => Promise<ExitCode> {
   return async (cmd) => {
@@ -813,6 +834,7 @@ export const SPACE_COMMANDS: CommandModule[] = [
     run: spaceProjection('space navigation get', 'spaces.navigation', renderNavigation),
   },
   { path: ['space', 'home', 'get'], run: spaceProjection('space home get', 'spaces.home', renderHome) },
+  { path: ['space', 'counts', 'get'], run: spaceProjection('space counts get', 'spaces.counts', renderCounts) },
   {
     path: ['space', 'settings', 'get'],
     run: spaceProjection('space settings get', 'spaces.settings', renderSettings),

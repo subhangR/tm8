@@ -1,0 +1,22 @@
+// Worktree lifecycle (TM8-WORKTREE-DESIGN Phase 2). Exported for the server's
+// spawn-integration phase; nothing in this package wires it into SpawnService
+// yet — the contract's SpawnWorkdir deliberately still refuses 'worktree'
+// until the saga lands (§7.4 prohibition 3: the manager and the contract
+// widening must land together, and the widening is Phase 3).
+export {
+  WorktreeManager,
+  isContainedIn,
+  type WorktreeAddParams,
+  type WorktreeListEntry,
+  type WorktreeManagerOptions,
+  type WorktreePreflight,
+} from './WorktreeManager.js';
+export {
+  WorktreeError,
+  assertCommitOid,
+  assertSafeBranchName,
+  assertSafeRefName,
+  runGit,
+  type GitResult,
+  type GitRunOptions,
+} from './git-invoker.js';

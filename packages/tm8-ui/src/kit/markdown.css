@@ -1,0 +1,238 @@
+/* ==========================================================================
+   MARKDOWN — the rendered doc body, one stylesheet for every surface that
+   shows markdown (the reader column and the editor's preview pane).
+
+   The type scale is the package's own (`--pn-fs-*`, `--pn-serif` for the
+   reading voice, `--pn-mono` for code); nothing here invents a size. Colours
+   are tokens only — the package hex guard scans this file.
+   ========================================================================== */
+
+.cv2-root .md-root {
+  font-family: var(--pn-serif);
+  font-size: var(--pn-fs-body);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+  min-width: 0;
+}
+
+/* --- headings -------------------------------------------------------------
+   Real heading levels, and the reason it matters: the reader used to promote
+   every heading into an outline chip and render the body as flat prose, so a
+   document's structure existed only in the chip row. These give the body its
+   own structure back. The outline still lists them — one is navigation, the
+   other is the document. */
+.cv2-root .md-root h1,
+.cv2-root .md-root h2,
+.cv2-root .md-root h3,
+.cv2-root .md-root h4,
+.cv2-root .md-root h5,
+.cv2-root .md-root h6 {
+  font-family: var(--pn-ui);
+  color: var(--pn-ink);
+  line-height: var(--pn-lh-snug);
+  letter-spacing: var(--pn-track-tight);
+  margin: 1.4em 0 0.5em;
+}
+.cv2-root .md-root > :first-child { margin-top: 0; }
+.cv2-root .md-root h1 { font-family: var(--pn-serif); font-size: var(--pn-fs-h1); font-weight: 500; }
+.cv2-root .md-root h2 { font-size: var(--pn-fs-h2); font-weight: 600; }
+.cv2-root .md-root h3 { font-size: var(--pn-fs-h3); font-weight: 600; }
+.cv2-root .md-root h4,
+.cv2-root .md-root h5,
+.cv2-root .md-root h6 { font-size: var(--pn-fs-title); font-weight: 600; }
+
+/* A rule under h1/h2 only — the two levels that open a section. */
+.cv2-root .md-root h1,
+.cv2-root .md-root h2 {
+  padding-bottom: 0.24em;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+/* --- prose ---------------------------------------------------------------- */
+.cv2-root .md-root p { margin: 0 0 0.85em; }
+.cv2-root .md-root strong { font-weight: 600; color: var(--pn-ink); }
+.cv2-root .md-root em { font-style: italic; }
+.cv2-root .md-root del { text-decoration: line-through; color: var(--pn-ink-3); }
+.cv2-root .md-root hr {
+  border: none;
+  border-top: 1px solid var(--pn-line);
+  margin: 1.6em 0;
+}
+
+.cv2-root .md-link {
+  color: var(--pn-brand);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.cv2-root .md-link:hover { color: var(--pn-ink); }
+
+/* --- lists ----------------------------------------------------------------
+   The shape the old parser destroyed most visibly: every bullet joined into
+   one paragraph. Nesting is preserved and indentation is per level. */
+.cv2-root .md-root ul,
+.cv2-root .md-root ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.5em;
+}
+.cv2-root .md-root li { margin: 0.2em 0; }
+.cv2-root .md-root li > ul,
+.cv2-root .md-root li > ol { margin: 0.2em 0; }
+/* GFM task lists: the checkbox is a rendered state, never an input the viewer
+   can toggle — nothing here writes back to the document. */
+.cv2-root .md-root li input[type='checkbox'] {
+  margin-right: 0.45em;
+  pointer-events: none;
+}
+
+/* --- quotes --------------------------------------------------------------- */
+.cv2-root .md-root blockquote {
+  margin: 0 0 0.9em;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 2px solid var(--pn-line-2);
+  color: var(--pn-ink-2);
+  font-style: italic;
+}
+.cv2-root .md-root blockquote p:last-child { margin-bottom: 0; }
+
+/* --- code -----------------------------------------------------------------
+   Inline spans stay inline. Fenced blocks get a real box with the language
+   named — no syntax highlighting ships, and the flat tokens are the honest
+   rendering of that rather than a half-coloured guess. */
+.cv2-root .md-code {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  background: var(--pn-hover);
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  padding: 0.08em 0.34em;
+  color: var(--pn-ink);
+}
+
+.cv2-root .md-fence {
+  display: block;
+  position: relative;
+  margin: 0 0 0.9em;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow: hidden;
+}
+.cv2-root .md-fence__lang {
+  display: block;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  text-transform: lowercase;
+  letter-spacing: var(--pn-track-mega);
+  color: var(--pn-ink-4);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+.cv2-root .md-fence__pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  white-space: pre;
+  tab-size: 2;
+}
+.cv2-root .md-fence__pre code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* --- tables ---------------------------------------------------------------
+   The wrapper scrolls so a wide table never widens the reading column. */
+.cv2-root .md-tablewrap {
+  display: block;
+  overflow-x: auto;
+  margin: 0 0 0.9em;
+}
+.cv2-root .md-table {
+  border-collapse: collapse;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  min-width: 100%;
+}
+.cv2-root .md-table th,
+.cv2-root .md-table td {
+  border: 1px solid var(--pn-line);
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.cv2-root .md-table th {
+  background: var(--pn-surface);
+  font-weight: 600;
+  color: var(--pn-ink);
+  white-space: nowrap;
+}
+
+/* --- images --------------------------------------------------------------- */
+.cv2-root .md-root img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--pn-r-sm);
+}
+
+/* --- mermaid diagrams ------------------------------------------------------
+   The diagram is CENTRED and allowed to scroll sideways rather than being
+   scaled down: a shrunk flowchart with unreadable labels is worse than one you
+   pan. Mermaid bakes its palette into the SVG at render time (see kit/Mermaid),
+   so almost nothing about the drawing itself is styleable from here — this is
+   the frame around it. */
+.cv2-root .md-mermaid {
+  display: block;
+  margin: 0 0 0.9em;
+  padding: 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-card);
+  overflow-x: auto;
+  text-align: center;
+}
+.cv2-root .md-mermaid__svg svg {
+  max-width: 100%;
+  height: auto;
+}
+.cv2-root .md-mermaid__pending {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+}
+
+/* A diagram that would not parse. It keeps its SOURCE — the author needs the
+   text to fix it — and states the parser's own words rather than "invalid". */
+.cv2-root .md-mermaid--failed {
+  text-align: left;
+  border-color: var(--pn-block);
+  background: var(--pn-block-soft);
+}
+.cv2-root .md-mermaid__error {
+  margin: 0 0 8px;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-2);
+}
+.cv2-root .md-mermaid__error strong { color: var(--pn-ink); }
+.cv2-root .md-mermaid__source {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 4px;
+  background: var(--pn-card);
+  overflow-x: auto;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-mono);
+  line-height: 1.55;
+  color: var(--pn-ink-2);
+  white-space: pre;
+  text-align: left;
+}

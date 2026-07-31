@@ -149,12 +149,39 @@ export interface PgDbOptions {
   readonly connectionTimeoutMillis?: number;
   readonly idleTimeoutMillis?: number;
   /**
+   * Server-enforced ceiling on any single statement. The interactive reads
+   * this pool serves complete in milliseconds; a statement still running after
+   * this long is a bug, and without the ceiling it holds one of `max` clients
+   * against every other request on the node.
+   */
+  readonly statementTimeoutMillis?: number;
+  /**
+   * Server-enforced ceiling on a transaction sitting idle between statements.
+   * This is the guard for the failure this pool has actually had in the field:
+   * a `tx` callback that awaits something that never resolves leaves its
+   * connection `idle in transaction` FOREVER — invisible to `/health`, fatal
+   * to every space-scoped read once it has happened `max` times. Postgres
+   * kills such a session at this timeout; the pool evicts the dead client and
+   * the node degrades for seconds instead of until someone runs
+   * `pg_terminate_backend` by hand.
+   */
+  readonly idleInTransactionTimeoutMillis?: number;
+  /**
    * Local test mode only. Passed as a per-connection PostgreSQL startup
    * setting, not a request claim, so it cannot be influenced by an HTTP
    * caller and does not widen the four-claim RLS contract.
    */
   readonly idempotencyEnabled?: boolean;
 }
+
+/**
+ * How long a transaction may stay open before the watchdog names it in the
+ * log. Diagnosis, not enforcement: the kill belongs to Postgres (see
+ * `idleInTransactionTimeoutMillis`); this exists so the log says WHICH call
+ * path was holding the client when it happened, which `pg_stat_activity`
+ * cannot.
+ */
+const TX_WATCHDOG_MILLIS = 10_000;
 
 export class PgDb implements Db {
   private readonly pool: pg.Pool;
@@ -165,6 +192,11 @@ export class PgDb implements Db {
       max: options.max ?? 8,
       connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5_000,
       idleTimeoutMillis: options.idleTimeoutMillis ?? 30_000,
+      // Startup parameters, applied by the server per connection — a stuck
+      // statement or an abandoned transaction is killed by Postgres itself,
+      // so no Node-side failure mode can wedge a pooled client permanently.
+      statement_timeout: options.statementTimeoutMillis ?? 30_000,
+      idle_in_transaction_session_timeout: options.idleInTransactionTimeoutMillis ?? 30_000,
       options: `-c tm8.idempotency_enabled=${options.idempotencyEnabled === false ? 'off' : 'on'}`,
     });
     // An idle-client error (server restart, sidecar bounce) is emitted on the
@@ -178,6 +210,19 @@ export class PgDb implements Db {
 
   async tx<T>(claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
+    // Captured BEFORE any await so the trace names the caller, not the pool
+    // internals. When Postgres kills a wedged transaction (see
+    // `idleInTransactionTimeoutMillis`) the error surfaces wherever the NEXT
+    // query runs — this log line is the only thing that names the code that
+    // was actually holding the client.
+    const openedAt = new Error('transaction opened here');
+    const watchdog = setTimeout(() => {
+      console.warn(
+        `[db] transaction still open after ${TX_WATCHDOG_MILLIS}ms ` +
+          `(request ${claims.requestId ?? 'unknown'})\n${openedAt.stack}`,
+      );
+    }, TX_WATCHDOG_MILLIS);
+    watchdog.unref?.();
     try {
       await client.query('begin');
       // One round trip, immediately after BEGIN and before any other statement:
@@ -202,6 +247,7 @@ export class PgDb implements Db {
       }
       throw translateDbError(err);
     } finally {
+      clearTimeout(watchdog);
       client.release();
     }
   }

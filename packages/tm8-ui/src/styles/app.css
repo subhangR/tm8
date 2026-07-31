@@ -42,3 +42,25 @@ body {
 .cv2-root {
   zoom: 1.1;
 }
+
+/* THE NESTED-SCOPE RESET — the bug the paragraph above walked straight into.
+   `.cv2-root` is BOTH the UI-scale hook and the theme scope, and the theme
+   scope is deliberately re-opened inside itself: EntityDetailPanel puts
+   `cv2-root` on the work_session panel to make it dark, and AlwaysDark opens a
+   third one around the terminal host. `zoom` MULTIPLIES down the ancestor
+   chain, so each of those re-applied the 1.1.
+
+   MEASURED, not reasoned: the work_session panel rendered at 1.21 (1.1²) while
+   every other panel rendered at 1.1, and the xterm host at 1.331 before its own
+   reciprocal — which is precisely the user's report, "the terminal is a bit
+   zoomed in … only the terminal, rest is good", and why the reciprocal in
+   terminal.css looked applied and still left the glyphs oversized.
+
+   A nested scope must re-declare TOKENS and nothing else. One `zoom: 1` here
+   is the fix for every nesting depth at once, and it is what makes
+   terminal.css's `calc(1 / 1.1)` finally land on a true 1.0 — i.e. xterm at a
+   physical 13px, which is maestro main's DEFAULT_TERMINAL_FONT_SIZE at its
+   `--app-zoom-scale: 1.0`. Same number, same screen. */
+.cv2-root .cv2-root {
+  zoom: 1;
+}

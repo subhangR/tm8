@@ -1,5 +1,16 @@
 # tm8 — Remote End-to-End Design (Phase 2)
 
+> ### ⚠ PARTIALLY SUPERSEDED — verified 2026-07-31
+>
+> Specific claims below were re-checked against the tree and found **false or stale**. The body is left unedited: it was accurate when written, and it remains the historical record. Corrections, with `file:line`, are tabulated in **`docs/plans/TM8-IDENTITY-OPEN-THREADS.md` §3**; the verified current state is **`docs/plans/TM8-AUTH-AND-IDENTITY-VERIFIED-STATE.md`**.
+>
+> - `:355` "align `PgIdentityRepository` to the RPC signatures" — **understates the work 2–3×**. Prefer this document's own stated alternative ("a fresh minimal query set mirroring `loopback.ts`"). A new migration is also required: `008:204-206` gives `accounts`/`auth_sessions` zero RLS policies by design.
+> - ~11 `file:line` citations have drifted (e.g. `main.ts:266-271` → `:288-293`). Substance checked out every time; only lines moved.
+> - Status: still a **draft pending ratification**. It is not a record of built behaviour.
+>
+> **Do not cite this document for current behaviour without re-verifying against code.** Three claims were published as verified during a 2026-07-31 investigation purely by trusting it; all three were wrong.
+
+
 **Status:** design draft, for adversarial review
 **Date:** 2026-07-27
 **Dependencies:** `docs/plans/PHASE-2-REMOTE-SERVER-INTEGRATION.md` (binding boundary — its §2 invariants are not relitigated here, its §11 is the 15-item checklist this document closes), `docs/plans/WORKSPACE-LAYOUT-AND-TERMINOLOGY.md` v2.11 FINAL GO, `docs/tm8-architecture/05-DECISIONS.md`, and the three research briefs (corpus, code, clients) prepared for this design pass.

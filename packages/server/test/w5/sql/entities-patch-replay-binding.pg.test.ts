@@ -79,17 +79,23 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
  * before-and-after recorded; never to a pattern, never to a live-computed set.
  */
 const PATCH_DOORS = [
+  // Before 2026-07-31 this was eleven doors. Migrations 056 (entity_memory)
+  // and 057 (worktrees) added `update_memory` and `update_worktree`, both
+  // carrying 038's replay binding from birth — the detector fired, and the
+  // list moved to the new exact literals (never to a pattern).
   'update_channel',
   'update_collection',
   'update_commit_entity',
   'update_custom_entity',
   'update_document',
   'update_file_entity',
+  'update_memory',
   'update_pull_request_entity',
   'update_skill_entity',
   'update_spell_entity',
   'update_task_content',
   'update_team_member',
+  'update_worktree',
 ] as const;
 
 /** Remove `--` line comments. The whole point of the file. */
@@ -130,9 +136,9 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
     await database?.destroy();
   }, 120_000);
 
-  it('the frozen list is exactly eleven and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(11);
-    expect(new Set(PATCH_DOORS).size).toBe(11);
+  it('the frozen list is exactly thirteen and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(13);
+    expect(new Set(PATCH_DOORS).size).toBe(13);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }

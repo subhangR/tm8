@@ -17,16 +17,20 @@ import {
   SpaceTabBar,
   useNotices,
   type KindPresenter,
+  type MenuDynamicGroup,
   type MenuTarget,
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
+import { screenStackStore } from '../stores/screenStackStore';
 import { navStore, useNavStore } from '../stores/navStore';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
+import { PromptsOverlay } from '../prompts';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DetailReasons } from '../panels';
+import { BootLoader } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
   authoredFromHollowReason,
@@ -43,6 +47,7 @@ import { EntityView } from './EntityView';
 import { HomeScreen } from '../home';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
+import { ChannelView } from './ChannelView';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -98,6 +103,7 @@ export function GateApp(props: GateAppProps = {}) {
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [menuCollapsed, setMenuCollapsed] = useState(false);
   const [addServerOpen, setAddServerOpen] = useState(false);
+  const [promptsOpen, setPromptsOpen] = useState(false);
   const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
     type: 'view',
     ref: 'workspace',
@@ -105,6 +111,28 @@ export function GateApp(props: GateAppProps = {}) {
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
+  const contentSurface = useNavStore((s) => s.contentSurface);
+  const [viewerMemberId, setViewerMemberId] = useState<string | null>(null);
+
+  // Surface preferences are member+session scoped. Identity is a read-only
+  // browser fact; it does not participate in provider/model launch selection.
+  useEffect(() => {
+    let active = true;
+    if (!data.spaceId) {
+      setViewerMemberId(null);
+      return () => { active = false; };
+    }
+    void data.seam.identity().then((identity) => {
+      if (!active) return;
+      setViewerMemberId(
+        identity.memberships.find((membership) => membership.spaceId === data.spaceId)?.memberId
+          ?? identity.identityId,
+      );
+    }).catch(() => {
+      if (active) setViewerMemberId(null);
+    });
+    return () => { active = false; };
+  }, [data.seam, data.spaceId]);
 
   // D44/D51 launch sheet. Transient client state — never the URL (§11), so a
   // shared link cannot open someone else's half-configured spawn surface.
@@ -132,8 +160,10 @@ export function GateApp(props: GateAppProps = {}) {
       unpin: (id) => actions.unpin(id),
       promote: (id) => actions.promote(id),
       applyNormalization: (next) => actions.applyNormalization(next),
+      surfaceOf: (id) => contentSurface[id] ?? null,
+      setContentSurface: (id, surface) => actions.setContentSurface(id, surface),
     };
-  }, [stack, pinned]);
+  }, [stack, pinned, contentSurface]);
 
   /**
    * GAP #0 (Surface Audit final): the palette and the C6 controller were
@@ -165,7 +195,8 @@ export function GateApp(props: GateAppProps = {}) {
         (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
       kb.setContext({
         textEntry,
-        modalDepth: paletteOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
+        modalDepth:
+          paletteOpen || promptsOpen || (launch.isModalOpen?.() ?? false) ? 1 : 0,
       });
       // Legacy ⌘\ stays honored even if the binding table names it
       // differently — losing a shipped shortcut would be its own regression.
@@ -186,7 +217,7 @@ export function GateApp(props: GateAppProps = {}) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [paletteOpen, launch]);
+  }, [paletteOpen, promptsOpen, launch]);
 
   /**
    * Kind refs resolve through the DOMAIN REGISTRY (§15.2) — shell never maps a
@@ -197,9 +228,68 @@ export function GateApp(props: GateAppProps = {}) {
   const presentKind = useCallback<KindPresenter>((ref) => {
     const row = getKind(ref);
     if (row.kind !== ref) return null;
+    // `live` stays SESSIONS-ONLY and keeps its meaning: the green dot is the
+    // count of PTYs actually running, from the liveness snapshot. It is not a
+    // count of rows, and no other kind has an equivalent, so no other kind
+    // gets one.
     const live = ref === DEFAULT_RIGHT_KIND ? data.liveIds.length : undefined;
-    return { label: row.labelPlural, icon: row.icon as unknown as string, live };
-  }, [data.liveIds.length]);
+    // The rail's own numbers, from `spaces.counts`. Absent (a node that cannot
+    // serve them, or a not-yet-completed first read) means NO number — never a
+    // fabricated zero, which would assert the space is empty.
+    const counts = data.countsFor(ref);
+    return {
+      label: row.labelPlural,
+      icon: row.icon as unknown as string,
+      live,
+      ...(counts ? { badge: counts.total, unseen: counts.unseen } : {}),
+    };
+  }, [data.liveIds.length, data.countsFor]);
+
+  // Collab v2's channel grammar: "Channels" is a label, while the active
+  // space's actual channel entities are the rows beneath it. The query is the
+  // same live collection projection every other entity list consumes.
+  const channelKind = getKind('channel');
+  const channelEntities = data.rowsFor(channelKind.kind)(undefined);
+  const channelGroup = useMemo<MenuDynamicGroup>(() => ({
+    replaceConfiguredItems: true,
+    emptyLabel: 'No channels in this space yet.',
+    items: channelEntities.map((entity) => {
+      const state = entity.state as unknown as { unreadCount?: number; workingAgentCount?: number };
+      return {
+        id: entity.id,
+        kind: entity.kind,
+        parentId: entity.parentId,
+        label: entity.title,
+        icon: '#',
+        ...(state.unreadCount ? { badge: state.unreadCount } : {}),
+        ...(state.workingAgentCount ? { live: state.workingAgentCount } : {}),
+      };
+    }),
+  }), [channelEntities]);
+
+  // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
+  // entities are the rows. The glyph comes from the REGISTRY row (as
+  // `presentKind` does above) rather than being authored here — a second
+  // authored glyph beside the registry's would drift the moment either moves.
+  const voiceKind = getKind('voice_channel');
+  const voiceEntities = data.rowsFor(voiceKind.kind)(undefined);
+  const voiceGroup = useMemo<MenuDynamicGroup>(() => ({
+    replaceConfiguredItems: true,
+    emptyLabel: 'No voice channels in this space yet.',
+    items: voiceEntities.map((entity) => {
+      const state = entity.state as unknown as { participantCount?: number };
+      return {
+        id: entity.id,
+        kind: entity.kind,
+        parentId: entity.parentId,
+        label: entity.title,
+        icon: voiceKind.icon as unknown as string,
+        // `live` renders the green ● n treatment. An EMPTY room gets no badge:
+        // "● 0" would present nobody-is-here as a presence signal.
+        ...(state.participantCount ? { live: state.participantCount } : {}),
+      };
+    }),
+  }), [voiceEntities, voiceKind.icon]);
 
   const reasons = useMemo<DetailReasons>(
     () => ({
@@ -247,10 +337,14 @@ export function GateApp(props: GateAppProps = {}) {
   );
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
-    if (scope === 'view') setActiveTarget({ type: 'view', ref: ref as never });
+    if (scope === 'view' && ref === 'channels' && channelEntities[0]) {
+      setActiveTarget({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
+    } else if (scope === 'view') {
+      setActiveTarget({ type: 'view', ref: ref as never });
+    }
     if (scope === 'kind') setActiveTarget({ type: 'kind', ref });
     setPaletteOpen(false);
-  }, []);
+  }, [channelEntities]);
 
   return (
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
@@ -262,9 +356,19 @@ export function GateApp(props: GateAppProps = {}) {
           }}
           spaces={data.spaces}
           activeSpaceId={data.spaceId || null}
-          onSelectSpace={(id: SpaceId) => void id}
+          onSelectSpace={(id: SpaceId) => {
+            navStore.getState().applyNormalization({ stack: [], pinned: [] });
+            navStore.getState().setSession(null);
+            /* Entity ids are SPACE-SCOPED and the screen stacks are module-level,
+               so they outlive this switch. Without this, a kind screen would
+               restore an entity belonging to the space just left. */
+            screenStackStore.getState().clearAll();
+            setActiveTarget({ type: 'view', ref: 'workspace' });
+            data.selectSpace(id);
+          }}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
+          onOpenPrompts={() => setPromptsOpen(true)}
           // D1: theme's one home is the account menu. No tab-bar toggle.
           onOpenAccount={toggleTheme}
           // T3-3, user-ordered 2026-07-29: the real account menu — signed-in
@@ -285,11 +389,17 @@ export function GateApp(props: GateAppProps = {}) {
             activeTarget={activeTarget}
             onNavigate={setActiveTarget}
             presentKind={presentKind}
+            dynamicGroups={{ channels: channelGroup, voice: voiceGroup }}
             servers={props.servers}
             activeServerId={activeServer.id}
             onSelectServer={(id) => {
               navStore.getState().applyNormalization({ stack: [], pinned: [] });
               navStore.getState().setSession(null);
+              /* Entity ids are SPACE-SCOPED and the screen stacks are module-level,
+                 so they outlive this switch. Without this, a kind screen would
+                 restore an entity belonging to the space just left. */
+              screenStackStore.getState().clearAll();
+              setActiveTarget({ type: 'view', ref: 'workspace' });
               props.onSelectServer?.(id);
             }}
             onAddServer={props.onAddServer ? () => setAddServerOpen(true) : undefined}
@@ -299,7 +409,33 @@ export function GateApp(props: GateAppProps = {}) {
               screen renders the designed error state with retry; the rail and
               tab bar above stay live for navigating away. */}
           <CatchBoundary label="view">
-          {data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
+          {data.ready &&
+            activeTarget?.type === 'entity' &&
+            activeTarget.kind === voiceKind.kind ? (
+            /* THE MISROUTE FIX. The branch below tested only `type === 'entity'`
+               with NO kind check, so EVERY entity target rendered ChannelView —
+               a voice rail row would have opened a message feed against a room
+               that has none, and the feed would have looked empty rather than
+               wrong. Guarded here, above it, because the rail now emits voice
+               entity targets.
+
+               The room UI itself is being built separately; until it lands this
+               SAYS SO, in the same idiom as `unbuilt-view` below. An honest
+               placeholder is the correct state — silently borrowing another
+               kind's screen is the failure class this replaces. */
+            <div className="ev-root" data-testid="unbuilt-voice-view">
+              <p className="evt-empty" style={{ margin: 24 }}>
+                {'Voice room — not built yet. This channel exists, but its room UI does not exist in this build; nothing is hidden here.'}
+              </p>
+            </div>
+          ) : data.ready && activeTarget?.type === 'entity' ? (
+            <ChannelView
+              data={data}
+              channelId={activeTarget.ref as EntityId}
+              serverBaseUrl={activeServer.routeBaseUrl}
+              reasons={reasons}
+            />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
             /* ◉ Graph follows the D65 pattern exactly:
                an activated menu view replaces the centre WHOLESALE — full
                width, no side lists; node C1 clicks open the Z3 aside inside
@@ -316,9 +452,7 @@ export function GateApp(props: GateAppProps = {}) {
               error={data.graph.error}
               onRetry={data.graph.refresh}
             />
-          ) : data.ready &&
-            (activeTarget?.type === 'kind' ||
-              (activeTarget?.type === 'view' && activeTarget.ref === 'channels')) ? (
+          ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside
                on row click, Z4 full on promote. The workspace stays the one
                three-panel exception below. CHANNELS is a contract VIEW ref
@@ -326,8 +460,9 @@ export function GateApp(props: GateAppProps = {}) {
                to the workspace silently — the misroute-honesty class). */
             <EntityView
               data={data}
+              viewerMemberId={viewerMemberId}
               serverBaseUrl={activeServer.routeBaseUrl}
-              kind={activeTarget.type === 'kind' ? activeTarget.ref : 'channel'}
+              kind={activeTarget.ref}
               reasons={reasons}
               onNotice={notices.push}
               onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
@@ -355,6 +490,7 @@ export function GateApp(props: GateAppProps = {}) {
           ) : data.ready ? (
             <WorkspaceView
               data={data}
+              viewerMemberId={viewerMemberId}
               serverBaseUrl={activeServer.routeBaseUrl}
               nav={nav}
               leftKind={kinds.leftKind}
@@ -436,16 +572,25 @@ export function GateApp(props: GateAppProps = {}) {
             /* GAP-1 (data-wiring handover): with the real seam now the
                default, an unreachable node is a NORMAL state and must be
                STATED — never a spinner that resolves for nobody, never a
-               silent fall-back to fixtures. */
-            <div className="shell-boot" role="alert">
-              <strong>Can’t reach the tm8 node.</strong>
-              <div>{data.bootError}</div>
-              <div>The workspace is empty because nothing could be read — not because there is nothing in it.</div>
-            </div>
+               silent fall-back to fixtures. Two distinct honest states share
+               this card: a node that could not be read (boot keeps retrying
+               in the background), and a node that answered with zero spaces
+               (nothing to retry — there is nothing to open). */
+            data.bootError.startsWith('this node has no spaces') ? (
+              <div className="shell-boot" role="alert">
+                <strong>No spaces on this node.</strong>
+                <div>{data.bootError}</div>
+              </div>
+            ) : (
+              <div className="shell-boot" role="alert">
+                <strong>Can’t reach the tm8 node.</strong>
+                <div>{data.bootError}</div>
+                <div>The workspace is empty because nothing could be read — not because there is nothing in it.</div>
+                <div>Retrying automatically — this clears itself the moment the node answers.</div>
+              </div>
+            )
           ) : (
-            <div className="shell-boot" role="status">
-              loading workspace…
-            </div>
+            <BootLoader label="loading workspace" />
           )}
           </CatchBoundary>
         </div>
@@ -463,6 +608,7 @@ export function GateApp(props: GateAppProps = {}) {
           onOpenView={openPaletteView}
           onDismiss={() => setPaletteOpen(false)}
         />
+        <PromptsOverlay open={promptsOpen} onClose={() => setPromptsOpen(false)} />
         <NoticeHost notices={notices.notices} onDismiss={notices.dismiss} />
         <AddServerDialog
           open={addServerOpen}

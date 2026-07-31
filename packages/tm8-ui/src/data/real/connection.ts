@@ -79,6 +79,14 @@ export interface ConnectionConfig {
   resyncGapMs: number;
   /** Server clamps to 500; 200 matches the pump's batch size. */
   pollLimit: number;
+  /**
+   * Inbound silence past which the half-open probe runs (see the idle
+   * watchdog). Quiet is normal — this is deliberately generous; the probe,
+   * not the silence, decides whether the socket is dead.
+   */
+  idleProbeAfterMs: number;
+  /** How often the watchdog looks at the silence clock while the socket is open. */
+  idleCheckIntervalMs: number;
 }
 
 export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
@@ -88,6 +96,8 @@ export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   accelerateIntervalMs: 400,
   resyncGapMs: 10 * 60 * 1_000,
   pollLimit: 200,
+  idleProbeAfterMs: 90_000,
+  idleCheckIntervalMs: 45_000,
 };
 
 export interface ConnectionDeps {
@@ -223,12 +233,96 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
 
   function dispatch(event: DurableWorkspaceEvent): void {
     if (disposed) return;
+    lastInboundAtMs = now();
     // Events are delivered only for OPEN spaces — the seam's own wording.
     if (!open.has(event.spaceId)) return;
     const last = cursors.get(event.spaceId) ?? 0;
     if (event.seq <= last) return;
     cursors.set(event.spaceId, event.seq);
     fanout(eventSubs, event);
+  }
+
+  // -- half-open watchdog ----------------------------------------------------
+  //
+  // The one disconnection this state machine could not see: a socket whose
+  // peer died WITHOUT a FIN (sleep/wake, network switch, killed server). The
+  // browser fires no `close`, `phase` stays `live`, the poll fallback never
+  // engages, and the UI silently stops advancing. There is no client-visible
+  // heartbeat (protocol pings are answered below JS), and inbound silence
+  // alone must not read as death — a quiet workspace is quiet.
+  //
+  // So the watchdog asks the one question that distinguishes them: after
+  // `idleProbeAfterMs` of inbound silence, poll the durable log from the
+  // current cursor. Items found = the log advanced while the socket sat
+  // silent = the socket is not delivering: dispatch what the probe found (the
+  // ordinary path — the seq law dedupes) and close the socket, which engages
+  // the normal fallback-and-backoff machinery. Nothing found = quiet really
+  // was quiet; the probe itself is fresh evidence the node answers.
+
+  let lastInboundAtMs = now();
+  let idleTimer: unknown = null;
+  let idleProbeInFlight = false;
+
+  function stopIdleWatchdog(): void {
+    if (idleTimer !== null) {
+      timers.clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  }
+
+  function scheduleIdleCheck(): void {
+    if (disposed || idleTimer !== null) return;
+    idleTimer = timers.setTimeout(() => {
+      idleTimer = null;
+      void idleCheck().finally(() => {
+        if (!disposed && socket !== null && socket.isOpen()) scheduleIdleCheck();
+      });
+    }, cfg.idleCheckIntervalMs);
+  }
+
+  async function idleCheck(): Promise<void> {
+    if (disposed || socket === null || !socket.isOpen()) return;
+    if (idleProbeInFlight) return;
+    if (now() - lastInboundAtMs < cfg.idleProbeAfterMs) return;
+    idleProbeInFlight = true;
+    try {
+      for (const spaceId of open) {
+        const since = cursors.get(spaceId) ?? 0;
+        let page: DurableEventPage | undefined;
+        try {
+          page = await deps.poll(spaceId, since, cfg.pollLimit);
+        } catch (err) {
+          // The probe could not run — that is transport news the HTTP layer
+          // already reported via noteTransport; the next check retries.
+          onError(err, 'idle probe');
+          return;
+        }
+        let missed = false;
+        for (const raw of page?.items ?? []) {
+          if (typeof raw?.seq === 'number' && raw.seq > since) missed = true;
+          dispatch(raw);
+        }
+        if (missed) {
+          onError(
+            new Error(`space ${spaceId} advanced while the socket sat silent — reconnecting`),
+            'idle probe',
+          );
+          // `SocketHandle.close()` silences its own handlers (socket.ts) —
+          // `handleClose` must be driven here, the same way the factory-throw
+          // path drives it, or the manager would sit on a closed socket with
+          // no fallback and no reconnect.
+          socket?.close();
+          handleClose();
+          return;
+        }
+      }
+      // Probed clean: the node answered and nothing was missed. Count it as
+      // liveness evidence so a genuinely quiet workspace is probed on the
+      // idle cadence, not hammered on the check cadence.
+      lastInboundAtMs = now();
+    } finally {
+      idleProbeInFlight = false;
+    }
   }
 
   // -- socket ----------------------------------------------------------------
@@ -290,6 +384,8 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
     }
 
     setPhase({ phase: 'live' });
+    lastInboundAtMs = now();
+    scheduleIdleCheck();
     if (reconnected) fanout(reconnectSubs);
   }
 
@@ -322,6 +418,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   function handleClose(): void {
     socket = null;
     connecting = false;
+    stopIdleWatchdog();
     if (disposed) return;
     for (const spaceId of open) stopAccelerate(spaceId);
     if (disconnectedAtMs === null) disconnectedAtMs = now();
@@ -502,6 +599,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       if (disposed) return;
       disposed = true;
       stopPollers();
+      stopIdleWatchdog();
       for (const spaceId of open) stopAccelerate(spaceId);
       if (reconnectTimer !== null) { timers.clearTimeout(reconnectTimer); reconnectTimer = null; }
       socket?.close();

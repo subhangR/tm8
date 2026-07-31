@@ -42,12 +42,15 @@ const ADDITIVE_OPERATIONS = [
 
 describe('W1 adopted catalog target', () => {
   it('adds exactly A01-A21 in dossier order with exact bindings and kinds', () => {
-    expect(OPERATIONS.slice(-ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
+    // The A01-A21 dossier block is no longer the literal tail (the artifacts
+    // amendment appends six rows after it); locate the block by its first row.
+    const start = OPERATIONS.findIndex((op) => op.name === ADDITIVE_OPERATIONS[0].name);
+    expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 106-row target without changing reserved honesty', () => {
-    expect(OPERATIONS).toHaveLength(106);
-    expect(V1_OPERATIONS).toHaveLength(104);
+  it('reconciles the additive 119-row target (110 W1 + voice.token.create + 6 artifacts + execution.resume + spaces.counts) without changing reserved honesty', () => {
+    expect(OPERATIONS).toHaveLength(119);
+    expect(V1_OPERATIONS).toHaveLength(117);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -63,21 +66,55 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 39, POST: 42, PATCH: 9, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 43, POST: 50, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 42, command: 63, stream: 1 });
+    }).toEqual({ read: 46, command: 72, stream: 1 });
+  });
+});
+
+describe('Session-resume amendment (2026-07-31) — one row inside the execution family', () => {
+  it('adds exactly execution.resume, bound to the entity-command shape, beside its family', () => {
+    const attach = OPERATIONS.findIndex((op) => op.name === 'execution.streams.attach');
+    expect(OPERATIONS[attach + 1]).toEqual({
+      name: 'execution.resume', method: 'POST', path: '/v2/entities/:id/commands/resume',
+      kind: 'command', status: 'v1',
+    });
+  });
+});
+
+describe('Voice channels amendment (2026-07-31 plan) — additive, does not touch the W1 tail', () => {
+  it('adds exactly voice.token.create ahead of the frozen A01-A21 tail', () => {
+    const firstAdditive = OPERATIONS.findIndex((op) => op.name === ADDITIVE_OPERATIONS[0].name);
+    expect(OPERATIONS[firstAdditive - 1]).toEqual({
+      name: 'voice.token.create', method: 'POST', path: '/v2/entities/:id/commands/voice-token',
+      kind: 'command', status: 'v1',
+    });
+  });
+});
+
+describe('Artifacts amendment (TM8-ARTIFACTS-DESIGN §8.1) — six trailing rows', () => {
+  it('appends exactly the six artifact operations after the A01-A21 tail', () => {
+    expect(OPERATIONS.slice(-6)).toEqual([
+      { name: 'artifacts.create', method: 'POST', path: '/v2/artifacts', kind: 'command', status: 'v1' },
+      { name: 'artifacts.publish', method: 'POST', path: '/v2/artifacts/:artifactId/revisions', kind: 'command', status: 'v1' },
+      { name: 'artifacts.revisions.list', method: 'GET', path: '/v2/artifacts/:artifactId/revisions', kind: 'read', status: 'v1' },
+      { name: 'artifacts.preview.start', method: 'POST', path: '/v2/artifacts/:artifactId/preview-sessions', kind: 'command', status: 'v1' },
+      { name: 'artifacts.export', method: 'GET', path: '/v2/artifacts/:artifactId/revisions/:revisionNumber/export', kind: 'read', status: 'v1' },
+      { name: 'artifacts.restore', method: 'POST', path: '/v2/artifacts/:artifactId/commands/restore-revision', kind: 'command', status: 'v1' },
+    ]);
   });
 });
 
 describe('W1 frozen-row schema amendments', () => {
-  it('adds only project and interaction_profile to the core-kind registry', () => {
+  it('adds project, interaction_profile, and (voice plan) voice_channel to the core-kind registry', () => {
     expect(CoreEntityKindSchema.options).toEqual([
       'channel', 'task', 'message', 'member', 'team_member',
       'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
       'work_session', 'collection', 'project', 'interaction_profile',
+      'voice_channel', 'memory', 'worktree', 'artifact',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

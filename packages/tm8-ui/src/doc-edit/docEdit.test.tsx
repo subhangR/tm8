@@ -174,9 +174,13 @@ describe('F1b — the edit surface exists and every control is reachable', () =>
     const { commands } = scripted();
     render(<Harness commands={commands} body={'## Floors\n\nfloors are law.\n\n> C_min = max(320, V·320)'} />);
     fireEvent.click(screen.getByTestId('doc-stance-preview'));
-    expect(screen.getByTestId('doc-preview-heading').textContent).toBe('Floors');
-    expect(screen.getByTestId('doc-preview-quote').textContent).toContain('C_min');
-    expect(screen.getByTestId('doc-preview-prose').textContent).toContain('floors are law.');
+    // Rendered through the SAME `kit/Markdown` the reader uses (user ruling
+    // 2026-07-31), so a heading is an <h2> rather than a styled <p>. A preview
+    // that renders differently from the reader is not a preview.
+    const preview = screen.getByTestId('doc-preview');
+    expect(preview.querySelector('h2')!.textContent).toBe('Floors');
+    expect(preview.querySelector('blockquote')!.textContent).toContain('C_min');
+    expect(preview.querySelector('p')!.textContent).toContain('floors are law.');
   });
 });
 
@@ -476,11 +480,36 @@ describe('blocks', () => {
     expect(screen.getByTestId('disabled-with-reason')).toBeTruthy();
   });
 
-  it('the preview shows the block as a placeholder that states it is not rendered', () => {
+  it('the preview shows an ordinary fence as REAL code, labelled with its language', () => {
+    // REPLACES "the preview shows the block as a placeholder that states it is
+    // not rendered" (user ruling 2026-07-31). The placeholder was honest about
+    // having no renderer but hid the content entirely; the source in a
+    // labelled code block claims no more and shows what is actually there.
+    const { commands } = scripted();
+    render(<Harness commands={commands} body={'```bash\nbun run dev\n```'} />);
+    fireEvent.click(screen.getByTestId('doc-stance-preview'));
+    const preview = screen.getByTestId('doc-preview');
+    const fence = preview.querySelector('[data-testid="markdown-fence"]')!;
+    expect(fence).not.toBeNull();
+    expect(fence.getAttribute('data-lang')).toBe('bash');
+    expect(fence.textContent).toContain('bun run dev');
+    expect(preview.textContent).not.toMatch(/not rendered/i);
+  });
+
+  it('a MERMAID fence is handed to the diagram renderer, not drawn as code', () => {
+    // `WITH_BLOCK` is a mermaid fence, and mermaid is the one language the
+    // renderer hands off (user ruling 2026-07-31: "titles, code, mermaid, all
+    // this should come"). The drawing itself needs a browser — mermaid measures
+    // text to lay out nodes and jsdom has no layout — so what is asserted here
+    // is the ROUTING, and `e2e/mermaid.spec.ts` asserts the actual SVG.
     const { commands } = scripted();
     render(<Harness commands={commands} body={WITH_BLOCK} />);
     fireEvent.click(screen.getByTestId('doc-stance-preview'));
-    expect(screen.getByTestId('doc-preview-block').textContent).toMatch(/not rendered|no renderer/i);
+    const preview = screen.getByTestId('doc-preview');
+    expect(preview.querySelector('.md-mermaid')).not.toBeNull();
+    // Never the code path, and never the retired placeholder.
+    expect(preview.querySelector('[data-testid="markdown-fence"]')).toBeNull();
+    expect(preview.textContent).not.toMatch(/not rendered/i);
   });
 
   it('F2b — the block editor slot exists and says why it cannot open', () => {
@@ -517,8 +546,9 @@ describe('F2a — the Z4 split view is the same editing session', () => {
     const { commands } = scripted();
     render(<SplitHarness commands={commands} />);
     fireEvent.change(screen.getByTestId('doc-source'), { target: { value: '## Live\n\ntyped once' } });
-    expect(screen.getByTestId('doc-preview').textContent).toContain('typed once');
-    expect(screen.getByTestId('doc-preview-heading').textContent).toBe('Live');
+    const preview = screen.getByTestId('doc-preview');
+    expect(preview.textContent).toContain('typed once');
+    expect(preview.querySelector('h2')!.textContent).toBe('Live');
   });
 
   it('carries the same Cancel/Save pair and the same save word', () => {

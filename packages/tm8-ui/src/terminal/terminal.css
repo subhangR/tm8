@@ -191,7 +191,7 @@
    grid. The ghost placeholder (only present pre-mount / non-live verdicts)
    centers itself instead, absolutely positioned over the empty box.
 
-   COUNTER-SCALE, root-caused by the master: `.cv2-root` (styles/app.css:43)
+   COUNTER-SCALE, root-caused by the master: `.cv2-root` (styles/app.css)
    applies `zoom: 1.1` — the user's ruled UI-scale experiment — and every
    descendant inherits it, including this one. A live xterm's canvas glyphs
    are not the UI's to scale (R9's logic extended past color/font to size):
@@ -199,8 +199,18 @@
    canvas, is exactly the "oversized and blurry vs. maestro" complaint. No
    `--*-zoom` custom property exists to read here (checked; app.css keeps the
    1.1 as a literal) — hardcoded to its reciprocal, WHICH MUST STAY IN SYNC
-   WITH styles/app.css:43. If that literal ever changes, this one has to
-   change with it; there is no other mechanism holding them together.
+   WITH app.css's `.cv2-root { zoom }`. If that literal ever changes, this one
+   has to change with it; there is no other mechanism holding them together.
+
+   THIS RECIPROCAL WAS RIGHT AND STILL DID NOT WORK, 2026-07-31. `zoom`
+   multiplies down the ancestor chain, and `.cv2-root` is re-opened as a THEME
+   scope inside itself twice on this path — the work_session panel, then
+   AlwaysDark around this host. Measured: 1.1³ × (1/1.1) = 1.21, so the user's
+   "the terminal is a bit zoomed in" survived a counter-scale that reads as
+   exactly correct in isolation. The fix is app.css's `.cv2-root .cv2-root {
+   zoom: 1 }` — a nested scope re-declares TOKENS and never the UI scale —
+   which is what makes the reciprocal below finally land on a true 1.0. If that
+   reset is ever removed, this rule silently under-corrects again.
    The reciprocal alone is not the whole fix — see LiveTerminal.tsx's mount
    effect for the forced cell re-measurement `zoom` requires (xterm's canvas
    font metrics do not recompute on their own when the ambient zoom changes). */

@@ -12,12 +12,12 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
     // registerableV1Http; reserved and ws unmoved).
     expect(response.result).toMatchObject({
       catalog: {
-        total: 102,
-        v1: 100,
+        total: 117,
+        v1: 115,
         reserved: 2,
-        http: 101,
+        http: 116,
         ws: 1,
-        registerableV1Http: 99,
+        registerableV1Http: 114,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

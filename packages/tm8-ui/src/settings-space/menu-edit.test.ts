@@ -120,7 +120,8 @@ describe('remove', () => {
     const d = removeChild(startDraft(BASE), 'workspace', 0, 0);
     const item = draftConfig(d).groups.find((g) => g.id === 'workspace')?.items[0];
     expect(item?.type).toBe('view');
-    expect(item?.type === 'view' ? item.children : []).toHaveLength(3);
+    // Revision 4 ships six caret children; removing one leaves five.
+    expect(item?.type === 'view' ? item.children : []).toHaveLength(5);
   });
 
   it('removing the settings row makes the draft UNRENDERABLE and says so', () => {
@@ -181,7 +182,8 @@ describe('add', () => {
     const free = availableKindRefs(startDraft(BASE));
     const d = addChild(startDraft(BASE), 'workspace', 0, { type: 'kind', ref: free[0] });
     const item = draftConfig(d).groups.find((g) => g.id === 'workspace')?.items[0];
-    expect(item?.type === 'view' ? item.children : []).toHaveLength(5);
+    // Six shipped children (revision 4) plus the added one.
+    expect(item?.type === 'view' ? item.children : []).toHaveLength(7);
     expect(draftIssue(d)).toBeNull();
   });
 });
@@ -210,7 +212,8 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
     const d = startDraft(BASE);
     const cap = childCapacity(d, 'workspace', 0);
     expect(cap.max).toBe(MENU_CAPS.children);
-    expect(cap.used).toBe(4);
+    // Revision 4: task, work_session, doc, team_member, memory, artifact.
+    expect(cap.used).toBe(6);
     expect(cap.full).toBe(false);
   });
 

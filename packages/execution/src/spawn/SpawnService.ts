@@ -6,6 +6,7 @@
 // terminal as `PtyHostService`, and both are swappable in tests. The whole
 // point is that the PTY assertions can run with no Postgres at all.
 
+import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -13,17 +14,24 @@ import type { PtyHostService } from '../pty/PtyHostService.js';
 import type { Logger, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
+import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
 import {
   buildAgentCommand,
   composeEnv,
   composeManifest,
+  resolveAgentBinary,
   resolveLaunchConfig,
+  resolveSessionTitle,
   resolveWorkdir,
   withAgentPrompt,
+  withAgentResume,
 } from './manifest.js';
+import { resolveCodexNativeSessionId } from './native-session.js';
 import type {
   GraphAuth,
   GraphPort,
+  InteractionProfilePinContext,
+  ResumeRequest,
   SpawnRequest,
   SpawnResult,
   Tm8Manifest,
@@ -153,6 +161,15 @@ export class SpawnService {
     });
 
     const launch = resolveLaunchConfig(request, context, this.env);
+    // Pre-mint Claude's NATIVE conversation id (maestro's claude-spawner
+    // pattern): `--session-id <uuid>` makes Claude adopt tm8's uuid, so resume
+    // needs no transcript parsing — the id is known before the agent exists.
+    // Codex cannot be pre-seeded; its rollout id is captured at resume time
+    // (see native-session.ts). An operator wrapper gets neither: tm8 must not
+    // guess flags into a command it does not own.
+    const nativeSessionId =
+      !this.env.TM8_AGENT_CMD?.trim() && launch.agentTool === 'claude-code' ? randomUUID() : null;
+    const title = resolveSessionTitle(request, context);
     const workdir = resolveWorkdir(request, context, {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
@@ -166,6 +183,7 @@ export class SpawnService {
     const { sessionId, commandResult, replayed } = await this.graph.createWorkSession(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
+      parentSessionId: request.parentSessionId ?? null,
       taskIds,
       projectId: request.projectId ?? null,
       workdirMode: workdir.mode,
@@ -174,7 +192,7 @@ export class SpawnService {
       mode: launch.mode,
       model: launch.model,
       agentTool: launch.agentTool,
-      title: request.title?.trim() || null,
+      title,
       nodeId: this.nodeId,
       confirmUntrusted: request.confirmUntrusted ?? false,
       clientMutationId: request.clientMutationId ?? null,
@@ -214,6 +232,12 @@ export class SpawnService {
     this.sessionAuth.set(sessionId, auth);
 
     try {
+      // The pre-minted Claude id is graph truth from the moment the session
+      // exists — recorded BEFORE the PTY spawns, so even a session that dies
+      // in its boot window is already resume-capable.
+      if (nativeSessionId) {
+        await this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId);
+      }
       const interactionProfile = await this.graph.recordInteractionProfilePin(
         auth,
         sessionId,
@@ -223,7 +247,7 @@ export class SpawnService {
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
       // steps and not one — it unties an apparent circular dependency.
-      const baseCommand = buildAgentCommand(launch, this.env);
+      const baseCommand = buildAgentCommand(launch, this.env, { claudeSessionId: nativeSessionId });
       const manifestPath = this.manifestPathFor(sessionId);
       const manifest = composeManifest({
         sessionId,
@@ -248,9 +272,23 @@ export class SpawnService {
         sessionId,
         baseUrl: this.baseUrl,
       });
+      // The two halves stay SEPARATE all the way to the argv. `envelope.system`
+      // configures the agent; `envelope.task` is its first user turn, and is
+      // what actually makes it start. Concatenating them here is what left every
+      // real agent idle at a REPL — see `withAgentPrompt`.
+      //
+      // The Codex marker: a Codex rollout records nothing of the child's env
+      // and carries the system prompt as config, not a message — so the ONLY
+      // durable link between this tm8 session and its rollout file is a marker
+      // in the first user turn. That marker is what resume's capture scan
+      // matches (native-session.ts). Claude needs none: its id is pre-minted.
+      const task =
+        launch.agentTool === 'codex'
+          ? `${envelope.task}\n<tm8_session_id>${sessionId}</tm8_session_id>`
+          : envelope.task;
       const command = withAgentPrompt(
         baseCommand,
-        `${envelope.system}\n\n${envelope.task}`,
+        { system: envelope.system, task },
         launch,
         this.env,
       );
@@ -258,12 +296,42 @@ export class SpawnService {
       const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env);
       const envVarNames = Object.keys(env).sort();
 
+      // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
+      // is told what is actually wrong.
+      //
+      // Without this the launch "succeeds", the child exits 127 immediately, and
+      // the boot-settlement watcher reports `agent process exited during the
+      // 150ms boot settlement window` — true about the symptom, silent about the
+      // cause, and indistinguishable from a crashing or unlicensed CLI. Measured
+      // 2026-07-30 under the launchd service, whose PATH omits both agent
+      // binaries. `composeEnv` has already added the standard install dirs, so
+      // reaching this branch means the CLI genuinely is not installed anywhere
+      // tm8 knows to look — which is a `not_found`, not a retryable 503.
+      const binary = baseCommand.split(' ')[0] ?? '';
+      const unquoted = binary.replace(/^'|'$/g, '');
+      if (resolveAgentBinary(unquoted, env.PATH ?? '') === null) {
+        throw new SpawnError(
+          `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
+            `Looked on PATH: ${env.PATH ?? '(empty)'}`,
+          'not_found',
+          { agentTool: launch.agentTool, binary: unquoted },
+        );
+      }
+
       await this.writeManifestFile(manifestPath, manifest);
       // Names only. The manifest row is read by the UI and included in backups;
       // an ANTHROPIC_API_KEY value in there would outlive every rotation.
       await this.graph.recordManifest(auth, sessionId, manifest, envVarNames);
 
       if (!context.project) await mkdir(cwd, { recursive: true });
+
+      // Record the CLI's per-workspace trust BEFORE the child exists, because
+      // afterwards is too late: the dialog blocks on first directory access, and
+      // this launch is unattended — nobody is watching the PTY to answer it.
+      // Must also come after the `mkdir` above, since these resolve `cwd`
+      // through `realpath` and a scratch directory does not exist until then.
+      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, this.env);
+      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, this.env);
 
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
@@ -304,6 +372,261 @@ export class SpawnService {
       // there would burn a slot against the concurrency cap forever, so mark it
       // failed before rethrowing — and do not let a cleanup failure mask the
       // original error, which is the one that explains what happened.
+      await this.failSession(auth, sessionId, error, bootExit);
+      this.sessionAuth.delete(sessionId);
+      throw error;
+    }
+  }
+
+  /**
+   * execution.resume — bring THIS session back, conversation and all.
+   *
+   * Maestro-style same-session resume: the work_session row is resurrected
+   * (`exited`/`failed` → `spawning` via `public.execution_resume`, the one
+   * legal exception to the terminal-sink law) and the agent is relaunched with
+   * the provider's OWN resume flag against the stored native session id —
+   * `claude --resume <uuid>` / `codex resume <id>`. The provider restores the
+   * conversation history; tm8 re-applies only the static layer (system prompt,
+   * model, permission posture, cwd), and deliberately does NOT re-send the
+   * task turn — it is already the first message of the restored conversation.
+   *
+   * Ordering mirrors `spawn()` and is just as deliberate:
+   *   1. read the stored session facts + refuse everything non-resumable
+   *   2. resolve the native id — Codex's rollout scan runs HERE, before any
+   *      state changes, so a missing rollout refuses cleanly (fail-closed;
+   *      never `--last`, never a silent fresh start)
+   *   3. `execution_resume` — the status resurrection, cap check, ledger row
+   *   4. recompose manifest/env, write the file
+   *   5. spawn the PTY (no live PTY exists — step 1 refused if one did)
+   *   6. transition to `running`
+   */
+  async resume(auth: GraphAuth, request: ResumeRequest): Promise<SpawnResult> {
+    const info = await this.graph.loadWorkSessionForResume(auth, request.sessionId);
+    const sessionId = info.sessionId;
+    let bootExit: PtyExitInfo | undefined;
+
+    if (this.pty.hasSession(sessionId)) {
+      throw new SpawnError(
+        `work session ${sessionId} already has a live terminal — nothing to resume`,
+        'conflict',
+        { sessionId },
+      );
+    }
+    if (info.status !== 'exited' && info.status !== 'failed') {
+      throw new SpawnError(
+        `work session ${sessionId} is '${info.status}' — only exited or failed sessions can be resumed`,
+        'conflict',
+        { sessionId, status: info.status },
+      );
+    }
+    if (!info.teamMemberId) {
+      throw new SpawnError(
+        `work session ${sessionId} has no linked Teammate — cannot reconstruct its launch`,
+        'invalid_input',
+        { sessionId },
+      );
+    }
+
+    const context = await this.graph.loadSpawnContext(auth, {
+      spaceId: info.spaceId,
+      teamMemberId: info.teamMemberId,
+      projectId: info.projectId,
+      taskIds: info.taskIds,
+    });
+
+    // The stored row IS the request: same precedence chain as spawn, fed the
+    // facts the session was actually launched with, so the two paths resolve
+    // identically and cannot drift.
+    const syntheticRequest: SpawnRequest = {
+      spaceId: info.spaceId,
+      teamMemberId: info.teamMemberId,
+      projectId: info.projectId,
+      taskIds: info.taskIds,
+      mode: info.mode,
+      model: info.model,
+      agentTool: info.agentTool,
+      title: info.title || null,
+      clientMutationId: request.clientMutationId ?? null,
+    };
+    const launch = resolveLaunchConfig(syntheticRequest, context, this.env);
+
+    if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
+      throw new SpawnError(
+        `agent tool '${launch.agentTool}' has no resume-by-id contract`,
+        'invalid_input',
+        { sessionId, agentTool: launch.agentTool },
+      );
+    }
+    if (this.env.TM8_AGENT_CMD?.trim()) {
+      throw new SpawnError(
+        'resume is not supported under a TM8_AGENT_CMD operator wrapper — tm8 cannot know its resume flags',
+        'not_implemented',
+        { sessionId },
+      );
+    }
+
+    // Project cwd is re-read from the graph (it may legitimately have moved);
+    // a scratch cwd is named for the SESSION id, which resume shares — so the
+    // conversation's own files are still there.
+    const cwd = context.project
+      ? context.project.workingDir
+      : join(this.dataDir, 'scratch', sessionId);
+
+    // Resolve the native id BEFORE any state change (fail-closed, maestro's
+    // codex_resume_id_unavailable pattern). Claude ids are pre-minted at spawn,
+    // so a missing one means the session predates resume support — refuse
+    // honestly rather than silently launching a fresh conversation. Codex ids
+    // are captured lazily from the rollout here, then recorded write-once so
+    // the scan never runs twice.
+    let nativeSessionId = info.nativeSessionId;
+    if (!nativeSessionId && launch.agentTool === 'codex') {
+      nativeSessionId = await resolveCodexNativeSessionId({
+        home: this.env.HOME ?? homedir(),
+        tm8SessionId: sessionId,
+        cwd,
+      });
+      if (nativeSessionId) {
+        await this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId);
+      }
+    }
+    if (!nativeSessionId) {
+      throw new SpawnError(
+        launch.agentTool === 'codex'
+          ? `no Codex rollout under ~/.codex/sessions could be proven to belong to session ${sessionId} — refusing to resume a different or fresh conversation`
+          : `work session ${sessionId} has no recorded native session id (spawned before resume support) — it cannot be resumed`,
+        'conflict',
+        { sessionId, agentTool: launch.agentTool },
+      );
+    }
+
+    const { commandResult, replayed } = await this.graph.resumeWorkSession(auth, {
+      sessionId,
+      clientMutationId: request.clientMutationId ?? null,
+    });
+
+    const manifestPath = this.manifestPathFor(sessionId);
+    // A ledger replay is a transport retry of the original resume result — not
+    // permission to boot a second child. Mirrors spawn()'s replay branch.
+    if (replayed) {
+      const command = buildAgentCommand(launch, this.env);
+      const manifest = composeManifest({
+        sessionId,
+        request: syntheticRequest,
+        context,
+        launch,
+        workdir: { mode: info.workdirMode, path: cwd },
+        command,
+        baseUrl: this.baseUrl,
+      });
+      return {
+        sessionId,
+        manifestPath,
+        manifest,
+        command,
+        cwd,
+        envVarNames: [],
+        reused: true,
+        commandResult,
+      };
+    }
+
+    this.sessionAuth.set(sessionId, auth);
+
+    try {
+      // Re-pin the interaction profile for the new run; non-fatal on failure —
+      // a resume that degrades to the core-default profile frame is strictly
+      // better than one that refuses, because the restored conversation already
+      // carries the agent's working context.
+      let interactionProfile: InteractionProfilePinContext | undefined;
+      try {
+        const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
+          spaceId: info.spaceId,
+          teamMemberId: info.teamMemberId,
+          interactionProfileId: null,
+        });
+        interactionProfile = await this.graph.recordInteractionProfilePin(
+          auth,
+          sessionId,
+          resolvedProfile,
+        );
+      } catch (error) {
+        this.logger?.warn?.('SpawnService: resume could not re-pin the interaction profile', {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      // NO --session-id on a resume invocation: the id is already Claude's, and
+      // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
+      const baseCommand = buildAgentCommand(launch, this.env);
+      const manifest = composeManifest({
+        sessionId,
+        request: syntheticRequest,
+        context,
+        launch,
+        ...(interactionProfile ? { interactionProfile } : {}),
+        workdir: { mode: info.workdirMode, path: cwd },
+        command: baseCommand,
+        baseUrl: this.baseUrl,
+      });
+      const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });
+      const command = withAgentResume(
+        baseCommand,
+        envelope.system,
+        launch,
+        nativeSessionId,
+        this.env,
+      );
+
+      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env);
+      const envVarNames = Object.keys(env).sort();
+
+      const binary = baseCommand.split(' ')[0] ?? '';
+      const unquoted = binary.replace(/^'|'$/g, '');
+      if (resolveAgentBinary(unquoted, env.PATH ?? '') === null) {
+        throw new SpawnError(
+          `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
+            `Looked on PATH: ${env.PATH ?? '(empty)'}`,
+          'not_found',
+          { agentTool: launch.agentTool, binary: unquoted },
+        );
+      }
+
+      // The manifest FILE is rewritten (the agent re-reads it at boot); the
+      // manifest ROW is not re-recorded — record_session_manifest documented
+      // the original launch, and this resume's exact command is in the ledger.
+      await this.writeManifestFile(manifestPath, manifest);
+
+      if (!context.project) await mkdir(cwd, { recursive: true });
+      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, this.env);
+      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, this.env);
+
+      this.pty.beginPromptHandoff(sessionId);
+      const { reused } = this.pty.spawnIfAbsent({
+        sessionId,
+        command,
+        cwd,
+        env,
+        ...(request.cols ? { cols: request.cols } : {}),
+        ...(request.rows ? { rows: request.rows } : {}),
+      });
+
+      const bootSettlement = this.pty.waitForBootSettlement(sessionId, this.bootSettlementMs);
+      await this.graph.transition(auth, { sessionId, status: 'running' });
+
+      const earlyExit = await bootSettlement;
+      if (earlyExit) {
+        bootExit = earlyExit;
+        throw new SpawnError(
+          `agent process exited during the ${String(this.bootSettlementMs)}ms boot settlement window`,
+          'internal',
+          { sessionId, exitCode: earlyExit.exitCode, signal: earlyExit.signal },
+        );
+      }
+
+      this.logger?.info('SpawnService: session resumed', { sessionId, cwd, reused });
+      return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
+    } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
       this.sessionAuth.delete(sessionId);
       throw error;

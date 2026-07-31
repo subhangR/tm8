@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ea49dfb50f0967a8065c4d77376be1e5025061be2bc4d059f64a07d0b4d285ef",
+  "catalogDigest": "sha256:98aab261b790efa84dc5441fd9939f3597ed4c54f9b76848b719db53a4c4562e",
   "catalog": {
-    "total": 106,
-    "v1": 104,
+    "total": 119,
+    "v1": 117,
     "reserved": 2,
-    "http": 105,
+    "http": 118,
     "ws": 1,
-    "registerableV1Http": 103,
+    "registerableV1Http": 116,
     "methods": {
-      "GET": 39,
-      "POST": 42,
-      "PATCH": 9,
+      "GET": 43,
+      "POST": 50,
+      "PATCH": 10,
       "DELETE": 8,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 42,
-      "command": 63,
+      "read": 46,
+      "command": 72,
       "stream": 1
     },
-    "uniqueNames": 106,
-    "uniqueBindings": 106
+    "uniqueNames": 119,
+    "uniqueBindings": 119
   },
   "reservedOperations": [
     "search.query",
@@ -278,6 +278,13 @@
         "source": "server-router"
       },
       {
+        "operation": "spaces.counts",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/counts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "spaces.settings",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/settings",
@@ -379,6 +386,34 @@
         "operation": "entities.patch",
         "method": "PATCH",
         "path": "/v2/entities/:id",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.list",
+        "method": "GET",
+        "path": "/v2/attention-requests",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.create",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-requests",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.update",
+        "method": "PATCH",
+        "path": "/v2/attention-requests/:requestId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "attentionRequests.resolveEntity",
+        "method": "POST",
+        "path": "/v2/entities/:entityId/attention-requests/resolve",
         "status": "registered",
         "source": "server-router"
       },
@@ -768,6 +803,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.resume",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/resume",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "entityKinds.list",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/entity-kinds",
@@ -785,6 +827,13 @@
         "operation": "entityKinds.update",
         "method": "PATCH",
         "path": "/v2/spaces/:spaceId/entity-kinds/:kind",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "voice.token.create",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/voice-token",
         "status": "registered",
         "source": "server-router"
       },
@@ -932,6 +981,48 @@
         "operation": "execution.liveness",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/execution/liveness",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "artifacts.create",
+        "method": "POST",
+        "path": "/v2/artifacts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "artifacts.publish",
+        "method": "POST",
+        "path": "/v2/artifacts/:artifactId/revisions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "artifacts.revisions.list",
+        "method": "GET",
+        "path": "/v2/artifacts/:artifactId/revisions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "artifacts.preview.start",
+        "method": "POST",
+        "path": "/v2/artifacts/:artifactId/preview-sessions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "artifacts.export",
+        "method": "GET",
+        "path": "/v2/artifacts/:artifactId/revisions/:revisionNumber/export",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "artifacts.restore",
+        "method": "POST",
+        "path": "/v2/artifacts/:artifactId/commands/restore-revision",
         "status": "registered",
         "source": "server-router"
       }
@@ -1146,7 +1237,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 75
+    "unimplementedV1Http": 88
   },
   "schemas": {
     "additive": {
@@ -1236,6 +1327,22 @@
       }
     },
     "frozenAmendments": {
+      "attentionRequests.list": {
+        "requestSchema": "AttentionRequestListQuerySchema",
+        "resultSchema": "PageOfAttentionRequestSchema"
+      },
+      "attentionRequests.create": {
+        "requestSchema": "CreateAttentionRequestInputSchema",
+        "resultSchema": "AttentionRequestMutationResultSchema"
+      },
+      "attentionRequests.update": {
+        "requestSchema": "UpdateAttentionRequestInputSchema",
+        "resultSchema": "AttentionRequestMutationResultSchema"
+      },
+      "attentionRequests.resolveEntity": {
+        "requestSchema": "ResolveEntityAttentionInputSchema",
+        "resultSchema": "AttentionRequestMutationResultSchema"
+      },
       "messages.post": {
         "requestSchema": "PostMessageInputSchema",
         "resultSchema": "MessageBatchResultSchema"
@@ -1468,6 +1575,22 @@
         "intentTags": [
           "spaces",
           "home"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaces.counts",
+        "noun": "space",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaces.counts",
+        "intentTags": [
+          "spaces",
+          "counts"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -1724,6 +1847,75 @@
         ],
         "inputSchemaRef": "PatchEntityInputSchema",
         "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.list",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.list",
+        "intentTags": [
+          "attention",
+          "requests",
+          "list"
+        ],
+        "inputSchemaRef": "AttentionRequestListQuerySchema",
+        "resultSchemaRef": "PageOfAttentionRequestSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.create",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.create",
+        "intentTags": [
+          "attention",
+          "requests",
+          "create"
+        ],
+        "inputSchemaRef": "CreateAttentionRequestInputSchema",
+        "resultSchemaRef": "AttentionRequestMutationResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.update",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.update",
+        "intentTags": [
+          "attention",
+          "requests",
+          "update"
+        ],
+        "inputSchemaRef": "UpdateAttentionRequestInputSchema",
+        "resultSchemaRef": "AttentionRequestMutationResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "attentionRequests.resolveEntity",
+        "noun": "attention",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/attentionRequests.resolveEntity",
+        "intentTags": [
+          "attention",
+          "requests",
+          "resolve",
+          "entity"
+        ],
+        "inputSchemaRef": "ResolveEntityAttentionInputSchema",
+        "resultSchemaRef": "AttentionRequestMutationResultSchema",
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -2646,6 +2838,22 @@
         "publicComposite": null
       },
       {
+        "operation": "execution.resume",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.resume",
+        "intentTags": [
+          "execution",
+          "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "entityKinds.list",
         "noun": "kind",
         "exposure": "public",
@@ -2690,6 +2898,23 @@
           "update"
         ],
         "inputSchemaRef": "EntityKindUpdateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "voice.token.create",
+        "noun": "voice",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/voice.token.create",
+        "intentTags": [
+          "voice",
+          "token",
+          "create"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
@@ -3049,6 +3274,104 @@
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": "ExecutionLivenessSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "artifacts.create",
+        "noun": "artifact",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/artifacts.create",
+        "intentTags": [
+          "artifacts",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "artifacts.publish",
+        "noun": "artifact",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/artifacts.publish",
+        "intentTags": [
+          "artifacts",
+          "publish"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "artifacts.revisions.list",
+        "noun": "artifact",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/artifacts.revisions.list",
+        "intentTags": [
+          "artifacts",
+          "revisions",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "artifacts.preview.start",
+        "noun": "artifact",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/artifacts.preview.start",
+        "intentTags": [
+          "artifacts",
+          "preview",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "artifacts.export",
+        "noun": "artifact",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/artifacts.export",
+        "intentTags": [
+          "artifacts",
+          "export"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "artifacts.restore",
+        "noun": "artifact",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/artifacts.restore",
+        "intentTags": [
+          "artifacts",
+          "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
@@ -3577,6 +3900,147 @@
         },
         "migration": {
           "strategy": "w1-interaction-profile"
+        }
+      },
+      "voice_channel": {
+        "kind": "voice_channel",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "voice-channels"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "default"
+        },
+        "migration": {
+          "strategy": "voice-channel-detail"
+        }
+      },
+      "memory": {
+        "kind": "memory",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "memories"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "memory-detail"
+        }
+      },
+      "worktree": {
+        "kind": "worktree",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "worktrees"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "worktree-lifecycle",
+          "genericCreate": false,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "execution.spawn"
+          ]
+        },
+        "menu": {
+          "strategy": "not-addressable"
+        },
+        "migration": {
+          "strategy": "worktree-detail"
+        }
+      },
+      "artifact": {
+        "kind": "artifact",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "artifacts"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "artifact-lifecycle",
+          "genericCreate": false,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": [
+            "artifacts.create",
+            "artifacts.publish",
+            "artifacts.revisions.list",
+            "artifacts.preview.start",
+            "artifacts.export",
+            "artifacts.restore"
+          ]
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "artifact-detail"
         }
       }
     },

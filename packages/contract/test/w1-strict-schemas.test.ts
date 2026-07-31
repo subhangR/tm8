@@ -7,6 +7,7 @@ import {
   CorrectProjectAssociationInputSchema,
   CreateEntityInputSchema,
   DeleteMessageInputSchema,
+  EntityContentSchema,
   EntityConnectionsQuerySchema,
   EntityContextQuerySchema,
   EntityFeedQuerySchema,
@@ -223,6 +224,35 @@ describe('W1 strict additive command and query schemas', () => {
     expectUnknownKeyRejected(InteractionProfileDraftSchema, draft);
     expect(InteractionProfileDraftSchema.safeParse({ ...draft, feedPolicy: { ...draft.feedPolicy, scope: 'default' } }).success).toBe(false);
     expect(InteractionProfileDraftSchema.safeParse({ ...draft, providerCaptureMode: 'automatic' }).success).toBe(false);
+  });
+
+  it('admits the safe work-session Chat projection without exposing agent policy', () => {
+    const content = {
+      kind: 'work_session',
+      nodeId: 'node-1',
+      launchProjectId: null,
+      workingOn: [],
+      transcriptDoc: null,
+      interactionProfile: {
+        pinRevision: 3,
+        templateKey: 'tm8.chat.core',
+        templateVersion: 1,
+        compatibility: 'supported',
+        chatEnabled: true,
+        initialContentSurface: 'chat',
+        feedPolicy: draft.feedPolicy,
+        composerPolicy: draft.composerPolicy,
+      },
+    } as const;
+
+    expect(EntityContentSchema.safeParse(content).success).toBe(true);
+    expect(EntityContentSchema.safeParse({
+      ...content,
+      interactionProfile: {
+        ...content.interactionProfile,
+        promptPolicy: draft.promptPolicy,
+      },
+    }).success).toBe(false);
   });
 
   it('uses the shared Space settings revision for A20 input and result', () => {

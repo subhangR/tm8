@@ -40,6 +40,7 @@ export const OPERATIONS = [
   { name: 'spaces.update',           method: 'PATCH',  path: '/v2/spaces/:spaceId',                         kind: 'command', status: 'v1' },
   { name: 'spaces.navigation',       method: 'GET',    path: '/v2/spaces/:spaceId/navigation',              kind: 'read',    status: 'v1' },
   { name: 'spaces.home',             method: 'GET',    path: '/v2/spaces/:spaceId/home',                    kind: 'read',    status: 'v1' },
+  { name: 'spaces.counts',           method: 'GET',    path: '/v2/spaces/:spaceId/counts',                  kind: 'read',    status: 'v1' },
   { name: 'spaces.settings',         method: 'GET',    path: '/v2/spaces/:spaceId/settings',                kind: 'read',    status: 'v1' },
   { name: 'spaces.members.list',     method: 'GET',    path: '/v2/spaces/:spaceId/members',                 kind: 'read',    status: 'v1' },
   { name: 'spaces.invites.list',     method: 'GET',    path: '/v2/spaces/:spaceId/invites',                 kind: 'read',    status: 'v1' },
@@ -57,6 +58,10 @@ export const OPERATIONS = [
   { name: 'entities.get',            method: 'GET',    path: '/v2/entities/:id',                            kind: 'read',    status: 'v1' },
   { name: 'entities.create',         method: 'POST',   path: '/v2/entities',                                kind: 'command', status: 'v1' },
   { name: 'entities.patch',          method: 'PATCH',  path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.list',  method: 'GET',    path: '/v2/attention-requests',                      kind: 'read',    status: 'v1' },
+  { name: 'attentionRequests.create',method: 'POST',   path: '/v2/entities/:entityId/attention-requests',   kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.update',method: 'PATCH',  path: '/v2/attention-requests/:requestId',           kind: 'command', status: 'v1' },
+  { name: 'attentionRequests.resolveEntity', method: 'POST', path: '/v2/entities/:entityId/attention-requests/resolve', kind: 'command', status: 'v1' },
   { name: 'entities.move',           method: 'POST',   path: '/v2/entities/:id/move',                       kind: 'command', status: 'v1' },
   { name: 'entities.delete',         method: 'DELETE', path: '/v2/entities/:id',                            kind: 'command', status: 'v1' },
   { name: 'entities.restore',        method: 'POST',   path: '/v2/entities/:id/restore',                    kind: 'command', status: 'v1' },
@@ -138,11 +143,18 @@ export const OPERATIONS = [
   { name: 'execution.prompt',         method: 'POST',  path: '/v2/entities/:id/commands/prompt',            kind: 'command', status: 'v1' },
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
+  { name: 'execution.resume',         method: 'POST',  path: '/v2/entities/:id/commands/resume',            kind: 'command', status: 'v1' },
 
   // custom entity kinds (T-L4, R7–R9)
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },
   { name: 'entityKinds.create',      method: 'POST',   path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'command', status: 'v1' },
   { name: 'entityKinds.update',      method: 'PATCH',  path: '/v2/spaces/:spaceId/entity-kinds/:kind',      kind: 'command', status: 'v1' },
+
+  // voice channels (Discord-style, self-hosted LiveKit SFU) — audio never
+  // touches tm8-server; this op only mints the room-join grant (voice plan §2).
+  // The LiveKit webhook is a server-to-server callback, not a client op, so it
+  // is registered directly on the HTTP router rather than in this catalog.
+  { name: 'voice.token.create',      method: 'POST',   path: '/v2/entities/:id/commands/voice-token',       kind: 'command', status: 'v1' },
 
   // W0 dossier A01-A20 — adopted additive rows, exact frozen order
   { name: 'spaces.menu.get',                              method: 'GET',    path: '/v2/spaces/:spaceId/menu',                                           kind: 'read',    status: 'v1' },
@@ -167,6 +179,14 @@ export const OPERATIONS = [
   { name: 'spaces.interactionProfile.setDefault',        method: 'PUT',    path: '/v2/spaces/:spaceId/interaction-profile-default',                    kind: 'command', status: 'v1' },
   // A21 (D2/C-1): point-in-time PTY liveness for one space's work_sessions.
   { name: 'execution.liveness',                          method: 'GET',    path: '/v2/spaces/:spaceId/execution/liveness',                             kind: 'read',    status: 'v1' },
+
+  // artifacts — versioned, viewable static-web bundles (TM8-ARTIFACTS-DESIGN §8.1).
+  { name: 'artifacts.create',                            method: 'POST',   path: '/v2/artifacts',                                                      kind: 'command', status: 'v1' },
+  { name: 'artifacts.publish',                           method: 'POST',   path: '/v2/artifacts/:artifactId/revisions',                                kind: 'command', status: 'v1' },
+  { name: 'artifacts.revisions.list',                    method: 'GET',    path: '/v2/artifacts/:artifactId/revisions',                                kind: 'read',    status: 'v1' },
+  { name: 'artifacts.preview.start',                     method: 'POST',   path: '/v2/artifacts/:artifactId/preview-sessions',                         kind: 'command', status: 'v1' },
+  { name: 'artifacts.export',                            method: 'GET',    path: '/v2/artifacts/:artifactId/revisions/:revisionNumber/export',         kind: 'read',    status: 'v1' },
+  { name: 'artifacts.restore',                           method: 'POST',   path: '/v2/artifacts/:artifactId/commands/restore-revision',                kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];

@@ -128,7 +128,9 @@ function scanFacade(): Finding[] {
  * fixed — the allowlist is the record of that decision, not a suppression.
  */
 const ALLOWLISTED = new Map<string, string>([
-  ['handlers/activity.ts', 'latent: no paging route reaches loadActivity (gate-disproved)'],
+  // handlers/activity.ts entry removed 2026-07-31: the sweep no longer finds a
+  // truncating site there — the latent defect healed, so the allowlist emptied
+  // (an allowlist nobody revisits is how a suppression outlives its reason).
 ]);
 
 describe('cursor timestamp truncation detector', () => {
@@ -244,11 +246,11 @@ describe('cursor timestamp truncation detector', () => {
     ).toEqual([]);
   });
 
-  it('still sees the allowlisted site, so the allowlist is not hiding a fixed file', () => {
-    // If activity.ts were fixed, this fails and the allowlist entry should be
-    // deleted. An allowlist nobody revisits is how a suppression outlives its
-    // reason.
-    const found = scanFacade().filter((f) => ALLOWLISTED.has(f.file));
-    expect(found.length, 'allowlisted site no longer truncates — remove its entry').toBeGreaterThan(0);
+  it('the allowlist stays empty now that its last site healed', () => {
+    // The activity.ts entry was removed when the sweep stopped finding it
+    // (2026-07-31). If a new entry is ever added, restore the companion check
+    // that the sweep still SEES the allowlisted site — an allowlist nobody
+    // revisits is how a suppression outlives its reason.
+    expect([...ALLOWLISTED.keys()]).toEqual([]);
   });
 });

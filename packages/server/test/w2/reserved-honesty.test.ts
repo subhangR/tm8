@@ -114,21 +114,23 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 106 = 104 v1 + 2 reserved, 105 HTTP + 1 WS boundary', () => {
-    // A21 (execution.liveness) is the +1 on every axis it touches.
-    expect(OPERATIONS).toHaveLength(106);
-    expect(V1_OPERATIONS).toHaveLength(104);
+  it('keeps the exact 119 = 117 v1 + 2 reserved, 118 HTTP + 1 WS boundary', () => {
+    // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
+    // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
+    // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
+    expect(OPERATIONS).toHaveLength(119);
+    expect(V1_OPERATIONS).toHaveLength(117);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(105);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(118);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(103);
+    )).toHaveLength(116);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

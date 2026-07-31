@@ -293,3 +293,111 @@ describe('the registry seam — what this body can be asked to draw', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE WIRING, now that it exists. The block lists above were written as an
+ * EXPECTATION while the registry rows carried none — the handover's own note
+ * says its registry-seam test "passes vacuously" until §4.2 lands. These make
+ * it load-bearing: the constants at the top of this file and the registry rows
+ * are now asserted equal, so the screens cannot silently drift from what these
+ * tests prove about them.
+ */
+describe('the registry rows carry the block lists these tests assert', () => {
+  const rowFor = (kind: string) => {
+    const row = allKinds().find((r) => r.kind === kind);
+    if (!row) throw new Error(`registry must carry a ${kind} row`);
+    return row;
+  };
+
+  it('the member row draws the human frame', () => {
+    expect(rowFor('member').panel.blocks).toEqual(MEMBER_BLOCKS);
+  });
+
+  it('the teammate row draws the agent frame, then the org tree', () => {
+    // The oracle frame is intact and CONTIGUOUS; the org tree is appended,
+    // which is exactly the claim the registry comment makes.
+    expect(rowFor('team_member').panel.blocks).toEqual([
+      ...AGENT_BLOCKS,
+      { block: 'org-tree', label: 'TEAM' },
+    ]);
+  });
+
+  it('teammates can be viewed as a tree, because the hierarchy IS the org tree', () => {
+    // db/migrations/002_identity.sql:110. A hidden tree mode was the reason
+    // the team structure was unreachable, so this asserts the un-hiding.
+    const row = rowFor('team_member');
+    expect(row.hiddenModes ?? []).not.toContain('tree');
+    expect(row.list.tree).toEqual({ by: 'hierarchy', guideLines: true });
+  });
+});
+
+/**
+ * THE ORG TREE BLOCK — read-only, and honest when there is no structure.
+ *
+ * The interesting case is the LAST one. A teammate with no leader and no
+ * reports is the common state of a team nobody has arranged, and drawing a
+ * lone node there would imply structure was measured and found empty. It says
+ * so in words instead.
+ */
+describe('org-tree block', () => {
+  const ORG_BLOCKS: readonly ProfileBlockRef[] = [{ block: 'org-tree', label: 'TEAM' }];
+
+  const withHierarchy = (
+    id: string,
+    parent: unknown,
+    children: readonly unknown[],
+    total?: number,
+  ) => {
+    const base = detailOf(id);
+    return {
+      ...base,
+      hierarchy: {
+        parent: parent ?? null,
+        children: { items: children, nextCursor: null, ...(total == null ? {} : { total }) },
+        path: parent ? [parent] : [],
+      },
+    } as React.ComponentProps<typeof ProfileBody>['detail'];
+  };
+
+  it('draws leader, this teammate, then reports — each naming its relation in words', () => {
+    const detail = withHierarchy(teamMemberForge.id, memberAda, [teamMemberScout]);
+    const { getByTestId } = render(<ProfileBody detail={detail} blocks={ORG_BLOCKS} now={NOW} />);
+
+    const block = getByTestId('block-org-tree');
+    expect(block.textContent).toContain(memberAda.title);
+    expect(block.textContent).toContain(teamMemberScout.title);
+    // The relation is never carried by indent alone.
+    expect(block.textContent).toContain('leads');
+    expect(block.textContent).toContain('this teammate');
+    expect(block.textContent).toContain('reports to');
+  });
+
+  it('does not render the current teammate as a link to itself', () => {
+    const detail = withHierarchy(teamMemberForge.id, memberAda, [teamMemberScout]);
+    const { container } = render(<ProfileBody detail={detail} blocks={ORG_BLOCKS} now={NOW} />);
+
+    const self = container.querySelector('.pn-profile__org-row--self');
+    expect(self).toBeTruthy();
+    // A control that looks live and does nothing is the defect being avoided.
+    expect(self?.tagName).toBe('DIV');
+    expect(self?.getAttribute('aria-current')).toBe('true');
+  });
+
+  it('states when the server holds more reports than were loaded', () => {
+    const detail = withHierarchy(teamMemberForge.id, memberAda, [teamMemberScout], 4);
+    const { getByTestId } = render(<ProfileBody detail={detail} blocks={ORG_BLOCKS} now={NOW} />);
+    expect(getByTestId('block-org-tree').textContent).toContain('1 of 4 reports loaded');
+  });
+
+  it('says so plainly when the teammate has no leader and no reports', () => {
+    const detail = withHierarchy(teamMemberForge.id, null, []);
+    const { getByTestId } = render(<ProfileBody detail={detail} blocks={ORG_BLOCKS} now={NOW} />);
+
+    const text = getByTestId('block-org-tree').textContent ?? '';
+    expect(text).toContain('No leader and no reports');
+    // It names what would change the picture, rather than only reporting empty.
+    expect(text).toContain('parent');
+  });
+});

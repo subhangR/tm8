@@ -114,6 +114,10 @@ const G02_REPLACED_OPERATIONS = [
 
 /** G02's eleven net-new operations — the entire growth of tranche-v2. */
 const G02_NET_NEW_OPERATIONS = [
+  'attentionRequests.create',
+  'attentionRequests.list',
+  'attentionRequests.resolveEntity',
+  'attentionRequests.update',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entities.commands.pull',
@@ -194,9 +198,29 @@ const TRANCHE_V3_NET_NEW_OPERATIONS = [
   ...G14_NET_NEW_OPERATIONS,
 ] as const;
 
+/**
+ * The consolidation wave (2026-07-31): server connections, artifacts and voice
+ * landed as facade registrations after tranche-v3 froze. Net-new only — no
+ * replacements, so no closure-identity pin is owed for these.
+ */
+const CONSOLIDATION_NET_NEW_OPERATIONS = [
+  'artifacts.create',
+  'artifacts.export',
+  'artifacts.preview.start',
+  'artifacts.publish',
+  'artifacts.restore',
+  'artifacts.revisions.list',
+  'serverConnections.create',
+  'serverConnections.delete',
+  'serverConnections.get',
+  'serverConnections.list',
+  'voice.token.create',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
+  ...CONSOLIDATION_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -315,11 +339,12 @@ describe('W2.I02 tranche-v2 public composition', () => {
 
     expect(registry.implemented()).toEqual(EXPECTED_TRANCHE_V3_FACADE_OPERATIONS);
     expect(new Set(registry.implemented()).size).toBe(registry.size);
-    expect(registry.size).toBe(92);
+    expect(registry.size).toBe(107);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
-        + TRANCHE_V3_NET_NEW_OPERATIONS.length,
+        + TRANCHE_V3_NET_NEW_OPERATIONS.length
+        + CONSOLIDATION_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -459,7 +484,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
   });
 
   it('declaratively binds every completed tranche command and leaves only unfinished commands unbound', () => {
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(54);
+    // 59 -> 64 on 2026-07-31: the consolidation wave bound serverConnections,
+    // artifacts and voice command DTOs as it landed them.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(64);
     // G02 resolved its two entries the way every other "unbound" catalog row was
     // resolved — a required command context, not an invented DTO. Tranche-v3
     // resolved the last one: G04's service casts `ctx.body` to its contract DTO
@@ -578,8 +605,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // not measuring production. `implemented` is `registry.size`, the count of
     // MOUNTED handlers: the honest answer to "what is registered on this node",
     // which is not the same claim as "what is behaviourally complete".
-    expect(health).toMatchObject({ ok: true, operations: 105, implemented: 103 });
-    expect(harness.production.server.registry.size).toBe(103);
+    expect(health).toMatchObject({ ok: true, operations: 116, implemented: 114 });
+    expect(harness.production.server.registry.size).toBe(114);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -591,7 +618,7 @@ describe.sequential('W2.I02 real production public surface', () => {
       .filter((op) => op.method !== 'WS' && !registered.has(op.name))
       .map((op) => op.name);
     expect(residual).toEqual([]);
-    expect(registered.size + residual.length).toBe(103);
+    expect(registered.size + residual.length).toBe(114);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

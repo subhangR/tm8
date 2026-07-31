@@ -1,7 +1,7 @@
 /**
  * The CLI-owned OperationDiscovery projection — harness §7.1.
  *
- * EXHAUSTIVENESS over all 106 catalog rows, including internal and reserved.
+ * EXHAUSTIVENESS over all 107 catalog rows, including internal and reserved.
  * This file is the classic vacuous-pass risk (a loop that iterates nothing, or
  * `undefined` compared to `undefined`, is green and proves nothing), so every
  * sweep here:
@@ -46,7 +46,7 @@ import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/
 import { emitCommandHelp } from '../src/commands/help.js';
 import { createOutput } from '../src/output.js';
 
-const EXPECTED_ROWS = 106;
+const EXPECTED_ROWS = 119;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -112,7 +112,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 106 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 119 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -151,10 +151,10 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('102 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('115 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 102, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 115, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -467,6 +467,7 @@ function guardFlagsIn(syntax: string): Array<{ flag: string; required: boolean }
  * hide whichever of them drifted.
  */
 const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
+  'attentionRequests.update': 'UpdateAttentionRequestInputSchema',
   'entities.patch': 'PatchEntityInputSchema',
   'entities.move': 'MoveEntityInputSchema',
   'entities.commands.complete': 'CompleteTaskInputSchema',
@@ -489,6 +490,8 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'interactionProfiles.retire': 'RetireInteractionProfileInputSchema',
   'teamMembers.interactionProfile.setDefault': 'SetTeammateProfileDefaultInputSchema',
   'spaces.interactionProfile.setDefault': 'SetSpaceProfileDefaultInputSchema',
+  'artifacts.publish': 'ArtifactsPublishInputSchema',
+  'artifacts.restore': 'ArtifactsRestoreInputSchema',
 };
 
 /**
@@ -595,8 +598,8 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       const flags = syntax === null ? [] : guardFlagsIn(syntax);
       if (!flags.some((f) => f.required)) missing.push(operation);
     }
-    // 16 of the 17 guard DTOs bind to an operation; every one is required.
-    expect(swept).toBe(16);
+    // Every mapped guard DTO is required.
+    expect(swept).toBe(19);
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -643,6 +646,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
    * applied to the MAPPING rather than to membership.
    */
   const GUARD_PIN: ReadonlyArray<readonly [OperationName, string, string]> = [
+    ['attentionRequests.update', '--expect-version', 'expectedVersion'],
     ['entities.patch', '--expect-version', 'expectedVersion'],
     ['entities.move', '--expect-version', 'expectedVersion'],
     ['entities.commands.complete', '--expect-version', 'expectedVersion'],
@@ -673,6 +677,12 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     // why it is pinned here rather than left in a comment: tidying it fails
     // this assertion instead of passing review.
     ['projects.associations.correct', '--expect-version', 'expectedArtifactVersion'],
+
+    // ── artifacts: publish-a-revision and restore both guard the artifact ────
+    // version. `artifacts.create` (new artifact) carries NO guard and is
+    // deliberately absent — its shared `artifact publish` syntax omits the flag.
+    ['artifacts.publish', '--expect-version', 'expectedVersion'],
+    ['artifacts.restore', '--expect-version', 'expectedVersion'],
   ];
 
   it('every guard row pins its flag to its frozen field — transposition-proof', () => {
@@ -694,7 +704,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       rows.map((r) => r.join(' -> ')).sort();
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
-    expect(actual.length).toBe(16);
+    expect(actual.length).toBe(19);
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

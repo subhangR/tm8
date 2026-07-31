@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityItem, DeliverySummary, FeedItem, MessageView } from '@tm8/contract';
 import {
+  activityPresentation,
   canSendAgain,
   deliveryPresentation,
   deliverySummaryLine,
   directionOf,
   groupByOperation,
+  safeDeliveryReason,
   viaTitle,
 } from './feed-model';
 
@@ -183,6 +185,48 @@ describe('deliveryPresentation — eight statuses, eight drawn states', () => {
   it('pulses ONLY while dispatching, because only progress is animated', () => {
     expect(deliveryPresentation('dispatching').pulse).toBe(true);
     expect(deliveryPresentation('delivered').pulse).toBe(false);
+  });
+});
+
+describe('safe delivery failure details', () => {
+  it('translates only stable reason codes and never echoes arbitrary transport text', () => {
+    expect(safeDeliveryReason('restart_during_dispatch')).toBe('Node restarted during delivery');
+    expect(safeDeliveryReason('postgres://user:secret@internal/messages')).toBe('Details unavailable');
+    expect(safeDeliveryReason(null)).toBeNull();
+  });
+});
+
+describe('typed activity presentation', () => {
+  it('covers artifact, transition, terminal-state, generic event, and unknown variants', () => {
+    const artifact = activityItem({
+      anchor: { id: 'doc-1', kind: 'doc', title: 'Runbook' } as never,
+    }, { verb: 'created' });
+    expect(activityPresentation(artifact as Extract<FeedItem, { itemKind: 'activity' }>)).toMatchObject({
+      kind: 'entity-change', verb: 'created', entity: { id: 'doc-1' },
+    });
+
+    const work = activityItem({}, { verb: 'work.changed', summary: { status: 'in_review' } });
+    expect(activityPresentation(work as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({
+      kind: 'state', label: 'Work status', from: null, to: 'in_review',
+    });
+
+    for (const [verb, to] of [
+      ['completed', 'Completed'], ['deleted', 'Deleted'], ['restored', 'Restored'],
+      ['joined', 'Joined'], ['pulled', 'Pulled'], ['pr.linked', 'Pull request linked'],
+      ['unblocked', 'Unblocked'],
+    ] as const) {
+      const item = activityItem({}, { verb });
+      expect(activityPresentation(item as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({
+        kind: 'state', label: 'State', from: null, to,
+      });
+    }
+
+    for (const verb of ['linked', 'unlinked', 'reacted', 'awarded'] as const) {
+      const item = activityItem({}, { verb });
+      expect(activityPresentation(item as Extract<FeedItem, { itemKind: 'activity' }>).kind).toBe('event');
+    }
+    const future = activityItem({}, { verb: 'future.variant' });
+    expect(activityPresentation(future as Extract<FeedItem, { itemKind: 'activity' }>)).toEqual({ kind: 'unknown' });
   });
 });
 

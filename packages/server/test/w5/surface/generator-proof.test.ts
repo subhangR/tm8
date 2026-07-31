@@ -131,6 +131,9 @@ describe('W5.C generator proof', () => {
       'projects.update',
       'spaces.update',
       'tracking.refresh',
+      // 2026-07-31: voice.token.create's whole input is the optional command
+      // context — the target rides the path, so a bare {} is a valid body.
+      'voice.token.create',
     ]);
   });
 
@@ -157,6 +160,7 @@ describe('W5.C generator proof', () => {
   });
 
   it('pins the bound-schema count as an exact literal', () => {
-    expect(ENTRIES).toHaveLength(54);
+    // 54 -> 64 on 2026-07-31: the consolidation wave bound ten more DTOs.
+    expect(ENTRIES).toHaveLength(64);
   });
 });

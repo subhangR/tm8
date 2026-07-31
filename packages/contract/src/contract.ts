@@ -31,7 +31,11 @@ export type Cursor = string;
 export type CoreEntityKind =
   | 'channel' | 'task' | 'message' | 'member' | 'team_member'
   | 'doc' | 'file' | 'spell' | 'skill' | 'pull_request' | 'commit'
-  | 'work_session' | 'collection' | 'project' | 'interaction_profile';
+  | 'work_session' | 'collection' | 'project' | 'interaction_profile'
+  | 'voice_channel'
+  | 'memory'
+  | 'artifact'
+  | 'worktree';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -90,7 +94,7 @@ export type CoreEntityState =
   | { kind: 'channel'; topic: string; unreadCount: number; workingAgentCount: number }
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
-      messageBatchId: string | null; editedAt?: string | null }
+      messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
       liveWork?: LiveWork | null }
@@ -107,7 +111,29 @@ export type CoreEntityState =
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
       currentDraftVersion: number; activeVersion: number | null;
-      activeHash: string | null; retiredAt: string | null };
+      activeHash: string | null; retiredAt: string | null;
+      /** The draft's surface choice, absent when the draft has no opinion. */
+      initialContentSurface?: 'terminal' | 'chat' }
+  /** Roster count is a live read from the ephemeral voice-participants store, never stored. */
+  | { kind: 'voice_channel'; participantCount: number }
+  /**
+   * The scope fields ride in `state` so they arrive on EVERY summary read, in
+   * the same payload as the title — a value cannot travel away from the
+   * conditions that produced it. The statement itself is content; summaries
+   * carry it through the excerpt.
+   */
+  | { kind: 'memory'; mechanism: string; subjectScope: string;
+      doesNotEstablish: string; measuredAt: string | null }
+  /** Publish drives version advancement; `revisionNumber` is the current bundle revision. */
+  | { kind: 'artifact'; revisionNumber: number }
+  /**
+   * Semantic lifecycle only (forward-only: active → merged|abandoned → deleted).
+   * Operational disk health (preparing/ready/missing/…) deliberately does NOT
+   * appear here — it lives in `worktree_allocations`, which is not entity-backed
+   * and never bumps the entity version (TM8-WORKTREE-DESIGN.md §3).
+   */
+  | { kind: 'worktree'; status: WorktreeStatus; branch: string; baseRef: string;
+      baseCommitOid: string; projectId: ProjectId };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -115,10 +141,83 @@ export interface CustomEntityState { kind: CustomEntityKind; fields: Record<stri
 export type EntityState = CoreEntityState | CustomEntityState;
 
 export interface EntityBadges {
+  /** Derived from unresolved rows in `attention_requests`; never stored on the entity. */
+  attention?: EntityAttentionSummary;
   blocked?: { unresolvedHardDependencyCount: number; waitingOn: EntitySummary[] };
   pulls?: PullState[];
   workingActors?: LiveWork[];
   restricted?: boolean;
+  /**
+   * Derived at read time from mark edges and versions; never stored.
+   * ABSENT MEANS UNFLAGGED — it does NOT mean verified or current.
+   */
+  staleness?: EntityStaleness;
+}
+
+/**
+ * Derived at read time from mark edges (`supersedes`, `disputes`, `verifies`,
+ * `based_on`, `copy_of`) and pinned versions; never stored. ABSENT MEANS
+ * UNFLAGGED — it does NOT mean verified or current. `verified` is present only
+ * when a verifying edge exists, and `verified.current` is false once the
+ * target's content has moved past the version that was verified. Every value
+ * is viewer-independent.
+ */
+export interface EntityStaleness {
+  /** Every reason that applies, in display-precedence order (superseded > disputed > basisDeleted > basisMoved). Never empty — the badge is absent instead. */
+  reasons: ('superseded' | 'disputed' | 'basisDeleted' | 'basisMoved')[];
+  superseded?: { byId: EntityId; headId: EntityId | null; depthTruncated: boolean };
+  disputed?: { openCount: number; latestAt: string };
+  basisDeleted?: { count: number };
+  basisMoved?: { count: number };
+  verified?: { at: string; atVersion: number; current: boolean;
+               independenceBasis: 'session' | 'actor' };
+}
+
+export type AttentionRequestStatus = 'open' | 'acknowledged' | 'resolved' | 'dismissed';
+
+/** Compact aggregate carried by every entity summary and used to prioritize lists. */
+export interface EntityAttentionSummary {
+  pendingCount: number;
+  totalPoints: number;
+  maxPoints: number;
+  latestReason: string;
+  oldestRequestedAt: string;
+}
+
+/** A generic attention item can target any present or future entity kind. */
+export interface AttentionRequest {
+  id: string;
+  spaceId: SpaceId;
+  entityId: EntityId;
+  reason: string;
+  points: number;
+  status: AttentionRequestStatus;
+  version: number;
+  requestedBy: ActorSummary;
+  acknowledgedBy: ActorSummary | null;
+  resolvedBy: ActorSummary | null;
+  resolutionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface AttentionRequestListQuery {
+  spaceId: SpaceId;
+  entityId?: EntityId;
+  status?: AttentionRequestStatus;
+  minPoints?: number;
+  limit?: number;
+  cursor?: string;
+}
+
+export type AttentionRequestPage = Page<AttentionRequest>;
+
+export interface AttentionRequestMutationResult {
+  request: AttentionRequest | null;
+  entity: EntitySummary;
+  affectedCount: number;
 }
 
 export interface PullState {
@@ -140,6 +239,22 @@ export interface EntityDetail extends EntitySummary {
   capabilities: EntityCapabilities;
 }
 
+/**
+ * Safe viewer-side projection of the immutable work-session Interaction
+ * Profile pin. Agent prompt/tool policy and credentials are intentionally not
+ * representable in this shape.
+ */
+export interface WorkSessionInteractionProfileProjection {
+  pinRevision: number;
+  templateKey: string;
+  templateVersion: number;
+  compatibility: 'supported' | 'unknown_template';
+  chatEnabled: boolean;
+  initialContentSurface: 'terminal' | 'chat';
+  feedPolicy: FeedPolicy;
+  composerPolicy: ComposerInteractionPolicy;
+}
+
 export type CoreEntityContent =
   | { kind: 'task'; description: string; acceptanceCriteria: AcceptanceCriterion[];
       pointsEstimate?: number | null }
@@ -154,13 +269,24 @@ export type CoreEntityContent =
   | { kind: 'work_session'; nodeId: string | null;
       /** Immutable launch-root provenance; associations are `in_project` edges. */
       launchProjectId: ProjectId | null;
-      workingOn: EntitySummary[]; transcriptDoc: EntitySummary | null }
+      workingOn: EntitySummary[]; transcriptDoc: EntitySummary | null;
+      /** Null means no readable immutable pin, so Terminal is the only surface. */
+      interactionProfile?: WorkSessionInteractionProfileProjection | null }
   | { kind: 'collection'; description: string; items: EntitySummary[] }
   | { kind: 'project'; projectId: ProjectId; repoUrl?: string | null;
       materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
       templateKey: string; templateVersion: number; resolvedHash: string | null;
-      generatedByTeamMemberId: EntityId | null };
+      generatedByTeamMemberId: EntityId | null }
+  | { kind: 'voice_channel' }
+  | { kind: 'memory'; statement: string; mechanism: string; subjectScope: string;
+      doesNotEstablish: string; measuredAt: string | null }
+  /** The current bundle revision, projected; the bytes are served via preview/export, not here. */
+  | { kind: 'artifact'; description: string | null; currentRevisionNumber: number;
+      entrypoint: string; manifestSha256: string; fileCount: number; totalSizeBytes: number }
+  | { kind: 'worktree'; projectId: ProjectId; path: string; branch: string;
+      baseRef: string; baseCommitOid: string; status: WorktreeStatus;
+      statusChangedAt: string | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -270,6 +396,9 @@ export interface ActivityItem { id: string; entityId?: EntityId | null; actor?: 
 
 export interface PresenceSnapshot { viewers: ActorSummary[]; typingActorIds: EntityId[]; updatedAt: string }
 
+/** tm8 voice channels (LiveKit): one roster row per connected participant. */
+export interface VoiceParticipant { memberId: EntityId; name: string; muted?: boolean }
+
 // ---------------------------------------------------------------------------
 // Realtime event contract (§5)
 //
@@ -334,15 +463,21 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'work_session.profile_pinned'|'work_session.profile_repinned';
      pin: InteractionProfilePinView; clientMutationId?: string }
  | { type: 'presence.changed'; entityId: EntityId; presence: PresenceSnapshot }
- | { type: 'typing.changed'; anchorId: EntityId; typingActorIds: EntityId[] });
+ | { type: 'typing.changed'; anchorId: EntityId; typingActorIds: EntityId[] }
+ | { type: 'voice.participants.changed'; voiceChannelId: EntityId; spaceId: SpaceId;
+     participants: VoiceParticipant[] });
 
 /**
  * DEV-4: presence/typing are CLIENT-SYNTHESIZED, ephemeral events. They stay in
  * the WorkspaceEvent union but NEVER ride the durable `subscribe` stream — they
  * arrive only on the separate `subscribePresence` channel.
+ *
+ * tm8 voice channels: `voice.participants.changed` is SERVER-synthesized (from
+ * LiveKit webhooks) but shares the same ephemeral contract — it is never
+ * ledgered and must never ride the durable stream either (S12/voice plan §2).
  */
 export type PresenceWorkspaceEvent =
-  Extract<WorkspaceEvent, { type: 'presence.changed' | 'typing.changed' }>;
+  Extract<WorkspaceEvent, { type: 'presence.changed' | 'typing.changed' | 'voice.participants.changed' }>;
 
 /** The durable event stream (`subscribe`) emits exactly these. */
 export type DurableWorkspaceEvent = Exclude<WorkspaceEvent, PresenceWorkspaceEvent>;
@@ -643,7 +778,7 @@ export interface PatchTaskInput extends CommandContext {
 export interface CreateEntityInput extends CommandContext {
   clientMutationId: string;
   spaceId: SpaceId;
-  kind: Exclude<EntityKind, 'message' | 'member' | 'work_session' | 'project' | 'interaction_profile'>;
+  kind: Exclude<EntityKind, 'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'>;
   title: string;
   parentId?: EntityId | null;
   position?: number;
@@ -663,6 +798,29 @@ export interface PatchEntityInput extends CommandContext {
   expectedVersion: number;
   title?: string;
   content?: Record<string, unknown>;
+}
+
+/** POST /v2/entities/:entityId/attention-requests. */
+export interface CreateAttentionRequestInput extends CommandContext {
+  clientMutationId: string;
+  reason: string;
+  points: number;
+}
+
+/** PATCH /v2/attention-requests/:requestId. */
+export interface UpdateAttentionRequestInput extends CommandContext {
+  clientMutationId: string;
+  expectedVersion: number;
+  reason?: string;
+  points?: number;
+  status?: AttentionRequestStatus;
+  resolutionNote?: string;
+}
+
+/** POST /v2/entities/:entityId/attention-requests/resolve. */
+export interface ResolveEntityAttentionInput extends CommandContext {
+  clientMutationId: string;
+  resolutionNote?: string;
 }
 
 export interface MoveEntityInput extends CommandContext {
@@ -783,6 +941,16 @@ export interface UpdateSpaceInput extends CommandContext {
 
 /** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view. */
 export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings';
+/**
+ * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
+ * same R4 posture as `graph`). Menu presence is list navigation only — a
+ * worktree is still born exclusively from the provisioning saga (worktree
+ * design §2.7): generic create is refused server-side and the UI registry row
+ * carries `quickCreate: false`, which is the same visible-but-not-creatable
+ * posture `project` and `artifact` already hold. The former exclusion here
+ * enforced the CREATE rule with a VISIBILITY lever, and the cost was a whole
+ * kind unreachable from the rail.
+ */
 export type MenuKindRef = Exclude<EntityKind, 'channel' | 'message'>;
 
 export type MenuLeaf =
@@ -798,6 +966,36 @@ export interface MenuGroup {
   label: string;
   items: MenuItem[];
 }
+
+/**
+ * The default menu's group spine — ONE shared truth for its two twins.
+ *
+ * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
+ * db/migrations/061) and the client shipped default (tm8-ui
+ * `SHIPPED_DEFAULT_MENU`) each carry a hand-written copy of the default
+ * menu's groups, and the ids DIFFER in one place for historical reasons
+ * (`work` server-side, `workspace` client-side). Until 2026-07-31 nothing
+ * joined the copies: migration 059 rewrote the seeder from a stale base and
+ * silently dropped the voice group, every suite stayed green, and the stable
+ * DEPLOYMENT was what caught it. The two parity tests
+ * (packages/server/test/db/menu-seeder-parity.pg.test.ts and tm8-ui's
+ * menu.test.ts) now each pin their own side against THIS constant, so adding
+ * or removing a group is one edit here that both tests immediately enforce —
+ * pinned to one truth instead of to each other.
+ *
+ * Additive export only: no schema, operation, or DTO changes ride on it.
+ */
+export const DEFAULT_MENU_GROUP_SPINE = [
+  { serverId: 'home', clientId: 'home' },
+  { serverId: 'work', clientId: 'workspace' },
+  { serverId: 'tracking', clientId: 'tracking' },
+  { serverId: 'collab', clientId: 'collab' },
+  { serverId: 'channels', clientId: 'channels' },
+  // items-empty on both sides BY NECESSITY: MenuViewRef is a closed enum with
+  // no 'voice'; GateApp hangs live voice_channel rows beneath the group id.
+  { serverId: 'voice', clientId: 'voice' },
+  { serverId: 'settings', clientId: 'settings' },
+] as const;
 
 export interface MenuConfigPayload {
   schemaVersion: 1;
@@ -843,6 +1041,32 @@ export interface SpaceNavigation {
   channels: NavChannelNode[];
 }
 export interface NavChannelNode { entity: EntitySummary; childCount: number; children: NavChannelNode[] }
+
+/**
+ * One kind's pair of rail counters.
+ *
+ * `total` is every live entity of the kind the caller may read; `unseen` is the
+ * subset they have never opened, or have not opened since it last changed.
+ * They are separate numbers rather than one filtered number because the rail
+ * draws them in different slots — a plain trailing total and a distinct unseen
+ * mark — and collapsing them would lose the distinction it renders.
+ *
+ * `unseen` is derived from the caller's own read marks, so it is the one
+ * genuinely PER-VIEWER field here, in the same sense as
+ * `EntityCounters.viewerReaction` (DEV-10). It is deliberately NOT sourced from
+ * `attention`, which is space-wide and therefore cannot express "new to me".
+ */
+export interface KindCounts { total: number; unseen: number }
+
+/**
+ * GET /v2/spaces/:spaceId/counts — the menu rail's per-kind numbers.
+ *
+ * PARTIAL BY CONSTRUCTION: the underlying read groups by kind, so a kind with
+ * no rows in this space is ABSENT rather than present with zeroes. Consumers
+ * must treat a missing key as "no entities", which is also what lets a custom
+ * `c:*` kind appear here without a schema change.
+ */
+export type SpaceKindCounts = Partial<Record<EntityKind, KindCounts>>;
 
 /** Home — My Work: the three server-defined presets plus compact activity. */
 export interface HomeSnapshot {
@@ -938,6 +1162,15 @@ export type Unsubscribe = () => void;
 /** Single writer: the execution block's transition function (R29). */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
 
+/**
+ * Worktree SEMANTIC lifecycle, forward-only: active → merged|abandoned → deleted.
+ * `merged`/`abandoned` are recorded human/agent claims (the server can refuse a
+ * false merge claim but cannot observe one); `deleted` means the working
+ * directory has been removed from disk — the graph node itself is soft-deleted
+ * separately, after the transition.
+ */
+export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
+
 /** Graph-side announce/authorize state for live terminal sharing (T-L10). */
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
 
@@ -1024,6 +1257,12 @@ export type SpawnWorkdir =
   | { mode: 'project' }
   | { mode: 'scratch' };
 
+/** Provider-neutral launch controls. The execution layer maps these to each
+ * agent CLI's native flags; keeping them typed here prevents a UI choice from
+ * being displayed but silently discarded at the facade boundary. */
+export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'plan' | 'fullAccess';
+
 // --- execution.* operation family (R16) ------------------------------------
 
 /**
@@ -1048,6 +1287,12 @@ export interface ExecutionSpawnInput extends CommandContext {
   spaceId: SpaceId;
   /** The persona to run; authorization resolves through its owner (T-L7). */
   teamMemberId: EntityId;
+  /**
+   * The work_session issuing this spawn. The server persists it as the new
+   * session entity's homogeneous `parentId`, which is the spawn tree's source
+   * of truth. Human-launched sessions omit it and remain roots.
+   */
+  parentSessionId?: EntityId;
   /** Tasks the session works on — become `working_on` edges. */
   taskIds?: EntityId[];
   /**
@@ -1065,6 +1310,8 @@ export interface ExecutionSpawnInput extends CommandContext {
   mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
   model?: string | null;
   agentTool?: string | null;
+  reasoningEffort?: LaunchReasoningEffort;
+  accessMode?: LaunchAccessMode;
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;
@@ -1089,6 +1336,22 @@ export interface ExecutionTerminateInput extends CommandContext {
 }
 
 /**
+ * execution.resume — POST /v2/entities/:id/commands/resume. Bring a terminal
+ * (`exited`/`failed`) work_session back to life by relaunching its agent
+ * against the provider's OWN conversation id (`claude --resume <uuid>` /
+ * `codex resume <id>`), so the agent returns with its full prior conversation.
+ *
+ * Everything else about the session — persona, project, tasks, model, workdir —
+ * is re-read from the graph, never re-supplied by the caller: a resume is the
+ * same session continuing, not a new launch with overrides. Sessions whose
+ * agent tool has no resume-by-id contract (or that predate native-id capture)
+ * are refused, never silently restarted fresh.
+ */
+export interface ExecutionResumeInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/**
  * execution.streams.attach (T-L10): the graph announces and authorizes; bytes
  * flow client↔home-server over the WS bridge. Returns a grant, never bytes.
  */
@@ -1103,6 +1366,25 @@ export interface StreamAttachGrant {
   protocol: 'ws';
   mode: 'view' | 'drive';
   token?: string | null;
+  expiresAt: string;
+}
+
+/**
+ * voice.token.create — POST /v2/entities/:id/commands/voice-token. Mints a
+ * LiveKit access token scoped to one voice_channel entity (room = entity id).
+ * Audio never touches tm8-server; this grant is the sole authorization the
+ * browser needs to connect directly to the LiveKit SFU (voice plan §2).
+ */
+export type CreateVoiceTokenInput = CommandContext;
+
+export interface VoiceTokenGrant {
+  voiceChannelId: EntityId;
+  /** LiveKit ws URL the client connects to directly. */
+  url: string;
+  /** HS256 LiveKit access token (room join grant). */
+  token: string;
+  roomName: string;
+  identity: string;
   expiresAt: string;
 }
 
@@ -1398,6 +1680,10 @@ export interface InteractionProfileDraft {
   feedPolicy: FeedPolicy;
   providerCaptureMode: 'explicit-only';
   composerPolicy: ComposerInteractionPolicy;
+  /** Which Content surface a session pinned to this profile opens on. Absent
+      means "defer to the pinned static template", which is what every draft
+      written before this field existed meant implicitly. */
+  initialContentSurface?: 'terminal' | 'chat';
 }
 
 export type InteractionProfileStatus = 'draft' | 'active' | 'retired';

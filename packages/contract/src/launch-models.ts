@@ -48,6 +48,14 @@ export const LAUNCH_MODEL_CATALOG = [
     seedName: 'GPT 5.6 Terra Teammate',
   },
   {
+    model: 'gpt-5.6-luna',
+    label: 'OpenAI GPT 5.6 Luna',
+    provider: 'openai',
+    agentTool: 'codex',
+    note: 'Lowest-cost coding variant via Codex CLI',
+    seedName: 'GPT 5.6 Luna Teammate',
+  },
+  {
     model: 'claude-sonnet-5',
     label: 'Claude Sonnet 5',
     provider: 'anthropic',

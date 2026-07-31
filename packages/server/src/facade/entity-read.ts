@@ -32,7 +32,9 @@ import type {
   EntityCapabilities,
   EntityContent,
   EntityCounters,
+  EntityAttentionSummary,
   EntityKind,
+  EntityStaleness,
   EntityState,
   EntitySummary,
   LiveWork,
@@ -41,6 +43,7 @@ import type {
   WorkStatus,
 } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
+import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -63,6 +66,7 @@ export const ENTITY_COLUMNS = `
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
   d.title as doc_title, d.body as doc_body, d.format as doc_format,
   ch.name as channel_name, ch.topic as channel_topic,
+  vc.name as voice_channel_name,
   mem.display_name as member_display_name, mem.role as member_role,
   tm.name as team_member_name, tm.model as team_member_model,
   tm.agent_tool as team_member_agent_tool, tm.owner_member_id as team_member_owner_id,
@@ -76,6 +80,9 @@ export const ENTITY_COLUMNS = `
   ws.model as ws_model, ws.share_mode as ws_share_mode, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
   ws.transcript_doc_id as ws_transcript_doc_id,
+  wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
+  wsp.template_version as ws_pin_template_version,
+  wsp.resolved_snapshot as ws_pin_resolved_snapshot,
   msg.anchor_id, msg.root_message_id, msg.author_id, msg.body as message_body,
   msg.message_batch_id,
   msg.mentions as message_mentions, msg.attachments as message_attachments,
@@ -85,7 +92,22 @@ export const ENTITY_COLUMNS = `
   ppd.materialized_version as ppd_materialized_version,
   ip.status as ip_status, ip.current_draft_version as ip_current_draft_version,
   ip.active_version as ip_active_version, ip.active_hash as ip_active_hash,
-  ip.retired_at as ip_retired_at
+  ip.retired_at as ip_retired_at,
+  profile_version.draft_json ->> 'name' as ip_name,
+  profile_version.draft_json ->> 'initialContentSurface' as ip_initial_content_surface,
+  memo.statement as memory_statement, memo.mechanism as memory_mechanism,
+  memo.subject_scope as memory_subject_scope,
+  memo.does_not_establish as memory_does_not_establish,
+  memo.measured_at as memory_measured_at,
+  wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
+  wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
+  wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
+  art.name as artifact_name, art.description as artifact_description,
+  arev.revision_number as artifact_revision_number,
+  arev.entrypoint_path as artifact_entrypoint,
+  arev.manifest_sha256 as artifact_manifest_sha256,
+  arev.file_count as artifact_file_count,
+  arev.total_size_bytes as artifact_total_size_bytes
 `;
 
 /**
@@ -100,14 +122,29 @@ export const ENTITY_FROM = `
   left join public.tasks t            on t.entity_id  = e.id
   left join public.documents d        on d.entity_id  = e.id
   left join public.channels ch        on ch.entity_id = e.id
+  left join public.voice_channels vc  on vc.entity_id = e.id
   left join public.members mem        on mem.entity_id = e.id
   left join public.team_members tm    on tm.entity_id = e.id
   left join public.collections col    on col.entity_id = e.id
   left join public.work_sessions ws   on ws.entity_id = e.id
+  left join lateral (
+    select pin.pin_revision, pin.template_key, pin.template_version, pin.resolved_snapshot
+      from public.work_session_interaction_pins pin
+     where pin.work_session_id = ws.entity_id
+     order by pin.pin_revision desc
+     limit 1
+  ) wsp on true
   left join public.messages msg       on msg.entity_id = e.id
   left join public.files f            on f.entity_id  = e.id
   left join public.project_projection_details ppd on ppd.entity_id = e.id
   left join public.interaction_profiles ip        on ip.entity_id  = e.id
+  left join public.interaction_profile_versions profile_version
+    on profile_version.profile_id = ip.entity_id
+   and profile_version.version = coalesce(ip.active_version, ip.current_draft_version)
+  left join public.memories memo         on memo.entity_id = e.id
+  left join public.worktrees wt          on wt.entity_id = e.id
+  left join public.artifacts art         on art.entity_id = e.id
+  left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 `;
 
 export interface EntityRow {
@@ -141,6 +178,9 @@ export interface EntityRow {
   doc_format: string | null;
   channel_name: string | null;
   channel_topic: string | null;
+  // No topic column: a voice room has no feed, so `name` is all of its content
+  // (053 §2). Mirrors the projector's `voice_channel_name`.
+  voice_channel_name: string | null;
   member_display_name: string | null;
   member_role: string | null;
   team_member_name: string | null;
@@ -165,6 +205,10 @@ export interface EntityRow {
   ws_node_id: string | null;
   ws_project_id: string | null;
   ws_transcript_doc_id: string | null;
+  ws_pin_revision: number | null;
+  ws_pin_template_key: string | null;
+  ws_pin_template_version: number | null;
+  ws_pin_resolved_snapshot: Record<string, unknown> | null;
   anchor_id: string | null;
   root_message_id: string | null;
   author_id: string | null;
@@ -181,10 +225,32 @@ export interface EntityRow {
   ppd_project_id: string | null;
   ppd_materialized_version: number | null;
   ip_status: string | null;
+  ip_initial_content_surface: string | null;
   ip_current_draft_version: number | null;
   ip_active_version: number | null;
   ip_active_hash: string | null;
   ip_retired_at: Date | string | null;
+  /** Versioned authored name; optional keeps legacy row fixtures source-compatible. */
+  ip_name?: string | null;
+  memory_statement: string | null;
+  memory_mechanism: string | null;
+  memory_subject_scope: string | null;
+  memory_does_not_establish: string | null;
+  memory_measured_at: Date | string | null;
+  wt_project_id: string | null;
+  wt_path: string | null;
+  wt_branch: string | null;
+  wt_base_ref: string | null;
+  wt_base_commit_oid: string | null;
+  wt_status: string | null;
+  wt_status_changed_at: Date | string | null;
+  artifact_name: string | null;
+  artifact_description: string | null;
+  artifact_revision_number: number | null;
+  artifact_entrypoint: string | null;
+  artifact_manifest_sha256: string | null;
+  artifact_file_count: number | null;
+  artifact_total_size_bytes: string | number | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +414,8 @@ export function actorOf(actors: Map<string, ActorSummary>, id: string | null): A
 // ---------------------------------------------------------------------------
 
 export interface EntityRelations {
+  /** Aggregate of unresolved attention requests, per entity. */
+  attention: Map<string, EntityAttentionSummary>;
   /** `assigned_to` targets, per task. */
   assignees: Map<string, string[]>;
   /** Live child count, per entity. */
@@ -360,15 +428,39 @@ export interface EntityRelations {
   workingOn: Map<string, Array<{ actorId: string; props: Record<string, unknown>; at: string }>>;
   /** `contains` count, per collection. */
   itemCounts: Map<string, number>;
+  /** Raw mark-edge material for `badges.staleness` — derived in badgesOf, never stored. */
+  marks: Map<string, EntityMarks>;
+}
+
+/**
+ * The mark edges the staleness derivation needs, collected per entity.
+ * `disputes`/`verifies` stay raw here because "answered" depends on the
+ * entity's CURRENT version, which only badgesOf has; the basis counts are
+ * resolved here because they need the pin TARGETS' versions, which only this
+ * loader fetches.
+ */
+export interface EntityMarks {
+  /** Immediate successor (latest inbound `supersedes`), with the chain head. */
+  superseded: { byId: string; headId: string | null; depthTruncated: boolean } | null;
+  /** Inbound `disputes` edges, raw. */
+  disputes: Array<{ edgeId: string; at: string }>;
+  /** Inbound `verifies` edges, raw. */
+  verifies: Array<{ answers: string[]; pinnedVersion: number; at: string; independenceBasis: string }>;
+  /** Outbound `based_on`/`copy_of` pins whose target's version moved past the pin. */
+  basisMovedCount: number;
+  /** Outbound `based_on`/`copy_of` pins pointing at a soft-deleted entity. */
+  basisDeletedCount: number;
 }
 
 const EMPTY_RELATIONS: EntityRelations = {
+  attention: new Map(),
   assignees: new Map(),
   childCounts: new Map(),
   blockedBy: new Map(),
   pulls: new Map(),
   workingOn: new Map(),
   itemCounts: new Map(),
+  marks: new Map(),
 };
 
 function push<V>(map: Map<string, V[]>, key: string, value: V): void {
@@ -386,30 +478,73 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   if (unique.length === 0) return EMPTY_RELATIONS;
 
   const relations: EntityRelations = {
+    attention: new Map(),
     assignees: new Map(),
     childCounts: new Map(),
     blockedBy: new Map(),
     pulls: new Map(),
     workingOn: new Map(),
     itemCounts: new Map(),
+    marks: new Map(),
   };
 
   const edgeRows = await q.query<{
+    id: string;
     src_id: string;
     dst_id: string;
     type: string;
     props: Record<string, unknown>;
     created_at: Date | string;
   }>(
-    `select src_id, dst_id, type, props, created_at
+    `select id, src_id, dst_id, type, props, created_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains'))
-         or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on'))`,
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of'))
+         or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on', 'supersedes', 'disputes', 'verifies'))`,
     [unique],
   );
 
+  const attentionRows = await q.query<{
+    entity_id: string;
+    pending_count: number;
+    total_points: number;
+    max_points: number;
+    latest_reason: string;
+    oldest_requested_at: Date | string;
+  }>(
+    `select entity_id,
+            count(*)::int as pending_count,
+            sum(points)::int as total_points,
+            max(points)::int as max_points,
+            (array_agg(reason order by created_at desc, id desc))[1] as latest_reason,
+            min(created_at) as oldest_requested_at
+       from public.attention_requests
+      where entity_id = any($1::uuid[])
+        and status in ('open', 'acknowledged')
+      group by entity_id`,
+    [unique],
+  );
+  for (const row of attentionRows) {
+    relations.attention.set(row.entity_id, {
+      pendingCount: Number(row.pending_count),
+      totalPoints: Number(row.total_points),
+      maxPoints: Number(row.max_points),
+      latestReason: row.latest_reason,
+      oldestRequestedAt: iso(row.oldest_requested_at),
+    });
+  }
+
   const wanted = new Set(unique);
   const dependsOn: Array<{ src: string; dst: string; hard: boolean }> = [];
+  const pins: Array<{ src: string; dst: string; pinnedVersion: number }> = [];
+  const supersededBy = new Map<string, { byId: string; at: string }>();
+  const marksOf = (id: string): EntityMarks => {
+    let m = relations.marks.get(id);
+    if (!m) {
+      m = { superseded: null, disputes: [], verifies: [], basisMovedCount: 0, basisDeletedCount: 0 };
+      relations.marks.set(id, m);
+    }
+    return m;
+  };
 
   for (const edge of edgeRows) {
     switch (edge.type) {
@@ -450,8 +585,102 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
           });
         }
         break;
+      case 'based_on':
+      case 'copy_of':
+        if (wanted.has(edge.src_id)) {
+          pins.push({
+            src: edge.src_id,
+            dst: edge.dst_id,
+            pinnedVersion: Number(edge.props?.pinnedVersion ?? 0),
+          });
+        }
+        break;
+      case 'supersedes':
+        if (wanted.has(edge.dst_id)) {
+          const at = iso(edge.created_at);
+          const prior = supersededBy.get(edge.dst_id);
+          // Latest immediate successor wins the `byId` slot; the chain walk
+          // below resolves the head independently of which branch this is.
+          if (!prior || at > prior.at) supersededBy.set(edge.dst_id, { byId: edge.src_id, at });
+        }
+        break;
+      case 'disputes':
+        if (wanted.has(edge.dst_id)) {
+          marksOf(edge.dst_id).disputes.push({ edgeId: edge.id, at: iso(edge.created_at) });
+        }
+        break;
+      case 'verifies':
+        if (wanted.has(edge.dst_id)) {
+          const answers = Array.isArray(edge.props?.answers)
+            ? (edge.props.answers as unknown[]).filter((a): a is string => typeof a === 'string')
+            : [];
+          marksOf(edge.dst_id).verifies.push({
+            answers,
+            pinnedVersion: Number(edge.props?.pinnedVersion ?? 0),
+            at: iso(edge.created_at),
+            independenceBasis: String(edge.props?.independenceBasis ?? 'actor'),
+          });
+        }
+        break;
       default:
         break;
+    }
+  }
+
+  // The two staleness lookups mirror the conditional dependency-target fetch
+  // below: batched over the distinct targets, run only when the page produced
+  // any mark at all, so a page with no memories pays nothing.
+  if (pins.length > 0) {
+    const pinTargets = [...new Set(pins.map((p) => p.dst))];
+    const targetRows = await q.query<{ id: string; version: number; deleted_at: Date | string | null }>(
+      `select id, version, deleted_at from public.entities where id = any($1::uuid[])`,
+      [pinTargets],
+    );
+    const targetById = new Map(targetRows.map((r) => [r.id, r]));
+    for (const pin of pins) {
+      const target = targetById.get(pin.dst);
+      const m = marksOf(pin.src);
+      // A target RLS hid or that was hard-deleted out from under the pin is a
+      // gone basis, not a live one.
+      if (!target || target.deleted_at !== null) m.basisDeletedCount += 1;
+      // A deleted basis can ALSO have moved — both reasons fire (design §3.3:
+      // precedence orders display; it never hides).
+      if (target && pin.pinnedVersion > 0 && pin.pinnedVersion < target.version) {
+        m.basisMovedCount += 1;
+      }
+    }
+  }
+
+  if (supersededBy.size > 0) {
+    // One recursive walk for the whole page, bounded at depth 32. The bound is
+    // required regardless of the write-side cycle guard: prevent_edge_cycle's
+    // own CTE bounds at 256, so a longer chain can exist without detection.
+    // Hitting the bound reports headId null rather than a wrong head.
+    const chainRows = await q.query<{ origin: string; head: string; depth: number }>(
+      `with recursive chain as (
+         select e.dst_id as origin, e.src_id as head, 1 as depth
+           from public.edges e
+          where e.type = 'supersedes' and e.dst_id = any($1::uuid[])
+         union all
+         select c.origin, e.src_id, c.depth + 1
+           from chain c
+           join public.edges e on e.type = 'supersedes' and e.dst_id = c.head
+          where c.depth < 32
+       )
+       select distinct on (origin) origin, head, depth
+         from chain
+        order by origin, depth desc, head`,
+      [[...supersededBy.keys()]],
+    );
+    const headByOrigin = new Map(chainRows.map((r) => [r.origin, r]));
+    for (const [id, { byId }] of supersededBy) {
+      const walk = headByOrigin.get(id);
+      const truncated = (walk?.depth ?? 1) >= 32;
+      marksOf(id).superseded = {
+        byId,
+        headId: truncated ? null : (walk?.head ?? byId),
+        depthTruncated: truncated,
+      };
     }
   }
 
@@ -537,6 +766,11 @@ export function titleOf(row: EntityRow): string {
       // belongs to the client; conformance (reads.test.ts:32) asserts the
       // stored name comes back unadorned.
       return row.channel_name ?? 'channel';
+    case 'voice_channel':
+      // Same rule as `channel` above: the bare name, no '🔊'. The detail row is
+      // written in the same statement as the envelope (053 §5), so the fallback
+      // only ever covers a hypothetical stray row.
+      return row.voice_channel_name ?? 'voice channel';
     case 'member':
       return row.member_display_name ?? 'Member';
     case 'team_member':
@@ -555,9 +789,25 @@ export function titleOf(row: EntityRow): string {
     case 'project':
       return row.ppd_name ?? '';
     case 'interaction_profile':
-      // No name column exists for a profile; the empty string is the honest
-      // answer, matching the projector's.
-      return '';
+      // Profile names are versioned with the draft, not copied into the entity
+      // envelope. Project the active/current version so list reads never make
+      // the browser invent a label from an id. A legacy row with no matching
+      // version remains honestly unnamed.
+      return row.ip_name ?? '';
+    case 'memory':
+      // Title is DERIVED from the statement, never separately settable — a
+      // free-standing title would be a restatement with no back-link (design
+      // §3.1). Same 120-char bound as the projector twin.
+      return (row.memory_statement ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Memory';
+    case 'worktree':
+      // The branch IS the human name of a worktree; paths are server-computed
+      // noise and ids are forbidden as titles (L3).
+      return row.wt_branch ?? 'Worktree';
+    case 'artifact':
+      // The artifact's own name — MIRRORS the projector twin. The detail row is
+      // written atomically with the first revision (055), so the fallback only
+      // covers a hypothetical stray envelope.
+      return row.artifact_name ?? 'Artifact';
     default:
       return row.kind;
   }
@@ -576,6 +826,14 @@ function excerptOf(row: EntityRow): string | undefined {
       return excerpt(row.channel_topic);
     case 'collection':
       return excerpt(row.collection_description);
+    case 'memory':
+      // The statement reaches summaries through the excerpt; the scope fields
+      // ride in `state` — together they are the §3.1 thesis: a summary carries
+      // claim and conditions in one payload.
+      return excerpt(row.memory_statement);
+    case 'artifact':
+      // The description is the artifact's body text — MIRRORS the projector twin.
+      return excerpt(row.artifact_description);
     default:
       return undefined;
   }
@@ -602,6 +860,22 @@ function ipStatusOf(raw: string | null): 'draft' | 'active' | 'retired' {
   return raw === 'active' || raw === 'retired' ? raw : 'draft';
 }
 
+/** The worktree status enum, defaulted rather than trusted (same posture as ipStatusOf). */
+function wtStatusOf(raw: string | null): 'active' | 'merged' | 'abandoned' | 'deleted' {
+  return raw === 'merged' || raw === 'abandoned' || raw === 'deleted' ? raw : 'active';
+}
+
+/**
+ * The draft's surface choice, as a spreadable fragment. A draft written before
+ * `initialContentSurface` existed has no opinion, and the ABSENT key is the
+ * honest encoding of that — emitting a guessed 'chat' here is exactly the lie
+ * the launch picker used to tell, where a hardcoded constant made every profile
+ * advertise Chat regardless of what it actually did.
+ */
+function surfaceOf(raw: string | null): { initialContentSurface?: 'terminal' | 'chat' } {
+  return raw === 'terminal' || raw === 'chat' ? { initialContentSurface: raw } : {};
+}
+
 function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
   switch (row.kind) {
     case 'task':
@@ -624,6 +898,19 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         unreadCount: 0,
         workingAgentCount: (ctx.relations.workingOn.get(row.id) ?? []).length,
       };
+    case 'voice_channel':
+      return {
+        kind: 'voice_channel',
+        // 0 here, always — NOT a "not batched yet" 0 like unreadCount above.
+        // The roster is ephemeral by construction (voice/roster.ts, 053's
+        // header): it lives in this process's memory, is rebuilt from LiveKit
+        // webhooks, and is in no table. This file is a pure SELECT assembler,
+        // so there is no query that could produce the live count, and the
+        // projector twin reports 0 for the same reason — the read path and the
+        // event feed agree. Live counts reach clients over the voice roster
+        // events instead.
+        participantCount: 0,
+      };
     case 'doc':
       return {
         kind: 'doc',
@@ -638,6 +925,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         author: actorOf(ctx.actors, row.author_id),
         messageBatchId: row.message_batch_id,
         editedAt: isoOrNull(row.message_edited_at),
+        redactedAt: isoOrNull(row.message_redacted_at),
       };
     case 'member':
       return {
@@ -698,7 +986,36 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         activeVersion: row.ip_active_version,
         activeHash: row.ip_active_hash,
         retiredAt: isoOrNull(row.ip_retired_at),
+        ...surfaceOf(row.ip_initial_content_surface),
       };
+    case 'memory':
+      // The scope columns are NOT NULL in the DDL; the fallbacks keep a
+      // hypothetical stray row readable instead of failing the strict schema.
+      return {
+        kind: 'memory',
+        mechanism: row.memory_mechanism ?? '',
+        subjectScope: row.memory_subject_scope ?? '',
+        doesNotEstablish: row.memory_does_not_establish ?? '',
+        measuredAt: isoOrNull(row.memory_measured_at),
+      };
+    case 'worktree':
+      // SEMANTIC lifecycle only. Operational disk health lives in
+      // worktree_allocations, which is deliberately not on this read: state
+      // must never look like status (worktree design §3).
+      return {
+        kind: 'worktree',
+        status: wtStatusOf(row.wt_status),
+        branch: row.wt_branch ?? '',
+        baseRef: row.wt_base_ref ?? '',
+        baseCommitOid: row.wt_base_commit_oid ?? '',
+        projectId: row.wt_project_id ?? '',
+      };
+    case 'artifact':
+      // Publish drives version advancement; the summary carries the CURRENT
+      // bundle revision number — MIRRORS the projector twin. The fallback of 1
+      // keeps a hypothetical stray envelope (no revision joined) readable
+      // instead of failing the strict schema on a null.
+      return { kind: 'artifact', revisionNumber: row.artifact_revision_number ?? 1 };
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than
@@ -709,6 +1026,9 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
 
 function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
   const badges: EntityBadges = {};
+
+  const attention = ctx.relations.attention?.get(row.id);
+  if (attention) badges.attention = attention;
 
   const blockedBy = ctx.relations.blockedBy.get(row.id) ?? [];
   if (blockedBy.length > 0) {
@@ -757,7 +1077,71 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
 
   if (row.visibility === 'restricted') badges.restricted = true;
 
+  const staleness = stalenessOf(row, ctx.relations.marks.get(row.id));
+  if (staleness) badges.staleness = staleness;
+
   return badges;
+}
+
+/**
+ * `badges.staleness`, derived from mark edges and versions at read time —
+ * never stored, exactly like `contentStale` and `attention` above.
+ *
+ * ABSENT MEANS UNFLAGGED, never "verified" or "current": an entity nobody has
+ * examined must not acquire false authority. The badge exists only when at
+ * least one reason applies; `reasons: []` is never emitted. Display precedence
+ * (superseded > disputed > basisDeleted > basisMoved) ORDERS the array — it
+ * never hides a reason.
+ */
+function stalenessOf(row: EntityRow, marks: EntityMarks | undefined): EntityStaleness | undefined {
+  if (!marks) return undefined;
+
+  // A dispute is open until a verifying edge names it in `answers` AND pins
+  // the entity's CURRENT version — a clear of version N stops clearing the
+  // moment the content moves to N+1.
+  const openDisputes = marks.disputes.filter(
+    (d) => !marks.verifies.some(
+      (v) => v.pinnedVersion === row.version && v.answers.includes(d.edgeId),
+    ),
+  );
+
+  const reasons: EntityStaleness['reasons'] = [];
+  if (marks.superseded) reasons.push('superseded');
+  if (openDisputes.length > 0) reasons.push('disputed');
+  if (marks.basisDeletedCount > 0) reasons.push('basisDeleted');
+  if (marks.basisMovedCount > 0) reasons.push('basisMoved');
+  if (reasons.length === 0) return undefined;
+
+  const latestVerify = marks.verifies.reduce<EntityMarks['verifies'][number] | null>(
+    (best, v) => (best === null || v.at > best.at ? v : best),
+    null,
+  );
+
+  return {
+    reasons,
+    ...(marks.superseded ? { superseded: marks.superseded } : {}),
+    ...(openDisputes.length > 0
+      ? {
+          disputed: {
+            openCount: openDisputes.length,
+            latestAt: openDisputes.reduce((max, d) => (d.at > max ? d.at : max), ''),
+          },
+        }
+      : {}),
+    ...(marks.basisDeletedCount > 0 ? { basisDeleted: { count: marks.basisDeletedCount } } : {}),
+    ...(marks.basisMovedCount > 0 ? { basisMoved: { count: marks.basisMovedCount } } : {}),
+    ...(latestVerify
+      ? {
+          verified: {
+            at: latestVerify.at,
+            atVersion: latestVerify.pinnedVersion,
+            current: latestVerify.pinnedVersion === row.version,
+            independenceBasis:
+              latestVerify.independenceBasis === 'session' ? 'session' : 'actor',
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -781,7 +1165,12 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
  */
 export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   const live = row.deleted_at === null;
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill']);
+  // Memory edits are for typos (any edit bumps the version and un-pins every
+  // inbound verification); it is editable, never hierarchical, never pullable.
+  // Worktree "edit" is exactly one thing — the status transition through
+  // update_worktree; every other field is immutable. canEdit mirrors that the
+  // patch door will accept SOMETHING, which is the contract of this flag.
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
@@ -840,6 +1229,9 @@ export function contentOf(row: EntityRow): EntityContent {
         return { kind: 'task', description: '', acceptanceCriteria: [], pointsEstimate: null };
       case 'doc':
         return { kind: 'doc', body: '', format: 'markdown' };
+      case 'memory':
+        return { kind: 'memory', statement: '', mechanism: '', subjectScope: '',
+                 doesNotEstablish: '', measuredAt: null };
       default:
         break;
     }
@@ -867,6 +1259,11 @@ export function contentOf(row: EntityRow): EntityContent {
         // G1A slice; an empty list is honest, an invented one is not.
         autoTabs: [],
       };
+    case 'voice_channel':
+      // The contract arm carries nothing but the kind: a voice room has no
+      // topic, no pins and no feed to hydrate (053 §2). The name is the title,
+      // and the live roster is not content — it arrives over voice events.
+      return { kind: 'voice_channel' };
     case 'message':
       return {
         kind: 'message',
@@ -893,9 +1290,55 @@ export function contentOf(row: EntityRow): EntityContent {
         launchProjectId: row.ws_project_id,
         workingOn: [],
         transcriptDoc: null,
+        interactionProfile:
+          row.ws_pin_revision !== null
+          && row.ws_pin_template_key !== null
+          && row.ws_pin_template_version !== null
+          && row.ws_pin_resolved_snapshot !== null
+            ? projectInteractionProfileForBrowser({
+                pinRevision: row.ws_pin_revision,
+                templateKey: row.ws_pin_template_key,
+                templateVersion: row.ws_pin_template_version,
+                snapshot: row.ws_pin_resolved_snapshot,
+              })
+            : null,
       };
     case 'collection':
       return { kind: 'collection', description: row.collection_description ?? '', items: [] };
+    case 'memory':
+      return {
+        kind: 'memory',
+        statement: row.memory_statement ?? '',
+        mechanism: row.memory_mechanism ?? '',
+        subjectScope: row.memory_subject_scope ?? '',
+        doesNotEstablish: row.memory_does_not_establish ?? '',
+        measuredAt: isoOrNull(row.memory_measured_at),
+      };
+    case 'worktree':
+      return {
+        kind: 'worktree',
+        projectId: row.wt_project_id ?? '',
+        path: row.wt_path ?? '',
+        branch: row.wt_branch ?? '',
+        baseRef: row.wt_base_ref ?? '',
+        baseCommitOid: row.wt_base_commit_oid ?? '',
+        status: wtStatusOf(row.wt_status),
+        statusChangedAt: isoOrNull(row.wt_status_changed_at),
+      };
+    case 'artifact':
+      // The CURRENT revision, projected. The bytes are served via preview/export
+      // (055 RPCs), never here — this is metadata only. Fallbacks keep a
+      // hypothetical stray envelope readable rather than failing the strict
+      // schema on a null.
+      return {
+        kind: 'artifact',
+        description: row.artifact_description,
+        currentRevisionNumber: row.artifact_revision_number ?? 1,
+        entrypoint: row.artifact_entrypoint ?? '',
+        manifestSha256: row.artifact_manifest_sha256 ?? '',
+        fileCount: row.artifact_file_count ?? 0,
+        totalSizeBytes: Number(row.artifact_total_size_bytes ?? 0),
+      };
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };
   }

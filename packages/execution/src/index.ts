@@ -57,5 +57,6 @@ export type {
 } from './pty/types.js';
 
 export * from './spawn/index.js';
+export * from './worktree/index.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';

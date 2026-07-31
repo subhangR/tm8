@@ -32,6 +32,7 @@ import {
   type ActorSummary,
   type CustomEntityKind,
   type EntityCounters,
+  type EntityAttentionSummary,
   type EntityKind,
   type CustomEntityState,
   type EntityState,
@@ -112,6 +113,7 @@ const MEMBER_ROLES = ['owner', 'admin', 'member'] as const;
 const WS_STATUSES = ['spawning', 'running', 'idle', 'exited', 'failed'] as const;
 const WS_SHARE_MODES = ['none', 'space', 'explicit'] as const;
 const IP_STATUSES = ['draft', 'active', 'retired'] as const;
+const WT_STATUSES = ['active', 'merged', 'abandoned', 'deleted'] as const;
 
 /**
  * Hydrates the entity-shaped payloads an event projection needs.
@@ -175,6 +177,8 @@ interface SummaryRow {
   doc_format: string | null;
   channel_name: string | null;
   channel_topic: string | null;
+  // A voice room has no topic and no feed (053): `name` is the whole content.
+  voice_channel_name: string | null;
   msg_anchor_id: string | null;
   msg_root_id: string | null;
   msg_author_id: string | null;
@@ -224,9 +228,24 @@ interface SummaryRow {
   ppd_materialized_version: number | null;
   ip_status: string | null;
   ip_current_draft_version: number | null;
+  ip_initial_content_surface: string | null;
   ip_active_version: number | null;
   ip_active_hash: string | null;
   ip_retired_at: Date | string | null;
+  ip_name: string | null;
+  memory_statement: string | null;
+  memory_mechanism: string | null;
+  memory_subject_scope: string | null;
+  memory_does_not_establish: string | null;
+  memory_measured_at: Date | string | null;
+  wt_project_id: string | null;
+  wt_branch: string | null;
+  wt_base_ref: string | null;
+  wt_base_commit_oid: string | null;
+  wt_status: string | null;
+  artifact_name: string | null;
+  artifact_description: string | null;
+  artifact_revision_number: number | null;
   custom_fields: Record<string, unknown> | null;
 }
 
@@ -252,6 +271,7 @@ select
   d.format           as doc_format,
   ch.name            as channel_name,
   ch.topic           as channel_topic,
+  vc.name            as voice_channel_name,
   msg.anchor_id      as msg_anchor_id,
   msg.root_message_id as msg_root_id,
   msg.author_id      as msg_author_id,
@@ -304,12 +324,28 @@ select
   ip.active_version  as ip_active_version,
   ip.active_hash     as ip_active_hash,
   ip.retired_at      as ip_retired_at,
+  profile_version.draft_json ->> 'name' as ip_name,
+  profile_version.draft_json ->> 'initialContentSurface' as ip_initial_content_surface,
+  memo.statement     as memory_statement,
+  memo.mechanism     as memory_mechanism,
+  memo.subject_scope as memory_subject_scope,
+  memo.does_not_establish as memory_does_not_establish,
+  memo.measured_at   as memory_measured_at,
+  wt.project_id      as wt_project_id,
+  wt.branch          as wt_branch,
+  wt.base_ref        as wt_base_ref,
+  wt.base_commit_oid as wt_base_commit_oid,
+  wt.status          as wt_status,
+  art.name           as artifact_name,
+  art.description    as artifact_description,
+  arev.revision_number as artifact_revision_number,
   cev.fields         as custom_fields
 from public.entities e
 left join public.entity_counters c   on c.entity_id   = e.id
 left join public.tasks t             on t.entity_id   = e.id
 left join public.documents d         on d.entity_id   = e.id
 left join public.channels ch         on ch.entity_id  = e.id
+left join public.voice_channels vc   on vc.entity_id  = e.id
 left join public.messages msg        on msg.entity_id = e.id
 left join public.members mem         on mem.entity_id = e.id
 left join public.user_profiles up    on up.identity_id = mem.identity_id
@@ -323,6 +359,13 @@ left join public.skills sk           on sk.entity_id  = e.id
 left join public.collections col     on col.entity_id = e.id
 left join public.project_projection_details ppd on ppd.entity_id = e.id
 left join public.interaction_profiles ip        on ip.entity_id  = e.id
+left join public.interaction_profile_versions profile_version
+  on profile_version.profile_id = ip.entity_id
+ and profile_version.version = coalesce(ip.active_version, ip.current_draft_version)
+left join public.memories memo       on memo.entity_id = e.id
+left join public.worktrees wt        on wt.entity_id = e.id
+left join public.artifacts art       on art.entity_id = e.id
+left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 left join public.custom_entities cev on cev.entity_id = e.id
 where e.id = any($1::uuid[])
 `;
@@ -387,6 +430,33 @@ export class PgEntityProjector implements EntityProjector {
     }
 
     const edges = await q.query<{ src_id: string; dst_id: string; type: string }>(EDGE_SQL, [unique]);
+    const attentionRows = await q.query<{
+      entity_id: string;
+      pending_count: number;
+      total_points: number;
+      max_points: number;
+      latest_reason: string;
+      oldest_requested_at: Date | string;
+    }>(
+      `select entity_id, count(*)::int as pending_count,
+              sum(points)::int as total_points, max(points)::int as max_points,
+              (array_agg(reason order by created_at desc, id desc))[1] as latest_reason,
+              min(created_at) as oldest_requested_at
+         from public.attention_requests
+        where entity_id = any($1::uuid[]) and status in ('open', 'acknowledged')
+        group by entity_id`,
+      [unique],
+    );
+    const attention = new Map<string, EntityAttentionSummary>();
+    for (const row of attentionRows) {
+      attention.set(row.entity_id, {
+        pendingCount: Number(row.pending_count),
+        totalPoints: Number(row.total_points),
+        maxPoints: Number(row.max_points),
+        latestReason: row.latest_reason,
+        oldestRequestedAt: isoRequired(row.oldest_requested_at),
+      });
+    }
     const assigneeIds = new Map<string, string[]>();
     for (const edge of edges) {
       if (edge.type !== 'assigned_to') continue;
@@ -421,7 +491,8 @@ export class PgEntityProjector implements EntityProjector {
     for (const r of rows) {
       out.set(
         r.id,
-        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], viewerReactions.get(r.id) ?? null),
+        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], viewerReactions.get(r.id) ?? null,
+          attention.get(r.id)),
       );
     }
     return out;
@@ -489,6 +560,7 @@ export class PgEntityProjector implements EntityProjector {
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
     viewerReaction: EntityCounters['viewerReaction'],
+    attention: EntityAttentionSummary | undefined,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -520,7 +592,10 @@ export class PgEntityProjector implements EntityProjector {
       // cannot be honestly empty. `restricted` is the one badge derivable from
       // the envelope alone. blocked/pulls/workingActors need graph traversals
       // that belong to the facade's assembler — see KNOWN_GAPS.
-      badges: r.visibility === 'restricted' ? { restricted: true } : {},
+      badges: {
+        ...(r.visibility === 'restricted' ? { restricted: true } : {}),
+        ...(attention ? { attention } : {}),
+      },
     };
 
     const excerpt = this.excerptOf(r);
@@ -530,14 +605,16 @@ export class PgEntityProjector implements EntityProjector {
   /**
    * Kind-specific display title. Never an id (contract: "never an ID").
    *
-   * ## ⚠ THERE ARE TWO OF THESE, AND THEY DISAGREE
+   * ## ⚠ THERE ARE TWO OF THESE, AND MOST FALLBACKS DISAGREE
    *
    * The other one is `titleOf` in `facade/entity-read.ts` (the tombstone branch
    * is at entity-read.ts:485, the work_session fallback at :503). That is the
    * facade's read path; this is the event path. The SAME entity therefore gets a
    * different title depending on whether you fetched it or were pushed it — the
-   * observed symptom is a work_session that reads as "Session" in the panel and
-   * as "" in the event stream.
+   * observed symptom was a work_session that read as "Session" after reload
+   * and as "" after a live event. Work-session title parity is fixed below;
+   * the remaining cosmetic divergences stay visible until the shared assembler
+   * replaces this projector.
    *
    * **The intended fix is NOT to hand-match the tables below.** Doing that
    * creates a second copy of the fallback table, which is exactly what the
@@ -551,9 +628,9 @@ export class PgEntityProjector implements EntityProjector {
    *   task         ''                → 'Untitled task'
    *   doc          ''                → 'Untitled document'
    *   channel      ''                → 'channel'
+   *   voice_channel ''               → 'voice channel'
    *   member       ''                → 'Member'
    *   team_member  ''                → 'Agent'
-   *   work_session ''                → 'Session'
    *   file         ''                → 'File'
    *   collection   ''                → 'Collection'
    *   message      body.slice(0,120) → excerpt(body) ?? 'Message'
@@ -578,12 +655,16 @@ export class PgEntityProjector implements EntityProjector {
         return r.doc_title ?? '';
       case 'channel':
         return r.channel_name ?? '';
+      case 'voice_channel':
+        // Same bare name as `channel` — the '🔊' is a rendering affordance and
+        // belongs to the client, exactly as the '#' does for text channels.
+        return r.voice_channel_name ?? '';
       case 'member':
         return r.member_display_name ?? r.profile_display_name ?? r.member_identity_id ?? '';
       case 'team_member':
         return r.tm_name ?? '';
       case 'work_session':
-        return r.ws_title ?? '';
+        return r.ws_title && r.ws_title.length > 0 ? r.ws_title : 'Session';
       case 'file':
         return r.file_name ?? '';
       case 'pull_request':
@@ -600,13 +681,26 @@ export class PgEntityProjector implements EntityProjector {
       case 'project':
         return r.ppd_name ?? '';
       case 'interaction_profile':
-        // No name column exists for a profile projection; the empty string is
-        // the honest answer, matching the facade's absence of one.
-        return '';
+        // The name is versioned with the profile draft. Keep live events in
+        // lock-step with collection/detail reads so an upsert cannot replace
+        // a useful picker label with an empty string.
+        return r.ip_name ?? '';
       case 'message':
         // A message has no title of its own; the first line of the body is what
         // every surface shows. Bounded so a 10k-char message is not a title.
         return (r.msg_body ?? '').slice(0, 120);
+      case 'memory':
+        // Derived from the statement, never separately settable — MIRRORS
+        // entity-read.ts titleOf (same flatten, same 120-char bound, same
+        // fallback), because a title that differs between the feed and the
+        // read path is drift a client can see.
+        return (r.memory_statement ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Memory';
+      case 'worktree':
+        // The branch is the human name — MIRRORS entity-read.ts titleOf.
+        return r.wt_branch ?? 'Worktree';
+      case 'artifact':
+        // The artifact's own name — MIRRORS entity-read.ts titleOf.
+        return r.artifact_name ?? 'Artifact';
       default:
         // Custom c:* kinds: no title column exists. `fields.title` is the
         // convention when the kind schema declares one.
@@ -634,6 +728,8 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'doc' ? r.doc_body
       : r.kind === 'message' ? r.msg_body
       : r.kind === 'channel' ? r.channel_topic
+      : r.kind === 'memory' ? r.memory_statement
+      : r.kind === 'artifact' ? r.artifact_description
       : null;
     if (source === null || source === '') return null;
     return source.slice(0, 280);
@@ -681,6 +777,19 @@ export class PgEntityProjector implements EntityProjector {
           unreadCount: 0,
           workingAgentCount: 0,
         };
+      case 'voice_channel':
+        return {
+          kind: 'voice_channel',
+          // 0, ALWAYS, on this path — and not a "not computed yet" 0 like the
+          // ones in KNOWN_GAPS. The roster is ephemeral by construction: it
+          // lives in `voice/roster.ts` in this process, is rebuilt from LiveKit
+          // webhooks, and is deliberately in NO table (053's header: a table
+          // for it "would be a lie that survives a crash"). The projector reads
+          // Postgres under the caller's claims and holds nothing else, so there
+          // is no query that could produce the real count here. Live counts
+          // reach clients over the voice roster events, not over entity.upsert.
+          participantCount: 0,
+        };
       case 'message':
         return {
           kind: 'message',
@@ -692,6 +801,7 @@ export class PgEntityProjector implements EntityProjector {
               : (actors.get(r.msg_author_id) ?? this.unknownActor(r.msg_author_id)),
           messageBatchId: r.msg_batch_id,
           editedAt: iso(r.msg_edited_at),
+          redactedAt: iso(r.msg_redacted_at),
         };
       case 'member':
         return {
@@ -790,7 +900,43 @@ export class PgEntityProjector implements EntityProjector {
           activeVersion: r.ip_active_version,
           activeHash: r.ip_active_hash,
           retiredAt: iso(r.ip_retired_at),
+          // Absent key when the draft has no opinion — see entity-read's
+          // `surfaceOf`. Both readers must agree or the same profile would
+          // describe itself differently over the feed than over a read.
+          ...(r.ip_initial_content_surface === 'terminal'
+            || r.ip_initial_content_surface === 'chat'
+            ? { initialContentSurface: r.ip_initial_content_surface }
+            : {}),
         };
+      case 'memory':
+        // MIRRORS entity-read.ts stateOf. The scope columns are NOT NULL in
+        // the DDL; the fallbacks keep a hypothetical stray row projectable
+        // instead of poisoning the feed on a strict-schema refusal (the
+        // project/interaction_profile lesson above).
+        return {
+          kind: 'memory',
+          mechanism: r.memory_mechanism ?? '',
+          subjectScope: r.memory_subject_scope ?? '',
+          doesNotEstablish: r.memory_does_not_establish ?? '',
+          measuredAt: iso(r.memory_measured_at),
+        };
+      case 'worktree':
+        // Semantic lifecycle only — allocation (disk) state is deliberately
+        // not on the event path either. MIRRORS entity-read.ts stateOf.
+        return {
+          kind: 'worktree',
+          status: oneOf(r.wt_status, WT_STATUSES, 'active'),
+          branch: r.wt_branch ?? '',
+          baseRef: r.wt_base_ref ?? '',
+          baseCommitOid: r.wt_base_commit_oid ?? '',
+          projectId: r.wt_project_id ?? '',
+        };
+      case 'artifact':
+        // Publish drives version advancement; the CURRENT revision number —
+        // MIRRORS entity-read.ts stateOf. The fallback of 1 keeps a
+        // hypothetical stray envelope projectable instead of poisoning the feed
+        // on a strict-schema refusal.
+        return { kind: 'artifact', revisionNumber: r.artifact_revision_number ?? 1 };
       default: {
         // T-L4: custom c:* kinds carry their schema-validated scalars.
         //
@@ -836,6 +982,10 @@ export const KNOWN_GAPS = Object.freeze([
   'badges.blocked',
   'badges.pulls',
   'badges.workingActors',
+  // Staleness needs the mark-edge traversal + pin-target versions — the same
+  // per-entity graph work as blocked/pulls. A feed-driven UI sees a staleness
+  // change on re-read, not live (consistent with the two badges above).
+  'badges.staleness',
   'state.channel.unreadCount',
   'state.channel.workingAgentCount',
   'state.doc.childCount',

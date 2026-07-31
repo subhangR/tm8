@@ -54,6 +54,31 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(labels).toContain('Settings');
   });
 
+  it('shows per-space channels under a non-clickable heading and opens the channel chat', async () => {
+    const view = renderGate();
+    const channelRow = await waitFor(() => {
+      const row = view.container.querySelector('[data-entity-id="ch-design"]');
+      expect(row).toBeTruthy();
+      return row as HTMLElement;
+    });
+
+    const heading = [...view.container.querySelectorAll('.shell-rail__header')]
+      .find((node) => node.textContent === 'Channels');
+    expect(heading).toBeTruthy();
+    expect(heading?.closest('button')).toBeNull();
+
+    fireEvent.click(channelRow);
+    const channel = await waitFor(() => view.getByTestId('channel-view'));
+    expect(within(channel).getByRole('heading', { name: 'design' })).toBeTruthy();
+    expect(within(channel).getByRole('tab', { name: /Feed · 148/i })).toBeTruthy();
+    expect(await within(channel).findByLabelText('Message this channel')).toBeTruthy();
+    // The upload seam is wired through ChannelView — the attach control is a
+    // REAL file input, not the disabled-with-reason refusal.
+    const attach = within(channel).getByRole('button', { name: /attach a file/i });
+    expect(attach.getAttribute('aria-disabled')).not.toBe('true');
+    expect(within(channel).getByLabelText(/choose files to attach/i)).toBeTruthy();
+  });
+
   it('mounts both side panels and the live-session bar in the centre', async () => {
     const { getByTestId } = renderGate();
     const grid = await waitFor(() => getByTestId('workspace-grid'));
@@ -80,21 +105,21 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(left.querySelector('[data-kind="work_session"]')).not.toBeNull();
     expect(within(right).getByRole('button', { name: /drag task panel/i })).toBeTruthy();
 
-    // The empty-center session roster follows the session panel's registry
-    // capability, not a hard-wired assumption that Sessions stays on the right.
+    // The empty-center roster follows the registry's terminal capability, not
+    // a hard-wired assumption that Sessions stays on the right.
     const rosterNames = [...view.getByTestId('empty-center').querySelectorAll('.shell-empty__name')]
       .map((node) => node.textContent);
     expect(rosterNames).toContain('forge');
   });
 
-  it('renders the empty centre as the ROSTER plus the grammar lesson (02-LAYOUT §2.2)', async () => {
+  it('renders the empty centre as a grouped terminal summary plus the grammar lesson', async () => {
     // The spec's own words: "The empty state doubles as the live-session roster
     // and teaches the grammar." A blank centre would satisfy "nothing is open"
     // and fail the actual requirement — so assert the CONTENT, not the absence.
     const { getByTestId, getByText } = renderGate();
     const empty = await waitFor(() => getByTestId('empty-center'));
 
-    // The roster: sessions named, each with its status WORD (C8/L10).
+    // Only useful terminal states are grouped, each with its status WORD.
     // Scoped to the name/word classes because several fixture personas share a
     // display name — a bare getByText matches more than one row.
     const names = [...empty.querySelectorAll('.shell-empty__name')].map((n) => n.textContent);
@@ -103,6 +128,9 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(words).toContain('running');
     // …and the stale one honestly labelled, never as live (D6).
     expect(words).toContain('stale — node restarted');
+    within(empty).getByRole('heading', { name: 'Needs attention, 2' });
+    within(empty).getByRole('heading', { name: 'Running, 1' });
+    within(empty).getByRole('heading', { name: 'Recently completed, 1' });
 
     // The grammar lesson.
     getByText('Click any task or session to open it here.');
@@ -111,11 +139,19 @@ describe('THE GATE — composed T0-1 master screen', () => {
     within(empty).getByText('/');
   });
 
-  it('orders the roster LIVE FIRST, from the seam live set (never a summary field)', async () => {
+  it('prioritizes attention, then running and recent completion groups', async () => {
     const { getByTestId } = renderGate();
     const empty = await waitFor(() => getByTestId('empty-center'));
-    const names = [...empty.querySelectorAll('.shell-empty__name')].map((n) => n.textContent);
-    expect(names[0]).toBe('forge'); // the only id in liveEntityIds
+    const groups = [...empty.querySelectorAll('.shell-empty__group')].map((group) =>
+      group.getAttribute('data-testid'),
+    );
+    expect(groups).toEqual([
+      'empty-session-group-attention',
+      'empty-session-group-running',
+      'empty-session-group-completed',
+    ]);
+    const running = getByTestId('empty-session-group-running');
+    expect(running.querySelector('.shell-empty__name')?.textContent).toBe('forge');
   });
 
   it('the empty centre carries NO animated status mark (D31)', async () => {

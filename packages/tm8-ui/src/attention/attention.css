@@ -1,0 +1,176 @@
+/* AttentionInbox — the entity-detail blank state.
+   Every colour resolves through a token (§14): no literals, no per-theme
+   override. The points number is the loudest thing on the row because it is
+   what the list is ranked by. */
+
+.cv2-root .att-inbox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--pn-space-6) var(--pn-space-4);
+}
+
+.cv2-root .att-inbox__inner {
+  width: 100%;
+  max-width: 520px;
+}
+
+/* The quiet states (loading / error / nothing waiting) centre themselves
+   instead of sitting at the top where a list would start. */
+.cv2-root .att-inbox__inner--quiet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60%;
+  text-align: center;
+}
+
+.cv2-root .att-inbox__eyebrow {
+  margin-bottom: var(--pn-space-3);
+  color: var(--pn-ink-4);
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.cv2-root .att-inbox__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-root .att-inbox__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-3);
+  width: 100%;
+  padding: var(--pn-space-2) var(--pn-space-2);
+  border: 0;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  font-family: var(--pn-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cv2-root .att-inbox__row:hover {
+  background: var(--pn-hover);
+}
+
+/* Attention is a WAIT state — the same colour the roster uses for it, so the
+   two surfaces agree about what waiting looks like. */
+.cv2-root .att-inbox__points {
+  flex: none;
+  min-width: 34px;
+  padding: 2px 6px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-wait-soft);
+  color: var(--pn-wait);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.cv2-root .att-inbox__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.cv2-root .att-inbox__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cv2-root .att-inbox__glyph-sm {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .att-inbox__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pn-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An id standing in for a title must not read like a title. */
+.cv2-root .att-inbox__name--raw {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 400;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .att-inbox__kind {
+  flex: none;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .att-inbox__reason {
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cv2-root .att-inbox__count {
+  flex: none;
+  align-self: center;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.cv2-root .att-inbox__glyph {
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-h2);
+  margin-bottom: var(--pn-space-2);
+}
+
+.cv2-root .att-inbox__none {
+  margin: 0;
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-body);
+}
+
+.cv2-root .att-inbox__hint,
+.cv2-root .att-inbox__more {
+  margin: var(--pn-space-3) 0 0;
+  color: var(--pn-ink-4);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .att-inbox__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-body);
+}
+
+.cv2-root .att-inbox__error-detail {
+  margin: var(--pn-space-2) 0 0;
+  color: var(--pn-ink-3);
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}

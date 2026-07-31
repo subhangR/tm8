@@ -368,7 +368,13 @@ export class WorkspaceEventMapper {
       }
       throw err;
     }
-    return event as Exclude<WorkspaceEvent, { type: 'presence.changed' | 'typing.changed' }>;
+    // `DurableWorkspaceEvent`, not a hand-written exclusion of the two
+    // ephemeral types. The hand-written form was already stale: the contract
+    // added `voice.participants.changed` to `PresenceWorkspaceEvent`, and a
+    // copied list cannot learn that. Naming the contract's own alias means the
+    // next ephemeral type narrows this cast automatically instead of silently
+    // widening it to admit an event that must never ride the durable stream.
+    return event as DurableWorkspaceEvent;
   }
 
   private need(entities: Map<string, EntitySummary>, id: string | null, seq: number, what: string): EntitySummary {

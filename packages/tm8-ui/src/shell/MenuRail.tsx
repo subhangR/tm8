@@ -31,6 +31,38 @@ export interface RefPresentation {
   badge?: string | number;
   /** Optional live count — renders as the green `● n` treatment. */
   live?: number;
+  /**
+   * How many of `badge` the viewer has not seen yet.
+   *
+   * DELIBERATELY NOT FOLDED INTO `live`. Green `● n` means RUNNING throughout
+   * this product (live sessions, voice participants) — a fact about the world.
+   * Unseen is a fact about THIS VIEWER's relationship to the rows, so it gets
+   * its own quieter treatment and never competes with the live dot. Sessions
+   * are the row that would otherwise have to choose between them, and it
+   * carries both.
+   */
+  unseen?: number;
+}
+
+/**
+ * A live entity row inserted beneath a menu group. Channels use this seam: the
+ * group label remains grammar 1 (plain text), while every actual channel is a
+ * real navigation row carrying its unread and working counts.
+ *
+ * Kept generic so the rail still knows no entity kind. The host supplies the
+ * kind alongside the id and the domain registry supplies the presentation.
+ */
+export interface MenuEntityRow extends RefPresentation {
+  id: string;
+  kind: string;
+  parentId?: string | null;
+}
+
+export interface MenuDynamicGroup {
+  /** Dynamic rows replace authored items for Channels; other groups may append. */
+  replaceConfiguredItems?: boolean;
+  items: readonly MenuEntityRow[];
+  emptyLabel?: string;
 }
 
 /**
@@ -40,7 +72,10 @@ export interface RefPresentation {
  */
 export type KindPresenter = (ref: string) => RefPresentation | null;
 
-export type MenuTarget = { type: 'view'; ref: MenuViewRef } | { type: 'kind'; ref: string };
+export type MenuTarget =
+  | { type: 'view'; ref: MenuViewRef }
+  | { type: 'kind'; ref: string }
+  | { type: 'entity'; ref: string; kind: string };
 
 export interface ServerRailItem {
   id: string;
@@ -58,6 +93,8 @@ export interface MenuRailProps {
   activeTarget?: MenuTarget | null;
   onNavigate(target: MenuTarget): void;
   presentKind: KindPresenter;
+  /** Live rows keyed by MenuGroup.id, rendered directly beneath its label. */
+  dynamicGroups?: Readonly<Record<string, MenuDynamicGroup | undefined>>;
   /** Phase 2: Servers are groups in this one rail, never a second rail. */
   servers?: readonly ServerRailItem[];
   activeServerId?: string;
@@ -88,6 +125,40 @@ export const ADD_SERVER_DISABLED_REASON = REASONS.addServerDeferred;
 const sameTarget = (a: MenuTarget | null | undefined, b: MenuTarget): boolean =>
   !!a && a.type === b.type && a.ref === b.ref;
 
+interface MenuEntityNode {
+  row: MenuEntityRow;
+  children: MenuEntityNode[];
+}
+
+/** Build the same parent/child channel tree Collab v2's navigation rendered. */
+function entityTree(rows: readonly MenuEntityRow[]): MenuEntityNode[] {
+  const ids = new Set(rows.map((row) => row.id));
+  const children = new Map<string, MenuEntityRow[]>();
+  const roots: MenuEntityRow[] = [];
+
+  for (const row of rows) {
+    if (!row.parentId || !ids.has(row.parentId) || row.parentId === row.id) {
+      roots.push(row);
+      continue;
+    }
+    const siblings = children.get(row.parentId) ?? [];
+    siblings.push(row);
+    children.set(row.parentId, siblings);
+  }
+
+  const build = (row: MenuEntityRow, ancestors: ReadonlySet<string>): MenuEntityNode => {
+    if (ancestors.has(row.id)) return { row, children: [] };
+    const next = new Set(ancestors);
+    next.add(row.id);
+    return {
+      row,
+      children: (children.get(row.id) ?? []).map((child) => build(child, next)),
+    };
+  };
+
+  return roots.map((row) => build(row, new Set()));
+}
+
 /** Resolves an item/leaf to its presentation, or null when it cannot be drawn. */
 function present(node: MenuItem | MenuLeaf, presentKind: KindPresenter): RefPresentation | null {
   return node.type === 'view' ? VIEW_PRESENTATION[node.ref] ?? null : presentKind(node.ref);
@@ -110,7 +181,120 @@ function collapsedLabel(presentation: RefPresentation): string {
   const parts = [presentation.label];
   if (presentation.badge !== undefined) parts.push(String(presentation.badge));
   if (presentation.live !== undefined) parts.push(`${presentation.live} live`);
+  // Same C8/L10 rule as `live`: unseen is a STATUS, so it needs the word.
+  if (presentation.unseen) parts.push(`${presentation.unseen} unseen`);
   return parts.join(', ');
+}
+
+/**
+ * The trailing total, marked when part of it is unseen.
+ *
+ * THE UNSEEN COUNT IS NOT DRAWN AS ITS OWN NUMBER. Two bare integers side by
+ * side on one row ("3 210") read as a range or a fraction, and the rail already
+ * spends its numeric slot on the total. So unseen is carried visually as
+ * emphasis plus a dot, and its QUANTITY is exposed to assistive tech — which
+ * has no such ambiguity — rather than being dropped.
+ *
+ * One component for all three render sites (configured item, caret leaf,
+ * dynamic entity row) because three hand-rolled copies is exactly how the
+ * collapsed corner marks and the a11y wording drift apart.
+ */
+function CountBadge({ presentation }: { presentation: RefPresentation }) {
+  if (presentation.badge === undefined) return null;
+  const unseen = presentation.unseen ?? 0;
+  return (
+    <span className={`shell-rail__badge${unseen > 0 ? ' shell-rail__badge--unseen' : ''}`}>
+      {presentation.badge}
+      {unseen > 0 && <span className="shell-rail__unseen-dot" aria-hidden="true" />}
+      {unseen > 0 && <span className="shell-vh">, {unseen} unseen</span>}
+    </span>
+  );
+}
+
+function DynamicEntityRows({
+  items,
+  collapsed,
+  activeTarget,
+  onNavigate,
+}: {
+  items: readonly MenuEntityRow[];
+  collapsed: boolean;
+  activeTarget?: MenuTarget | null;
+  onNavigate(target: MenuTarget): void;
+}) {
+  return entityTree(items).map((node) => (
+    <DynamicEntityNode
+      key={node.row.id}
+      node={node}
+      depth={0}
+      collapsed={collapsed}
+      activeTarget={activeTarget}
+      onNavigate={onNavigate}
+    />
+  ));
+}
+
+function DynamicEntityNode({
+  node,
+  depth,
+  collapsed,
+  activeTarget,
+  onNavigate,
+}: {
+  node: MenuEntityNode;
+  depth: number;
+  collapsed: boolean;
+  activeTarget?: MenuTarget | null;
+  onNavigate(target: MenuTarget): void;
+}) {
+  const { row } = node;
+  const target: MenuTarget = { type: 'entity', ref: row.id, kind: row.kind };
+  const active = sameTarget(activeTarget, target);
+  const label = collapsedLabel(row);
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`shell-rail__row shell-rail__entity ${active ? 'shell-rail__row--active' : ''}`}
+        data-entity-id={row.id}
+        data-depth={depth}
+        aria-current={active ? 'page' : undefined}
+        aria-label={collapsed ? label : undefined}
+        title={collapsed ? label : undefined}
+        style={!collapsed && depth > 0 ? { paddingLeft: 12 + depth * 12 } : undefined}
+        onClick={() => onNavigate(target)}
+      >
+        <span className="shell-rail__icon" aria-hidden="true">{row.icon}</span>
+        {!collapsed ? <span className="shell-rail__label">{row.label}</span> : null}
+        {!collapsed && row.live !== undefined && row.live > 0 ? (
+          <span className="shell-rail__live">
+            <span className="shell-rail__live-dot" aria-hidden="true" />
+            {row.live}<span className="shell-vh"> live</span>
+          </span>
+        ) : null}
+        {!collapsed && row.badge !== undefined && row.badge !== 0 ? (
+          <span className="shell-rail__badge">{row.badge}</span>
+        ) : null}
+        {collapsed && row.badge !== undefined && row.badge !== 0 ? (
+          <span className="shell-rail__badge-corner" aria-hidden="true">{row.badge}</span>
+        ) : null}
+        {collapsed && row.live !== undefined && row.live > 0 ? (
+          <span className="shell-rail__live-corner" aria-hidden="true">{row.live}</span>
+        ) : null}
+      </button>
+      {node.children.map((child) => (
+        <DynamicEntityNode
+          key={child.row.id}
+          node={child}
+          depth={depth + 1}
+          collapsed={collapsed}
+          activeTarget={activeTarget}
+          onNavigate={onNavigate}
+        />
+      ))}
+    </>
+  );
 }
 
 export function MenuRail(props: MenuRailProps) {
@@ -170,7 +354,7 @@ export function MenuRail(props: MenuRailProps) {
               <div className="shell-rail__header kit-eyebrow">{group.label}</div>
             )}
 
-            {group.items.map((item) => {
+            {(props.dynamicGroups?.[group.id]?.replaceConfiguredItems ? [] : group.items).map((item) => {
               const presentation = present(item, presentKind);
               if (!presentation) return null;
 
@@ -205,16 +389,17 @@ export function MenuRail(props: MenuRailProps) {
                         <span className="shell-vh"> live</span>
                       </span>
                     )}
-                    {!collapsed && presentation.badge !== undefined && (
-                      <span className="shell-rail__badge">{presentation.badge}</span>
-                    )}
+                    {!collapsed && <CountBadge presentation={presentation} />}
                     {/* Collapsed, counts survive as corner marks — the count is
                         information, so it degrades rather than disappearing.
                         Both marks are aria-hidden because the row's composed
                         aria-label already carries their values; leaving them
                         exposed would double-announce every count. */}
                     {collapsed && presentation.badge !== undefined && (
-                      <span className="shell-rail__badge-corner" aria-hidden="true">
+                      <span
+                        className={`shell-rail__badge-corner${presentation.unseen ? ' shell-rail__badge-corner--unseen' : ''}`}
+                        aria-hidden="true"
+                      >
                         {presentation.badge}
                       </span>
                     )}
@@ -279,15 +464,26 @@ export function MenuRail(props: MenuRailProps) {
                               <span className="shell-vh"> live</span>
                             </span>
                           )}
-                          {leafPresentation.badge !== undefined && (
-                            <span className="shell-rail__badge">{leafPresentation.badge}</span>
-                          )}
+                          <CountBadge presentation={leafPresentation} />
                         </button>
                       );
                     })}
                 </div>
               );
             })}
+
+            {props.dynamicGroups?.[group.id] ? (
+              props.dynamicGroups[group.id]!.items.length > 0 ? (
+                <DynamicEntityRows
+                  items={props.dynamicGroups[group.id]!.items}
+                  collapsed={collapsed}
+                  activeTarget={activeTarget}
+                  onNavigate={onNavigate}
+                />
+              ) : !collapsed && props.dynamicGroups[group.id]!.emptyLabel ? (
+                <div className="shell-rail__empty">{props.dynamicGroups[group.id]!.emptyLabel}</div>
+              ) : null
+            ) : null}
           </div>
         ))}
       </div>

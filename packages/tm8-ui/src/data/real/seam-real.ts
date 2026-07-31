@@ -33,6 +33,8 @@ import {
   CollabError,
   bindPath,
   type ActivityItem,
+  type AttentionRequestListQuery,
+  type AttentionRequestPage,
   type CollectionQuery,
   type CollectionResult,
   type CommandResult,
@@ -52,6 +54,7 @@ import {
   type Page,
   type ProjectResource,
   type SpaceId,
+  type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
@@ -223,6 +226,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     identity: (): Promise<IdentityView> => ops.identity(),
     spaces: (): Promise<SpaceSummary[]> => ops.spaces(),
     spaceSettings: (spaceId: SpaceId): Promise<SpaceSettingsView> => ops.spaceSettings(spaceId),
+    counts: (spaceId: SpaceId): Promise<SpaceKindCounts> => ops.counts(spaceId),
 
     /**
      * LLD C-4, the ONE soft-fallback in the whole seam: `not_implemented` (501)
@@ -254,8 +258,17 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     handoffs: (workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> =>
       ops.handoffs(workSessionId, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
+    attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
+      ops.attentionRequests(input),
     feed: (id: EntityId, opts?: FeedOpts): Promise<EntityFeedPage> => ops.feed(id, opts),
     delivery: (messageId: EntityId): Promise<MessageDeliveryView> => ops.delivery(messageId),
+
+    files: {
+      uploadInit: (input) => ops.fileUploadInit(input),
+      putBytes: (grant, bytes) => ops.fileUploadBytes(grant, bytes),
+      complete: (uploadId, input) => ops.fileUploadComplete(uploadId, input),
+      abort: (uploadId, input) => ops.fileUploadAbort(uploadId, input),
+    },
 
     // -- commands ------------------------------------------------------------
 
@@ -272,6 +285,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       postMessage: (input) => ops.postMessage(input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
+      resolveAttention: (id, input) => ops.resolveAttention(id, input),
       markRead: (notificationId) => ops.markRead(notificationId),
       /**
        * `lastReadAt` is intentionally NOT sent. `readMarks.upsert` binds
@@ -283,6 +297,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
         void lastReadAt;
         return ops.upsertReadMark(anchorId);
       },
+      previewArtifact: (id, input) => ops.previewArtifact(id, input),
       spawn: (input) => ops.spawn(input),
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),

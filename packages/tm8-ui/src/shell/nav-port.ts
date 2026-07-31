@@ -59,6 +59,9 @@ export interface NavPort extends NavPanelState {
    * history — which is what makes it safe to call on every resize frame.
    */
   applyNormalization(next: NavPanelState): void;
+  /** Viewer-local nested Content surface. Implementations mirror with replace-history. */
+  surfaceOf?(id: EntityId): ContentSurface | null;
+  setContentSurface?(id: EntityId, surface: ContentSurface): void;
 }
 
 /** `V` — kept identical to A1a's `selectVisibleCount` so the halves cannot drift. */

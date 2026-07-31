@@ -34,10 +34,13 @@ import {
   type PtySessionStatus,
   type RecordCommandInput,
   type ResolvedInteractionProfileContext,
+  type ResumeWorkSessionResult,
   type SpawnContext,
   type SpawnRequest,
   type Tm8Manifest,
   type TransitionInput,
+  type WorkdirMode,
+  type WorkSessionResumeInfo,
   type WorkSessionStatus,
 } from '@tm8/execution';
 import { CollabError } from '@tm8/contract';
@@ -113,8 +116,15 @@ interface TaskRow {
 export class DbGraphPort implements GraphPort {
   constructor(
     private readonly db: Db,
-    /** Governance cap (S10). Refused loudly at capacity, never queued. */
-    private readonly sessionCap = 8,
+    /**
+     * Governance cap (S10). Refused loudly at capacity, never queued.
+     *
+     * Defaults from `TM8_SESSION_CAP` rather than a literal, so a node cannot
+     * end up with one cap on the spawn path and a different one in the capacity
+     * the launch panel displays — the two disagreeing is how "8 of 8 free"
+     * appears next to a refusal.
+     */
+    private readonly sessionCap = resolveSessionCap(),
   ) {}
 
   private claims(auth: GraphAuth): DbClaims {
@@ -244,6 +254,7 @@ export class DbGraphPort implements GraphPort {
         this.sessionCap,
         null, // p_actor_id — resolve_actor derives it from the claims
         input.clientMutationId,
+        input.parentSessionId,
       ],
     );
 
@@ -322,6 +333,101 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
+   * The stored launch facts of one session, for resume. A read in one
+   * transaction (row + persona edge + task edges must describe the same
+   * instant), under the caller's claims — an unreadable session is a
+   * not_found, indistinguishable from a missing one.
+   */
+  async loadWorkSessionForResume(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<WorkSessionResumeInfo> {
+    return this.db.tx(this.claims(auth), async (q) => {
+      const rows = await q.query<{
+        entity_id: string;
+        space_id: string;
+        project_id: string | null;
+        workdir_mode: string;
+        workdir_path: string | null;
+        mode: string | null;
+        model: string | null;
+        agent_tool: string | null;
+        title: string;
+        status: string;
+        native_session_id: string | null;
+      }>(
+        `select ws.entity_id, e.space_id, ws.project_id, ws.workdir_mode,
+                ws.workdir_path, ws.mode, ws.model, ws.agent_tool, ws.title,
+                ws.status, ws.native_session_id
+           from public.work_sessions ws
+           join public.entities e on e.id = ws.entity_id
+          where ws.entity_id = $1 and e.deleted_at is null`,
+        [sessionId],
+      );
+      const row = rows[0];
+      if (!row) throw fail('not_found', `work session ${sessionId} not found`);
+
+      const members = await q.query<{ dst_id: string }>(
+        `select dst_id from public.edges
+          where src_id = $1 and type = 'relates_to' limit 1`,
+        [sessionId],
+      );
+      const tasks = await q.query<{ dst_id: string }>(
+        `select dst_id from public.edges
+          where src_id = $1 and type = 'working_on'`,
+        [sessionId],
+      );
+
+      return {
+        sessionId: row.entity_id,
+        spaceId: row.space_id,
+        teamMemberId: members[0]?.dst_id ?? null,
+        projectId: row.project_id,
+        taskIds: tasks.map((t) => t.dst_id),
+        workdirMode: row.workdir_mode as WorkdirMode,
+        workdirPath: row.workdir_path,
+        mode: (row.mode as WorkSessionResumeInfo['mode']) ?? null,
+        model: row.model,
+        agentTool: row.agent_tool,
+        title: row.title,
+        status: row.status as WorkSessionStatus,
+        nativeSessionId: row.native_session_id,
+      };
+    });
+  }
+
+  async resumeWorkSession(
+    auth: GraphAuth,
+    input: { sessionId: string; clientMutationId: string | null },
+  ): Promise<ResumeWorkSessionResult> {
+    const result = await this.db.rpc<Record<string, unknown>>(
+      this.claims(auth),
+      'public.execution_resume',
+      [
+        input.sessionId,
+        this.sessionCap,
+        null, // p_actor_id — resolve_actor derives it from the claims
+        input.clientMutationId,
+      ],
+    );
+    const replayed = result?.__tm8_replayed === true;
+    const { __tm8_replayed: _replayMarker, ...commandResult } = result ?? {};
+    return { commandResult, replayed };
+  }
+
+  async recordNativeSessionId(
+    auth: GraphAuth,
+    sessionId: string,
+    nativeSessionId: string,
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.execution_record_native_session', [
+      sessionId,
+      nativeSessionId,
+      null, // p_actor_id — derived from claims
+    ]);
+  }
+
+  /**
    * Non-terminal work sessions recorded against `nodeId` — the ghost candidates
    * startup reconciliation retires.
    *
@@ -380,6 +486,51 @@ export class DbGraphPort implements GraphPort {
 }
 
 // --- runtime -----------------------------------------------------------------
+
+/**
+ * The hard-coded 8 was never a resource measurement — it was a placeholder that
+ * became a wall. It surfaces as `No session slots free (0 of 8 session slots
+ * free)` in the launch panel with no way to raise it short of a rebuild, and on
+ * a machine that can comfortably run more agents that is an invented limit.
+ *
+ * `TM8_SESSION_CAP` makes it the operator's decision:
+ *   - unset      → 8, the previous behaviour, so nothing changes by upgrading
+ *   - a number   → that many concurrent live sessions
+ *   - `0` / `unlimited` / `none` → no practical ceiling
+ *
+ * "No practical ceiling" is a saturating NUMBER, not a disabled check, and that
+ * is deliberate. The cap is enforced inside `internal.execution_spawn`, whose
+ * guard is `live_work_session_count(null) >= greatest(coalesce(cap, 8), 1)` — it
+ * CANNOT express "unlimited", and it clamps anything below 1 up to 1. So passing
+ * 0 straight through would produce a cap of ONE, the exact opposite of what the
+ * operator asked for. A saturating value is the honest way to say "never refuse
+ * on capacity" through an interface that has no word for it.
+ *
+ * The saturating value is int4's maximum, NOT `Number.MAX_SAFE_INTEGER`, because
+ * `p_session_cap` is declared `integer`: a JS-safe-integer would overflow int4
+ * and turn "unlimited" into a spawn that fails on every request. The ceiling of
+ * the narrowest type in the chain is the only value that survives the whole path.
+ *
+ * What removing the cap does NOT remove: each live session is a real PTY and a
+ * real agent process, so the true limits are RAM, file descriptors and provider
+ * rate limits. Those fail in their own way and this setting cannot help with
+ * them — it only stops tm8 from being the thing that says no.
+ */
+/** int4 max — `internal.execution_spawn(p_session_cap integer)` is the narrowest
+ *  type this value has to pass through, so it is the largest "unlimited" that
+ *  cannot overflow on the way to the guard. */
+const UNLIMITED_SESSION_CAP = 2_147_483_647;
+
+export function resolveSessionCap(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env['TM8_SESSION_CAP']?.trim();
+  if (raw === undefined || raw === '') return 8;
+  if (/^(unlimited|none|off|0)$/i.test(raw)) return UNLIMITED_SESSION_CAP;
+  const parsed = Number.parseInt(raw, 10);
+  // A typo must not silently become a SMALLER cap than the default: an
+  // unparseable or negative value falls back rather than being coerced to 1.
+  if (!Number.isFinite(parsed) || parsed < 1) return 8;
+  return Math.min(parsed, UNLIMITED_SESSION_CAP);
+}
 
 export interface ExecutionRuntimeDeps {
   db: Db;
@@ -444,7 +595,7 @@ export interface ExecutionRuntime {
  * cannot have that sink, so the cycle is closed here with a lazy closure.
  */
 export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRuntime {
-  const sessionCap = deps.sessionCap ?? 8;
+  const sessionCap = deps.sessionCap ?? resolveSessionCap(process.env);
   const graph = new DbGraphPort(deps.db, sessionCap);
 
   let spawnService!: SpawnService;
@@ -542,7 +693,7 @@ export function registerExecutionHandlers(
     ...(deps.logger ? { logger: deps.logger } : {}),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
-  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, 8);
+  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap());
   return {
     pty: deps.pty,
     // See the docblock above this function — disconnected, never resolves.
@@ -689,6 +840,7 @@ function registerHandlers(
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
+      parentSessionId: input.parentSessionId ?? null,
       ...(input.taskIds ? { taskIds: input.taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
@@ -697,6 +849,8 @@ function registerHandlers(
       mode: input.mode ?? null,
       model: input.model ?? null,
       agentTool: input.agentTool ?? null,
+      reasoningEffort: input.reasoningEffort ?? null,
+      accessMode: input.accessMode ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       clientMutationId: envelope.clientMutationId ?? null,
@@ -733,6 +887,25 @@ function registerHandlers(
    * thing no request body can be.
    */
   registry.register('execution.prompt', async () => refusePublicExecutionPrompt());
+
+  /**
+   * execution.resume — maestro-style same-session resume. All the semantics
+   * live in SpawnService.resume (fail-closed native-id resolution, the
+   * execution_resume resurrection RPC, provider resume flags); this handler is
+   * the same thin claims-and-assembly shell every execution.* command uses.
+   */
+  registry.register('execution.resume', async (ctx) => {
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+    const result = await rethrowing(() =>
+      spawnService.resume(claims, {
+        sessionId: requireUuidParam(ctx, 'id'),
+        clientMutationId: envelope.clientMutationId ?? null,
+      }),
+    );
+    return json(await assembleCommandResult(db, claims, result.commandResult, owner.identityId));
+  });
 
   registry.register('execution.terminate', async (ctx) => {
     const owner = await resolveOwner();

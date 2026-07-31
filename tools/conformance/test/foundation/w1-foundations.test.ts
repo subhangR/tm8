@@ -38,23 +38,23 @@ describe('W1.C generated catalog and reachability foundations', () => {
 
     // A21 (execution.liveness, GET read) is the +1 on each affected axis.
     expect(manifest.catalog).toEqual({
-      total: 106,
-      v1: 104,
+      total: 117,
+      v1: 115,
       reserved: 2,
-      http: 105,
+      http: 116,
       ws: 1,
-      registerableV1Http: 103,
-      methods: { GET: 39, POST: 42, PATCH: 9, DELETE: 8, PUT: 7, WS: 1 },
-      kinds: { read: 42, command: 63, stream: 1 },
-      uniqueNames: 106,
-      uniqueBindings: 106,
+      registerableV1Http: 114,
+      methods: { GET: 42, POST: 49, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 },
+      kinds: { read: 45, command: 71, stream: 1 },
+      uniqueNames: 117,
+      uniqueBindings: 117,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(105);
+    expect(manifest.routes.http).toHaveLength(116);
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -80,8 +80,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
     });
     expect(manifest.serverRegistries.inputSchemas.bound).toHaveLength(36);
     expect(manifest.serverRegistries.inputSchemas.unboundCommands).toHaveLength(13);
-    // 99 registerable v1 HTTP ops (A21 added one) minus the 28 W1-implemented.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(75);
+    // 114 current registerable v1 HTTP ops minus the 28 W1-implemented.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(86);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -102,9 +102,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(snapshot.inputSchemas.unboundCommands).toHaveLength(13);
     expect(manifest.serverRegistries).toEqual({
       ...snapshot,
-      // 99 registerable v1 HTTP ops (A21 added one) minus the 28 in the
+      // 114 current registerable v1 HTTP ops minus the 28 in the
       // frozen snapshot. The snapshot itself never rotates.
-      unimplementedV1Http: 75,
+      unimplementedV1Http: 86,
     });
   });
 
@@ -156,14 +156,14 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(106);
+    expect(manifest.help.operations).toHaveLength(117);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
   });
 
-  it('is total over 15 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
-    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(15);
+  it('is total over 19 core kinds, c:* fallback, and the ui_template negative sentinel', () => {
+    expect(Object.keys(CORE_KIND_DISPOSITIONS)).toHaveLength(19);
     expect(CUSTOM_KIND_DISPOSITION.kind).toBe('c:*');
     expect(UI_TEMPLATE_SENTINEL).toMatchObject({
       kind: 'ui_template',
@@ -320,31 +320,31 @@ describe('W2.C01 current mounted registry inventory', () => {
       readInputSchemaSourceInventory(),
     ]);
 
-    expect(handlers.facade).toHaveLength(96);
-    // Tranche-v4 = I03 plus exactly TWO moves, each attributed:
-    //  - presence.get (events group), mounted by the w4-w5 BASELINE commit
-    //    e419e4a — pre-Track-S working tree; unrecorded here until D2's run
-    //    because the pre-rebuild stale-dist failures masked this whole file;
-    //  - execution.liveness (execution group), D2/A21, this amendment.
-    // Control, verified: stripping exactly those two names from the live list
-    // reproduces the tranche-v3 sha 73b322ec…276da7 byte-for-byte.
+    expect(handlers.facade).toHaveLength(107);
+    // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
+    // concurrent feature lane (not the W1 amendment set):
+    //  - voice.token.create (voice-channels lane);
+    //  - the six artifacts.* writers/readers (artifacts lane): create, publish,
+    //    revisions.list, preview.start, export, restore.
+    // Control, verified this run: stripping exactly those seven names from the
+    // live list reproduces the tranche-v4 sha efd55f5b…58229d byte-for-byte.
     expect(handlers.execution).toHaveLength(5);
     expect(handlers.events).toHaveLength(2);
-    expect(handlers.all).toHaveLength(103);
+    expect(handlers.all).toHaveLength(114);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('34323bf4cd8b971fb6ad5ebc65d2708e77ff40157d10ac73d209c8401f3beeed');
+      .toBe('d7d226e6c9131c9e527d655528c61c1dc4afb097c5aeb52c1f63ac3c214215ed');
 
-    expect(inputSchemas.bound).toHaveLength(56);
+    expect(inputSchemas.bound).toHaveLength(64);
     expect(inputSchemas.unboundCommands).toEqual([]);
 
     const mounted = new Set(handlers.all);
     const registerableV1Http = OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
-    expect(registerableV1Http).toHaveLength(103);
-    // Tranche-v4: presence.get was the last unmounted row until the baseline
-    // commit mounted it; every registerable v1 HTTP op now has a handler.
+    expect(registerableV1Http).toHaveLength(114);
+    // Every registerable v1 HTTP op has a handler, including the six new
+    // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name)).map(({ name }) => name))
       .toEqual([]);

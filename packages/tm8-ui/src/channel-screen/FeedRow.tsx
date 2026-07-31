@@ -1,28 +1,27 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { EntityId, FeedItem, MessageView } from '@tm8/contract';
 import { Avatar, Pill } from '../kit';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import {
+  accessibleDateTime,
+  activityPresentation,
   canSendAgain,
   clockTime,
   deliveryPresentation,
   deliverySummaryLine,
-  directionOf,
-  viaTitle,
+  safeDeliveryReason,
   type FeedGroup,
 } from './feed-model';
 
 /**
- * ONE FEED ROW — the T10 hero's row grammar, in the oracle's default
- * provenance treatment (§5 "1a Margin rail": direction owns an 88px left
- * margin; time and `via` live with it; the byline carries name, delivery and
- * the verbs).
+ * ONE FEED ROW — chat grammar: a fixed avatar gutter on the left, the byline
+ * (name · time · facts) on the first message of an author run, and the body
+ * hanging under the name. Consecutive messages from the same author within a
+ * short window render as FOLLOW rows: no repeated byline, the timestamp
+ * surfaces in the gutter on hover. Row-level actions (reply, send again) live
+ * in a hover-revealed bar so they never inflate the reading density.
  *
- * WHY 1a AND NOT 1b/1c. The oracle draws three and marks one: "1a is the hero
- * default." Picking a different one would be a design decision this lane has
- * no standing to make, and the canvas already made it.
- *
- * WHAT THIS FILE REFUSES TO DO, since every one of these was a defect
+ * WHAT THIS FILE STILL REFUSES TO DO, since every one of these was a defect
  * somewhere in this build's history:
  *
  *   · It never drops a row it does not understand (S15). An unrecognised
@@ -32,6 +31,12 @@ import {
  *     Delivery is a badge on a stored thing; the stored thing is the fact.
  *   · It never recovers a redacted body from cache (S14). A tombstone keeps
  *     its position and its permitted metadata and nothing else.
+ *
+ * Provenance demotion is deliberate, not a loss: the canonical-anchor and
+ * source-session line renders ONLY when it says something the surface does not
+ * already imply — a foreign anchor or a source session. "This message in this
+ * channel is anchored to this channel" is not information; repeating it under
+ * every row was the single biggest source of feed noise.
  */
 
 export interface FeedRowHandlers {
@@ -39,74 +44,116 @@ export interface FeedRowHandlers {
   onPost?: (body: string, parentMessageId: EntityId | null) => void;
   onReply?: (message: MessageView) => void;
   onOpenEntity?: (id: EntityId) => void;
+  /** Loaded-page index for bounded reply previews; no recursive fetches here. */
+  loadedMessages?: ReadonlyMap<EntityId, MessageView>;
+  onFocusMessage?: (id: EntityId) => void;
 }
 
 export function FeedRowGroup({
   group,
   anchorId,
-  anchorNoun,
+  clustered = false,
   handlers,
 }: {
   group: FeedGroup;
   anchorId: EntityId;
-  anchorNoun: string;
+  /** This row continues the author run above it — no repeated byline. */
+  clustered?: boolean;
   handlers: FeedRowHandlers;
 }) {
   if (group.kind === 'operation') {
-    return <MutationGroupRow group={group} anchorId={anchorId} anchorNoun={anchorNoun} />;
+    return <MutationGroupRow group={group} />;
   }
-  return <FeedRow item={group.item} anchorId={anchorId} anchorNoun={anchorNoun} handlers={handlers} />;
+  return <FeedRow item={group.item} anchorId={anchorId} clustered={clustered} handlers={handlers} />;
 }
 
 function FeedRow({
   item,
   anchorId,
-  anchorNoun,
+  clustered,
   handlers,
 }: {
   item: FeedItem;
   anchorId: EntityId;
-  anchorNoun: string;
+  clustered: boolean;
   handlers: FeedRowHandlers;
 }) {
+  const isMessage = item.itemKind === 'message';
+  const cls = [
+    'chs-row',
+    clustered ? 'chs-row--follow' : '',
+    isMessage ? '' : 'chs-row--activity',
+  ].filter(Boolean).join(' ');
   return (
-    <li className="chs-row">
-      <article className="chs-row__grid">
-        <Rail item={item} anchorId={anchorId} anchorNoun={anchorNoun} />
+    <li className={cls}>
+      <article
+        className="chs-row__grid"
+        {...(isMessage ? { 'data-feed-message-id': item.message.id, tabIndex: -1 } : {})}
+      >
+        <Gutter item={item} clustered={clustered} />
         <div className="chs-row__body">
-          {item.itemKind === 'message' ? (
-            <MessageContent item={item} handlers={handlers} />
+          {isMessage ? (
+            <MessageContent item={item} anchorId={anchorId} clustered={clustered} handlers={handlers} />
           ) : (
             <ActivityContent item={item} handlers={handlers} />
           )}
         </div>
+        {isMessage && !item.message.state.redactedAt ? (
+          <RowActions item={item} handlers={handlers} />
+        ) : null}
       </article>
     </li>
   );
 }
 
 /**
- * The margin rail. Direction, `via ×N`, time — right-aligned in a fixed column
- * so the eye has a constant scan line down the left of the feed.
- *
- * `via ×N` is shown only for a MULTI-predicate item, exactly as the oracle
- * does: one predicate is the ordinary case and needs no annotation, while two
- * or more mean the server surfaced this row by several routes at once — which
- * is the fact worth exposing. The tooltip prints the predicates verbatim.
+ * The avatar gutter. First message of a run: the author's avatar (shape is
+ * provenance — humans round, agents rounded-square). Follow rows and activity
+ * rows: the timestamp, so every row still answers "when" without a byline.
  */
-function Rail({ item, anchorId, anchorNoun }: { item: FeedItem; anchorId: EntityId; anchorNoun: string }) {
-  const dir = directionOf(item, anchorId, anchorNoun);
+function Gutter({ item, clustered }: { item: FeedItem; clustered: boolean }) {
+  if (item.itemKind === 'message' && !clustered && !item.message.state.redactedAt) {
+    const author = item.message.state.author ?? item.message.createdBy;
+    return (
+      <div className="chs-gutter">
+        <Avatar
+          provenance={author?.isAgent ? 'agent' : 'human'}
+          label={author?.displayName ?? 'unknown'}
+          size={32}
+        />
+      </div>
+    );
+  }
   return (
-    <div className="chs-rail">
-      {dir ? <span className={`chs-rail__dir chs-rail__dir--${dir.tone}`}>{dir.word}</span> : null}
-      {item.via.length > 1 ? (
-        <span className="chs-rail__via" title={viaTitle(item.via)}>
-          {`via ×${item.via.length}`}
-        </span>
-      ) : null}
-      <time className="chs-rail__time" dateTime={item.createdAt}>
+    <div className="chs-gutter">
+      <time
+        className="chs-gutter__time"
+        dateTime={item.createdAt}
+        aria-label={accessibleDateTime(item.createdAt)}
+      >
         {clockTime(item.createdAt)}
       </time>
+    </div>
+  );
+}
+
+/**
+ * The hover action bar. Reply and Send again float over the row's top-right
+ * corner instead of sitting in the byline — the 44px touch targets stay
+ * honest without adding 44px to every row's height. An absent dispatcher is
+ * still a visible refusal (R5 #9), never a hidden control.
+ */
+function RowActions({
+  item,
+  handlers,
+}: {
+  item: Extract<FeedItem, { itemKind: 'message' }>;
+  handlers: FeedRowHandlers;
+}) {
+  return (
+    <div className="chs-actions">
+      {canSendAgain(item.delivery) ? <SendAgain item={item} handlers={handlers} /> : null}
+      <ReplyButton message={item.message} onReply={handlers.onReply} />
     </div>
   );
 }
@@ -117,15 +164,19 @@ function Rail({ item, anchorId, anchorNoun }: { item: FeedItem; anchorId: Entity
 
 function MessageContent({
   item,
+  anchorId,
+  clustered,
   handlers,
 }: {
   item: Extract<FeedItem, { itemKind: 'message' }>;
+  anchorId: EntityId;
+  clustered: boolean;
   handlers: FeedRowHandlers;
 }) {
   const { message, delivery } = item;
   const author = message.state.author ?? message.createdBy;
 
-  if (message.deletedAt) {
+  if (message.state.redactedAt) {
     /*
      * S14 — the tombstone. It keeps its PLACE (so replies below it still make
      * sense) and states who removed it and when, where that is permitted. The
@@ -134,8 +185,8 @@ function MessageContent({
      */
     return (
       <p className="chs-tomb" data-testid="chs-tombstone">
-        {`⌀ message removed${author?.displayName ? ` by ${author.displayName}` : ''} · ${clockTime(
-          message.deletedAt,
+        {`⌀ message${author?.displayName ? ` from ${author.displayName}` : ''} redacted · ${clockTime(
+          message.state.redactedAt,
         )} — replies keep their place`}
       </p>
     );
@@ -146,33 +197,217 @@ function MessageContent({
 
   return (
     <>
-      <div className="chs-byline">
-        {/*
-          DRIFT, recorded rather than smuggled: the oracle draws an 18px avatar
-          on this byline (hero line 98) and `kit/Avatar` types its size as
-          15|20|22|32. 20 is the nearest legal value. Widening the kit union is
-          an edit outside this lane, so the divergence goes to HANDOVER.md for
-          the coordinator to route — a 2px silent deviation is exactly the class
-          of "close and wrong" the ink-chip lesson was about.
-        */}
-        <Avatar
-          provenance={author?.isAgent ? 'agent' : 'human'}
-          label={author?.displayName ?? 'unknown'}
-          size={20}
+      {!clustered ? (
+        <div className="chs-byline">
+          <span className="chs-byline__who">{author?.displayName ?? 'unknown'}</span>
+          {author?.isAgent ? <span className="chs-byline__kind">agent</span> : null}
+          <time
+            className="chs-byline__time"
+            dateTime={message.createdAt}
+            aria-label={accessibleDateTime(message.createdAt)}
+          >
+            {clockTime(message.createdAt)}
+          </time>
+          {message.state.editedAt ? (
+            <span className="chs-byline__edited" title={`Edited ${accessibleDateTime(message.state.editedAt)}`}>
+              edited
+            </span>
+          ) : null}
+          {message.pending ? <Pill tone="idle">saving…</Pill> : null}
+          {single ? <DeliveryBadge status={single.status} /> : null}
+        </div>
+      ) : null}
+
+      <ContextLine item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
+
+      {message.state.rootMessageId ? (
+        <ParentPreview
+          id={message.state.rootMessageId}
+          parent={handlers.loadedMessages?.get(message.state.rootMessageId) ?? null}
+          onOpenEntity={handlers.onOpenEntity}
+          onFocusMessage={handlers.onFocusMessage}
         />
-        <span className="chs-byline__who">{author?.displayName ?? 'unknown'}</span>
-        <span className="chs-byline__gap" />
-        {single ? <DeliveryBadge status={single.status} /> : null}
-        {canSendAgain(delivery) ? <SendAgain item={item} handlers={handlers} /> : null}
-        <ReplyButton message={message} onReply={handlers.onReply} />
-      </div>
+      ) : null}
 
-      {message.state.rootMessageId ? <ParentPreview id={message.state.rootMessageId} /> : null}
-
-      <p className="chs-text">{message.content.body}</p>
+      <MessageBody message={message} onOpenEntity={handlers.onOpenEntity} />
 
       {summary && delivery.length > 1 ? <TargetList summary={summary} rows={delivery} /> : null}
     </>
+  );
+}
+
+/**
+ * The body, with the message's canonical mentions rendered IN PLACE.
+ *
+ * A mention whose `@display` token appears in the text becomes an inline
+ * control right where it was typed; only mentions the text does NOT carry
+ * fall through to trailing chips. Rendering both — the token in the text and
+ * a chip repeating it below — was the duplication the screenshot complained
+ * about. Matching is exact-token against the message's OWN mention list;
+ * nothing in the body is guessed at.
+ */
+function MessageBody({
+  message,
+  onOpenEntity,
+}: {
+  message: MessageView;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
+  const { body } = message.content;
+  const mentions = message.content.mentions;
+  const attachments = message.content.attachments;
+
+  type Match = { start: number; end: number; mention: (typeof mentions)[number] };
+  const candidates: Match[] = [];
+  for (const mention of mentions) {
+    const token = `@${mention.display}`;
+    for (let at = body.indexOf(token); at !== -1; at = body.indexOf(token, at + token.length)) {
+      candidates.push({ start: at, end: at + token.length, mention });
+    }
+  }
+  // Earliest first; on a tie the longer token wins so "@Haiku 4.5" beats "@Haiku".
+  candidates.sort((a, b) => a.start - b.start || b.end - a.end);
+  const matches: Match[] = [];
+  let cursor = 0;
+  for (const match of candidates) {
+    if (match.start < cursor) continue;
+    matches.push(match);
+    cursor = match.end;
+  }
+
+  const inlined = new Set(matches.map((m) => `${m.mention.kind}:${m.mention.entityId}`));
+  const trailing = mentions.filter((m) => !inlined.has(`${m.kind}:${m.entityId}`));
+
+  const parts: ReactNode[] = [];
+  let from = 0;
+  for (const [index, match] of matches.entries()) {
+    if (match.start > from) parts.push(body.slice(from, match.start));
+    const label = `@${match.mention.display}`;
+    parts.push(onOpenEntity ? (
+      <button
+        key={`m-${index}`}
+        type="button"
+        className="chs-mention-inline"
+        aria-label={`Open mention ${match.mention.display}`}
+        onClick={() => onOpenEntity(match.mention.entityId)}
+      >
+        {label}
+      </button>
+    ) : (
+      <span key={`m-${index}`} className="chs-mention-inline">{label}</span>
+    ));
+    from = match.end;
+  }
+  if (from < body.length) parts.push(body.slice(from));
+
+  return (
+    <>
+      <p className="chs-text">{parts}</p>
+      {trailing.length > 0 || attachments.length > 0 ? (
+        <div className="chs-references">
+          {trailing.length > 0 ? (
+            <ul className="chs-mentions" aria-label="Mentions">
+              {trailing.map((mention) => (
+                <li key={`${mention.kind}:${mention.entityId}`}>
+                  {onOpenEntity ? (
+                    <button
+                      type="button"
+                      className="chs-ref-chip"
+                      aria-label={`Open mention ${mention.display}`}
+                      onClick={() => onOpenEntity(mention.entityId)}
+                    >
+                      @{mention.display}
+                    </button>
+                  ) : <span className="chs-ref-chip">@{mention.display}</span>}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {attachments.length > 0 ? (
+            <ul className="chs-attachments" aria-label="Attachments">
+              {attachments.map((attachment) => (
+                <li key={attachment.fileEntityId}>
+                  {onOpenEntity ? (
+                    <button
+                      type="button"
+                      className="chs-attachment"
+                      aria-label={`Open attachment ${attachment.name}`}
+                      onClick={() => onOpenEntity(attachment.fileEntityId)}
+                    >
+                      <span aria-hidden>▧</span>
+                      <span>{attachment.name}</span>
+                      <span className="chs-attachment__mime">{attachment.mime}</span>
+                    </button>
+                  ) : (
+                    <span className="chs-attachment">
+                      <span aria-hidden>▧</span>
+                      <span>{attachment.name}</span>
+                      <span className="chs-attachment__mime">{attachment.mime}</span>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Cross-surface provenance, rendered ONLY when it is news: the message
+ * surfaced from a work session, or its canonical anchor is some OTHER entity
+ * than the one this feed is anchored on. A message posted to this channel,
+ * shown in this channel, says nothing here — that line was pure noise.
+ */
+function ContextLine({
+  item,
+  anchorId,
+  onOpenEntity,
+}: {
+  item: Extract<FeedItem, { itemKind: 'message' }>;
+  anchorId: EntityId;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
+  const canonicalId = item.anchor?.id ?? item.message.state.anchorId;
+  const foreign = canonicalId && canonicalId !== anchorId
+    ? { id: canonicalId, label: item.anchor?.title || canonicalId }
+    : null;
+  if (!item.sourceWorkSessionId && !foreign) return null;
+  return (
+    <p className="chs-message-meta" data-testid="chs-message-meta">
+      {item.sourceWorkSessionId ? (
+        <span className="chs-message-meta__part">
+          <span>from session </span>
+          {onOpenEntity ? (
+            <button
+              type="button"
+              className="chs-linkbtn"
+              aria-label="Open source session"
+              onClick={() => onOpenEntity(item.sourceWorkSessionId!)}
+            >
+              {item.sourceWorkSessionId}
+            </button>
+          ) : <span>{item.sourceWorkSessionId}</span>}
+        </span>
+      ) : null}
+      {foreign ? (
+        <span className="chs-message-meta__part">
+          <span>in </span>
+          {onOpenEntity ? (
+            <button
+              type="button"
+              className="chs-linkbtn"
+              aria-label="Open canonical anchor"
+              onClick={() => onOpenEntity(foreign.id)}
+            >
+              {foreign.label}
+            </button>
+          ) : <span>{foreign.label}</span>}
+        </span>
+      ) : null}
+    </p>
   );
 }
 
@@ -217,12 +452,18 @@ function TargetList({
         <ul className="chs-targets__list" data-testid="chs-targets">
           {rows.map((r) => {
             const p = deliveryPresentation(r.status);
+            const reason = safeDeliveryReason(r.failureReason);
             return (
-              <li key={r.deliveryId} className="chs-targets__row">
+              <li
+                key={r.deliveryId}
+                className="chs-targets__row"
+                data-delivery-status={r.status}
+              >
                 <span className="chs-targets__name">{r.targetWorkSessionId}</span>
                 <span className={`chs-targets__state chs-targets__state--${p.tone}`} title={p.tooltip}>
                   {p.label}
                 </span>
+                {reason ? <span className="chs-targets__reason">{reason}</span> : null}
               </li>
             );
           })}
@@ -293,7 +534,8 @@ function ReplyButton({
 }
 
 /**
- * The reply's parent preview.
+ * The reply's parent preview — a compact quote card the whole of which jumps
+ * to the parent.
  *
  * HONEST LIMIT, stated rather than papered over: `MessageView` carries the
  * parent's ID and nothing else, and this surface holds only the page it was
@@ -303,12 +545,48 @@ function ReplyButton({
  * is always true. The oracle's excerpt needs a parent-hydration read that the
  * seam does not expose; it is filed in HANDOVER.md under GAPS.
  */
-function ParentPreview({ id }: { id: EntityId }) {
+function ParentPreview({
+  id,
+  parent,
+  onOpenEntity,
+  onFocusMessage,
+}: {
+  id: EntityId;
+  parent: MessageView | null;
+  onOpenEntity?: (id: EntityId) => void;
+  onFocusMessage?: (id: EntityId) => void;
+}) {
+  const author = parent?.state.author?.displayName ?? parent?.createdBy?.displayName ?? null;
+  const preview = parent
+    ? parent.state.redactedAt
+      ? 'redacted message'
+      : parent.content.body
+    : id;
+  const inner = (
+    <>
+      <span aria-hidden className="chs-parent__glyph">↩</span>
+      {author ? <span className="chs-parent__author">{author}</span> : null}
+      <span className="chs-parent__excerpt">{preview}</span>
+    </>
+  );
+  if (onFocusMessage || onOpenEntity) {
+    return (
+      <div className="chs-parent" data-testid="chs-parent">
+        <button
+          type="button"
+          className="chs-parent__jump"
+          aria-label="Focus parent message"
+          onClick={() => (parent && onFocusMessage ? onFocusMessage(id) : onOpenEntity?.(id))}
+        >
+          {inner}
+        </button>
+      </div>
+    );
+  }
   return (
-    <p className="chs-parent" data-testid="chs-parent">
-      <span className="chs-parent__label">in reply to</span>
-      <span className="chs-parent__id">{id}</span>
-    </p>
+    <div className="chs-parent" data-testid="chs-parent">
+      <span className="chs-parent__jump">{inner}</span>
+    </div>
   );
 }
 
@@ -333,19 +611,57 @@ function ActivityContent({
   handlers: FeedRowHandlers;
 }) {
   const { activity } = item;
-  const from = scalar(activity.summary.from ?? activity.summary.fromStatus);
-  const to = scalar(activity.summary.to ?? activity.summary.toStatus);
+  const presentation = activityPresentation(item);
 
-  if (from !== null && to !== null) {
+  if (presentation.kind === 'entity-change') {
+    const entity = presentation.entity;
+    return (
+      <div className="chs-artifact" data-testid="chs-artifact">
+        <span className="chs-artifact__kind">{entity.kind}</span>
+        <strong className="chs-artifact__title">{entity.title}</strong>
+        {entity.excerpt ? <span className="chs-artifact__excerpt">{entity.excerpt}</span> : null}
+        <span className="chs-artifact__provenance">
+          {`${presentation.verb} by ${item.actor?.displayName ?? 'unknown'}${
+            item.sourceWorkSessionId ? ` · session ${item.sourceWorkSessionId}` : ''
+          }`}
+        </span>
+        {handlers.onOpenEntity ? (
+          <button
+            type="button"
+            className="chs-linkbtn"
+            aria-label={`Open ${entity.title}`}
+            onClick={() => handlers.onOpenEntity?.(entity.id)}
+          >
+            open details →
+          </button>
+        ) : <OpenDetails id={entity.id} onOpenEntity={handlers.onOpenEntity} />}
+      </div>
+    );
+  }
+
+  if (presentation.kind === 'state') {
     return (
       <p className="chs-state" data-testid="chs-state">
         <span aria-hidden className="chs-state__dot" />
-        <span className="chs-state__verb">{activity.verb}</span>
-        <span className="chs-state__from">{from}</span>
-        <span aria-hidden className="chs-state__arrow">
-          →
-        </span>
-        <span className="chs-state__to">{to}</span>
+        {item.actor ? <span className="chs-state__actor">{item.actor.displayName}</span> : null}
+        <span className="chs-state__verb">{presentation.label}</span>
+        {presentation.from ? (
+          <>
+            <span className="chs-state__from">{presentation.from}</span>
+            <span aria-hidden className="chs-state__arrow">→</span>
+          </>
+        ) : null}
+        <span className="chs-state__to">{presentation.to}</span>
+      </p>
+    );
+  }
+
+  if (presentation.kind === 'event') {
+    return (
+      <p className="chs-state chs-state--event" data-testid="chs-event">
+        <span aria-hidden className="chs-state__dot" />
+        <span className="chs-state__verb">{presentation.label}</span>
+        {item.actor ? <span>{`by ${item.actor.displayName}`}</span> : null}
       </p>
     );
   }
@@ -402,22 +718,22 @@ function OpenDetails({ id, onOpenEntity }: { id: EntityId | null; onOpenEntity?:
  * and the expansion lists them. The key is printed in the tooltip because the
  * grouping rule is a claim about the data and the user is entitled to check it.
  */
-function MutationGroupRow({
-  group,
-  anchorId,
-  anchorNoun,
-}: {
-  group: Extract<FeedGroup, { kind: 'operation' }>;
-  anchorId: EntityId;
-  anchorNoun: string;
-}) {
+function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operation' }> }) {
   const [open, setOpen] = useState(false);
   const head = group.items[0];
   const actor = head.actor?.displayName ?? 'someone';
   return (
-    <li className="chs-row">
+    <li className="chs-row chs-row--activity">
       <article className="chs-row__grid">
-        <Rail item={head} anchorId={anchorId} anchorNoun={anchorNoun} />
+        <div className="chs-gutter">
+          <time
+            className="chs-gutter__time"
+            dateTime={head.createdAt}
+            aria-label={accessibleDateTime(head.createdAt)}
+          >
+            {clockTime(head.createdAt)}
+          </time>
+        </div>
         <div className="chs-row__body">
           <div className="chs-group" data-testid="chs-group">
             <span aria-hidden className="chs-group__glyph">
@@ -447,10 +763,4 @@ function MutationGroupRow({
       </article>
     </li>
   );
-}
-
-function scalar(v: unknown): string | null {
-  if (typeof v === 'string' && v.length > 0) return v;
-  if (typeof v === 'number') return String(v);
-  return null;
 }

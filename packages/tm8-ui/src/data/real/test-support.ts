@@ -171,6 +171,8 @@ export interface FakeCall {
   url: string;
   method: string;
   body: unknown;
+  rawBody?: BodyInit | null;
+  headers?: HeadersInit;
 }
 
 /** What a route hands back. Exactly one of these shapes. */
@@ -205,6 +207,8 @@ export function fakeFetch(route: (call: FakeCall) => FakeReply): FakeFetch {
         url,
         method: init?.method ?? 'GET',
         body: typeof rawBody === 'string' ? JSON.parse(rawBody) : undefined,
+        rawBody,
+        headers: init?.headers,
       };
       calls.push(call);
       const reply = route(call);

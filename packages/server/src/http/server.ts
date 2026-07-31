@@ -39,10 +39,16 @@ import { fail, notImplemented, sendWireError } from './errors.js';
 import { normalizeCommandInputForIdempotencyMode } from './idempotency.js';
 import { nextRequestId } from './request-id.js';
 import { Router } from './router.js';
-import { autoOwnerResolver, BASE_SECURITY_HEADERS, checkTransport } from './security.js';
+import {
+  autoOwnerResolver,
+  BASE_SECURITY_HEADERS,
+  checkTransport,
+  checkUpgradeTransport,
+} from './security.js';
 import type { StaticHandler } from './static.js';
 import type { RemoteServerProxy } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
+import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
 import {
   isHandlerResult,
   type HandlerResult,
@@ -71,8 +77,24 @@ export interface FacadeServerOptions {
   readonly staticHandler?: StaticHandler;
   /** The sole non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
+  /**
+   * The LiveKit webhook callback. Like the upload route it is dispatched
+   * before `readJsonBody`, because LiveKit signs the RAW body and a
+   * re-serialized one has a different digest.
+   */
+  readonly voiceWebhookRoute?: VoiceWebhookRoute;
   /** Same-origin relay for node-local named Server connections. */
   readonly remoteServerProxy?: RemoteServerProxy;
+  /**
+   * Answers "can this node actually serve a read right now?" — in practice, a
+   * `select 1` through the SAME pool every space-scoped read uses. `/health`
+   * without this reported only in-memory router state, which stays green while
+   * the pool is exhausted — the exact outage it exists to detect (observed in
+   * the field: `/health` 200 while every `/v2/spaces/:id/*` read hung).
+   * Optional because a node wired without a database has no pool to probe and
+   * its honest health is the 501s it serves.
+   */
+  readonly healthProbe?: () => Promise<void>;
 }
 
 export interface FacadeServer {
@@ -103,6 +125,19 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
 
   if (upgrades || opts.remoteServerProxy) {
     http.on('upgrade', (req, socket, head) => {
+      // S2/S3 on the upgrade path. This listener never reaches `handle`, so
+      // the transport checks there do NOT cover it (design C3: "two wiring
+      // changes, not one") — a rebound Host or a foreign browser Origin must
+      // be refused before any socket server sees the request.
+      const upgradeDecision = checkUpgradeTransport(req.headers, config);
+      if (upgradeDecision.refusal) {
+        socket.write(
+          'HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n' +
+            `${upgradeDecision.refusal.message}\n`,
+        );
+        socket.destroy();
+        return;
+      }
       const pathname = new URL(req.url ?? '/', 'http://tm8.invalid').pathname;
       if (opts.remoteServerProxy?.matches(pathname)) {
         void opts.remoteServerProxy.handleUpgrade(req, socket, head);
@@ -140,12 +175,34 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         // orchestrator, the conformance global-setup, and `doctor`. It also
         // reports how much of the catalog is actually built — the honest
         // answer to "is this a real server or a stub?".
-        sendRaw(res, 200, requestId, {
-          ok: true,
+        //
+        // The DB probe is bounded at 2s: a health check that can hang is a
+        // health check that lies by omission, and 2s is an eternity for
+        // `select 1` on a local node — anything slower IS the outage. `db`
+        // is reported as its own field (and flips `ok`) so a probe reading
+        // only `ok` and a human reading the body both get the truth.
+        let dbOk: boolean | undefined;
+        if (opts.healthProbe) {
+          try {
+            await Promise.race([
+              opts.healthProbe(),
+              new Promise((_, reject) => {
+                const t = setTimeout(() => reject(new Error('health probe timed out')), 2_000);
+                (t as { unref?: () => void }).unref?.();
+              }),
+            ]);
+            dbOk = true;
+          } catch {
+            dbOk = false;
+          }
+        }
+        sendRaw(res, dbOk === false ? 503 : 200, requestId, {
+          ok: dbOk !== false,
           server: 'tm8-server',
           contractVersion: CONTRACT_VERSION,
           operations: router.mounted().length,
           implemented: registry.size,
+          ...(dbOk === undefined ? {} : { db: dbOk ? 'ok' : 'unavailable' }),
         });
         return;
       }
@@ -171,6 +228,12 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
       }
 
+      // No identity resolution: the SFU is not a tm8 identity, and the route
+      // authenticates it by signature instead. Before readJsonBody, deliberately.
+      if (method === 'POST' && pathname === VOICE_WEBHOOK_PATH && opts.voiceWebhookRoute) {
+        if (await opts.voiceWebhookRoute(req, res, { requestId })) return;
+      }
+
       const { value: body } = await readJsonBody(req, config.maxBodyBytes);
 
       const match = router.match(method, pathname);
@@ -184,6 +247,9 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const requestBody = normalizeCommandInputForIdempotencyMode(
         match.op,
         body,
+        // `!== false`, not `=== true`. This is the site that REWRITES the
+        // caller's clientMutationId when idempotency is off, so reading an
+        // absent field as "off" silently discards every caller's id.
         config.idempotencyEnabled !== false,
       );
       const schema: ZodTypeAny | undefined = INPUT_SCHEMAS[match.opName];

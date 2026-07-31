@@ -18,24 +18,30 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the WLT §2 diagram: Home · Workspace · Tracking · Collab · Channels · Settings', () => {
+  it('encodes the WLT §2 diagram: Home · Workspace · Tracking · Collab · Channels · Voice · Settings', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       'Home',
       'Workspace',
       'Tracking',
       'Collab',
       'Channels',
+      // Revision 3 (2026-07-31) — the Voice label, added beside Channels for
+      // the dynamic voice_channel rows.
+      'Voice',
       'Settings',
     ]);
   });
 
-  it('makes Workspace the ONE caret view item, with its four leaves (RULING E)', () => {
+  it('makes Workspace the ONE caret view item, with its six leaves (RULING E)', () => {
     const workspace = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .find((item) => item.ref === 'workspace');
     expect(workspace?.type).toBe('view');
     const children = workspace?.type === 'view' ? workspace.children ?? [] : [];
-    expect(children.map((c) => c.ref)).toEqual(['task', 'work_session', 'doc', 'team_member']);
+    // Revision 4 (2026-07-31): memory + artifact joined the caret. Cap is 8.
+    expect(children.map((c) => c.ref)).toEqual([
+      'task', 'work_session', 'doc', 'team_member', 'memory', 'artifact',
+    ]);
   });
 
   it('is the only item with children — depth is exactly ≤1', () => {
