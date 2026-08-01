@@ -120,6 +120,7 @@ function Gutter({ item, clustered }: { item: FeedItem; clustered: boolean }) {
           provenance={author?.isAgent ? 'agent' : 'human'}
           label={author?.displayName ?? 'unknown'}
           size={32}
+          src={author?.avatar ?? null}
         />
       </div>
     );
