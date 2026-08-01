@@ -693,6 +693,8 @@
   white-space: nowrap;
 }
 .cv2-root .pn-foot__sep { color: var(--pn-ink-4); }
+/* identity-display lane (additive): author avatar beside "by <name>". */
+.cv2-root .pn-foot__by { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 
 /* --- panel states -------------------------------------------------------- */
 .cv2-root .pn-skeleton { gap: 9px; }
@@ -1210,47 +1212,110 @@
 /* --- entity cards — Maestro surface + T0-1 hierarchy ----------------------- */
 /* Rounded, elevated card shell from the Maestro reference; disclosure column,
    status control, attached children and inline config from the workspace file. */
+/* EVERY LIST IS ONE UNBROKEN COLUMN — the session list's, for all three
+   anatomies. No gap between siblings: rows are separated by their own bottom
+   hairline, which is what makes a list read as a table rather than as a stack
+   of floating cards. The gapped variant was the default for every kind that
+   was not a session, and it is the single biggest reason those lists did not
+   look like the session list even where the rows themselves matched. */
 .cv2-root .lp__tree {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
   min-width: 0;
 }
-/* THE CONTROL LIST IS ONE UNBROKEN COLUMN. Rows bleed past `lp__body`'s 8px
-   gutter so each tile's hairline runs edge to edge, and NOTHING between rows
-   has a gap — not siblings, not a parent and its subtasks. The band eyebrows
-   stay inset, which is what makes the rows read as a table under a label. */
-.cv2-root .lp__tree--control {
-  gap: 0;
+/* Rows bleed past `lp__body`'s 8px gutter so each hairline runs edge to edge.
+   The band eyebrows stay inset, which is what makes the rows read as a table
+   under a label. */
+.cv2-root .lp__tree--control,
+.cv2-root .lp__tree--session,
+.cv2-root .lp__tree {
   margin-inline: -8px;
   border-top: 1px solid var(--pn-line);
 }
 .cv2-root .lp__branch { min-width: 0; }
+/* ONE TREE, THREE ANATOMIES. Every nested level is one wrapper, 19px in, with
+   one hairline per ancestor. Tasks used to draw depth inside the tile
+   (`--tt-indent`, a single line); the default kinds used a 14px+8px inset with
+   a gapped, `--pn-line-2` rule. Three implementations of "a tree" in one app
+   is why the same subtree indented three different amounts depending on which
+   panel it appeared in. */
 .cv2-root .lp__children {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0;
   min-width: 0;
-  margin: 6px 0 1px 14px;
-  padding-left: 8px;
-  border-left: 1px solid var(--pn-line-2);
-  animation: lp-children-in var(--pn-dur-base) var(--pn-ease-out);
-}
-/* Subtasks of a control card are ATTACHED: the wrapper contributes no gap, no
-   inset and no border of its own. Depth is drawn inside the tile instead
-   (`--tt-indent`), so an expanded subtree stays flush with its parent. */
-.cv2-root .lp__tree--control .lp__children {
-  gap: 0;
-  margin: 0;
-  padding-left: 0;
-  border-left: 0;
-}
-.cv2-root .lp__tree--session { gap: 0; }
-.cv2-root .lp__tree--session .lp__children {
-  gap: 0;
   margin: 0 0 0 19px;
   padding-left: 0;
   border-left: 1px solid var(--pn-line);
+  animation: lp-children-in var(--pn-dur-base) var(--pn-ease-out);
+}
+
+/* --- message pulse — a message travelling between two sessions -------------
+   AMBIENT, NOT ANNOUNCING. The tree already carries one hairline per nesting
+   level; a pulse is that same hairline briefly brightening as the message
+   passes, drawn as an overlay so the wire underneath keeps its exact colour
+   and the row geometry never moves. Nothing here changes layout, so traffic in
+   a background subtree cannot make the list the user is reading jump.
+
+   The sweep rides `background-position` on a 1px-wide overlay — a compositor
+   -friendly property on an element that already exists, rather than an
+   inserted node per frame. `--lp-pulse-delay` is set per segment by the panel,
+   which is what makes the light travel ALONG the route instead of every level
+   flashing at once. */
+.cv2-root .lp__children[data-pulse] { position: relative; }
+.cv2-root .lp__children[data-pulse]::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 1px;
+  pointer-events: none;
+  background-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--pn-brand) 45%,
+    var(--pn-brand) 55%,
+    transparent 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 55%;
+  animation: lp-pulse-down 620ms var(--pn-ease-standard) var(--lp-pulse-delay, 0ms) both;
+}
+.cv2-root .lp__children[data-pulse='up']::after { animation-name: lp-pulse-up; }
+
+/* Travel plus fade at both ends: a sweep that stayed at full strength would
+   read as a scrollbar, and the fade is what makes it read as motion. */
+@keyframes lp-pulse-down {
+  0%   { background-position: 0 -60%; opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { background-position: 0 160%; opacity: 0; }
+}
+@keyframes lp-pulse-up {
+  0%   { background-position: 0 160%; opacity: 0; }
+  20%  { opacity: 1; }
+  80%  { opacity: 1; }
+  100% { background-position: 0 -60%; opacity: 0; }
+}
+
+/* The endpoints. A row that sent, and a row that received — including a
+   collapsed ancestor standing in for a descendant, which is the ONLY signal
+   that something happened inside a subtree the user cannot see. Both are a
+   glow on the tile's own surface; neither resizes it. */
+.cv2-root .lp__branch[data-pulse-row] > .pn-st,
+.cv2-root .lp__branch[data-pulse-row] > .lp__tile {
+  animation: lp-pulse-row 900ms var(--pn-ease-out) both;
+}
+.cv2-root .lp__branch[data-pulse-row='from'] > .pn-st,
+.cv2-root .lp__branch[data-pulse-row='from'] > .lp__tile {
+  animation-duration: 620ms;
+}
+@keyframes lp-pulse-row {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0); }
+  35%  { box-shadow: 0 0 0 2px rgba(var(--pn-brand-rgb), 0.28); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--pn-brand-rgb), 0); }
 }
 
 /* Maestro SessionListItem anatomy. The live-dot markup and ping animation are
@@ -1275,6 +1340,12 @@
 .cv2-root .pn-st--selected { background: var(--pn-active); }
 .cv2-root .pn-st--attention { background: var(--pn-wait-soft); }
 .cv2-root .pn-st--archived { opacity: 0.62; }
+/* THE ROW METRIC. The session row is the reference and it is NOT altered here:
+   29px is simply what it already measures — 17px for the tallest in-flow child
+   (the agent mark) plus its 6px/6px pad. The token exists so the task tile can
+   be held to that number (`maestro-task-tile.css`) rather than being measured
+   by hand and drifting. Sessions define it; tasks follow it. */
+.cv2-root { --pn-listrow-h: 29px; }
 .cv2-root .pn-st__main { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 6px 8px 6px 7px; cursor: pointer; }
 .cv2-root .pn-st__arrow {
   position: relative; width: 16px; height: 16px; flex: 0 0 auto; display: grid; place-items: center;
@@ -1345,71 +1416,90 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* THE DEFAULT TILE IS THE SESSION ROW. Every kind that is not a session or a
+   task lands here — docs, channels, members, PRs, commits, files, projects,
+   memories, artifacts, worktrees — and each was a BORDERED CARD: its own box on
+   all four sides, a gapped column, a brand-tinted selected state. Against the
+   session list's full-bleed run of hairline-separated rows they read as two
+   different products. This block is `pn-st`, rule for rule: one bottom
+   hairline, hover tint plus the brand edge bar, `--pn-active` when selected. */
 .cv2-root .lp__tile {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  border: 0;
+  border-bottom: 1px solid var(--pn-line);
   border-radius: 0;
   box-shadow: none;
   overflow: hidden;
   box-sizing: border-box;
+  user-select: none;
   transition:
-    border-color var(--pn-dur-base) var(--pn-ease-out),
-    box-shadow var(--pn-dur-base) var(--pn-ease-out),
-    background var(--pn-dur-fast) var(--pn-ease-standard),
-    transform var(--pn-dur-fast) var(--pn-ease-out);
+    background var(--pn-dur-base) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-base) var(--pn-ease-out);
 }
 .cv2-root .lp__tile:hover {
-  border-color: color-mix(in srgb, var(--pn-brand) 55%, var(--pn-line-2));
-  box-shadow: none;
+  background: var(--pn-hover);
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--pn-brand) 58%, transparent);
   transform: none;
 }
 .cv2-root .lp__tile--selected {
-  border-color: var(--pn-brand);
-  background: color-mix(in srgb, var(--pn-brand-soft) 62%, var(--pn-card));
+  background: var(--pn-active);
   box-shadow: none;
 }
 .cv2-root .lp__tile--attention {
-  border-color: color-mix(in srgb, var(--pn-wait) 42%, var(--pn-line));
-  background: color-mix(in srgb, var(--pn-wait) 6%, var(--pn-card));
+  background: var(--pn-wait-soft);
 }
+/* The session list's `pn-st__tag--attention`, verbatim — one badge, the same
+   words, in every list. It read as three different components only because it
+   was 10px/650 rounded in two of them and 9px mono uppercase in the third. */
 .cv2-root .lp__attention-label,
 .cv2-root .pn-tt__attention {
+  flex: 0 0 auto;
+  padding: 2px 6px;
   color: var(--pn-wait);
   background: var(--pn-wait-soft);
-  border-radius: 999px;
-  padding: 2px 6px;
-  font-size: 10px;
-  font-weight: 650;
+  border-radius: var(--pn-r-xs);
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 .cv2-root .lp__tile[data-flow='open']:hover { transform: none; }
+/* `pn-st__main`: 6px/8px pad, 6px gap, the shared 29px floor. The row is the
+   positioning context for the floating action cluster below. */
 .cv2-root .lp__tile-main {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 3px;
   min-width: 0;
-  padding: 7px 8px;
+  padding: 6px 8px 6px 7px;
   cursor: pointer;
 }
 .cv2-root .lp--compact .lp__tile-main { padding: 6px 7px; }
 
-.cv2-root .lp__row1 { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.cv2-root .lp__row2 {
+.cv2-root .lp__row1 {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
-  padding-left: 23px;
+  min-height: var(--pn-listrow-h);
 }
-.cv2-root .lp__tile[data-tree='true'] .lp__row2 { padding-left: 46px; }
+/* `lp__meta` is inline now, so it must NOT be `flex: 1` — that made it compete
+   with the title for the free space instead of yielding it. It shrinks first
+   and disappears entirely before the title truncates. It is also the session's
+   `pn-st__model` metric: 9px mono, capped, ellipsised. */
 .cv2-root .lp__meta {
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: 128px;
   min-width: 0;
-  font-size: 10px;
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  line-height: 1;
   color: var(--pn-ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -1431,8 +1521,9 @@
 .cv2-root .lp__disclosure {
   appearance: none;
   flex: none;
-  width: 18px;
-  height: 18px;
+  /* 16px, the session caret's column (`pn-st__arrow`). */
+  width: 16px;
+  height: 16px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -1450,23 +1541,27 @@
 }
 .cv2-root .lp__disclosure:hover { color: var(--pn-ink-2); background: var(--pn-active); }
 .cv2-root .lp__disclosure--expanded > span { transform: rotate(90deg); }
-.cv2-root .lp__disclosure--empty { color: var(--pn-line-2); cursor: default; }
+.cv2-root .lp__disclosure--empty { color: var(--pn-line); cursor: default; }
+.cv2-root .lp__disclosure > span { display: grid; place-items: center; }
 
+/* 16px and unfilled, matching `pn-st__statusglyph`. The soft-tinted 18px
+   rounded square read as a chip in a list whose sessions carry a bare glyph;
+   tone still comes through the dot and the kind mark inside it. */
 .cv2-root .lp__statusmark {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
-  background: var(--pn-idle-soft);
+  border-radius: 5px;
+  background: transparent;
   color: var(--pn-idle);
 }
-.cv2-root .lp__statusmark--run { background: var(--pn-run-soft); color: var(--pn-run); }
-.cv2-root .lp__statusmark--wait { background: var(--pn-wait-soft); color: var(--pn-wait); }
-.cv2-root .lp__statusmark--block { background: var(--pn-block-soft); color: var(--pn-block); }
-.cv2-root .lp__statusmark--info { background: var(--pn-info-soft); color: var(--pn-info); }
-.cv2-root .lp__statusmark--brand { background: var(--pn-brand-soft); color: var(--pn-brand); }
+.cv2-root .lp__statusmark--run { color: var(--pn-run); }
+.cv2-root .lp__statusmark--wait { color: var(--pn-wait); }
+.cv2-root .lp__statusmark--block { color: var(--pn-block); }
+.cv2-root .lp__statusmark--info { color: var(--pn-info); }
+.cv2-root .lp__statusmark--brand { color: var(--pn-brand); }
 .cv2-root .lp__kindmark { font-size: 10px; font-weight: 700; line-height: 1; }
 
 /* Nested branches own the guide line; the card itself stays a complete object. */
@@ -1510,8 +1605,10 @@
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: 12px;
+  /* `pn-st__titleText`, exactly — 12.5/600 with the same tracking. */
+  font-size: 12.5px;
   font-weight: 600;
+  letter-spacing: -0.005em;
   line-height: 1.3;
   color: var(--pn-ink);
   white-space: nowrap;
@@ -1520,7 +1617,8 @@
   text-align: left;
   cursor: pointer;
 }
-.cv2-root .lp--compact .lp__title { font-size: 11.5px; }
+/* No compact step-down: a session title is 12.5px at every density, so shrinking
+   only this one reopened the mismatch wherever `lp--compact` is applied. */
 .cv2-root .lp__title--done { color: var(--pn-ink-3); text-decoration: line-through; }
 .cv2-root .lp__title:focus-visible {
   outline: 2px solid var(--pn-brand);
@@ -1538,22 +1636,44 @@
   white-space: nowrap;
 }
 
-/* The badge slot YIELDS to the action cluster on hover — the row never grows,
-   so hovering can never reflow the list under the cursor. */
+/* `pn-st__actions`, rule for rule: the cluster floats over the row's right edge
+   on its own backing rather than living in the flow. The old version swapped
+   `display` with the badge slot on hover — which kept the row from growing, but
+   only by making the badges vanish under the cursor. Floating keeps the row
+   fixed AND keeps the badges readable, and takes the buttons out of the height
+   calculation so this row can stand on the same 29px as a session's. */
 .cv2-root .lp__rowactions {
-  flex: none;
-  display: none;
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 2;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  padding-left: 7px;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--pn-hover);
+  transform: translate(3px, -50%);
+  transition:
+    opacity var(--pn-dur-base) var(--pn-ease-standard),
+    transform var(--pn-dur-base) var(--pn-ease-out);
 }
-.cv2-root .lp__tile-main:hover .lp__rowactions,
-.cv2-root .lp__tile:focus-within .lp__rowactions { display: inline-flex; }
-.cv2-root .lp__tile-main:hover .lp__badges,
-.cv2-root .lp__tile:focus-within .lp__badges { display: none; }
+.cv2-root .lp__tile:hover .lp__rowactions,
+.cv2-root .lp__tile:focus-within .lp__rowactions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+}
+/* A selected row is not a hovered row, so the backing has to follow it. */
+.cv2-root .lp__tile--selected .lp__rowactions { background: var(--pn-active); }
+.cv2-root .lp__tile--selected:hover .lp__rowactions { background: var(--pn-hover); }
+/* 22px, the session button (`pn-st__btn`). 26 was sized for a row half again
+   as tall; in a 29px row it fills the whole thing. */
 .cv2-root .lp__rowaction {
   appearance: none;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   font-family: var(--pn-mono);
@@ -1574,6 +1694,11 @@
 
 @media (prefers-reduced-motion: reduce) {
   .cv2-root .lp__children { animation: none; }
+  /* The TRAVELLING sweep is the vestibular part, so it goes. The endpoint glow
+     stays: it is an opacity change on a stationary element, and dropping it too
+     would leave a reduced-motion user with no signal at all that a message
+     arrived — silence is not an accessibility win. */
+  .cv2-root .lp__children[data-pulse]::after { animation: none; opacity: 0; }
   .cv2-root .lp__tile { transition: none; }
   .cv2-root .lp__tile:hover { transform: none; }
 }
@@ -1720,8 +1845,12 @@
 /* The row-action cluster is hover-revealed; while its own flow is open the
    trigger must stay put, or the control the user just pressed vanishes from
    under the cursor and the expand looks orphaned. */
-.cv2-root .lp__tile[data-flow='open'] .lp__rowactions { display: inline-flex; }
-.cv2-root .lp__tile[data-flow='open'] .lp__badges { display: none; }
+.cv2-root .lp__tile[data-flow='open'] .lp__rowactions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%);
+  background: var(--pn-active);
+}
 .cv2-root .lp__rowaction--on {
   background: var(--pn-brand);
   border-color: var(--pn-brand);
@@ -1981,6 +2110,10 @@
   outline: none;
 }
 .cv2-root .lq__accessbtn--plan { color: var(--pn-ink-2); }
+/* `auto` shares the working-posture treatment with `acceptEdits`: both let the
+   session get on with it, and neither removes a safeguard. The chip TEXT is what
+   distinguishes them — the hue only says "this one runs". */
+.cv2-root .lq__accessbtn--auto,
 .cv2-root .lq__accessbtn--acceptEdits {
   color: var(--pn-run);
   border-color: var(--pn-run);

@@ -139,7 +139,10 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
                   key={actor.id}
                   provenance={actor.isAgent ? 'agent' : 'human'}
                   label={actor.displayName}
-                  size={20}
+                  /* 15, not 20 — nothing in this row may exceed the 17px that
+                     sets a session row's height, or the row grows past the
+                     shared floor for the one reason CSS alone cannot fix. */
+                  size={15}
                 />
               ))}
             </span>

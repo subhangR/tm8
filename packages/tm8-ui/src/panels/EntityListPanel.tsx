@@ -30,6 +30,8 @@ import { useDismissable } from './useDismissable';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { MaestroTaskTile } from './list/MaestroTaskTile';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
+import { routeMessagePulse, type PulseSegment } from './list/message-pulse';
+import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
 
@@ -74,6 +76,11 @@ export interface EntityListPanelProps {
   livenessOf?: (id: string) => SessionLiveness;
   /** Pool activity signal, per session. Gated on the verdict. */
   activity?: Readonly<Record<string, boolean>>;
+  /**
+   * Live message arrivals (sender → anchor), for `list.tree.messagePulse`.
+   * Injected like every other signal: the panel never taps the seam itself.
+   */
+  messagePulses?: readonly MessagePulse[];
   /** The seam's live set — the ONLY source for the '● N live' count. */
   liveIds?: readonly string[];
   /** Server capability truth per row. Absent ⇒ unknown ⇒ NOT permitted. */
@@ -934,6 +941,17 @@ function TreeRows({
 
   const roots = useMemo(() => buildTileTree(rows, Boolean(config.list.tree)), [rows, config.list.tree]);
 
+  /**
+   * Live message traffic, resolved against THIS tree's current shape. Recomputed
+   * when the tree or the collapsed set changes, because a route is only true for
+   * the arrangement that was on screen when it was drawn — collapsing a subtree
+   * mid-flight must re-aim the pulse at the ancestor now standing in for it.
+   */
+  const pulse = useMemo(
+    () => resolvePulses(rows, collapsed, props.messagePulses, config),
+    [rows, collapsed, props.messagePulses, config],
+  );
+
   const toggle = (id: string) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -945,6 +963,8 @@ function TreeRows({
   const renderNode = (node: TileTreeNode): React.ReactNode => {
     const isCollapsed = collapsed.has(node.row.id);
     const hasChildren = node.children.length > 0;
+    const wire = pulse.segments.get(node.row.id);
+    const endpoint = pulse.endpoints.get(node.row.id);
     return (
       <div
         key={node.row.id}
@@ -952,6 +972,11 @@ function TreeRows({
         role={config.list.tree ? 'treeitem' : 'listitem'}
         aria-expanded={config.list.tree && hasChildren ? !isCollapsed : undefined}
         aria-selected={config.list.tree ? props.selectedId === node.row.id : undefined}
+        /* Presentation only. The pulse is decoration over a message that is
+           already announced on its own anchor, so it carries no ARIA and no
+           live region — narrating every inter-session message here would be
+           noise on a tree the user is trying to read. */
+        data-pulse-row={endpoint}
       >
         <Tile
           row={node.row}
@@ -963,7 +988,13 @@ function TreeRows({
           onToggleChildren={hasChildren ? () => toggle(node.row.id) : undefined}
         />
         {hasChildren && !isCollapsed ? (
-          <div className="lp__children" role="group" data-testid="list-tile-children">
+          <div
+            className="lp__children"
+            role="group"
+            data-testid="list-tile-children"
+            data-pulse={wire?.direction}
+            style={wire ? ({ '--lp-pulse-delay': `${wire.order * 90}ms` } as React.CSSProperties) : undefined}
+          >
             {node.children.map(renderNode)}
           </div>
         ) : null}
@@ -975,6 +1006,27 @@ function TreeRows({
     <div className={treeClass(config)} role={config.list.tree ? 'tree' : 'list'}>
       {roots.map(renderNode)}
     </div>
+  );
+}
+
+/**
+ * The session caret, as an SVG. The default tile drew `›` — a typographic arrow
+ * sits on its own font's baseline, so it landed at a different optical height
+ * from the same caret in the session and task lists, which draw a path in a
+ * square viewBox. Same reason `MaestroTaskTile` stopped using the glyph.
+ */
+function TileChevron() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden focusable="false">
+      <path
+        d="M6 3.5L10.5 8L6 12.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -1023,6 +1075,78 @@ function buildTileTree(rows: readonly EntitySummary[], hierarchical: boolean): T
     if (!seen.has(row.id)) roots.push(attach(row, 0));
   }
   return roots;
+}
+
+interface ResolvedPulses {
+  /** Wire owner → how its hairline sweeps, and where in the flight it does so. */
+  segments: ReadonlyMap<string, { direction: PulseSegment['direction']; order: number }>;
+  /** Row → its part in a pulse, for the endpoint glow. */
+  endpoints: ReadonlyMap<string, 'from' | 'to'>;
+}
+
+const NO_PULSES: ResolvedPulses = { segments: new Map(), endpoints: new Map() };
+
+/**
+ * Turns live arrivals into per-node presentation, against the tree as it is
+ * currently arranged.
+ *
+ * The binding is checked here and nowhere else: a list whose registry row does
+ * not ask for `messagePulse` resolves to nothing, so this cannot animate a tree
+ * that never opted in. Same shape as `tile.pulse` — data decides, not the kind.
+ *
+ * When several messages are in flight at once their routes are merged, and a
+ * wire carrying more than one keeps the EARLIEST position in flight, so a long
+ * route already under way is not restarted by a short one that crosses it.
+ */
+function resolvePulses(
+  rows: readonly EntitySummary[],
+  collapsed: ReadonlySet<string>,
+  pulses: readonly MessagePulse[] | undefined,
+  config: KindConfig,
+): ResolvedPulses {
+  if (config.list.tree?.messagePulse !== true) return NO_PULSES;
+  if (pulses === undefined || pulses.length === 0) return NO_PULSES;
+
+  // Same parent resolution as `buildTileTree`: a row whose parent is not on
+  // this page is a root here, and the route must agree with what is drawn.
+  const present = new Set(rows.map((row) => row.id));
+  const parents = new Map<string, string | null>(
+    rows.map((row) => [row.id, row.parentId && present.has(row.parentId) ? row.parentId : null]),
+  );
+  const parentOf = (id: string) => parents.get(id);
+
+  const index = {
+    parentOf,
+    isVisible: (id: string) => {
+      if (!present.has(id) || collapsed.has(id)) return false;
+      // Rendered means every ancestor is expanded, not just this row's parent.
+      const guard = new Set<string>();
+      let cursor = parentOf(id);
+      while (typeof cursor === 'string' && !guard.has(cursor)) {
+        if (collapsed.has(cursor)) return false;
+        guard.add(cursor);
+        cursor = parentOf(cursor);
+      }
+      return true;
+    },
+  };
+
+  const segments = new Map<string, { direction: PulseSegment['direction']; order: number }>();
+  const endpoints = new Map<string, 'from' | 'to'>();
+  for (const item of pulses) {
+    const route = routeMessagePulse(item.fromId, item.toId, index);
+    route.segments.forEach((segment, order) => {
+      const existing = segments.get(segment.ownerId);
+      if (existing === undefined || order < existing.order) {
+        segments.set(segment.ownerId, { direction: segment.direction, order });
+      }
+    });
+    // Arrival wins a contested row: a session that both sends and receives in
+    // the same window is more interesting as a destination.
+    if (route.fromRowId !== null && !endpoints.has(route.fromRowId)) endpoints.set(route.fromRowId, 'from');
+    if (route.toRowId !== null) endpoints.set(route.toRowId, 'to');
+  }
+  return { segments, endpoints };
 }
 
 function Tile({
@@ -1284,11 +1408,11 @@ function Tile({
                   onToggleChildren();
                 }}
               >
-                <span aria-hidden>›</span>
+                <span aria-hidden><TileChevron /></span>
               </button>
             ) : (
               <span className="lp__disclosure lp__disclosure--empty" aria-hidden>
-                ›
+                <TileChevron />
               </span>
             )
           ) : null}
@@ -1314,7 +1438,9 @@ function Tile({
             )}
           </span>
 
-          {avatar ? <Avatar provenance={avatar.provenance} label={avatar.label} size={20} /> : null}
+          {/* 15, not 20 — 17px is the tallest thing a session row contains and
+              therefore the height of every row in every list. */}
+          {avatar ? <Avatar provenance={avatar.provenance} label={avatar.label} size={15} /> : null}
 
           <button
             type="button"
@@ -1328,6 +1454,21 @@ function Tile({
           >
             {row.title}
           </button>
+
+          {/* Quiet facts and the priority tag ride IN the row, the way a
+              session carries its model inline — they used to be a second line,
+              which is what made every non-session row twice a session row's
+              height. Both ellipsise before the title gives up any width. */}
+          {metas.length > 0 ? (
+            <span className="lp__meta" title={metas.join(' · ')}>
+              {metas.join(' · ')}
+            </span>
+          ) : null}
+          {tag ? (
+            <span className={`lp__tag kit-pill--${tag.tone}`}>
+              {props.compact ? tag.label.slice(0, 2) : tag.label}
+            </span>
+          ) : null}
 
           {/* The badge slot YIELDS to the action cluster on hover — the card
               never grows, so hovering cannot reflow the list under the cursor. */}
@@ -1358,19 +1499,6 @@ function Tile({
           </span>
 
         </div>
-
-        {/* Line 2 — quiet facts and a compact priority tag, aligned under the
-            title rather than under the disclosure/status controls. */}
-        {metas.length > 0 || tag ? (
-          <div className="lp__row2">
-            <span className="lp__meta">{metas.join(' · ')}</span>
-            {tag ? (
-              <span className={`lp__tag kit-pill--${tag.tone}`}>
-                {props.compact ? tag.label.slice(0, 2) : tag.label}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
       </div>
 
       {/* The config is an attached card section, not a popover: the subject
