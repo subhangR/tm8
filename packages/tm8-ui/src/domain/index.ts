@@ -85,9 +85,14 @@ export {
   modelsFor,
   newLaunchMutationId,
   EDGES_NOT_HYDRATED_REASON,
+  ACCESS_MODE_CYCLE,
+  accessModeLabel,
+  describeAccessMode,
+  nextAccessMode,
 } from './launch';
 export type {
   AgentToolDef,
+  LaunchAccessMode,
   LaunchCapacity,
   LaunchConfig,
   LaunchMode,

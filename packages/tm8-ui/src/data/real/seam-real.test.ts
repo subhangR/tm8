@@ -253,13 +253,23 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // updated, so the guard was red in-tree before the attention inbox
       // landed. Recorded here rather than silently corrected.
       'resolveAttention',
-      'restoreEntity', 'spawn', 'terminate', 'upsertReadMark', 'work',
+      // 2026-08-01: resume — the exited card's button. Sorts AFTER
+      // restoreEntity ('rest' < 'resu'), which is not where it reads like it
+      // belongs. Locked here the same way, so the seam cannot gain a command
+      // without this list saying so.
+      'restoreEntity', 'resume', 'spawn', 'terminate', 'upsertReadMark', 'work',
     ]);
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
-    expect(Object.keys(seam.files).sort()).toEqual(['abort', 'complete', 'putBytes', 'uploadInit']);
+    // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam
+    // member that answers a URL rather than a DTO, because `files.download`
+    // answers raw bytes and a browser reaches those through `href`/`src`.
+    // Locked here so the file group cannot grow a verb in silence.
+    expect(Object.keys(seam.files).sort()).toEqual([
+      'abort', 'complete', 'downloadHref', 'putBytes', 'uploadInit',
+    ]);
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
-      'connections', 'activity', 'messages', 'handoffs', 'inbox', 'feed', 'delivery',
+      'connections', 'activity', 'messages', 'handoffs', 'journal', 'inbox', 'feed', 'delivery',
       'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }

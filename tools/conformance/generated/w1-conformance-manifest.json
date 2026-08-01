@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:98aab261b790efa84dc5441fd9939f3597ed4c54f9b76848b719db53a4c4562e",
+  "catalogDigest": "sha256:ab251303b3772e70dbc2a85d9169cfdf2ae8b5cc8268feefd097837379cfed20",
   "catalog": {
-    "total": 119,
-    "v1": 117,
+    "total": 120,
+    "v1": 118,
     "reserved": 2,
-    "http": 118,
+    "http": 119,
     "ws": 1,
-    "registerableV1Http": 116,
+    "registerableV1Http": 117,
     "methods": {
-      "GET": 43,
+      "GET": 44,
       "POST": 50,
       "PATCH": 10,
       "DELETE": 8,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 46,
+      "read": 47,
       "command": 72,
       "stream": 1
     },
-    "uniqueNames": 119,
-    "uniqueBindings": 119
+    "uniqueNames": 120,
+    "uniqueBindings": 120
   },
   "reservedOperations": [
     "search.query",
@@ -810,6 +810,13 @@
         "source": "server-router"
       },
       {
+        "operation": "execution.journal",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/journal",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "entityKinds.list",
         "method": "GET",
         "path": "/v2/spaces/:spaceId/entity-kinds",
@@ -1237,7 +1244,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 88
+    "unimplementedV1Http": 89
   },
   "schemas": {
     "additive": {
@@ -2845,6 +2852,22 @@
         "intentTags": [
           "execution",
           "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.journal",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.journal",
+        "intentTags": [
+          "execution",
+          "journal"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

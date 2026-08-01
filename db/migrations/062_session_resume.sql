@@ -52,7 +52,8 @@ grant execute on function public.execution_record_native_session(uuid, text, uui
 
 create or replace function public.execution_resume(
   p_session_id uuid, p_session_cap integer default 8,
-  p_actor_id uuid default null, p_client_mutation_id text default null
+  p_actor_id uuid default null, p_client_mutation_id text default null,
+  p_node_id text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare
   replay jsonb;
@@ -61,8 +62,20 @@ declare
   member_id uuid;
   current_status text;
 begin
+  -- W2.SEC-1, both halves. A resume is a command like prompt/terminate, so it
+  -- owes the same replay law record_execution_command obeys (041): a stored
+  -- result may go back only to the principal that recorded it, and only to a
+  -- request addressing the SAME session. Without the subject binding, a
+  -- clientMutationId recorded against session A and replayed while addressing
+  -- session B returns A's projection — the caller named B and received A.
+  perform internal.require_replay_principal(p_client_mutation_id);
   replay := internal.ledger_replay(p_client_mutation_id, 'execution.resume');
   if replay is not null then
+    -- Security boundary: runs with ledger_replay's advisory lock HELD. The
+    -- subject binding needs the stored projection, so it can only live here.
+    perform internal.require_replay_principal(p_client_mutation_id);
+    perform internal.require_replay_subject(
+      replay #>> '{entity,id}', p_session_id::text, 'work session');
     return replay || jsonb_build_object('__tm8_replayed', true);
   end if;
 
@@ -100,9 +113,18 @@ begin
   -- leaving it on a session now spawning again would read as a live agent that
   -- somehow also died. The next exit writes fresh evidence through the normal
   -- single-writer path.
+  --
+  -- node_id moves WITH the resume. The row names the node that owns the live
+  -- PTY, and after this call that is the node resuming — which need not be the
+  -- node that first spawned it. Leaving the old value would make startup ghost
+  -- reconciliation on node A list a session whose PTY is on node B, find no
+  -- local PTY, and retire a genuinely running agent. `coalesce` so a caller
+  -- that does not know its node id leaves the existing value alone rather than
+  -- nulling it.
   perform set_config('tm8.work_session_transition', 'on', true);
   update public.work_sessions
-     set status = 'spawning', exit_code = null, error = null, exited_at = null
+     set status = 'spawning', exit_code = null, error = null, exited_at = null,
+         node_id = coalesce(p_node_id, node_id)
    where entity_id = p_session_id;
   perform set_config('tm8.work_session_transition', 'off', true);
 
@@ -123,5 +145,5 @@ begin
 end
 $$;
 
-revoke all on function public.execution_resume(uuid, integer, uuid, text) from public;
-grant execute on function public.execution_resume(uuid, integer, uuid, text) to tm8_app;
+revoke all on function public.execution_resume(uuid, integer, uuid, text, text) from public;
+grant execute on function public.execution_resume(uuid, integer, uuid, text, text) to tm8_app;

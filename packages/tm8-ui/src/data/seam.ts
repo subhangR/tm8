@@ -22,6 +22,13 @@
  * needs its one command. Additive, zero caller churn; contract types
  * verbatim like every other command.
  *
+ * Amendment 3 (2026-08-01, attachments): `files` gains `downloadHref` — a
+ * synchronous URL builder for the contract-v1 `files.download` route. It is the
+ * one seam member that answers a URL rather than a DTO, because that route
+ * answers RAW BYTES and a browser reaches bytes through `href`/`src`, not
+ * through a DTO. Additive, zero caller churn; it closes the SEAM GAP recorded
+ * at `files/reasons.ts:DOWNLOAD_UNAVAILABLE`.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -59,6 +66,7 @@ import type {
   EntitySummary,
   ExecutionPromptInput,
   ExecutionSpawnInput,
+  ExecutionResumeInput,
   ExecutionTerminateInput,
   FileUploadAbortInput,
   FileUploadCompleteInput,
@@ -82,6 +90,7 @@ import type {
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
+  SessionJournalPage,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -156,6 +165,14 @@ export interface FeedOpts extends PageOpts {
   around?: `message:${string}` | `activity:${string}`;
 }
 
+/** The DEBUG journal read's paging window. `before` is a seq cursor, not a Cursor. */
+export interface JournalOpts {
+  /** Max records in the window; server default is 100. */
+  limit?: number;
+  /** Return records with `seq` below this — the cursor for paging older records. */
+  before?: number;
+}
+
 export interface Seam {
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -221,6 +238,15 @@ export interface Seam {
   messages(anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>>;
   handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>>;
   /**
+   * The session's `tm8` CLI command journal — the DEBUG surface's only read.
+   * A window (`records`) plus whole-file `totals`, so the headline stays honest
+   * when the window is truncated. `available:false` is a real, common state (a
+   * session spawned before journaling, or one launched with it off) and renders
+   * as an explained empty, never a zero. `before` is a seq cursor for paging
+   * older records; `limit` defaults to 100 server-side.
+   */
+  journal(workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage>;
+  /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
    * nor an attention sort (contract.ts CollectionQuery), so the alternative
@@ -248,6 +274,23 @@ export interface Seam {
     putBytes(grant: FileUploadGrant, bytes: BodyInit): Promise<void>;
     complete(uploadId: string, input: FileUploadCompleteInput): Promise<CommandResult>;
     abort(uploadId: string, input: FileUploadAbortInput): Promise<CommandResult>;
+    /**
+     * Amendment 3 (2026-08-01, attachments). The ONE read in this seam that
+     * answers a URL rather than a DTO, because `files.download`
+     * (GET /v2/files/:fileEntityId/download, catalog.ts:118) answers RAW BYTES
+     * and a browser reaches bytes through `<a href>` / `<img src>`, not through
+     * a fetch the UI would then have to re-blob.
+     *
+     * It is HERE and not in a component because building a transport URL is
+     * `src/data/**` work: only this layer knows the node's base URL, and
+     * `files/reasons.ts:DOWNLOAD_UNAVAILABLE` recorded the alternative
+     * (same-origin luck in a component) as the thing not to do. Synchronous by
+     * design — a src attribute cannot await.
+     *
+     * Not a capability grant: the route authorizes the caller itself, so the
+     * href is only as good as the viewer's session.
+     */
+    downloadHref(fileEntityId: EntityId): string;
   };
 
   // -- commands (contract input types VERBATIM; the caller supplies
@@ -279,6 +322,13 @@ export interface Seam {
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;
+    /**
+     * Bring an `exited`/`failed` session back with its agent's conversation
+     * restored. `clientMutationId` is REQUIRED by the contract DTO (unlike
+     * terminate's optional `force`), and the server's `.strict()` schema
+     * refuses any field the contract does not name.
+     */
+    resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

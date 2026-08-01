@@ -1956,3 +1956,40 @@
   white-space: nowrap;
 }
 .cv2-root .rs-exit:hover { background: var(--pn-hover); }
+
+/* THE QUICK ACCESS TOGGLE — one chip, one click per posture step.
+   It states the CURRENT posture in words; the colour only reinforces what the
+   text already says, so the escalation is legible without relying on hue. */
+.cv2-root .lq__access { display: flex; align-items: center; gap: 8px; }
+.cv2-root .lq__accessbtn {
+  appearance: none;
+  min-height: 22px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+.cv2-root .lq__accessbtn:hover { border-color: var(--pn-ink-3); color: var(--pn-ink); }
+.cv2-root .lq__accessbtn:focus-visible {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+  outline: none;
+}
+.cv2-root .lq__accessbtn--plan { color: var(--pn-ink-2); }
+.cv2-root .lq__accessbtn--acceptEdits {
+  color: var(--pn-run);
+  border-color: var(--pn-run);
+  background: var(--pn-run-soft);
+}
+/* Bypass is the only posture that removes a safeguard, so it is the only one
+   that reads as a warning rather than a setting. */
+.cv2-root .lq__accessbtn--fullAccess {
+  color: var(--pn-block);
+  border-color: var(--pn-block);
+  background: var(--pn-block-soft);
+}

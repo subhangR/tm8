@@ -268,3 +268,86 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(getByTestId('empty-center')).toBeTruthy();
   });
 });
+
+/**
+ * THE OPEN ENTITY SURVIVES LEAVING THE SCREEN (user report, 2026-07-31).
+ *
+ * The defect: every detail screen held its selection in a component-local
+ * `useState`, and the rail switches screens by swapping a branch of GateApp's
+ * ternary — which UNMOUNTS the view. So the selection was not cleared, it
+ * ceased to exist, and coming back showed the attention page as though nothing
+ * had ever been opened. `WorkspaceView` was the one screen without the bug,
+ * because it reads the module-level `navStore`.
+ *
+ * These run against the composed app for a reason: the store's own unit tests
+ * cannot see a `useState` left behind in a view, which is precisely what was
+ * broken. The mount/unmount is the test.
+ */
+describe('detail screens keep what you were looking at', () => {
+  const rail = (view: ReturnType<typeof renderGate>) =>
+    within(view.getByTestId('menu-rail'));
+
+  const openKind = async (view: ReturnType<typeof renderGate>, name: RegExp) => {
+    // Scoped to the rail (the workspace panels carry their own kind controls)
+    // and matched by prefix (rail labels carry badge text: "Tasks3, 3 unseen").
+    fireEvent.click(rail(view).getByRole('button', { name }));
+    return waitFor(() => view.getByTestId('entity-view'));
+  };
+
+  const detailPanel = (view: ReturnType<typeof renderGate>) =>
+    within(view.getByTestId('entity-view-detail')).queryByTestId('entity-detail-panel');
+
+  it('restores the open entity after switching rail items and back', async () => {
+    const view = renderGate();
+    await waitFor(() => view.getByTestId('workspace-grid'));
+    await openKind(view, /^Tasks/);
+
+    // Nothing open yet: the attention inbox IS the empty state of the centre.
+    expect(view.getByTestId('attention-inbox')).toBeTruthy();
+
+    const tile = (await waitFor(() => view.getAllByTestId('list-tile')))[0] as HTMLElement;
+    fireEvent.click(tile.querySelector('button') ?? tile);
+    /* Wait for the panel to SETTLE. The detail loads async, so grabbing its
+       text on first appearance captures "Loading…" and the comparison below
+       would be against a transient rather than against the entity. */
+    const settled = async () =>
+      waitFor(() => {
+        const panel = detailPanel(view);
+        expect(panel).toBeTruthy();
+        const text = panel?.textContent ?? '';
+        expect(text).not.toContain('Loading');
+        return text;
+      });
+    const openedText = await settled();
+    expect(openedText.length).toBeGreaterThan(0);
+
+    // LEAVE — Dashboard is a different branch of GateApp's view ternary, so
+    // EntityView really unmounts. That is the step that used to destroy the
+    // selection, and the assertion below is that it no longer does.
+    fireEvent.click(rail(view).getByRole('button', { name: /^Dashboard$/ }));
+    await waitFor(() => expect(view.queryByTestId('entity-view')).toBeNull());
+
+    // COME BACK.
+    await openKind(view, /^Tasks/);
+    // The same entity, not the attention page.
+    expect(await settled()).toBe(openedText);
+    view.unmount();
+  });
+
+  it('keeps each screen separate — a task does not follow you into Docs', async () => {
+    const view = renderGate();
+    await waitFor(() => view.getByTestId('workspace-grid'));
+    await openKind(view, /^Tasks/);
+    const tile = (await waitFor(() => view.getAllByTestId('list-tile')))[0] as HTMLElement;
+    fireEvent.click(tile.querySelector('button') ?? tile);
+    await waitFor(() => expect(detailPanel(view)).toBeTruthy());
+
+    // A screen nobody has opened anything on is still empty: its stack is its
+    // own, so the Tasks selection is structurally unreachable from here. This
+    // is the rule EntityView used to enforce by resetting on every kind change.
+    await openKind(view, /^Docs/);
+    await waitFor(() => expect(detailPanel(view)).toBeNull());
+    expect(view.getByTestId('attention-inbox')).toBeTruthy();
+    view.unmount();
+  });
+});

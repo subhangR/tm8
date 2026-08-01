@@ -42,7 +42,8 @@ import {
   EXIT_USAGE,
   type ExitCode,
 } from './exit.js';
-import { createOutput, type Output } from './output.js';
+import { createOutput, processStreams, type Output } from './output.js';
+import { journal } from './journal.js';
 import { CLI_VERSION } from './discovery/help.js';
 import { isCommandPath } from './discovery/operations.js';
 
@@ -136,7 +137,13 @@ const RETIRED_COMMANDS: readonly Retired[] = [
   },
 ];
 
-async function dispatch(invocation: ParsedInvocation, out: Output): Promise<ExitCode> {
+async function dispatch(
+  invocation: ParsedInvocation,
+  out: Output,
+  /** Reports the resolved command path so the journal can record it even when
+   *  the command later throws. Purely an observer callback. */
+  onResolvePath: (path: readonly string[]) => void = () => {},
+): Promise<ExitCode> {
   const { positionals, globals } = invocation;
   // Imported lazily so `registry.ts` can import CommandModule from this file
   // without a load-order cycle: the registry is only needed once argv resolves.
@@ -192,6 +199,8 @@ async function dispatch(invocation: ParsedInvocation, out: Output): Promise<Exit
     return EXIT_OK;
   }
 
+  onResolvePath(match.path);
+
   const command = findCommand(match.path);
   if (!command) {
     // In the grammar, no handler in this build. An honest 8 (DEV-13's own
@@ -233,17 +242,30 @@ async function dispatch(invocation: ParsedInvocation, out: Output): Promise<Exit
  * diagnostic. Nothing diagnostic ever reaches stdout.
  */
 export async function run(argv: readonly string[]): Promise<ExitCode> {
-  let out = createOutput({ format: 'human' });
+  // The journal observes; it never participates. It is inert unless this
+  // process was spawned as a session (see journal.ts), and its `wrapStreams`
+  // forwards every chunk before counting it, so nothing here can change what
+  // the caller sees or what exit code they get.
+  const streams = journal.enabled ? journal.wrapStreams(processStreams) : undefined;
+  let commandPath: readonly string[] = [];
+  let out = createOutput({ format: 'human', streams });
   try {
     const invocation = parseInvocation(argv);
     out = createOutput({
       format: invocation.globals.format,
       color: invocation.globals.color,
       quiet: invocation.globals.quiet,
+      streams,
     });
-    return await dispatch(invocation, out);
+    const exit = await dispatch(invocation, out, (path) => {
+      commandPath = path;
+    });
+    journal.finish({ path: commandPath, argv, exitCode: exit });
+    return exit;
   } catch (err) {
     out.error(errorLines(err));
-    return exitCodeFor(err);
+    const exit = exitCodeFor(err);
+    journal.finish({ path: commandPath, argv, exitCode: exit, error: err });
+    return exit;
   }
 }

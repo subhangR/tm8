@@ -372,6 +372,18 @@ describe('composeEnv', () => {
     expect(env.TM8_BASE_URL).toBe('http://127.0.0.1:4610');
   });
 
+  it('injects TM8_JOURNAL_PATH when a journal path is given', () => {
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {}, '/data/journals/sess-1.jsonl');
+    expect(env.TM8_JOURNAL_PATH).toBe('/data/journals/sess-1.jsonl');
+  });
+
+  it('OMITS TM8_JOURNAL_PATH when none is given — the var IS the feature gate', () => {
+    // A CLI that never sees this variable journals nothing at all, which is
+    // exactly right for a human running `tm8` at their own terminal.
+    const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {});
+    expect('TM8_JOURNAL_PATH' in env).toBe(false);
+  });
+
   it('forwards provider credentials that the server itself holds', () => {
     const env = composeEnv(manifest, '/tmp/m.json', 'http://x', { ANTHROPIC_API_KEY: 'sk-test' });
     expect(env.ANTHROPIC_API_KEY).toBe('sk-test');

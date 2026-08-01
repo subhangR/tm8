@@ -46,6 +46,7 @@ import { InterruptedError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
+import type { SessionJournalPage } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
@@ -113,6 +114,75 @@ async function sessionLiveness(cmd: CommandContext): Promise<ExitCode> {
   );
   cmd.out.data(snapshot, renderLiveness);
   return EXIT_OK;
+}
+
+/**
+ * `tm8 session journal <id>` — what a session's own `tm8` invocations did.
+ *
+ * The bytes are written by the teammate's CLI processes into a file on the
+ * node; this command is the read side of that, and the same projection the
+ * Debug surface renders.
+ */
+async function sessionJournal(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('session journal', cmd.options.value('mutation-id'));
+  const workSessionId = cmd.args[0];
+  if (workSessionId === undefined) {
+    throw new CliError('tm8 session journal requires a work-session id', EXIT_USAGE, {
+      hint: 'find one with `tm8 session liveness` or `tm8 entity query`',
+    });
+  }
+  const query: Record<string, string> = {};
+  const limit = cmd.options.value('limit');
+  if (limit !== undefined) query.limit = limit;
+  const before = cmd.options.value('before');
+  if (before !== undefined) query.before = before;
+
+  const page = await observedInvoke<SessionJournalPage>(
+    clientFor(cmd.ctx),
+    'execution.journal',
+    { params: { workSessionId }, query },
+  );
+  cmd.out.data(page, renderJournal);
+  return EXIT_OK;
+}
+
+function renderJournal(page: SessionJournalPage): string {
+  if (!page.available) {
+    // An explained empty, never a zero: "no commands" and "no journal" are
+    // different facts and the caller must be able to tell them apart.
+    const why = page.unavailableReason === 'unreadable'
+      ? 'its journal file could not be read'
+      : 'it has no journal file — the session predates command journalling, or ran without it';
+    return `no journal for ${page.sessionId}: ${why}`;
+  }
+  const t = page.totals;
+  const lines = [
+    `${String(t.invocations)} tm8 commands, ${String(t.failed)} failed`,
+    // The estimator is named on the same line as the numbers it produced, so
+    // the estimate can never be read as a measurement.
+    `~${String(t.agentToCliEst)} tokens out, ~${String(t.cliToAgentEst)} tokens in (estimated, ${t.estimator})`,
+    'CLI boundary only — not the model provider’s reported usage.',
+    'Only `tm8` commands are recorded; other shell commands are not.',
+  ];
+  if (t.malformed > 0) {
+    lines.push(
+      t.malformed === 1
+        ? '1 unreadable record was skipped'
+        : `${String(t.malformed)} unreadable records were skipped`,
+    );
+  }
+  lines.push('');
+  for (const r of page.records) {
+    const when = r.startedAt.slice(11, 19);
+    const cmdText = r.command.path.join(' ') || '(unresolved)';
+    const calls = r.calls.length === 1 ? '1 call' : `${String(r.calls.length)} calls`;
+    lines.push(
+      `${when}  ${cmdText.padEnd(24)} exit ${String(r.result.exitCode)}  ${String(r.durationMs)}ms  ${calls}  ` +
+        `~${String(r.tokens.agentToCli)}↑ ~${String(r.tokens.cliToAgent)}↓`,
+    );
+  }
+  if (page.hasMore) lines.push('', '(older records exist — page back with --before)');
+  return lines.join('\n');
 }
 
 interface ExecutionLivenessDto {
@@ -403,6 +473,7 @@ function renderLiveness(dto: ExecutionLivenessDto): string {
  */
 export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'liveness'], run: sessionLiveness },
+  { path: ['session', 'journal'], run: sessionJournal },
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },

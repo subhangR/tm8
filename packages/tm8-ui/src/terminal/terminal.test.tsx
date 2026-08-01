@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import type { SessionLiveness } from '../data/seam';
 import {
   ExitedFallback,
@@ -187,11 +187,54 @@ describe('terminal host', () => {
 });
 
 describe('fallbacks — each verdict states what is actually known', () => {
-  it('exited is read-only and points at the surviving record', () => {
+  it('exited points at the surviving record and offers resume', () => {
     const { getByTestId } = render(<ExitedFallback meta="exit code 0 · ran 41m" />);
     const el = getByTestId('session-exited-fallback');
     expect(el.textContent).toContain('Session exited');
-    expect(el.textContent).toContain('Read-only');
+    // The record survives — that half of the old copy is unchanged.
+    expect(el.textContent).toContain('session record, discussion and connections stay');
+    // "Read-only" is GONE on purpose: a resumable session is not read-only,
+    // and the word next to a Resume button would be a false claim.
+    expect(el.textContent).not.toMatch(/read-only/i);
+  });
+
+  it('resume is DISABLED with a reason when the host has not wired it — never hidden', () => {
+    const { getByTestId } = render(<ExitedFallback />);
+    const btn = getByTestId('session-resume') as HTMLButtonElement;
+    // Present, refused, and it says why. A missing button would claim the
+    // session cannot be resumed, which is a different statement entirely.
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toMatch(/not wired/i);
+  });
+
+  it('resume fires the host handler, and reports its own in-flight state', () => {
+    const calls: number[] = [];
+    const { getByTestId, rerender } = render(
+      <ExitedFallback onResume={() => calls.push(1)} />,
+    );
+    const btn = getByTestId('session-resume') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    fireEvent.click(btn);
+    expect(calls).toHaveLength(1);
+
+    // In flight: disabled, so a double-click cannot race two spawns onto one
+    // session id.
+    rerender(<ExitedFallback onResume={() => calls.push(1)} resuming />);
+    const busy = getByTestId('session-resume') as HTMLButtonElement;
+    expect(busy.disabled).toBe(true);
+    expect(busy.textContent).toMatch(/resuming/i);
+    fireEvent.click(busy);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('a server refusal becomes the caption, verbatim', () => {
+    const REASON = 'no recorded native session id (spawned before resume support)';
+    const { getByTestId } = render(
+      <ExitedFallback onResume={() => {}} resumeDisabledReason={REASON} />,
+    );
+    const el = getByTestId('session-exited-fallback');
+    expect(el.textContent).toContain(REASON);
+    expect((getByTestId('session-resume') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('stale contradicts our own record out loud, and offers the only real remedy', () => {

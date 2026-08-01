@@ -43,14 +43,20 @@ import {
   type WorkSessionResumeInfo,
   type WorkSessionStatus,
 } from '@tm8/execution';
-import { CollabError } from '@tm8/contract';
+import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import type {
   ExecutionLiveness,
   ExecutionPromptInput,
   ExecutionSpawnInput,
   ExecutionStreamsAttachInput,
   ExecutionTerminateInput,
+  SessionJournalPage,
+  SessionJournalRecord,
 } from '@tm8/contract';
+import { createReadStream } from 'node:fs';
+import { realpath } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
+import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
@@ -398,7 +404,7 @@ export class DbGraphPort implements GraphPort {
 
   async resumeWorkSession(
     auth: GraphAuth,
-    input: { sessionId: string; clientMutationId: string | null },
+    input: { sessionId: string; clientMutationId: string | null; nodeId: string | null },
   ): Promise<ResumeWorkSessionResult> {
     const result = await this.db.rpc<Record<string, unknown>>(
       this.claims(auth),
@@ -408,6 +414,9 @@ export class DbGraphPort implements GraphPort {
         this.sessionCap,
         null, // p_actor_id — resolve_actor derives it from the claims
         input.clientMutationId,
+        // p_node_id — the resuming node takes ownership of the row, because it
+        // is the one about to own the PTY. Null leaves the stored value alone.
+        input.nodeId,
       ],
     );
     const replayed = result?.__tm8_replayed === true;
@@ -415,16 +424,27 @@ export class DbGraphPort implements GraphPort {
     return { commandResult, replayed };
   }
 
+  /**
+   * Returns whether the id was actually stored. `false` means the row already
+   * held a DIFFERENT id: write-once refused the overwrite. The caller must not
+   * discard this — see SpawnService for why a silent `false` would hide a
+   * genuine capture bug.
+   */
   async recordNativeSessionId(
     auth: GraphAuth,
     sessionId: string,
     nativeSessionId: string,
-  ): Promise<void> {
-    await this.db.rpc(this.claims(auth), 'public.execution_record_native_session', [
-      sessionId,
-      nativeSessionId,
-      null, // p_actor_id — derived from claims
-    ]);
+  ): Promise<boolean> {
+    const stored = await this.db.rpc<boolean>(
+      this.claims(auth),
+      'public.execution_record_native_session',
+      [
+        sessionId,
+        nativeSessionId,
+        null, // p_actor_id — derived from claims
+      ],
+    );
+    return stored === true;
   }
 
   /**
@@ -629,7 +649,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     promptSettlement,
     spawnService,
     graph,
-    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap),
+    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir),
     reconcileGhosts: async () => {
       // Runs as the loopback OWNER. `work_session_transition` goes through
       // `require_space_member` → `require_identity` with no node-admin bypass,
@@ -693,7 +713,7 @@ export function registerExecutionHandlers(
     ...(deps.logger ? { logger: deps.logger } : {}),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
-  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap());
+  registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
   return {
     pty: deps.pty,
     // See the docblock above this function — disconnected, never resolves.
@@ -777,6 +797,201 @@ async function assembleCommandResult(
   return db.tx(claims, (q) => toCommandResult(q, (raw ?? {}) as RpcCommandResult, viewerIdentityId));
 }
 
+/**
+ * Launch accepts ANY entity; a session's assignment anchor is always a task.
+ *
+ * The UI can now put a Run button on a doc, a teammate, a memory, an artifact,
+ * a project, a pull request or a worktree, and every one of them arrives here
+ * in the same `taskIds` field. This is the seam that makes that true: each id
+ * is mapped through `public.derive_task_for_entity` (064), which returns a task
+ * id — the entity itself when it already IS a task (writing nothing, so
+ * existing task launches are bit-for-bit unchanged), otherwise an open task
+ * derived from it, reused if one exists and created if not.
+ *
+ * Everything downstream therefore keeps its proven, task-shaped contract:
+ * `loadSpawnContext`'s join to `public.tasks`, `execution_spawn`'s
+ * `live_entity(task_id,'task')` assertion (048:92), the `working_on` edge whose
+ * registry entry permits dst `['task']` only (001:905), and the
+ * `<tm8_task_prompt>` envelope. None of them needed to change, and none of them
+ * gained a second code path to keep correct.
+ *
+ * SEQUENTIAL ON PURPOSE. Each call is a write whose reuse branch reads what an
+ * earlier call may have just written, so two ids naming the same entity — or
+ * the same entity twice in one array — would race under `Promise.all` and mint
+ * two tasks for it. The array is a handful of ids; the round trips are cheap
+ * next to the process spawn that follows.
+ */
+async function resolveAssignmentAnchors(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string,
+  subjectIds: readonly string[],
+): Promise<string[]> {
+  const anchors: string[] = [];
+  for (const subjectId of subjectIds) {
+    const derived = await db.rpc<{ taskId?: string } | null>(
+      claims,
+      'public.derive_task_for_entity',
+      // p_actor_id is null: resolve_actor derives it from the claims, the same
+      // convention createWorkSession uses.
+      [spaceId, subjectId, null],
+    );
+    const taskId = derived?.taskId;
+    if (typeof taskId !== 'string') {
+      throw fail(
+        'upstream_unavailable',
+        `derive_task_for_entity returned no task id for ${subjectId}`,
+      );
+    }
+    // De-duplicate on the ANCHOR, not the subject: two different entities can
+    // legitimately resolve to one task, and `execution_spawn` would then try to
+    // insert the same `working_on` edge twice.
+    if (!anchors.includes(taskId)) anchors.push(taskId);
+  }
+  return anchors;
+}
+
+// --- execution.journal (read) -----------------------------------------------
+
+const JOURNAL_LIMIT_DEFAULT = 100;
+const JOURNAL_LIMIT_MAX = 500;
+
+/**
+ * `relative()`-based containment: true iff `candidate` is at or beneath `root`.
+ * Copied from `files/w2-blob-store.ts` so the journal path can never escape the
+ * journals dir even through a symlink (we realpath before trusting it).
+ */
+function journalContained(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+const emptyJournalTotals = (): SessionJournalPage['totals'] => ({
+  invocations: 0,
+  failed: 0,
+  agentToCliEst: 0,
+  cliToAgentEst: 0,
+  estimator: 'chars/4',
+  malformed: 0,
+});
+
+/**
+ * Read one session's journal file and fold it into a `SessionJournalPage`.
+ *
+ * THE PATH NEVER COMES FROM THE REQUEST: the caller passes a UUID that has
+ * already been validated AND authorized (the entity read is the authz gate),
+ * and we join it under `<dataDir>/journals/` ourselves. A UUID cannot contain a
+ * path separator, but we still realpath-check containment (defence in depth
+ * against a symlinked journals dir) before trusting the resolved path.
+ *
+ * Totals are computed over the WHOLE file; `records` is only the newest window.
+ * Lines are read one at a time via `readline` (never the whole file as one
+ * string); the parsed records are retained in memory, which is bounded by the
+ * per-session invocation count — pragmatic for a per-teammate CLI journal.
+ *
+ * PAGINATION IS ON LINE INDEX, NOT `seq`. `seq` is a per-process counter that
+ * is 0 on almost every record (one invocation = one process = one line), so it
+ * is neither unique nor monotonic across the file. The stable cursor is instead
+ * the record's 0-based ordinal among the valid records in file (append) order —
+ * oldest = 0. `before` returns the window ending just before that ordinal, and
+ * `hasMore` is true when ordinal 0 was not reached. The client derives the next
+ * cursor without a per-record field: the window's oldest ordinal is
+ * `totals.invocations - records.length`.
+ */
+async function readSessionJournal(
+  dataDir: string | undefined,
+  sessionId: string,
+  limit: number,
+  before: number | null,
+): Promise<SessionJournalPage> {
+  const unavailable = (
+    reason: 'no_journal_file' | 'unreadable',
+  ): SessionJournalPage => ({
+    sessionId,
+    available: false,
+    unavailableReason: reason,
+    totals: emptyJournalTotals(),
+    records: [],
+    hasMore: false,
+  });
+
+  // A node without a data root cannot have written a journal. Treat it as a
+  // genuine read failure rather than a missing file — it is a config fault, not
+  // a session that simply predates journaling.
+  if (!dataDir) return unavailable('unreadable');
+
+  const journalsRoot = resolvePath(dataDir, 'journals');
+  const filePath = resolvePath(journalsRoot, `${sessionId}.jsonl`);
+  // Pre-open string check — impossible to fail for a UUID, but it keeps the
+  // containment invariant local and obvious.
+  if (!journalContained(journalsRoot, filePath)) {
+    throw new CollabError('not_found', `no journal for session: ${sessionId}`);
+  }
+
+  const totals = emptyJournalTotals();
+  const records: SessionJournalRecord[] = [];
+
+  try {
+    // Symlink defence: the real resolved file must still sit under the real
+    // journals dir. realpath throws ENOENT for a missing file, which is the
+    // no-journal case handled below.
+    const realFile = await realpath(filePath);
+    const realRoot = await realpath(journalsRoot);
+    if (!journalContained(realRoot, realFile)) {
+      throw new CollabError('not_found', `no journal for session: ${sessionId}`);
+    }
+
+    const rl = createInterface({
+      input: createReadStream(realFile, { encoding: 'utf8' }),
+      crlfDelay: Infinity,
+    });
+    for await (const line of rl) {
+      if (line.trim() === '') continue; // blank line, not malformed
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        totals.malformed += 1;
+        continue;
+      }
+      const result = SessionJournalRecordSchema.safeParse(parsed);
+      if (!result.success) {
+        totals.malformed += 1;
+        continue;
+      }
+      const record = result.data;
+      totals.invocations += 1;
+      if (record.result.exitCode !== 0) totals.failed += 1;
+      totals.agentToCliEst += record.tokens.agentToCli;
+      totals.cliToAgentEst += record.tokens.cliToAgent;
+      records.push(record);
+    }
+  } catch (err) {
+    if (err instanceof CollabError) throw err;
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'ENOENT') return unavailable('no_journal_file');
+    // Any other error (permissions, I/O) is a genuine read failure — surfaced
+    // as an explained empty, never a 500 for a session with no readable journal.
+    return unavailable('unreadable');
+  }
+
+  // File (append) order IS oldest-first, so a record's array index is its line
+  // ordinal. `before` is that ordinal; the window is the newest `limit` records
+  // strictly older than it. hasMore means ordinal 0 was not included.
+  const qualifying = before === null ? records : records.slice(0, Math.max(0, before));
+  const hasMore = qualifying.length > limit;
+  const window = hasMore ? qualifying.slice(qualifying.length - limit) : qualifying;
+
+  return {
+    sessionId,
+    available: true,
+    unavailableReason: null,
+    totals,
+    records: window,
+    hasMore,
+  };
+}
+
 function registerHandlers(
   registry: HandlerRegistry,
   spawnService: SpawnService,
@@ -785,6 +1000,7 @@ function registerHandlers(
   resolveOwner: () => Promise<LoopbackOwner>,
   pty: PtyHostService,
   sessionCap: number,
+  dataDir: string | undefined,
 ): void {
   /**
    * A21 — execution.liveness (C-1). The ONE authority on "is there a live
@@ -831,17 +1047,72 @@ function registerHandlers(
     };
     return json(result);
   });
+  /**
+   * execution.journal — the ONLY path from a teammate's on-disk CLI journal
+   * (`<dataDir>/journals/<sessionId>.jsonl`) to a browser. The session id is
+   * validated as a uuid and resolved as a `work_session` entity under the
+   * caller's claims — that entity read IS the authorization gate (RLS answers
+   * membership; an unreadable session is indistinguishable from a missing one,
+   * exactly as `execution.liveness` treats a foreign space). The file path is
+   * then constructed server-side; it never comes from the request.
+   */
+  registry.register('execution.journal', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const sessionId = requireUuidParam(ctx, 'workSessionId');
+    const sessions = await db.query<{ id: string }>(
+      claims,
+      `select e.id from public.entities e
+        where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
+      [sessionId],
+    );
+    if (!sessions[0]) {
+      throw new CollabError('not_found', `no such work session: ${sessionId}`);
+    }
+
+    const rawLimit = ctx.query.get('limit');
+    let limit = JOURNAL_LIMIT_DEFAULT;
+    if (rawLimit !== null && rawLimit !== '') {
+      const parsed = Number.parseInt(rawLimit, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new CollabError('invalid_input', `limit must be a positive integer, got ${rawLimit}`);
+      }
+      limit = Math.min(parsed, JOURNAL_LIMIT_MAX);
+    }
+
+    const rawBefore = ctx.query.get('before');
+    let before: number | null = null;
+    if (rawBefore !== null && rawBefore !== '') {
+      const parsed = Number.parseInt(rawBefore, 10);
+      // `before` is a 0-based line ordinal (see readSessionJournal), not a seq.
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new CollabError('invalid_input', `before must be a non-negative integer, got ${rawBefore}`);
+      }
+      before = parsed;
+    }
+
+    return json(await readSessionJournal(dataDir, sessionId, limit, before));
+  });
   registry.register('execution.spawn', async (ctx) => {
     const input = ctx.body as ExecutionSpawnInput;
 
     const owner = await resolveOwner();
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
+
+    // Any entity may be launched; the anchor is always a task. See
+    // `resolveAssignmentAnchors` — a task passes through untouched.
+    const taskIds = input.taskIds?.length
+      ? await rethrowing(() =>
+          resolveAssignmentAnchors(db, claims, input.spaceId, input.taskIds ?? []),
+        )
+      : undefined;
+
     const request: SpawnRequest = {
       spaceId: input.spaceId,
       teamMemberId: input.teamMemberId,
       parentSessionId: input.parentSessionId ?? null,
-      ...(input.taskIds ? { taskIds: input.taskIds } : {}),
+      ...(taskIds ? { taskIds } : {}),
       projectId: input.projectId ?? null,
       ...(input.workdir ? { workdir: input.workdir } : {}),
       ...(input.interactionProfileId ? { interactionProfileId: input.interactionProfileId } : {}),

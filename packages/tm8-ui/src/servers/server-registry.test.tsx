@@ -38,6 +38,37 @@ const STAGING: Connection = {
 const LIST_URL = '/v2/server-connections';
 
 /**
+ * Testing Library's default is 1000ms, which this file cannot rely on: every
+ * assertion here waits on a fetch -> setState -> re-render chain, and under a
+ * full parallel suite run that chain need not finish inside a second. A longer
+ * ceiling weakens nothing — the condition must still become true, it is merely
+ * allowed to take longer on a loaded machine.
+ *
+ * HONEST STATUS: this bound is UNFALSIFIED, NOT PROVEN. The flake was seen
+ * exactly once, by another lane, at 1083ms and 1068ms. Those durations sitting
+ * 68-83ms above the 1000ms default are the fingerprint of a wait bound
+ * expiring — a real race would fail fast, or at scattered durations, not twice
+ * within a hair of the exact default. That is the whole case for this fix.
+ *
+ * It is NOT confirmed. The reporting lane then tried hard to reproduce it: 12
+ * full-suite runs, three of them under 8 saturating CPU hogs on an 8-core box,
+ * AND three more with the 1000ms bound deliberately restored under that same
+ * load. Zero reproductions at either bound. So nobody has shown this fix
+ * causes anything. The original condition appears to have been a one-off load
+ * spike — in the very run that flaked, two heavyweight suites (gate.test.tsx,
+ * prompts.test.tsx) went from crashing-at-import to passing for the first
+ * time, sharply changing the parallel load profile while this file ran.
+ *
+ * IF IT EVER RECURS, THE DURATION IS THE MEASUREMENT — do not re-litigate:
+ *   fails at ~15s -> the wait bound really is the constraint. Raise it, or
+ *                    find what is genuinely that slow.
+ *   fails fast    -> NOT a timeout. Suspect a real race between the mount
+ *                    refresh and the focus effect, which both invoke the same
+ *                    `refresh` callback.
+ */
+const WAIT = { timeout: 15_000 } as const;
+
+/**
  * Backed by a MUTABLE array so a test can register a Server *after* mount —
  * which is the entire failure mode. A fixed response could not express it.
  */
@@ -75,7 +106,7 @@ describe('useServerRegistry revalidation', () => {
     vi.stubGlobal('fetch', mockFetch(state));
 
     const { result } = renderHook(() => useServerRegistry());
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.loading).toBe(false), WAIT);
 
     // The state the operator was stuck in: only the implicit local node.
     expect(result.current.servers.map((server) => server.id)).toEqual(['local']);
@@ -87,8 +118,9 @@ describe('useServerRegistry revalidation', () => {
       window.dispatchEvent(new Event('focus'));
     });
 
-    await waitFor(() =>
-      expect(result.current.servers.map((server) => server.id)).toEqual(['local', 'staging']),
+    await waitFor(
+      () => expect(result.current.servers.map((server) => server.id)).toEqual(['local', 'staging']),
+      WAIT,
     );
   });
 
@@ -98,7 +130,7 @@ describe('useServerRegistry revalidation', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const { result } = renderHook(() => useServerRegistry());
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.loading).toBe(false), WAIT);
 
     const afterMount = listCalls(fetchMock);
     expect(afterMount).toBeGreaterThan(0);
@@ -119,7 +151,7 @@ describe('useServerRegistry revalidation', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const { result } = renderHook(() => useServerRegistry());
-    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.loading).toBe(false), WAIT);
 
     const afterMount = listCalls(fetchMock);
     state.connections = [STAGING];
@@ -128,9 +160,10 @@ describe('useServerRegistry revalidation', () => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
 
-    await waitFor(() => expect(listCalls(fetchMock)).toBeGreaterThan(afterMount));
-    await waitFor(() =>
-      expect(result.current.servers.map((server) => server.id)).toEqual(['local', 'staging']),
+    await waitFor(() => expect(listCalls(fetchMock)).toBeGreaterThan(afterMount), WAIT);
+    await waitFor(
+      () => expect(result.current.servers.map((server) => server.id)).toEqual(['local', 'staging']),
+      WAIT,
     );
   });
 });

@@ -52,21 +52,26 @@ export const UPLOAD_CANCEL_UNAVAILABLE = reason(
 );
 
 /**
- * SEAM GAP, with a lane boundary on top. `files.download` (GET
+ * HOST GAP as of 2026-08-01 — it was a SEAM GAP until then, and the change is
+ * the point. `files.download` (GET
  * /v2/files/:fileEntityId/download) is contract-`v1` (catalog.ts:109) and is
  * the one read that returns raw bytes rather than the JSON envelope. The seam
- * exposes no read for it.
+ * carries it as of Amendment 3; what this card still lacks is a HOST that
+ * passes the resolver down.
  *
  * WHY THIS LANE DOES NOT SIMPLY EMIT AN `<a href="/v2/files/…">`: constructing
- * a transport URL is `src/data/**` work — a lane whose seat the user closed —
- * and same-origin luck is not a substitute for a seam. Instead the components
- * take an OPTIONAL `downloadHref` resolver from the host: supply one and every
- * download control on the screen becomes a real link; supply nothing and they
- * all carry this reason. See HANDOVER "Integration note".
+ * a transport URL is `src/data/**` work, and same-origin luck is not a
+ * substitute for a seam. That reading was upheld and then ACTED ON rather than
+ * lived with — seam Amendment 3 added `files.downloadHref`, built in the data
+ * layer off the catalog binding, so the URL now comes from the one place
+ * entitled to build it. These components still take an OPTIONAL `downloadHref`
+ * resolver from the host: supply one (every real host now can) and every
+ * download control becomes a real link; supply nothing and they carry this
+ * reason. See HANDOVER "Integration note".
  */
 export const DOWNLOAD_UNAVAILABLE = reason(
-  'Downloading has no executor in this build',
-  'files.download is a contract-v1 route and the seam exposes no read for it. Pass a downloadHref resolver to enable every download control on this screen at once.',
+  'Downloading is not connected to this Files card',
+  'the seam now carries files.downloadHref (Amendment 3, 2026-08-01) and the entity panel’s attachment strip uses it. Pass a downloadHref resolver to enable every download control on this screen at once.',
 );
 
 /**
@@ -200,7 +205,6 @@ export const ALL_FILES_NODE_REASONS: readonly UnavailableReason[] = [
  * be diffed when the seam grows.
  */
 export const MISSING_FILE_OPS: readonly { op: string; kind: 'seam-gap' | 'capability' }[] = [
-  { op: 'files.download', kind: 'seam-gap' },
   { op: 'messages.attachments.add', kind: 'seam-gap' },
   { op: 'messages.attachments.remove', kind: 'seam-gap' },
   { op: 'node.health', kind: 'capability' },

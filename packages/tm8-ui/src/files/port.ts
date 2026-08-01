@@ -7,12 +7,21 @@
  * and `nodePortFromSeam(seam, spaceId)` in the host; nothing in `files/`
  * imports a seam implementation.
  *
- * READS ONLY, and — as in settings-space — that is the finding, not an
- * omission. Every read here works against a real seam. Every WRITE these two
- * screens draw (upload, retry, cancel, attach, detach, provider add, provider
- * test, backup, restore) has no executor in `seam.commands`; they live in
+ * READS ONLY for the two SCREENS, and — as in settings-space — that is the
+ * finding, not an omission. Every read here works against a real seam. The
+ * writes those two screens draw (retry, provider add, provider test, backup,
+ * restore) still have no executor in `seam.commands`; they live in
  * `reasons.ts` as disabled-with-reason, and this port deliberately exposes no
  * method for them so a future component cannot quietly acquire one.
+ *
+ * THE ONE EXCEPTION, added 2026-08-01 with its own port: `attachmentsPort`.
+ * Upload was never a capability gap — the canonical grant lifecycle has been
+ * live in `seam.files` and used by the chat composer all along; what was
+ * missing was a HOST willing to hand it to a second surface. Download was a
+ * genuine seam gap and is now closed by seam Amendment 3 (`files.downloadHref`).
+ * Both are therefore reachable, and refusing them would now be the dishonest
+ * render. `reasons.ts` keeps its entries for the standalone specimen card,
+ * which still receives no dispatcher.
  *
  * The port is driven against an ACTUAL `createFixtureSeam()` in
  * `port-seam.test.tsx`, asserting on what comes BACK rather than on what was
@@ -23,6 +32,7 @@ import type { EntityId, MessageView, SpaceId } from '@tm8/contract';
 import type { ConnectionState, LivenessSnapshot, Seam, Unsubscribe } from '../data/seam';
 import { allKinds } from '../domain';
 import { attachedFiles, enrich, rowFromAttachment, rowFromEntity, type FileRow } from './model';
+import { createFileUploadTask, type FileUploadTask } from './upload';
 
 // ---------------------------------------------------------------------------
 // The file kind, reached through REGISTRY DATA rather than typed
@@ -117,6 +127,31 @@ export function filesPortFromSeam(seam: Seam, spaceId: SpaceId): FilesPort {
       const detail = await seam.entity(entityId);
       return attachedFiles(detail);
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The attachment port — what an ENTITY PANEL needs to show and add files
+// ---------------------------------------------------------------------------
+
+/**
+ * Two verbs and nothing else, because the strip does two things: resolve bytes
+ * for a file it already knows about, and start an upload against an anchor.
+ * The already-attached ROWS are not here — they come off the anchor's own
+ * `EntityDetail.connections` via `attachedFiles()`, which the panel already
+ * holds, so putting a read here would add a round-trip for data in hand.
+ */
+export interface AttachmentsPort {
+  /** Seam Amendment 3. Never null in this port: the seam always answers. */
+  downloadHref(fileEntityId: string): string;
+  startUpload(file: File, anchorId: EntityId): FileUploadTask;
+}
+
+export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): AttachmentsPort {
+  return {
+    downloadHref: (fileEntityId) => seam.files.downloadHref(fileEntityId as EntityId),
+    startUpload: (file, anchorId) =>
+      createFileUploadTask({ files: seam.files, file, spaceId, anchorId }),
   };
 }
 

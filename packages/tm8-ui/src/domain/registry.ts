@@ -21,6 +21,7 @@
  */
 import type { CoreEntityKind, EntityKind } from '@tm8/contract';
 import type {
+  ActionRef,
   CollectionMode,
   FilterSpec,
   KindConfig,
@@ -237,6 +238,7 @@ const ROWS: readonly KindConfig[] = [
   // -- task -----------------------------------------------------------------
   {
     kind: 'task',
+    launchable: true,
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
@@ -381,6 +383,7 @@ const ROWS: readonly KindConfig[] = [
   // -- doc ------------------------------------------------------------------
   {
     kind: 'doc',
+    launchable: true,
     label: 'Doc',
     labelPlural: 'Docs',
     icon: '▤',
@@ -526,6 +529,7 @@ const ROWS: readonly KindConfig[] = [
   // -- team_member ----------------------------------------------------------
   {
     kind: 'team_member',
+    launchable: true,
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
@@ -575,6 +579,7 @@ const ROWS: readonly KindConfig[] = [
   // -- pull_request ---------------------------------------------------------
   {
     kind: 'pull_request',
+    launchable: true,
     label: 'Pull request',
     labelPlural: 'Pull requests',
     icon: '⑂',
@@ -739,6 +744,7 @@ const ROWS: readonly KindConfig[] = [
   // -- project (restricted: generic create/patch/delete/move refused) -------
   {
     kind: 'project',
+    launchable: true,
     label: 'Project',
     labelPlural: 'Projects',
     icon: '⬢',
@@ -824,6 +830,7 @@ const ROWS: readonly KindConfig[] = [
   // -- memory (scope-carrying claims; staleness derived server-side) --------
   {
     kind: 'memory',
+    launchable: true,
     label: 'Memory',
     labelPlural: 'Memories',
     icon: '◈',
@@ -849,6 +856,7 @@ const ROWS: readonly KindConfig[] = [
   // -- artifact (versioned bundle; bytes served via preview/export, not here) --
   {
     kind: 'artifact',
+    launchable: true,
     label: 'Artifact',
     labelPlural: 'Artifacts',
     icon: '❖',
@@ -878,6 +886,7 @@ const ROWS: readonly KindConfig[] = [
   // -- worktree (server-provisioned Git checkout; lifecycle rides patch) ----
   {
     kind: 'worktree',
+    launchable: true,
     label: 'Worktree',
     labelPlural: 'Worktrees',
     icon: '⎇',
@@ -933,7 +942,35 @@ const ROWS: readonly KindConfig[] = [
   },
 ];
 
-const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(ROWS.map((row) => [row.kind, row]));
+/**
+ * `launchable: true` → the `run` action, in every place that renders one.
+ *
+ * The Run button is drawn from three independent arrays — `list.rowActions` (the
+ * tile), `panel.primaries` (the detail header) and `palette.primaryAction` — and
+ * before this every one of them was hand-written under `kind: 'task'`. That made
+ * "which kinds can launch?" a question with three possible answers and no
+ * authority, and adding a kind meant remembering all three. Deriving them here
+ * means a kind opts in ONCE and cannot end up half-wired.
+ *
+ * Additive and idempotent: a row that already names `run` keeps its own ordering
+ * (task lists `['run','complete']`, which is deliberate — Run leads), and a row
+ * without the flag is returned untouched rather than rebuilt.
+ */
+function applyLaunch(row: KindConfig): KindConfig {
+  if (!row.launchable) return row;
+  const withRun = (actions: readonly ActionRef[] | undefined): ActionRef[] =>
+    actions?.includes('run') ? [...actions] : ['run', ...(actions ?? [])];
+  return {
+    ...row,
+    list: { ...row.list, rowActions: withRun(row.list.rowActions) },
+    panel: { ...row.panel, primaries: withRun(row.panel.primaries) },
+    palette: { ...row.palette, primaryAction: row.palette?.primaryAction ?? 'run' },
+  };
+}
+
+const KINDS: readonly KindConfig[] = ROWS.map(applyLaunch);
+
+const BY_KIND: ReadonlyMap<string, KindConfig> = new Map(KINDS.map((row) => [row.kind, row]));
 
 const FALLBACK = BY_KIND.get(CUSTOM_KIND_FALLBACK) as KindConfig;
 
@@ -948,17 +985,17 @@ export function getKind(kind: string): KindConfig {
 
 /** Every row, fallback included. */
 export function allKinds(): KindConfig[] {
-  return [...ROWS];
+  return [...KINDS];
 }
 
 /** Rows the list-panel kind selector offers: `strategy === 'collection'`. */
 export function collectionKinds(): KindConfig[] {
-  return ROWS.filter((row) => row.strategy === 'collection' && row.kind !== CUSTOM_KIND_FALLBACK);
+  return KINDS.filter((row) => row.strategy === 'collection' && row.kind !== CUSTOM_KIND_FALLBACK);
 }
 
 /** Slug → row, for the `k/{slug}` route and `origin` validation. */
 export function kindBySlug(slug: string): KindConfig | null {
-  return ROWS.find((row) => row.slug === slug) ?? null;
+  return KINDS.find((row) => row.slug === slug) ?? null;
 }
 
 /** The `c:{name}` → `c-{name}` slug for a custom kind, collision-checked by callers. */

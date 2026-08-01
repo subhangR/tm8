@@ -46,7 +46,7 @@ import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/
 import { emitCommandHelp } from '../src/commands/help.js';
 import { createOutput } from '../src/output.js';
 
-const EXPECTED_ROWS = 119;
+const EXPECTED_ROWS = 120;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -112,7 +112,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 119 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 120 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -151,10 +151,10 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('115 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('116 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 115, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 116, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

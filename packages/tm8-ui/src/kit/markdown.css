@@ -174,12 +174,33 @@
   white-space: nowrap;
 }
 
-/* --- images --------------------------------------------------------------- */
+/* --- images ---------------------------------------------------------------
+   The cap is on the ELEMENT, not just on `.md-img`: an image that escaped the
+   override still must not widen the reading column. */
 .cv2-root .md-root img {
   max-width: 100%;
   height: auto;
   border-radius: var(--pn-r-sm);
 }
+
+/* The two refusals and the remote link share one chip, because to a reader
+   they are one fact: something is there and it is not being shown. It reads as
+   a small inline label rather than a broken-image box — see kit/Markdown's
+   `img` override for why the request is never made. */
+.cv2-root .md-img-chip {
+  display: inline-block;
+  max-width: 100%;
+  font-family: var(--pn-ui);
+  font-size: var(--pn-fs-sm);
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink-3);
+  background: var(--pn-hover);
+  border: 1px dashed var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  padding: 3px 8px;
+  overflow-wrap: anywhere;
+}
+.cv2-root a.md-img-chip { color: var(--pn-brand); }
 
 /* --- mermaid diagrams ------------------------------------------------------
    The diagram is CENTRED and allowed to scroll sideways rather than being

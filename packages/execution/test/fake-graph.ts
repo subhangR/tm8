@@ -197,9 +197,17 @@ export class FakeGraph implements GraphPort {
   /** The stored session facts `loadWorkSessionForResume` answers with. Set by the test. */
   resumeInfo: WorkSessionResumeInfo | null = null;
   /** Resume calls the RPC saw. */
-  readonly resumes: Array<{ sessionId: string; clientMutationId: string | null }> = [];
+  readonly resumes: Array<{
+    sessionId: string;
+    clientMutationId: string | null;
+    nodeId: string | null;
+  }> = [];
   /** Native ids recorded, in order. */
   readonly nativeIds: Array<{ sessionId: string; nativeSessionId: string }> = [];
+  /** Set false to simulate write-once refusing a colliding native id. */
+  nativeIdWriteAccepted = true;
+  /** Set true to make the resume RPC answer as a ledger replay. */
+  resumeReplayed = false;
 
   async loadWorkSessionForResume(
     auth: GraphAuth,
@@ -214,13 +222,13 @@ export class FakeGraph implements GraphPort {
 
   async resumeWorkSession(
     auth: GraphAuth,
-    input: { sessionId: string; clientMutationId: string | null },
+    input: { sessionId: string; clientMutationId: string | null; nodeId: string | null },
   ): Promise<ResumeWorkSessionResult> {
     this.authSeen.push(auth);
     this.resumes.push(input);
     return {
       commandResult: { entityId: input.sessionId, patches: [input.sessionId] },
-      replayed: false,
+      replayed: this.resumeReplayed,
     };
   }
 
@@ -228,8 +236,9 @@ export class FakeGraph implements GraphPort {
     auth: GraphAuth,
     sessionId: string,
     nativeSessionId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.authSeen.push(auth);
     this.nativeIds.push({ sessionId, nativeSessionId });
+    return this.nativeIdWriteAccepted;
   }
 }

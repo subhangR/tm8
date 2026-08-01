@@ -40,9 +40,11 @@ import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
+import { attachmentsPortFromSeam } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
+import { SessionDebugBody } from '../panels/bodies/SessionDebugBody';
 import './entity-view.css';
 
 export interface EntityViewProps {
@@ -122,6 +124,16 @@ export function EntityView(props: EntityViewProps) {
   }, [data, kind]);
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+
+  /*
+   * ATTACHMENTS, one port for the whole view. Memoized on the seam+space so
+   * the panel's strip does not get a fresh `startUpload` identity on every
+   * keystroke elsewhere in the view.
+   */
+  const attachments = useMemo(
+    () => attachmentsPortFromSeam(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
   const config = getKind(kind);
 
   /* Authoring mount 7a, EntityView host: +New in the list head creates for
@@ -243,6 +255,8 @@ export function EntityView(props: EntityViewProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the list already"
       liveness={data.livenessOf(selectedId)}
       livenessOf={data.livenessOf}
+      attachments={attachments}
+      onAttachmentUploaded={() => props.data.pull?.(selectedId)}
       viewerMemberId={props.viewerMemberId}
       contentSurface={contentSurfaces[selectedId] ?? null}
       onContentSurfaceChange={(surface) => {
@@ -262,6 +276,13 @@ export function EntityView(props: EntityViewProps) {
           onSwitchToTerminal={() => {
             setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));
           }}
+        />
+      ) : undefined}
+      debugSurface={detail ? (
+        <SessionDebugBody
+          seam={data.seam}
+          sessionId={selectedId}
+          live={data.livenessOf(selectedId) === 'live'}
         />
       ) : undefined}
       messages={messages}
@@ -364,6 +385,8 @@ export function EntityView(props: EntityViewProps) {
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
                 livenessOf={data.livenessOf}
+                attachments={attachments}
+                onAttachmentUploaded={() => props.data.pull?.(aux.id)}
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 commands={data.seam.commands}

@@ -241,14 +241,18 @@ export interface GraphPort {
    */
   resumeWorkSession(
     auth: GraphAuth,
-    input: { sessionId: string; clientMutationId: string | null },
+    input: { sessionId: string; clientMutationId: string | null; nodeId: string | null },
   ): Promise<ResumeWorkSessionResult>;
-  /** `public.execution_record_native_session` — write-once native-id capture. */
+  /**
+   * `public.execution_record_native_session` — write-once native-id capture.
+   * Resolves `false` when the row already held a DIFFERENT id, which is a
+   * capture bug upstream and must be surfaced, never swallowed.
+   */
   recordNativeSessionId(
     auth: GraphAuth,
     sessionId: string,
     nativeSessionId: string,
-  ): Promise<void>;
+  ): Promise<boolean>;
   /** `public.record_execution_command` — the ledger row for prompt/terminate. */
   recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown>;
   /**

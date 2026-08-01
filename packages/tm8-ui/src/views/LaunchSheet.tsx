@@ -24,8 +24,11 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
 import {
+  accessModeLabel,
   agentTool,
+  describeAccessMode,
   LAUNCH_MODES,
+  nextAccessMode,
   modelsFor,
   type LaunchCapacity,
   type LaunchConfig,
@@ -226,6 +229,26 @@ export function LaunchSheet(props: LaunchSheetProps) {
             <span className="ls__rowtext">
               <span className="ls__rowname">Access</span>
               <span className="ls__rowsub">approval and sandbox posture</span>
+              {/* The same one-click cycle the quick config carries, so the two
+                  surfaces change posture the same way. The select stays: it is
+                  how you jump straight to a posture instead of stepping to it. */}
+              <button
+                type="button"
+                className={`ls__accessbtn ls__accessbtn--${accessMode}`}
+                data-testid="launch-access-toggle"
+                data-access-mode={accessMode}
+                title={`${describeAccessMode(accessMode)} — click to change`}
+                aria-label={`Access mode: ${describeAccessMode(accessMode)}. Click to change.`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  // The sheet has committed to an explicit posture, so the
+                  // cycle's `null` (inherit) step is not reachable here —
+                  // skipping it keeps every click a visible change.
+                  setAccessMode((current) => nextAccessMode(current) ?? 'plan');
+                }}
+              >
+                {accessModeLabel(accessMode)}
+              </button>
               <select
                 value={accessMode}
                 data-testid="launch-access-mode"

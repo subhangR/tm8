@@ -16,8 +16,8 @@ export const PANEL_TABS: readonly PanelTab[] = ['content', 'discussion', 'connec
  * Per-panel content surface, meaningful only for work_session panels. NEVER
  * expands the `t` vocabulary. Phase 1 preserves-and-clamps `chat` (D12).
  */
-export type ContentSurface = 'terminal' | 'chat';
-export const CONTENT_SURFACES: readonly ContentSurface[] = ['terminal', 'chat'];
+export type ContentSurface = 'terminal' | 'chat' | 'debug';
+export const CONTENT_SURFACES: readonly ContentSurface[] = ['terminal', 'chat', 'debug'];
 
 /** `origin = {slug}[.{mode}]`, registry-validated. */
 export interface Origin {

@@ -1,0 +1,269 @@
+/* ==========================================================================
+   SESSION DEBUG — the CLI command-journal surface below the terminal.
+
+   COLOURS ARE TOKENS. Every value is a declared `--pn-*` token; there is no
+   raw hex here, so `src/hex-ban.test.ts` (which scans this file) finds nothing.
+   Failure red is `--pn-block`, the functional-status token the collab pills
+   already use for the blocked/failed tone.
+
+   SCOPE. Every selector leads with `.cv2-root`, per the mandatory rule — the
+   surface only ever renders inside the panel's `.cv2-root` theme/zoom scope.
+
+   The commands table is WIDE. It scrolls inside its own `overflow-x:auto`
+   container (`.pn-debug__scroll`) so the panel body itself never scrolls
+   horizontally.
+   ========================================================================== */
+
+.cv2-root .pn-debug {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pn-debug__loading,
+.cv2-root .pn-debug__no-rows,
+.cv2-root .pn-debug__more {
+  margin: var(--pn-space-4);
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-debug__empty {
+  margin: var(--pn-space-4);
+}
+
+/* --- header strip -------------------------------------------------------- */
+
+.cv2-root .pn-debug__header {
+  flex: none;
+  padding: var(--pn-space-3) var(--pn-space-4);
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+
+.cv2-root .pn-debug__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-5);
+  align-items: baseline;
+}
+
+.cv2-root .pn-debug__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cv2-root .pn-debug__stat-value {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-title);
+  color: var(--pn-ink);
+  line-height: var(--pn-lh-tight);
+}
+
+.cv2-root .pn-debug__stat[data-tone='bad'] .pn-debug__stat-value {
+  color: var(--pn-block);
+}
+
+.cv2-root .pn-debug__stat-label {
+  font: 600 10px/1 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__boundary {
+  margin: var(--pn-space-3) 0 0;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__boundary code {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink-2);
+}
+
+/* --- the wide table, scrolling inside its own container ------------------ */
+
+.cv2-root .pn-debug__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.cv2-root .pn-debug__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  white-space: nowrap;
+}
+
+.cv2-root .pn-debug__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--pn-surface);
+  padding: var(--pn-space-2) var(--pn-space-3);
+  text-align: left;
+  font: 600 10px/1 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-debug__table td {
+  padding: var(--pn-space-2) var(--pn-space-3);
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-ink-2);
+  vertical-align: top;
+}
+
+.cv2-root .pn-debug__num { text-align: right; font-variant-numeric: tabular-nums; }
+.cv2-root .pn-debug__num[data-tone='bad'] { color: var(--pn-block); font-weight: 600; }
+
+.cv2-root .pn-debug__col-expand { width: 1.5em; text-align: center; }
+
+.cv2-root .pn-debug__row[data-failed='true'] .pn-debug__cmd code { color: var(--pn-block); }
+
+.cv2-root .pn-debug__cmd code {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-debug__time { color: var(--pn-ink-3); }
+
+.cv2-root .pn-debug__toggle {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  padding: 0;
+  line-height: 1;
+}
+.cv2-root .pn-debug__toggle:hover { color: var(--pn-ink); }
+
+/* --- the expanded detail row -------------------------------------------- */
+
+.cv2-root .pn-debug__detail-row td {
+  background: var(--pn-hover);
+  white-space: normal;
+}
+
+.cv2-root .pn-debug__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) 0;
+}
+
+.cv2-root .pn-debug__kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px var(--pn-space-3);
+  margin: 0;
+}
+
+.cv2-root .pn-debug__kv dt {
+  font: 600 10px/1.4 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-debug__kv dd code,
+.cv2-root .pn-debug__pre {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-debug__err code { color: var(--pn-block); }
+
+.cv2-root .pn-debug__sample {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-root .pn-debug__sample-label {
+  font: 600 10px/1.4 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__trunc {
+  color: var(--pn-wait);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.cv2-root .pn-debug__pre {
+  margin: 0;
+  padding: var(--pn-space-2) var(--pn-space-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-debug__sample-empty,
+.cv2-root .pn-debug__no-calls {
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+/* --- the per-call sub-table --------------------------------------------- */
+
+.cv2-root .pn-debug__calls {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-root .pn-debug__calls-label {
+  font: 600 10px/1.4 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__calls-table {
+  border-collapse: collapse;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-debug__calls-table th {
+  text-align: left;
+  padding: 2px var(--pn-space-3) 2px 0;
+  font-weight: 600;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__calls-table td {
+  padding: 2px var(--pn-space-3) 2px 0;
+  border: none;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-debug__calls-table code { color: var(--pn-ink); }

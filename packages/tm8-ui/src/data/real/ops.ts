@@ -51,6 +51,7 @@ import {
   type EntitySummary,
   type ExecutionPromptInput,
   type ExecutionSpawnInput,
+  type ExecutionResumeInput,
   type ExecutionTerminateInput,
   type FileUploadAbortInput,
   type FileUploadCompleteInput,
@@ -73,6 +74,7 @@ import {
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
+  type SessionJournalPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -80,7 +82,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { FeedOpts, IdentityView, LivenessSnapshot, PageOpts } from '../seam';
+import type { FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -210,6 +212,15 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> {
       return http.call<Page<HandoffView>>('handoffs.list', { params: { workSessionId }, query: pageQuery(opts) });
+    },
+    journal(workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> {
+      // `http.call` binds the path from the catalog row (`execution.journal`);
+      // no URL literal. `undefined` query keys are dropped by http.ts, so a
+      // paging-less first read sends neither `limit` nor `before`.
+      return http.call<SessionJournalPage>('execution.journal', {
+        params: { workSessionId },
+        query: { limit: opts?.limit, before: opts?.before },
+      });
     },
 
     inbox(opts?: PageOpts): Promise<Page<NotificationItem>> {
@@ -376,6 +387,17 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('files.uploadAbort', { params: { uploadId }, body: input });
     },
 
+    /**
+     * The download URL, built from the CATALOG binding rather than a typed
+     * path — so if `files.download` ever moves, this moves with it and cannot
+     * silently 404. No request is made here: the browser makes it, as an
+     * `<img src>` or an `<a href>`, which is the only way to reach a route
+     * that answers bytes instead of the JSON envelope.
+     */
+    fileDownloadHref(fileEntityId: EntityId): string {
+      return `${http.baseUrl}${bindPath('files.download', { fileEntityId })}`;
+    },
+
     /** Answers `MessageBatchResult` — the seam's union member, passed through. */
     postMessage(input: PostMessageInput): Promise<MessageBatchResult> {
       return http.call<MessageBatchResult>('messages.post', { body: input });
@@ -429,6 +451,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.terminate', { params: { id }, body: input });
+    },
+
+    resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult> {
+      return http.call<CommandResult>('execution.resume', { params: { id }, body: input });
     },
   };
 }

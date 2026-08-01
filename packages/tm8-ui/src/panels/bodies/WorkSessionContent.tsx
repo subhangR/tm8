@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import type { ContentSurface } from '../../routes';
 
-const SURFACES: readonly ContentSurface[] = ['terminal', 'chat'];
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
+
+const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
+  terminal: 'Terminal',
+  chat: 'Chat',
+  debug: 'Debug',
+};
 
 export interface WorkSessionContentProps {
   sessionId: string;
@@ -14,6 +19,14 @@ export interface WorkSessionContentProps {
   requestedSurface?: ContentSurface | null;
   terminal: ReactNode;
   chat: ReactNode;
+  /**
+   * The DEBUG surface (the session's CLI journal). Always offered — it does not
+   * depend on the immutable chat pin — so the switch shows a Debug chip whether
+   * or not Chat exists. Rendered ONLY while selected so its poll stops the
+   * moment the viewer leaves it (the "poll only while selected" half of the
+   * honesty rule); the terminal, by contrast, stays mounted throughout.
+   */
+  debug?: ReactNode;
   onSurfaceChange?: (surface: ContentSurface) => void;
   /**
    * USER RULING 2026-07-31 — "the terminal, chat tab should be at the top row
@@ -39,9 +52,10 @@ export interface WorkSessionContentProps {
 
 /**
  * The work-session Content switch owns presentation only. The immutable pin
- * decides whether Chat exists; the launch provider/model never enters this
- * component. Both panes stay mounted after render so xterm and its PTY
- * transport keep exactly the same component instance while Chat is visible.
+ * decides whether Chat exists; DEBUG always exists; the launch provider/model
+ * never enters this component. Terminal (and Chat, once shown) stay mounted
+ * after render so xterm and its PTY transport keep exactly the same component
+ * instance while another surface is visible.
  */
 export function WorkSessionContent({
   sessionId,
@@ -50,20 +64,26 @@ export function WorkSessionContent({
   requestedSurface = null,
   terminal,
   chat,
+  debug,
   onSurfaceChange,
   switchSlot = null,
 }: WorkSessionContentProps) {
   const chatAvailable = profile?.chatEnabled === true;
+  // The offered surfaces, in fixed order. Terminal is always first (and the
+  // default); Chat is gated by the immutable pin; Debug is always last.
+  const surfaces = useMemo<ContentSurface[]>(
+    () => ['terminal', ...(chatAvailable ? (['chat'] as const) : []), 'debug'],
+    [chatAvailable],
+  );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
   const [surface, setSurface] = useState<ContentSurface>(() =>
-    resolveInitialSurface({ requestedSurface, profile, preferenceKey }),
+    resolveInitialSurface({ requestedSurface, chatAvailable, preferenceKey }),
   );
   const [chatMounted, setChatMounted] = useState(() =>
-    resolveInitialSurface({ requestedSurface, profile, preferenceKey }) === 'chat',
+    resolveInitialSurface({ requestedSurface, chatAvailable, preferenceKey }) === 'chat',
   );
   const previousRequest = useRef(requestedSurface);
-  const terminalTab = useRef<HTMLButtonElement>(null);
-  const chatTab = useRef<HTMLButtonElement>(null);
+  const tabRefs = useRef<Partial<Record<ContentSurface, HTMLButtonElement | null>>>({});
   const id = useId();
 
   // External route hydration remains authoritative. A missing route value is
@@ -96,86 +116,77 @@ export function WorkSessionContent({
       writePreference(preferenceKey, next);
       onSurfaceChange?.(next);
       if (focus) {
-        queueMicrotask(() => (next === 'terminal' ? terminalTab : chatTab).current?.focus());
+        queueMicrotask(() => tabRefs.current[next]?.focus());
       }
     },
     [chatAvailable, onSurfaceChange, preferenceKey],
   );
 
+  // Roving tabindex over the DYNAMIC surface list — the arrow keys walk
+  // whatever chips are offered (two or three), not a hardcoded terminal/chat
+  // flip.
   const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!chatAvailable) return;
     const current = event.currentTarget.dataset.surface as ContentSurface;
+    const index = surfaces.indexOf(current);
+    if (index === -1) return;
     let next: ContentSurface | null = null;
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-      next = current === 'terminal' ? 'chat' : 'terminal';
+    if (event.key === 'ArrowLeft') {
+      next = surfaces[(index - 1 + surfaces.length) % surfaces.length] ?? null;
+    } else if (event.key === 'ArrowRight') {
+      next = surfaces[(index + 1) % surfaces.length] ?? null;
     } else if (event.key === 'Home') {
-      next = SURFACES[0];
+      next = surfaces[0] ?? null;
     } else if (event.key === 'End') {
-      next = SURFACES[SURFACES.length - 1];
+      next = surfaces[surfaces.length - 1] ?? null;
     }
     if (!next) return;
     event.preventDefault();
     select(next, true);
   };
 
-  if (!chatAvailable) {
-    return (
-      <div className="pn-work-session-content" data-testid="work-session-content">
-        {terminal}
-      </div>
-    );
-  }
+  const tabId = (s: ContentSurface) => `${id}-${s}-tab`;
+  const panelId = (s: ContentSurface) => `${id}-${s}-panel`;
 
-  const terminalTabId = `${id}-terminal-tab`;
-  const chatTabId = `${id}-chat-tab`;
-  const terminalPanelId = `${id}-terminal-panel`;
-  const chatPanelId = `${id}-chat-panel`;
+  // The switch shows whenever more than one surface is offered. With Debug
+  // always present that is always true, but the condition is kept honest so a
+  // single-surface session would render its one pane with no dead switch.
+  const showSwitch = surfaces.length > 1;
 
-  const switchEl = (
+  const switchEl = showSwitch ? (
     <div
       className={switchSlot ? 'pn-surface-switch pn-surface-switch--bar' : 'pn-surface-switch'}
       role="tablist"
       aria-label="Work session surface"
       data-testid="work-session-surface-switch"
     >
-      <button
-        ref={terminalTab}
-        id={terminalTabId}
-        type="button"
-        role="tab"
-        className="pn-surface-switch__tab"
-        data-surface="terminal"
-        aria-selected={surface === 'terminal'}
-        aria-controls={terminalPanelId}
-        tabIndex={surface === 'terminal' ? 0 : -1}
-        onClick={() => select('terminal')}
-        onKeyDown={onTabKeyDown}
-      >
-        Terminal
-      </button>
-      <button
-        ref={chatTab}
-        id={chatTabId}
-        type="button"
-        role="tab"
-        className="pn-surface-switch__tab"
-        data-surface="chat"
-        aria-selected={surface === 'chat'}
-        aria-controls={chatPanelId}
-        tabIndex={surface === 'chat' ? 0 : -1}
-        onClick={() => select('chat')}
-        onKeyDown={onTabKeyDown}
-      >
-        Chat
-      </button>
+      {surfaces.map((s) => (
+        <button
+          key={s}
+          ref={(node) => {
+            tabRefs.current[s] = node;
+          }}
+          id={tabId(s)}
+          type="button"
+          role="tab"
+          className="pn-surface-switch__tab"
+          data-surface={s}
+          aria-selected={surface === s}
+          aria-controls={panelId(s)}
+          tabIndex={surface === s ? 0 : -1}
+          onClick={() => select(s)}
+          onKeyDown={onTabKeyDown}
+        >
+          {SURFACE_LABEL[s]}
+        </button>
+      ))}
     </div>
-  );
+  ) : null;
 
   return (
     <div className="pn-work-session-content" data-testid="work-session-content" data-surface={surface}>
-      {switchSlot ? createPortal(switchEl, switchSlot) : switchEl}
+      {switchEl ? (switchSlot ? createPortal(switchEl, switchSlot) : switchEl) : null}
 
-      {profile.compatibility === 'unknown_template' ? (
+      {chatAvailable && profile?.compatibility === 'unknown_template' ? (
         <p className="pn-surface-compat" role="status">
           This session uses a newer interaction template. Terminal opens first; Chat uses the core-safe
           message feed and composer.{' '}
@@ -192,9 +203,9 @@ export function WorkSessionContent({
       ) : null}
 
       <div
-        id={terminalPanelId}
+        id={panelId('terminal')}
         role="tabpanel"
-        aria-labelledby={terminalTabId}
+        aria-labelledby={tabId('terminal')}
         aria-hidden={surface !== 'terminal'}
         className="pn-work-session-content__surface"
         data-active={surface === 'terminal' ? 'true' : 'false'}
@@ -202,16 +213,31 @@ export function WorkSessionContent({
       >
         {terminal}
       </div>
+      {chatAvailable ? (
+        <div
+          id={panelId('chat')}
+          role="tabpanel"
+          aria-labelledby={tabId('chat')}
+          aria-hidden={surface !== 'chat'}
+          className="pn-work-session-content__surface"
+          data-active={surface === 'chat' ? 'true' : 'false'}
+          data-testid="work-session-chat-surface"
+        >
+          {chatMounted ? chat : null}
+        </div>
+      ) : null}
       <div
-        id={chatPanelId}
+        id={panelId('debug')}
         role="tabpanel"
-        aria-labelledby={chatTabId}
-        aria-hidden={surface !== 'chat'}
+        aria-labelledby={tabId('debug')}
+        aria-hidden={surface !== 'debug'}
         className="pn-work-session-content__surface"
-        data-active={surface === 'chat' ? 'true' : 'false'}
-        data-testid="work-session-chat-surface"
+        data-active={surface === 'debug' ? 'true' : 'false'}
+        data-testid="work-session-debug-surface"
       >
-        {chatMounted ? chat : null}
+        {/* Mounted only while selected: unmounting is how the journal poll
+            stops the instant the viewer switches away. */}
+        {surface === 'debug' ? debug : null}
       </div>
     </div>
   );
@@ -219,26 +245,38 @@ export function WorkSessionContent({
 
 function resolveInitialSurface({
   requestedSurface,
-  profile,
+  chatAvailable,
   preferenceKey,
 }: {
   requestedSurface: ContentSurface | null;
-  profile?: WorkSessionInteractionProfileProjection | null;
+  chatAvailable: boolean;
   preferenceKey: string;
 }): ContentSurface {
-  if (!profile?.chatEnabled) return 'terminal';
-  if (requestedSurface === 'terminal' || requestedSurface === 'chat') return requestedSurface;
+  // The route wins first, but a `chat` request on a session without Chat falls
+  // through to the terminal default.
+  if (requestedSurface === 'terminal' || requestedSurface === 'debug') return requestedSurface;
+  if (requestedSurface === 'chat' && chatAvailable) return 'chat';
   const saved = readPreference(preferenceKey);
-  if (saved) return saved;
-  if (profile.compatibility === 'unknown_template') return 'terminal';
-  return profile.initialContentSurface;
+  if (saved === 'debug') return 'debug';
+  if (saved === 'chat' && chatAvailable) return 'chat';
+  if (saved === 'terminal') return 'terminal';
+  // USER RULING 2026-08-01 — "I want all the default to be only terminal. I
+  // should still be able to switch, but the default is always terminal."
+  //
+  // The pinned projection's `initialContentSurface` no longer opens the panel.
+  // The pin still decides whether Chat EXISTS (chatEnabled); it no longer
+  // decides what is shown first. Route (?contentSurface) and the viewer's own
+  // prior click on this session still outrank this, so switching works and
+  // sticks exactly as before — a freshly spawned session, which has neither,
+  // opens on the terminal.
+  return 'terminal';
 }
 
 function readPreference(key: string): ContentSurface | null {
   if (typeof window === 'undefined') return null;
   try {
     const saved = window.localStorage.getItem(key);
-    return saved === 'terminal' || saved === 'chat' ? saved : null;
+    return saved === 'terminal' || saved === 'chat' || saved === 'debug' ? saved : null;
   } catch {
     return null;
   }

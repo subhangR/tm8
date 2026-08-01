@@ -391,6 +391,52 @@ describe('what Launch actually commits', () => {
     expect(JSON.stringify(input)).toContain(subject.id);
   });
 
+  it('cycles the access toggle and carries the chosen posture into the spawn', () => {
+    // The whole point of the toggle: bypass must be reachable without the
+    // sheet, and what the chip SAYS must be what the spawn input carries.
+    const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        subject={subject}
+        spaceId={FIXTURE_SPACE_ID}
+        teammates={TEAMMATES}
+        onSpawn={onSpawn}
+        clientMutationId="m:access"
+      />,
+    );
+    const toggle = getByTestId('launch-access-toggle');
+
+    // Starts on the inherit step — a posture nobody chose is not asserted.
+    expect(toggle.getAttribute('data-access-mode')).toBe('default');
+
+    fireEvent.click(toggle); // plan
+    fireEvent.click(toggle); // safe
+    fireEvent.click(toggle); // acceptEdits
+    fireEvent.click(toggle); // fullAccess
+    expect(toggle.getAttribute('data-access-mode')).toBe('fullAccess');
+    expect(toggle.textContent).toContain('Bypass');
+
+    fireEvent.click(getByTestId('launch-commit'));
+    expect(onSpawn.mock.calls[0][0].accessMode).toBe('fullAccess');
+  });
+
+  it('omits accessMode entirely while the toggle sits on its default step', () => {
+    // An inherited posture must not travel as an explicit one: sending "safe"
+    // here would silently override the teammate and node defaults.
+    const onSpawn = vi.fn<(input: ExecutionSpawnInput) => void>();
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        subject={subject}
+        spaceId={FIXTURE_SPACE_ID}
+        teammates={TEAMMATES}
+        onSpawn={onSpawn}
+        clientMutationId="m:access-default"
+      />,
+    );
+    fireEvent.click(getByTestId('launch-commit'));
+    expect(onSpawn.mock.calls[0][0].accessMode).toBeUndefined();
+  });
+
   it('re-seeds tool and model together when the teammate changes', () => {
     // Patching one field would leave the previous persona's model attached to
     // the new one — a config that looks deliberate and is not.

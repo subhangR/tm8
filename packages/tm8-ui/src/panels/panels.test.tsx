@@ -175,10 +175,11 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar).not.toBeNull();
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
-    // Still the two chips, still switchable — relocating a control may not
-    // quietly cost it its behaviour.
+    // Still switchable in the bar — relocating a control may not quietly cost
+    // it its behaviour. Debug is the always-present third chip (it does not
+    // depend on the chat pin), so a chat-enabled session shows all three.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat']);
+    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -1062,5 +1063,105 @@ describe('share drop target — refusing honestly', () => {
     // Un-defaulted dragover is what makes the platform show "no drop" and fire
     // no drop event — so there is no window in which we appear to accept.
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+/**
+ * ATTACHMENTS IN THE CONTENT BODY — the wiring test, not a component test.
+ *
+ * `AttachmentStrip.test.tsx` proves the component. THIS file proves the thing
+ * that four green suites can hide (the four-links lesson): that the PANEL
+ * actually mounts it, in the content body, for every kind, without adding a
+ * fifth tab. The strip was correct and unmounted for exactly as long as
+ * nobody asserted the mount.
+ */
+describe('EntityDetailPanel — attachments ride in the content body (D3 intact)', () => {
+  const anyDetail = Object.values(fixtureDetails).find((d) => d.deletedAt == null)!;
+
+  /** A file peer on an `attached_to` edge — the shape `edges.list` answers. */
+  function withAttachment(detail: EntityDetail, over?: Partial<{ name: string; mime: string }>): EntityDetail {
+    const filePeer = {
+      ...(anyDetail as unknown as EntitySummary),
+      id: 'file-attached-1',
+      title: over?.name ?? 'diagram.png',
+      state: {
+        kind: 'file',
+        name: over?.name ?? 'diagram.png',
+        mimeType: over?.mime ?? 'image/png',
+        sizeBytes: 4096,
+      },
+    } as unknown as EntitySummary;
+    return {
+      ...detail,
+      connections: {
+        ...detail.connections,
+        incoming: [
+          ...detail.connections.incoming,
+          {
+            type: 'attached_to',
+            direction: 'incoming',
+            edges: [{ source: filePeer, target: detail as unknown as EntitySummary }],
+          } as unknown as EntityDetail['connections']['incoming'][number],
+        ],
+      },
+    };
+  }
+
+  it('STILL FOUR TABS with an attachment present — no fifth tab, ever', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={withAttachment(anyDetail)} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(within(getByTestId('panel-tabs')).getAllByRole('tab')).toHaveLength(4);
+  });
+
+  it('renders the attached file INSIDE the panel, with a working download link', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={withAttachment(anyDetail)}
+        reasons={REASONS}
+        ctx={ctx}
+        attachments={{
+          downloadHref: (id) => `/v2/files/${id}/download`,
+          startUpload: () => { throw new Error('unused'); },
+        }}
+      />,
+    );
+    const panel = getByTestId('entity-detail-panel');
+    const strip = within(panel).getByTestId('attachment-strip');
+    const img = within(strip).getByAltText('diagram.png') as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('/v2/files/file-attached-1/download');
+    expect(within(strip).getByTestId('attachment-file-input')).toBeTruthy();
+  });
+
+  it('renders NOTHING for an entity with no attachments and no uploader', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={anyDetail} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attachment-strip')).toBeNull();
+  });
+
+  it('is kind-agnostic: EVERY non-terminal kind with a fixture mounts the strip', () => {
+    // The claim the brief made ("wire it into the shared/generic body path so
+    // it appears for task, doc, work_session etc.") measured rather than
+    // asserted once on a task and generalised.
+    const covered = allKinds()
+      .map((config) => ({
+        config,
+        detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
+      }))
+      .filter((r) => r.detail != null && r.config.panel.archetype !== 'terminal');
+    expect(covered.length).toBeGreaterThan(8);
+
+    for (const { config, detail } of covered) {
+      const { getByTestId, unmount } = render(
+        <EntityDetailPanel detail={withAttachment(detail!)} reasons={REASONS} ctx={ctx} />,
+      );
+      expect(
+        within(getByTestId('entity-detail-panel')).queryByTestId('attachment-strip'),
+        `${config.kind} did not mount the attachment strip`,
+      ).not.toBeNull();
+      unmount();
+    }
   });
 });

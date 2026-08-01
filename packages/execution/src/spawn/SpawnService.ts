@@ -136,6 +136,22 @@ export class SpawnService {
   }
 
   /**
+   * Where this session's `tm8` invocations append their command journal.
+   *
+   * Session-keyed and a sibling of `manifests/`, deliberately NOT the session's
+   * cwd: a project-backed session's cwd is the SHARED project directory, so a
+   * journal written there would have every session of that project appending
+   * to one file, inside the user's repo.
+   *
+   * The file itself is created by the first `tm8` invocation, not here — a
+   * session that never runs a command correctly has no journal, and the read
+   * side reports that as `available: false` rather than as an empty one.
+   */
+  private journalPathFor(sessionId: string): string {
+    return join(this.dataDir, 'journals', `${sessionId}.jsonl`);
+  }
+
+  /**
    * The spawn flow, in the only order that is safe:
    *   1. read the graph (persona, project, tasks) — nothing has been created yet
    *   2. resolve launch config + cwd IN-PROCESS
@@ -293,7 +309,7 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env);
+      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
       const envVarNames = Object.keys(env).sort();
 
       // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
@@ -486,7 +502,20 @@ export class SpawnService {
         cwd,
       });
       if (nativeSessionId) {
-        await this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId);
+        // Write-once refusing this id means the row already names a DIFFERENT
+        // conversation — two rollouts claiming one session. Resuming on the id
+        // we just scanned would attach to a conversation the graph does not
+        // agree is ours, so refuse instead of guessing which one is right.
+        const stored = await this.graph.recordNativeSessionId(auth, sessionId, nativeSessionId);
+        if (!stored) {
+          throw new SpawnError(
+            `work session ${sessionId} already has a different native session id recorded — ` +
+              `the Codex rollout scan found '${nativeSessionId}', which contradicts it. ` +
+              `Refusing to resume against an ambiguous conversation.`,
+            'conflict',
+            { sessionId, agentTool: launch.agentTool },
+          );
+        }
       }
     }
     if (!nativeSessionId) {
@@ -502,6 +531,9 @@ export class SpawnService {
     const { commandResult, replayed } = await this.graph.resumeWorkSession(auth, {
       sessionId,
       clientMutationId: request.clientMutationId ?? null,
+      // THIS node is about to own the PTY, so it must own the row — a session
+      // first spawned elsewhere migrates here on resume.
+      nodeId: this.nodeId,
     });
 
     const manifestPath = this.manifestPathFor(sessionId);
@@ -578,7 +610,7 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env);
+      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
       const envVarNames = Object.keys(env).sort();
 
       const binary = baseCommand.split(' ')[0] ?? '';

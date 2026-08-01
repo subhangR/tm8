@@ -28,6 +28,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { CliError, EXIT_USAGE } from './exit.js';
+import { journal } from './journal.js';
 import { OUTPUT_FORMATS, type OutputFormat } from './output.js';
 
 /** Global options. They bind target, context, and output, never payload. */
@@ -54,6 +55,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'confirm-untrusted',   // session spawn --confirm-untrusted
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
+  'no-session-link',     // entity create — suppress the automatic created_in edge
 ]);
 
 /**
@@ -450,7 +452,11 @@ const defaultIo: SourceIo = {
     stdinConsumed = true;
     const chunks: Buffer[] = [];
     for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-    return Buffer.concat(chunks).toString('utf8');
+    const text = Buffer.concat(chunks).toString('utf8');
+    // Piped input is text the agent produced, so it counts toward what the
+    // agent EMITTED. Size only — the content is the caller's payload.
+    journal.noteStdin(text.length);
+    return text;
   },
 };
 

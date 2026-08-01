@@ -37,6 +37,7 @@ import {
   EntityKindCreateInputSchema,
   EntityKindUpdateInputSchema,
   ExecutionPromptInputSchema,
+  ExecutionResumeInputSchema,
   ExecutionSpawnInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
@@ -199,6 +200,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.prompt': ExecutionPromptInputSchema,
   'execution.terminate': ExecutionTerminateInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,
+  'execution.resume': ExecutionResumeInputSchema,
 
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,
@@ -214,9 +216,27 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
  * Listed explicitly rather than derived, so the gap is visible in review
  * instead of hiding as an absence.
  *
- * EMPTY as of tranche-v3: composing G04 resolved the last entry. The list stays
- * because it is the place a future group declares an unresolved binding, and an
- * empty array asserts "nothing is unbound" far more loudly than a deleted
- * export would.
+ * NOT empty, and the emptiness was a LIE. This read `[]` — asserting "nothing is
+ * unbound" — while nine command operations had no binding at all, because the
+ * only test over it pinned a hardcoded COUNT of INPUT_SCHEMAS rather than
+ * deriving the unbound set from the catalog. `execution.resume` then shipped
+ * with no server-side validation and nothing went red: the contract declared
+ * `clientMutationId` required, the server never enforced it, and every resume
+ * skipped ledger idempotency silently.
+ *
+ * The nine below are PRE-EXISTING gaps, enumerated here rather than fixed —
+ * each needs its own DTO decision. What changed is that they are now visible,
+ * and the guard test derives this set from `OPERATIONS` instead of trusting a
+ * count, so the next command operation that forgets a schema fails loudly.
  */
-export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [];
+export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
+  'spaces.menu.update',
+  'spaces.defaultChannel.set',
+  'interactionProfiles.propose',
+  'interactionProfiles.updateDraft',
+  'interactionProfiles.validate',
+  'interactionProfiles.activate',
+  'interactionProfiles.retire',
+  'teamMembers.interactionProfile.setDefault',
+  'spaces.interactionProfile.setDefault',
+];

@@ -30,15 +30,15 @@ import { ApiError, StreamOperationError, exitCodeFor } from '../src/errors.js';
 import { isExitCode } from '../src/exit.js';
 
 /** The coordinator-verified shape of the frozen catalog. */
-const EXPECTED_ROWS = 119;
+const EXPECTED_ROWS = 120;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('119 rows = 117 v1 + 2 reserved, 118 HTTP + 1 WS', () => {
+  it('120 rows = 118 v1 + 2 reserved, 119 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(117);
+    expect(V1_OPERATIONS.length).toBe(118);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -112,11 +112,11 @@ describe('every row resolves through the client and the error mapping', () => {
     }
 
     expect(resolved.size).toBe(EXPECTED_ROWS);
-    // 118 HTTP rows produced an honest 8; the single WS row produced usage 2
+    // 119 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(118);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(119);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(118);
+    expect(requested).toHaveLength(119);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -149,7 +149,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(118);
+    expect(httpRows).toBe(119);
   });
 });
 

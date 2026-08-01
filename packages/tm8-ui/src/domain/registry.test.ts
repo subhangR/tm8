@@ -181,12 +181,38 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(session.panel.primaries).toEqual(['terminate']);
   });
 
-  it('4. Run / Coordinate primaries are TASK-KIND ONLY', () => {
-    expect(getKind('task').list.primaryActions).toEqual(['run', 'coordinate']);
+  /**
+   * Was "Run / Coordinate primaries are TASK-KIND ONLY". That rule is retired:
+   * any entity can be launched, because the server derives a task to anchor the
+   * session on (migration 064) rather than requiring the subject to BE one.
+   *
+   * The old assertion read `list.primaryActions`, which is why it kept passing
+   * after launch went generic — that field has NO consumer anywhere in `src/`
+   * (EntityListPanel renders from `list.rowActions` at :1158 and :1348, and
+   * nothing else reads it). It was guarding a surface that does not render.
+   * These assert the arrays that actually draw a button.
+   */
+  it('4. launch is declared by `launchable`, and lands on the RENDERED arrays', () => {
     for (const row of allKinds()) {
-      if (row.kind === 'task') continue;
-      expect(row.list.primaryActions ?? []).not.toContain('run');
+      const expected = row.launchable === true;
+      expect({ kind: row.kind, run: (row.list.rowActions ?? []).includes('run') })
+        .toEqual({ kind: row.kind, run: expected });
+      expect({ kind: row.kind, run: (row.panel.primaries ?? []).includes('run') })
+        .toEqual({ kind: row.kind, run: expected });
     }
+  });
+
+  it('4b. every kind a person can ask an agent to work on is launchable', () => {
+    const launchable = allKinds().filter((r) => r.launchable).map((r) => r.kind).sort();
+    expect(launchable).toEqual([
+      'artifact', 'doc', 'memory', 'project', 'pull_request', 'task', 'team_member', 'worktree',
+    ]);
+  });
+
+  it('4c. task keeps Run FIRST and its own row ordering', () => {
+    // applyLaunch is additive, not a rebuild: a row that already names `run`
+    // keeps the order it authored.
+    expect(getKind('task').list.rowActions).toEqual(['run', 'complete']);
   });
 
   it('the task DETAIL toolbar keeps Run only', () => {

@@ -44,6 +44,23 @@ function stripComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
+/**
+ * THE ONE FALSE POSITIVE, named narrowly rather than loosened.
+ *
+ * `<input type="file">` is an HTML input type. It is not an entity kind, it
+ * has nothing to do with the registry, and there is no other way to spell it —
+ * the DOM defines the token. `AttachmentStrip.tsx` needs one, and the
+ * alternative to this line was `type={'fi' + 'le'}`, which would satisfy the
+ * guard while making the code worse: exactly the outcome D61 warns about when
+ * a guard fires on something its rule was never about.
+ *
+ * The carve is deliberately the WHOLE attribute, not the word: a bare `'file'`
+ * anywhere else in this lane still fails, which is the rule that matters.
+ */
+function stripHtmlInputType(text: string): string {
+  return text.replace(/type=(["'])file\1/g, 'type=INPUT_TYPE');
+}
+
 const ownedFiles = walk(HERE);
 
 const sourceFiles = ownedFiles
@@ -64,7 +81,7 @@ describe('§15.2 — the files lane knows no kind', () => {
 
     const offenders: string[] = [];
     for (const file of sourceFiles) {
-      const text = stripComments(readFileSync(file, 'utf8'));
+      const text = stripHtmlInputType(stripComments(readFileSync(file, 'utf8')));
       for (const kind of kinds) {
         if (new RegExp(`['"\`]${kind}['"\`]`).test(text)) {
           offenders.push(`${relative(SRC, file)} → '${kind}'`);

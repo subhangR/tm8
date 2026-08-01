@@ -336,8 +336,22 @@
   padding: 5px 14px;
   cursor: pointer;
 }
-.cv2-root .term-fallback__action:hover {
+.cv2-root .term-fallback__action:hover:not(:disabled) {
   background: rgba(var(--pn-brand-rgb), 0.2);
+}
+/* Disabled reads as REFUSED, not as decoration: dimmed, not-allowed, and it
+   keeps its title so the reason is reachable. Never hidden — an absent button
+   would claim the session cannot be resumed at all. */
+.cv2-root .term-fallback__action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cv2-root .term-fallback__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .cv2-root[data-theme='dark'] .term-fallback__action,
 [data-theme='dark'] .cv2-root .term-fallback__action {

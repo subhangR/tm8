@@ -1412,6 +1412,104 @@ export interface ExecutionLiveness {
   capacity: { used: number; total: number };
 }
 
+// --- execution.journal — the session CLI command journal --------------------
+
+/**
+ * ONE `tm8` INVOCATION, as the CLI recorded it on its way out.
+ *
+ * Every `tm8` command a teammate runs is its own short-lived process that
+ * already knows its session (`TM8_SESSION_ID` is injected at spawn), so it
+ * appends one of these to `<dataDir>/journals/<sessionId>.jsonl` and exits.
+ * No daemon, no database, no IPC.
+ *
+ * WHAT THE TOKEN FIELDS ARE, AND ARE NOT. They are BYTE-DERIVED ESTIMATES of
+ * text crossing the CLI boundary, never the provider's reported usage. They
+ * exclude the system prompt and the conversation, so they can NEVER be
+ * presented as the session's token spend. `chars` counts are exact and are the
+ * ground truth; the estimate is derived from them by `estimator`.
+ */
+export interface SessionJournalRecord {
+  /** Record schema version — readers must ignore fields they do not know. */
+  v: 1;
+  /** Per-process counter. Pair with `startedAt` to order across processes. */
+  seq: number;
+  sessionId: EntityId;
+  spaceId: EntityId | null;
+  teamMemberId: EntityId | null;
+  pid: number;
+  startedAt: string;
+  durationMs: number;
+  command: {
+    /** Resolved command path, e.g. `['message','send']`. Empty if unparsed. */
+    path: string[];
+    argv: string[];
+    cwd: string;
+  };
+  input: { stdinChars: number };
+  output: {
+    stdoutChars: number;
+    stderrChars: number;
+    /** Bounded head of stdout. `truncated` says whether bytes were dropped. */
+    stdoutSample: string;
+    stderrSample: string;
+    truncated: boolean;
+  };
+  /** One entry per HTTP call this invocation made. Often 1, sometimes 0 or N. */
+  calls: SessionJournalCall[];
+  result: { exitCode: number; error: string | null };
+  tokens: {
+    /** Names how the estimate was derived. Never omit it. */
+    estimator: 'chars/4';
+    /** Command line + stdin — tokens the agent EMITTED. */
+    agentToCli: number;
+    /** stdout + stderr — tokens the agent will CONSUME next turn. */
+    cliToAgent: number;
+  };
+}
+
+export interface SessionJournalCall {
+  operation: string;
+  method: string;
+  path: string;
+  /** The node actually addressed — `--server` can retarget mid-session. */
+  baseUrl: string;
+  /** null when the transport failed and no response was ever produced. */
+  status: number | null;
+  requestChars: number;
+  responseChars: number;
+  durationMs: number;
+}
+
+/**
+ * A bounded window over one session's journal, plus totals over the WHOLE file.
+ *
+ * Totals are computed across every record, records are only a window — so the
+ * headline number stays honest even when the table is truncated.
+ */
+export interface SessionJournalPage {
+  sessionId: EntityId;
+  /**
+   * false when there is no journal file: a session spawned before this feature,
+   * or one launched with journaling off. A real, common state that must render
+   * as an explained empty rather than as a zero.
+   */
+  available: boolean;
+  /** Present only when `available` is false. Machine-readable reason. */
+  unavailableReason: 'no_journal_file' | 'unreadable' | null;
+  totals: {
+    invocations: number;
+    failed: number;
+    agentToCliEst: number;
+    cliToAgentEst: number;
+    estimator: 'chars/4';
+    /** Records the reader could not parse — surfaced, never silently dropped. */
+    malformed: number;
+  };
+  /** Oldest-first within the window. */
+  records: SessionJournalRecord[];
+  hasMore: boolean;
+}
+
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------
 
 /**

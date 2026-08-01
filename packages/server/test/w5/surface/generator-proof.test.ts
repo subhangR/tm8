@@ -161,6 +161,7 @@ describe('W5.C generator proof', () => {
 
   it('pins the bound-schema count as an exact literal', () => {
     // 54 -> 64 on 2026-07-31: the consolidation wave bound ten more DTOs.
-    expect(ENTRIES).toHaveLength(64);
+    // 64 -> 65 on 2026-08-01: execution.journal bound its query schema.
+    expect(ENTRIES).toHaveLength(65);
   });
 });

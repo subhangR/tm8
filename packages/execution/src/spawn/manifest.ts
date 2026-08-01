@@ -560,6 +560,18 @@ export function composeEnv(
   manifestPath: string,
   baseUrl: string,
   parentEnv: NodeJS.ProcessEnv = process.env,
+  /**
+   * Where this session's `tm8` invocations append their command journal.
+   *
+   * The env var IS the feature gate: a CLI that does not see it journals
+   * nothing at all, which is exactly what should happen for a human running
+   * `tm8` at their own terminal. Optional so a caller that does not want
+   * journaling simply omits it rather than having to disable anything.
+   *
+   * It needs no manifest field to be discoverable — `envVarNames` is derived
+   * from these keys and already reaches the graph via `recordManifest`.
+   */
+  journalPath?: string,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -571,6 +583,7 @@ export function composeEnv(
     TM8_TEAM_MEMBER_ID: manifest.agent.teamMemberId,
     TM8_TASK_IDS: manifest.tasks.map((t) => t.id).join(','),
   };
+  if (journalPath) env.TM8_JOURNAL_PATH = journalPath;
 
   for (const key of SAFE_BASE_ENV_KEYS) {
     const value = parentEnv[key];

@@ -53,12 +53,13 @@ import {
   type NotificationItem,
   type Page,
   type ProjectResource,
+  type SessionJournalPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { FeedOpts, IdentityView, PageOpts, Seam, Unsubscribe } from '../seam';
+import type { FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -257,6 +258,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     messages: (anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>> => ops.messages(anchorId, opts),
     handoffs: (workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> =>
       ops.handoffs(workSessionId, opts),
+    journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
+      ops.journal(workSessionId, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),
@@ -268,6 +271,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       putBytes: (grant, bytes) => ops.fileUploadBytes(grant, bytes),
       complete: (uploadId, input) => ops.fileUploadComplete(uploadId, input),
       abort: (uploadId, input) => ops.fileUploadAbort(uploadId, input),
+      downloadHref: (fileEntityId) => ops.fileDownloadHref(fileEntityId),
     },
 
     // -- commands ------------------------------------------------------------
@@ -301,6 +305,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       spawn: (input) => ops.spawn(input),
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
+      resume: (id, input) => ops.resume(id, input),
     },
 
     // -- liveness ------------------------------------------------------------

@@ -502,6 +502,59 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
     }
     tuples.push({ type: raw.slice(0, eq), targetId: raw.slice(eq + 1) });
   }
+
+  // A session's own output is the thing its connection surface most obviously
+  // ought to show, and it did not: measured on prod before migration 066, 59
+  // docs existed, exactly ONE was linked to any session, and 45 had no edges at
+  // all. Sessions produce docs all day and the graph could not answer "what did
+  // this session make?" for any kind. So when this process IS a work session,
+  // everything it creates claims that session as its birthplace.
+  //
+  // THIS IS A CLAIM, NOT A FACT. Nothing verifies that the caller really is the
+  // session it names, which is why `created_in` stamps `props.origin =
+  // 'client_claim'` instead of the usual 'user' (066 §1) — a later reader must
+  // not mistake an assertion for something the Server recorded. The verified
+  // form is `authored_from`, and it needs the Server to DERIVE the session from
+  // a session-scoped token rather than be told; that is why it cannot be written
+  // from here. Until that lands this is the honest approximation.
+  //
+  // Skipped when the caller named `created_in` themselves: one entity has one
+  // birth session (`edges_created_in_source_idx`), so a second claim at a
+  // different target is refused by the database rather than silently preferred.
+  // An explicit flag beats an inferred one, and `--no-session-link` opts out
+  // entirely for an entity that should not be attributed to this session.
+  //
+  // ⚠ THE SPACE AND SERVER GUARDS ARE LOAD-BEARING, AND THIS IS MEASURED.
+  // The connection travels INSIDE the create request, so an unresolvable target
+  // does not degrade to a missing edge — it fails the WHOLE CREATE. A first cut
+  // of this added the link unconditionally and broke 30 CLI integration tests
+  // with `not_found: entity <session> not found`: the suites create into their
+  // own throwaway Space, where this process's session does not exist, while
+  // TM8_SESSION_ID is still inherited from the agent running them.
+  //
+  // Same failure, worse blast radius, in production: `tm8 --server staging
+  // entity create` from a prod session is the Staging Steward's ENTIRE JOB, and
+  // its session lives on prod.
+  //
+  // So link only when the Space was resolved FROM THE SESSION ITSELF (`--space`
+  // or config means some other Space, where this session may not exist) and no
+  // `--server`/`--base-url` flag has pointed us at a different node. Anything
+  // else, and the honest answer is no edge rather than a broken create — the
+  // same rule the 065 triggers follow: a derived edge must never take down the
+  // operation that caused it.
+  const sessionId = cmd.ctx.sessionId;
+  const spaceIsThisSession = cmd.ctx.space?.source === 'session';
+  const serverOverridden = cmd.ctx.baseUrl.source === 'flag';
+  if (
+    sessionId !== undefined &&
+    spaceIsThisSession &&
+    !serverOverridden &&
+    !cmd.options.bool('no-session-link') &&
+    !tuples.some((t) => t.type === 'created_in')
+  ) {
+    tuples.push({ type: 'created_in', targetId: sessionId });
+  }
+
   const seen = new Set<string>();
   return tuples.filter((t) => {
     const key = `${t.type} ${t.targetId}`;
@@ -525,6 +578,7 @@ async function readContent(raw: string): Promise<Record<string, unknown>> {
 async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   assertKnownOptions(cmd, [
     'parent', 'position', 'content', 'attach-to', 'relate-to', 'connect', 'mutation-id',
+    'no-session-link',
   ]);
   const kind = requireArg(cmd, 0, '<kind>');
   const title = requireArg(cmd, 1, '<title>');

@@ -1082,3 +1082,25 @@
   background: var(--pn-brand-soft); border: 1px solid var(--pn-brand);
   color: var(--pn-brand-2); cursor: pointer;
 }
+
+/* The sheet's copy of the quick access toggle — same words, same colours. */
+.cv2-root .ls__accessbtn {
+  appearance: none;
+  align-self: flex-start;
+  margin: 2px 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-card);
+  color: var(--pn-ink-2);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+.cv2-root .ls__accessbtn:hover { border-color: var(--pn-ink-3); color: var(--pn-ink); }
+.cv2-root .ls__accessbtn--acceptEdits {
+  color: var(--pn-run); border-color: var(--pn-run); background: var(--pn-run-soft);
+}
+.cv2-root .ls__accessbtn--fullAccess {
+  color: var(--pn-block); border-color: var(--pn-block); background: var(--pn-block-soft);
+}

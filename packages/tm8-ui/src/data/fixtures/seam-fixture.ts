@@ -23,6 +23,7 @@
  * 1-second tick from FIXTURE_NOW per mutation; ids and seqs are counters.
  */
 import {
+  bindPath,
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   WORKSPACE_EVENT_SCHEMA_VERSION,
@@ -50,6 +51,7 @@ import {
   type EntitySummary,
   type ExecutionPromptInput,
   type ExecutionSpawnInput,
+  type ExecutionResumeInput,
   type ExecutionTerminateInput,
   type FeedItem,
   type FileUploadGrant,
@@ -71,6 +73,8 @@ import {
   type PostMessageInput,
   type ProjectResource,
   type ReactionInput,
+  type SessionJournalPage,
+  type SessionJournalRecord,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -138,6 +142,108 @@ const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, l
 
 function isCustomState(s: EntityState): s is CustomEntityState {
   return s.kind.startsWith('c:');
+}
+
+/**
+ * A small, deterministic CLI journal for the live fixture session: a couple of
+ * successful reads and one failed command, exercising the DEBUG surface's
+ * expand/collapse, failure styling, truncation marker, and HTTP-call rows.
+ */
+function fixtureJournalRecords(sessionId: EntityId): SessionJournalRecord[] {
+  const at = (offsetMs: number) => new Date(FIXTURE_BASE_MS - offsetMs).toISOString();
+  const base = { v: 1 as const, sessionId, spaceId: FIXTURE_SPACE_ID, teamMemberId: null };
+  return [
+    {
+      ...base,
+      seq: 1,
+      pid: 41001,
+      startedAt: at(9000),
+      durationMs: 214,
+      command: { path: ['task', 'list'], argv: ['tm8', 'task', 'list', '--json'], cwd: '/work/tm8' },
+      input: { stdinChars: 0 },
+      output: {
+        stdoutChars: 1840,
+        stderrChars: 0,
+        stdoutSample: '[{"id":"01900000-0000-7000-8000-0000000000aa","title":"Wire the DEBUG surface"}]',
+        stderrSample: '',
+        truncated: true,
+      },
+      calls: [
+        {
+          operation: 'collections.query',
+          method: 'POST',
+          path: '/v2/collections/query',
+          baseUrl: 'http://127.0.0.1:4610',
+          status: 200,
+          requestChars: 132,
+          responseChars: 1840,
+          durationMs: 188,
+        },
+      ],
+      result: { exitCode: 0, error: null },
+      tokens: { estimator: 'chars/4', agentToCli: 8, cliToAgent: 460 },
+    },
+    {
+      ...base,
+      seq: 2,
+      pid: 41002,
+      startedAt: at(5200),
+      durationMs: 96,
+      command: { path: ['message', 'send'], argv: ['tm8', 'message', 'send', '--to', 'lead'], cwd: '/work/tm8' },
+      input: { stdinChars: 512 },
+      output: {
+        stdoutChars: 64,
+        stderrChars: 0,
+        stdoutSample: '{"delivered":1}',
+        stderrSample: '',
+        truncated: false,
+      },
+      calls: [
+        {
+          operation: 'messages.post',
+          method: 'POST',
+          path: '/v2/messages',
+          baseUrl: 'http://127.0.0.1:4610',
+          status: 200,
+          requestChars: 540,
+          responseChars: 64,
+          durationMs: 71,
+        },
+      ],
+      result: { exitCode: 0, error: null },
+      tokens: { estimator: 'chars/4', agentToCli: 138, cliToAgent: 16 },
+    },
+    {
+      ...base,
+      seq: 3,
+      pid: 41003,
+      startedAt: at(1200),
+      durationMs: 41,
+      command: { path: ['task', 'complete'], argv: ['tm8', 'task', 'complete', 'bad-id'], cwd: '/work/tm8' },
+      input: { stdinChars: 0 },
+      output: {
+        stdoutChars: 0,
+        stderrChars: 88,
+        stdoutSample: '',
+        stderrSample: 'error: entity not found (404)',
+        truncated: false,
+      },
+      calls: [
+        {
+          operation: 'entities.commands.complete',
+          method: 'POST',
+          path: '/v2/entities/bad-id/complete',
+          baseUrl: 'http://127.0.0.1:4610',
+          status: 404,
+          requestChars: 40,
+          responseChars: 88,
+          durationMs: 33,
+        },
+      ],
+      result: { exitCode: 1, error: 'entity not found' },
+      tokens: { estimator: 'chars/4', agentToCli: 12, cliToAgent: 22 },
+    },
+  ];
 }
 
 /** Minimal kind-correct content for summaries the dataset gives no detail for. */
@@ -723,6 +829,50 @@ export function createFixtureSeam(): FixtureSeam {
       // matrix, keyed by target work session — sessions without rows page empty.
       return clone(pageOf(fixtureHandoffsBySession[workSessionId] ?? [], opts));
     },
+    async journal(workSessionId, opts): Promise<SessionJournalPage> {
+      requireSummary(workSessionId);
+      // Only the live PTY (C-5) has a journal file in the fixture dataset;
+      // every other session honestly reports the common `no_journal_file`
+      // state, which the DEBUG surface renders as an explained empty.
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_journal_file',
+          totals: {
+            invocations: 0,
+            failed: 0,
+            agentToCliEst: 0,
+            cliToAgentEst: 0,
+            estimator: 'chars/4',
+            malformed: 0,
+          },
+          records: [],
+          hasMore: false,
+        });
+      }
+      const all = fixtureJournalRecords(workSessionId);
+      const before = opts?.before;
+      const limit = opts?.limit ?? 100;
+      const windowed = all
+        .filter((r) => (before === undefined ? true : r.seq < before))
+        .slice(-limit);
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        totals: {
+          invocations: all.length,
+          failed: all.filter((r) => r.result.exitCode !== 0).length,
+          agentToCliEst: all.reduce((sum, r) => sum + r.tokens.agentToCli, 0),
+          cliToAgentEst: all.reduce((sum, r) => sum + r.tokens.cliToAgent, 0),
+          estimator: 'chars/4',
+          malformed: 1,
+        },
+        records: windowed,
+        hasMore: windowed.length < all.length,
+      });
+    },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.
       return clone(pageOf<NotificationItem>([], opts));
@@ -876,6 +1026,15 @@ export function createFixtureSeam(): FixtureSeam {
       async abort(uploadId) {
         if (!uploadSlots.delete(uploadId)) throw new CollabError('not_found', `upload ${uploadId} not found`);
         return { patches: [] };
+      },
+      /**
+       * The same RELATIVE path the real seam builds, minus a base URL the
+       * fixture has no business inventing. A fixture-driven UI therefore
+       * renders real, well-formed hrefs that resolve to nothing — which is the
+       * honest fixture behaviour for a route that serves bytes off a node.
+       */
+      downloadHref(fileEntityId) {
+        return bindPath('files.download', { fileEntityId });
       },
     },
 
@@ -1158,6 +1317,30 @@ export function createFixtureSeam(): FixtureSeam {
         const snap = livenessBySpace.get(s.spaceId);
         if (snap?.liveEntityIds.includes(id)) {
           setLiveness(s.spaceId, snap.liveEntityIds.filter((x) => x !== id), snap.nodeBootId);
+        }
+        emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+        return commandResult(s);
+      },
+      /**
+       * The inverse of terminate, and it refuses on the same terms: only a
+       * TERMINAL session can be resumed. The server refuses a live one with
+       * `conflict`, so the fixture must too — a fixture that cheerfully
+       * resumed a running session would let the UI ship a button the real
+       * seam rejects.
+       */
+      async resume(id, input: ExecutionResumeInput) {
+        const s = requireSummary(id);
+        if (s.state.kind !== 'work_session') throw new CollabError('invariant_violation', `${id} is not a work_session`);
+        if (s.state.status !== 'exited' && s.state.status !== 'failed') {
+          throw new CollabError('invariant_violation', `session ${id} is not resumable from ${s.state.status}`);
+        }
+        s.state.status = 'running';
+        s.state.exitedAt = null;
+        touch(s);
+        const snap = livenessBySpace.get(s.spaceId);
+        const live = snap?.liveEntityIds ?? [];
+        if (!live.includes(id)) {
+          setLiveness(s.spaceId, [...live, id], snap?.nodeBootId ?? FIXTURE_NODE_BOOT_ID);
         }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);

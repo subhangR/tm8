@@ -215,6 +215,9 @@ const CONSOLIDATION_NET_NEW_OPERATIONS = [
   'serverConnections.get',
   'serverConnections.list',
   'voice.token.create',
+  // Landed by a separate lane (migration 063) after the wave above; listed here
+  // because this is the net-new bucket, not because it shares that provenance.
+  'spaces.counts',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -339,7 +342,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
 
     expect(registry.implemented()).toEqual(EXPECTED_TRANCHE_V3_FACADE_OPERATIONS);
     expect(new Set(registry.implemented()).size).toBe(registry.size);
-    expect(registry.size).toBe(107);
+    // 107 -> 108 on 2026-08-01: `spaces.counts` joined the facade tranche.
+    expect(registry.size).toBe(108);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -486,13 +490,25 @@ describe('W2.I02 tranche-v2 public composition', () => {
   it('declaratively binds every completed tranche command and leaves only unfinished commands unbound', () => {
     // 59 -> 64 on 2026-07-31: the consolidation wave bound serverConnections,
     // artifacts and voice command DTOs as it landed them.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(64);
-    // G02 resolved its two entries the way every other "unbound" catalog row was
-    // resolved — a required command context, not an invented DTO. Tranche-v3
-    // resolved the last one: G04's service casts `ctx.body` to its contract DTO
-    // without validating, so composing it REQUIRED binding the five message and
-    // handoff commands the contract already names 1:1. Nothing is unbound now.
-    expect(UNBOUND_COMMAND_OPERATIONS).toEqual([]);
+    // 64 -> 65 on 2026-08-01: execution.resume, which had shipped UNBOUND.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(65);
+
+    // DERIVED, and the load-bearing half of this test. The count above cannot
+    // catch a new command operation that forgets a schema — it passes as long
+    // as SOME other binding was added in the same change, which is exactly how
+    // execution.resume reached production unvalidated. This computes the
+    // unbound set from the catalog, so the two lists must agree or the next
+    // omission is red on the line that names it.
+    const unbound = OPERATIONS.filter(
+      (op) => op.kind === 'command' && !(op.name in INPUT_SCHEMAS),
+    ).map((op) => op.name);
+    expect([...unbound].sort()).toEqual([...UNBOUND_COMMAND_OPERATIONS].sort());
+    // This used to assert `[]`. It was wrong, and being wrong was invisible:
+    // nine command operations had no binding while the constant claimed none
+    // were missing. They are enumerated now (see input-schemas.ts) so the
+    // derived check above has something true to compare against.
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(9);
+    expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
       'messages.attachments.add',
@@ -605,8 +621,13 @@ describe.sequential('W2.I02 real production public surface', () => {
     // not measuring production. `implemented` is `registry.size`, the count of
     // MOUNTED handlers: the honest answer to "what is registered on this node",
     // which is not the same claim as "what is behaviourally complete".
-    expect(health).toMatchObject({ ok: true, operations: 116, implemented: 114 });
-    expect(harness.production.server.registry.size).toBe(114);
+    // 116 -> 118 on 2026-08-01: `execution.resume` (the sixth execution
+    // handler) and `spaces.counts` both joined the catalog. This pin was
+    // already RED on the tree before either was reconciled — a count pin only
+    // fails after the fact, which is why the residual check below derives from
+    // the live catalog instead.
+    expect(health).toMatchObject({ ok: true, operations: 118, implemented: 116 });
+    expect(harness.production.server.registry.size).toBe(116);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -618,7 +639,8 @@ describe.sequential('W2.I02 real production public surface', () => {
       .filter((op) => op.method !== 'WS' && !registered.has(op.name))
       .map((op) => op.name);
     expect(residual).toEqual([]);
-    expect(registered.size + residual.length).toBe(114);
+    // 114 -> 116: `execution.resume` + `spaces.counts`.
+    expect(registered.size + residual.length).toBe(116);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

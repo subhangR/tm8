@@ -119,7 +119,12 @@ describe('canonical Chat attachment upload task', () => {
     task.cancel();
     release();
 
-    await expect(task.result).rejects.toMatchObject({ name: 'ChatUploadCancelledError' });
+    // The class moved to `files/upload.ts` when the entity panel became a
+    // second caller, and its NAME moved with it — the cancellation is not a
+    // chat-specific fact. `ChatUploadCancelledError` remains exported as an
+    // alias, so `instanceof` at every call site is unchanged; only this
+    // string, which nothing branches on, differs.
+    await expect(task.result).rejects.toMatchObject({ name: 'UploadCancelledError' });
     expect(h.files.abort).toHaveBeenCalledTimes(1);
     expect(h.files.complete).not.toHaveBeenCalled();
   });

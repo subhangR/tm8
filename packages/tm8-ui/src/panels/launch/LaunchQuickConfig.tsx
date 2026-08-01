@@ -1,8 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ExecutionSpawnInput } from '@tm8/contract';
 import {
+  accessModeLabel,
   agentTool,
   buildSpawnInput,
+  describeAccessMode,
+  nextAccessMode,
   canLaunch,
   defaultConfigFor,
   defaultLaunchTarget,
@@ -61,7 +64,12 @@ export interface LaunchTeammateOption {
 }
 
 export interface LaunchQuickConfigProps {
-  /** The entity being run — supplies the task link and the session title. */
+  /**
+   * The entity being run — supplies the assignment link and the session title.
+   * ANY kind, not just a task: the server derives a task to anchor the session
+   * on when the subject is not one (migration 064), so this stays a bare
+   * `{id,title}` and no kind check belongs here.
+   */
   subject: { id: string; title: string };
   spaceId: string;
   /** Selectable personas, already adapted to the shape above. */
@@ -200,6 +208,27 @@ export function LaunchQuickConfig({
         </label>
       </div>
 
+      {/* THE ACCESS TOGGLE — one click per step through the same postures the
+          sheet lists in a select. It exists because the posture is the setting
+          people change most often and the only path to it was the five-section
+          sheet; a chip that names the CURRENT posture (never a bare icon) keeps
+          the escalation legible at the moment of commitment. `Default` is a
+          step, not a gap: it says the teammate and node decide. */}
+      <div className="lq__access">
+        <span className="lq__label">Access</span>
+        <button
+          type="button"
+          className={`lq__accessbtn lq__accessbtn--${config.accessMode ?? 'default'}`}
+          data-testid="launch-access-toggle"
+          data-access-mode={config.accessMode ?? 'default'}
+          title={`${describeAccessMode(config.accessMode)} — click to change`}
+          aria-label={`Access mode: ${describeAccessMode(config.accessMode)}. Click to change.`}
+          onClick={() => setConfig((c) => ({ ...c, accessMode: nextAccessMode(c.accessMode) }))}
+        >
+          {accessModeLabel(config.accessMode)}
+        </button>
+      </div>
+
       {/* The resolved profile as a LINE with its provenance — never a bare
           value. An inherited default that looks like a choice is the same lie
           as a hollow zero. */}
@@ -287,6 +316,9 @@ export function LaunchQuickConfig({
                     clientMutationId: newClientMutationId?.() ?? clientMutationId ?? newLaunchMutationId(),
                     spaceId,
                     config,
+                    // Still named `taskIds` on the wire; the server maps each
+                    // id through `derive_task_for_entity` (064), so a non-task
+                    // subject arrives here unchanged and is resolved there.
                     taskIds: [subject.id],
                     title: subject.title,
                   }),

@@ -20,7 +20,7 @@
 import type { EntityId } from '@tm8/contract';
 
 export type PanelTab = 'content' | 'discussion' | 'connections' | 'activity';
-export type ContentSurface = 'terminal' | 'chat';
+export type ContentSurface = 'terminal' | 'chat' | 'debug';
 export type PanelHost = 'stack' | 'pinned' | 'peek' | 'z4';
 
 export interface NavPanelState {

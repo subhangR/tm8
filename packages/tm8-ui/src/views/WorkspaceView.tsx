@@ -130,6 +130,32 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     });
   }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
 
+  /**
+   * Resume — the inverse of close, and the reason the exited card has a button.
+   *
+   * `resumingId` is not cosmetic: resume boots a real agent process, and a
+   * double-fire races two spawns onto one session id. The server refuses the
+   * second with `conflict`, but the honest UI is to not send it.
+   */
+  const [resumingId, setResumingId] = useState<string | null>(null);
+  const handleSessionResume = useCallback((entityId: string) => {
+    setResumingId(entityId);
+    void data.seam.commands.resume(entityId as EntityId, {
+      clientMutationId: `resume:${entityId}:${Date.now()}`,
+    }).then(data.reconcileCommand).catch((error: unknown) => {
+      props.onNotice({
+        id: 'session-resume-failed',
+        tone: 'error',
+        title: 'Session could not be resumed',
+        // The server's refusal, verbatim. Resume fails for REASONS a user can
+        // act on — no native id recorded, the concurrency cap, an ambiguous
+        // Codex rollout — and paraphrasing them would discard the remedy.
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 8_000,
+      });
+    }).finally(() => setResumingId(null));
+  }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
+
   /** Opening is never blocked on the mutation. Resolve only when the rendered
       summary says attention is pending, and coalesce rapid repeated clicks. */
   const openEntity = useCallback((entityId: string) => {
@@ -213,6 +239,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           ) : undefined}
           messages={messages}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
+          onResumeSession={() => handleSessionResume(id)}
+          resumingSession={resumingId === id}
           /* GAP-2 (data-wiring handover): hand the seam commands down so the
              save path is live in the workspace panels too. */
           commands={data.seam.commands}
@@ -377,7 +405,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               refusal={props.launchRefusal}
               subjectId={props.launchSubjectId}
               fromChip="◔ Run ▸"
-              fromCaption="task pre-associated — the session links to it"
+              // Not "task pre-associated" any more: the subject can be a doc, a
+              // teammate, a memory, an artifact, a project, a pull request or a
+              // worktree. Only `subjectId` reaches this mount — no kind — and
+              // the sentence has to stay true for all of them, so it names the
+              // relationship rather than the kind.
+              fromCaption="subject pre-associated — the session links to it"
               teammates={data.launch.teammates}
               projects={data.launch.projects}
               profiles={data.launch.profiles}

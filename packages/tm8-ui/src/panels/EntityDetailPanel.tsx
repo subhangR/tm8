@@ -47,6 +47,9 @@ import { ProfileBody } from './bodies/ProfileBody';
 import { GovernedBody } from './bodies/GovernedBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
+import { AttachmentStrip } from '../files/AttachmentStrip';
+import { attachedFiles } from '../files/model';
+import type { AttachmentsPort } from '../files/port';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -122,6 +125,14 @@ export interface EntityDetailPanelProps {
   livenessOf?: (id: string) => SessionLiveness;
   /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
   onPostMessage?: (body: string) => Promise<void> | void;
+  /**
+   * Resume this exited/failed work session. Absent ⇒ the exited card renders
+   * its Resume button DISABLED with a reason, never hidden — a missing button
+   * would claim the session is unresumable rather than unwired.
+   */
+  onResumeSession?: () => void;
+  /** True while that resume is in flight. */
+  resumingSession?: boolean;
   streaming?: boolean;
   needsAttention?: boolean;
   attentionDetail?: string;
@@ -129,6 +140,23 @@ export interface EntityDetailPanelProps {
   contentSurface?: ContentSurface | null;
   viewerMemberId?: string | null;
   chatSurface?: ReactNode;
+  /** The DEBUG surface (session CLI journal). Self-fetching; host wires the seam. */
+  debugSurface?: ReactNode;
+  /**
+   * ATTACHMENTS — bytes and an uploader for the strip in the Content body.
+   *
+   * ONE prop for every kind, deliberately: `attached_to` is an edge type and
+   * the server attaches a file to any entity id at all, so a per-kind prop
+   * would be a restriction the backend does not have. Absent ⇒ the strip
+   * renders read-only if the entity already has attachments and renders
+   * NOTHING if it has none — no dead dropzone, no empty box.
+   *
+   * `AttachmentsPort` is a structural port over the seam (`files/port.ts`), so
+   * a host writes `attachmentsPortFromSeam(seam, spaceId)` and nothing else.
+   */
+  attachments?: AttachmentsPort | null;
+  /** An upload landed; the host refetches so the new edge appears. */
+  onAttachmentUploaded?: () => void;
   onContentSurfaceChange?: (surface: ContentSurface) => void;
 
   /**
@@ -390,6 +418,29 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               in the ordinary case. */}
           <AuthoringHost save={save}>
             <PanelBody {...props} detail={detail} tab={tab} save={save} surfaceSlot={surfaceSlot} />
+            {/*
+              ATTACHMENTS RIDE IN THE CONTENT BODY — not in a fifth tab. D3
+              fixes the panel at four tabs for every kind (user ruling
+              2026-08-01), and the content body is the one region allowed to
+              vary. Rendered HERE rather than inside each archetype arm so it
+              is genuinely kind-agnostic: one mount serves task, doc,
+              work_session and every custom kind, and no future archetype can
+              forget to include it.
+
+              TWO EXCLUSIONS, both structural, neither a kind check. The
+              terminal archetype owns its full height (a live PTY canvas with a
+              strip stapled under it is not a design, it is a leak), and a
+              tombstone shows only its tombstone.
+            */}
+            {tab === 'content' && !isTombstone && config.panel.archetype !== 'terminal' ? (
+              <AttachmentStrip
+                anchorId={detail.id}
+                files={attachedFiles(detail)}
+                downloadHref={props.attachments?.downloadHref}
+                startUpload={props.attachments?.startUpload}
+                onUploaded={props.onAttachmentUploaded}
+              />
+            ) : null}
           </AuthoringHost>
         </CatchBoundary>
       )}
@@ -485,11 +536,18 @@ function PanelBody(
             livenessLabel={config.list.liveTreatment?.(props.liveness ?? 'unknown').label}
             livenessReason={config.list.liveTreatment?.(props.liveness ?? 'unknown').reason}
             onOpenEntity={onOpenEntity}
+            {...(props.onResumeSession ? { onResume: props.onResumeSession } : {})}
+            {...(props.resumingSession ? { resuming: props.resumingSession } : {})}
           />
         }
         chat={props.chatSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             Chat is enabled for this session, but its feed host is unavailable.
+          </p>
+        )}
+        debug={props.debugSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The debug journal host is unavailable in this view.
           </p>
         )}
       />

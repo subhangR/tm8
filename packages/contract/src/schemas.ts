@@ -58,7 +58,8 @@ import type {
   KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
-  ExecutionLiveness, SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
+  ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
+  SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
@@ -1560,6 +1561,70 @@ export const ExecutionLivenessSchema: z.ZodType<ExecutionLiveness> = z.object({
     used: z.number().int().nonnegative(),
     total: z.number().int().positive(),
   }).strict(),
+}).strict();
+
+/**
+ * execution.journal. NOT `.strict()` on the record: journal lines are written
+ * by whatever CLI build the teammate happened to be running, and a newer CLI
+ * adding a field must not make an older server refuse to show the session's
+ * history. Unknown keys are dropped, the record still renders.
+ */
+export const SessionJournalCallSchema: z.ZodType<SessionJournalCall> = z.object({
+  operation: z.string(),
+  method: z.string(),
+  path: z.string(),
+  baseUrl: z.string(),
+  status: z.number().int().nullable(),
+  requestChars: z.number().int().nonnegative(),
+  responseChars: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative(),
+});
+
+export const SessionJournalRecordSchema: z.ZodType<SessionJournalRecord> = z.object({
+  v: z.literal(1),
+  seq: z.number().int().nonnegative(),
+  sessionId: EntityIdSchema,
+  spaceId: EntityIdSchema.nullable(),
+  teamMemberId: EntityIdSchema.nullable(),
+  pid: z.number().int(),
+  startedAt: IsoTimestamp,
+  durationMs: z.number().int().nonnegative(),
+  command: z.object({
+    path: z.array(z.string()),
+    argv: z.array(z.string()),
+    cwd: z.string(),
+  }),
+  input: z.object({ stdinChars: z.number().int().nonnegative() }),
+  output: z.object({
+    stdoutChars: z.number().int().nonnegative(),
+    stderrChars: z.number().int().nonnegative(),
+    stdoutSample: z.string(),
+    stderrSample: z.string(),
+    truncated: z.boolean(),
+  }),
+  calls: z.array(SessionJournalCallSchema),
+  result: z.object({ exitCode: z.number().int(), error: z.string().nullable() }),
+  tokens: z.object({
+    estimator: z.literal('chars/4'),
+    agentToCli: z.number().int().nonnegative(),
+    cliToAgent: z.number().int().nonnegative(),
+  }),
+});
+
+export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum(['no_journal_file', 'unreadable']).nullable(),
+  totals: z.object({
+    invocations: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    agentToCliEst: z.number().int().nonnegative(),
+    cliToAgentEst: z.number().int().nonnegative(),
+    estimator: z.literal('chars/4'),
+    malformed: z.number().int().nonnegative(),
+  }).strict(),
+  records: z.array(SessionJournalRecordSchema),
+  hasMore: z.boolean(),
 }).strict();
 
 // ---------------------------------------------------------------------------

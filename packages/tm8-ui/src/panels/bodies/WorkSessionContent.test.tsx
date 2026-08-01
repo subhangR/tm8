@@ -70,19 +70,88 @@ describe('WorkSessionContent', () => {
     Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
   });
 
-  it('renders only Terminal when no immutable interaction pin projected Chat', () => {
+  // The switch is no longer chat-gated: Debug is always offered, so a session
+  // with no chat pin still shows a Terminal|Debug switch — but NO Chat chip,
+  // and the chat pane is never rendered.
+  it('offers Terminal and Debug (no Chat) when no immutable interaction pin projected Chat', () => {
     render(
       <WorkSessionContent
         sessionId="01900000-0000-7000-8000-000000000001"
         profile={null}
         terminal={<div>native terminal</div>}
         chat={<div>explicit chat</div>}
+        debug={<div>debug journal</div>}
       />,
     );
 
     expect(screen.getByText('native terminal')).toBeTruthy();
-    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Terminal' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Debug' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: 'Chat' })).toBeNull();
+    expect(screen.queryByTestId('work-session-chat-surface')).toBeNull();
     expect(screen.queryByText('explicit chat')).toBeNull();
+  });
+
+  it('shows the Debug journal only while its chip is selected, keeping Terminal mounted', () => {
+    const onMount = vi.fn();
+    render(
+      <WorkSessionContent
+        sessionId="01900000-0000-7000-8000-000000000009"
+        profile={null}
+        terminal={<StatefulTerminal onMount={onMount} />}
+        chat={<div>explicit chat</div>}
+        debug={<div data-testid="debug-content">debug journal</div>}
+      />,
+    );
+
+    // Terminal is default; Debug pane is present but empty until selected.
+    expect(screen.queryByTestId('debug-content')).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Debug' }));
+    expect(screen.getByTestId('debug-content')).toBeTruthy();
+    expect(screen.getByTestId('work-session-terminal-surface')).toBeTruthy();
+    // Switching back unmounts debug (this is how its poll stops) but keeps the
+    // terminal mounted throughout — onMount fired exactly once.
+    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
+    expect(screen.queryByTestId('debug-content')).toBeNull();
+    expect(onMount).toHaveBeenCalledTimes(1);
+  });
+
+  // USER RULING 2026-08-01 — the default is always Terminal, for every session.
+  it('opens on Terminal even when the pin projects Chat as its initial surface', () => {
+    render(
+      <WorkSessionContent
+        sessionId="01900000-0000-7000-8000-00000000000a"
+        viewerMemberId="member-a"
+        profile={CHAT_PROFILE}
+        terminal={<div>native terminal</div>}
+        chat={<div>explicit chat</div>}
+      />,
+    );
+
+    expect(screen.getByRole('tab', { name: 'Terminal' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('work-session-terminal-surface').getAttribute('aria-hidden')).toBe('false');
+    expect(screen.getByTestId('work-session-chat-surface').getAttribute('aria-hidden')).toBe('true');
+    // Switching is still available and still works.
+    fireEvent.click(screen.getByRole('tab', { name: 'Chat' }));
+    expect(screen.getByTestId('work-session-chat-surface').getAttribute('aria-hidden')).toBe('false');
+    expect(screen.getByText('explicit chat')).toBeTruthy();
+  });
+
+  it('honours a saved viewer preference for Chat on a session already switched', () => {
+    const sessionId = '01900000-0000-7000-8000-00000000000b';
+    localStorage.setItem(`tm8:work-session-surface:v1:member-a:${sessionId}`, 'chat');
+
+    render(
+      <WorkSessionContent
+        sessionId={sessionId}
+        viewerMemberId="member-a"
+        profile={CHAT_PROFILE}
+        terminal={<div>native terminal</div>}
+        chat={<div>explicit chat</div>}
+      />,
+    );
+
+    expect(screen.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('uses explicit URL selection before saved preference and the pinned default', () => {
@@ -154,12 +223,20 @@ describe('WorkSessionContent', () => {
 
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Chat' }), { key: 'Home' });
     expect(screen.getByText('terminal-preserved')).toBeTruthy();
-    fireEvent.keyDown(screen.getByRole('tab', { name: 'Terminal' }), { key: 'End' });
+    // ArrowRight walks the dynamic list terminal→chat; the chat pane kept its
+    // state while hidden.
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Terminal' }), { key: 'ArrowRight' });
     expect(screen.getByText('chat-preserved')).toBeTruthy();
+    expect(chatScroll.scrollTop).toBe(123);
+    // End now jumps to the LAST surface — Debug, the always-present third chip.
+    // The chat pane stays mounted (its scroll survives), the terminal too.
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Chat' }), { key: 'End' });
+    expect(onSurfaceChange).toHaveBeenLastCalledWith('debug');
+    expect(screen.getByRole('tab', { name: 'Debug' }).getAttribute('aria-selected')).toBe('true');
     expect(chatScroll.scrollTop).toBe(123);
     expect(onMount).toHaveBeenCalledTimes(1);
     expect(onChatMount).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem(`tm8:work-session-surface:v1:member-b:${sessionId}`)).toBe('chat');
+    expect(localStorage.getItem(`tm8:work-session-surface:v1:member-b:${sessionId}`)).toBe('debug');
   });
 
   it('isolates two pinned panels and gives Claude/Codex context no authority over surface selection', () => {

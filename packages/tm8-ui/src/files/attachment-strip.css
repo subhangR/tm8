@@ -1,0 +1,163 @@
+/* ==========================================================================
+   THE ATTACHMENT STRIP — inside an entity panel's content body.
+
+   NO RAW HEX: `src/hex-ban.test.ts` and this lane's own copy of that guard
+   scan every .css here, so every colour resolves through a `--pn-*` token.
+   The strip introduces no token of its own; it reuses the chip grammar the
+   rest of this lane already paints (files.css), which is the point of "one
+   chip grammar everywhere".
+
+   It is NOT scoped to `.cv2-root` like the two review-board frames: this
+   strip renders inside a live panel, and a panel is not guaranteed to sit
+   under that class. Scoping it there is how the styles would silently not
+   apply in the one place they matter.
+   ========================================================================== */
+
+.fn-strip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) 0 0;
+  border-top: 1px solid var(--pn-line);
+  /* The column floor: the strip never widens its host, it wraps. */
+  min-width: 0;
+}
+
+.fn-strip--dragging {
+  outline: 1px dashed var(--pn-brand);
+  outline-offset: var(--pn-space-1);
+  border-radius: var(--pn-r-sm);
+}
+
+.fn-strip__items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
+
+.fn-strip__item {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* A thumbnail is its own block, never a token in a row of chips. */
+.fn-strip__item--thumb {
+  flex: 0 1 auto;
+}
+
+.fn-strip__link {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+/* THE SIZE GUARD. A panel column is ~320-440px and an attached photo can be
+   any size at all; without this a single upload reflows the whole panel. */
+.fn-strip__thumb {
+  display: block;
+  max-width: 100%;
+  max-height: 160px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+}
+
+.fn-strip__chip-face {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.fn-strip__glyph {
+  color: var(--pn-ink-3);
+}
+
+.fn-strip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  color: var(--pn-ink);
+}
+
+.fn-strip__size {
+  color: var(--pn-ink-3);
+  flex: none;
+}
+
+.fn-strip__nolink,
+.fn-strip__hint,
+.fn-strip__pending-why {
+  font-size: 10.5px;
+  color: var(--pn-ink-3);
+}
+
+.fn-strip__pending {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  margin: 0;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.fn-strip__pending-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-2);
+}
+
+.fn-strip__drop {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+}
+
+/* The real input stays reachable to assistive tech and to tests; the button
+   is the visible affordance. `display:none` would take it out of the
+   accessibility tree AND out of jsdom's reach, so it is clipped instead. */
+.fn-strip__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.fn-strip__btn,
+.fn-strip__cancel {
+  font: inherit;
+  font-size: 11px;
+  padding: 2px var(--pn-space-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
+  cursor: pointer;
+}
+
+.fn-strip__btn:hover,
+.fn-strip__cancel:hover {
+  background: var(--pn-active, var(--pn-surface));
+  color: var(--pn-ink);
+}

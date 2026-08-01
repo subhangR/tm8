@@ -523,7 +523,8 @@ export function GateApp(props: GateAppProps = {}) {
                       clientMutationId: newLaunchMutationId(),
                       spaceId: data.spaceId,
                       config,
-                      taskIds: [config.subjectId],
+                      // Any kind: the server derives the task anchor (064).
+              taskIds: [config.subjectId],
                       title: data.detailOf(config.subjectId)?.title,
                     }),
                   )

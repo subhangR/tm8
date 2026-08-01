@@ -411,6 +411,54 @@ export interface LaunchConfig {
 
 export type LaunchRefusal = { ok: true } | { ok: false; reason: string };
 
+// ---------------------------------------------------------------------------
+// Access mode — the quick cycle
+// ---------------------------------------------------------------------------
+
+export type LaunchAccessMode = NonNullable<LaunchConfig['accessMode']>;
+
+/**
+ * The cycle behind the quick access toggle, in escalating order.
+ *
+ * `null` is the FIRST step and a real one: it means "whatever the teammate and
+ * the node already decided", which is not the same statement as any of the
+ * four explicit postures. Dropping it would make merely clicking twice pin a
+ * posture the viewer never chose — the same silent-override failure
+ * `defaultConfigFor` avoids by seeding `accessMode: null`.
+ */
+export const ACCESS_MODE_CYCLE: readonly (LaunchAccessMode | null)[] = [
+  null,
+  'plan',
+  'safe',
+  'acceptEdits',
+  'fullAccess',
+];
+
+const ACCESS_MODE_LABELS: Record<LaunchAccessMode, { short: string; full: string }> = {
+  safe: { short: 'Safe', full: 'Safe · ask for untrusted actions' },
+  acceptEdits: { short: 'Accept edits', full: 'Accept edits · workspace write' },
+  plan: { short: 'Plan', full: 'Plan · read only' },
+  fullAccess: { short: 'Bypass', full: 'Full access · bypass safeguards' },
+};
+
+/** Short chip text. Inherit says so rather than naming a posture it is not. */
+export function accessModeLabel(mode: LaunchAccessMode | null): string {
+  return mode ? ACCESS_MODE_LABELS[mode].short : 'Default';
+}
+
+/** The sentence, for a title/aria description. */
+export function describeAccessMode(mode: LaunchAccessMode | null): string {
+  return mode
+    ? ACCESS_MODE_LABELS[mode].full
+    : 'Default · the teammate and node decide';
+}
+
+/** Next step in the cycle. Unknown values restart it rather than sticking. */
+export function nextAccessMode(mode: LaunchAccessMode | null): LaunchAccessMode | null {
+  const at = ACCESS_MODE_CYCLE.indexOf(mode ?? null);
+  return ACCESS_MODE_CYCLE[(at + 1) % ACCESS_MODE_CYCLE.length] ?? null;
+}
+
 /** The launch defaults for a teammate — its recorded tool and model win. */
 export function defaultConfigFor(teammate: {
   id: EntityId;

@@ -35,6 +35,7 @@ import {
   TransportError,
 } from './errors.js';
 import { CliError, EXIT_USAGE } from './exit.js';
+import { journal } from './journal.js';
 
 export type ResponseMode = 'envelope' | 'bytes' | 'stream';
 
@@ -219,6 +220,10 @@ export class Tm8Client {
     const controller = new AbortController();
     const timeoutMs = opts.timeoutMs ?? this.timeoutMs;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    // Only the SIZE of the request body is journalled, never its content and
+    // never the headers — `authorization` is set two lines above.
+    const requestChars = opts.body === undefined ? 0 : JSON.stringify(opts.body).length;
+    const startedMs = Date.now();
     let res: Response;
     try {
       res = await this.fetchImpl(url, {
@@ -228,6 +233,18 @@ export class Tm8Client {
         ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
       });
     } catch (err) {
+      // A transport failure is still a call the agent made and paid for, so it
+      // is journalled with a null status: the node never answered.
+      journal.noteCall({
+        operation: name,
+        method: op.method,
+        path: url.pathname,
+        baseUrl: this.baseUrl,
+        status: null,
+        requestChars,
+        responseChars: 0,
+        durationMs: Date.now() - startedMs,
+      });
       const reason = err instanceof Error ? err.message : String(err);
       throw new TransportError(
         `${op.method} ${url.pathname} failed: ${reason} (is tm8-server running at ${this.baseUrl}?)`,
@@ -240,6 +257,18 @@ export class Tm8Client {
     // A byte response is only drained as text when it FAILED; a success is
     // read as an ArrayBuffer by the caller so no blob is ever utf8-decoded.
     const text = read === 'text' || res.status >= 400 ? await res.text() : '';
+    journal.noteCall({
+      operation: name,
+      method: op.method,
+      path: url.pathname,
+      baseUrl: this.baseUrl,
+      status: res.status,
+      requestChars,
+      // A successful bytes read is not drained here, so its size is unknown
+      // rather than zero. `content-length` is the honest source when present.
+      responseChars: text.length || Number(res.headers.get('content-length') ?? 0),
+      durationMs: Date.now() - startedMs,
+    });
     return { res, url, method: op.method, text };
   }
 }

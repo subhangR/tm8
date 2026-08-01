@@ -66,6 +66,10 @@ export interface TerminalBodyProps {
   compact?: boolean;
   onOpenEntity?: (id: string) => void;
   onOpenTranscript?: () => void;
+  /** Resume this exited/failed session. Absent = the host has not wired it. */
+  onResume?: () => void;
+  resuming?: boolean;
+  resumeDisabledReason?: string;
 }
 
 export function TerminalBody({
@@ -83,6 +87,9 @@ export function TerminalBody({
   compact,
   onOpenEntity,
   onOpenTranscript,
+  onResume,
+  resuming,
+  resumeDisabledReason,
 }: TerminalBodyProps) {
   const row = toSessionRow(detail);
   const presentation = presentSession({
@@ -161,6 +168,9 @@ export function TerminalBody({
           livenessLabel={livenessLabel}
           livenessReason={livenessReason}
           onOpenTranscript={onOpenTranscript}
+          {...(onResume ? { onResume } : {})}
+          {...(resuming ? { resuming } : {})}
+          {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
           liveTerminalRef={liveTerminalRef}
         />
 
@@ -382,6 +392,9 @@ function SessionCanvas({
   livenessLabel,
   livenessReason,
   onOpenTranscript,
+  onResume,
+  resuming,
+  resumeDisabledReason,
   liveTerminalRef,
 }: {
   presentation: ReturnType<typeof presentSession>;
@@ -390,6 +403,9 @@ function SessionCanvas({
   livenessLabel?: string;
   livenessReason?: string;
   onOpenTranscript?: () => void;
+  onResume?: () => void;
+  resuming?: boolean;
+  resumeDisabledReason?: string;
   liveTerminalRef?: React.Ref<LiveTerminalHandle>;
 }) {
   switch (presentation) {
@@ -421,7 +437,14 @@ function SessionCanvas({
     case 'failed':
     case 'exited':
     default:
-      return <ExitedFallback onOpenTranscript={onOpenTranscript} />;
+      return (
+        <ExitedFallback
+          onOpenTranscript={onOpenTranscript}
+          {...(onResume ? { onResume } : {})}
+          {...(resuming ? { resuming } : {})}
+          {...(resumeDisabledReason ? { resumeDisabledReason } : {})}
+        />
+      );
   }
 }
 

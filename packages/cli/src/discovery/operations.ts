@@ -1006,6 +1006,20 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['terminal', 'pty', 'watch', 'drive'],
     notes: ['`--format json` implies `--grant-only`: interactive terminal bytes are not DTO output'],
   },
+  'execution.journal': {
+    cmd: ['session', 'journal'],
+    syn: 'tm8 session journal <work-session-id> [--limit <count>] [--before <line-index>]',
+    sum: "Read a session's own tm8 CLI command journal: what it ran, what it printed, and an estimate of the tokens each way",
+    authz: 'entity',
+    input: 'none',
+    tags: ['journal', 'commands', 'history', 'tokens', 'audit', 'debug', 'usage'],
+    notes: [
+      'the journal records ONLY `tm8` commands — anything else the agent ran in its shell is not here, so this is not a shell history',
+      'token counts are BYTE-DERIVED ESTIMATES of text crossing the CLI boundary, not the model provider’s reported usage, and never the session’s token spend',
+      'character counts are exact; the estimate is derived from them by the named estimator',
+      'a session spawned before this feature, or one launched without journaling, answers `available: false` rather than an empty journal',
+    ],
+  },
   'execution.liveness': {
     cmd: ['session', 'liveness'],
     syn: 'tm8 session liveness [--space <space-id>]',
@@ -1436,7 +1450,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:98aab261b790efa84dc5441fd9939f3597ed4c54f9b76848b719db53a4c4562e';
+  'sha256:ab251303b3772e70dbc2a85d9169cfdf2ae8b5cc8268feefd097837379cfed20';
 
 export const GRAMMAR_VERSION = '2';
 

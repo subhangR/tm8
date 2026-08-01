@@ -549,6 +549,22 @@ export interface KindConfig {
   list: ListConfig;
   panel: PanelConfig;
   palette?: { createLabel?: string; primaryAction?: ActionRef };
+  /**
+   * Can a session be launched ON this kind — the Run button.
+   *
+   * Declared here rather than by hand-listing `'run'` in `list.rowActions` and
+   * `panel.primaries`, which is how it worked when task was the only launchable
+   * kind: the capability then lived in three separate string arrays per kind
+   * with nothing tying them together, so "which kinds can launch?" had no single
+   * answer and adding a kind meant remembering all three sites. `applyLaunch`
+   * in the registry derives those arrays from this one field.
+   *
+   * The subject need not be a task. The server derives a task to anchor the
+   * session on (migration 064) and the launched entity is what the agent is
+   * pointed at, so any kind that a person could sensibly ask an agent to work on
+   * may set this.
+   */
+  launchable?: boolean;
 }
 
 /** Every custom kind resolves to the fallback row; `c:{name}` → `c-{name}`. */

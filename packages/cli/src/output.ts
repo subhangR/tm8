@@ -21,7 +21,9 @@ export interface OutputStreams {
   stderr(chunk: string): void;
 }
 
-const processStreams: OutputStreams = {
+/** The real process streams. Exported so an observer (the session journal) can
+ *  wrap them without this module having to know one exists. */
+export const processStreams: OutputStreams = {
   stdout: (chunk) => void process.stdout.write(chunk),
   stderr: (chunk) => void process.stderr.write(chunk),
 };

@@ -144,6 +144,13 @@ export const OPERATIONS = [
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
   { name: 'execution.resume',         method: 'POST',  path: '/v2/entities/:id/commands/resume',            kind: 'command', status: 'v1' },
+  // The session's CLI command journal. The bytes live on the node's disk at
+  // `<dataDir>/journals/<sessionId>.jsonl`, written by the teammate's own `tm8`
+  // invocations — NOT in the database. This op is the ONLY way they reach a
+  // browser, and it is deliberately keyed by work_session id rather than by
+  // path: the handler computes the filename itself from a validated UUID, so
+  // no request can ever name a file. See TM8-CLI-SESSION-COMMAND-JOURNAL §11.
+  { name: 'execution.journal',        method: 'GET',   path: '/v2/work-sessions/:workSessionId/journal',    kind: 'read',    status: 'v1' },
 
   // custom entity kinds (T-L4, R7–R9)
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },

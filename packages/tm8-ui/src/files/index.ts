@@ -30,8 +30,22 @@ export {
 /* ── T3-5 ──────────────────────────────────────────────────────────────── */
 export { NodeRoom, useNodeFacts, connectionRow, type NodeRoomProps, type ProviderRow } from './NodeRoom';
 
+/* ── the attachment strip: files on ONE entity, inside its panel body ───── */
+export { AttachmentStrip, canThumbnail, type AttachmentStripProps } from './AttachmentStrip';
+export {
+  createFileUploadTask,
+  safeUploadReason,
+  sha256Hex,
+  UploadCancelledError,
+  type FileUploadTask,
+  type FileUploadTaskOptions,
+  type UploadedFile,
+} from './upload';
+
 /* ── the seam adapter (the ONLY place this lane touches a seam) ─────────── */
 export {
+  attachmentsPortFromSeam,
+  type AttachmentsPort,
   filesPortFromSeam,
   nodePortFromSeam,
   staticNodePort,

@@ -20,22 +20,72 @@ export function ExitedFallback({
   /** e.g. "exit code 0 · ran 41m · ended 12m ago" — assembled by the caller. */
   meta,
   onOpenTranscript,
+  onResume,
+  /** True while a resume is in flight — the button must not be double-fired. */
+  resuming,
+  /**
+   * Why resume is unavailable for THIS session, when it is. Server-owned
+   * truth (e.g. a session spawned before native-id capture existed), never a
+   * guess assembled here.
+   */
+  resumeDisabledReason,
 }: {
   meta?: string;
   onOpenTranscript?: () => void;
+  onResume?: () => void;
+  resuming?: boolean;
+  resumeDisabledReason?: string;
 }) {
+  // L6: never hide, never enabled-inert. An unwired or refused resume renders
+  // as a DISABLED button carrying its reason — a missing button would read as
+  // "this session cannot be resumed", which is a different claim entirely.
+  const disabled = !onResume || Boolean(resumeDisabledReason) || Boolean(resuming);
+  const reason = !onResume
+    ? 'Resume is not wired on this surface yet.'
+    : resumeDisabledReason;
+
   return (
     <div className="term-fallback" data-testid="session-exited-fallback">
       <div className="term-fallback__inner">
         <span className="term-fallback__ring" aria-hidden />
         <span className="term-fallback__title">Session exited</span>
         {meta ? <span className="term-fallback__meta">{meta}</span> : null}
-        <button type="button" className="term-fallback__action" onClick={onOpenTranscript}>
-          View transcript ↗
-        </button>
+        <div className="term-fallback__actions">
+          <button
+            type="button"
+            className="term-fallback__action"
+            data-testid="session-resume"
+            onClick={onResume}
+            disabled={disabled}
+            aria-disabled={disabled}
+            {...(reason ? { title: reason } : {})}
+          >
+            {resuming ? 'Resuming…' : 'Resume session'}
+          </button>
+          <button type="button" className="term-fallback__chip" onClick={onOpenTranscript}>
+            View transcript ↗
+          </button>
+        </div>
+        {/* The record-survival sentence stays; "Read-only" does NOT. A session
+            that can be resumed is not read-only, and keeping that word next to
+            a live Resume button would be the same copy dishonesty the stale
+            fallback exists to avoid.
+
+            The refusal is ADDITIONAL, never a replacement: an earlier draft
+            swapped the caption out for the reason, which quietly dropped the
+            "your record survives" fact in exactly the case a user is most
+            likely to fear losing it. */}
         <span className="term-fallback__caption">
-          Read-only — the session record, discussion and connections stay. Re-run from its task.
+          The session record, discussion and connections stay.
+          {reason
+            ? ''
+            : ' Resume restores the agent’s own conversation — it picks up where it stopped, it does not start over.'}
         </span>
+        {reason ? (
+          <span className="term-fallback__meta" data-testid="session-resume-reason">
+            {reason}
+          </span>
+        ) : null}
       </div>
     </div>
   );
