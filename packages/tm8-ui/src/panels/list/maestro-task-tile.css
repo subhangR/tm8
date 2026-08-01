@@ -169,12 +169,21 @@
    card expands (meta chips, launch flow) far more often than a session does,
    and anchoring on the tile would drag the buttons to the centre of the
    expanded card. At rest the two are pixel-identical. */
+/* `box-sizing` is NOT border-box by default in this app — there is no global
+   reset, every rule that needs it says so. Without it `min-height` sizes the
+   CONTENT box, so the 29px floor became 29px of content PLUS the 6px/6px pad
+   and the row measured 41px: the token was being honoured against the wrong
+   box, which is why a task row stayed half again a session row's height even
+   after both were pointed at the same number. `pn-st__main` never hit this
+   because it sets no min-height at all — it is simply 17px of content + 12px
+   of pad. With border-box the floor means the same thing for both. */
 .cv2-root .pn-tt__main {
   position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  box-sizing: border-box;
   min-height: var(--pn-listrow-h);
   padding: 6px 8px 6px calc(7px + var(--tt-indent));
   cursor: pointer;

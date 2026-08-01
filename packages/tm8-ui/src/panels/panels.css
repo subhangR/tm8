@@ -1514,22 +1514,30 @@
 .cv2-root .lp__tile[data-flow='open']:hover { transform: none; }
 /* `pn-st__main`: 6px/8px pad, 6px gap, the shared 29px floor. The row is the
    positioning context for the floating action cluster below. */
+/* The floor lives on the PADDED box, in border-box — same construction as
+   `pn-tt__main`. It used to sit on `lp__row1`, which carries no padding of its
+   own, so the 29px was 29px of content and this tile's 6px/6px pad pushed every
+   non-session row to 41px. Holding the padded box to the token instead makes
+   the number mean the same thing here, on a task row and on a session row. */
 .cv2-root .lp__tile-main {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
+  box-sizing: border-box;
+  min-height: var(--pn-listrow-h);
   padding: 6px 8px 6px 7px;
   cursor: pointer;
 }
 .cv2-root .lp--compact .lp__tile-main { padding: 6px 7px; }
 
+/* No `min-height` here — the floor is on `lp__tile-main` above. Setting it on
+   both would re-add the padding on top of the token a second time. */
 .cv2-root .lp__row1 {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  min-height: var(--pn-listrow-h);
 }
 /* `lp__meta` is inline now, so it must NOT be `flex: 1` — that made it compete
    with the title for the free space instead of yielding it. It shrinks first
