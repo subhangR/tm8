@@ -88,6 +88,70 @@ function stableKey(value: unknown): string {
   return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableKey(v)}`).join(',')}}`;
 }
 
+/**
+ * Did the node ANSWER this failure, and was the answer "I am overloaded"?
+ *
+ * The distinction the boot retry runs on. `CollabError.status` cannot carry
+ * it — the class recomputes 503 from the code, so a connection refused and a
+ * served 503 look identical there. Only `details.httpStatus` (set by the
+ * transport exactly when a response arrived) records that the node was
+ * reachable and drowning rather than absent. 502/504 are the proxy saying the
+ * same thing on the backend's behalf.
+ */
+function isOverloadResponse(error: unknown): boolean {
+  const details = (error as { details?: Record<string, unknown> } | null | undefined)?.details;
+  const status = details?.['httpStatus'];
+  return status === 502 || status === 503 || status === 504;
+}
+
+/**
+ * Backoff for the boot reads, and THE FIX for the request storm's feedback
+ * half: against an OVERLOADED node the retry itself is the load.
+ *
+ * An unreachable node costs nothing to probe — a fast 1s→15s ladder gets the
+ * workspace back the moment the node returns, and "retry forever" stays
+ * correct because unreachable is a normal, transient state (restart, sleep,
+ * a blip). A node answering 503 is the opposite case: it is up, saturated,
+ * and every request we add holds its pool down. Measured on staging before
+ * this existed: boot retries were ~50 req/s sustained and the node never
+ * converged, because the retry rate exceeded the drain rate. So overload
+ * starts at 5s and backs off to a 60s ceiling — still forever, never a
+ * permanent error card, but slow enough that the node can drain.
+ */
+function bootRetryDelayMs(attempt: number, error: unknown): number {
+  return isOverloadResponse(error)
+    ? Math.min(5_000 * 2 ** attempt, 60_000)
+    : Math.min(1_000 * 2 ** attempt, 15_000);
+}
+
+/**
+ * `Promise.all` with a concurrency bound, for the boot reads that genuinely
+ * need one request per item. The pool behind `/v2` is small (8 by default)
+ * and shared by every tab; an unbounded fan-out of N kind queries plus one
+ * connections read per teammate is how boot saturated it. Two at a time keeps
+ * boot latency close to parallel while leaving the pool room to serve
+ * everything that is not us.
+ */
+async function mapLimit<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      out[index] = await fn(items[index] as T);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/** Boot's request-concurrency bound for per-item reads. See `mapLimit`. */
+const BOOT_READ_CONCURRENCY = 2;
+
 export interface GateData {
   ready: boolean;
   spaceId: SpaceId;
@@ -352,12 +416,19 @@ export function useGateData(options: GateOptions): GateData {
         absorb(`${kind}::*`, result.page.items);
         return result.page.items;
       };
-      const loaded = await Promise.all(
-        [...new Set([options.leftKind, options.rightKind, 'team_member', 'interaction_profile'])]
-          .map(async (kind) => {
-            const items = await load(kind);
-            return { kind, items };
-          }),
+      // BOUNDED, not `Promise.all`: these are the collections.query calls that
+      // boot fires per kind, and unbounded they arrive at the node together —
+      // with the counts/menu/graph reads above already in flight, ONE tab's
+      // boot approached the whole pool, and two tabs exceeded it. The rail's
+      // counters already come from the one-query `spaces.counts` read above;
+      // only the panels' actual rows justify per-kind queries at all.
+      const loaded = await mapLimit(
+        [...new Set([options.leftKind, options.rightKind, 'team_member', 'interaction_profile'])],
+        BOOT_READ_CONCURRENCY,
+        async (kind) => {
+          const items = await load(kind);
+          return { kind, items };
+        },
       );
       const unnamedProfiles = loaded
         .filter((entry) => entry.kind === 'interaction_profile')
@@ -367,19 +438,21 @@ export function useGateData(options: GateOptions): GateData {
       // envelope title even though the canonical entity detail already knew
       // the versioned draft name. Resolve only those compatibility rows. A
       // current node returns the name in the summary and pays zero extra reads.
-      await Promise.all(unnamedProfiles.map(async (profile) => {
+      await mapLimit(unnamedProfiles, BOOT_READ_CONCURRENCY, async (profile) => {
         const detail = await seam.entity(profile.id).catch(() => undefined);
         if (detail) domain.store.getState().ingestDetail(detail);
-      }));
+      });
       const teammateRows = loaded
         .filter((entry) => entry.kind === 'team_member')
         .flatMap((entry) => entry.items);
-      const defaults = await Promise.all(teammateRows.map(async (teammate) => {
+      // Bounded for the same reason as the kind loads: this is one request PER
+      // TEAMMATE, the only boot read whose count scales with the space.
+      const defaults = await mapLimit(teammateRows, BOOT_READ_CONCURRENCY, async (teammate) => {
         const page = await seam.connections(teammate.id, { limit: 200 }).catch(() => undefined);
         const edge = page?.items.find((candidate) =>
           candidate.type === 'defaults_to_profile' && candidate.source.id === teammate.id);
         return [teammate.id, edge?.target.id ?? null] as const;
-      }));
+      });
       setTeammateProfileDefaults(Object.fromEntries(defaults));
     },
     [seam, options.leftKind, options.rightKind, absorb, loadGraph, domain],
@@ -391,7 +464,11 @@ export function useGateData(options: GateOptions): GateData {
   // is a separate effect below so the tab bar is a real switch, not a painted
   // control whose handler discards the id.
   //
-  // THE READ RETRIES FOREVER, backoff capped at 15s. An unreachable node is a
+  // THE READ RETRIES FOREVER, and the backoff is OVERLOAD-AWARE
+  // (`bootRetryDelayMs`): 15s cap while the node is unreachable, 60s cap the
+  // moment it answers 503 — because against a saturated pool the retry IS the
+  // load, and a loop that treats "drowning" like "absent" never converges
+  // (measured: ~50 req/s sustained, self-inflicted). An unreachable node is a
   // NORMAL state (see the bootError note below), and it is also usually a
   // TRANSIENT one — the node restarts, the pool un-wedges, the laptop wakes.
   // A boot that tries once turns every transient into a permanent error card
@@ -434,7 +511,7 @@ export function useGateData(options: GateOptions): GateData {
           if (cancelled) return;
           setBootError(String((error as { message?: string })?.message ?? error));
           await new Promise<void>((resolve) => {
-            delayHandle = setTimeout(resolve, Math.min(1_000 * 2 ** attempt, 15_000));
+            delayHandle = setTimeout(resolve, bootRetryDelayMs(attempt, error));
           });
         }
       }
@@ -465,10 +542,13 @@ export function useGateData(options: GateOptions): GateData {
     setLinkedProjects([]);
     setTeammateProfileDefaults({});
 
-    // Same retry law as the spaces read above: hydration failure is surfaced
-    // immediately AND retried with capped backoff, because "the node blinked
-    // while I switched spaces" must not strand the workspace on an error card
-    // (or, before the transport timeout existed, on a spinner) until reload.
+    // Same retry law as the spaces read above, including the overload-aware
+    // backoff — hydration is the HEAVY read set (a dozen-plus requests), so a
+    // fast retry of it against a 503ing node is the storm's worst case:
+    // hydration failure is surfaced immediately AND retried with capped
+    // backoff, because "the node blinked while I switched spaces" must not
+    // strand the workspace on an error card (or, before the transport timeout
+    // existed, on a spinner) until reload.
     let delayHandle: ReturnType<typeof setTimeout> | undefined;
     void (async () => {
       for (let attempt = 0; !cancelled; attempt++) {
@@ -484,7 +564,7 @@ export function useGateData(options: GateOptions): GateData {
           if (cancelled) return;
           setBootError(String((error as { message?: string })?.message ?? error));
           await new Promise<void>((resolve) => {
-            delayHandle = setTimeout(resolve, Math.min(1_000 * 2 ** attempt, 15_000));
+            delayHandle = setTimeout(resolve, bootRetryDelayMs(attempt, error));
           });
         }
       }
@@ -619,9 +699,22 @@ export function useGateData(options: GateOptions): GateData {
       observed count permits one new read when the server counter advances,
       without turning a failed read into a render-time request loop. */
   const pulledMessages = useRef(new Map<string, number>());
+  /**
+   * The latest `rows`, for callbacks that only GUARD on it. `ensureKind`
+   * used to take `rows` as a dependency — but calling it WRITES `rows` (via
+   * `absorb`/`setRows`), so its identity churned on its own writes, and every
+   * effect and memo holding it re-fired per write. On a healthy node the
+   * per-key guards made that mere churn; against a node that was 503ing, the
+   * churn re-entered effects exactly when the caches were empty and multiplied
+   * the retry storm. A read-through ref breaks the cycle: the guard still sees
+   * the CURRENT rows at call time, and the callback's identity depends only on
+   * the space and the seam.
+   */
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const ensureKind = useCallback(
     (kind: string) => {
-      if (!spaceId || rows[`${kind}::*`] || inFlight.current.has(kind)) return;
+      if (!spaceId || rowsRef.current[`${kind}::*`] || inFlight.current.has(kind)) return;
       inFlight.current.add(kind);
       const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
       void seam
@@ -634,7 +727,7 @@ export function useGateData(options: GateOptions): GateData {
         })
         .finally(() => inFlight.current.delete(kind));
     },
-    [seam, spaceId, rows, absorb],
+    [seam, spaceId, absorb],
   );
 
   useEffect(() => {

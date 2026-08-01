@@ -167,9 +167,31 @@ describe('http: error mapping — the server owns the code', () => {
     }));
     const http = createHttpClient({ fetch: f.fetch });
     const err = await http.call('identity.get').catch((e: unknown) => e) as CollabError;
-    expect(err.details).toEqual({ reason: 'x', serverRequestId: 'req_srv_42' });
+    // `httpStatus` rides along on EVERY served error now — it is how the boot
+    // retry tells an answered 503 from an unreachable node, which mint the
+    // same CollabError code (and therefore the same `.status`).
+    expect(err.details).toEqual({ reason: 'x', serverRequestId: 'req_srv_42', httpStatus: 403 });
     // The control: the client-minted id is NOT the server's.
     expect(err.requestId).not.toBe('req_srv_42');
+  });
+
+  it('a served 503 carries httpStatus; an unreachable node does not', async () => {
+    // The boot retry's overload backoff keys on exactly this difference —
+    // both errors share code `upstream_unavailable` and `.status` 503.
+    const served = fakeFetch(() => ({
+      status: 503,
+      error: { code: 'upstream_unavailable', message: 'pool saturated', requestId: 'r', retryable: true },
+    }));
+    const answered = await createHttpClient({ fetch: served.fetch })
+      .call('identity.get').catch((e: unknown) => e) as CollabError;
+    expect(answered.code).toBe('upstream_unavailable');
+    expect(answered.details).toMatchObject({ httpStatus: 503 });
+
+    const down = fakeFetch(() => ({ networkError: 'ECONNREFUSED' }));
+    const unreachable = await createHttpClient({ fetch: down.fetch })
+      .call('identity.get').catch((e: unknown) => e) as CollabError;
+    expect(unreachable.code).toBe('upstream_unavailable');
+    expect(unreachable.details?.['httpStatus']).toBeUndefined();
   });
 
   it('refuses to invent a code it does not understand', async () => {

@@ -67,6 +67,16 @@ export interface ServerConfig {
    */
   readonly idempotencyEnabled?: boolean;
   /**
+   * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
+   *
+   * This number IS the node's read concurrency: the pool queues past it and
+   * callers time out after `connectionTimeoutMillis` as 503s. It was a
+   * hardcoded default in db/client.ts with no way to raise it per deployment
+   * while every other operational knob had an env var — on a box whose
+   * Postgres can take more, the only fix was a rebuild.
+   */
+  readonly dbPoolMax?: number;
+  /**
    * Self-hosted LiveKit SFU, for voice channels. All three or none — a node
    * with a URL and no secret cannot mint a token, so a half-set environment is
    * a configuration error, not a degraded mode.
@@ -193,6 +203,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     );
   }
 
+  const dbPoolMaxRaw = env.TM8_DB_POOL_MAX?.trim();
+  const dbPoolMax = dbPoolMaxRaw ? Number.parseInt(dbPoolMaxRaw, 10) : 8;
+  if (!Number.isInteger(dbPoolMax) || dbPoolMax <= 0 || dbPoolMax > 1000) {
+    throw new ConfigError(`TM8_DB_POOL_MAX must be an integer between 1 and 1000, got ${JSON.stringify(dbPoolMaxRaw)}`);
+  }
+
   const livekit = resolveLiveKit(env);
 
   const extraAllowedHostnames = (env.TM8_ALLOWED_HOSTNAMES ?? '')
@@ -215,6 +231,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
+    dbPoolMax,
     ...(livekit ? { livekit } : {}),
   };
 }

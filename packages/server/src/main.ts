@@ -103,7 +103,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const db = config.databaseUrl
     // `!== false`, not `=== true`: an absent field means "not overridden", and
     // must inherit the ON default rather than read as off.
-    ? createDb(config.databaseUrl, { idempotencyEnabled: config.idempotencyEnabled !== false })
+    ? createDb(config.databaseUrl, {
+        idempotencyEnabled: config.idempotencyEnabled !== false,
+        ...(config.dbPoolMax !== undefined ? { max: config.dbPoolMax } : {}),
+      })
     : undefined;
   const dataDir = config.dataDir ?? resolveServerDataDir();
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;

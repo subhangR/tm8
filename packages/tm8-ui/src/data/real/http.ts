@@ -122,13 +122,21 @@ function toCollabError(status: number, body: unknown): CollabError {
 
   if (typeof err?.requestId === 'string') details.serverRequestId = err.requestId;
 
+  // The status the wire ACTUALLY carried, on every served error — not only
+  // the unrecognised-code fallback it used to mark. `CollabError.status` is
+  // recomputed from the code, so a client-minted "node unreachable" error and
+  // a served 503 both read `status: 503` off the class; this field is the
+  // only record that a response arrived at all. The boot retry keys its
+  // backoff on that difference: an overloaded node is answering, and every
+  // fast retry against it is added load.
+  details.httpStatus = status;
+
   let code: CommandErrorCode;
   if (rawCode !== undefined && isCommandErrorCode(rawCode)) {
     code = rawCode;
   } else {
     code = 'upstream_unavailable';
     if (rawCode !== undefined) details.serverCode = rawCode;
-    else details.httpStatus = status;
   }
 
   return new CollabError(code, message, {
@@ -245,8 +253,11 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       try {
         parsed = text === '' ? undefined : JSON.parse(text);
       } catch {
+        // `httpStatus` alongside the legacy `status` key: a proxy's own 502/503
+        // error page is non-JSON and lands here, and the boot retry must read
+        // it as "answered, overloaded" — same marker toCollabError sets.
         throw new CollabError('upstream_unavailable', `tm8 returned non-JSON (HTTP ${res.status})`, {
-          details: { url, status: res.status },
+          details: { url, status: res.status, httpStatus: res.status },
         });
       }
 
