@@ -250,6 +250,9 @@ export function errorLines(err: unknown): string[] {
   if (err instanceof UnsettledDeliveryError) {
     return [`tm8: ${err.message}`, '  the message IS stored; do not resend'];
   }
-  if (err instanceof InterruptedError) return ['tm8: interrupted'];
+  // The default message is 'interrupted' (SIGINT), but the attach stream's
+  // close path constructs this with the WS close code and the server's reason;
+  // rendering a fixed string here silently discarded "no live PTY for session".
+  if (err instanceof InterruptedError) return [`tm8: ${err.message}`];
   return [`tm8: unexpected failure: ${err instanceof Error ? err.stack ?? err.message : String(err)}`];
 }

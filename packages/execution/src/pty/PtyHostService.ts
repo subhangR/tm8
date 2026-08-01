@@ -346,6 +346,17 @@ export class PtyHostService {
   private epochCounter = 0;
 
   constructor(options: PtyHostOptions = {}) {
+    // Enforce the node-not-bun invariant documented above at the moment it can
+    // still be enforced. Under bun the failure is a PTY that spawns and emits
+    // NOTHING — no error on either side, just an agent that never speaks —
+    // which costs far more to diagnose than a refused boot.
+    if ((process as { versions?: { bun?: string } }).versions?.bun !== undefined) {
+      throw new Error(
+        'PtyHostService requires node — under bun, node-pty onData never fires and ' +
+          'the spawn-helper exec bit is stripped, so every PTY would be silently dead. ' +
+          'Start the server with node.',
+      );
+    }
     this.logger = options.logger ?? NOOP_LOGGER;
     this.onSessionStatus = options.onSessionStatus;
     this.onPromptSettled = options.onPromptSettled;
