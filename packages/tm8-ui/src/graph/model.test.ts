@@ -23,6 +23,13 @@ import {
   searchMatches,
 } from './model';
 
+/**
+ * The whole-graph baseline. Pinned to the `all` lens on purpose: everything in
+ * this file asserts properties of the FULL partition — components, the shelf,
+ * blocked paths, ghosts, layout geometry — which are only well-defined when the
+ * canvas is showing the whole space. Lens behavior (which subgraph a lens picks
+ * and why) is relevance.test.ts's job.
+ */
 const model = () =>
   buildGraphModel({
     nodes: graphFixtureNodes,
@@ -30,12 +37,19 @@ const model = () =>
     kindFilter: null,
     edgeTypeFilter: null,
     now: GRAPH_FIXTURE_NOW,
+    lens: 'all',
   });
 
 describe('components and the shelf', () => {
-  it('places every connected node and shelves every singleton — nothing vanishes', () => {
+  it('accounts for every node — placed, shelved, folded or truncated, nothing vanishes', () => {
     const m = model();
-    expect(m.placed.length + m.shelf.length).toBe(graphFixtureNodes.length);
+    // THE ACCOUNTING LAW. Folding relocates leaves onto their hub's badge, so
+    // the old `placed + shelf === total` no longer holds — but nothing may go
+    // missing, and every node must still be findable in exactly one bucket.
+    expect(
+      m.placed.length + m.shelf.length + m.foldedCount + m.truncated + m.outOfLens,
+    ).toBe(graphFixtureNodes.length);
+    expect(m.visibleTotal).toBe(graphFixtureNodes.length);
     expect(m.truncated).toBe(0);
     // The deliberate singletons land on the shelf.
     expect(m.shelf.map((s) => s.id)).toContain(spellDeploy.id);
@@ -62,6 +76,7 @@ describe('components and the shelf', () => {
       kindFilter: null,
       edgeTypeFilter: only,
       now: GRAPH_FIXTURE_NOW,
+      lens: 'all',
     });
     // Only dependency endpoints stay on canvas; everything else shelves.
     for (const p of m.placed) {
@@ -119,8 +134,26 @@ describe('layout stability (frozen positions)', () => {
   const freezeAll = (m: ReturnType<typeof model>): Record<string, { x: number; y: number }> =>
     Object.fromEntries(m.placed.map((p) => [p.entity.id, { x: p.x, y: p.y }]));
 
+  /**
+   * The stability spine is about GEOMETRY: frozen rects hold, arrivals slot in
+   * beside them. Folding changes WHICH nodes get placed at all, so a folded
+   * baseline frozen against an unfolded model would report every unfolded leaf
+   * as an "arrival" and measure nothing. Both halves of each test below share
+   * this unfolded baseline so the only new node is the one the test adds.
+   */
+  const unfolded = () =>
+    buildGraphModel({
+      nodes: graphFixtureNodes,
+      edges: graphFixtureEdges,
+      kindFilter: null,
+      edgeTypeFilter: null,
+      now: GRAPH_FIXTURE_NOW,
+      lens: 'all',
+      fold: false,
+    });
+
   it('keeps frozen nodes at EXACTLY their positions even when an edge is added', () => {
-    const base = model();
+    const base = unfolded();
     const frozen = freezeAll(base);
     // A brand-new edge between two already-placed nodes — the partition may
     // shift, but nothing frozen is allowed to move.
@@ -131,7 +164,9 @@ describe('layout stability (frozen positions)', () => {
       kindFilter: null,
       edgeTypeFilter: null,
       now: GRAPH_FIXTURE_NOW,
+      lens: 'all',
       frozen,
+      fold: false, // matches the unfolded baseline — see `unfolded` above
     });
     for (const p of m.placed) {
       expect({ x: p.x, y: p.y }).toEqual(frozen[p.entity.id]);
@@ -141,7 +176,7 @@ describe('layout stability (frozen positions)', () => {
   });
 
   it('slots an arrival next to its frozen neighbor without overlapping any frozen rect', () => {
-    const base = model();
+    const base = unfolded();
     const frozen = freezeAll(base);
     const arrival: EntitySummary = { ...graphFixtureNodes[0], id: 'arrival-1', title: 'the newcomer' };
     const arrivalEdge = { ...graphFixtureEdges[0], id: 'ge-arrival', source: arrival, target: taskUuidTitle };
@@ -151,7 +186,14 @@ describe('layout stability (frozen positions)', () => {
       kindFilter: null,
       edgeTypeFilter: null,
       now: GRAPH_FIXTURE_NOW,
+      lens: 'all',
       frozen,
+      // What is under test here is the STABILITY SPINE — frozen rects hold and
+      // an arrival slots in beside its neighbor. The arrival has exactly one
+      // edge, so with folding on it would legitimately collapse onto its hub
+      // and never be placed at all; that is folding policy, covered by its own
+      // tests below. Held off here so this asserts only the geometry it names.
+      fold: false,
     });
     // Exactly one node was positioned heuristically.
     expect(m.pendingRelayout).toBe(1);
@@ -231,9 +273,15 @@ describe('the honest cap', () => {
       kindFilter: null,
       edgeTypeFilter: null,
       now: GRAPH_FIXTURE_NOW,
+      // `all` so the RENDER BUDGET is what binds — this test is about the cap.
+      // Under a seeded lens these islands would be excluded by RADIUS instead,
+      // which is a different count with a different meaning (see `outOfLens`).
+      lens: 'all',
     });
     expect(m.placed.length).toBeLessThanOrEqual(RENDER_CAP);
-    expect(m.truncated).toBe(big.length - m.placed.length - m.shelf.length);
+    expect(m.truncated).toBe(big.length - m.placed.length - m.shelf.length - m.outOfLens);
     expect(m.truncated).toBeGreaterThan(0);
+    // The cap did the cutting, not the lens: nothing here is out-of-lens.
+    expect(m.outOfLens).toBe(0);
   });
 });

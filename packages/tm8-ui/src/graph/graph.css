@@ -89,6 +89,59 @@
   border-color: rgba(var(--pn-brand-rgb), 0.55);
 }
 
+/* -- the lens ---------------------------------------------------------------
+   A segmented control, not a dropdown: there are three options, the current one
+   must be readable at a glance, and switching is the most common action on this
+   toolbar. Sits first in the bar because it is the first question the canvas
+   answers — what is this view about? */
+
+.gv-lens {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  background: var(--pn-surface-2);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-pill);
+}
+
+.gv-lens__opt {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--pn-r-pill);
+  padding: 2px var(--pn-space-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.gv-lens__opt:hover { color: var(--pn-ink-1); background: var(--pn-hover); }
+
+.gv-lens__opt--on,
+.gv-lens__opt--on:hover {
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+}
+
+/* The folded-count affordance inside the count line: a plain-text button, so it
+   reads as part of the sentence it belongs to rather than as a control. */
+.gv-toolbar__fold {
+  font: inherit;
+  color: var(--pn-ink-3);
+  background: none;
+  border: 0;
+  padding: 0 0 0 2px;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.gv-toolbar__fold:hover { color: var(--pn-brand-2); }
+
 /* -- honesty banner + empty state ----------------------------------------- */
 
 .gv-banner {
@@ -388,6 +441,24 @@
 }
 
 .gv-node__meta--ghost { color: var(--pn-block); }
+
+/* The fold badge — "+12" on a hub that swallowed twelve leaves. Brand-soft so
+   it reads as an available expansion, and it must stay legible when the card is
+   dimmed by a hover neighborhood or a search miss (see the --dim rules). */
+.gv-node__folded {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand-2);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.35);
+  border-radius: var(--pn-r-pill);
+  padding: 0 6px;
+  margin-left: auto;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.gv-node__folded:hover { border-color: rgba(var(--pn-brand-rgb), 0.65); }
 
 /* -- shelf ------------------------------------------------------------------ */
 

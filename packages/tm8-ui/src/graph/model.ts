@@ -18,6 +18,16 @@
  *    from the seam's snapshot, R-UI-5 — the view gates the pulse).
  */
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
+import {
+  DEFAULT_LENS,
+  computeRelevance,
+  foldLeaves,
+  lensSpec,
+  seedsFor,
+  selectByInterest,
+  type FoldedInto,
+  type LensId,
+} from './relevance';
 
 export const NODE_W = 240;
 export const NODE_H = 124;
@@ -30,6 +40,8 @@ const MARGIN = 32;
 /** Honest render budget: past this the model truncates AND SAYS SO. */
 export const RENDER_CAP = 150;
 
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
 export type Heat = 'fresh' | 'warm' | 'rest';
 
 export interface GraphModelInput {
@@ -40,6 +52,26 @@ export interface GraphModelInput {
   edgeTypeFilter: ReadonlySet<string> | null;
   /** The heat clock — fixtures pass FIXTURE_NOW, live passes wall time. */
   now: string;
+  /**
+   * Which lens seeds the relevance pass. Omitted = the default lens. Selection
+   * is by DEGREE-OF-INTEREST (relevance.ts), not by island order, so the render
+   * budget always buys the most relevant reachable subgraph.
+   */
+  lens?: LensId;
+  /** The liveness snapshot's verdict — the only honest source of "running". */
+  liveIds?: ReadonlySet<string>;
+  /** Search hits: they raise interest AND exempt a node from folding. */
+  matchIds?: ReadonlySet<string>;
+  /** Focus / selection — pinned interest, never folded, never truncated. */
+  pinnedIds?: ReadonlySet<string>;
+  /** Explicit focus node: adds the distance term to the ranking. */
+  focusId?: EntityId | null;
+  /**
+   * Fold unprotected degree-1 leaves onto their hub (default ON — it is the
+   * single largest declutter and it costs no meaning, since the hub carries the
+   * count). Set false to draw every node as its own card.
+   */
+  fold?: boolean;
   /**
    * Layout stability spine. When present, any PLACED node whose id is a key
    * keeps EXACTLY that position — no re-layout, no packing shift. Placed nodes
@@ -60,6 +92,14 @@ export interface PlacedNode {
   /** Tombstone (deletedAt set) — renders as a ghost, never hidden silently. */
   ghost: boolean;
   componentId: number;
+  /**
+   * Leaves that folded onto this node, if any. The card renders the count — a
+   * folded node is RELOCATED onto its hub, never dropped, and the totals below
+   * account for every one of them.
+   */
+  folded?: FoldedInto;
+  /** This node's degree-of-interest — what won it a place in the budget. */
+  interest: number;
 }
 
 export interface PlacedEdge {
@@ -79,8 +119,36 @@ export interface GraphModel {
   width: number;
   height: number;
   componentCount: number;
-  /** Nodes beyond RENDER_CAP that were NOT placed (0 = everything shown). */
+  /**
+   * Nodes inside the lens that did not fit the RENDER BUDGET. Only these may be
+   * explained by "the canvas is full" — see `outOfLens` for the other reason.
+   */
   truncated: number;
+  /**
+   * Nodes the LENS never reached. A different fact from `truncated` with a
+   * different remedy: widen the lens, not raise the cap. Reported apart because
+   * conflating them made the banner blame the 150-node budget for exclusions the
+   * budget never made.
+   */
+  outOfLens: number;
+  /**
+   * True when a seeded lens found no seeds — `Live` with nothing running. The
+   * canvas must say so rather than silently showing the whole space.
+   */
+  lensEmpty: boolean;
+  /**
+   * Leaves folded onto a hub. Not hidden: each is counted on its hub's badge
+   * and included in `visibleTotal` below. Reported separately so the toolbar can
+   * say exactly what the declutter did.
+   */
+  foldedCount: number;
+  /**
+   * How many nodes the kind filter let through. The accounting law:
+   * placed + shelf + folded + truncated + outOfLens === visibleTotal.
+   */
+  visibleTotal: number;
+  /** The lens this model was built under. */
+  lens: LensId;
   /**
    * How many placed nodes were positioned heuristically this call — i.e. the
    * arrivals that landed beside a frozen neighbor or in the new-arrivals row.
@@ -272,6 +340,7 @@ function placeWithFrozen(
   blockedIds: Set<EntityId>,
   frozen: Readonly<Record<string, { x: number; y: number }>>,
   now: string,
+  decorate: (entity: EntitySummary) => Pick<PlacedNode, 'interest'> & { folded?: FoldedInto },
 ): { placed: PlacedNode[]; pendingRelayout: number } {
   const placedIds: EntityId[] = [];
   const componentOf = new Map<EntityId, number>();
@@ -348,6 +417,7 @@ function placeWithFrozen(
       onBlockedPath: blockedIds.has(id),
       ghost: entity.deletedAt !== null,
       componentId: componentOf.get(id) ?? 0,
+      ...decorate(entity),
     };
   });
   return { placed, pendingRelayout: arrivals.length };
@@ -412,8 +482,48 @@ export function searchMatches(nodes: readonly EntitySummary[], query: string): S
 
 export function buildGraphModel(input: GraphModelInput): GraphModel {
   const { kindFilter, edgeTypeFilter, now } = input;
+  const lens = input.lens ?? DEFAULT_LENS;
+  const liveIds = input.liveIds ?? EMPTY_SET;
+  const matchIds = input.matchIds ?? EMPTY_SET;
+  const pinnedIds = input.pinnedIds ?? EMPTY_SET;
 
-  const visible = input.nodes.filter((n) => kindFilter === null || kindFilter.has(n.kind));
+  const kindVisible = input.nodes.filter((n) => kindFilter === null || kindFilter.has(n.kind));
+
+  // ------------------------------------------------------------------------
+  // RELEVANCE PASS. Score, fold, then select — before any layout runs, so the
+  // layout only ever sees the subgraph that earned the canvas. This replaces
+  // the old behavior of laying out EVERYTHING and cutting by island order.
+  // ------------------------------------------------------------------------
+  const scopeEdges = input.edges.filter(
+    (e) => edgeTypeFilter === null || edgeTypeFilter.has(e.type),
+  );
+  const relevance = computeRelevance({
+    nodes: kindVisible,
+    edges: scopeEdges,
+    liveIds,
+    matchIds,
+    pinnedIds,
+    focusId: input.focusId ?? null,
+    now,
+  });
+
+  const fold = input.fold ?? true;
+  const folds = fold
+    ? foldLeaves(kindVisible, relevance)
+    : { groups: new Map<string, FoldedInto>(), foldedIds: new Set<string>() };
+
+  const unfolded = kindVisible.filter((n) => !folds.foldedIds.has(n.id));
+  const seeds = seedsFor(lens, unfolded, liveIds);
+  const selection = selectByInterest(
+    unfolded.map((n) => n.id),
+    seeds,
+    relevance,
+    RENDER_CAP,
+    lensSpec(lens).radius,
+  );
+  const selectedIds = new Set(selection.selected);
+
+  const visible = unfolded.filter((n) => selectedIds.has(n.id));
   const visibleIds = new Set(visible.map((n) => n.id));
   const byId = new Map(visible.map((n) => [n.id, n]));
 
@@ -467,25 +577,29 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     (a, b) => b.length - a.length || (byId.get(a[0])!.title < byId.get(b[0])!.title ? -1 : 1),
   );
 
-  // Honest cap: place whole islands until the budget runs out; report the rest.
-  let budget = RENDER_CAP;
-  const placedComponents: EntityId[][] = [];
-  let truncated = 0;
-  for (const component of components) {
-    if (component.length <= budget) {
-      placedComponents.push(component);
-      budget -= component.length;
-    } else {
-      truncated += component.length;
-    }
-  }
+  // The budget was already spent by the relevance pass, which admitted nodes in
+  // descending interest rather than by island size — so every island reaching
+  // this point is drawn whole, and truncation is what the DOI ranking left out.
+  const placedComponents: EntityId[][] = components;
+  const truncated = selection.omitted.length;
+  const outOfLens = selection.outOfLens.length;
 
   // Position the placed nodes. With `frozen`, pinned ids hold and arrivals
   // slot in around them; otherwise pack whole islands into rows.
+  // What every placed card carries beyond its geometry: the leaves that folded
+  // onto it, and the interest that won it its place.
+  const decorate = (entity: EntitySummary): Pick<PlacedNode, 'interest'> & { folded?: FoldedInto } => {
+    const group = folds.groups.get(entity.id);
+    return {
+      interest: relevance.doi.get(entity.id) ?? 0,
+      ...(group ? { folded: group } : {}),
+    };
+  };
+
   let placed: PlacedNode[];
   let pendingRelayout = 0;
   if (input.frozen) {
-    const r = placeWithFrozen(placedComponents, edges, byId, blockedIds, input.frozen, now);
+    const r = placeWithFrozen(placedComponents, edges, byId, blockedIds, input.frozen, now, decorate);
     placed = r.placed;
     pendingRelayout = r.pendingRelayout;
   } else {
@@ -511,6 +625,7 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
           onBlockedPath: blockedIds.has(id),
           ghost: entity.deletedAt !== null,
           componentId,
+          ...decorate(entity),
         });
       }
       cursorX += layout.w + ISLAND_GAP;
@@ -532,6 +647,15 @@ export function buildGraphModel(input: GraphModelInput): GraphModel {
     height,
     componentCount: placedComponents.length,
     truncated,
+    outOfLens,
+    lensEmpty: selection.lensEmpty,
+    foldedCount: folds.foldedIds.size,
+    // The accounting law, asserted in model.test.ts: everything the filters let
+    // through is either placed, shelved, folded onto a hub, cut by the budget
+    // (`truncated`) or left outside the lens (`outOfLens`). Nothing is ever
+    // dropped silently, and each bucket names the REASON it is in.
+    visibleTotal: kindVisible.length,
+    lens,
     pendingRelayout,
   };
 }

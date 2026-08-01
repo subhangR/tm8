@@ -29,6 +29,7 @@ import { Avatar, Chip, Eyebrow, IconBtn, Pill, type PillTone } from '../kit';
 import {
   NODE_H,
   NODE_W,
+  RENDER_CAP,
   buildGraphModel,
   focusSubgraph,
   searchMatches,
@@ -36,6 +37,7 @@ import {
   type PlacedEdge,
   type PlacedNode,
 } from './model';
+import { DEFAULT_LENS, LENSES, lensSpec, type LensId } from './relevance';
 import { GraphSearch } from './GraphSearch';
 import { Minimap } from './Minimap';
 
@@ -85,6 +87,17 @@ function statusPill(entity: EntitySummary): { word: string; tone: PillTone } | n
     typeof raw === 'string' ? raw : typeof raw === 'boolean' ? (raw ? 'equipped' : 'library') : null;
   if (value === null) return null;
   return { word: value.replace(/_/g, ' '), tone: (chip.tones?.[value] ?? 'idle') as PillTone };
+}
+
+/**
+ * "3 messages, 1 doc" — the fold badge's tooltip. Kind names arrive as DATA and
+ * resolve through the registry (§15.2); nothing here knows what a message is.
+ */
+function foldSummary(byKind: Readonly<Record<string, number>>): string {
+  return Object.entries(byKind)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([kind, n]) => `${n} ${n === 1 ? getKind(kind).label : getKind(kind).labelPlural}`)
+    .join(', ');
 }
 
 function timeAgo(iso: string, now: string): string {
@@ -148,6 +161,17 @@ export function GraphView(props: GraphViewProps) {
   const [kindsOff, setKindsOff] = useState<ReadonlySet<string>>(new Set());
   const [typesOff, setTypesOff] = useState<ReadonlySet<string>>(new Set());
 
+  // The relevance lens. This is the answer to "the graph shows too much": the
+  // canvas opens on active work rather than on every entity the session has
+  // ever ingested, and `Everything` is one click away and clearly labeled.
+  const [lens, setLens] = useState<LensId>(DEFAULT_LENS);
+  // Folding is ON by default (it is the largest declutter and costs no meaning)
+  // but the user can always ask to see every leaf as its own card.
+  const [fold, setFold] = useState(true);
+  // Hubs the user has explicitly expanded — their folded leaves come back as
+  // real cards without turning folding off everywhere.
+  const [expandedHubs, setExpandedHubs] = useState<ReadonlySet<string>>(new Set());
+
   // Timeline application — arrivals only ever ADD edges / touch activityAt.
   const [extraEdges, setExtraEdges] = useState<readonly EdgeView[]>([]);
   const [touched, setTouched] = useState<Readonly<Record<string, string>>>({});
@@ -208,6 +232,29 @@ export function GraphView(props: GraphViewProps) {
   // and slots only arrivals in, reporting model.pendingRelayout. null → a full
   // unfrozen re-layout (first mount / explicit re-layout / focus change).
   // relayoutTick is a dep so the re-layout chip can force one recompute.
+  // Liveness as a SET, for the model's relevance pass. Derived from the seam's
+  // snapshot verdict — never from recency, which is a different fact (R-UI-5).
+  const liveIds = useMemo(
+    () => new Set(modelNodes.filter((n) => livenessOf(n.id) === 'live').map((n) => n.id)),
+    [modelNodes, livenessOf],
+  );
+
+  // Ids the user has pinned interest to: the selection, the focus, and every
+  // neighbor of an expanded hub (those are exactly the leaves that would have
+  // folded onto it, so protecting them is what "expand" means).
+  const pinnedIds = useMemo(() => {
+    const pins = new Set<string>();
+    if (selectedId) pins.add(selectedId);
+    if (focus) pins.add(focus.id);
+    if (expandedHubs.size > 0) {
+      for (const e of allEdges) {
+        if (expandedHubs.has(e.source.id)) pins.add(e.target.id);
+        if (expandedHubs.has(e.target.id)) pins.add(e.source.id);
+      }
+    }
+    return pins;
+  }, [selectedId, focus, expandedHubs, allEdges]);
+
   const model: GraphModel = useMemo(
     () =>
       buildGraphModel({
@@ -218,12 +265,19 @@ export function GraphView(props: GraphViewProps) {
           ? new Set(typesPresent.filter((t) => !typesOff.has(t)))
           : null,
         now,
+        lens,
+        liveIds,
+        matchIds: matches,
+        pinnedIds,
+        focusId: focus?.id ?? null,
+        fold,
         frozen: frozenRef.current ?? undefined,
       }),
     // frozenRef is read intentionally without being a dep (the same idiom as
     // prevCanvasIds below): it is refreshed by the snapshot effect after commit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [modelNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now, relayoutTick],
+    [modelNodes, allEdges, kindsOff, typesOff, kindsPresent, typesPresent, now, relayoutTick,
+     lens, liveIds, matches, pinnedIds, focus, fold],
   );
 
   // Snapshot placed positions AFTER each compute — the next compute freezes on
@@ -514,6 +568,27 @@ export function GraphView(props: GraphViewProps) {
     setFocus(null);
   }, []);
 
+  // A lens or fold change replaces the node set wholesale, so freezing the old
+  // positions would strand survivors in a layout computed for a different
+  // graph. Both drop the freeze for exactly one compute, like focus above.
+  const chooseLens = useCallback((next: LensId) => {
+    frozenRef.current = null;
+    setLens(next);
+  }, []);
+  const toggleFold = useCallback(() => {
+    frozenRef.current = null;
+    setFold((f) => !f);
+  }, []);
+  const expandHub = useCallback((hubId: EntityId) => {
+    frozenRef.current = null;
+    setExpandedHubs((prior) => {
+      const next = new Set(prior);
+      if (next.has(hubId)) next.delete(hubId);
+      else next.add(hubId);
+      return next;
+    });
+  }, []);
+
   const onKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       const pan = (dx: number, dy: number) => {
@@ -578,10 +653,44 @@ export function GraphView(props: GraphViewProps) {
   return (
     <div className="gv-root" data-testid="graph-view">
       <div className="gv-toolbar">
-        <Eyebrow>Graph · workspace data</Eyebrow>
+        {/* THE LENS. First control in the bar because it is the first decision:
+            what is this canvas about? Everything downstream (filters, search,
+            zoom) refines the answer. Each lens says exactly what it seeds on,
+            so no one has to guess why something is or isn't drawn. */}
+        <div className="gv-lens" role="group" aria-label="Graph lens">
+          {LENSES.map((spec) => (
+            <button
+              key={spec.id}
+              type="button"
+              className={spec.id === lens ? 'gv-lens__opt gv-lens__opt--on' : 'gv-lens__opt'}
+              aria-pressed={spec.id === lens}
+              title={spec.hint}
+              onClick={() => chooseLens(spec.id)}
+            >
+              {spec.label}
+            </button>
+          ))}
+        </div>
         <span className="gv-toolbar__count">
           {model.placed.length} nodes · {model.edges.length} edges · {model.componentCount}{' '}
           {model.componentCount === 1 ? 'island' : 'islands'}
+          {/* The declutter states its own price, always. A number nobody can
+              account for is the thing this whole change exists to remove. */}
+          {model.foldedCount > 0 && (
+            <button
+              type="button"
+              className="gv-toolbar__fold"
+              onClick={toggleFold}
+              title="Leaves with a single connection are folded onto their neighbor, which carries the count. Click to draw every one as its own card."
+            >
+              · {model.foldedCount} folded
+            </button>
+          )}
+          {!fold && (
+            <button type="button" className="gv-toolbar__fold" onClick={toggleFold}>
+              · re-fold leaves
+            </button>
+          )}
         </span>
         <span className="gv-toolbar__spacer" />
         {/* INTEGRATION(W2): GraphSearch mounted here — before the filter selects
@@ -642,16 +751,49 @@ export function GraphView(props: GraphViewProps) {
         </div>
       </div>
 
-      {model.truncated > 0 && (
+      {/* TWO EXCLUSIONS, TWO SENTENCES. `truncated` means the canvas filled up;
+          `outOfLens` means this lens never reached them. They are different facts
+          with different remedies — raise the cap vs. widen the lens — and saying
+          "the canvas holds 150" over a lens exclusion is a false explanation, the
+          exact failure this change exists to remove. */}
+      {(model.truncated > 0 || model.outOfLens > 0) && (
         <div className="gv-banner" role="status">
-          Showing {model.placed.length} of {model.placed.length + model.truncated} — refine filters
-          to see the rest. Nothing was dropped silently.
+          {model.outOfLens > 0 && (
+            <>
+              {model.outOfLens} of {model.visibleTotal} outside this lens —{' '}
+              {lensSpec(lens).label} shows {lensSpec(lens).hint.toLowerCase()}{' '}
+              Switch to Everything to see them.{' '}
+            </>
+          )}
+          {model.truncated > 0 && (
+            <>
+              {model.truncated} more did not fit — the canvas holds {RENDER_CAP} and spends
+              them on the most relevant work first. Live, searched and selected entities are
+              never among them.
+            </>
+          )}
         </div>
       )}
 
       {nothingVisible ? (
         <div className="gv-empty">
-          {filtered ? (
+          {model.lensEmpty ? (
+            /* THE HONEST EMPTY LENS. This used to fall through to scoping the
+               whole space, so "Live" on a workspace with nothing running drew
+               every node and called it live — the opposite of the promise. An
+               empty answer is the true one; the escape sits right under it. */
+            <>
+              <p className="gv-empty__title">
+                Nothing matches the {lensSpec(lens).label} lens right now.
+              </p>
+              <p className="gv-empty__detail">
+                {lensSpec(lens).hint} {model.visibleTotal} entities are in this space.
+              </p>
+              <button type="button" className="gv-filter" onClick={() => chooseLens('all')}>
+                Show everything
+              </button>
+            </>
+          ) : filtered ? (
             <>
               <p className="gv-empty__title">Nothing matches these filters.</p>
               <button
@@ -831,6 +973,24 @@ export function GraphView(props: GraphViewProps) {
                       <span className="gv-node__meta">✉ {p.entity.counters.messages}</span>
                     )}
                     {p.ghost && <span className="gv-node__meta gv-node__meta--ghost">deleted</span>}
+                    {/* THE FOLD BADGE. What collapsed onto this card, said in
+                        kinds and counts, and clickable to bring it back. A
+                        folded leaf is relocated here — never dropped — and this
+                        is where it is accounted for. */}
+                    {p.folded && (
+                      <button
+                        type="button"
+                        className="gv-node__folded"
+                        title={`${foldSummary(p.folded.byKind)} folded in — click to expand`}
+                        aria-label={`Expand ${p.folded.nodes.length} folded neighbors`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          expandHub(p.entity.id);
+                        }}
+                      >
+                        +{p.folded.nodes.length}
+                      </button>
+                    )}
                   </span>
                 </div>
               );
