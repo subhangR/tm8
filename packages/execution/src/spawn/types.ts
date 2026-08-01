@@ -24,10 +24,16 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
  * Permission posture handed to the agent. Named for old maestro's vocabulary
  * because the personas carry these exact strings in team_members.permission_mode
  * and an import must not have to translate them.
+ *
+ * `auto` is the one posture maestro never had, because the CLI it maps to did
+ * not have it either: Claude Code's `--permission-mode auto` lets the agent run
+ * the actions it judges safe and escalates only the risky ones. It sits between
+ * `acceptEdits` (edits free, every command asked) and `bypassPermissions` (ask
+ * nothing) and it is tm8's DEFAULT — see `DEFAULT_PERMISSION_MODE`.
  */
-export type PermissionMode = 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
+export type PermissionMode = 'auto' | 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export type AccessMode = 'safe' | 'acceptEdits' | 'plan' | 'fullAccess';
+export type AccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 
 /** Working-directory semantics (contract `SpawnWorkdir`). */
 export type WorkdirMode = 'project' | 'scratch';

@@ -86,10 +86,28 @@ describe('resolveLaunchConfig', () => {
     });
   });
 
+  /**
+   * Every tm8 session is unattended, so the posture nothing named must be one
+   * that does not stop to ask. `acceptEdits` frees edits and nothing else — the
+   * agent still blocked on its first Bash approval with no human at the PTY.
+   */
+  it('defaults to auto when neither the request, the node nor the persona names a posture', () => {
+    const resolved = resolveLaunchConfig(base, context(), {});
+    expect(resolved).toMatchObject({ permissionMode: 'auto', accessMode: 'auto' });
+    expect(buildAgentCommand(resolved, {})).toContain('--permission-mode auto');
+  });
+
+  it('lets a request pin auto explicitly, over a persona that says otherwise', () => {
+    expect(
+      resolveLaunchConfig({ ...base, accessMode: 'auto' }, context({ permissionMode: 'readOnly' }), {})
+        .permissionMode,
+    ).toBe('auto');
+  });
+
   it('ignores permission and mode values that are not in the enum', () => {
     expect(
       resolveLaunchConfig(base, context({ permissionMode: 'yolo' }), {}).permissionMode,
-    ).toBe('acceptEdits');
+    ).toBe('auto');
     expect(resolveLaunchConfig(base, context({ mode: 'nonsense' as never }), {}).mode).toBe('worker');
   });
 
@@ -141,6 +159,11 @@ describe('buildAgentCommand', () => {
   it('maps the resolved access posture to Claude flags without escalating it', () => {
     expect(buildAgentCommand(launch, {})).toBe(
       "claude --permission-mode acceptEdits --model 'opus'",
+    );
+    // `auto` is a real Claude mode, passed through rather than approximated —
+    // approximating it upward would be a silent escalation, downward a hang.
+    expect(buildAgentCommand({ ...launch, permissionMode: 'auto' }, {})).toBe(
+      "claude --permission-mode auto --model 'opus'",
     );
     expect(
       buildAgentCommand({ ...launch, permissionMode: 'bypassPermissions' }, {}),
@@ -232,6 +255,13 @@ describe('buildAgentCommand', () => {
 
     const readOnly = buildAgentCommand({ ...codexLaunch, permissionMode: 'readOnly' }, {});
     expect(readOnly).toContain('--sandbox read-only');
+
+    // `auto` is Claude's word and Codex has no equivalent. It must NOT become
+    // `on-request`, which asks — and nobody is here to answer. tm8's default
+    // posture therefore lands codex exactly where it landed before auto existed.
+    const auto = buildAgentCommand({ ...codexLaunch, permissionMode: 'auto' }, {});
+    expect(auto).toContain('--ask-for-approval never');
+    expect(auto).toContain('--sandbox workspace-write');
 
     const low = buildAgentCommand({ ...codexLaunch, reasoningEffort: 'low' }, {});
     expect(low).toContain(`-c 'model_reasoning_effort="low"'`);

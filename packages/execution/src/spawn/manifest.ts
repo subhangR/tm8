@@ -35,12 +35,25 @@ import { SpawnError } from './types.js';
 export const DEFAULT_MODEL = 'sonnet';
 /** Fallback agent tool. Matches old maestro's read-time default. */
 export const DEFAULT_AGENT_TOOL = 'claude-code';
-/** Fallback permission posture (old maestro: manifest-generator.ts:474). */
-export const DEFAULT_PERMISSION_MODE: PermissionMode = 'acceptEdits';
+/**
+ * Fallback permission posture.
+ *
+ * `auto`, not maestro's `acceptEdits` (manifest-generator.ts:474). Every tm8
+ * session is UNATTENDED — there is no human at the PTY to answer a prompt — and
+ * `acceptEdits` frees only file edits: a spawned agent still stopped dead at its
+ * first `Bash` approval, which is the same unattended-hang class the Codex
+ * branch below documents. `auto` is Claude Code's own answer to that (the agent
+ * runs what it judges safe and escalates the rest), so it is what a session
+ * that named no posture gets. It is a DEFAULT and nothing more: an explicit
+ * `accessMode` on the request, `TM8_PERMISSION_MODE` on the node, or a persona's
+ * recorded `permission_mode` all still win, in that order.
+ */
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
 /** The magic `TM8_AGENT_CMD` value that selects the built-in smoke agent. */
 export const ECHO_AGENT_CMD = 'echo-agent';
 
 const PERMISSION_MODES: readonly PermissionMode[] = [
+  'auto',
   'acceptEdits',
   'interactive',
   'readOnly',
@@ -104,6 +117,7 @@ function asReasoningEffort(value: string | null | undefined): ReasoningEffort | 
 function permissionModeForAccessMode(mode: AccessMode): PermissionMode {
   switch (mode) {
     case 'fullAccess': return 'bypassPermissions';
+    case 'auto': return 'auto';
     case 'acceptEdits': return 'acceptEdits';
     case 'plan': return 'readOnly';
     case 'safe': return 'interactive';
@@ -113,6 +127,7 @@ function permissionModeForAccessMode(mode: AccessMode): PermissionMode {
 function accessModeForPermissionMode(mode: PermissionMode): AccessMode {
   switch (mode) {
     case 'bypassPermissions': return 'fullAccess';
+    case 'auto': return 'auto';
     case 'acceptEdits': return 'acceptEdits';
     case 'readOnly': return 'plan';
     case 'interactive': return 'safe';
@@ -476,6 +491,12 @@ export function withAgentPrompt(
  */
 function mapCodexApprovalPolicy(mode: PermissionMode): string {
   switch (mode) {
+    // Codex has no `auto` of its own, and inventing one out of `on-request`
+    // would be a REGRESSION dressed as a translation: `on-request` stops to ask,
+    // and there is nobody at this PTY to answer. `auto` is tm8's default, so
+    // codex sessions that name no posture must keep landing exactly where they
+    // land today — `never` + `workspace-write`, i.e. `acceptEdits`.
+    case 'auto':
     case 'acceptEdits':
       return 'never';
     case 'readOnly':
@@ -491,6 +512,7 @@ function mapCodexApprovalPolicy(mode: PermissionMode): string {
 /** tm8's four postures → Codex's `--sandbox` mode (maestro: mapSandboxMode). */
 function mapCodexSandboxMode(mode: PermissionMode): string {
   switch (mode) {
+    case 'auto':
     case 'acceptEdits':
     case 'interactive':
       return 'workspace-write';
@@ -502,9 +524,18 @@ function mapCodexSandboxMode(mode: PermissionMode): string {
   }
 }
 
-/** tm8's four postures → the three `--permission-mode` values Claude accepts. */
+/**
+ * tm8's five postures → the `--permission-mode` values Claude accepts.
+ *
+ * `auto` is passed straight through: it is a first-class Claude Code mode
+ * (`--permission-mode` choices are acceptEdits / auto / bypassPermissions /
+ * manual / dontAsk / plan, verified against the installed CLI 2026-08-01), and
+ * it is the posture a tm8 session gets when nothing named one.
+ */
 function mapClaudePermissionMode(mode: PermissionMode): string {
   switch (mode) {
+    case 'auto':
+      return 'auto';
     case 'acceptEdits':
       return 'acceptEdits';
     case 'readOnly':
