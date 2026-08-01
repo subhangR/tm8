@@ -678,6 +678,48 @@
 }
 .cv2-root .pn-body > .pn-section { padding: 0 0 10px; }
 
+/* Connections tab: one row per connected ENTITY, its edge types trailing it.
+   The peer chip leads because "what is this connected to" is the question;
+   the relation labels answer "how" without competing for the eye. */
+.cv2-root .pn-peers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .pn-peers__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.cv2-root .pn-peers__rels {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.cv2-root .pn-peers__rel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  padding: 1px 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 3px;
+  color: var(--pn-ink-4);
+  white-space: nowrap;
+}
+/* An unresolved HARD dependency is why something is blocked — it wears the
+   block ramp so it cannot be mistaken for any other relation. */
+.cv2-root .pn-peers__rel--hard {
+  color: var(--pn-block);
+  border-color: var(--pn-block);
+}
+
 .cv2-root .pn-foot {
   flex: none;
   height: 28px;
