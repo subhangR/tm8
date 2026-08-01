@@ -22,7 +22,10 @@ import type {
 import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
-  ActivityItem, ActorSummary, AddMessageAttachmentsInput, ChannelTab,
+  ActivityItem, ActorSummary, AddMessageAttachmentsInput,
+  AuthAccountView, AuthLoginInput, AuthLoginResult, AuthLogoutInput,
+  AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
+  AuthSignupResult, ChannelTab,
   ClosedPromptPolicy, CollectionGroup, CollectionQuery, CollectionResult,
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
@@ -37,7 +40,8 @@ import type {
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
-  Hierarchy, HomeSnapshot, InboxListQuery, InboxMarkReadInput, InboxRecipient,
+  Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
+  InboxListQuery, InboxMarkReadInput, InboxRecipient,
   InteractionProfileDraft, InteractionProfilePinView, InteractionProfilePreview,
   InteractionProfileView, LeaderboardRow, LinkCommitInput, LinkPrInput,
   LiveWork, MenuConfig, MenuConfigPayload, MenuGroup, MenuItem, MenuLeaf,
@@ -749,6 +753,9 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     ...workspaceEventEnvelopeShape,
     type: z.enum(['message.created', 'message.updated', 'message.deleted']),
     anchorId: EntityIdSchema,
+    // Optional + nullable so stored rows and older projectors that never emitted
+    // this envelope-level provenance stay valid under `assertWorkspaceEvent`.
+    sourceWorkSessionId: EntityIdSchema.nullable().optional(),
     message: MessageViewSchema,
     clientMutationId: z.string().optional(),
   }).strict(),
@@ -964,6 +971,102 @@ export const ServerConnectionCreateInputSchema: z.ZodType<ServerConnectionCreate
 export const ServerConnectionDeleteInputSchema: z.ZodType<ServerConnectionDeleteInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
+}).strict();
+
+/**
+ * No `commandContextShape` here: the DTO declares no `actorId` on purpose
+ * (see the interface), so an actor on the wire is refused by strictness.
+ * The `globalId` shape mirrors the 067 check constraint exactly — a
+ * non-empty issuer, one colon seam, a non-empty subject, no whitespace.
+ */
+export const IdentityProfileUpdateInputSchema: z.ZodType<IdentityProfileUpdateInput> = z.object({
+  clientMutationId: z.string().min(1),
+  displayName: z.string().min(1).max(200).optional(),
+  avatar: z.string().min(1).max(2000).optional(),
+  email: z.string().min(3).max(320).optional(),
+  globalId: z.string().min(3).max(200).regex(/^[^:\s]+:\S+$/, {
+    message: 'globalId must be issuer:subject with no whitespace',
+  }).optional(),
+}).strict();
+
+export const IdentityProfileViewSchema: z.ZodType<IdentityProfileView> = z.object({
+  identityId: z.string().min(1).max(200),
+  displayName: z.string().nullable(),
+  avatar: z.string().nullable(),
+  email: z.string().nullable(),
+  globalId: z.string().nullable(),
+}).strict();
+
+// ---------------------------------------------------------------------------
+// auth.* (Identity v2 Stage 1). No `commandContextShape` on any input: the
+// DTOs declare neither `actorId` nor `clientMutationId` on purpose (see the
+// interfaces), so strictness refuses both on the wire.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the 002 check constraint: 1–100 chars after trim. Normalized lower-case server-side. */
+const AuthUsernameSchema = z.string().min(1).max(100).regex(/^\S+$/, {
+  message: 'username must not contain whitespace',
+});
+
+/** The UI's MIN_PASSWORD_LENGTH is 8; the server refuses shorter outright. */
+const AuthPasswordSchema = z.string().min(8).max(1024);
+
+export const AuthSignupInputSchema: z.ZodType<AuthSignupInput> = z.object({
+  username: AuthUsernameSchema,
+  password: AuthPasswordSchema,
+  displayName: z.string().min(1).max(200).optional(),
+  email: z.string().min(3).max(320).optional(),
+  isNodeAdmin: z.boolean().optional(),
+}).strict();
+
+export const AuthLoginInputSchema: z.ZodType<AuthLoginInput> = z.object({
+  username: AuthUsernameSchema,
+  password: z.string().min(1).max(1024),
+  kind: z.enum(['browser', 'cli']).optional(),
+  label: z.string().min(1).max(200).optional(),
+}).strict();
+
+export const AuthLogoutInputSchema: z.ZodType<AuthLogoutInput> = z.object({
+  sessionId: z.string().uuid().optional(),
+}).strict();
+
+export const AuthAccountViewSchema: z.ZodType<AuthAccountView> = z.object({
+  accountId: z.string().uuid(),
+  identityId: z.string().min(1).max(200),
+  username: z.string().min(1).max(100),
+  displayName: z.string().nullable(),
+  isNodeAdmin: z.boolean(),
+  isOwner: z.boolean(),
+}).strict();
+
+export const AuthSessionViewSchema: z.ZodType<AuthSessionView> = z.object({
+  sessionId: z.string().uuid(),
+  kind: z.enum(['browser', 'cli', 'agent']),
+  actingAsTeamMemberId: z.string().uuid().nullable(),
+  label: z.string().nullable(),
+  createdAt: IsoTimestamp.optional(),
+  expiresAt: IsoTimestamp,
+}).strict();
+
+export const AuthSignupResultSchema: z.ZodType<AuthSignupResult> = z.object({
+  account: AuthAccountViewSchema,
+}).strict();
+
+export const AuthLoginResultSchema: z.ZodType<AuthLoginResult> = z.object({
+  token: z.string().min(1),
+  account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema,
+}).strict();
+
+export const AuthLogoutResultSchema: z.ZodType<AuthLogoutResult> = z.object({
+  sessionId: z.string().uuid(),
+  revoked: z.boolean(),
+}).strict();
+
+export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.object({
+  authKind: z.enum(['bearer', 'auto-owner']),
+  account: AuthAccountViewSchema,
+  session: AuthSessionViewSchema.nullable(),
 }).strict();
 
 export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({
@@ -1505,7 +1608,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
-  accessMode: z.enum(['safe', 'acceptEdits', 'plan', 'fullAccess']).optional(),
+  accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
 }).strict();

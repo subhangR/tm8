@@ -289,9 +289,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
   it('sweeps exactly the 98 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
-    expect(SURFACE).toHaveLength(114);
-    expect(rows).toHaveLength(114);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(114);
+    // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
+    // 114 -> 118 on 2026-08-01: execution.resume, spaces.counts,
+    // execution.journal, identity.profile.update. The first three landed
+    // without this pin moving; the fourth reconciled it.
+    expect(SURFACE).toHaveLength(122);
+    expect(rows).toHaveLength(122);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(122);
   });
 
   /**
@@ -379,7 +383,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
    */
   it('applies the FULL migration chain, enumerated rather than hand-listed', () => {
     // 39 -> 57 on 2026-07-31: migrations 040-060 landed with the wave.
-    expect(server.appliedMigrations.length).toBe(57);
+    // 57 -> 63 on 2026-08-01: 061-067 (voice group restore through identity
+    // profile). Several landed without this pin moving; 067 reconciled it.
+    // 63 -> 65 on 2026-08-01: the pin was ALREADY red at 64 when this lane
+    // arrived — 068 (counters watermark) landed from another lane without
+    // moving it, the same drift 067 had just reconciled. 069 (channels into
+    // Home) is the second of the two.
+    // 65 -> 66 on 2026-08-02: 070 (entities_select restricted-projection policy).
+    expect(server.appliedMigrations.length).toBe(66);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -590,6 +601,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // both handler-reached 400s, recorded when the wave landed them.
   'artifacts.export',
   'attentionRequests.list',
+  // 2026-08-02: auth.logout with a bare {} and no bearer session names nothing
+  // to revoke — a handler-reached invalid_input, not a :166 gate rejection.
+  'auth.logout',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',

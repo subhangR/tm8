@@ -72,11 +72,27 @@ function claimValue(value: string | undefined): string {
   return value === undefined || value === null ? '' : String(value);
 }
 
+/**
+ * The fifth binding is the ROLE DOWNGRADE (Identity v2 Stage 1, trap 3).
+ *
+ * The connection string is historically a superuser with `rolbypassrls`,
+ * which left migration 008's RLS policies inert on every read this pool
+ * served. Dropping to the app role per transaction makes them real:
+ * `set_config('role', …, true)` is exactly `SET LOCAL ROLE`, dies at
+ * COMMIT/ROLLBACK with the claims, and cannot leak between pooled requests.
+ * SECURITY DEFINER RPCs are unaffected (they run as the schema owner);
+ * direct reads now see only what the bound claims entitle them to.
+ *
+ * This is deliberately in the same round trip as the claims: nothing in the
+ * transaction may ever observe superuser reads with caller claims bound —
+ * that combination is the entire defect this line removes.
+ */
 const BIND_CLAIMS_SQL = `select
   set_config('tm8.identity_id', $1, true),
   set_config('tm8.actor_id',    $2, true),
   set_config('tm8.node_admin',  $3, true),
-  set_config('tm8.request_id',  $4, true)`;
+  set_config('tm8.request_id',  $4, true),
+  set_config('role',            $5, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -172,6 +188,14 @@ export interface PgDbOptions {
    * caller and does not widen the four-claim RLS contract.
    */
   readonly idempotencyEnabled?: boolean;
+  /**
+   * The role every claim-binding transaction runs as (T-L11: low-privilege
+   * role, per-transaction claims). Defaults to `tm8_app` — the role 008's
+   * policies are written for. The session user must be a member of it (a
+   * superuser always is); a connection that cannot assume it fails its first
+   * transaction loudly rather than serving bypass-RLS reads quietly.
+   */
+  readonly role?: string;
 }
 
 /**
@@ -185,8 +209,10 @@ const TX_WATCHDOG_MILLIS = 10_000;
 
 export class PgDb implements Db {
   private readonly pool: pg.Pool;
+  private readonly role: string;
 
   constructor(options: PgDbOptions) {
+    this.role = options.role ?? 'tm8_app';
     this.pool = new pg.Pool({
       connectionString: options.databaseUrl,
       max: options.max ?? 8,
@@ -232,6 +258,7 @@ export class PgDb implements Db {
         claimValue(claims.actorId),
         nodeAdminClaim(claims.nodeAdmin),
         claimValue(claims.requestId),
+        this.role,
       ]);
 
       const result = await fn(makeQuerier(client));

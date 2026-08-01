@@ -17,7 +17,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   const h = await server.health();
   expect(h.ok).toBe(true);
   expect(h.server).toBe('tm8-server');
-  expect(h.operations).toBe(118);
+  expect(h.operations).toBe(124); // 120 -> 124 (2026-08-02): auth.* Identity v2 Stage 1 added four HTTP routes.
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

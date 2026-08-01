@@ -63,6 +63,21 @@ const NOOP_LOGGER: PtyWsLogger = {
   error: () => {},
 };
 
+/**
+ * The attach authorization verdict (Identity v2 Stage 1, trap 5). `ok: false`
+ * refuses BEFORE the 101, over plain HTTP — a caller who may not attach never
+ * gets a socket, and never learns whether the session id was real (the
+ * not-visible and not-found cases share a 404 on purpose).
+ */
+export type PtyAttachVerdict =
+  | { ok: true }
+  | { ok: false; status: 401 | 403 | 404; message: string };
+
+export type PtyAttachAuthorizer = (
+  req: IncomingMessage,
+  sessionId: string,
+) => Promise<PtyAttachVerdict>;
+
 export interface PtyWsServerOptions {
   /**
    * The SHARED PtyHostService — must be `createExecutionRuntime().pty`, the same
@@ -70,6 +85,15 @@ export interface PtyWsServerOptions {
    * session map and every attach would 1011.
    */
   pty: PtyHostService;
+  /**
+   * Attach authorization, supplied by the composition root (it owns the db and
+   * the identity resolver; this file deliberately reaches neither). Bearing a
+   * session id is NOT authorization: before this seam existed, any caller who
+   * could name a session id — a uuid that appears in ordinary CLI and UI
+   * responses — got bidirectional keystroke injection. Absent (tests), every
+   * attach is allowed, which is only sound behind the loopback bind.
+   */
+  authorize?: PtyAttachAuthorizer;
   logger?: PtyWsLogger;
   /** Forwarded to each connection's heartbeat; injectable so tests need not wait 30s. */
   heartbeatMs?: number;
@@ -234,6 +258,32 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     const key = headerValue(req, 'sec-websocket-key');
     if (key === '') {
       refuse(socket, 400, 'Bad Request', 'missing Sec-WebSocket-Key');
+      return;
+    }
+
+    // AUTHORIZATION AND EXISTENCE, BEFORE THE 101 (trap 5). The old order
+    // wrote the 101 first, which (a) let anyone drive any terminal they could
+    // name and (b) oracled session ids by answering "no live PTY" only over
+    // an established socket. Refusals here are plain HTTP on the raw socket.
+    if (opts.authorize) {
+      const verdict = await opts.authorize(req, sessionId);
+      if (!verdict.ok) {
+        const statusText =
+          verdict.status === 401 ? 'Unauthorized' : verdict.status === 403 ? 'Forbidden' : 'Not Found';
+        logger.warn('PtyWsServer: attach refused', {
+          sessionId,
+          status: verdict.status,
+          message: verdict.message,
+        });
+        refuse(socket, verdict.status, statusText, verdict.message);
+        return;
+      }
+    }
+    // Existence check for the authorized caller. The replay computed here is
+    // discarded — the authoritative getReplay below must stay synchronous with
+    // the subscribe join (see the ordering invariant).
+    if (!pty.getReplay(sessionId, 0)) {
+      refuse(socket, 404, 'Not Found', 'no live PTY for session');
       return;
     }
 

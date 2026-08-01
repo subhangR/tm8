@@ -458,14 +458,15 @@ describe('/v2/ws coexistence — events WS and PTY WS on one upgrade path', () =
     );
   });
 
-  it('A6b: ?sessionId= dispatches to the PTY server — the upgrade COMPLETES, then closes 1011 for a ghost session', async () => {
-    // The 101 proves the upgrade split routed to the PTY server (the events
-    // server would have accepted and then treated frames as control frames);
-    // the 1011 close with this reason is PtyWsServer's own ghost answer.
-    const ws = await connectWs(`${node.wsUrl}?sessionId=${randomUUID()}`);
-    const end = await closed(ws);
-    expect(end.code).toBe(1011);
-    expect(end.reason).toMatch(/no live PTY/i);
+  it('A6b: ?sessionId= dispatches to the PTY server — a ghost session is REFUSED before the 101 (trap 5)', async () => {
+    // Identity v2 Stage 1 (2026-08-02): the PTY server used to complete the
+    // upgrade and then close 1011, which oracled session ids to anyone. A
+    // ghost session now gets a plain-HTTP 404 and no WebSocket ever exists —
+    // the refusal itself proves the upgrade split routed to the PTY server,
+    // because the events server would have accepted the socket.
+    await expect(connectWs(`${node.wsUrl}?sessionId=${randomUUID()}`)).rejects.toThrow(
+      /ws connection failed/,
+    );
   });
 
   it('A6c: a REAL echo-agent PTY attach streams alongside a live events socket on the same node', async () => {

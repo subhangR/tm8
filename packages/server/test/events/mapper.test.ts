@@ -167,6 +167,55 @@ describe('WorkspaceEventMapper', () => {
   });
 
   /**
+   * ENVELOPE provenance: the SENDER work session, hydrated live from the
+   * `authored_from` edge and threaded next to `anchorId`. Present when an edge
+   * exists (agent-authored), `null` when it does not (human-authored) — the
+   * latter must NOT be treated as an error.
+   */
+  const WORK_SESSION = '019f9896-928d-7bbb-9c0c-0aa0f7d5b0b1';
+  function messageEventRow() {
+    return row({
+      event_type: 'message.created',
+      payload: { entity_id: 'msg_1', anchor_id: TASK, body: 'x', mentions: [], attachments: [] },
+    });
+  }
+  function messageMapper() {
+    const msgSummary = summary({
+      id: 'msg_1',
+      kind: 'message',
+      title: 'hello',
+      state: { kind: 'message', anchorId: TASK, rootMessageId: null, author: summary().createdBy, editedAt: null },
+    });
+    return {
+      m: new WorkspaceEventMapper(fixedProjector(new Map([['msg_1', msgSummary]]))),
+      entities: new Map([['msg_1', msgSummary]]),
+      contents: new Map([['msg_1', { body: 'hello', mentions: [], attachments: [] }]]),
+    };
+  }
+
+  it('carries the sender work session when an authored_from edge exists', () => {
+    const { m, entities, contents } = messageMapper();
+    const event = m.mapRow(
+      messageEventRow(),
+      entities,
+      new Map(),
+      contents,
+      new Map([['msg_1', WORK_SESSION]]),
+    );
+    if (event.type !== 'message.created') throw new Error('unreachable');
+    expect(event.sourceWorkSessionId).toBe(WORK_SESSION);
+    expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it('yields a null sender work session for a human-authored message with no edge', () => {
+    const { m, entities, contents } = messageMapper();
+    const event = m.mapRow(messageEventRow(), entities, new Map(), contents, new Map());
+    if (event.type !== 'message.created') throw new Error('unreachable');
+    expect(event.sourceWorkSessionId).toBeNull();
+    expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  /**
    * The privacy guarantee, at the unit level: with no live row available the
    * mapper must SKIP rather than fall back to the captured payload. A fallback
    * would serve pre-redaction text, since `message.created`'s payload froze the

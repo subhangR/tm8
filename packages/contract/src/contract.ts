@@ -440,7 +440,17 @@ export interface WorkspaceEventEnvelope {
 export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'entity.upsert'|'entity.deleted'; entity: EntitySummary; clientMutationId?: string }
  | { type: 'edge.upsert'|'edge.deleted'; edge: EdgeView; clientMutationId?: string }
- | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId; message: MessageView; clientMutationId?: string }
+ | { type: 'message.created'|'message.updated'|'message.deleted'; anchorId: EntityId;
+     // ENVELOPE provenance, sitting next to `anchorId` (the target): the SENDER
+     // work session the message was authored FROM, so a consumer can animate a
+     // message travelling from session A to session B. It is the recorder-owned
+     // `authored_from` edge's `dst_id`, hydrated live at map time — it is NOT on
+     // `CoreEntityState kind:'message'` and NOT on MessageView, because it is a
+     // fact about the delivery envelope, not about the message entity. Optional
+     // and nullable: human-authored messages have no `authored_from` edge, and
+     // rows captured before this field must stay valid under `assertWorkspaceEvent`.
+     sourceWorkSessionId?: EntityId | null;
+     message: MessageView; clientMutationId?: string }
  | { type: 'counter.changed'; entityId: EntityId; counters: EntityCounters; clientMutationId?: string }
  | { type: 'activity.created'; activity: ActivityItem; clientMutationId?: string }
  | { type: 'notification.created'|'notification.read'; notification: NotificationItem; clientMutationId?: string }
@@ -739,6 +749,131 @@ export interface ServerConnectionDeleteInput extends CommandContext {
   clientMutationId: string;
 }
 
+/**
+ * `identity.profile.update` — the caller writes their OWN `user_profiles` row.
+ *
+ * Deliberately NO `actorId`: a profile belongs to an identity, not to a
+ * per-space actor, so acting-as is meaningless here and `--as` must be
+ * refused rather than ignored. There is likewise no field naming whose
+ * profile to write — the subject is always the bound identity.
+ *
+ * All fields optional; only provided fields are written. `globalId` carries
+ * the cross-server display binding in `issuer:subject` shape. It is a display
+ * claim, never an authorization input (Identity v2 invariant I6).
+ */
+export interface IdentityProfileUpdateInput {
+  clientMutationId: string;
+  displayName?: string;
+  avatar?: string;
+  email?: string;
+  globalId?: string;
+}
+
+/** The written profile, as `identity.profile.update` returns it. */
+export interface IdentityProfileView {
+  identityId: string;
+  displayName: string | null;
+  avatar: string | null;
+  email: string | null;
+  globalId: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// auth.* — local accounts (Identity v2 Stage 1, doc 4 §6).
+//
+// None of these extend CommandContext: an actor is a per-space authoring
+// persona and has no meaning on the authentication surface, and auth commands
+// are deliberately outside the idempotency ledger (a session row is not a
+// graph mutation; a retried login mints a second session, which is correct).
+// Strict schemas therefore refuse `actorId`/`clientMutationId` on the wire.
+// ---------------------------------------------------------------------------
+
+/** How a session authenticates thereafter. `agent` sessions are minted at spawn, never by `auth.login`. */
+export type AuthSessionKindView = 'browser' | 'cli' | 'agent';
+
+/** The session half of every auth response. The token itself appears exactly once, at issuance. */
+export interface AuthSessionView {
+  sessionId: string;
+  kind: AuthSessionKindView;
+  /** Persona-scoped agent sessions only; null for human sessions. */
+  actingAsTeamMemberId: string | null;
+  label: string | null;
+  /** Present at issuance; `auth.session.get` verifies live rather than re-reading the row. */
+  createdAt?: string;
+  expiresAt: string;
+}
+
+/** The account half of every auth response. Never carries credential material. */
+export interface AuthAccountView {
+  accountId: string;
+  identityId: string;
+  username: string;
+  displayName: string | null;
+  isNodeAdmin: boolean;
+  isOwner: boolean;
+}
+
+/**
+ * `auth.signup` — node-admin creates a local account. NEVER open
+ * self-registration: provisioning is the server owner's decision (doc 4 §6).
+ * The password is hashed server-side (scrypt); it is transported in the
+ * request body, which is why TLS is a hard prerequisite for real deployments
+ * (review finding F8).
+ */
+export interface AuthSignupInput {
+  username: string;
+  password: string;
+  displayName?: string;
+  email?: string;
+  /** Node-level role — accounts, invites, limits. Never widens `can_act_as`. */
+  isNodeAdmin?: boolean;
+}
+
+export interface AuthSignupResult {
+  account: AuthAccountView;
+}
+
+/** `auth.login` — exchange a local credential for a `tm8s_…` bearer token. */
+export interface AuthLoginInput {
+  username: string;
+  password: string;
+  /** Defaults to `browser`. `agent` is refused — agent tokens are minted at spawn. */
+  kind?: 'browser' | 'cli';
+  /** Free-form label shown in session listings (e.g. a device name). */
+  label?: string;
+}
+
+export interface AuthLoginResult {
+  /** `tm8s_<sessionId>.<secret>` — returned exactly once, never recoverable. */
+  token: string;
+  account: AuthAccountView;
+  session: AuthSessionView;
+}
+
+/**
+ * `auth.logout` — revoke the presented bearer session, or (node admin / same
+ * account) an explicitly named one. A loopback auto-owner request carries no
+ * session; naming none is then an `invalid_input`.
+ */
+export interface AuthLogoutInput {
+  /** Defaults to the session presented in the Authorization header. */
+  sessionId?: string;
+}
+
+export interface AuthLogoutResult {
+  sessionId: string;
+  revoked: boolean;
+}
+
+/** `auth.session.get` — who am I, on this server, and how am I authenticated. */
+export interface AuthSessionGetResult {
+  /** `bearer` for token callers; `auto-owner` for the loopback degenerate case. */
+  authKind: 'bearer' | 'auto-owner';
+  account: AuthAccountView;
+  /** null for the loopback auto-owner, which authenticates without a session row. */
+  session: AuthSessionView | null;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;
@@ -986,11 +1121,18 @@ export interface MenuGroup {
  * Additive export only: no schema, operation, or DTO changes ride on it.
  */
 export const DEFAULT_MENU_GROUP_SPINE = [
+  // 2026-08-01 (user ruling): the Channels GROUP is gone. Channels are
+  // ENTITIES, so they live in the Entity List Panel with every other
+  // collection — tm8-ui's `channel` registry row is `strategy: 'collection'`
+  // now, which is what puts them in that panel's kind switcher. A rail section
+  // AND a collection list would be two divergent homes for one kind.
+  // Feed and Inbox left the rail in the same ruling, so `home` is Dashboard
+  // alone. All three view refs keep their routes and their chords: this
+  // removes rail rows, not features.
   { serverId: 'home', clientId: 'home' },
   { serverId: 'work', clientId: 'workspace' },
   { serverId: 'tracking', clientId: 'tracking' },
   { serverId: 'collab', clientId: 'collab' },
-  { serverId: 'channels', clientId: 'channels' },
   // items-empty on both sides BY NECESSITY: MenuViewRef is a closed enum with
   // no 'voice'; GateApp hangs live voice_channel rows beneath the group id.
   { serverId: 'voice', clientId: 'voice' },
@@ -1261,7 +1403,13 @@ export type SpawnWorkdir =
  * agent CLI's native flags; keeping them typed here prevents a UI choice from
  * being displayed but silently discarded at the facade boundary. */
 export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'plan' | 'fullAccess';
+/**
+ * `auto` is the posture a session gets when the request names none — the agent
+ * runs what it judges safe and escalates the rest. It is listed here so a caller
+ * can PIN it (the omitted-field default is resolved by the execution layer, and
+ * a client that wants the posture on the record rather than inherited says so).
+ */
+export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 
 // --- execution.* operation family (R16) ------------------------------------
 

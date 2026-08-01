@@ -12,17 +12,20 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
     // registerableV1Http; reserved and ws unmoved).
     expect(response.result).toMatchObject({
       catalog: {
-        total: 117,
-        v1: 115,
+        // -> {121/119/120/118} (2026-08-01: execution.resume, spaces.counts,
+        // execution.journal, identity.profile.update).
+        // -> {125/123/124/122} (2026-08-02: the four auth.* rows, Stage 1).
+        total: 125,
+        v1: 123,
         reserved: 2,
-        http: 116,
+        http: 124,
         ws: 1,
-        registerableV1Http: 114,
+        registerableV1Http: 122,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
         { noun: 'project', operationCount: 7 },
-        { noun: 'space', operationCount: 22 },
+        { noun: 'space', operationCount: 23 },
       ]),
     });
     expect(JSON.stringify(response.result)).not.toContain('/v2/');

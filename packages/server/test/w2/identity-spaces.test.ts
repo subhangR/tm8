@@ -21,6 +21,11 @@ const AXIS_ID = '00000000-0000-7000-8000-000000000004';
 
 const G01_OPERATIONS = [
   'identity.get',
+  // Identity v2 Stage 0 (2026-08-01): the caller's own display-profile writer.
+  'identity.profile.update',
+  // Landed by a separate lane (migration 063) without this list moving; the
+  // group registered 20 while the list froze 19. Reconciled 2026-08-01.
+  'spaces.counts',
   'spaces.list',
   'spaces.create',
   'spaces.get',
@@ -136,7 +141,7 @@ function registryFor(db: Db): HandlerRegistry {
 }
 
 describe('W2.G01 identity and Spaces handler seam', () => {
-  it('registers the complete frozen 19-operation group and nothing else', () => {
+  it('registers the complete frozen 21-operation group and nothing else', () => {
     const registry = registryFor(new FakeDb());
     expect(registry.implemented()).toEqual([...G01_OPERATIONS].sort());
   });
@@ -157,6 +162,7 @@ describe('W2.G01 identity and Spaces handler seam', () => {
         name: 'platform', axisValues: ['web'], kind: 'manual', position: 1,
       }],
       ['spaces.taskAxes.delete', { spaceId: SPACE_ID, axisId: AXIS_ID }, {}],
+      ['identity.profile.update', {}, { displayName: 'No mutation id' }],
     ] as const;
 
     for (const [opName, params, body] of commandCases) {
@@ -167,6 +173,50 @@ describe('W2.G01 identity and Spaces handler seam', () => {
       });
     }
     expect(db.rpcCalls).toEqual([]);
+  });
+
+  it('writes the caller\'s own profile through update_identity_profile, absent fields as null', async () => {
+    const db = new FakeDb(
+      async () => [],
+      async (fn, args) => {
+        expect(fn).toBe('update_identity_profile');
+        // Positional: display_name, avatar, email, global_id, cmid. Only the
+        // provided fields carry values; the DTO has no way to name another
+        // identity — the subject is always the bound claim.
+        expect(args).toEqual([
+          'Subhang',
+          null,
+          null,
+          'example-issuer:12345',
+          'cmid-profile-set',
+        ]);
+        return {
+          identityId: 'identity-owner',
+          displayName: 'Subhang',
+          avatar: null,
+          email: null,
+          globalId: 'example-issuer:12345',
+        };
+      },
+    );
+    const handler = registryFor(db).get('identity.profile.update')!;
+
+    const result = await handler(context('identity.profile.update', {
+      body: {
+        clientMutationId: 'cmid-profile-set',
+        displayName: 'Subhang',
+        globalId: 'example-issuer:12345',
+      },
+    }));
+
+    expect(result).toEqual({
+      identityId: 'identity-owner',
+      displayName: 'Subhang',
+      avatar: null,
+      email: null,
+      globalId: 'example-issuer:12345',
+    });
+    expect(db.rpcCalls).toHaveLength(1);
   });
 
   it('updates Space metadata through one typed RPC and preserves an explicit null repo', async () => {

@@ -56,6 +56,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'allow-tightening',    // kind update --allow-tightening
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — suppress the automatic created_in edge
+  'node-admin',          // auth signup --node-admin
 ]);
 
 /**

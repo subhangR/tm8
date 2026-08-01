@@ -247,11 +247,12 @@ export class WorkspaceEventMapper {
         ? new Map<string, ActorSummary>()
         : await this.projector.actorSummaries(q, [...ids]);
     const contents = await this.messageContents(q, rows);
+    const sourceSessions = await this.messageSourceSessions(q, rows);
 
     const out: DurableWorkspaceEvent[] = [];
     for (const row of rows) {
       try {
-        out.push(this.mapRow(row, entities, actors, contents));
+        out.push(this.mapRow(row, entities, actors, contents, sourceSessions));
       } catch (err) {
         if (err instanceof UnprojectableEventError) {
           onSkip?.(err);
@@ -328,14 +329,53 @@ export class WorkspaceEventMapper {
     return out;
   }
 
+  /**
+   * ENVELOPE provenance: for each message event on the page, the SENDER work
+   * session the message was authored FROM. Read LIVE from the `authored_from`
+   * edge (`dst_id`), never from the captured payload — the payload has no such
+   * field, because the correlation is recorded by a separate recorder-gated edge
+   * write (`authored_from` is writer-gated to `message_recorder`, see
+   * feed-context.ts:511), not by the message insert that produced the event row.
+   *
+   * Batched exactly like `messageContents`: one query per page, only when the
+   * page contains message events. A message with NO `authored_from` edge is
+   * human-authored provenance and yields `null` — that is normal, not an error,
+   * so the arm must not throw. Read-only: this file never writes the edge.
+   */
+  private async messageSourceSessions(
+    q: Querier,
+    rows: readonly WorkspaceEventRow[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const ids = [
+      ...new Set(
+        rows
+          .filter((r) => r.event_type.startsWith('message.'))
+          .map((r) => str(r.payload['entity_id']))
+          .filter((v): v is string => v !== null),
+      ),
+    ];
+    if (ids.length === 0) return out;
+
+    const provenance = await q.query<{ src_id: string; dst_id: string }>(
+      `select src_id, dst_id
+         from public.edges
+        where type = 'authored_from' and src_id = any($1::uuid[])`,
+      [ids],
+    );
+    for (const row of provenance) out.set(row.src_id, row.dst_id);
+    return out;
+  }
+
   mapRow(
     row: WorkspaceEventRow,
     entities: Map<string, EntitySummary>,
     actors: Map<string, ActorSummary> = new Map(),
     contents: Map<string, LiveMessageContent> = new Map(),
+    sourceSessions: Map<string, string> = new Map(),
   ): DurableWorkspaceEvent {
     const seq = Number(row.seq);
-    const body = this.bodyOf(row, entities, actors, contents, seq);
+    const body = this.bodyOf(row, entities, actors, contents, sourceSessions, seq);
 
     // The envelope is the ROW's, verbatim. `schema_version` comes from the row
     // rather than the current constant on purpose: an event captured under an
@@ -437,6 +477,7 @@ export class WorkspaceEventMapper {
     entities: Map<string, EntitySummary>,
     actors: Map<string, ActorSummary>,
     contents: Map<string, LiveMessageContent>,
+    sourceSessions: Map<string, string>,
     seq: number,
   ): Record<string, unknown> {
     const p = row.payload;
@@ -528,7 +569,13 @@ export class WorkspaceEventMapper {
           },
           replyCount: 0,
         };
-        return { type: row.event_type, anchorId, message };
+        // Envelope-level SENDER provenance, hydrated live from the `authored_from`
+        // edge rather than read from the captured payload (the payload has no such
+        // field — the correlation is a separate recorder-gated edge write). A
+        // human-authored message has no edge and yields `null`, which is normal,
+        // not an UnprojectableEventError.
+        const sourceWorkSessionId = sourceSessions.get(summary.id) ?? null;
+        return { type: row.event_type, anchorId, sourceWorkSessionId, message };
       }
 
       case 'counter.changed': {

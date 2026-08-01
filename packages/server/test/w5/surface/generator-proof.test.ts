@@ -125,6 +125,9 @@ describe('W5.C generator proof', () => {
       .sort();
 
     expect(permissive).toEqual([
+      // 2026-08-02: auth.logout's only field is an optional sessionId — a bare
+      // {} means "revoke the session presented in the Authorization header".
+      'auth.logout',
       'entityKinds.update',
       'execution.terminate',
       'files.uploadAbort',
@@ -162,6 +165,8 @@ describe('W5.C generator proof', () => {
   it('pins the bound-schema count as an exact literal', () => {
     // 54 -> 64 on 2026-07-31: the consolidation wave bound ten more DTOs.
     // 64 -> 65 on 2026-08-01: execution.journal bound its query schema.
-    expect(ENTRIES).toHaveLength(65);
+    // 65 -> 66 on 2026-08-01: identity.profile.update bound its input DTO.
+    // 66 -> 69 on 2026-08-02: auth.signup/login/logout bound their input DTOs.
+    expect(ENTRIES).toHaveLength(69);
   });
 });

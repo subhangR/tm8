@@ -32,6 +32,8 @@ import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/ser
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
+import { TOKEN_PREFIX } from './identity/crypto.js';
+import { resolveBearerIdentity } from './identity/pg-auth.js';
 import { loadConfig, resolveServerDataDir, type ServerConfig } from './http/config.js';
 import { createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
@@ -41,7 +43,7 @@ import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
-import { createPtyWsServer, isPtyUpgrade } from './pty/index.js';
+import { createPtyWsServer, isPtyUpgrade, type PtyAttachAuthorizer } from './pty/index.js';
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
@@ -275,7 +277,56 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * write to. A second host would have its own session map and every attach
    * would find no live PTY.
    */
-  const ptyWs = execution ? createPtyWsServer({ pty: execution.pty }) : undefined;
+  /**
+   * PTY attach authorization (Identity v2 Stage 1, trap 5).
+   *
+   * Identity: browsers cannot set headers on a WebSocket, so a bearer caller
+   * appends `&token=tm8s_…` to the grant URL; header auth works for
+   * non-browser clients; no credential resolves to the loopback auto-owner,
+   * exactly like every HTTP request (T-L7 — one resolver, one arm).
+   *
+   * Authorization: the caller must be able to SEE the work_session entity —
+   * one RLS-governed read under their own claims as `tm8_app`. Membership of
+   * the owning space is precisely what `entity_readable` encodes, so there
+   * is no second authorization vocabulary here. Not-visible and nonexistent
+   * are both 404: an outsider learns nothing about which ids are real.
+   */
+  const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const ptyAuthorize: PtyAttachAuthorizer | undefined = db
+    ? async (req, sessionId) => {
+        if (!UUID_SHAPE.test(sessionId)) {
+          return { ok: false, status: 404, message: 'no such session' };
+        }
+        let identity: RequestIdentity;
+        try {
+          const url = new URL(req.url ?? '/', 'http://tm8.invalid');
+          const token = url.searchParams.get('token');
+          const headers = token
+            ? { ...req.headers, authorization: `Bearer ${token}` }
+            : req.headers;
+          identity = await identityResolver!(headers);
+        } catch {
+          return { ok: false, status: 401, message: 'authentication required' };
+        }
+        if (!identity.identityId) {
+          return { ok: false, status: 401, message: 'authentication required' };
+        }
+        const visible = await db.query(
+          { identityId: identity.identityId },
+          'select 1 from public.entities where id = $1 and deleted_at is null',
+          [sessionId],
+        );
+        if (visible.length === 0) return { ok: false, status: 404, message: 'no such session' };
+        return { ok: true };
+      }
+    : undefined;
+
+  const ptyWs = execution
+    ? createPtyWsServer({
+        pty: execution.pty,
+        ...(ptyAuthorize ? { authorize: ptyAuthorize } : {}),
+      })
+    : undefined;
   const upgrades: UpgradeTarget = ptyWs
     ? {
         handleUpgrade: (req, socket, head) =>
@@ -303,9 +354,35 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    *
    * Resolving it here means `ctx.identity` carries the real owner for every
    * handler in the process, and any future block gets it for free.
+   *
+   * THE BEARER ARM (Identity v2 Stage 1). This resolver is the single seam
+   * the whole design plugs into (doc 3 §2): an arm, never a second path —
+   * `test/one-identity-path.test.ts` holds. `Authorization: Bearer tm8s_…`
+   * is verified against `auth_sessions` (claim-free by design) and any
+   * failure is a uniform 401. Every OTHER Authorization shape falls through
+   * to the loopback owner untouched, because the raw file-upload PUT already
+   * carries FileUploadGrant bearer tokens on the same header and those are
+   * not identities. Local single-machine behaviour is byte-identical: no
+   * header, same auto-owner (T-L7 — local is the degenerate case).
    */
   const identityResolver: IdentityResolver | undefined = db
-    ? async () => {
+    ? async (headers) => {
+        const header = headers.authorization;
+        const raw = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+        if (raw.startsWith(TOKEN_PREFIX)) {
+          const session = await resolveBearerIdentity(db, raw);
+          return {
+            kind: 'bearer',
+            identityId: session.identityId,
+            nodeAdmin: session.isNodeAdmin,
+            accountId: session.accountId,
+            sessionId: session.sessionId,
+            token: raw,
+            // Agent sessions are persona-scoped (S8): the token may only act
+            // as its team_member. Postgres still authorises via can_act_as.
+            ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
+          };
+        }
         const resolved = await owner!();
         return { kind: 'auto-owner', identityId: resolved.identityId };
       }

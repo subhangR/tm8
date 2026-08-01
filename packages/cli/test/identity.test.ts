@@ -156,10 +156,11 @@ const IDENTITY = {
 };
 
 describe('the registered command set', () => {
-  it('registers exactly `identity get`, and the projection documents it', async () => {
+  it('registers exactly `identity get` and `identity profile set`, and the projection documents them', async () => {
     const paths = (await identityCommands()).map((c) => c.path.join(' '));
-    expect(paths).toEqual(['identity get']);
+    expect(paths).toEqual(['identity get', 'identity profile set']);
     expect(isCommandPath(['identity', 'get'])).toBe(true);
+    expect(isCommandPath(['identity', 'profile', 'set'])).toBe(true);
   });
 });
 
