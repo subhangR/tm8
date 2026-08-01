@@ -62,6 +62,7 @@
  */
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
+import { ApiError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
@@ -524,37 +525,10 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
   // An explicit flag beats an inferred one, and `--no-session-link` opts out
   // entirely for an entity that should not be attributed to this session.
   //
-  // ⚠ THE SPACE AND SERVER GUARDS ARE LOAD-BEARING, AND THIS IS MEASURED.
-  // The connection travels INSIDE the create request, so an unresolvable target
-  // does not degrade to a missing edge — it fails the WHOLE CREATE. A first cut
-  // of this added the link unconditionally and broke 30 CLI integration tests
-  // with `not_found: entity <session> not found`: the suites create into their
-  // own throwaway Space, where this process's session does not exist, while
-  // TM8_SESSION_ID is still inherited from the agent running them.
-  //
-  // Same failure, worse blast radius, in production: `tm8 --server staging
-  // entity create` from a prod session is the Staging Steward's ENTIRE JOB, and
-  // its session lives on prod.
-  //
-  // So link only when the Space was resolved FROM THE SESSION ITSELF (`--space`
-  // or config means some other Space, where this session may not exist) and no
-  // `--server`/`--base-url` flag has pointed us at a different node. Anything
-  // else, and the honest answer is no edge rather than a broken create — the
-  // same rule the 065 triggers follow: a derived edge must never take down the
-  // operation that caused it.
-  const sessionId = cmd.ctx.sessionId;
-  const spaceIsThisSession = cmd.ctx.space?.source === 'session';
-  const serverOverridden = cmd.ctx.baseUrl.source === 'flag';
-  if (
-    sessionId !== undefined &&
-    spaceIsThisSession &&
-    !serverOverridden &&
-    !cmd.options.bool('no-session-link') &&
-    !tuples.some((t) => t.type === 'created_in')
-  ) {
-    tuples.push({ type: 'created_in', targetId: sessionId });
-  }
-
+  // NOTE: the automatic `created_in` link is deliberately NOT added here — see
+  // `linkCreatedInSession` below for why it cannot ride inside the create
+  // request. An EXPLICIT `--connect created_in=<id>` still travels here, which is
+  // why that function stands down when the caller named one.
   const seen = new Set<string>();
   return tuples.filter((t) => {
     const key = `${t.type} ${t.targetId}`;
@@ -562,6 +536,80 @@ function initialConnections(cmd: CommandContext): Array<{ type: string; targetId
     seen.add(key);
     return true;
   });
+}
+
+/**
+ * Claim this session as the birthplace of a just-created entity — BEST EFFORT,
+ * as a SEPARATE request, and never fatal.
+ *
+ * WHY IT CANNOT RIDE INSIDE THE CREATE. It was written that way first, and it is
+ * wrong: a connection in the create body is validated with the create, so an
+ * unresolvable session does not degrade to a missing edge, it fails the WHOLE
+ * CREATE. That broke 22 CLI integration tests with `not_found: entity <session>
+ * not found` — the suites boot their own Server and database, `cli()` passes
+ * `{...process.env}`, so `TM8_SESSION_ID` and `TM8_SPACE_ID` leak in from
+ * whatever agent is running the suite while the target database has never heard
+ * of that session. Guarding on `ctx.space.source === 'session'` did NOT fix it,
+ * because the leaked value arrives as env and therefore reads as 'session' too.
+ *
+ * The same failure has a worse shape in production: `tm8 --server staging entity
+ * create` run from a prod session is the Staging Steward's entire job, and its
+ * session exists only on prod.
+ *
+ * So the rule the 065/066 database triggers already follow applies to the client
+ * too: A DERIVED EDGE MUST NEVER TAKE DOWN THE OPERATION THAT CAUSED IT. The
+ * entity is created first and committed; the claim is attempted after and its
+ * failure is reported on stderr, not raised. A create that succeeded must not
+ * report failure because a nicety did not land.
+ *
+ * The failure is WARNED rather than swallowed on purpose — silent absence is the
+ * failure mode this whole change exists to remove, so trading a broken create
+ * for an invisible one would be no progress at all.
+ */
+async function linkCreatedInSession(
+  cmd: CommandContext,
+  created: unknown,
+  explicitConnections: ReadonlyArray<{ type: string; targetId: string }>,
+): Promise<void> {
+  const sessionId = cmd.ctx.sessionId;
+  if (sessionId === undefined) return;
+  if (cmd.options.bool('no-session-link')) return;
+  // One entity has one birth session (`edges_created_in_source_idx`), so an
+  // explicit claim wins outright rather than racing the inferred one.
+  if (explicitConnections.some((c) => c.type === 'created_in')) return;
+
+  const entityId = (created as { entity?: { id?: unknown } } | null)?.entity?.id;
+  if (typeof entityId !== 'string' || entityId === '') return;
+  if (entityId === sessionId) return; // nothing is born in itself
+
+  try {
+    await clientFor(cmd.ctx).invoke('edges.create', {
+      body: {
+        srcId: entityId,
+        dstId: sessionId,
+        type: 'created_in',
+        clientMutationId: resolveMutationId(undefined),
+      },
+    });
+  } catch (err) {
+    // `not_found` on the session is not a failure — it is the answer to a
+    // question we were right to ask. It means this invocation is not operating
+    // in its own session's world: the Space belongs to another database (the
+    // integration harness leaks TM8_SESSION_ID into suites that boot their own
+    // Server), or `--server` sent us to a node where the session does not exist.
+    // In that case NO edge is the correct outcome and there is nothing to report,
+    // which is also why a suite asserting `stderr: ''` on a clean create stays
+    // green.
+    //
+    // Anything else — forbidden, invalid_input, a transport failure, a 500 — is a
+    // claim we SHOULD have been able to record and could not, so it is surfaced.
+    // Silent absence is the exact failure mode this change exists to remove.
+    if (err instanceof ApiError && err.code === 'not_found') return;
+    cmd.out.warn(
+      `note: could not record this entity as created in session ${sessionId} ` +
+        `(${err instanceof Error ? err.message : String(err)}). The entity was created.`,
+    );
+  }
 }
 
 /** `--content <json-source>` is `Record<string, unknown>` — an array is a misread flag. */
@@ -601,6 +649,8 @@ async function entityCreate(cmd: CommandContext): Promise<ExitCode> {
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.create', {
     body: withActor(cmd, body),
   });
+  // After the create has landed, never before it — see linkCreatedInSession.
+  await linkCreatedInSession(cmd, data, connections);
   cmd.out.data(data, renderCommandResult);
   return EXIT_OK;
 }
