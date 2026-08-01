@@ -322,6 +322,7 @@ describe('the server identity binds when the real seam is on', () => {
     displayName: 'Amber',
     avatar: null,
     email: null,
+    globalId: null,
     isNodeAdmin: true,
     isOwner: true,
     status: 'active',

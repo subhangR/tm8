@@ -60,6 +60,8 @@ import {
   type GraphQuery,
   type GraphResult,
   type HandoffView,
+  type IdentityProfileUpdateInput,
+  type IdentityProfileView,
   type MenuConfig,
   type MessageBatchResult,
   type MessageDeliveryView,
@@ -149,6 +151,16 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     identity(): Promise<IdentityView> {
       return http.call<IdentityView>('identity.get');
+    },
+
+    /**
+     * Writes the caller's OWN profile row (`identity.profile.update`). No
+     * params: the route names no subject — the server derives the row from
+     * the bound identity claim. The answer is the written profile, not a
+     * `CommandResult`, exactly as the contract types it.
+     */
+    updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView> {
+      return http.call<IdentityProfileView>('identity.profile.update', { body: input });
     },
 
     /** Bare array, not a Page — `spaces.list` accepts no pagination at all. */

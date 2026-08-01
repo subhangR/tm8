@@ -38,6 +38,13 @@ export {
   type RedeemLandingProps,
 } from './InviteFrames';
 export { MenuEditor, glyphOf, labelOf, type MenuEditorProps } from './MenuEditor';
+export {
+  IdentityProfileSection,
+  GLOBAL_ID_EXPLAINER,
+  globalIdProblem,
+  type IdentityProfileSectionProps,
+  type ProfileDraftInput,
+} from './IdentityProfileSection';
 
 /* ── the editor model, exported so a host can drive it in a test ──────────── */
 export {

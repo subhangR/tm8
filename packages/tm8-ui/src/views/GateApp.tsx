@@ -48,6 +48,7 @@ import { HomeScreen } from '../home';
 import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
+import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -245,27 +246,14 @@ export function GateApp(props: GateAppProps = {}) {
     };
   }, [data.liveIds.length, data.countsFor]);
 
-  // Collab v2's channel grammar: "Channels" is a label, while the active
-  // space's actual channel entities are the rows beneath it. The query is the
-  // same live collection projection every other entity list consumes.
-  const channelKind = getKind('channel');
-  const channelEntities = data.rowsFor(channelKind.kind)(undefined);
-  const channelGroup = useMemo<MenuDynamicGroup>(() => ({
-    replaceConfiguredItems: true,
-    emptyLabel: 'No channels in this space yet.',
-    items: channelEntities.map((entity) => {
-      const state = entity.state as unknown as { unreadCount?: number; workingAgentCount?: number };
-      return {
-        id: entity.id,
-        kind: entity.kind,
-        parentId: entity.parentId,
-        label: entity.title,
-        icon: '#',
-        ...(state.unreadCount ? { badge: state.unreadCount } : {}),
-        ...(state.workingAgentCount ? { live: state.workingAgentCount } : {}),
-      };
-    }),
-  }), [channelEntities]);
+  // Channels left the rail entirely (user ruling 2026-08-01): they are
+  // entities, so they live in the Entity List Panel with every other
+  // collection — `channel` is `strategy: 'collection'` in the registry now and
+  // the panel's kind switcher offers it with no wiring here. What remains is
+  // the CHANNEL ROUTE: `#/s/{space}/channels` (and the palette row that opens
+  // it) still resolve to the space's first channel and its full-screen
+  // ChannelView, so a deep link and a bookmark keep working.
+  const channelEntities = data.rowsFor('channel')(undefined);
 
   // The same grammar for VOICE: "Voice" is a label, the space's voice_channel
   // entities are the rows. The glyph comes from the REGISTRY row (as
@@ -290,6 +278,14 @@ export function GateApp(props: GateAppProps = {}) {
       };
     }),
   }), [voiceEntities, voiceKind.icon]);
+
+  // The settings screen's one seam adapter (settings-space/port.ts). Memoized
+  // on the same (seam, space) pair the shell booted with; null until a space
+  // exists, which is also when the Settings rail row can first be clicked.
+  const settingsPort = useMemo(
+    () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId) : null),
+    [data.seam, data.spaceId],
+  );
 
   const reasons = useMemo<DetailReasons>(
     () => ({
@@ -389,7 +385,7 @@ export function GateApp(props: GateAppProps = {}) {
             activeTarget={activeTarget}
             onNavigate={setActiveTarget}
             presentKind={presentKind}
-            dynamicGroups={{ channels: channelGroup, voice: voiceGroup }}
+            dynamicGroups={{ voice: voiceGroup }}
             servers={props.servers}
             activeServerId={activeServer.id}
             onSelectServer={(id) => {
@@ -478,10 +474,20 @@ export function GateApp(props: GateAppProps = {}) {
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
+            activeTarget.ref === 'settings' &&
+            settingsPort ? (
+            /* ⛭ Settings — the T2 shell, mounted at last (identity-display
+               lane, 2026-08-01): this ref rendered the unbuilt-view card while
+               the whole module sat built and unmounted in settings-space/.
+               Sections another module owns (projects/kinds) keep their honest
+               not-mounted state inside the shell itself. */
+            <SettingsShell port={settingsPort} />
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (
-            /* Unbuilt view refs (dashboard/feed/inbox/settings) SAY SO —
-               rendering the workspace under a highlighted Dashboard row was a
-               silent lie about where you are (same audit, same class). */
+            /* Unbuilt view refs (feed/inbox/…) SAY SO — rendering the
+               workspace under a highlighted Dashboard row was a silent lie
+               about where you are (same audit, same class). */
             <div className="ev-root" data-testid="unbuilt-view">
               <p className="evt-empty" style={{ margin: 24 }}>
                 {`${activeTarget.ref} isn’t built yet — its designed screen is coming. Nothing is hidden here; it does not exist in this build.`}

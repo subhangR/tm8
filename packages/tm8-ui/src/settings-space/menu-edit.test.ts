@@ -80,9 +80,11 @@ describe('reorder', () => {
   });
 
   it('moves an item inside its group without touching siblings', () => {
-    const d = moveItem(startDraft(BASE), 'home', 0, 2);
-    const home = draftConfig(d).groups.find((g) => g.id === 'home');
-    expect(home?.items.map((i) => i.ref)).toEqual(['feed', 'inbox', 'dashboard']);
+    // Home ships ONE item since revision 5, so the sibling-preserving move is
+    // asserted where there are siblings to preserve: the Tracking group.
+    const d = moveItem(startDraft(BASE), 'tracking', 0, 2);
+    const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
+    expect(tracking?.items.map((i) => i.ref)).toEqual(['pull_request', 'worktree', 'project']);
   });
 
   it('an out-of-range index is a no-op, not a crash or a dropped row', () => {
@@ -111,9 +113,9 @@ describe('rename', () => {
 
 describe('remove', () => {
   it('removes an item', () => {
-    const d = removeItem(startDraft(BASE), 'home', 1);
-    const home = draftConfig(d).groups.find((g) => g.id === 'home');
-    expect(home?.items.map((i) => i.ref)).toEqual(['dashboard', 'inbox']);
+    const d = removeItem(startDraft(BASE), 'tracking', 1);
+    const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
+    expect(tracking?.items.map((i) => i.ref)).toEqual(['project', 'worktree']);
   });
 
   it('removes a caret child without removing its parent', () => {
@@ -134,22 +136,23 @@ describe('remove', () => {
 });
 
 describe('add', () => {
-  it('offers NO view ref on the shipped default — a measured fact, not a bug', () => {
-    // `MenuViewRef` is a CLOSED union of 7 and SHIPPED_DEFAULT_MENU spends all
-    // 7. So on the default menu "＋ view ref" has literally nothing to add.
-    // Asserted rather than worked around: the editor must render that control
-    // disabled-with-reason instead of opening an empty picker, and if a future
-    // view ref is added to the union this test goes red and the reason changes.
-    expect(availableViewRefs(startDraft(BASE))).toEqual([]);
+  it('offers exactly the view refs revision 5 freed', () => {
+    // `MenuViewRef` is a CLOSED union of 7. Until revision 5 the default spent
+    // all 7 and this control had literally nothing to add; the user ruling of
+    // 2026-08-01 took Feed, Inbox and Channels off the rail WITHOUT taking any
+    // of them out of the union, so they are the three refs the picker can now
+    // offer — which is exactly what "removed from the rail, not from the app"
+    // has to look like from the editor's side.
+    expect(availableViewRefs(startDraft(BASE))).toEqual(['feed', 'inbox', 'channels']);
   });
 
-  it('adds a view ref once one is free', () => {
-    const freed = removeItem(startDraft(BASE), 'home', 1); // drop `feed`
-    const free = availableViewRefs(freed);
-    expect(free).toEqual(['feed']);
-    const d = addItem(freed, 'home', { type: 'view', ref: free[0] });
+  it('adds a freed view ref back onto the rail', () => {
+    const d = addItem(startDraft(BASE), 'home', { type: 'view', ref: 'feed' });
     expect(draftIssue(d)).toBeNull();
-    expect(draftConfig(d).groups.find((g) => g.id === 'home')?.items).toHaveLength(3);
+    expect(draftConfig(d).groups.find((g) => g.id === 'home')?.items.map((i) => i.ref))
+      .toEqual(['dashboard', 'feed']);
+    // And once used, it stops being on offer.
+    expect(availableViewRefs(d)).toEqual(['inbox', 'channels']);
   });
 
   it('offers only refs the rail can actually render, and never a duplicate', () => {
@@ -220,7 +223,7 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
   it('reports group and item capacity too', () => {
     const d = startDraft(BASE);
     expect(groupCapacity(d)).toEqual({ used: BASE.groups.length, max: MENU_CAPS.groups, full: false });
-    expect(itemCapacity(d, 'home')).toEqual({ used: 3, max: MENU_CAPS.items, full: false });
+    expect(itemCapacity(d, 'home')).toEqual({ used: 1, max: MENU_CAPS.items, full: false });
   });
 
   it('an add past the cap is REFUSED by the model, so the control can state the cap', () => {

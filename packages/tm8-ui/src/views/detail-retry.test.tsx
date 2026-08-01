@@ -233,29 +233,50 @@ describe('a detail read that fails is not abandoned forever', () => {
     ).toBe(1);
   });
 
-  it('a dead DETAIL does not silence that anchor\'s THREAD', { timeout: 30_000 }, async () => {
-    // The two halves fail for different reasons and are asked about
-    // separately. A 404 detail spends the DETAIL budget; the thread must still
-    // be readable, or one dead entity would also empty a thread that reads fine.
-    let messageReads = 0;
-    const h = harness([task('ent-present')], () => false);
-    (h.seam as unknown as { messages: () => Promise<unknown> }).messages = async () => {
-      messageReads += 1;
-      return { items: [], nextCursor: null, total: 0 };
+  it("a dead DETAIL does not silence that anchor's THREAD", { timeout: 30_000 }, async () => {
+    // The budget is PER HALF. Detail and thread fail for different reasons, so
+    // a 404 on the detail must not also stop this anchor's thread from ever
+    // being re-read. The discriminating move is the counter bump AFTER the
+    // detail has died: with one shared budget the second read is refused
+    // before it is even claimed, so `messageCalls` stays at 1.
+    const row = task('ent-dead-detail', {
+      counters: { children: 0, comments: 0, reactions: 0, points: 0, messages: 1, viewerReaction: null },
+    } as Partial<EntitySummary>);
+    // The row exists as a SUMMARY (so the counter is readable) but the detail
+    // read 404s — the shape of an entity the list can see and the detail cannot.
+    const h = harness([row], () => false);
+    (h.seam as unknown as { entity: (id: string) => Promise<unknown> }).entity = async () => {
+      throw new CollabError('not_found', 'no such entity');
     };
     const { result } = renderHook(() =>
       useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
     );
     await waitFor(() => expect(result.current.ready).toBe(true));
 
-    // 'ent-missing' 404s on the detail half. The thread half rides the same pull.
-    await renderPasses((id) => void result.current.pull?.(id), 'ent-missing', 2, 900);
+    await renderPasses((id) => void result.current.pull?.(id), row.id, 1, 300);
+    const afterFirst = h.messageCalls();
+    expect(afterFirst, 'the first pull reads the thread').toBeGreaterThan(0);
 
-    expect(h.entityCalls(), 'the 404 detail is asked once').toBe(1);
+    // The node says this anchor gained a message. The thread is genuinely stale
+    // now (the fake always answers empty), so the thread read must re-arm.
+    act(() => {
+      h.emit({
+        type: 'entity.upsert',
+        spaceId: SPACE,
+        seq: 99,
+        entity: {
+          ...row,
+          counters: { children: 0, comments: 0, reactions: 0, points: 0, messages: 2, viewerReaction: null },
+        },
+      } as unknown as DurableWorkspaceEvent);
+    });
+
+    await renderPasses((id) => void result.current.pull?.(id), row.id, 2, 300);
+
     expect(
-      messageReads,
-      "the thread read must not be blocked by the detail's terminal failure",
-    ).toBeGreaterThan(0);
+      h.messageCalls(),
+      "the thread must be re-read after the counter advanced — the detail's terminal 404 must not spend the thread's budget",
+    ).toBeGreaterThan(afterFirst);
   });
 
   it('the retry is BOUNDED — an entity that never reads does not loop the node', { timeout: 30_000 }, async () => {

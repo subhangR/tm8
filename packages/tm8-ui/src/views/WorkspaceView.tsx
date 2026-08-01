@@ -39,6 +39,9 @@ import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 import { openEntityAndResolve } from './open-entity';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
+import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
+import { channelFeedPortFromGateData } from './channel-feed-port';
+import { debugSurfaceFor } from './debugSurface';
 
 /** The session collection is selected by capability, never by panel position
     or a kind literal. The empty centre must keep showing terminals after both
@@ -115,6 +118,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   );
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+  /* Memoized on `data` so the port identity is stable — the feed hook's effects
+     key on it, and a fresh object each render would re-read on every keystroke
+     anywhere in the workspace. */
+  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
   const handleSessionClose = useCallback((entityId: string) => {
     void data.seam.commands.terminate(entityId as EntityId, {
@@ -219,11 +226,27 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               : `${admission.cause} — ${admission.remedy}`
           }
           liveness={data.livenessOf(id)}
+          debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           livenessOf={data.livenessOf}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}
           onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
-          chatSurface={detail ? (
+          /*
+           * ONE SLOT, TWO SURFACES, CHOSEN BY ARCHETYPE — never by kind (§15.2).
+           * `terminal` entities get the session chat; `hub` entities get their
+           * channel feed, which is what makes a channel opened from the Entity
+           * List Panel a channel you can actually read and post to (user ruling
+           * 2026-08-01). Any other archetype gets no feed and HubBody's
+           * unchanged front-door body.
+           */
+          chatSurface={detail && getKind(detail.kind).panel.archetype === 'hub' ? (
+            <LazyChannelChatSurface
+              port={channelFeedPort}
+              channelId={id}
+              connection={data.connection}
+              onOpenEntity={(entityId) => openEntity(entityId)}
+            />
+          ) : detail ? (
             <LazySessionChatSurface
               seam={data.seam}
               sessionId={id}
@@ -260,7 +283,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded
@@ -347,6 +370,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
@@ -448,6 +472,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}

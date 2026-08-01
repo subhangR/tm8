@@ -103,7 +103,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
   });
   const [mode, setMode] = useState<LaunchMode>('worker');
   const [reasoningEffort, setReasoningEffort] = useState<NonNullable<LaunchConfig['reasoningEffort']>>('low');
-  const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('acceptEdits');
+  // `auto` — the same posture the node falls back to when nothing names one, so
+  // this sheet opening on a different default cannot silently change what a
+  // launch does. It is the sheet's only pre-selected posture because the sheet
+  // always SENDS one (unlike the quick config, which can send nothing at all).
+  const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('auto');
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
 
@@ -256,6 +260,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               >
                 <option value="safe">Safe · ask for untrusted actions</option>
                 <option value="acceptEdits">Accept edits · workspace write</option>
+                <option value="auto">Auto · run what is safe, escalate the rest</option>
                 <option value="plan">Plan · read only</option>
                 <option value="fullAccess">Full access · bypass safeguards</option>
               </select>

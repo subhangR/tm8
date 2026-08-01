@@ -390,7 +390,7 @@ export interface LaunchConfig {
   agentToolId: string | null;
   model: string | null;
   reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
-  accessMode: 'safe' | 'acceptEdits' | 'plan' | 'fullAccess' | null;
+  accessMode: 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess' | null;
   mode: LaunchMode;
   target: LaunchTarget;
   /**
@@ -422,8 +422,9 @@ export type LaunchAccessMode = NonNullable<LaunchConfig['accessMode']>;
  *
  * `null` is the FIRST step and a real one: it means "whatever the teammate and
  * the node already decided", which is not the same statement as any of the
- * four explicit postures. Dropping it would make merely clicking twice pin a
- * posture the viewer never chose — the same silent-override failure
+ * five explicit postures — even `auto`, which is where an un-pinned launch
+ * currently LANDS but not what it SAYS. Dropping it would make merely clicking
+ * twice pin a posture the viewer never chose — the same silent-override failure
  * `defaultConfigFor` avoids by seeding `accessMode: null`.
  */
 export const ACCESS_MODE_CYCLE: readonly (LaunchAccessMode | null)[] = [
@@ -431,12 +432,14 @@ export const ACCESS_MODE_CYCLE: readonly (LaunchAccessMode | null)[] = [
   'plan',
   'safe',
   'acceptEdits',
+  'auto',
   'fullAccess',
 ];
 
 const ACCESS_MODE_LABELS: Record<LaunchAccessMode, { short: string; full: string }> = {
   safe: { short: 'Safe', full: 'Safe · ask for untrusted actions' },
   acceptEdits: { short: 'Accept edits', full: 'Accept edits · workspace write' },
+  auto: { short: 'Auto', full: 'Auto · run what is safe, escalate the rest' },
   plan: { short: 'Plan', full: 'Plan · read only' },
   fullAccess: { short: 'Bypass', full: 'Full access · bypass safeguards' },
 };

@@ -44,8 +44,8 @@ import { attachmentsPortFromSeam } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
-import { SessionDebugBody } from '../panels/bodies/SessionDebugBody';
 import './entity-view.css';
+import { debugSurfaceFor } from './debugSurface';
 
 export interface EntityViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -278,13 +278,7 @@ export function EntityView(props: EntityViewProps) {
           }}
         />
       ) : undefined}
-      debugSurface={detail ? (
-        <SessionDebugBody
-          seam={data.seam}
-          sessionId={selectedId}
-          live={data.livenessOf(selectedId) === 'live'}
-        />
-      ) : undefined}
+      debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       messages={messages}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
@@ -331,6 +325,7 @@ export function EntityView(props: EntityViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          messagePulses={data.messagePulses}
           // Capability truth comes from the DETAIL, never the summary: a row
           // whose detail is not hydrated genuinely has unknown capabilities
           // and correctly stays refused (WorkspaceView states the same rule).
@@ -384,6 +379,7 @@ export function EntityView(props: EntityViewProps) {
                 pinned={false}
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
+                debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
                 livenessOf={data.livenessOf}
                 attachments={attachments}
                 onAttachmentUploaded={() => props.data.pull?.(aux.id)}

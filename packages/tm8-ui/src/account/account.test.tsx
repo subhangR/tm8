@@ -32,6 +32,7 @@ function identity(over: Partial<IdentityView> = {}): IdentityView {
     displayName: 'ada',
     avatar: null,
     email: null,
+    globalId: null,
     isNodeAdmin: true,
     isOwner: true,
     status: 'active',

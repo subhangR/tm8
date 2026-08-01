@@ -412,6 +412,7 @@ describe('what Launch actually commits', () => {
     fireEvent.click(toggle); // plan
     fireEvent.click(toggle); // safe
     fireEvent.click(toggle); // acceptEdits
+    fireEvent.click(toggle); // auto
     fireEvent.click(toggle); // fullAccess
     expect(toggle.getAttribute('data-access-mode')).toBe('fullAccess');
     expect(toggle.textContent).toContain('Bypass');

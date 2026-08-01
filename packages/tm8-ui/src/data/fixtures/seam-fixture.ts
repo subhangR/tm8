@@ -59,6 +59,8 @@ import {
   type GraphQuery,
   type GraphResult,
   type HandoffView,
+  type IdentityProfileUpdateInput,
+  type IdentityProfileView,
   type MenuConfig,
   type MessageBatchResult,
   type MessageDeliveryRecord,
@@ -583,6 +585,9 @@ export function createFixtureSeam(): FixtureSeam {
     displayName: viewerActor.displayName,
     avatar: viewerActor.avatar ?? null,
     email: null,
+    // NULL like every real row today (067 landed with no backfill) — the
+    // fixture exercises the empty-profile default path, not the exception.
+    globalId: null,
     isNodeAdmin: true,
     isOwner: true,
     status: 'active',
@@ -1105,6 +1110,31 @@ export function createFixtureSeam(): FixtureSeam {
           emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         }
         return { request: null, entity: clone(s), affectedCount };
+      },
+      /**
+       * Amendment 4 mirror: writes the VIEWER's profile — the only row this
+       * seam has, exactly like the real op. Only provided fields are written,
+       * and the `globalId` check-constraint shape is enforced here too so the
+       * fixture path exercises the same refusal the node would issue.
+       */
+      async updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView> {
+        if (input.globalId !== undefined && !/^[^:\s]+:\S+$/.test(input.globalId)) {
+          throw new CollabError('invalid_input', 'globalId must be issuer:subject with no whitespace');
+        }
+        if (input.displayName !== undefined) identityView.displayName = input.displayName;
+        if (input.avatar !== undefined) identityView.avatar = input.avatar;
+        if (input.email !== undefined) identityView.email = input.email;
+        if (input.globalId !== undefined) identityView.globalId = input.globalId;
+        // The viewer's actor mirrors the profile so feeds attribute with it.
+        if (input.displayName !== undefined) viewerActor.displayName = input.displayName;
+        if (input.avatar !== undefined) viewerActor.avatar = input.avatar;
+        return clone({
+          identityId: identityView.identityId,
+          displayName: identityView.displayName,
+          avatar: identityView.avatar,
+          email: identityView.email,
+          globalId: identityView.globalId,
+        });
       },
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);

@@ -393,7 +393,14 @@ export interface ListConfig {
    */
   lifecycle?: readonly LifecycleTier[];
   /** task subtree; session coordinator→worker. */
-  tree?: { by: 'hierarchy'; guideLines: boolean };
+  /**
+   * `messagePulse` binds the tree's hairlines to live message provenance: a
+   * message from one row to another sweeps the wires between them. It is a
+   * BINDING, not a predicate — like `tile.pulse`, it subscribes to a signal the
+   * panel is handed and never derives one. Requires `guideLines`, since it
+   * animates the wire those draw.
+   */
+  tree?: { by: 'hierarchy'; guideLines: boolean; messagePulse?: boolean };
   tile: {
     badges: readonly TileBadgeSpec[];
     /**

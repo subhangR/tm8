@@ -40,6 +40,7 @@ export function HubBody({
   detail,
   blocks,
   messages,
+  hasFeed,
   now,
   onOpenEntity,
 }: {
@@ -52,6 +53,19 @@ export function HubBody({
    * (see LatestMessage): nothing was read vs. a read that found nothing.
    */
   messages?: readonly MessageView[];
+  /**
+   * The host is rendering the entity's LIVE FEED directly beneath this body
+   * (user ruling 2026-08-01 — channels open in the panel now). Two regions
+   * stop being true when it does, and both are suppressed rather than left to
+   * contradict what is on screen a few pixels below:
+   *
+   *   · the latest-message card — a one-line summary of a feed the reader can
+   *     already see in full, including its hollow and empty states, which
+   *     would claim nothing was read while the feed shows the messages;
+   *   · the redirect note — it names the surface that renders the feed, and
+   *     that surface IS this panel now.
+   */
+  hasFeed?: boolean;
   /** Injected so the age on the card is deterministic under test. */
   now?: string;
   onOpenEntity?: (id: string) => void;
@@ -125,12 +139,12 @@ export function HubBody({
         </section>
       ) : null}
 
-      <LatestMessage messages={messages} now={now} />
+      {hasFeed ? null : <LatestMessage messages={messages} now={now} />}
 
       {/* The redirect NOTE, not the generic `pn-notice`: the oracle draws this
           one in the 11.5px UI face at ink-4 (line 270), where pn-notice is the
           9.5px mono voice. Different treatment, so it gets its own class. */}
-      {redirect ? (
+      {redirect && !hasFeed ? (
         <p className="hub-redirect" data-testid="hub-redirect">
           {redirect}
         </p>

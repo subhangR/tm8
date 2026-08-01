@@ -290,6 +290,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),
       resolveAttention: (id, input) => ops.resolveAttention(id, input),
+      updateProfile: (input) => ops.updateProfile(input),
       markRead: (notificationId) => ops.markRead(notificationId),
       /**
        * `lastReadAt` is intentionally NOT sent. `readMarks.upsert` binds

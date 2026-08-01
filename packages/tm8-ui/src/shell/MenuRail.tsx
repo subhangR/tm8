@@ -179,36 +179,65 @@ function present(node: MenuItem | MenuLeaf, presentKind: KindPresenter): RefPres
  */
 function collapsedLabel(presentation: RefPresentation): string {
   const parts = [presentation.label];
+  // The TOTAL is still announced here even though it is no longer drawn: a
+  // collapsed rail gives assistive tech no hover to reach `title` with, so
+  // dropping it would remove the count from AT users only.
   if (presentation.badge !== undefined) parts.push(String(presentation.badge));
   if (presentation.live !== undefined) parts.push(`${presentation.live} live`);
-  // Same C8/L10 rule as `live`: unseen is a STATUS, so it needs the word.
-  if (presentation.unseen) parts.push(`${presentation.unseen} unseen`);
+  // Same C8/L10 rule as `live`: news is a STATUS, so it needs the word.
+  if (presentation.unseen) parts.push(`${presentation.unseen} new`);
   return parts.join(', ');
 }
 
 /**
- * The trailing total, marked when part of it is unseen.
+ * The rail's one number: WHAT IS NEW, not how much exists.
  *
- * THE UNSEEN COUNT IS NOT DRAWN AS ITS OWN NUMBER. Two bare integers side by
- * side on one row ("3 210") read as a range or a fraction, and the rail already
- * spends its numeric slot on the total. So unseen is carried visually as
- * emphasis plus a dot, and its QUANTITY is exposed to assistive tech — which
- * has no such ambiguity — rather than being dropped.
+ * IT USED TO DRAW THE TOTAL, AND THAT WAS THE WRONG NUMBER. A lifetime total
+ * only ever grows, is identical on every visit, and cannot be acted on — the
+ * rail read "Docs 61 / Sessions 50 / Tasks 38" and said the same thing forever.
+ * Worse, before the 068 watermark almost every row was also unseen (93% of
+ * entities had never been marked read), so each kind rendered its total twice:
+ * once plain, once in bold.
+ *
+ * So the badge is now the UNSEEN count and nothing else, and a kind with
+ * nothing new draws NO badge at all. A quiet rail is the correct rendering of
+ * a quiet workspace; numbers appear when something actually changes, which is
+ * what makes them worth looking at.
+ *
+ * THE TOTAL IS NOT DISCARDED, it is demoted: it rides in the row's `title`
+ * (and in the collapsed accessible name), so "how many docs are there" is one
+ * hover away without spending the rail's scarce numeric slot on a constant.
  *
  * One component for all three render sites (configured item, caret leaf,
  * dynamic entity row) because three hand-rolled copies is exactly how the
  * collapsed corner marks and the a11y wording drift apart.
  */
 function CountBadge({ presentation }: { presentation: RefPresentation }) {
-  if (presentation.badge === undefined) return null;
   const unseen = presentation.unseen ?? 0;
+  // Nothing new ⇒ nothing drawn. Deliberately not `0`: a zero is visual noise
+  // on every row of a caught-up workspace, and it reads as a state ("zero
+  // docs") rather than as the absence of news.
+  if (unseen <= 0) return null;
   return (
-    <span className={`shell-rail__badge${unseen > 0 ? ' shell-rail__badge--unseen' : ''}`}>
-      {presentation.badge}
-      {unseen > 0 && <span className="shell-rail__unseen-dot" aria-hidden="true" />}
-      {unseen > 0 && <span className="shell-vh">, {unseen} unseen</span>}
+    <span className="shell-rail__badge shell-rail__badge--unseen">
+      {unseen}
+      <span className="shell-vh"> new</span>
     </span>
   );
+}
+
+/**
+ * The hover text carrying what the badge no longer spends a slot on.
+ *
+ * Returns undefined when there is no total to report, so the attribute is
+ * omitted rather than rendered empty.
+ */
+function countTitle(presentation: RefPresentation): string | undefined {
+  if (presentation.badge === undefined) return undefined;
+  const unseen = presentation.unseen ?? 0;
+  return unseen > 0
+    ? `${presentation.badge} ${presentation.label.toLowerCase()}, ${unseen} new`
+    : `${presentation.badge} ${presentation.label.toLowerCase()}`;
 }
 
 function DynamicEntityRows({
@@ -374,7 +403,7 @@ export function MenuRail(props: MenuRailProps) {
                     className={`shell-rail__row ${active ? 'shell-rail__row--active' : ''}`}
                     aria-current={active ? 'page' : undefined}
                     aria-label={collapsed ? collapsedLabel(presentation) : undefined}
-                    title={collapsed ? collapsedLabel(presentation) : undefined}
+                    title={collapsed ? collapsedLabel(presentation) : countTitle(presentation)}
                     onClick={() => onNavigate(target)}
                   >
                     <span className="shell-rail__icon" aria-hidden="true">
@@ -395,12 +424,16 @@ export function MenuRail(props: MenuRailProps) {
                         Both marks are aria-hidden because the row's composed
                         aria-label already carries their values; leaving them
                         exposed would double-announce every count. */}
-                    {collapsed && presentation.badge !== undefined && (
+                    {/* Collapsed, the corner mark is the UNSEEN count, matching
+                        the expanded badge. It used to show the lifetime total,
+                        which pinned a permanent two-digit number to a 48px
+                        icon rail and never changed. */}
+                    {collapsed && (presentation.unseen ?? 0) > 0 && (
                       <span
-                        className={`shell-rail__badge-corner${presentation.unseen ? ' shell-rail__badge-corner--unseen' : ''}`}
+                        className="shell-rail__badge-corner shell-rail__badge-corner--unseen"
                         aria-hidden="true"
                       >
-                        {presentation.badge}
+                        {presentation.unseen}
                       </span>
                     )}
                     {collapsed && presentation.live !== undefined && (
@@ -449,6 +482,7 @@ export function MenuRail(props: MenuRailProps) {
                           type="button"
                           className={`shell-rail__leaf ${leafActive ? 'shell-rail__leaf--active' : ''}`}
                           aria-current={leafActive ? 'page' : undefined}
+                          title={countTitle(leafPresentation)}
                           onClick={() => onNavigate(leafTarget)}
                         >
                           <span className="shell-rail__guide" aria-hidden="true" />
