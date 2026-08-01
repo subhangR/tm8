@@ -247,7 +247,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
       fireEvent.click(view.getByRole('button', { name: 'Graph' }));
 
       const graph = await waitFor(() => view.getByTestId('graph-screen'));
-      expect(within(graph).getByText('Graph · workspace data')).toBeTruthy();
+      // The lens control replaced the static eyebrow: the first thing the
+      // toolbar says is now which lens the canvas is under, and it must offer
+      // the escape to the whole space.
+      expect(within(graph).getByRole('group', { name: 'Graph lens' })).toBeTruthy();
+      expect(within(graph).getByRole('button', { name: 'Everything' })).toBeTruthy();
       expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0);
     } finally {
       view.unmount();
