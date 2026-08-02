@@ -73,6 +73,50 @@ export TM8_UI_DIR="$TM8_PROD_ROOT/packages/tm8-ui/dist"
 # The vite preview proxy target (packages/tm8-ui/vite.preview.config.ts reads it).
 export TM8_SERVER_ORIGIN="http://127.0.0.1:7778"
 
-# Homebrew node — not whatever a login shell happens to resolve. node-pty is
-# built against this one.
-export TM8_NODE_BIN="${TM8_NODE_BIN:-/opt/homebrew/bin/node}"
+# node, never bun: packages/server and packages/execution load node-pty, which
+# does not work under bun (README "Hard rules"). node-pty 1.1.0 ships N-API
+# prebuilds — see node_modules/.bun/node-pty@*/node_modules/node-pty/prebuilds/
+# — so nothing is compiled against a particular binary and any node of the
+# right MAJOR will load it. What must not drift is the major: CI builds and
+# tests on 22 (.github/workflows/ci.yml NODE_VERSION), so prod runs 22 too.
+#
+# Hence: pin the major, resolve the path. An absolute path here encodes one
+# machine's layout — it broke the moment Homebrew node was uninstalled, and it
+# fails as "no node at …" rather than "wrong node". Candidates are tried in
+# order and the first one reporting major 22 wins; a login shell's bare `node`
+# is the LAST resort, not the first.
+#
+# Override for a deliberate off-major run:  TM8_NODE_BIN=/path/to/node ./deploy.sh
+_tm8_find_node() {
+  local c
+  for c in "$HOME/.local/bin/node" \
+           /opt/homebrew/opt/node@22/bin/node \
+           "$(command -v node || true)"; do
+    [[ -n "$c" && -x "$c" ]] || continue
+    [[ "$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null)" == 22 ]] \
+      && { echo "$c"; return 0; }
+  done
+  return 0                      # let deploy.sh's preflight report it, not a sourced file
+}
+export TM8_NODE_BIN="${TM8_NODE_BIN:-$(_tm8_find_node)}"
+unset -f _tm8_find_node
+
+# Postgres 18 CLIENT binaries, explicitly. Homebrew keeps postgresql@18 keg-only,
+# so a machine that also has an older postgresql formula answers bare `psql` and
+# `pg_dump` from THAT one — /opt/homebrew/bin/psql is whichever version got
+# linked, not the one the sidecar speaks. psql tolerates the skew; pg_dump does
+# not (step 5 dies with "server version mismatch"), and db/migrate.mjs tries
+# bare `psql` before the keg, so it inherits the wrong client too. Setting this
+# short-circuits both (migrate.mjs findPsql() reads TM8_PSQL first).
+_tm8_find_psql() {
+  local c
+  for c in /opt/homebrew/opt/postgresql@18/bin/psql \
+           /usr/local/opt/postgresql@18/bin/psql \
+           /usr/lib/postgresql/18/bin/psql \
+           "$(command -v psql || true)"; do
+    [[ -n "$c" && -x "$c" ]] && { echo "$c"; return 0; }
+  done
+  return 0
+}
+export TM8_PSQL="${TM8_PSQL:-$(_tm8_find_psql)}"
+unset -f _tm8_find_psql
