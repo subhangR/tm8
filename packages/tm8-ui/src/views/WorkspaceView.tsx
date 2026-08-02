@@ -33,6 +33,7 @@ import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { allKinds, getKind } from '../domain/registry';
+import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { EmptyCenter } from './EmptyCenter';
@@ -229,6 +230,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveness={data.livenessOf(id)}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           livenessOf={data.livenessOf}
+          /* Same one prop, same shared predicate, same reason as EntityView:
+             the block signal must reach the terminal AND the chat surface, not
+             whichever one is on top. */
+          needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
+          attentionDetail={QUIET_SESSION_DETAIL}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}
           onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
@@ -257,6 +263,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
               defaultLimit={content?.interactionProfile?.feedPolicy.pageSize}
               composerPolicy={content?.interactionProfile?.composerPolicy}
+              needsAttention={needsAttentionOf(detail, data.livenessOf)}
+              attentionDetail={QUIET_SESSION_DETAIL}
               onOpenEntity={openEntity}
               onSwitchToTerminal={() => nav.setContentSurface?.(id, 'terminal')}
             />
