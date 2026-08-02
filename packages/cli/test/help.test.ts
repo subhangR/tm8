@@ -284,6 +284,25 @@ describe('intent search — tm8.help.search.v1, 16 KiB AND at most 5 (conformanc
     }
   });
 
+  it('notes are indexed: the body-cap fact is findable by intent', () => {
+    // The one discovery miss the corpus measured: the 10k body cap lives in a
+    // note, and note words were invisible to --query until NOTE_WORD.
+    const res = searchHelp('message body length limit');
+    const ops = res.matches.map((m) => m.operation);
+    // messages.edit ranks first by an honest SUMMARY_WORD ("body" is in its
+    // summary, 8 > 4); the note tier's job is to surface messages.post at all,
+    // and to lift it above the rows that match only on the "message" prefix.
+    expect(ops).toContain('messages.post');
+    expect(ops.indexOf('messages.post')).toBeLessThan(ops.indexOf('messages.list'));
+    const post = res.matches.find((m) => m.operation === 'messages.post');
+    expect(post?.command).toBe('message send');
+    expect(post?.reason).toContain('body');
+    // The :280 honesty rule must survive note indexing: messages.post notes
+    // contain the words "prompt, report, or progress", but the rendered reason
+    // quotes the summary only — never a retired verb as a command.
+    expect(json(res)).not.toMatch(/tm8 (session prompt|report|progress|whoami)/);
+  });
+
   it('every match carries a reason and a helpRef so the answer is followable', () => {
     for (const m of searchHelp('find my tasks').matches) {
       expect(m.reason.length).toBeGreaterThan(5);
