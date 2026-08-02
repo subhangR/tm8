@@ -967,12 +967,12 @@ const ROWS: Record<OperationName, Row> = {
   // ── events & presence ────────────────────────────────────────────────────
   'events.subscribe': {
     cmd: ['event', 'watch'],
-    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence]',
-    sum: 'Stream Space events over the WebSocket',
+    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence] [--until-match]',
+    sum: 'Stream Space events over the WebSocket — or, with --until-match, block until one matches',
     authz: 'space',
     input: 'none',
     side: 'none',
-    tags: ['stream', 'follow', 'tail', 'live', 'realtime'],
+    tags: ['stream', 'follow', 'tail', 'live', 'realtime', 'wait', 'block', 'until'],
     // These notes state CONTRACT facts, not the state of this node. The row
     // previously said the socket was "an upgrade SKELETON … do not depend on it
     // for durable ordering yet", which was true when it was written and stopped
@@ -985,6 +985,7 @@ const ROWS: Record<OperationName, Row> = {
       'the contract defines a client→server control protocol on this socket: `subscribe`/`unsubscribe` are fan-out membership, `resume` is replay, `presence`/`presence.set` are the ephemeral channel, and a refused frame answers `control.refused` rather than going quiet',
       'a gap is repaired by re-watching with `--after <space-seq>`, which sends a `resume` frame replaying stored events over the socket; `event list` is the repair when no socket can be opened at all',
       'presence signals never advance the durable cursor',
+      'with `--until-match` the watch becomes a bounded blocking wait: the first event matching --type/--entity is printed and the process exits — 0 matched on the stream, 14 matched via the events.poll fallback after the socket was lost, 13 nothing matched before the timeout; the global --timeout <seconds> is required and capped at 300 — longer waits belong to a scheduler re-invoking this command',
     ],
   },
   'events.poll': {

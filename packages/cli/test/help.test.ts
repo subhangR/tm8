@@ -352,8 +352,10 @@ describe('every dimensioned value names its dimension, on EVERY surface', () => 
         /<seconds>|SECONDS/,
       );
     }
-    // root help + all three completion scripts.
-    expect(mentioning).toBe(4);
+    // root help + all three completion scripts, plus the two renderings of the
+    // events.subscribe row (cmd:event watch, op:events.subscribe) whose F7 note
+    // names `--timeout <seconds>` for `--until-match`.
+    expect(mentioning).toBe(6);
   });
 
   it('`--limit` is rendered as a count, never a bare <n>', () => {
