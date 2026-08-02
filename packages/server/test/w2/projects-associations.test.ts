@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import {
   EdgeCorrectionResultSchema,
+  ProjectDirectoryListingSchema,
   ProjectResourceSchema,
   getOperation,
   type OperationName,
@@ -13,6 +15,10 @@ import type { Db, DbClaims, Querier } from '../../src/db/types.js';
 import type { FacadeDeps } from '../../src/facade/deps.js';
 import { registerW2ProjectsAssociationsHandlers } from '../../src/facade/handlers/w2/projects-associations.js';
 import { HandlerRegistry } from '../../src/facade/registry.js';
+import {
+  ensureProjectWorkingDirectory,
+  listProjectDirectories,
+} from '../../src/facade/services/w2/project-directories.js';
 import type { OperationHandler, RequestContext } from '../../src/http/types.js';
 
 const IDS = {
@@ -86,7 +92,12 @@ function deps(db: Db): FacadeDeps {
 
 function request(
   opName: OperationName,
-  options: { params?: Record<string, string>; query?: string; body?: unknown } = {},
+  options: {
+    params?: Record<string, string>;
+    query?: string;
+    body?: unknown;
+    identity?: RequestContext['identity'];
+  } = {},
 ): RequestContext {
   const op = getOperation(opName);
   return {
@@ -96,7 +107,7 @@ function request(
     query: new URLSearchParams(options.query),
     body: options.body,
     requestId: `req-${opName}`,
-    identity: { kind: 'auto-owner', identityId: OWNER.identityId },
+    identity: options.identity ?? { kind: 'auto-owner', identityId: OWNER.identityId },
     headers: {},
     method: op.method,
     path: op.path,
@@ -116,16 +127,69 @@ function handler(registry: HandlerRegistry, name: OperationName): OperationHandl
 }
 
 describe('W2.G06 projects and association correction facade', () => {
-  it('exports one registration seam for the exact seven frozen operations', () => {
+  it('exports one registration seam for the project operations', () => {
     expect(registered(new FakeDb()).implemented()).toEqual([
       'projects.associations.correct',
       'projects.create',
+      'projects.directories.list',
       'projects.get',
       'projects.link',
       'projects.list',
       'projects.unlink',
       'projects.update',
     ]);
+  });
+
+  it('lists only directories inside configured roots and creates one retry-safe child', async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'tm8-project-browser-'));
+    const root = join(scratch, 'root');
+    const outside = join(scratch, 'outside');
+    try {
+      await mkdir(join(root, 'alpha'), { recursive: true });
+      await mkdir(outside);
+      await writeFile(join(root, 'notes.txt'), 'not a directory');
+      await symlink(outside, join(root, 'escape'));
+
+      const listing = await listProjectDirectories(root, [root]);
+      expect(ProjectDirectoryListingSchema.safeParse(listing).success).toBe(true);
+      expect(listing.directories).toEqual([{ name: 'alpha', path: join(root, 'alpha') }]);
+      expect(listing.parentPath).toBeNull();
+
+      await expect(listProjectDirectories(outside, [root]))
+        .rejects.toMatchObject({ code: 'forbidden' });
+
+      const created = await ensureProjectWorkingDirectory(join(root, 'new-project'), [root]);
+      expect(created).toBe(join(root, 'new-project'));
+      expect(await ensureProjectWorkingDirectory(join(root, 'new-project'), [root])).toBe(created);
+      await expect(ensureProjectWorkingDirectory(join(root, 'missing', 'deep'), [root]))
+        .rejects.toMatchObject({ code: 'not_found' });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('requires node-admin claims before browsing or creating local directories', async () => {
+    const registry = registered(new FakeDb());
+    const identity = {
+      kind: 'bearer' as const,
+      identityId: 'ordinary-user',
+      token: 'test-token',
+      nodeAdmin: false,
+    };
+    await expect(handler(registry, 'projects.directories.list')(
+      request('projects.directories.list', { identity }),
+    )).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(handler(registry, 'projects.create')(
+      request('projects.create', {
+        identity,
+        body: {
+          name: 'refused',
+          workingDir: '/tmp/refused-project',
+          ensureWorkingDir: true,
+          clientMutationId: 'refused-create',
+        },
+      }),
+    )).rejects.toMatchObject({ code: 'forbidden' });
   });
 
   it('returns complete ProjectResource shapes and narrows list by a validated active Space link', async () => {

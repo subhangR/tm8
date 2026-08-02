@@ -1388,6 +1388,40 @@ export interface ProjectCreateInput extends CommandContext {
   /** Defaults to 'untrusted' — trust is an explicit grant. */
   trust?: ProjectTrustLevel;
   defaults?: ProjectDefaults;
+  /**
+   * Create `workingDir` when it is one missing child beneath an allowed,
+   * existing project-browse directory. False/absent never mutates the
+   * filesystem; it only records the supplied path, preserving the original
+   * projects.create contract for CLI and migration callers.
+   */
+  ensureWorkingDir?: boolean;
+}
+
+/** One selectable child in the node-local project directory browser. */
+export interface ProjectDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+/**
+ * GET /v2/project-directories — a bounded, root-confined view of directories
+ * on the tm8 node. Files are deliberately absent: this is a project-root
+ * picker, not a general filesystem API.
+ */
+export interface ProjectDirectoryListing {
+  roots: string[];
+  path: string;
+  parentPath: string | null;
+  separator: '/' | '\\';
+  directories: ProjectDirectoryEntry[];
+  truncated: boolean;
+}
+
+/** The wrapper returned by spaces.create after its default member/channel saga. */
+export interface CreateSpaceResult {
+  space: SpaceSummary;
+  memberId: EntityId;
+  defaultChannelId: EntityId;
 }
 
 /** PATCH /v2/projects/:projectId */

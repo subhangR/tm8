@@ -10,7 +10,7 @@ import {
   ExecutionSpawnInputSchema,
   FileUploadGrantSchema, FileUploadInitInputSchema,
   getOperation, isCollabError, isKeysetCursor, MessageViewSchema, OPERATIONS,
-  ProjectCreateInputSchema, ProjectLinkInputSchema, ProjectResourceSchema,
+  ProjectCreateInputSchema, ProjectDirectoryListingSchema, ProjectLinkInputSchema, ProjectResourceSchema,
   RESERVED_OPERATIONS, V1_OPERATIONS, WireErrorBodySchema, WorkInputSchema,
   WorkspaceEventSchema, bindPath,
 } from '../src/index.js';
@@ -109,7 +109,7 @@ describe('operation catalog', () => {
   });
 
   it('carries the projects.* and files.* families (AM-2 §1/§2) as v1', () => {
-    for (const name of ['projects.list', 'projects.create', 'projects.get', 'projects.update',
+    for (const name of ['projects.list', 'projects.create', 'projects.directories.list', 'projects.get', 'projects.update',
                         'projects.link', 'projects.unlink',
                         'files.uploadInit', 'files.uploadComplete', 'files.uploadAbort', 'files.download'] as const) {
       expect(getOperation(name).status).toBe('v1');
@@ -322,8 +322,15 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(ProjectResourceSchema.safeParse(project).success).toBe(true);
     expect(ProjectResourceSchema.safeParse({ ...project, trust: 'sorta' }).success).toBe(false);
     expect(ProjectCreateInputSchema.safeParse({ name: 'tm8', workingDir: '/Users/x/tm8' }).success).toBe(true);
+    expect(ProjectCreateInputSchema.safeParse({
+      name: 'tm8', workingDir: '/Users/x/tm8', ensureWorkingDir: true,
+    }).success).toBe(true);
     expect(ProjectCreateInputSchema.safeParse({ name: 'tm8' }).success).toBe(false);
     expect(ProjectLinkInputSchema.safeParse({ projectId: 'proj_1' }).success).toBe(true);
+    expect(ProjectDirectoryListingSchema.safeParse({
+      roots: ['/Users/x'], path: '/Users/x', parentPath: null, separator: '/',
+      directories: [{ name: 'tm8', path: '/Users/x/tm8' }], truncated: false,
+    }).success).toBe(true);
   });
 
   it('file upload init enforces sha-256 checksums and positive sizes (AM-2 §2)', () => {

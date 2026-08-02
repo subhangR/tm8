@@ -67,6 +67,48 @@ describe('ops: launch resources', () => {
     expect(f.last().method).toBe('GET');
     expect(f.last().url).toBe('/v2/spaces/space-1/settings');
   });
+
+  it('uses catalog bindings for node-local onboarding reads and commands', async () => {
+    const listing = {
+      roots: ['/srv/projects'],
+      path: '/srv/projects',
+      parentPath: null,
+      separator: '/' as const,
+      directories: [],
+      truncated: false,
+    };
+    const { ops, f } = harness(listing);
+
+    await expect(ops.projectDirectories('/srv/projects')).resolves.toEqual(listing);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/project-directories?path=%2Fsrv%2Fprojects');
+
+    await ops.createSpace({ name: 'Studio', clientMutationId: 'space-1' });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/spaces',
+      body: { name: 'Studio', clientMutationId: 'space-1' },
+    });
+
+    await ops.createProject({
+      name: 'Website',
+      workingDir: '/srv/projects/website',
+      ensureWorkingDir: true,
+      clientMutationId: 'project-1',
+    });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/projects',
+      body: expect.objectContaining({ ensureWorkingDir: true }),
+    });
+
+    await ops.linkProject('space-1', { projectId: 'project-1', clientMutationId: 'link-1' });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/spaces/space-1/projects',
+      body: { projectId: 'project-1', clientMutationId: 'link-1' },
+    });
+  });
 });
 
 describe('ops: canonical file upload lifecycle', () => {

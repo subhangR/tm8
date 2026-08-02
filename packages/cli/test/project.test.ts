@@ -304,6 +304,14 @@ describe('tm8 project create', () => {
     expect((requests[0]?.body as Record<string, unknown>).clientMutationId).toBe('MiXeD-Case_id');
   });
 
+  it('opts into creating one missing working-directory child explicitly', async () => {
+    respond = () => ({ status: 201, body: RESOURCE });
+    await invoke([
+      'project', 'create', 'tm8', '--working-dir', '/tmp/new-project', '--ensure-working-dir',
+    ]);
+    expect((requests[0]?.body as Record<string, unknown>).ensureWorkingDir).toBe(true);
+  });
+
   it('carries trust and the three spawn defaults, with `none` clearing a default', async () => {
     respond = () => ({ status: 201, body: RESOURCE });
     await invoke([

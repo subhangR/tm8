@@ -802,6 +802,17 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'bound',
   },
+  'projects.directories.list': {
+    cmd: null,
+    sum: 'Browse allowed node-local directories for Space project onboarding',
+    authz: 'server',
+    input: 'none',
+    tags: ['folder', 'directory', 'browse', 'workdir', 'local'],
+    reason: 'ui_onboarding_only',
+    notes: [
+      'the browser onboarding flow invokes this root-confined read; tm8 CLI exposes no general filesystem browser',
+    ],
+  },
   'projects.get': {
     cmd: ['project', 'get'],
     syn: 'tm8 project get <project-resource-id>',
@@ -1540,7 +1551,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:954873433ecaf3e168d282a6120496c0155fb30b000268d9a6f1456ad98c0e30';
+  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
 
 export const GRAMMAR_VERSION = '2';
 
