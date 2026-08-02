@@ -428,7 +428,7 @@ describe('per-operation availability (M-3) is derived, never assumed', () => {
     expect(resolveAvailability('events.poll', 'v1')).toEqual({
       availability: 'unknown',
       availabilityReason: null,
-      availabilitySource: 'contract',
+      availabilitySource: 'none',
     });
   });
 

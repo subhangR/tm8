@@ -47,6 +47,9 @@ describe('the default is unknown, and unknown is never upgraded', () => {
     expect(d.availabilityReason).toBeNull();
     expect(AVAILABILITIES).toContain(d.availability);
     expect(AVAILABILITY_SOURCES).toContain(d.availabilitySource);
+    // The assertion this title always promised: nothing looked, so the source
+    // is `none` — never `contract`, which declined to answer on this path.
+    expect(d.availabilitySource).toBe('none');
   });
 });
 
