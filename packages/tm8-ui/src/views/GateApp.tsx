@@ -49,6 +49,7 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { nodeKeyOf } from '../data/launch-cache';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -490,7 +491,7 @@ export function GateApp(props: GateAppProps = {}) {
                the whole module sat built and unmounted in settings-space/.
                Sections another module owns (projects/kinds) keep their honest
                not-mounted state inside the shell itself. */
-            <SettingsShell port={settingsPort} />
+            <SettingsShell port={settingsPort} nodeKey={nodeKeyOf(activeServer.routeBaseUrl)} />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (

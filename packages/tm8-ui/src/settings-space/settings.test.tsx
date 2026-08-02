@@ -104,6 +104,26 @@ const LIVE_VERBS = [
   /^Avatar URL$/,
   /^Global id$/,
   /^Save profile$/,
+  // Models: the nav row plus every control in the section. Live for a DIFFERENT
+  // reason than `Your profile` — not because the seam gained a verb, but because
+  // this catalog is browser-local and never asks the seam anything. The guard's
+  // rule is "no enabled control promises an act it cannot do", and each of these
+  // performs its act completely. The section states its per-browser scope in its
+  // own body, which is where that limit belongs.
+  /^Models$/,
+  /^Model id$/,
+  /^Display label$/,
+  /^Agent tool$/,
+  /^＋ Add model$/,
+  /^Edit /,
+  /^Hide /,
+  /^Delete /,
+  /^Reset /,
+  /^reset all \(\d+\)$/,
+  /^Label for /,
+  /^Note for /,
+  /^Save$/,
+  /^Cancel$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {

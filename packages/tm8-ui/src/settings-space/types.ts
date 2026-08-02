@@ -20,6 +20,7 @@ export type SettingsSectionId =
   | 'members'
   | 'invites'
   | 'axes'
+  | 'models'
   | 'projects'
   | 'menu'
   | 'kinds'
@@ -50,6 +51,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
   { id: 'axes', label: 'Task axes', heading: 'Task axes' },
+  /* Models sits with the other space-shaped configuration even though it is
+     browser-local: it is where someone looking for "what can I launch with"
+     will look, and the section itself states its real scope rather than
+     letting its neighbours imply one. */
+  { id: 'models', label: 'Models', heading: 'Models' },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Menu', heading: 'Menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },
@@ -77,6 +83,12 @@ export interface SettingsShellProps {
   initialSection?: SettingsSectionId;
   /** Notified on every section change so a host can mirror it into the route. */
   onSectionChange?: (id: SettingsSectionId) => void;
+  /**
+   * Which node's browser-local settings this shell edits. Defaults to the local
+   * node. Only the Models section reads it today; it is a prop rather than a
+   * module read so a host pointed at a named Server edits THAT node's catalog.
+   */
+  nodeKey?: string;
 }
 
 /**

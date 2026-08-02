@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react';
 import type { SpaceSummary } from '@tm8/contract';
 import { DisabledAction } from '../panels';
 import { MembersSection } from './MembersSection';
+import { ModelsSection } from './ModelsSection';
 import { InvitesPanel } from './InviteFrames';
 import { IdentityProfileSection } from './IdentityProfileSection';
 import { MenuEditor } from './MenuEditor';
@@ -43,6 +44,7 @@ export function SettingsShell({
   sections,
   initialSection = 'members',
   onSectionChange,
+  nodeKey = 'local',
 }: SettingsShellProps) {
   const [active, setActive] = useState<SettingsSectionId>(initialSection);
   const [data, setData] = useState<SettingsData>({
@@ -144,6 +146,7 @@ export function SettingsShell({
             onGo={go}
             port={port}
             onProfileSaved={refreshIdentity}
+            nodeKey={nodeKey}
           />
         </div>
       </div>
@@ -158,6 +161,7 @@ function SectionBody({
   onGo,
   port,
   onProfileSaved,
+  nodeKey,
 }: {
   id: SettingsSectionId;
   data: SettingsData;
@@ -165,6 +169,7 @@ function SectionBody({
   onGo: (id: SettingsSectionId) => void;
   port: SettingsShellProps['port'];
   onProfileSaved: () => void;
+  nodeKey: string;
 }) {
   const injected = sections?.[id];
   if (injected !== undefined) return <>{injected}</>;
@@ -199,6 +204,10 @@ function SectionBody({
           onSaved={onProfileSaved}
         />
       );
+    case 'models':
+      // Browser-local, so it needs no port and cannot be refused by the seam.
+      // The node key comes from the shell because the catalog is per node.
+      return <ModelsSection nodeKey={nodeKey} heading={def.heading} />;
     case 'axes':
       return (
         <>

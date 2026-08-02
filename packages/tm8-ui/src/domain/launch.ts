@@ -24,6 +24,7 @@ import type {
   SpawnWorkdir,
 } from '@tm8/contract';
 import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
+import { catalogModelsFor } from './model-catalog';
 
 // ---------------------------------------------------------------------------
 // Agent tools and models
@@ -75,7 +76,37 @@ export function agentTool(id: string | null | undefined): AgentToolDef | null {
  * the kind of confident guess that produces a refusal at spawn time.
  */
 export function modelsFor(toolId: string | null | undefined): readonly ModelDef[] {
-  return agentTool(toolId)?.models ?? [];
+  // READS THE EDITABLE CATALOG, not the frozen constant. Settings can add a
+  // model this node was never shipped knowing about, and hide one it was — and
+  // a settings screen whose changes never reached the picker would be exactly
+  // the decorative control this codebase refuses everywhere else.
+  //
+  // `nodeKey` is threaded from the caller because the catalog is per node; the
+  // default keeps every existing call site working against the local one.
+  return catalogModelsFor(currentNodeKey(), toolId).map((entry) => ({
+    id: entry.model,
+    label: entry.label,
+    ...(entry.note ? { note: entry.note } : {}),
+  }));
+}
+
+/**
+ * The node the model catalog is read against.
+ *
+ * A module-level value rather than a parameter: `modelsFor` is called from
+ * render in several places that have no reason to know about servers, and
+ * threading a node key through all of them to serve one setting would put a
+ * transport fact in the middle of the launch domain. The shell sets it once
+ * when the active server changes.
+ */
+let activeNodeKey = 'local';
+
+export function setCatalogNodeKey(nodeKey: string): void {
+  activeNodeKey = nodeKey;
+}
+
+export function currentNodeKey(): string {
+  return activeNodeKey;
 }
 
 // ---------------------------------------------------------------------------
