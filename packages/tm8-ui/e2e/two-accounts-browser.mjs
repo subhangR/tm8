@@ -118,6 +118,14 @@ const run = async () => {
   const browser = await chromium.launch({ channel: 'chrome' });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));
+  page.on('requestfailed', (req) => {
+    if (req.url().includes('/v2/')) console.log(`  [requestfailed] ${req.method()} ${req.url()} — ${req.failure()?.errorText}`);
+  });
+  page.on('response', (res) => {
+    if (res.url().includes('/v2/') && res.status() >= 400) {
+      console.log(`  [http ${res.status()}] ${res.request().method()} ${res.url()}`);
+    }
+  });
 
   // ── §1 · first run: the gate, then a REAL account ─────────────────────
   console.log(`\n§1 · amber ${LOGIN_ONLY ? 'signs in' : 'signs up'} through the gate`);
@@ -129,6 +137,7 @@ const run = async () => {
   check(`the gate closed after ${LOGIN_ONLY ? 'login' : 'signup'}`, true);
 
   const amberPass = await passFromBrowser(page);
+  const amberAuthorLabel = amberPass?.account?.displayName ?? AMBER;
   check('a tm8s_ pass is stored under the page ORIGIN', !!amberPass && amberPass.token.startsWith('tm8s_'));
   check('the pass names amber', amberPass?.account?.handle === AMBER, JSON.stringify(amberPass?.account));
 
@@ -169,6 +178,7 @@ const run = async () => {
     await createAccount(page, BOBBY, PW_B);
   }
   const bobbyPass = await passFromBrowser(page);
+  const bobbyAuthorLabel = bobbyPass?.account?.displayName ?? BOBBY;
   check('bobby has his OWN tm8s_ pass now', !!bobbyPass && bobbyPass.token.startsWith('tm8s_') && bobbyPass.token !== amberPass.token);
   check('the pass names bobby', bobbyPass?.account?.handle === BOBBY, JSON.stringify(bobbyPass?.account));
 
@@ -211,15 +221,15 @@ const run = async () => {
         if (names.some((n) => label.includes(n))) found.push(label);
       }
       return found;
-    }, [AMBER, BOBBY]);
+    }, [amberAuthorLabel, bobbyAuthorLabel]);
     await page.screenshot({ path: `${OUT}4-task-detail-${i + 1}.png` });
     console.log(`  detail ${i + 1} author avatars:`, JSON.stringify(detail));
     authorsSeen.push(new Set(detail));
     await page.keyboard.press('Escape').catch(() => {});
     await page.waitForTimeout(500);
   }
-  const sawAmber = authorsSeen.some((s) => [...s].some((l) => l.includes(AMBER)));
-  const sawBobby = authorsSeen.some((s) => [...s].some((l) => l.includes(BOBBY)));
+  const sawAmber = authorsSeen.some((s) => [...s].some((l) => l.includes(amberAuthorLabel)));
+  const sawBobby = authorsSeen.some((s) => [...s].some((l) => l.includes(bobbyAuthorLabel)));
   check('one task shows AMBER as its author icon', sawAmber);
   check('the other task shows BOBBY as its author icon', sawBobby);
 
