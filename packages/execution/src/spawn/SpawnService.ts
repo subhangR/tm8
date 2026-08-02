@@ -7,7 +7,7 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -72,6 +72,52 @@ const EXIT_STATUS_MAP: Record<PtySessionStatus, WorkSessionStatus> = {
   failed: 'failed',
 };
 
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+/**
+ * Tighten an application-owned directory even when it predates the permission
+ * boundary. `mkdir({ mode })` only applies to directories it creates, so it is
+ * not enough for an upgraded node whose roots already exist as 0755.
+ */
+async function ensurePrivateDirectory(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  const info = await lstat(path);
+  if (!info.isDirectory()) {
+    throw new Error(`private tm8 data root is not a directory: ${path}`);
+  }
+  await chmod(path, PRIVATE_DIRECTORY_MODE);
+}
+
+/**
+ * Repair regular files already present in a private data root. Symlinks and
+ * special files are deliberately ignored: following one during remediation
+ * could chmod a target outside the tm8 data directory.
+ */
+async function repairPrivateFiles(path: string): Promise<void> {
+  const entries = await readdir(path, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = join(path, entry.name);
+      const info = await lstat(entryPath);
+      if (info.isFile()) await chmod(entryPath, PRIVATE_FILE_MODE);
+    }),
+  );
+}
+
+/** A 0700 scratch root is sufficient to protect everything below it, but its
+ * existing per-session directories are tightened as defence in depth. */
+async function repairPrivateChildDirectories(path: string): Promise<void> {
+  const entries = await readdir(path, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = join(path, entry.name);
+      const info = await lstat(entryPath);
+      if (info.isDirectory()) await chmod(entryPath, PRIVATE_DIRECTORY_MODE);
+    }),
+  );
+}
+
 /**
  * Turn a {@link PtyExitInfo} into the honest, human-readable statement that
  * lands in `work_sessions.error` for a NATURAL exit.
@@ -112,6 +158,8 @@ export class SpawnService {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  /** One fail-closed remediation pass per service lifetime. */
+  private privateDataLayoutReady: Promise<void> | undefined;
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -190,6 +238,44 @@ export class SpawnService {
    */
   private journalPathFor(sessionId: string): string {
     return join(this.dataDir, 'journals', `${sessionId}.jsonl`);
+  }
+
+  /**
+   * Manifests contain the full persona and task briefing, journals contain
+   * command output, and scratch directories contain the agent's files. They
+   * are one confidentiality boundary and must be repaired together.
+   *
+   * This runs lazily on the first non-replayed spawn/resume so a permission
+   * failure participates in the existing failed-session cleanup path. Caching
+   * the promise also prevents concurrent spawns from racing the same sweep.
+   */
+  private ensurePrivateDataLayout(): Promise<void> {
+    if (this.privateDataLayoutReady) return this.privateDataLayoutReady;
+
+    this.privateDataLayoutReady = (async () => {
+      const manifests = join(this.dataDir, 'manifests');
+      const journals = join(this.dataDir, 'journals');
+      const scratch = join(this.dataDir, 'scratch');
+
+      await Promise.all([
+        ensurePrivateDirectory(manifests),
+        ensurePrivateDirectory(journals),
+        ensurePrivateDirectory(scratch),
+      ]);
+      await Promise.all([
+        repairPrivateFiles(manifests),
+        repairPrivateFiles(journals),
+        repairPrivateChildDirectories(scratch),
+      ]);
+    })();
+
+    return this.privateDataLayoutReady;
+  }
+
+  private async ensurePrivateScratchDirectory(path: string): Promise<void> {
+    await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+    // As above, `mode` does not repair an existing directory (notably resume).
+    await chmod(path, PRIVATE_DIRECTORY_MODE);
   }
 
   /**
@@ -460,7 +546,7 @@ export class SpawnService {
         task,
       });
 
-      if (!context.project) await mkdir(cwd, { recursive: true });
+      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
 
       // Record the CLI's per-workspace trust BEFORE the child exists, because
       // afterwards is too late: the dialog blocks on first directory access, and
@@ -772,7 +858,7 @@ export class SpawnService {
       // the original launch, and this resume's exact command is in the ledger.
       await this.writeManifestFile(manifestPath, manifest);
 
-      if (!context.project) await mkdir(cwd, { recursive: true });
+      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
       if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, this.env);
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, this.env);
 
@@ -809,14 +895,27 @@ export class SpawnService {
   }
 
   private async writeManifestFile(path: string, manifest: Tm8Manifest): Promise<void> {
-    await mkdir(dirname(path), { recursive: true });
+    await this.ensurePrivateDataLayout();
+    await ensurePrivateDirectory(dirname(path));
     // Write-then-rename: the agent boots concurrently and must never observe a
     // half-written manifest. A truncated JSON parse at boot is indistinguishable
     // from a malformed manifest, and the agent has no way to retry.
+    //
+    // The fixed temp name is removed first. `writeFile({ mode })` does not
+    // change an existing file's mode and follows symlinks; either behaviour
+    // would let a stale pre-fix `.tmp` preserve 0644 or redirect the write.
     const tmp = `${path}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    const { rename } = await import('node:fs/promises');
+    await rm(tmp, { force: true });
+    await writeFile(tmp, `${JSON.stringify(manifest, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: PRIVATE_FILE_MODE,
+      flag: 'wx',
+    });
+    // Assert the postcondition explicitly rather than trusting the process
+    // umask or creation semantics. The rename then publishes a 0600 inode.
+    await chmod(tmp, PRIVATE_FILE_MODE);
     await rename(tmp, path);
+    await chmod(path, PRIVATE_FILE_MODE);
   }
 
   private async failSession(

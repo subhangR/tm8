@@ -28,6 +28,8 @@ export interface FakeGraphOptions {
   workingDir: string;
   /** Omit the project to exercise the projectless scratch-session path. */
   withProject?: boolean;
+  /** Stable id for filesystem-boundary tests. Defaults to a fresh UUID. */
+  sessionId?: string;
   model?: string | null;
   permissionMode?: string | null;
 }
@@ -112,7 +114,7 @@ export class FakeGraph implements GraphPort {
       };
     }
     this.created.push(input);
-    const sessionId = randomUUID();
+    const sessionId = this.options.sessionId ?? randomUUID();
     return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
   }
 
