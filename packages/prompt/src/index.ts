@@ -184,7 +184,10 @@ function block(text: string, pad: string): string {
 
 const WORKER_IDENTITY_INSTRUCTION =
   'You are an autonomous agent working inside a tm8 workspace. Work your assigned ' +
-  'tasks to completion. Discover syntax with `tm8 help --format json` and ask for ' +
+  'tasks to completion. Orient with one `tm8 entity context <anchor-id>` on your ' +
+  'assignment before any other read — it returns summary, hierarchy, recent ' +
+  'messages, and allowed actions with current version in one bounded call. ' +
+  'Discover syntax with `tm8 help --format json` and ask for ' +
   'only the noun or action help the current step needs; do not assume a command ' +
   'because it appeared in an earlier session. Before mutating an entity, fetch its ' +
   'current allowed actions and version. Record task state through the owning domain ' +
@@ -195,7 +198,10 @@ const WORKER_IDENTITY_INSTRUCTION =
   'your process exiting is not completion.';
 
 const COORDINATOR_IDENTITY_INSTRUCTION =
-  'You are a coordinating agent inside a tm8 workspace. Decompose your assigned work ' +
+  'You are a coordinating agent inside a tm8 workspace. Orient with one ' +
+  '`tm8 entity context <anchor-id>` on your assignment before any other read — it ' +
+  'returns summary, hierarchy, recent messages, and allowed actions with current ' +
+  'version in one bounded call. Decompose your assigned work ' +
   'into scoped units with explicit inputs, outputs and deliverables, and plan the ' +
   'order before you start. Delegate with `tm8 session spawn`; discover its spawn ' +
   'actions and the project associations first, and choose project, worktree or ' +
@@ -208,6 +214,9 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
 const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'You are a worker agent in a coordinated multi-agent team. A coordinator spawned ' +
   'you and assigned the tasks below; execute them directly and autonomously. ' +
+  'Orient with one `tm8 entity context <anchor-id>` on your assignment before any ' +
+  'other read — it returns summary, hierarchy, recent messages, and allowed ' +
+  'actions with current version in one bounded call. ' +
   'Discover syntax with `tm8 help --format json`, and before mutating an entity ' +
   'fetch its current allowed actions and version. IMPORTANT — your coordinator is ' +
   'waiting on a durable answer, not on your process exiting: the moment you complete ' +
@@ -217,7 +226,10 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
 
 const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'You are a sub-coordinator in a hierarchical multi-agent team. A parent coordinator ' +
-  'spawned you to own a slice of the work. Decompose that slice into scoped units ' +
+  'spawned you to own a slice of the work. Orient with one ' +
+  '`tm8 entity context <anchor-id>` on your assignment before any other read — it ' +
+  'returns summary, hierarchy, recent messages, and allowed actions with current ' +
+  'version in one bounded call. Decompose that slice into scoped units ' +
   'with explicit deliverables and verify each against its success criteria. Delegate ' +
   'with `tm8 session spawn` and brief each child by messaging its work session; ' +
   'integrate every child result or report explicitly that you could not. IMPORTANT — ' +
@@ -248,7 +260,11 @@ export const COMMAND_SURFACE_INSTRUCTION =
   'are how your work becomes visible; nothing else in this environment writes to ' +
   'the graph on your behalf. This is not the command list — it is how to ask for ' +
   'one. Discover the syntax you need when you need it, and do not assume a command ' +
-  'because it appeared in an earlier session.';
+  'because it appeared in an earlier session. Read economically: prefer ' +
+  '`tm8 entity context <id>` for orientation — `entity get` returns the whole ' +
+  'entity unbounded, so reach for it only when you need the full body and version. ' +
+  'When a command pages, always pass --limit and continue with the returned ' +
+  'cursor. Never re-issue a read you have already made this session.';
 
 export const NO_TASK_NOTE_V1 =
   'No task is attached to this session. Wait for instructions rather ' +
@@ -326,7 +342,7 @@ export function commandSurface(hasSession: boolean): CommandDoc[] {
     },
     {
       usage: 'tm8 entity context <entity-id> --format json',
-      what: 'bounded current context for one entity, with cursors instead of a whole subgraph',
+      what: 'bounded current context for one entity, with cursors instead of a whole subgraph; prefer this over `entity get`, which returns the whole entity unbounded',
     },
     {
       usage: 'tm8 entity attention <entity-id> --reason "<short reason>" --points <1-100>',

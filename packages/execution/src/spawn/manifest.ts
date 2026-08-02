@@ -688,13 +688,15 @@ export function composeEnv(
 
   // Put the `tm8` binary on the agent's PATH.
   //
-  // The system prompt instructs the agent to run `tm8 task report progress|
-  // complete|blocked` — that IS the reporting loop, and it is the only way its
-  // work becomes visible in the graph. `@tm8/cli` is a workspace package with a
-  // `bin` entry that nothing ever installs globally, so without this every one
-  // of those commands dies with "command not found" and the agent looks broken
-  // while believing it reported. PREPENDED so a stale globally-installed `tm8`
-  // cannot shadow the build this server actually shipped with.
+  // The system prompt instructs the agent to report durably with
+  // `tm8 message send --to <anchor-entity-id>` — that IS the reporting loop
+  // (the retired `task report` verbs are rejected vocabulary now), and it is
+  // the only way its work becomes visible in the graph. `@tm8/cli` is a
+  // workspace package with a `bin` entry that nothing ever installs globally,
+  // so without this every one of those commands dies with "command not found"
+  // and the agent looks broken while believing it reported. PREPENDED so a
+  // stale globally-installed `tm8` cannot shadow the build this server
+  // actually shipped with.
   const binDir = cliBinDir();
   if (binDir) {
     const inherited = parentEnv.PATH ?? '';
