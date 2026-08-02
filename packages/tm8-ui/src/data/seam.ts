@@ -64,6 +64,8 @@ import type {
   CommandResult,
   CompleteTaskInput,
   CreateEntityInput,
+  CreateSpaceInput,
+  CreateSpaceResult,
   CreateTaskInput,
   Cursor,
   DurableWorkspaceEvent,
@@ -98,6 +100,9 @@ import type {
   PatchMessageInput,
   PatchTaskInput,
   PostMessageInput,
+  ProjectCreateInput,
+  ProjectDirectoryListing,
+  ProjectLinkInput,
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
@@ -246,6 +251,17 @@ export interface Seam {
   entityKinds(spaceId: SpaceId): Promise<EntityKindDef[]>;
   /** Linked project resources, including trust and graph-owned cwd. */
   projects(spaceId: SpaceId): Promise<ProjectResource[]>;
+  /**
+   * Node-local onboarding is optional because fixture seams have no filesystem.
+   * The real seam exposes the complete contract-backed saga surface; its
+   * absence keeps the Add Space control disabled-with-reason.
+   */
+  projectSetup?: {
+    directories(path?: string): Promise<ProjectDirectoryListing>;
+    createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
+    createProject(input: ProjectCreateInput): Promise<ProjectResource>;
+    linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+  };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
   /** Connections tab. */

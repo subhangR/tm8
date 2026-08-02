@@ -251,7 +251,7 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(124); // 120 -> 124 (2026-08-02): auth.* Identity v2 Stage 1 added four HTTP routes.
+    expect(health.operations).toBe(125); // +1 node-local project directory read.
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

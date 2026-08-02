@@ -293,9 +293,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 114 -> 118 on 2026-08-01: execution.resume, spaces.counts,
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
-    expect(SURFACE).toHaveLength(122);
-    expect(rows).toHaveLength(122);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(122);
+    expect(SURFACE).toHaveLength(123);
+    expect(rows).toHaveLength(123);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
   });
 
   /**
@@ -340,7 +340,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // actually asserting about was already correct.
     const tm8Frames = stack
       .split('\n')
-      .filter((line) => line.includes('/Projects/tm8/packages/'));
+      .filter((line) => line.includes('/tm8/packages/'));
     expect(tm8Frames.length).toBeGreaterThan(0);
     expect(tm8Frames.filter((line) => line.includes('/dist/'))).toEqual([]);
   });
