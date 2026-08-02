@@ -730,7 +730,10 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // single-element result above is a fact about `teamMembers` and not about
     // a broken predicate.
     // 5 -> 7: execution.resume and execution.journal joined the family.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(7);
+    // 7 -> 8: execution.launch — the journal says what a session DID, and this
+    // says what it was TOLD. Two rows, because they have opposite lifetimes:
+    // one is polled and paginated, one is written once at spawn.
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(8);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

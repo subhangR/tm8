@@ -63,6 +63,7 @@ import type {
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
+  SessionLaunchRecord,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
@@ -1749,6 +1750,26 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
   }).strict(),
   records: z.array(SessionJournalRecordSchema),
   hasMore: z.boolean(),
+}).strict();
+
+/**
+ * `manifest` is `z.record(z.unknown())` and NOT a modelled object: the stored
+ * document was written by whatever build spawned the session, and validating
+ * its interior would make this read fail closed on exactly the sessions a
+ * debug surface most needs to explain. The envelope around it is strict.
+ */
+export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum(['no_manifest_row']).nullable(),
+  manifest: z.record(z.unknown()).nullable(),
+  envVarNames: z.array(z.string()),
+  prompts: z.object({
+    system: z.string().nullable(),
+    task: z.string().nullable(),
+    unavailableReason: z.enum(['not_recorded']).nullable(),
+  }).strict(),
+  recordedAt: z.string().nullable(),
 }).strict();
 
 // ---------------------------------------------------------------------------

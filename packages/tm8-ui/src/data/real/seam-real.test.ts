@@ -273,8 +273,8 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     ]);
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',
-      'connections', 'activity', 'messages', 'handoffs', 'journal', 'inbox', 'feed', 'delivery',
-      'attentionRequests']) {
+      'connections', 'activity', 'messages', 'handoffs', 'journal', 'launch', 'inbox', 'feed',
+      'delivery', 'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }
   });

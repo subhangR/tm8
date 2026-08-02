@@ -102,6 +102,7 @@ import type {
   ReactionInput,
   ResolveEntityAttentionInput,
   SessionJournalPage,
+  SessionLaunchRecord,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -264,6 +265,22 @@ export interface Seam {
    * older records; `limit` defaults to 100 server-side.
    */
   journal(workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage>;
+  /**
+   * What the session was TOLD at spawn — the other half of the DEBUG surface.
+   *
+   * The journal answers "what did this agent DO"; this answers "what was this
+   * agent GIVEN": the composed manifest (teammate, model, provider, workdir,
+   * tasks, profile pin), the environment variable NAMES, and the two prompt
+   * channels as the bytes actually sent. One-shot, not polled: unlike the
+   * journal it cannot grow, so re-reading it every few seconds would ship a
+   * whole manifest to learn nothing.
+   *
+   * `available:false` and `prompts.unavailableReason:'not_recorded'` are two
+   * DIFFERENT explained empties — no manifest row at all versus a manifest
+   * recorded before the prompts were captured — and the surface must keep them
+   * apart. Environment VALUES are structurally absent, never merely hidden.
+   */
+  launch(workSessionId: EntityId): Promise<SessionLaunchRecord>;
   /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
