@@ -21,6 +21,15 @@ export type PtyKillOutcome = 'killed' | 'not_found' | 'error';
 export type PtySessionStatus = 'completed' | 'failed';
 
 /**
+ * Whether a LIVE PTY is currently producing output.
+ *
+ * Both values describe a running process — this is orthogonal to
+ * {@link PtySessionStatus}, which only ever describes one that ended. An exited
+ * PTY has no activity at all and reports neither.
+ */
+export type PtyActivity = 'busy' | 'idle';
+
+/**
  * The raw evidence node-pty's `onExit` handed back for a session that just died.
  *
  * `null` in either field is a fact, not a gap: node-pty's own callback type
@@ -117,6 +126,46 @@ export interface PtyHostOptions {
     outcome: 'delivered' | 'unknown',
     reason?: string,
   ) => void | Promise<void>;
+  /**
+   * BLOCK DETECTION — fires when a live PTY crosses the quiescence threshold in
+   * either direction, and never for any other reason.
+   *
+   * This is the evidence behind the `needs-you` session presentation, which has
+   * existed in the UI since R8 with nothing to fire it (the registry predicate
+   * is `live && status === 'idle'`, and until this callback no code path ever
+   * wrote `'idle'`). tm8's SpawnService wires it to the same graph transition
+   * `onSessionStatus` uses, so the signal reaches every surface as an ordinary
+   * entity change on the durable event spine rather than as a side-channel.
+   *
+   * WHAT IT MEASURES, EXACTLY: this PTY produced output at some point and has
+   * now emitted nothing for {@link PtyHostOptions.idleAfterMs}. That is all. It
+   * is deliberately NOT a claim that an agent is waiting on a human — a silent
+   * `npm install` looks identical from here, and the only signal that could
+   * tell them apart is a structured one from the agent itself, which tm8 does
+   * not have (there is no hook integration in this repo). Consumers must render
+   * what was measured — "no output for Ns" — and must never upgrade it into a
+   * fabricated question. Mirrors `onSessionStatus`'s shape on purpose: an
+   * injected side-effect off the hot path, not a new callback pattern.
+   */
+  onActivityChange?: (
+    sessionId: string,
+    activity: PtyActivity,
+  ) => void | Promise<void>;
+  /**
+   * Silence after which a live PTY is reported `'idle'` (default 10s).
+   *
+   * Chosen well above `PROMPT_COLD_IDLE_MS` (1500ms), the constant that already
+   * distinguishes "the composer settled" from the sub-second lulls a booting TUI
+   * has between redraws: a threshold near that one would flap every time an
+   * agent paused to think. Ten seconds of complete silence from a PTY that has
+   * already spoken is a different kind of quiet.
+   *
+   * It is a DEFAULT, not a measurement. The delivery constants above were
+   * derived by running against real agents and carry a warning against tidying
+   * them; this one has not had that treatment yet and should get it before it is
+   * treated as settled.
+   */
+  idleAfterMs?: number;
   /** Live output fan-out coalescing window (ms). SCAR: default 16. */
   coalesceMs?: number;
   /** Force a flush when this many bytes accumulate inside one window. Default 64 KiB. */

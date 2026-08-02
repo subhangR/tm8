@@ -90,6 +90,20 @@ export interface ChannelScreenProps {
    * hidden one — there is nothing to hide.
    */
   onSwitchToTerminal?: () => void;
+  /**
+   * The session has gone quiet and may be waiting for a human.
+   *
+   * WHY CHAT NEEDS ITS OWN. The terminal surface has shown this since R8
+   * (`NeedsYouBanner`), but the two surfaces are both mounted and only one is
+   * visible, so a signal drawn in the terminal alone is invisible to exactly the
+   * person this feature exists for: the non-developer reading chat. That is the
+   * disagreement between the two views, in its smallest form.
+   *
+   * Ignored on a channel anchor, which has no session to be blocked.
+   */
+  needsAttention?: boolean;
+  /** What the host measured, in words. See `QUIET_SESSION_DETAIL`. */
+  attentionDetail?: string;
 }
 
 export function ChannelScreen({
@@ -114,6 +128,8 @@ export function ChannelScreen({
   onLoadEarlier,
   onOpenEntity,
   onSwitchToTerminal,
+  needsAttention = false,
+  attentionDetail,
 }: ChannelScreenProps) {
   const feedElement = useRef<HTMLDivElement>(null);
   const scrollSnapshot = useRef<{
@@ -237,6 +253,27 @@ export function ChannelScreen({
 
   return (
     <section className="chs-root" data-testid="chs-root">
+      {needsAttention ? (
+        <div className="chs-needs-you" role="status" aria-live="polite" data-testid="chs-needs-you">
+          <span className="chs-needs-you__label">⚠ needs you</span>
+          {/*
+            STATES THE MEASUREMENT, NOT A GUESS. The detector behind this knows
+            only that the PTY fell silent; it cannot see which tool is waiting or
+            what was asked. So the copy says the agent went quiet and points at
+            the terminal, where the real question — if there is one — is drawn.
+            Inventing a question here would be indistinguishable, to the reader,
+            from having actually received one.
+          */}
+          {attentionDetail ? (
+            <span className="chs-needs-you__detail">{attentionDetail}</span>
+          ) : null}
+          {onSwitchToTerminal ? (
+            <button type="button" className="chs-chip-btn" onClick={onSwitchToTerminal}>
+              Open the terminal
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div
         ref={feedElement}
         className="chs-feed"
