@@ -362,6 +362,12 @@ interface DeliveryRow {
   updated_at: Date | string;
 }
 
+interface SessionSiblingRow {
+  source_message_id: string;
+  target_message_id: string;
+  target_work_session_id: string;
+}
+
 const DELIVERY_STATUSES = new Set<string>([
   'pending', 'dispatching', 'delivered', 'failed_retryable',
   'failed_permanent', 'unknown', 'expired', 'cancelled',
@@ -445,6 +451,7 @@ interface FeedHydration {
   readonly activity: Map<string, ActivityItem>;
   readonly activityRows: Map<string, ActivityRow>;
   readonly deliveries: Map<string, DeliverySummary[]>;
+  readonly linkedWorkSessions: Map<string, EntitySummary[]>;
   readonly authoredFrom: Map<string, string>;
   readonly anchors: Map<string, EntitySummary>;
 }
@@ -482,30 +489,50 @@ async function hydrate(
     workSessionId: row.work_session_id,
   }]));
 
-  const deliveryRows = messageIds.length === 0 ? [] : await q.query<DeliveryRow>(
+  // A channel @Tag is represented by one message batch with a channel source
+  // copy and one work-session sibling per existing/spawned session target.
+  // Read that durable graph shape rather than inferring linkage from delivery:
+  // a session chip must survive a refused, unavailable, or pruned attempt.
+  const sessionSiblingRows = messageIds.length === 0 ? [] : await q.query<SessionSiblingRow>(
+    `/* entities.feed:sessiontargets */
+     select source.entity_id source_message_id,
+            sibling.entity_id target_message_id,
+            sibling.anchor_id target_work_session_id
+       from public.messages source
+       join public.entities source_anchor
+         on source_anchor.id = source.anchor_id and source_anchor.kind = 'channel'
+       join public.messages sibling
+         on sibling.message_batch_id = source.message_batch_id
+        and sibling.author_id = source.author_id
+        and sibling.entity_id <> source.entity_id
+       join public.entities target_anchor
+         on target_anchor.id = sibling.anchor_id
+        and target_anchor.kind = 'work_session'
+        and target_anchor.space_id = source_anchor.space_id
+      where source.entity_id = any($1::uuid[])
+        and source.message_batch_id is not null
+      order by source.entity_id, sibling.entity_id`,
+    [messageIds],
+  );
+
+  const deliveryMessageIds = [...new Set([
+    ...messageIds,
+    ...sessionSiblingRows.map((row) => row.target_message_id),
+  ])];
+
+  const deliveryRows = deliveryMessageIds.length === 0 ? [] : await q.query<DeliveryRow>(
     `/* entities.feed:deliveries */
      select delivery_id, message_id, target_work_session_id, status, attempt_no,
             failure_reason, updated_at
        from public.session_message_deliveries
       where message_id = any($1::uuid[])
       order by reserved_at asc, delivery_id asc`,
-    [messageIds],
+    [deliveryMessageIds],
   );
-  const deliveries = new Map<string, DeliverySummary[]>();
   for (const row of deliveryRows) {
     if (!DELIVERY_STATUSES.has(row.status)) {
       throw new CollabError('upstream_unavailable', 'stored delivery has an invalid status');
     }
-    const list = deliveries.get(row.message_id) ?? [];
-    list.push({
-      deliveryId: row.delivery_id,
-      targetWorkSessionId: row.target_work_session_id,
-      status: row.status as MessageDeliveryStatus,
-      attemptNo: Number(row.attempt_no),
-      failureReason: row.failure_reason,
-      updatedAt: iso(row.updated_at),
-    });
-    deliveries.set(row.message_id, list);
   }
 
   // `authored_from` is writer-gated to `message_recorder` (015:618), so this is
@@ -525,15 +552,52 @@ async function hydrate(
   const anchorIds = [
     ...messageViews.map((view) => view.state.anchorId),
     ...activityRows.map((row) => row.entity_id ?? ''),
+    ...sessionSiblingRows.map((row) => row.target_work_session_id),
+    ...deliveryRows.map((row) => row.target_work_session_id),
   ].filter(Boolean);
   const anchorSummaries = await loadEntitySummariesByIds(q, anchorIds, viewerIdentityId);
   const anchors = new Map(anchorSummaries.map((summary) => [summary.id, summary]));
+
+  const feedIdsByDeliveryMessage = new Map<string, Set<string>>();
+  for (const id of messageIds) feedIdsByDeliveryMessage.set(id, new Set([id]));
+  for (const row of sessionSiblingRows) {
+    const feedIds = feedIdsByDeliveryMessage.get(row.target_message_id) ?? new Set<string>();
+    feedIds.add(row.source_message_id);
+    feedIdsByDeliveryMessage.set(row.target_message_id, feedIds);
+  }
+
+  const deliveries = new Map<string, DeliverySummary[]>();
+  for (const row of deliveryRows) {
+    for (const feedId of feedIdsByDeliveryMessage.get(row.message_id) ?? []) {
+      const list = deliveries.get(feedId) ?? [];
+      list.push({
+        deliveryId: row.delivery_id,
+        targetWorkSessionId: row.target_work_session_id,
+        targetWorkSession: anchors.get(row.target_work_session_id) ?? null,
+        status: row.status as MessageDeliveryStatus,
+        attemptNo: Number(row.attempt_no),
+        failureReason: row.failure_reason,
+        updatedAt: iso(row.updated_at),
+      });
+      deliveries.set(feedId, list);
+    }
+  }
+
+  const linkedWorkSessions = new Map<string, EntitySummary[]>();
+  for (const row of sessionSiblingRows) {
+    const session = anchors.get(row.target_work_session_id);
+    if (!session) continue;
+    const list = linkedWorkSessions.get(row.source_message_id) ?? [];
+    if (!list.some((candidate) => candidate.id === session.id)) list.push(session);
+    linkedWorkSessions.set(row.source_message_id, list);
+  }
 
   return {
     messages,
     activity,
     activityRows: new Map(activityRows.map((row) => [row.id, row])),
     deliveries,
+    linkedWorkSessions,
     authoredFrom,
     anchors,
   };
@@ -569,6 +633,7 @@ function toFeedItem(row: FeedPageRow, hydration: FeedHydration): FeedItem | null
       itemKind: 'message',
       message,
       delivery: hydration.deliveries.get(row.item_id) ?? [],
+      linkedWorkSessions: hydration.linkedWorkSessions.get(row.item_id) ?? [],
     };
   }
 

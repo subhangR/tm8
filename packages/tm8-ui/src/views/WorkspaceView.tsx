@@ -44,6 +44,7 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { representedThreadMessageCount } from './message-thread';
 
 /** The session collection is selected by capability, never by panel position
     or a kind literal. The empty centre must keep showing terminals after both
@@ -210,7 +211,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       const messages = data.messagesOf(id);
       // Detail and Discussion are independent reads. A command result can
       // prefill the detail while the thread is still absent.
-      if (!detail || messages === undefined || messages.length < detail.counters.messages) {
+      if (
+        !detail
+        || messages === undefined
+        || representedThreadMessageCount(messages) < detail.counters.messages
+      ) {
         props.data.pull?.(id);
       }
 
