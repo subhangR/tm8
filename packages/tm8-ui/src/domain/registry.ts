@@ -90,6 +90,7 @@ const deletedFilter: FilterSpec = {
 };
 
 const BY_ACTIVITY: SortSpec = { key: 'activityAt_desc', label: 'Recent activity', default: true };
+const BY_UPDATED: SortSpec = { key: 'updatedAt_desc', label: 'Recently modified', default: true };
 const BY_CREATED: SortSpec = { key: 'createdAt_desc', label: 'Newest' };
 const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
@@ -396,7 +397,7 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'docFormat' }, { source: 'childCount' }, { source: 'messages' }] },
-      sort: [BY_ACTIVITY, BY_POSITION, BY_CREATED],
+      sort: [BY_UPDATED, { ...BY_ACTIVITY, default: false }, BY_POSITION, BY_CREATED],
       inlineEdit: { title: true },
     }),
     panel: { archetype: 'reader', primaries: ['add-child'] },

@@ -610,7 +610,7 @@ function collectionQueryShape() {
     filters: CollectionFiltersSchema.optional(),
     layout: z.enum(['list', 'board', 'tree', 'feed', 'gallery', 'graph']).optional(),
     groupBy: GroupBySchema.optional(),
-    sort: z.enum(['activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']).optional(),
+    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']).optional(),
     cursor: CursorSchema.optional(),
     limit: z.number().int().positive().optional(),
   };
