@@ -209,15 +209,22 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
     return EXIT_OK;
   }
 
+  // A quoted path arrives as ONE argv element — the shell never re-splits it —
+  // so `tm8 help "entity get"` used to die in the fallthrough with a message
+  // byte-identical to a genuinely unknown command. Retokenize first: the quoted
+  // form resolves exactly like the unquoted one, and true unknowns still fall
+  // through below with the ORIGINAL args in the message.
+  const tokens = args.flatMap((a) => a.trim().split(/\s+/)).filter(Boolean);
+
   // Longest match first, so `tm8 help space task-axis create` resolves to the
   // three-token command rather than to the `space` noun with two stray args.
-  for (let n = Math.min(3, args.length); n >= 2; n--) {
-    const path = args.slice(0, n);
+  for (let n = Math.min(3, tokens.length); n >= 2; n--) {
+    const path = tokens.slice(0, n);
     if (isCommandPath(path)) return emitCommandHelp(path, out);
   }
 
-  const noun = args[0] as string;
-  if (isNoun(noun)) {
+  const noun = tokens[0] as string;
+  if (noun !== undefined && isNoun(noun)) {
     const shard = nounHelp(noun);
     /* c8 ignore next */
     if (shard === undefined) throw new CliError(`no help for noun ${noun}`, EXIT_USAGE);

@@ -23,6 +23,9 @@ import {
 } from '../src/discovery/help.js';
 import { CATALOG_DIGEST, PUBLIC_NOUNS, commands, discoveryFor } from '../src/discovery/operations.js';
 import { completionScript } from '../src/discovery/completion.js';
+import { createOutput } from '../src/output.js';
+import { help } from '../src/commands/help.js';
+import { parseInvocation } from '../src/args.js';
 
 const json = (dto: unknown): string => JSON.stringify(dto);
 
@@ -360,5 +363,39 @@ describe('byte caps are enforced by truncating LOUDLY, never silently', () => {
     const res = searchHelp('message', { cap: 400 });
     expect(byteLength(res)).toBeLessThanOrEqual(400);
     if (res.matches.length < 5) expect(res.truncated).toBeDefined();
+  });
+});
+
+describe('help router — quoted paths resolve like unquoted ones', () => {
+  /** Capture one help() run: the emitted stdout bytes and the exit path. */
+  const invoke = (args: string[]): { stdout: string; code: number } => {
+    let stdout = '';
+    const out = createOutput({
+      format: 'json',
+      streams: {
+        stdout: (chunk: string | Uint8Array) => { stdout += String(chunk); },
+        stderr: () => {},
+      },
+    });
+    const code = help(args, parseInvocation(['help', ...args]).options, out);
+    return { stdout, code };
+  };
+
+  it('`tm8 help "entity get"` (ONE argv element) is byte-identical to the unquoted form', () => {
+    const quoted = invoke(['entity get']);
+    const unquoted = invoke(['entity', 'get']);
+    expect(quoted.code).toBe(0);
+    expect(quoted.stdout).toBe(unquoted.stdout);
+    expect(quoted.stdout).toContain('tm8.help.command.v1');
+  });
+
+  it('a quoted three-token path resolves too, and stray whitespace is harmless', () => {
+    const quoted = invoke(['  space   task-axis create ']);
+    const unquoted = invoke(['space', 'task-axis', 'create']);
+    expect(quoted.stdout).toBe(unquoted.stdout);
+  });
+
+  it('a genuinely unknown command still fails with the ORIGINAL args in the message', () => {
+    expect(() => invoke(['utterly bogus'])).toThrowError(/utterly bogus/);
   });
 });
