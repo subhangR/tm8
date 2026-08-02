@@ -402,6 +402,7 @@ export function PanelFooter({
       </span>
       <span className="pn-foot__by">
         <Avatar
+          actorId={detail.createdBy.id}
           provenance={detail.createdBy.isAgent ? 'agent' : 'human'}
           label={author}
           size={15}

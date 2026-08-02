@@ -91,7 +91,7 @@ export interface InboxRow {
   /** "@noa mentioned you" — actor + verb. */
   headline: string;
   /** The actor, for the avatar. `null` when the item carries none. */
-  actor: { label: string; isAgent: boolean } | null;
+  actor: { id: string; label: string; isAgent: boolean; avatar?: string | null } | null;
   /** "▤ Menu spec" — the entity the notification points at. */
   target: { id: string; glyph: string; title: string } | null;
   /** "12m" — relative, computed against an injected `now`. */
@@ -165,7 +165,12 @@ export function inboxRowOf(item: NotificationItem, now: Date): InboxRow {
     group: groupOf(item.kind),
     unread: item.readAt == null,
     headline: headlineOf(item),
-    actor: item.actor ? { label: item.actor.displayName, isAgent: item.actor.isAgent } : null,
+    actor: item.actor ? {
+      id: item.actor.id,
+      label: item.actor.displayName,
+      isAgent: item.actor.isAgent,
+      avatar: item.actor.avatar,
+    } : null,
     target: targetOf(item.target),
     recency: recencyOf(item.createdAt, now),
     preview: item.message?.trim() ? item.message.trim() : null,

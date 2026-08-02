@@ -200,37 +200,6 @@
      stated in the source. */
   border-bottom: 1px solid var(--pn-x-hairline-soft);
 }
-.set-member__avatar {
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--pn-active);
-  color: var(--pn-ink-2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9.5px;
-  font-weight: 600;
-}
-.set-member__avatar--pending {
-  background: none;
-  border: 1px dashed var(--pn-ink-4); /* L79 */
-  color: var(--pn-ink-4);
-}
-/* Profile image over the initial (067): fallback stays painted underneath. */
-.set-member__avatar {
-  position: relative;
-  overflow: hidden;
-}
-.set-member__avatar-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: inherit;
-}
 .set-member__name {
   flex: 1;
   min-width: 0;

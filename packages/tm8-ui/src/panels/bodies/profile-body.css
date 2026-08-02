@@ -123,6 +123,9 @@
 }
 /* T0-4 476: `color:#23201B;font-weight:500` — the owner reads as a person. */
 .cv2-root .pn-profile__actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--pn-ink);
   font-weight: 500;
 }

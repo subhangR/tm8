@@ -352,6 +352,17 @@
 }
 
 .chs-state__actor { color: var(--pn-ink-2); font-weight: 600; }
+.chs-inline-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.chs-artifact__provenance {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
 
 .chs-state__from,
 .chs-state__to {
@@ -753,6 +764,7 @@
   color: var(--pn-ink);
 }
 
+.chs-mention-picker__identity { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 .chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: 9px var(--pn-mono); }
 .chs-mention-picker__empty {
   margin: 0;

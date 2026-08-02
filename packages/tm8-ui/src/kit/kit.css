@@ -155,15 +155,26 @@
   font-weight: 600;
   user-select: none;
 }
-.cv2-root .kit-avatar--human {
+.cv2-root .kit-avatar.kit-avatar--human {
   border-radius: 50%;
-  background: var(--pn-active);
-  color: var(--pn-ink-2);
 }
-.cv2-root .kit-avatar--agent {
+.cv2-root .kit-avatar.kit-avatar--agent {
   border-radius: 5px;
-  background: var(--pn-brand-soft);
-  color: var(--pn-brand-2);
+}
+.cv2-root .kit-avatar--tone-0 { --kit-avatar-tone: var(--pn-run); }
+.cv2-root .kit-avatar--tone-1 { --kit-avatar-tone: var(--pn-wait); }
+.cv2-root .kit-avatar--tone-2 { --kit-avatar-tone: var(--pn-block); }
+.cv2-root .kit-avatar--tone-3 { --kit-avatar-tone: var(--pn-info); }
+.cv2-root .kit-avatar--tone-4 { --kit-avatar-tone: var(--pn-brand); }
+.cv2-root .kit-avatar--tone-5 { --kit-avatar-tone: var(--pn-idle); }
+/* Token-only identity palette. The 28% tint keeps all six tones visibly
+   distinct while `--pn-ink` remains comfortably legible in BOTH themes:
+   light mixes toward white card; dark mixes toward graphite card. The soft
+   token is the fallback for engines without color-mix support. */
+.cv2-root .kit-avatar.kit-avatar {
+  background: var(--pn-active);
+  background: color-mix(in srgb, var(--kit-avatar-tone) 28%, var(--pn-card));
+  color: var(--pn-ink);
 }
 .cv2-root .kit-avatar--mono {
   font-family: var(--pn-mono);

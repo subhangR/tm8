@@ -51,4 +51,27 @@ describe('launch Interaction Profile hydration', () => {
     expect(result.current.launch.profiles.find((item) => item.id === profile.id)?.name)
       .toBe('Focused Chat — text only');
   });
+
+  it('publishes real space membership and resolves the viewer to that actor', async () => {
+    const seam = createFixtureSeam();
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam }),
+    );
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.members).toHaveLength(1);
+    expect(result.current.viewerActor?.id).toBe(result.current.members[0]?.id);
+  });
+
+  it('an unreadable display identity never turns membership into a boot gate', async () => {
+    const seam = createFixtureSeam();
+    vi.spyOn(seam, 'identity').mockRejectedValue(new Error('identity unavailable'));
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam }),
+    );
+
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.members).toHaveLength(1);
+    expect(result.current.viewerActor).toBeNull();
+  });
 });

@@ -1,5 +1,5 @@
 import type { HandoffView } from '@tm8/contract';
-import { Eyebrow } from '../../kit';
+import { Avatar, Eyebrow } from '../../kit';
 import { DisabledIconControl, toReason } from '../honesty/DisabledWithReason';
 import { deliveryFacet, recordFacet, withdrawalAudit } from './facets';
 
@@ -128,7 +128,20 @@ function HandoffRow({
         </p>
       ) : null}
 
-      {audit ? <p className="pn-handoff__note pn-handoff__note--audit">{audit}</p> : null}
+      {audit ? (
+        <p className="pn-handoff__note pn-handoff__note--audit">
+          {handoff.withdrawnBy ? (
+            <Avatar
+              actorId={handoff.withdrawnBy.id}
+              provenance={handoff.withdrawnBy.isAgent ? 'agent' : 'human'}
+              label={handoff.withdrawnBy.displayName}
+              size={15}
+              src={handoff.withdrawnBy.avatar ?? null}
+            />
+          ) : null}
+          <span>{audit}</span>
+        </p>
+      ) : null}
     </li>
   );
 }

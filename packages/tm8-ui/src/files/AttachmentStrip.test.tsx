@@ -25,7 +25,7 @@ import type { FileRow } from './model';
 function row(over: Partial<FileRow> & Pick<FileRow, 'fileEntityId' | 'name' | 'mime'>): FileRow {
   return {
     sizeBytes: 2048,
-    attributedTo: { displayName: 'ada', isAgent: false },
+    attributedTo: { id: 'actor-ada', displayName: 'ada', isAgent: false, avatar: null },
     attributedAt: '2026-08-01T00:00:00.000Z',
     sourceMissing: false,
     ...over,

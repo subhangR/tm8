@@ -1,5 +1,5 @@
-import { useCallback, useId, useMemo, useRef, useState } from 'react';
-import type { EntityCapabilities, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ActorSummary, EntityCapabilities, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type {
   ActionContext,
@@ -38,6 +38,8 @@ import type { MessagePulse } from './list/useMessagePulses';
 import { LaunchQuickConfig, type LaunchTeammateOption } from './launch/LaunchQuickConfig';
 import { newLaunchMutationId } from '../domain/launch';
 
+const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
+
 /**
  * EntityListPanel — the other universal primitive (L3).
  *
@@ -73,6 +75,8 @@ export interface EntityListPanelProps {
   kind: string;
   /** Rows for a filter — seam-hydrated and store-selected by the shell. */
   rowsFor: (filter: QueryFilter) => readonly EntitySummary[];
+  /** Real active-space membership. The people filter exists only at 2+. */
+  members?: readonly ActorSummary[];
   ctx: ActionContext;
 
   /** THE verdict. Required for kinds whose ListConfig has a liveTreatment. */
@@ -179,11 +183,25 @@ export function EntityListPanel(props: EntityListPanelProps) {
    * non-multi spec holds at most one.
    */
   const [selected, setSelected] = useState<Readonly<Record<string, readonly string[]>>>({});
+  const [selectedPeople, setSelectedPeople] = useState<readonly string[]>([]);
   const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<CollectionMode>(config.defaultMode);
 
   const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
+  const members = props.members ?? EMPTY_MEMBERS;
+
+  // A space switch may keep this panel instance mounted. A selected member
+  // from the prior space must not survive as a hidden createdByIds filter.
+  useEffect(() => {
+    const present = new Set(members.map((member) => member.id));
+    setSelectedPeople((current) => {
+      const next = members.length > 1 ? current.filter((id) => present.has(id)) : [];
+      return next.length === current.length && next.every((id, index) => id === current[index])
+        ? current
+        : next;
+    });
+  }, [members]);
 
   return (
     <section
@@ -243,6 +261,15 @@ export function EntityListPanel(props: EntityListPanelProps) {
         onTier={setTierId}
         tierCount={(tier: LifecycleTier) => tierCount(props, config, tier)}
         compact={props.compact}
+        people={members.length > 1 ? members : []}
+        selectedPeople={selectedPeople}
+        onTogglePerson={(actorId) =>
+          setSelectedPeople((current) =>
+            current.includes(actorId)
+              ? current.filter((id) => id !== actorId)
+              : [...current, actorId],
+          )
+        }
       />
 
       <div className="lp__body">
@@ -251,7 +278,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
             <Band
               key={section.id}
               label={section.label}
-              rows={matching(rowsForBand(props, section.filter, activeTier, selected, config), query)}
+              rows={matching(rowsForBand(props, section.filter, activeTier, selected, config, selectedPeople), query)}
               collapsed={collapsed.has(section.id)}
               onToggle={() =>
                 setCollapsed((prev) => {
@@ -269,7 +296,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         ) : (
           <Band
             label={null}
-            rows={matching(rowsForBand(props, activeTier?.filter ?? {}, activeTier, selected, config), query)}
+            rows={matching(rowsForBand(props, activeTier?.filter ?? {}, activeTier, selected, config, selectedPeople), query)}
             props={props}
             config={config}
             query={query}
@@ -312,6 +339,7 @@ function rowsForBand(
   tier: LifecycleTier | null,
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
+  selectedPeople: readonly string[] = [],
 ): readonly EntitySummary[] {
   /**
    * D20 RETIRED (D56). The client-side status partition that used to run here
@@ -328,6 +356,7 @@ function rowsForBand(
     ...filter,
     ...(tier?.filter ?? {}),
     ...mergeSelectedFilters(config, selected),
+    ...(selectedPeople.length > 0 ? { createdByIds: selectedPeople } : {}),
   });
 }
 
@@ -689,6 +718,9 @@ function FilterRow({
   onTier,
   tierCount,
   compact,
+  people,
+  selectedPeople,
+  onTogglePerson,
 }: {
   config: KindConfig;
   selected: Readonly<Record<string, readonly string[]>>;
@@ -701,10 +733,13 @@ function FilterRow({
   /** Each tier's own query size — the one source the tabs, footer and total share. */
   tierCount: (tier: LifecycleTier) => number;
   compact?: boolean;
+  people: readonly ActorSummary[];
+  selectedPeople: readonly string[];
+  onTogglePerson: (actorId: string) => void;
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [picker, setPicker] = useState<'filters' | 'people' | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
-  useDismissable(pickerOpen, barRef, useCallback(() => setPickerOpen(false), []));
+  useDismissable(picker !== null, barRef, useCallback(() => setPicker(null), []));
   const sort = config.list.sort;
   const current = sort.find((s) => s.key === sortKey) ?? sort[0];
 
@@ -735,16 +770,49 @@ function FilterRow({
           {`${option.label} ✕`}
         </button>
       ))}
+      {selectedPeople.flatMap((actorId) => {
+        const person = people.find((candidate) => candidate.id === actorId);
+        return person ? [(
+          <button
+            key={`person:${person.id}`}
+            type="button"
+            className="lp__chip lp__chip--active lp__chip--person"
+            onClick={() => onTogglePerson(person.id)}
+            title={`Clear people filter: ${person.displayName}`}
+          >
+            <Avatar
+              actorId={person.id}
+              provenance={person.isAgent ? 'agent' : 'human'}
+              label={person.displayName}
+              size={15}
+              src={person.avatar ?? null}
+            />
+            <span>{`${person.displayName} ✕`}</span>
+          </button>
+        )] : [];
+      })}
       {config.list.filters.length > 0 ? (
         <button
           type="button"
           className="lp__chip"
-          onClick={() => setPickerOpen((o) => !o)}
-          aria-expanded={pickerOpen}
+          onClick={() => setPicker((open) => open === 'filters' ? null : 'filters')}
+          aria-expanded={picker === 'filters'}
           aria-haspopup="menu"
           data-testid="filter-trigger"
         >
           filter ▾
+        </button>
+      ) : null}
+      {people.length > 1 ? (
+        <button
+          type="button"
+          className={selectedPeople.length > 0 ? 'lp__chip lp__chip--active' : 'lp__chip'}
+          onClick={() => setPicker((open) => open === 'people' ? null : 'people')}
+          aria-expanded={picker === 'people'}
+          aria-haspopup="menu"
+          data-testid="people-filter-trigger"
+        >
+          {selectedPeople.length > 0 ? `people · ${selectedPeople.length}` : 'people ▾'}
         </button>
       ) : null}
 
@@ -772,7 +840,7 @@ function FilterRow({
           keeps `overflow: hidden` as its floor guard, and the picker is still
           free to overflow it. No hardcoded offset — `top: 100%` of the bar
           works whether or not this kind renders a header-actions row. */}
-      {pickerOpen ? (
+      {picker === 'filters' ? (
         <div className="lp__filtermenu" role="menu" data-testid="filter-menu">
           {config.list.filters.map((spec) => (
             <div key={spec.id}>
@@ -795,6 +863,34 @@ function FilterRow({
               })}
             </div>
           ))}
+        </div>
+      ) : null}
+      {picker === 'people' ? (
+        <div className="lp__filtermenu" role="menu" data-testid="people-filter-menu">
+          <div className="lp__filtergroup">PEOPLE</div>
+          {people.map((person) => {
+            const on = selectedPeople.includes(person.id);
+            return (
+              <button
+                key={person.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
+                onClick={() => onTogglePerson(person.id)}
+              >
+                <Avatar
+                  actorId={person.id}
+                  provenance={person.isAgent ? 'agent' : 'human'}
+                  label={person.displayName}
+                  size={20}
+                  src={person.avatar ?? null}
+                />
+                <span>{person.displayName}</span>
+                {on ? <span className="lp__filtercheck">✓</span> : null}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -1544,6 +1640,7 @@ function Tile({
                 ? controlFacts.assignees.slice(0, 3).map((actor) => (
                     <Avatar
                       key={actor.id}
+                      actorId={actor.id}
                       provenance={actor.isAgent ? 'agent' : 'human'}
                       label={actor.displayName}
                       /* 15, not 20 — the avatar sits INSIDE a 24px chip and
@@ -1661,7 +1758,7 @@ function Tile({
 
           {/* 15, not 20 — 17px is the tallest thing a session row contains and
               therefore the height of every row in every list. */}
-          {avatar ? <Avatar provenance={avatar.provenance} label={avatar.label} size={15} /> : null}
+          {avatar ? <Avatar actorId={avatar.actorId} provenance={avatar.provenance} label={avatar.label} size={15} src={avatar.src ?? null} /> : null}
 
           <button
             type="button"

@@ -383,6 +383,9 @@
 }
 /* The withdrawal audit line decorates; it never replaces the content above. */
 .cv2-root .pn-handoff__note--audit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   border-top: 1px dotted var(--pn-line);
   padding-top: 3px;
   margin-top: 2px;
@@ -990,6 +993,7 @@
 .cv2-root .pn-activity__dot--info { background: var(--pn-info); }
 .cv2-root .pn-activity__text { flex: 1; min-width: 0; font-size: 12px; color: var(--pn-ink-2); }
 .cv2-root .pn-activity__time { flex: none; font-family: var(--pn-mono); font-size: 9.5px; color: var(--pn-ink-4); }
+.cv2-root .pn-state__title--actor { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 
 .cv2-root .sr-only {
   position: absolute;
@@ -1171,6 +1175,12 @@
   padding: 2px 8px;
   cursor: pointer;
   white-space: nowrap;
+}
+.cv2-root .lp__chip--person {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 3px;
 }
 .cv2-root .lp__chip:hover { background: var(--pn-hover); }
 .cv2-root .lp__chip--active {

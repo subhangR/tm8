@@ -30,6 +30,9 @@ export interface ActivityRow {
   seq: number;
   /** Display name, or null when the event does not name one. Never guessed. */
   actor: string | null;
+  /** Stable identity key for the shared Avatar; absent only on actorless events. */
+  actorId?: string | null;
+  actorAvatar?: string | null;
   isAgent: boolean;
   verb: string;
   /** Kind glyph + title of the thing the verb acted on, when the event carries it. */
@@ -68,6 +71,8 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
       return {
         ...base,
         actor: item.actor?.displayName ?? null,
+        actorId: item.actor?.id ?? null,
+        actorAvatar: item.actor?.avatar ?? null,
         isAgent: item.actor?.isAgent === true,
         verb: item.verb.replace(/_/g, ' '),
         objectGlyph: null,
@@ -85,6 +90,8 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
       return {
         ...base,
         actor: isCreate ? entity.createdBy.displayName : null,
+        actorId: isCreate ? entity.createdBy.id : null,
+        actorAvatar: isCreate ? entity.createdBy.avatar ?? null : null,
         isAgent: isCreate ? entity.createdBy.isAgent : false,
         verb: isCreate ? 'created' : 'updated',
         objectGlyph: glyphOf(entity.kind),
@@ -98,6 +105,8 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
       return {
         ...base,
         actor: null,
+        actorId: null,
+        actorAvatar: null,
         isAgent: false,
         verb: 'deleted',
         objectGlyph: glyphOf(entity.kind),
@@ -111,6 +120,8 @@ export function activityRowOf(event: DurableWorkspaceEvent, glyphOf: GlyphOf): A
       return {
         ...base,
         actor: author.displayName,
+        actorId: author.id,
+        actorAvatar: author.avatar ?? null,
         isAgent: author.isAgent,
         verb: 'posted',
         objectGlyph: null,

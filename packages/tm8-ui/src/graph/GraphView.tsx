@@ -964,6 +964,7 @@ export function GraphView(props: GraphViewProps) {
                   <span className="gv-node__title">{p.entity.title}</span>
                   <span className="gv-node__foot">
                     <Avatar
+                      actorId={p.entity.createdBy.id}
                       provenance={p.entity.createdBy.isAgent ? 'agent' : 'human'}
                       label={p.entity.createdBy.displayName}
                       size={15}
