@@ -9,7 +9,7 @@
  * W2 changes one line here — the registry gains handlers — and nothing else
  * about the frame moves.
  */
-import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
@@ -28,6 +28,7 @@ import {
   WorkspaceEventPublisher,
 } from './events/index.js';
 import { createExecutionRuntime } from './facade/execution-handlers.js';
+import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
@@ -187,6 +188,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       owner,
       files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
+      resolveAuthoredFromWorkSessionId: async (ctx) => {
+        const claimed = commandEnvelope(ctx).workSessionId ?? null;
+        const pinned = ctx.identity.kind === 'bearer'
+          ? ctx.identity.workSessionId ?? null
+          : null;
+        if (pinned && claimed && pinned !== claimed) {
+          throw new CollabError(
+            'forbidden',
+            'workSessionId does not match the authenticated agent session',
+            { details: { reason: 'work_session_identity_mismatch' } },
+          );
+        }
+        return pinned ?? claimed;
+      },
     });
     registerEventHandlers(registry, { db, config, presence });
     execution?.register(registry);
@@ -377,6 +392,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             nodeAdmin: session.isNodeAdmin,
             accountId: session.accountId,
             sessionId: session.sessionId,
+            ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
             token: raw,
             // Agent sessions are persona-scoped (S8): the token may only act
             // as its team_member. Postgres still authorises via can_act_as.

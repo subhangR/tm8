@@ -648,7 +648,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'messages.post': {
     cmd: ['message', 'send'],
-    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--reply-to <parent-message-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     sum: 'Create one durable message per anchor and attempt delivery',
     authz: 'entity',
     input: 'bound',
@@ -662,12 +662,12 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'this is the ONLY public communication action for text; there is no prompt, report, or progress command',
       'a work session is addressed like any other anchor — the message is stored first and delivered second',
-      '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
+      'reply with the exact target from an incoming envelope: `--to <anchor-id> --reply-to <message-id>`',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
-      "tm8 message reply <message-id> '<body>' --mutation-id <uuid>",
+      "tm8 message send --to <anchor-entity-id> --reply-to <message-id> '<body>' --mutation-id <uuid>",
     ],
   },
   'messages.edit': {

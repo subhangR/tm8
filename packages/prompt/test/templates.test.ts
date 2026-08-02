@@ -143,9 +143,14 @@ describe('§§14.3-14.6, 14.9 — every injection that carries authored content'
       render: (body) =>
         incomingMessageInjection({
           messageId: 'msg_1',
-          anchorId: 'tsk_1',
           deliveryAttemptId: 'dl_1',
-          senderActorId: 'ent_a',
+          author: {
+            actorId: 'ent_a', kind: 'member', displayName: 'Alice', avatar: null,
+            role: 'owner', isAgent: false,
+          },
+          anchor: { id: 'tsk_1', kind: 'task', title: 'Task', spaceId: 'spc_1' },
+          rootMessageId: null,
+          parentMessageId: null,
           sourceSessionId: 'ses_a',
           body,
         }),
@@ -208,16 +213,25 @@ describe('§14.4 incoming message — the double-delivery guard', () => {
   it('says the durable write already happened, so the injection is not a second message', () => {
     const xml = incomingMessageInjection({
       messageId: 'msg_1',
-      anchorId: 'tsk_1',
       deliveryAttemptId: 'dl_1',
-      senderActorId: 'ent_a',
+      author: {
+        actorId: 'ent_a', kind: 'team_member', displayName: 'Research Agent',
+        avatar: 'https://example.test/avatar.png', role: 'researcher',
+        ownerMemberId: 'mem_1', isAgent: true,
+      },
+      anchor: { id: 'tsk_1', kind: 'task', title: 'Task', spaceId: 'spc_1' },
+      rootMessageId: 'msg_root',
+      parentMessageId: 'msg_parent',
       sourceSessionId: null,
       body: 'hi',
     });
     expect(xml).toContain('delivery_attempt_id="dl_1"');
     expect(xml).toContain('<reply command_ref="tm8://help/message/send"');
+    expect(xml).toContain('display_name="Research Agent"');
+    expect(xml).toContain('root_message_id="msg_root" parent_message_id="msg_parent"');
+    expect(xml).toContain('anchor id="tsk_1" kind="task"');
     expect(xml).toMatch(/must not be interpreted as a second message/);
-    expect(xml).toContain('source_session_id="none"');
+    expect(xml).toContain('work_session_id="none"');
   });
 });
 

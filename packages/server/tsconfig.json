@@ -16,6 +16,9 @@
     },
     {
       "path": "../execution"
+    },
+    {
+      "path": "../prompt"
     }
   ]
 }

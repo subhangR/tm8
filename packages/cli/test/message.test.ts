@@ -380,6 +380,23 @@ describe('message send', () => {
     });
   });
 
+  it('threads an exact reply and attributes commands to the current work session', async () => {
+    process.env.TM8_SESSION_ID = ANCHOR_2;
+    reply = () => envelope(batch([MESSAGE]));
+    const r = await dispatch([
+      'message', 'send', '--to', ANCHOR, '--reply-to', MESSAGE, 'reply',
+      '--mutation-id', 'mut-reply',
+    ]);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.body).toEqual({
+      anchorIds: [ANCHOR],
+      parentMessageId: MESSAGE,
+      workSessionId: ANCHOR_2,
+      body: 'reply',
+      clientMutationId: 'mut-reply',
+    });
+  });
+
   it('collapses duplicate anchors preserving first-occurrence order', async () => {
     reply = () => envelope(batch([MESSAGE]));
     await dispatch([

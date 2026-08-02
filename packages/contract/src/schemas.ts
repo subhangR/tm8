@@ -917,6 +917,7 @@ export const WorkspaceControlAckSchema: z.ZodType<WorkspaceControlAck> = z.objec
 const commandContextShape = {
   actorId: EntityIdSchema.optional(),
   clientMutationId: z.string().optional(),
+  workSessionId: EntityIdSchema.optional(),
 };
 
 export const CommandContextSchema: z.ZodType<CommandContext> =

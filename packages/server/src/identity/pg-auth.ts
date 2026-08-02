@@ -24,7 +24,7 @@
  */
 import { CollabError } from '@tm8/contract';
 import { randomUUID } from 'node:crypto';
-import type { Db } from '../db/types.js';
+import type { Db, DbClaims } from '../db/types.js';
 import {
   ScryptPasswordHasher,
   UNMATCHABLE_VERIFIER,
@@ -55,6 +55,7 @@ export interface ResolvedAuthSession {
   isOwner: boolean;
   kind: LoginKind;
   actingAsTeamMemberId: string | null;
+  workSessionId: string | null;
   expiresAt: string;
   label: string | null;
 }
@@ -78,6 +79,7 @@ interface SessionRowJson {
   account_id: string;
   kind: LoginKind;
   acting_as_team_member_id: string | null;
+  work_session_id?: string | null;
   label: string | null;
   created_at: string;
   expires_at: string;
@@ -118,6 +120,53 @@ export interface IssuedLogin {
     createdAt: string;
     expiresAt: string;
   };
+}
+
+export interface IssuedAgentSession {
+  token: string;
+  sessionId: string;
+  workSessionId: string;
+  actingAsTeamMemberId: string;
+  expiresAt: string;
+}
+
+/**
+ * Mint the credential for one concrete agent run.
+ *
+ * The dedicated RPC derives the account from the bound identity, verifies the
+ * persona participates in this work session, and atomically revokes any token
+ * from an earlier run (including resume). The human bearer is never copied.
+ */
+export async function issueAgentSession(
+  db: Db,
+  claims: DbClaims,
+  input: { workSessionId: string; teamMemberId: string; label?: string | null },
+): Promise<IssuedAgentSession> {
+  const secret = generateSecret();
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent).toISOString();
+  const session = await db.rpc<SessionRowJson>(claims, 'issue_agent_auth_session', [
+    input.workSessionId,
+    input.teamMemberId,
+    hashToken(secret),
+    expiresAt,
+    input.label ?? `agent:${input.workSessionId}`,
+  ]);
+  return {
+    token: formatToken(session.id, secret),
+    sessionId: session.id,
+    workSessionId: input.workSessionId,
+    actingAsTeamMemberId: input.teamMemberId,
+    expiresAt: session.expires_at,
+  };
+}
+
+/** Idempotent lifecycle cleanup. No token value is needed to revoke the run. */
+export async function revokeAgentSession(
+  db: Db,
+  claims: DbClaims,
+  workSessionId: string,
+): Promise<void> {
+  await db.rpc(claims, 'revoke_agent_auth_session', [workSessionId]);
 }
 
 /** One message and one code for every rejection: a caller holding a bad credential learns nothing. */

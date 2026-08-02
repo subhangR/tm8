@@ -91,6 +91,8 @@ export interface RegisterFacadeHandlersDeps {
    * not be reached from inside the tree, so it had to be decided here.
    */
   readonly messageDelivery?: W2MessagesHandoffsServiceOptions['messageDelivery'];
+  /** Resolves database-authorized message provenance from the command envelope. */
+  readonly resolveAuthoredFromWorkSessionId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromWorkSessionId'];
 }
 
 /**
@@ -156,8 +158,12 @@ export function registerFacadeHandlers(
    * commands in `./input-schemas.ts`. Mounting it without them would put
    * unvalidated input in front of a handler that assumes the contract shape.
    */
-  registerW2MessagesHandoffsHandlers(registry, facade,
-    deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {});
+  registerW2MessagesHandoffsHandlers(registry, facade, {
+    ...(deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {}),
+    ...(deps.resolveAuthoredFromWorkSessionId
+      ? { resolveAuthoredFromWorkSessionId: deps.resolveAuthoredFromWorkSessionId }
+      : {}),
+  });
 
   /**
    * G12, G13 and G14 are pure additions — no operation below was registered by

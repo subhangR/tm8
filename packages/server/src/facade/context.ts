@@ -32,15 +32,17 @@ import type { RequestContext } from '../http/types.js';
 export interface CommandEnvelope {
   actorId?: string;
   clientMutationId?: string;
+  workSessionId?: string;
 }
 
 export function commandEnvelope(ctx: RequestContext): CommandEnvelope {
   const body = ctx.body;
   if (typeof body !== 'object' || body === null) return {};
-  const { actorId, clientMutationId } = body as CommandEnvelope;
+  const { actorId, clientMutationId, workSessionId } = body as CommandEnvelope;
   return {
     ...(typeof actorId === 'string' ? { actorId } : {}),
     ...(typeof clientMutationId === 'string' ? { clientMutationId } : {}),
+    ...(typeof workSessionId === 'string' ? { workSessionId } : {}),
   };
 }
 

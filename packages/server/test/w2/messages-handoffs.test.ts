@@ -155,7 +155,7 @@ class FakeDb implements Db {
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn) => {
     throw new Error(`unexpected rpc: ${fn}`);
   };
-  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) => {
+  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql, params) => {
     if (sql.includes('profile_display_name')) {
       return [{
         id: IDS.author,
@@ -170,7 +170,23 @@ class FakeDb implements Db {
         profile_avatar: null,
       }] as R[];
     }
-    if (sql.includes('left join public.messages msg')) return [messageRow()] as R[];
+    if (sql.includes('left join public.messages msg')) {
+      const requested = Array.isArray(params[0]) ? params[0] as string[] : [];
+      if (requested.includes(IDS.anchor)) {
+        return [messageRow({
+          id: IDS.anchor,
+          kind: 'channel',
+          channel_name: 'Identity channel',
+          anchor_id: null,
+          author_id: null,
+          message_batch_id: null,
+          message_body: null,
+          message_mentions: null,
+          message_attachments: null,
+        })] as R[];
+      }
+      return [messageRow()] as R[];
+    }
     return [];
   };
 
@@ -305,6 +321,15 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
             requestId: 'request-messages.post',
             messageId: IDS.message,
             targetWorkSessionId: IDS.targetSession,
+            incomingMessage: {
+              messageId: IDS.message,
+              author: { actorId: IDS.author, displayName: 'Message Author', isAgent: false },
+              anchor: { id: IDS.anchor, kind: 'channel', title: 'Identity channel', spaceId: IDS.space },
+              rootMessageId: null,
+              parentMessageId: null,
+              sourceSessionId: IDS.sourceSession,
+              body: 'stored body',
+            },
           });
           return {
             deliveryId: IDS.delivery,

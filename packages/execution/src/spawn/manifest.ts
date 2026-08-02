@@ -616,9 +616,9 @@ const SAFE_BASE_ENV_KEYS = [
 /**
  * Compose the agent's environment.
  *
- * The three mandated variables (TM8_SESSION_ID / TM8_MANIFEST_PATH /
- * TM8_BASE_URL) are the whole boot contract — everything else is convenience an
- * agent may ignore.
+ * The boot contract includes the exact persona (`TM8_ACTOR_ID`) and, when the
+ * server has identity enabled, a run-scoped `TM8_AGENT_TOKEN`. The token is
+ * passed separately from the manifest so it is never persisted there.
  *
  * The `CLAUDE_CODE_ENTRYPOINT` / `CLAUDECODE` deletions are a scar, not
  * housekeeping: when tm8-server is itself started from inside a Claude Code
@@ -642,6 +642,18 @@ export function composeEnv(
    * from these keys and already reaches the graph via `recordManifest`.
    */
   journalPath?: string,
+  /**
+   * Persona-pinned bearer for this run. Never written to the manifest.
+   *
+   * This environment carrier is an explicit INTERIM boundary, not a claim
+   * that environment variables are secret storage: descendants inherit it and
+   * a process running as the same Unix uid may inspect it. That is acceptable
+   * only for this least-privilege, run-scoped credential on a dedicated node,
+   * where lifecycle revocation limits the exposure. It would NOT be acceptable
+   * for a human credential or on a shared multi-user host. A future fd/pipe
+   * carrier can replace this argument without changing the manifest contract.
+   */
+  agentToken?: string,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -651,9 +663,11 @@ export function composeEnv(
     TM8_MODE: manifest.mode,
     TM8_AGENT_TOOL: manifest.launch.tool,
     TM8_TEAM_MEMBER_ID: manifest.agent.teamMemberId,
+    TM8_ACTOR_ID: manifest.agent.teamMemberId,
     TM8_TASK_IDS: manifest.tasks.map((t) => t.id).join(','),
   };
   if (journalPath) env.TM8_JOURNAL_PATH = journalPath;
+  if (agentToken) env.TM8_AGENT_TOKEN = agentToken;
 
   for (const key of SAFE_BASE_ENV_KEYS) {
     const value = parentEnv[key];

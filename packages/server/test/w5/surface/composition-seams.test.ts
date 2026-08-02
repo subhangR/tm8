@@ -55,10 +55,9 @@
  * G2+G6)**, whose stated observable is feed items gaining
  * `via:['authored']`/`['caused']`.
  *
- * **SO THE DISPOSITION IS: A DECLARED SEAM AWAITING A LATER WAVE. Not a defect,
- * not a dossier question.** Which is precisely why a `count == 0` assertion
- * would have been wrong: IT WOULD HAVE GONE RED AT S2 AND PUNISHED THE FIX.
- * The structural assertion greets S2 instead.
+ * **CURRENT DISPOSITION: S2 ARRIVED.** `resolveAuthoredFromWorkSessionId` is now
+ * exposed by the composition root and `main.ts` assigns it. The structural
+ * assertion below records that door as present and keeps the other two gaps.
  *
  * ⚠ AND WHAT THE REGISTER DOES **NOT** COVER, which is why this file asserts
  * all three seams rather than only the known one: `resolveTargetWorkSessionEpoch`
@@ -101,8 +100,8 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
  */
 type Door<K extends string> = K extends keyof RegisterFacadeHandlersDeps ? true : false;
 
-/** Declared on the service; NOT reachable through `registerFacadeHandlers`. */
-const NO_DOOR_AUTHORED_FROM: Door<'resolveAuthoredFromWorkSessionId'> = false;
+/** Provenance is now reachable; the remaining two seams still are not. */
+const HAS_DOOR_AUTHORED_FROM: Door<'resolveAuthoredFromWorkSessionId'> = true;
 const NO_DOOR_SESSION_EPOCH: Door<'resolveTargetWorkSessionEpoch'> = false;
 const NO_DOOR_HANDOFF_DELIVERY: Door<'handoffDelivery'> = false;
 
@@ -121,8 +120,8 @@ const DECLARED_HANDOFF_DELIVERY: Declared<'handoffDelivery'> = true;
 
 describe('W5.C composition-root seam doors', () => {
   /**
-   * THE ASYMMETRY IS THE FINDING: three seams are declared on the service and
-   * have no door; one is declared and has one.
+   * The asymmetry remains: two seams are declared on the service without a
+   * door, while message delivery and authored_from provenance have doors.
    *
    * The runtime assertions below carry the type-level results into the suite so
    * a `vitest` run reports this too — the compile-time constants are what
@@ -134,12 +133,7 @@ describe('W5.C composition-root seam doors', () => {
     expect(DECLARED_SESSION_EPOCH).toBe(true);
     expect(DECLARED_HANDOFF_DELIVERY).toBe(true);
 
-    expect(
-      NO_DOOR_AUTHORED_FROM,
-      'RegisterFacadeHandlersDeps now exposes resolveAuthoredFromWorkSessionId. THE SEAM IS NOW '
-        + 'WIREABLE — this is the fix arriving, not a regression. Move it to the with-a-door set, '
-        + 'record before/after, and add the provenance assertion this file deliberately omits.',
-    ).toBe(false);
+    expect(HAS_DOOR_AUTHORED_FROM).toBe(true);
     expect(NO_DOOR_SESSION_EPOCH).toBe(false);
     expect(NO_DOOR_HANDOFF_DELIVERY).toBe(false);
 
@@ -155,28 +149,24 @@ describe('W5.C composition-root seam doors', () => {
 
   /**
    * THE STRUCTURAL FACT RESTATED AS A SET, so the ratio is visible rather than
-   * inferred from four separate booleans. Three of four seams are declared and
-   * unreachable; the asymmetry — not any one seam — is what makes this a
-   * finding rather than a configuration note.
+   * inferred from four separate booleans. Two of four seams remain unreachable.
    *
    * `messageDelivery` is the contrast that makes it one: `main.ts` wires it
-   * conditionally on `TM8_DELIVERY_DATABASE_URL` and `facade/index.ts` documents
-   * that as the honest degraded mode. ONE SEAM IS A CONFIGURED OPTION; THREE ARE
-   * DEAD PARAMETERS.
+   * conditionally on `TM8_DELIVERY_DATABASE_URL`; provenance is always assigned
+   * when the database-backed facade is mounted.
    */
   it('pins the door asymmetry as an exact set', () => {
     const withDoor = [
       HAS_DOOR_MESSAGE_DELIVERY ? 'messageDelivery' : null,
+      HAS_DOOR_AUTHORED_FROM ? 'resolveAuthoredFromWorkSessionId' : null,
     ].filter(Boolean);
     const withoutDoor = [
-      NO_DOOR_AUTHORED_FROM ? null : 'resolveAuthoredFromWorkSessionId',
       NO_DOOR_SESSION_EPOCH ? null : 'resolveTargetWorkSessionEpoch',
       NO_DOOR_HANDOFF_DELIVERY ? null : 'handoffDelivery',
     ].filter(Boolean);
 
-    expect(withDoor).toEqual(['messageDelivery']);
+    expect(withDoor).toEqual(['messageDelivery', 'resolveAuthoredFromWorkSessionId']);
     expect(withoutDoor).toEqual([
-      'resolveAuthoredFromWorkSessionId',
       'resolveTargetWorkSessionEpoch',
       'handoffDelivery',
     ]);
@@ -187,13 +177,8 @@ describe('W5.C composition-root seam doors', () => {
    * reassuring direction and because both this seat and its developer reached
    * the same limit independently:
    *
-   * It shows the PUBLIC composition cannot supply these seams. IT DOES NOT SHOW
-   * THAT NOTHING CAN CREATE AN `authored_from` EDGE. `w2_post_message_batch` is
-   * SECURITY DEFINER and `feed-context.ts:511` records the edge as writer-gated
-   * to `message_recorder`, so a privileged writer could. And the "no other
-   * writer" sweeps behind that were name sweeps — they would miss a writer that
-   * computes the edge type from a variable, WHICH IS EXACTLY HOW
-   * `record_execution_command` ESCAPED THE CLASS-D ENUMERATION.
+   * It shows which options the PUBLIC composition can supply. It does not prove
+   * end-to-end edge creation; the behavioural database test owns that fact.
    *
    * UPPER BOUND, NOT A PROOF. This test asserts nothing about it; the comment
    * exists so nobody reads the green above as wider than it is.
