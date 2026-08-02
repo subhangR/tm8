@@ -362,6 +362,20 @@ export interface Tm8Manifest {
     permissionMode: PermissionMode;
     accessMode: AccessMode;
     reasoningEffort: ReasoningEffort | null;
+    /**
+     * Set when `permissionMode` asked for OS-level confinement and the node
+     * could not provide it, so the agent was launched UNCONFINED. Holds the
+     * one-sentence reason; null when the posture was honoured as written.
+     *
+     * It exists because the manifest is otherwise a liar in exactly this case:
+     * `permissionMode` records what was ASKED FOR, and on a node whose sandbox
+     * cannot start that is not what happened. Reading the two fields together
+     * is the only way to tell a confined codex session from an unconfined one,
+     * and before this there was no way at all — the deployed node had codex
+     * agents running with no filesystem confinement and no approval gate, and
+     * nothing in the graph, the manifest or the session row said so.
+     */
+    sandboxDegraded?: string | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
   };
