@@ -32,7 +32,7 @@ import { journal } from './journal.js';
 import { OUTPUT_FORMATS, type OutputFormat } from './output.js';
 
 /** Global options. They bind target, context, and output, never payload. */
-export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh'] as const;
+export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh', 'terse', 'full'] as const;
 
 /**
  * Every boolean in the frozen grammar. A flag NOT listed here consumes a value.
@@ -41,7 +41,7 @@ export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no
  */
 export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   // global + root discovery
-  'no-color', 'quiet', 'fresh', 'help', 'version',
+  'no-color', 'quiet', 'fresh', 'terse', 'full', 'help', 'version',
   // §7.5 destructive confirmation
   'yes',
   // §4 per-command booleans
@@ -172,6 +172,13 @@ export interface GlobalOptions {
   quiet: boolean;
   /** `--fresh`: bypass the session read-cache lookup for this invocation. */
   fresh: boolean;
+  /**
+   * `--terse` / `--full` (F5, opt-in): project entity summaries to their work
+   * fields under json/jsonl. `--full` DEFEATS `--terse` — its whole purpose is
+   * to restore the complete envelope in one flag, whatever injected the terse
+   * request — so when both are present, full wins.
+   */
+  render: 'full' | 'terse';
   help: boolean;
   version: boolean;
 }
@@ -341,6 +348,8 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
   const noColor = takeBool('no-color');
   const quiet = takeBool('quiet');
   const fresh = takeBool('fresh');
+  const terse = takeBool('terse');
+  const full = takeBool('full');
   const help = takeBool('help');
   // NOT takeBool: a colliding name never entered `bag` as a global, and any
   // occurrence still IN `bag` is the command's own and must stay there.
@@ -371,6 +380,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     color: !noColor,
     quiet,
     fresh,
+    render: full ? 'full' : terse ? 'terse' : 'full',
     help,
     version,
   };

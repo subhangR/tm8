@@ -54,6 +54,8 @@ const GLOBAL_OPTIONS: readonly string[] = [
   '--no-color',
   '--quiet',
   '--fresh',
+  '--terse',
+  '--full',
   '--help',
 ];
 

@@ -234,6 +234,8 @@ const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
   { option: '--no-color', summary: 'disable colour' },
   { option: '--quiet', summary: 'silence notes on stderr; warnings and errors are never silenced' },
   { option: '--fresh', summary: 'bypass the session read-cache and re-fetch from the Server' },
+  { option: '--terse', summary: 'project entity summaries to their work fields under json/jsonl; full envelope stays one flag away' },
+  { option: '--full', summary: 'render complete envelopes; defeats --terse wherever it came from' },
 ];
 
 export function rootHelp(opts: ShardOptions = {}): RootHelp {

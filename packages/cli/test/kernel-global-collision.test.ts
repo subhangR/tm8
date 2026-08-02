@@ -169,6 +169,8 @@ const GLOBAL_PROBE: Readonly<Record<string, readonly string[]>> = {
   'no-color': ['--no-color'],
   quiet: ['--quiet'],
   fresh: ['--fresh'],
+  terse: ['--terse'],
+  full: ['--full'],
   help: ['--help'],
   version: ['--version'],
 };
