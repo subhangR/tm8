@@ -1892,6 +1892,7 @@ export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
 export const DeliverySummarySchema: z.ZodType<DeliverySummary> = z.object({
   deliveryId: z.string().min(1),
   targetWorkSessionId: EntityIdSchema,
+  targetWorkSession: EntitySummarySchema.nullable().optional(),
   status: MessageDeliveryStatusSchema,
   attemptNo: z.number().int().positive(),
   failureReason: z.string().nullable(),
@@ -1915,6 +1916,7 @@ export const FeedItemSchema: z.ZodType<FeedItem> = z.lazy(() => z.discriminatedU
     itemKind: z.literal('message'),
     message: MessageViewSchema,
     delivery: z.array(DeliverySummarySchema),
+    linkedWorkSessions: z.array(EntitySummarySchema).optional(),
   }).strict(),
   z.object({
     ...feedItemBaseShape,

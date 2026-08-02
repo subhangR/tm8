@@ -1926,6 +1926,8 @@ export interface EntityFeedQuery {
 export interface DeliverySummary {
   deliveryId: string;
   targetWorkSessionId: EntityId;
+  /** Readable canonical session summary for direct navigation from a feed. */
+  targetWorkSession?: EntitySummary | null;
   status: MessageDeliveryStatus;
   attemptNo: number;
   failureReason: string | null;
@@ -1944,7 +1946,9 @@ export interface FeedItemBase {
 }
 
 export type FeedItem =
-  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[] })
+  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[];
+      /** Work-session siblings in this message batch (channel tag/spawn targets). */
+      linkedWorkSessions?: EntitySummary[] })
   | (FeedItemBase & { itemKind: 'activity'; activity: ActivityItem });
 
 export interface EntityFeedPage {

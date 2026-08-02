@@ -273,6 +273,11 @@ interface Stub {
   locate?: Array<{ item_id: string; created_at: string; in_scope: boolean }>;
   activity?: ActivityRow[];
   deliveries?: Array<Record<string, unknown>>;
+  sessionTargets?: Array<{
+    source_message_id: string;
+    target_message_id: string;
+    target_work_session_id: string;
+  }>;
   provenance?: Array<{ src_id: string; dst_id: string }>;
   entities?: EntityRow[];
   root?: EntityRow[];
@@ -297,6 +302,8 @@ function router(stub: Stub): <R>(sql: string, params: readonly unknown[]) => Pro
         return (stub.activity ?? []) as R[];
       case 'entities.feed:deliveries':
         return (stub.deliveries ?? []) as R[];
+      case 'entities.feed:sessiontargets':
+        return (stub.sessionTargets ?? []) as R[];
       case 'entities.feed:provenance':
         return (stub.provenance ?? []) as R[];
       case 'entities.context:root':
@@ -576,6 +583,45 @@ describe('W2.G13 entities.feed page assembly', () => {
     // readers. `null` is the honest answer, not an invented value.
     expect(activity.logicalOperationId).toBeNull();
     expect(activity.sourceWorkSessionId).toBeNull();
+  });
+
+  it('projects channel message siblings as linked sessions and carries their delivery facet', async () => {
+    const targetMessage = '00000000-0000-7000-8000-000000000d10';
+    const { run } = feedOn({
+      anchor: TASK_ANCHOR,
+      page: [{
+        item_kind: 'message',
+        item_id: IDS.rootMessage,
+        created_at: '2026-07-26T09:45:00.000Z',
+        via: ['anchored'],
+      }],
+      entities: [messageRow(IDS.rootMessage), taskRow(IDS.task), sessionRow(IDS.session)],
+      sessionTargets: [{
+        source_message_id: IDS.rootMessage,
+        target_message_id: targetMessage,
+        target_work_session_id: IDS.session,
+      }],
+      deliveries: [{
+        delivery_id: 'delivery-target-1',
+        message_id: targetMessage,
+        target_work_session_id: IDS.session,
+        status: 'delivered',
+        attempt_no: 1,
+        failure_reason: null,
+        updated_at: '2026-07-26T09:46:00.000Z',
+      }],
+    });
+    const page = await run();
+    const item = page.items[0];
+    if (item?.itemKind !== 'message') throw new Error('expected message feed item');
+    expect(item.linkedWorkSessions).toHaveLength(1);
+    expect(item.linkedWorkSessions?.[0]).toMatchObject({ id: IDS.session, title: 'G13 session' });
+    expect(item.delivery[0]).toMatchObject({
+      deliveryId: 'delivery-target-1',
+      targetWorkSessionId: IDS.session,
+      targetWorkSession: { id: IDS.session, title: 'G13 session' },
+    });
+    expect(EntityFeedPageSchema.parse(page)).toBeTruthy();
   });
 
   it('never lets the request forge recorder-owned provenance', async () => {

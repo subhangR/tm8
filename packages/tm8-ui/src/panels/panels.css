@@ -901,6 +901,21 @@
 
 /* --- shared tabs --------------------------------------------------------- */
 .cv2-root .pn-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.cv2-root .pn-thread__branch { display: flex; flex-direction: column; gap: 7px; }
+.cv2-root .pn-thread__replies {
+  list-style: none;
+  margin: 1px 0 0 13px;
+  padding: 0 0 0 17px;
+  border-left: 2px solid var(--pn-line-2);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.cv2-root .pn-thread__more {
+  margin: 0 0 0 39px;
+  color: var(--pn-ink-4);
+  font: 9.5px var(--pn-mono);
+}
 .cv2-root .pn-msg { display: flex; gap: 9px; }
 .cv2-root .pn-msg__col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cv2-root .pn-msg__byline { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
@@ -928,6 +943,19 @@
   cursor: help;
 }
 .cv2-root .pn-msg__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); text-wrap: pretty; }
+.cv2-root .pn-msg__reply-context {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  margin: 0 0 1px;
+  padding-left: 7px;
+  border-left: 2px solid var(--pn-brand);
+  color: var(--pn-ink-4);
+  font: 9.5px var(--pn-mono);
+}
+.cv2-root .pn-msg__reply-context strong { color: var(--pn-ink-2); }
+.cv2-root .pn-msg__reply-excerpt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A failed post is held HERE, beside the text that failed — T5-5's
    anti-toast law: a refusal never leaves the surface that asked. */
 .cv2-root .pn-composer__error {
