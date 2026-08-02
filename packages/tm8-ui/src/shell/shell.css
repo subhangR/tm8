@@ -295,30 +295,20 @@
   padding: 1px 7px;
   flex: none;
 }
-/* Unseen is emphasis on the TOTAL, not a second number (see CountBadge). The
-   badge goes from the quiet brand-soft pill to the solid brand fill, so an
-   untouched kind reads as foreground and a fully-read one recedes. It uses the
-   BRAND ramp, never --pn-run: green means "running" everywhere in this
-   product, and an unread doc is not running. */
+/* The badge is now NEWS ONLY — it renders solely when a kind has unseen rows,
+   so there is no quiet state left to style. It keeps the BRAND ramp and never
+   --pn-run: green means "running" everywhere in this product, and an unread
+   doc is not running. */
 .cv2-root .shell-rail__badge--unseen {
   color: var(--pn-surface);
   background: var(--pn-brand);
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
-.cv2-root .shell-rail__unseen-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--pn-surface);
-  flex: none;
-}
-/* Collapsed, the pill is already solid brand, so the unseen state cannot be
-   carried by fill alone — it gets a ring against the rail instead. The count
-   itself stays legible at the 8.5px type floor. */
+/* `.shell-rail__unseen-dot` was removed with the total: the dot existed to
+   mark a total as partly-unseen, and a badge that only ever means "new" has
+   nothing left to disambiguate. */
 .cv2-root .shell-rail__badge-corner--unseen {
-  box-shadow: 0 0 0 1.5px var(--pn-surface), 0 0 0 3px var(--pn-brand);
+  color: var(--pn-surface);
+  background: var(--pn-brand);
 }
 .cv2-root .shell-rail__live {
   display: flex;
@@ -1098,6 +1088,7 @@
   cursor: pointer;
 }
 .cv2-root .ls__accessbtn:hover { border-color: var(--pn-ink-3); color: var(--pn-ink); }
+.cv2-root .ls__accessbtn--auto,
 .cv2-root .ls__accessbtn--acceptEdits {
   color: var(--pn-run); border-color: var(--pn-run); background: var(--pn-run-soft);
 }

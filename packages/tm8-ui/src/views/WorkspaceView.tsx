@@ -33,12 +33,16 @@ import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { allKinds, getKind } from '../domain/registry';
-import { newLaunchMutationId, type ProfileResolution } from '../domain/launch';
+import { newLaunchMutationId } from '../domain/launch';
+import { useLaunchPort } from './useLaunchPort';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 import { openEntityAndResolve } from './open-entity';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
+import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
+import { channelFeedPortFromGateData } from './channel-feed-port';
+import { debugSurfaceFor } from './debugSurface';
 
 /** The session collection is selected by capability, never by panel position
     or a kind literal. The empty centre must keep showing terminals after both
@@ -115,6 +119,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   );
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+  /* Memoized on `data` so the port identity is stable — the feed hook's effects
+     key on it, and a fresh object each render would re-read on every keystroke
+     anywhere in the workspace. */
+  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
   const handleSessionClose = useCallback((entityId: string) => {
     void data.seam.commands.terminate(entityId as EntityId, {
@@ -219,11 +227,27 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               : `${admission.cause} — ${admission.remedy}`
           }
           liveness={data.livenessOf(id)}
+          debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           livenessOf={data.livenessOf}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}
           onContentSurfaceChange={(surface) => nav.setContentSurface?.(id, surface)}
-          chatSurface={detail ? (
+          /*
+           * ONE SLOT, TWO SURFACES, CHOSEN BY ARCHETYPE — never by kind (§15.2).
+           * `terminal` entities get the session chat; `hub` entities get their
+           * channel feed, which is what makes a channel opened from the Entity
+           * List Panel a channel you can actually read and post to (user ruling
+           * 2026-08-01). Any other archetype gets no feed and HubBody's
+           * unchanged front-door body.
+           */
+          chatSurface={detail && getKind(detail.kind).panel.archetype === 'hub' ? (
+            <LazyChannelChatSurface
+              port={channelFeedPort}
+              channelId={id}
+              connection={data.connection}
+              onOpenEntity={(entityId) => openEntity(entityId)}
+            />
+          ) : detail ? (
             <LazySessionChatSurface
               seam={data.seam}
               sessionId={id}
@@ -260,7 +284,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded
@@ -288,18 +312,16 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [linkedTasksBySession],
   );
 
-  const profileFor = useCallback((teamMemberId: string | null): ProfileResolution => {
-    const teammate = data.launch.teammates.find((candidate) => candidate.id === teamMemberId);
-    const teammateDefault = data.launch.profiles.find((profile) => profile.id === teammate?.defaultProfileId);
-    if (teammateDefault) {
-      return { profileId: teammateDefault.id, label: teammateDefault.name, source: 'teammate-default' };
-    }
-    const spaceDefault = data.launch.profiles.find((profile) => profile.isSpaceDefault);
-    if (spaceDefault) {
-      return { profileId: spaceDefault.id, label: spaceDefault.name, source: 'space-default' };
-    }
-    return { profileId: null, label: 'resolved by node at commit', source: 'none' };
-  }, [data.launch.teammates, data.launch.profiles]);
+  /* ONE construction, shared with EntityView. It used to be built inline here,
+     twice — and not at all on the kind screens, which is why their quick config
+     showed no teammates and no models. See `useLaunchPort`. */
+  const launchPort = useLaunchPort(data, {
+    ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
+    ...(props.onLaunchOpen
+      ? { onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId) }
+      : {}),
+  });
+  const profileFor = launchPort.profileFor;
 
   /* Each dock owns a create-flow hook so a quick-create panel keeps the
      behavior when it crosses the center. Both run unconditionally (rules of
@@ -347,6 +369,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
@@ -364,26 +387,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           // panels/ importing views/ would point the dependency backwards,
           // since views compose panels. One map at the seam, no cast on
           // either side.
-          launch={{
-            spaceId: ctx.spaceId,
-            teammates: data.launch.teammates.map((t) => ({
-              id: t.id,
-              label: t.name,
-              agentTool: t.agentTool,
-              model: t.model,
-            })),
-            projects: data.launch.projects.map((project) => ({
-              projectId: project.id,
-              name: project.name,
-              trusted: project.trusted,
-              ...(project.reason ? { untrustedReason: project.reason } : {}),
-            })),
-            capacity: data.launch.capacity,
-            profileFor,
-            mutationId: () => newLaunchMutationId(),
-            onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
-            onSpawn: props.onSpawn,
-          }}
+          launch={launchPort}
         />
       }
       center={
@@ -448,32 +452,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
+          messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
-          launch={{
-            spaceId: ctx.spaceId,
-            teammates: data.launch.teammates.map((t) => ({
-              id: t.id,
-              label: t.name,
-              agentTool: t.agentTool,
-              model: t.model,
-            })),
-            projects: data.launch.projects.map((project) => ({
-              projectId: project.id,
-              name: project.name,
-              trusted: project.trusted,
-              ...(project.reason ? { untrustedReason: project.reason } : {}),
-            })),
-            capacity: data.launch.capacity,
-            profileFor,
-            mutationId: () => newLaunchMutationId(),
-            onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
-            onSpawn: props.onSpawn,
-          }}
+          launch={launchPort}
         />
       }
     />

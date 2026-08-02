@@ -27,6 +27,16 @@ export interface RequestIdentity {
   actorId?: string;
   /** Raw bearer credential when `kind === 'bearer'`; never logged. */
   token?: string;
+  /**
+   * Node-level admin, resolved from the verified session's account when
+   * `kind === 'bearer'`. Absent for `auto-owner` (the owner resolver already
+   * knows) and `anonymous`. Never widens `can_act_as` (T-L7).
+   */
+  nodeAdmin?: boolean;
+  /** Verified account row id when `kind === 'bearer'`. */
+  accountId?: string;
+  /** Verified `auth_sessions` row id when `kind === 'bearer'`. */
+  sessionId?: string;
 }
 
 /** Everything a handler is allowed to know about one request. */

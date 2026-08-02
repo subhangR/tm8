@@ -288,8 +288,9 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
   }));
 
   it('sweeps the whole projection, not a subset', () => {
-    // Vacuity guards. The catalog is 120 rows, 118 of which publish syntax.
-    expect(rows.length).toBe(120);
+    // Vacuity guards. The catalog is 125 rows, 123 of which publish syntax.
+    // 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+    expect(rows.length).toBe(125);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);
@@ -387,6 +388,7 @@ const kebab = (s: string): string => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').to
 const DELIBERATE_SPELLINGS: Readonly<Record<string, string>> = {
   confirm: '--yes, the §7.5 destructive confirmation (interaction-profile activate|retire set body.confirm from it)',
   enabled: '--off, which sets enabled:false for `entity react`',
+  isNodeAdmin: '--node-admin, which sets isNodeAdmin:true for `auth signup` (2026-08-02)',
 };
 
 describe('CLASS SWEEP: every boolean the frozen input schemas accept is expressible', () => {

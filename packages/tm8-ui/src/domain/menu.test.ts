@@ -63,9 +63,26 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(refs).toContain('settings');
   });
 
-  it('keeps the Channels route ref for config/deep links', () => {
-    const channels = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'channels');
-    expect(channels?.items).toEqual([{ type: 'view', ref: 'channels' }]);
+  /**
+   * Revision 5 (user ruling 2026-08-01): channels left the rail for the Entity
+   * List Panel, and Feed and Inbox left it too, so Home is Dashboard alone.
+   * Both halves are asserted — a surviving `channels` row would be a rail
+   * destination competing with the list panel for the same kind, which is the
+   * two-divergent-homes shape the voice row's docblock already warned about.
+   */
+  it('puts Home at Dashboard alone and keeps NO Channels group', () => {
+    const home = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'home');
+    expect(home?.items).toEqual([{ type: 'view', ref: 'dashboard' }]);
+    expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).not.toContain('channels');
+  });
+
+  it('drops feed, inbox and channels from the RAIL, not from the union', () => {
+    // The distinction this test exists to hold: the three are unrouted from
+    // the rail, not deleted. `MenuViewRef` still carries all three, so the menu
+    // editor can offer them and a deep link still resolves. Channels moved to
+    // the Entity List Panel — see the registry row's `strategy: 'collection'`.
+    const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
+    for (const gone of ['feed', 'inbox', 'channels']) expect(refs).not.toContain(gone);
   });
 
   it('keeps depth at exactly ≤1 with Workspace as the one caret VIEW item', () => {
@@ -106,8 +123,12 @@ describe('menu-ref validation (WLT §2.3)', () => {
   it('accepts collection-strategy kinds only', () => {
     expect(isMenuEligibleKind('task')).toBe(true);
     expect(isMenuEligibleKind('work_session')).toBe(true);
-    // channel is a reserved word with its own route; message has no k/ view.
-    expect(isMenuEligibleKind('channel')).toBe(false);
+    // channel became a collection kind on 2026-08-01, so it IS menu-eligible
+    // now — the ruling put it in the Entity List Panel, and a kind the list can
+    // show is a kind the menu could name. The shipped default does not name it
+    // (the list panel is its home), which is a CONFIG choice, not a capability.
+    expect(isMenuEligibleKind('channel')).toBe(true);
+    // message stays ineligible: anchored, no k/ view, no slug.
     expect(isMenuEligibleKind('message')).toBe(false);
   });
 

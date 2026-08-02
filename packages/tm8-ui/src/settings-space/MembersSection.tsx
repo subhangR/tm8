@@ -19,6 +19,7 @@
  * shows T1-4's hollow marker carrying the reason. Inventing `@` + a slugged
  * title would be a lie of precision on the one field a user would trust.
  */
+import { useEffect, useState } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import type { IdentityView } from '../data/seam';
 import { DisabledAction, DisabledIconControl, HollowInline } from '../panels';
@@ -52,6 +53,26 @@ export const VIEWER_ROLE_FOOTNOTE =
 
 function initial(title: string): string {
   return (title.trim()[0] ?? '·').toUpperCase();
+}
+
+/**
+ * A member row's avatar. The INITIAL IS THE RULE — member entities carry no
+ * profile in this build, so only the viewer's own row (via `identity.avatar`,
+ * 067) can ever show an image, and even that is NULL until the viewer sets it
+ * in Your profile. The image layers over the initial and falls back to it on
+ * a broken URL; nothing renders a broken-image glyph.
+ */
+function MemberAvatar({ title, src }: { title: string; src: string | null }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [src]);
+  return (
+    <span className="set-member__avatar" aria-hidden>
+      {initial(title)}
+      {src && !broken ? (
+        <img className="set-member__avatar-img" src={src} alt="" onError={() => setBroken(true)} />
+      ) : null}
+    </span>
+  );
 }
 
 /** Coarse and honest: the oracle prints "now / 2h / 4d", not a precise stamp. */
@@ -100,9 +121,7 @@ export function MembersSection({ members, identity, onInvite }: MembersSectionPr
           const isOwner = ownerWord !== null && role === ownerWord;
           return (
             <div className="set-member" key={m.id} data-testid="member-row">
-              <span className="set-member__avatar" aria-hidden>
-                {initial(m.title)}
-              </span>
+              <MemberAvatar title={m.title} src={isSelf ? identity?.avatar ?? null : null} />
               <span className="set-member__name">
                 {m.title}{' '}
                 {isSelf && identity?.username ? (

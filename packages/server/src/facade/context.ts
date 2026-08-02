@@ -49,17 +49,34 @@ export function commandEnvelope(ctx: RequestContext): CommandEnvelope {
  *
  * `requestId` is bound so an audit row and the id the client was handed are
  * joinable after the fact — the whole point of threading it this far down.
+ *
+ * BEARER (Identity v2 Stage 1): when the resolver verified a `tm8s_…` token,
+ * `ctx.identity` carries the session's identity and it — not the memoised
+ * node owner — is who this request runs as. The owner parameter remains the
+ * auto-owner (loopback) source, exactly as before; doc 3 §3 named this line
+ * as where the two would first differ. A bearer identity that somehow lacks
+ * an id is refused rather than silently escalated to the owner.
+ *
+ * The actor precedence mirrors `internal.resolve_actor`'s coalesce: an
+ * explicit envelope `actorId` wins; else an agent session's persona binding;
+ * else unset so Postgres resolves the right member per space (file header).
+ * Either way it is a REQUEST — `can_act_as` authorises it in SQL.
  */
 export function claimsFor(
   owner: LoopbackOwner,
   ctx: RequestContext,
   envelope: CommandEnvelope = {},
 ): DbClaims {
+  const bearer = ctx.identity?.kind === 'bearer' ? ctx.identity : undefined;
+  if (bearer && !bearer.identityId) {
+    throw new CollabError('unauthenticated', 'bearer identity is unresolved');
+  }
+  const actorId = envelope.actorId ?? bearer?.actorId;
   return {
-    identityId: owner.identityId,
+    identityId: bearer ? bearer.identityId! : owner.identityId,
     // See the file header: unset unless explicitly requested.
-    ...(envelope.actorId ? { actorId: envelope.actorId } : {}),
-    nodeAdmin: owner.isNodeAdmin,
+    ...(actorId ? { actorId } : {}),
+    nodeAdmin: bearer ? bearer.nodeAdmin === true : owner.isNodeAdmin,
     requestId: ctx.requestId,
   };
 }

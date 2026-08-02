@@ -23,7 +23,7 @@ import type { NavPort } from './nav-port';
 /** Stand-in for the domain registry (A1a's). Shell must never map kinds itself. */
 const presentKind: KindPresenter = (ref) => {
   const table: Record<string, RefPresentation> = {
-    task: { label: 'Tasks', icon: '◔', badge: 18 },
+    task: { label: 'Tasks', icon: '◔', badge: 18, unseen: 4 },
     work_session: { label: 'Sessions', icon: '▣', live: 3 },
     doc: { label: 'Docs', icon: '▤' },
     team_member: { label: 'Teammates', icon: '◯' },
@@ -62,30 +62,32 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     expect(headers[0]?.textContent).toBe('Home');
   });
 
-  it('renders Channels as a plain heading with live entity rows beneath it', () => {
+  /**
+   * Menu revision 5 (user ruling 2026-08-01): CHANNELS LEFT THE RAIL. They are
+   * entities, so they live in the Entity List Panel with every other
+   * collection. The rail keeps the dynamic-group mechanism — voice rooms still
+   * use it — so this asserts the mechanism still works AND that no channel row
+   * or Channels header rides along on the shipped default.
+   */
+  it('keeps the dynamic-group grammar for voice, with no Channels section left', () => {
     const onNavigate = vi.fn();
     const { container, getByText } = renderRail({
       onNavigate,
       dynamicGroups: {
-        channels: {
-          replaceConfiguredItems: true,
-          items: [
-            { id: 'ch-general', kind: 'channel', label: 'general', icon: '#', badge: 3 },
-            { id: 'ch-design', kind: 'channel', parentId: 'ch-general', label: 'design', icon: '#', live: 2 },
-          ],
+        voice: {
+          items: [{ id: 'vc-studio', kind: 'voice_channel', label: 'studio', icon: '\u266a', live: 2 }],
         },
       },
     });
 
-    const heading = [...container.querySelectorAll('.shell-rail__header')]
-      .find((node) => node.textContent === 'Channels');
-    expect(heading).toBeTruthy();
-    expect(heading?.closest('button')).toBeNull();
-    expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(2);
-    expect(container.querySelector('[data-entity-id="ch-design"]')?.getAttribute('data-depth')).toBe('1');
+    const headers = [...container.querySelectorAll('.shell-rail__header')]
+      .map((node) => node.textContent);
+    expect(headers).toContain('Voice');
+    expect(headers).not.toContain('Channels');
+    expect(container.querySelectorAll('[data-entity-id]')).toHaveLength(1);
 
-    fireEvent.click(getByText('general'));
-    expect(onNavigate).toHaveBeenCalledWith({ type: 'entity', ref: 'ch-general', kind: 'channel' });
+    fireEvent.click(getByText('studio'));
+    expect(onNavigate).toHaveBeenCalledWith({ type: 'entity', ref: 'vc-studio', kind: 'voice_channel' });
   });
 
   it('GRAMMAR 2: a plain item renders one navigating row with its glyph', () => {
@@ -184,7 +186,8 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
       ],
     };
     const { container } = renderRail({ collapsed: true, config });
-    expect(container.querySelector('.shell-rail__badge-corner')?.textContent).toBe('18');
+    // The badge corner reports NEWS (4 unseen of 18), not the lifetime total.
+    expect(container.querySelector('.shell-rail__badge-corner')?.textContent).toBe('4');
     expect(container.querySelector('.shell-rail__live-corner')?.textContent).toBe('3');
   });
 
@@ -202,11 +205,11 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
       }],
     };
     const presentBoth: KindPresenter = (ref) =>
-      ref === 'both' ? { label: 'Both', icon: '◔', badge: 18, live: 3 } : null;
+      ref === 'both' ? { label: 'Both', icon: '◔', badge: 18, unseen: 4, live: 3 } : null;
     const { container } = renderRail({ collapsed: true, config, presentKind: presentBoth });
     const badge = container.querySelector('.shell-rail__badge-corner');
     const live = container.querySelector('.shell-rail__live-corner');
-    expect(badge?.textContent).toBe('18');
+    expect(badge?.textContent).toBe('4');
     expect(live?.textContent).toBe('3');
     // Distinct elements in distinct corners — asserted via the class contract
     // the stylesheet keys off, since jsdom computes no geometry (D10).
@@ -553,11 +556,11 @@ describe('notice vocabulary (T1-4 / R4-7)', () => {
   });
 });
 
-describe('per-kind counters — total, and how many are unseen', () => {
+describe('per-kind counters — the rail shows what is NEW, not how much exists', () => {
   /**
-   * The counter presenter under test. `task` carries unseen rows, `doc` is a
-   * kind the viewer is fully caught up on, and `project` has counters absent
-   * entirely (a node that cannot serve them).
+   * `task` has news, `doc` is fully caught up, `project` has no counters at
+   * all (a node that cannot serve them). `work_session` carries news AND a
+   * running count, which must stay two separate facts.
    */
   const presentCounts: KindPresenter = (ref) => {
     const table: Record<string, RefPresentation> = {
@@ -569,53 +572,54 @@ describe('per-kind counters — total, and how many are unseen', () => {
     return table[ref] ?? null;
   };
 
-  it('draws the TOTAL as the number and marks unseen without a second number', () => {
+  it('draws the UNSEEN count, not the lifetime total', () => {
     const { container } = renderRail({ presentKind: presentCounts });
     const badges = [...container.querySelectorAll('.shell-rail__badge')];
-    const tasks = badges.find((b) => b.textContent?.startsWith('142'));
-    expect(tasks, 'the total renders').toBeTruthy();
-    expect(tasks?.classList.contains('shell-rail__badge--unseen')).toBe(true);
-    // The unseen QUANTITY must not appear as a second visible integer — it is
-    // carried by emphasis plus a dot, and spelled out only for assistive tech.
-    expect(tasks?.querySelector('.shell-rail__unseen-dot')).toBeTruthy();
-    expect(tasks?.textContent).toContain('7 unseen');
-    expect(tasks?.textContent?.replace(/\D/g, '')).toBe('1427');
+    const texts = badges.map((b) => b.textContent?.replace(/\D/g, ''));
+    // 7 new, not 142 total. A total only grows, is the same on every visit,
+    // and cannot be acted on — it is not what the rail's one slot is for.
+    expect(texts).toContain('7');
+    expect(texts).not.toContain('142');
   });
 
-  it('a fully-read kind keeps its total but loses the unseen treatment', () => {
-    const { container } = renderRail({ presentKind: presentCounts });
-    const docs = [...container.querySelectorAll('.shell-rail__badge')]
-      .find((b) => b.textContent?.startsWith('210'));
-    expect(docs).toBeTruthy();
-    expect(docs?.classList.contains('shell-rail__badge--unseen')).toBe(false);
-    expect(docs?.querySelector('.shell-rail__unseen-dot')).toBeNull();
-  });
-
-  it('ABSENT counters draw no number at all — never a fabricated zero', () => {
+  it('a caught-up kind draws NO badge — not a zero', () => {
     const { container } = renderRail({ presentKind: presentCounts });
     const badges = [...container.querySelectorAll('.shell-rail__badge')];
-    // A `0` here would assert "this space has no projects", which is a claim
-    // the rail has not read and must not make.
+    // Docs: 210 total, 0 unseen. A `0` on every row of a caught-up workspace
+    // is noise, and reads as a state rather than as the absence of news.
+    expect(badges.map((b) => b.textContent?.replace(/\D/g, ''))).not.toContain('210');
     expect(badges.some((b) => b.textContent?.trim() === '0')).toBe(false);
   });
 
-  it('sessions carry BOTH: green live for running, and the unseen mark', () => {
+  it('the TOTAL is demoted to the hover title, not discarded', () => {
     const { container } = renderRail({ presentKind: presentCounts });
-    // The live treatment keeps its own meaning (PTYs actually running) and is
-    // not replaced by the unseen mark.
+    const row = [...container.querySelectorAll('.shell-rail__leaf, .shell-rail__row')]
+      .find((element) => element.querySelector('.shell-rail__label')?.textContent === 'Tasks');
+    expect(row?.getAttribute('title')).toBe('142 tasks, 7 new');
+  });
+
+  it('ABSENT counters draw nothing at all', () => {
+    const { container } = renderRail({ presentKind: presentCounts });
+    const projects = [...container.querySelectorAll('.shell-rail__row')]
+      .find((element) => element.querySelector('.shell-rail__label')?.textContent === 'Projects');
+    expect(projects?.querySelector('.shell-rail__badge')).toBeNull();
+    expect(projects?.getAttribute('title')).toBeNull();
+  });
+
+  it('sessions keep the green RUNNING dot beside their news count', () => {
+    const { container } = renderRail({ presentKind: presentCounts });
+    // Two different facts: 3 PTYs are running (about the world), 2 rows are
+    // new to me (about this viewer). Neither may absorb the other.
     const live = [...container.querySelectorAll('.shell-rail__live')]
       .find((n) => n.textContent?.includes('3'));
     expect(live?.querySelector('.shell-rail__live-dot')).toBeTruthy();
     expect(live?.textContent).toContain('live');
     const sessions = [...container.querySelectorAll('.shell-rail__badge')]
-      .find((b) => b.textContent?.startsWith('38'));
+      .find((b) => b.textContent?.startsWith('2'));
     expect(sessions?.classList.contains('shell-rail__badge--unseen')).toBe(true);
   });
 
-  it('COLLAPSED, the unseen state survives in the accessible name and the corner mark', () => {
-    // A TOP-LEVEL item, not a Workspace leaf: collapsed renders icons only and
-    // caret leaves are not drawn at all, so a leaf could never carry a corner
-    // mark to assert on.
+  it('COLLAPSED, the corner mark is the news count and AT still hears the total', () => {
     const config: MenuConfig = {
       schemaVersion: 1,
       revision: 1,
@@ -630,11 +634,12 @@ describe('per-kind counters — total, and how many are unseen', () => {
       config,
       presentKind: presentCounts,
     });
-    // D31: the composed label carries every part the row shows, and `unseen`
-    // gets the WORD (C8/L10) because it is a status, not a bare quantity.
-    expect(getByLabelText('Tasks, 142, 7 unseen')).toBeTruthy();
-    const corner = [...container.querySelectorAll('.shell-rail__badge-corner')]
-      .find((n) => n.textContent === '142');
-    expect(corner?.classList.contains('shell-rail__badge-corner--unseen')).toBe(true);
+    const corner = container.querySelector('.shell-rail__badge-corner');
+    // 7, not 142 — a permanent two-digit total pinned to a 48px icon rail was
+    // exactly the noise this change removes.
+    expect(corner?.textContent).toBe('7');
+    // The total survives for assistive tech: a collapsed rail offers AT no
+    // hover to reach `title` with, so dropping it would cost AT users only.
+    expect(getByLabelText('Tasks, 142, 7 new')).toBeTruthy();
   });
 });

@@ -22,8 +22,9 @@ import type {
 } from '@tm8/contract';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { ActionContext } from '../domain/types';
-import type { SessionLiveness } from '../data/seam';
+import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
+import { debugSurfaceFor } from '../views/debugSurface';
 
 export interface GraphScreenData {
   spaceId: string;
@@ -31,6 +32,9 @@ export interface GraphScreenData {
   messagesOf(id: string): readonly MessageView[] | undefined;
   postMessage(input: PostMessageInput): Promise<void>;
   livenessOf(id: string): SessionLiveness;
+  /** Optional: without it the Debug surface renders its explained absence
+   *  rather than a broken table. */
+  seam?: Seam;
   activity: Readonly<Record<string, boolean>>;
   pull?(id: string): void;
 }
@@ -92,6 +96,7 @@ export function GraphScreen(props: GraphScreenProps) {
       // so the pin verb is refused with the true reason, never hidden (L6).
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
+      debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       messages={messages}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,

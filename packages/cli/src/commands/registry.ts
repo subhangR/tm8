@@ -35,6 +35,7 @@ import { KIND_COMMANDS } from './kind.js';
 // line in this file. Order here is registration order only; it carries no meaning.
 import { SPACE_COMMANDS } from './space.js';
 import { IDENTITY_COMMANDS } from './identity.js';
+import { AUTH_COMMANDS } from './auth.js';
 import { EDGE_COMMANDS } from './edge.js';
 import { PLACEMENT_COMMANDS } from './placement.js';
 import { INBOX_COMMANDS } from './inbox.js';
@@ -91,6 +92,7 @@ export const COMMANDS: CommandModule[] = [
   ...KIND_COMMANDS,
   ...SPACE_COMMANDS,
   ...IDENTITY_COMMANDS,
+  ...AUTH_COMMANDS,
   ...EDGE_COMMANDS,
   ...PLACEMENT_COMMANDS,
   ...INBOX_COMMANDS,

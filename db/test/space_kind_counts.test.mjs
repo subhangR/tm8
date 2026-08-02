@@ -162,3 +162,51 @@ test('the function is executable by tm8_app and revoked from public', () => {
 test('literal guard: the suite named a real space', () => {
   assert.ok(literal(spaceA).length > 0);
 });
+
+/**
+ * 068 — the WATERMARK, and the cold-start defect it exists to fix.
+ *
+ * Measured on the real tm8 space before this landed: 356 live entities against
+ * 24 read marks, so 93.3% of every kind came back `unseen` and the rail drew
+ * each kind's lifetime total twice — once plain, once in bold. `read_marks`
+ * had only ever been written for channels, so nothing else could POSSIBLY be
+ * marked, and no amount of using the product would have fixed it short of
+ * opening every row by hand.
+ */
+test('a member does not inherit history that predates them as unseen', () => {
+  // Everything in Space A already exists. A member whose counters start NOW
+  // must see a clean rail: you cannot have failed to see what predates you.
+  ok(
+    `update public.members set counters_since = now() + interval '1 second'
+      where space_id = ${uuid(spaceA)} and entity_id = ${uuid(world.memberA)}`,
+    { url: OWNER_URL },
+  );
+
+  const counts = countsFor(world.identityA, world.memberA, spaceA);
+  const totals = Object.values(counts).reduce((n, c) => n + c.total, 0);
+  const unseen = Object.values(counts).reduce((n, c) => n + c.unseen, 0);
+  assert.ok(totals > 0, 'the space still HAS entities — the total is untouched');
+  assert.equal(unseen, 0, 'but none of them is news to a member starting now');
+});
+
+test('anything that changes AFTER the watermark is news again', () => {
+  // The watermark is a floor, not a mute: it suppresses backlog, and must not
+  // suppress genuine activity that happens afterwards.
+  ok(
+    `update public.entities set activity_at = now() + interval '1 hour'
+      where id = ${uuid(world.taskA)}`,
+    { url: OWNER_URL },
+  );
+  const counts = countsFor(world.identityA, world.memberA, spaceA);
+  assert.equal(counts.task.unseen, 1, 'changed after the watermark ⇒ unseen');
+});
+
+test('the watermark defaults to member creation, so it is never null', () => {
+  const rowsOut = rows(
+    `select count(*) filter (where counters_since is null) as nulls, count(*) as all_members
+       from public.members`,
+    { claims: claimsFor(world.identityA, world.memberA) },
+  );
+  assert.equal(Number(rowsOut[0].nulls), 0, 'no member has a null watermark');
+  assert.ok(Number(rowsOut[0].all_members) > 0, 'and the check saw real rows');
+});

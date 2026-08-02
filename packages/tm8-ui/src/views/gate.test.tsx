@@ -54,29 +54,47 @@ describe('THE GATE — composed T0-1 master screen', () => {
     expect(labels).toContain('Settings');
   });
 
-  it('shows per-space channels under a non-clickable heading and opens the channel chat', async () => {
+  /**
+   * THE RULING OF 2026-08-01, end to end: channels are ENTITIES, so they live
+   * in the Entity List Panel and open in the entity detail panel like anything
+   * else — with their real feed, not a front-door summary. The rail is asserted
+   * to be OUT of it: a Channels header surviving anywhere would mean two homes
+   * for one kind.
+   */
+  it('lists channels in the Entity List Panel and opens one with its live feed', async () => {
     const view = renderGate();
-    const channelRow = await waitFor(() => {
-      const row = view.container.querySelector('[data-entity-id="ch-design"]');
-      expect(row).toBeTruthy();
-      return row as HTMLElement;
+    const grid = await waitFor(() => view.getByTestId('workspace-grid'));
+
+    // Not in the rail, at all.
+    expect([...view.container.querySelectorAll('.shell-rail__header')]
+      .some((node) => node.textContent === 'Channels')).toBe(false);
+    expect(view.container.querySelector('[data-entity-id="ch-design"]')).toBeNull();
+
+    // Channels is an offered COLLECTION in the list panel's kind switcher.
+    const left = within(grid).getByLabelText('Left panel');
+    fireEvent.click(left.querySelector('.lp__kind') as HTMLElement);
+    fireEvent.click(within(left).getByRole('menuitem', { name: /Channels/ }));
+    await waitFor(() =>
+      expect(left.querySelector('[data-testid="entity-list-panel"]')?.getAttribute('data-kind'))
+        .toBe('channel'));
+
+    const row = await waitFor(() => {
+      const found = within(left).getByText('design');
+      expect(found).toBeTruthy();
+      return found as HTMLElement;
     });
+    fireEvent.click(row);
 
-    const heading = [...view.container.querySelectorAll('.shell-rail__header')]
-      .find((node) => node.textContent === 'Channels');
-    expect(heading).toBeTruthy();
-    expect(heading?.closest('button')).toBeNull();
-
-    fireEvent.click(channelRow);
-    const channel = await waitFor(() => view.getByTestId('channel-view'));
-    expect(within(channel).getByRole('heading', { name: 'design' })).toBeTruthy();
-    expect(within(channel).getByRole('tab', { name: /Feed · 148/i })).toBeTruthy();
-    expect(await within(channel).findByLabelText('Message this channel')).toBeTruthy();
-    // The upload seam is wired through ChannelView — the attach control is a
-    // REAL file input, not the disabled-with-reason refusal.
-    const attach = within(channel).getByRole('button', { name: /attach a file/i });
-    expect(attach.getAttribute('aria-disabled')).not.toBe('true');
-    expect(within(channel).getByLabelText(/choose files to attach/i)).toBeTruthy();
+    // The panel is the channel: hub front door AND the real composer beneath.
+    // Both waits are real — the detail hydrates through a pull, and the feed
+    // surface is a lazy chunk, so an immediate query would race both.
+    await view.findByTestId('hub-body');
+    const panel = view.getByTestId('entity-detail-panel');
+    expect(await within(panel).findByLabelText('Message this channel')).toBeTruthy();
+    // The redirect note pointed at the rail screen; there is nothing to redirect
+    // to now, and the feed is right here.
+    expect(within(panel).queryByTestId('hub-redirect')).toBeNull();
+    expect(within(panel).queryByTestId('hub-latest-hollow')).toBeNull();
   });
 
   it('mounts both side panels and the live-session bar in the centre', async () => {
@@ -247,7 +265,11 @@ describe('THE GATE — composed T0-1 master screen', () => {
       fireEvent.click(view.getByRole('button', { name: 'Graph' }));
 
       const graph = await waitFor(() => view.getByTestId('graph-screen'));
-      expect(within(graph).getByText('Graph · workspace data')).toBeTruthy();
+      // The lens control replaced the static eyebrow: the first thing the
+      // toolbar says is now which lens the canvas is under, and it must offer
+      // the escape to the whole space.
+      expect(within(graph).getByRole('group', { name: 'Graph lens' })).toBeTruthy();
+      expect(within(graph).getByRole('button', { name: 'Everything' })).toBeTruthy();
       expect(graph.querySelectorAll('.gv-node, .gv-shelf__chips > *').length).toBeGreaterThan(0);
     } finally {
       view.unmount();

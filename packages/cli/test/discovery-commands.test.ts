@@ -98,12 +98,13 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 116 command paths; the registry is an honest subset of them', () => {
-    // 118 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
+  it('the projection holds 121 command paths; the registry is an honest subset of them', () => {
+    // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
+    // 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // = 116 rows that have one; `files.uploadInit` + `files.uploadComplete` share
     // `file upload` and `artifacts.create` + `artifacts.publish` share
     // `artifact publish` ⇒ 113 DISTINCT paths.
-    expect(COMMAND_PATHS).toHaveLength(116);
+    expect(COMMAND_PATHS).toHaveLength(121);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

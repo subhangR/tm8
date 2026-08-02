@@ -3,7 +3,7 @@ import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
 import { resolveAction } from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
-import { IconBtn, Pill, type PillTone } from '../../kit';
+import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 
@@ -400,7 +400,15 @@ export function PanelFooter({
       <span className="pn-foot__sep" aria-hidden>
         ·
       </span>
-      <span>by {author}</span>
+      <span className="pn-foot__by">
+        <Avatar
+          provenance={detail.createdBy.isAgent ? 'agent' : 'human'}
+          label={author}
+          size={15}
+          src={detail.createdBy.avatar ?? null}
+        />
+        <span>by {author}</span>
+      </span>
       <span className="pn-foot__sep" aria-hidden>
         ·
       </span>

@@ -299,6 +299,28 @@ describe('session spawn', () => {
     expect(body().parentSessionId).toBe(SESSION);
   });
 
+  it('carries an explicit --access-mode', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--access-mode', 'fullAccess',
+    ]);
+    expect(r.code).toBe(0);
+    expect(body().accessMode).toBe('fullAccess');
+  });
+
+  it('refuses an access mode outside the closed set', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--access-mode', 'yolo',
+    ]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('fullAccess');
+    expect(seen).toEqual([]);
+  });
+
+  /**
+   * The absence is the feature. A spawned agent that sends no `accessMode` gets
+   * its PARENT session's posture on the Server; sending a default here would
+   * overwrite that inheritance with the one value the caller never chose.
+   */
   it('omits every optional field the caller did not give', async () => {
     const r = await drive(['session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE]);
     expect(r.code).toBe(0);

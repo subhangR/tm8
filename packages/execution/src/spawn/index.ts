@@ -37,6 +37,7 @@ export type {
   RecordCommandInput,
   ResumeRequest,
   ResumeWorkSessionResult,
+  SessionLaunchPosture,
   SpawnContext,
   SpawnRequest,
   SpawnResult,

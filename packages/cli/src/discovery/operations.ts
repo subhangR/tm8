@@ -170,6 +170,59 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'me', 'actor', 'principal'],
   },
+  'identity.profile.update': {
+    cmd: ['identity', 'profile', 'set'],
+    syn: 'tm8 identity profile set [--display-name <name>] [--avatar <url>] [--email <email>] [--global-id <issuer:subject>] [--mutation-id <id>]',
+    sum: 'Write the caller\'s own display profile — name, avatar, email, and the cross-server global id',
+    authz: 'server',
+    input: 'bound',
+    tags: ['profile', 'display-name', 'avatar', 'global-id', 'me'],
+    notes: [
+      'writes only the caller\'s own profile: there is no flag naming another identity, and --as is refused',
+      'the global id is a display claim in issuer:subject shape, never an authorization input',
+    ],
+  },
+  // ── auth (Identity v2 Stage 1: local accounts) ───────────────────────────
+  'auth.signup': {
+    cmd: ['auth', 'signup'],
+    syn: 'tm8 auth signup <username> --password <password> [--display-name <name>] [--email <email>] [--node-admin]',
+    sum: 'Create a local account on this Server (node-admin only; never open self-registration)',
+    authz: 'server',
+    input: 'bound',
+    tags: ['account', 'signup', 'provision', 'user', 'admin'],
+    notes: [
+      'the caller must be a node admin; the guard is enforced inside Postgres, not in the CLI',
+      'the password travels in the request body — a real deployment needs TLS before using this',
+    ],
+  },
+  'auth.login': {
+    cmd: ['auth', 'login'],
+    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>]',
+    sum: 'Exchange a username and password for a tm8s_… bearer token, printed exactly once',
+    authz: 'server',
+    input: 'bound',
+    tags: ['login', 'token', 'session', 'bearer', 'password'],
+    notes: [
+      'export the printed token as TM8_AGENT_TOKEN to authenticate subsequent CLI calls',
+      'the failure message never distinguishes an unknown username from a wrong password',
+    ],
+  },
+  'auth.logout': {
+    cmd: ['auth', 'logout'],
+    syn: 'tm8 auth logout [--session-id <id>]',
+    sum: 'Revoke the presented bearer session, or a named one you own (node admins: any)',
+    authz: 'server',
+    input: 'bound',
+    tags: ['logout', 'revoke', 'session', 'token'],
+  },
+  'auth.session.get': {
+    cmd: ['auth', 'session'],
+    syn: 'tm8 auth session',
+    sum: 'Show the authenticated account and session behind the current credentials',
+    authz: 'server',
+    input: 'none',
+    tags: ['whoami', 'session', 'token', 'me'],
+  },
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',
@@ -945,7 +998,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -954,6 +1007,7 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
       '`--context` is launch-manifest context, NOT a runtime prompt',
+      'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
       'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
@@ -1371,6 +1425,7 @@ const ROWS: Record<OperationName, Row> = {
  */
 const NOUN_BY_FAMILY: Record<string, string> = {
   identity: 'identity',
+  auth: 'auth',
   serverConnections: 'server',
   spaces: 'space',
   entities: 'entity',
@@ -1450,7 +1505,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:ab251303b3772e70dbc2a85d9169cfdf2ae8b5cc8268feefd097837379cfed20';
+  'sha256:ca0d14bbcbde8eb07440edd8e6dc9e8274482d90eb876733cc89fead91d08285';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -1667,6 +1722,7 @@ export function isCommandPath(path: readonly string[]): boolean {
  */
 const NOUN_SUMMARY: Record<string, string> = {
   identity: 'Who this process is calling as',
+  auth: 'Local accounts: sign up, log in, log out, and inspect the current session',
   server: 'Named routes to other tm8 Servers',
   space: 'Spaces — the authorization and event boundary, and their members, invites, axes, and menus',
   entity: 'Every entity kind: read, create, update, move, query, and relate',

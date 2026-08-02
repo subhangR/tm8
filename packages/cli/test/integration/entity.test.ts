@@ -785,6 +785,81 @@ describe('task transition wipes fields it has no flag for', () => {
   }, 180_000);
 });
 
+// ── linkCreatedInSession — the best-effort created_in claim ────────────────
+
+/**
+ * The journal analysis found `edges.create` 404ing 40 times with exit 0 and
+ * nothing on stderr — every one an integration suite whose `cli()` spreads
+ * `process.env`, leaking the parent agent's `TM8_SESSION_ID` into a server
+ * whose fresh database has never heard of that session. That swallow is
+ * DELIBERATE (entity.ts documents why), and these tests pin its exact shape so
+ * a future edit cannot widen it into swallowing real failures, or narrow it
+ * into failing clean creates.
+ *
+ * The POSITIVE path (session exists → edge written) is not testable here:
+ * `CreateEntityInputSchema` excludes `work_session`, so a session entity can
+ * only be born through `execution.spawn`. It is verified against real servers
+ * instead — `created_in` edges exist in production for every spawned session.
+ */
+describe('linkCreatedInSession — the best-effort created_in claim', () => {
+  /** A valid UUID this suite's fresh database cannot contain. */
+  const FOREIGN_SESSION = '019fbf00-dead-7000-8000-000000000001';
+
+  type WithConnections = { connections?: { outgoing?: { type: string }[] } };
+
+  const outgoingTypes = async (id: string): Promise<string[]> => {
+    // The in-process reader answers the detail bare; the child-process CLI
+    // wraps it as `{entity}`. Accept both rather than pinning the wrapper.
+    const got = await json<WithConnections & { entity?: WithConnections }>(['entity', 'get', id]);
+    expect(got.code, got.stderr).toBe(0);
+    const detail = got.data.entity ?? got.data;
+    return (detail.connections?.outgoing ?? []).map((g) => g.type);
+  };
+
+  const createdId = (stdout: string): string => {
+    const dto = JSON.parse(stdout) as { entity?: { id?: string } };
+    const id = dto.entity?.id ?? '';
+    expect(id).not.toBe('');
+    return id;
+  };
+
+  it('a leaked session id (valid UUID, unknown here) is swallowed: exit 0, EMPTY stderr, no edge', async () => {
+    const made = await cli(
+      ['entity', 'create', 'doc', 'silent link probe', '--space', spaceId, '--format', 'json'],
+      server,
+      { TM8_SESSION_ID: FOREIGN_SESSION },
+    );
+    expect(made.code, made.stderr).toBe(0);
+    // The load-bearing assertion: the benign cross-database answer is SILENT.
+    expect(made.stderr).toBe('');
+    expect(await outgoingTypes(createdId(made.stdout))).not.toContain('created_in');
+  }, 120_000);
+
+  it('a MALFORMED session id is a misconfiguration, not the benign case: exit 0 but WARNED', async () => {
+    // Without the client-side shape check the server answers 22P02 → the same
+    // not_found the benign case swallows, and the misconfiguration is invisible.
+    const made = await cli(
+      ['entity', 'create', 'doc', 'malformed link probe', '--space', spaceId, '--format', 'json'],
+      server,
+      { TM8_SESSION_ID: 'not-a-uuid' },
+    );
+    expect(made.code, made.stderr).toBe(0);
+    expect(made.stderr).toContain('not a UUID');
+    expect(await outgoingTypes(createdId(made.stdout))).not.toContain('created_in');
+  }, 120_000);
+
+  it('--no-session-link skips the claim: exit 0, empty stderr, no edge', async () => {
+    const made = await cli(
+      ['entity', 'create', 'doc', 'opt-out probe', '--space', spaceId, '--no-session-link', '--format', 'json'],
+      server,
+      { TM8_SESSION_ID: FOREIGN_SESSION },
+    );
+    expect(made.code, made.stderr).toBe(0);
+    expect(made.stderr).toBe('');
+    expect(await outgoingTypes(createdId(made.stdout))).not.toContain('created_in');
+  }, 120_000);
+});
+
 // ── bind coherence, LAST ───────────────────────────────────────────────────
 
 describe('bind coherence', () => {

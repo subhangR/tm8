@@ -3,7 +3,7 @@ import { CollabError } from '@tm8/contract';
 import type { OperationHandler } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
-import { identityGet } from '../identity.js';
+import { identityGet, identityProfileUpdate } from '../identity.js';
 import {
   spacesCounts,
   spacesCreate,
@@ -48,6 +48,7 @@ export function registerW2IdentitySpacesHandlers(
   const service = new W2IdentitySpacesService(deps);
   registry.registerAll({
     'identity.get': identityGet(deps),
+    'identity.profile.update': requireMutationId(identityProfileUpdate(deps)),
     'spaces.list': spacesList(deps),
     'spaces.create': requireMutationId(spacesCreate(deps)),
     'spaces.get': spacesGet(deps),

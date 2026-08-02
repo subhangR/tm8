@@ -57,6 +57,15 @@ type WorkdirMode = (typeof WORKDIRS)[number];
 const SESSION_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator'] as const;
 type SessionMode = (typeof SESSION_MODES)[number];
 
+/**
+ * The closed access-posture set, spelled exactly as `ExecutionSpawnInput`
+ * accepts it. Omitting the flag is NOT the same as sending a default: an absent
+ * `accessMode` is what lets the Server apply its precedence chain, of which
+ * "inherit the spawning session's posture" is one link.
+ */
+const ACCESS_MODES = ['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess'] as const;
+type AccessMode = (typeof ACCESS_MODES)[number];
+
 /** §4.13's closed attach-mode set. `view` observes; `drive` owns the terminal. */
 const ATTACH_MODES = ['view', 'drive'] as const;
 type AttachMode = (typeof ATTACH_MODES)[number];
@@ -203,6 +212,7 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
 
   const workdir = closed<WorkdirMode>('workdir', cmd.options.value('workdir'), WORKDIRS);
   const mode = closed<SessionMode>('mode', cmd.options.value('mode'), SESSION_MODES);
+  const accessMode = closed<AccessMode>('access-mode', cmd.options.value('access-mode'), ACCESS_MODES);
   const taskIds = cmd.options.values('task');
   const projectId = cmd.options.value('launch-project');
   const profileId = cmd.options.value('interaction-profile');
@@ -229,6 +239,11 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // through `--as` is refused there, not pre-judged here.
   if (profileId !== undefined) body.interactionProfileId = profileId;
   if (mode !== undefined) body.mode = mode;
+  // Sent ONLY when the caller named one. A spawned agent that omits this gets
+  // its parent session's posture rather than the persona default — see
+  // `resolveLaunchConfig`. Sending a value here is how a coordinator hands a
+  // child LESS than it holds, which is the only direction worth spelling out.
+  if (accessMode !== undefined) body.accessMode = accessMode;
   if (model !== undefined) body.model = model;
   if (agentTool !== undefined) body.agentTool = agentTool;
   if (title !== undefined) body.title = title;

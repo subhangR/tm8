@@ -80,7 +80,12 @@ function MessageRow({
   const isAgent = author.isAgent;
   return (
     <li className="pn-msg">
-      <Avatar provenance={isAgent ? 'agent' : 'human'} label={author.displayName} size={22} />
+      <Avatar
+        provenance={isAgent ? 'agent' : 'human'}
+        label={author.displayName}
+        size={22}
+        src={author.avatar ?? null}
+      />
       <div className="pn-msg__col">
         <div className="pn-msg__byline">
           <span className="pn-msg__name">{author.displayName}</span>
@@ -116,10 +121,52 @@ function ProvenanceChip({ value, hollowReason }: { value: string | null; hollowR
 // Connections
 // ---------------------------------------------------------------------------
 
+/** One peer entity and every edge type this entity shares with it. */
+interface PeerGroup {
+  peer: EdgeGroup['edges'][number]['source'];
+  /** Edge types, first-appearance order, deduped by direction+type. */
+  relations: { key: string; label: string; direction: 'outgoing' | 'incoming'; count: number; unresolvedHard: boolean }[];
+  /** Any unresolved HARD dependency anywhere in this peer's relations. */
+  unresolvedHard: boolean;
+}
+
+/**
+ * The seam returns edges grouped BY TYPE. The question a reader actually asks
+ * of this tab is "what is this connected to, and how?" — entity first, edge
+ * types second — so we invert that grouping here: one row per peer entity,
+ * carrying every relation it participates in. The inversion is stable
+ * (first-appearance order) so the list does not reshuffle between renders.
+ */
+function groupByPeer(groups: readonly EdgeGroup[], selfId: string): PeerGroup[] {
+  const byPeer = new Map<string, PeerGroup>();
+  for (const group of groups) {
+    for (const edge of group.edges) {
+      // The far end of the edge relative to THIS entity.
+      const peer = edge.source.id === selfId ? edge.target : edge.source;
+      let entry = byPeer.get(peer.id);
+      if (!entry) {
+        entry = { peer, relations: [], unresolvedHard: false };
+        byPeer.set(peer.id, entry);
+      }
+      const key = `${group.direction}:${group.type}`;
+      const hard = edge.hard === true && edge.resolved === false;
+      const existing = entry.relations.find((r) => r.key === key);
+      if (existing) {
+        existing.count += 1;
+        existing.unresolvedHard ||= hard;
+      } else {
+        entry.relations.push({ key, label: group.label, direction: group.direction, count: 1, unresolvedHard: hard });
+      }
+      entry.unresolvedHard ||= hard;
+    }
+  }
+  return [...byPeer.values()];
+}
+
 /**
  * "two axes: vertical = where it lives · horizontal = what it connects to."
- * Parent/children come from the hierarchy; LINKED groups come from the edge
- * groups the seam already returns pre-grouped, so nothing is regrouped here.
+ * Parent/children come from the hierarchy; LINKED rows are one per connected
+ * entity, each showing the edge types it holds with this one.
  */
 export function ConnectionsTab({
   detail,
@@ -134,9 +181,10 @@ export function ConnectionsTab({
     ...(connections?.outgoing ?? detail.connections.outgoing),
     ...(connections?.incoming ?? detail.connections.incoming),
   ];
+  const peers = groupByPeer(groups, detail.id);
   const parent = detail.hierarchy.parent;
   const children = detail.hierarchy.children.items;
-  const empty = !parent && children.length === 0 && groups.length === 0;
+  const empty = !parent && children.length === 0 && peers.length === 0;
 
   return (
     <div className="pn-body" id="tabpanel-connections" role="tabpanel" aria-labelledby="tab-connections">
@@ -159,29 +207,47 @@ export function ConnectionsTab({
         </section>
       ) : null}
 
-      {groups.map((group) => (
-        <section className="pn-section" key={`${group.direction}:${group.type}`}>
-          <Eyebrow faint>{`${group.label.toUpperCase()} · ${group.edges.length}`}</Eyebrow>
-          <div className="pn-chiprow">
-            {group.edges.map((edge) => {
-              // The far end of the edge relative to THIS entity.
-              const peer = edge.source.id === detail.id ? edge.target : edge.source;
-              return (
+      {peers.length > 0 ? (
+        <section className="pn-section">
+          <Eyebrow faint>{`LINKED · ${peers.length}`}</Eyebrow>
+          <ul className="pn-peers">
+            {peers.map((entry) => (
+              <li className="pn-peers__row" key={entry.peer.id}>
                 <Chip
-                  key={edge.id}
-                  glyph={getKind(peer.kind).chip.glyph}
-                  onClick={() => onOpenEntity?.(peer.id)}
+                  glyph={getKind(entry.peer.kind).chip.glyph}
+                  onClick={() => onOpenEntity?.(entry.peer.id)}
                   /* An unresolved HARD dependency is why something is blocked —
                      the chip says so rather than looking like any other link. */
-                  title={edge.hard && edge.resolved === false ? 'unresolved hard dependency' : peer.title}
+                  title={entry.unresolvedHard ? 'unresolved hard dependency' : entry.peer.title}
                 >
-                  {peer.title}
+                  {entry.peer.title}
                 </Chip>
-              );
-            })}
-          </div>
+                <div className="pn-peers__rels">
+                  {entry.relations.map((rel) => (
+                    <span
+                      className={
+                        rel.unresolvedHard ? 'pn-peers__rel pn-peers__rel--hard' : 'pn-peers__rel'
+                      }
+                      key={rel.key}
+                      title={
+                        rel.unresolvedHard
+                          ? 'unresolved hard dependency'
+                          : `${rel.direction} · ${rel.label}`
+                      }
+                    >
+                      {/* Direction is part of the relation's meaning: "blocks"
+                          and "blocked by" are the same edge type read two ways. */}
+                      <span aria-hidden="true">{rel.direction === 'outgoing' ? '→' : '←'}</span>
+                      {rel.label}
+                      {rel.count > 1 ? ` · ${rel.count}` : ''}
+                    </span>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
-      ))}
+      ) : null}
 
       {children.length > 0 ? (
         <section className="pn-section">

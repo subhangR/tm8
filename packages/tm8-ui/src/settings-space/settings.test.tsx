@@ -42,6 +42,7 @@ const IDENTITY: IdentityView = {
   displayName: 'Ada Osei',
   avatar: null,
   email: null,
+  globalId: null,
   isNodeAdmin: false,
   isOwner: true,
   status: 'active',
@@ -95,6 +96,14 @@ const LIVE_VERBS = [
   /^add to group$/,
   /^new group name$/,
   /^Your name$/,
+  // Your profile (067): the nav row plus the FOUR live controls — live
+  // because `identity.profile.update` is a real executor in seam.commands
+  // (Amendment 4), the first write this surface has ever been allowed.
+  /^Your profile$/,
+  /^Display name$/,
+  /^Avatar URL$/,
+  /^Global id$/,
+  /^Save profile$/,
 ];
 
 function sweepEnabledControls(root: HTMLElement) {
@@ -327,7 +336,10 @@ describe('T2-3 — the menu editor', () => {
     const before = preview();
     expect(before).toMatch(/Dashboard/);
 
-    const grip = screen.getByRole('button', { name: /reorder Dashboard/ });
+    // Projects, not Dashboard: revision 5 left Home with a SINGLE item, and
+    // moving the only row in a group is correctly a no-op — which would make
+    // this test assert that a reorder does nothing.
+    const grip = screen.getByRole('button', { name: /reorder Projects/ });
     fireEvent.keyDown(grip, { key: 'ArrowDown', altKey: true });
     expect(preview()).not.toBe(before);
     // The preview footer must now say the change is unsaved.
@@ -339,7 +351,7 @@ describe('T2-3 — the menu editor', () => {
     const discard = screen.getByRole('button', { name: 'discard' }) as HTMLButtonElement;
     expect(discard.disabled).toBe(true);
 
-    fireEvent.keyDown(screen.getByRole('button', { name: /reorder Dashboard/ }), {
+    fireEvent.keyDown(screen.getByRole('button', { name: /reorder Projects/ }), {
       key: 'ArrowDown',
       altKey: true,
     });
@@ -363,11 +375,22 @@ describe('T2-3 — the menu editor', () => {
     expect(screen.getByTestId('menu-issue').textContent).toMatch(/Settings row is gone/);
   });
 
-  it('“＋ view ref” is refused on the default menu because the set is exhausted', () => {
+  /**
+   * Was: "refused, because the set is exhausted". Menu revision 5 (user ruling
+   * 2026-08-01) took Feed, Inbox and Channels off the rail without taking any
+   * of them out of `MenuViewRef`, so the picker has refs to offer and the
+   * control is LIVE. That is the editor-side proof that those views were
+   * unrouted rather than deleted — a viewer who wants one back can put it back.
+   */
+  it('“＋ view ref” is LIVE, offering the refs revision 5 freed', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
     const add = screen.getByRole('button', { name: '＋ view ref' });
-    expect(add.getAttribute('aria-disabled')).toBe('true');
-    expect(document.body.textContent).toMatch(/every view the rail knows is already on this menu/);
+    expect(add.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(add);
+    const options = screen.getAllByRole('button').filter((b) => b.className === 'set-add');
+    const labels = options.map((b) => (b.textContent ?? '').trim());
+    expect(labels.some((l) => /Feed/i.test(l))).toBe(true);
+    expect(labels.some((l) => /Inbox/i.test(l))).toBe(true);
   });
 
   it('“＋ kind ref” is LIVE, and adding one lands in the preview', () => {

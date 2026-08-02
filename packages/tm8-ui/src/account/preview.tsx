@@ -31,6 +31,7 @@ const NICE: IdentityView = {
   displayName: 'ada',
   avatar: null,
   email: 'ada@loopback',
+  globalId: null,
   isNodeAdmin: true,
   isOwner: true,
   status: 'active',

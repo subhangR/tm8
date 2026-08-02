@@ -1,27 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   ChannelTab,
   CollectionResult,
-  Cursor,
   EntityDetail,
-  EntityFeedPage,
   EntityId,
   EntitySummary,
 } from '@tm8/contract';
 import { LazyChannelScreen } from '../channel-screen/LazyChannelScreen';
-import { createChatAttachmentUploadTask } from '../channel-screen/chat-attachments';
-import {
-  dispatchTaggedChannelMessage,
-  loadChannelAttachOptions,
-  loadChannelTagOptions,
-  type ComposerMentionOption,
-} from '../channel-screen/channel-tags';
-import type { ChannelPostInput, ChannelRefusal } from '../channel-screen/feed-model';
+import { useChannelFeed } from '../channel-screen/useChannelFeed';
+import { channelFeedPortFromGateData } from './channel-feed-port';
 import { getKind } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
 import './channel-view.css';
+import { debugSurfaceFor } from './debugSurface';
 
 const FEED_KEY = 'feed';
 
@@ -40,11 +33,12 @@ type DetailMode = 'aside' | 'full';
  */
 export function ChannelView({ data, channelId, serverBaseUrl, reasons }: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
-  const [page, setPage] = useState<EntityFeedPage>();
-  const [loading, setLoading] = useState(true);
-  const [loadingEarlier, setLoadingEarlier] = useState(false);
-  const [feedError, setFeedError] = useState<string | null>(null);
-  const [refusal, setRefusal] = useState<ChannelRefusal | null>(null);
+  /* ONE feed implementation, shared with the panel-hosted ChannelChatSurface
+     (channel-screen/useChannelFeed). This view used to own it inline; the
+     2026-08-01 ruling gave channels a second host, and two copies of the @tag
+     dispatch — which can SPAWN a teammate — is not a thing to keep. */
+  const feedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  const feed = useChannelFeed(feedPort, channelId);
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own
    * history, not one shared "channels" stack. Held outside the component
@@ -61,9 +55,6 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
     [channelId],
   );
   const [detailMode, setDetailMode] = useState<DetailMode>('aside');
-  const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[]>([]);
-  const [attachEntityOptions, setAttachEntityOptions] = useState<ComposerMentionOption[]>([]);
-  const mutationSequence = useRef(0);
 
   const detail = data.detailOf(channelId);
   const content = channelContent(detail);
@@ -71,173 +62,16 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
     () => content.autoTabs.filter((tab) => tab.key !== FEED_KEY),
     [content.autoTabs],
   );
-  const liveSessionKey = data.liveIds.join('\u0000');
-
-  /*
-   * The canonical upload seam, wired exactly as the session chat wires it:
-   * init grant → PUT bytes → complete into a file entity, with the task owning
-   * abort. The attached file is anchored on this channel, and its entity id
-   * rides the post as `attachmentIds` — there is no second upload path.
-   */
-  const startAttachmentUpload = useMemo(
-    () => data.seam.files
-      ? (file: File) => createChatAttachmentUploadTask({
-          files: data.seam.files,
-          file,
-          spaceId: data.spaceId,
-          anchorId: channelId,
-        })
-      : undefined,
-    [data.seam, data.spaceId, channelId],
-  );
-
-  const readMentionOptions = useCallback(
-    (liveSessionIds: readonly EntityId[]) => loadChannelTagOptions({
-      port: data.seam,
-      spaceId: data.spaceId,
-      liveSessionIds,
-    }),
-    [data.seam, data.spaceId],
-  );
-
-  useEffect(() => {
-    let current = true;
-    setMentionOptions([]);
-    setAttachEntityOptions([]);
-    void readMentionOptions(data.liveIds).then(
-      async (options) => {
-        if (current) setMentionOptions(options);
-        const attachable = await loadChannelAttachOptions({
-          port: data.seam,
-          spaceId: data.spaceId,
-          mentionOptions: options,
-        });
-        if (current) setAttachEntityOptions(attachable);
-      },
-      () => {
-        // [] is an honest measured absence and keeps the @ control available
-        // so the picker can say there are no options instead of disappearing.
-        if (current) setMentionOptions([]);
-      },
-    ).catch(() => {
-      // The tasks/docs read failed — the picker stays with a measured zero.
-      if (current) setAttachEntityOptions([]);
-    });
-    return () => {
-      current = false;
-    };
-  }, [channelId, data.liveIds, data.seam, data.spaceId, liveSessionKey, readMentionOptions]);
-
-  const loadNewest = useCallback(async () => {
-    setLoading(true);
-    setFeedError(null);
-    setRefusal(null);
-    try {
-      const next = await data.seam.feed(channelId, { scope: 'direct_v1' });
-      // The server pages newest-first; a chat reads oldest-to-newest with the
-      // latest at the bottom, so the page is re-sorted before it ever paints.
-      setPage({ ...next, items: chronological(next.items) });
-    } catch (error: unknown) {
-      const code = errorCode(error);
-      if (code === 'forbidden' || code === 'not_found') {
-        setRefusal({
-          kind: code,
-          message: errorMessage(error, code === 'forbidden'
-            ? 'You no longer have access to this channel’s Chat.'
-            : 'This channel no longer exists.'),
-        });
-      } else {
-        setFeedError(errorMessage(error, 'The channel feed could not be read.'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [channelId, data.seam]);
 
   useEffect(() => {
     setActiveTab(FEED_KEY);
-    setPage(undefined);
     /* NOT `setSelectedId(null)`: the stack is keyed per channel, so entering a
        channel must RESTORE its selection rather than wipe it. Clearing here
        would empty the very stack this effect's channel just brought back. */
     setDetailMode('aside');
     data.pull?.(channelId);
-    void loadNewest();
-  }, [channelId, loadNewest]);
-
-  // Keep an open channel current when another client posts into it.
-  useEffect(
-    () => data.seam.onEvent((event) => {
-      if ('anchorId' in event && event.anchorId === channelId) void loadNewest();
-    }),
-    [channelId, data.seam, loadNewest],
-  );
-
-  const loadEarlier = useCallback(async (cursor: Cursor) => {
-    setLoadingEarlier(true);
-    try {
-      const older = await data.seam.feed(channelId, { cursor, scope: 'direct_v1' });
-      setPage((current) => current
-        ? {
-            ...current,
-            items: mergeFeedItems(older.items, current.items),
-            nextCursor: older.nextCursor,
-          }
-        : { ...older, items: chronological(older.items) });
-    } finally {
-      setLoadingEarlier(false);
-    }
-  }, [channelId, data.seam]);
-
-  const post = useCallback(async (input: ChannelPostInput) => {
-    mutationSequence.current += 1;
-    const mutationId = `channel-post:${channelId}:${Date.now()}:${mutationSequence.current}`;
-    if (input.tagTargetIds?.length) {
-      const liveness = await data.seam.liveness.refresh(data.spaceId);
-      const freshOptions = await readMentionOptions(liveness.liveEntityIds);
-      await dispatchTaggedChannelMessage({
-        channelId,
-        body: input.body,
-        parentMessageId: input.parentMessageId,
-        selectedTagIds: input.tagTargetIds,
-        candidates: freshOptions,
-        mentionIds: input.mentionIds,
-        attachmentIds: input.attachmentIds,
-        extraAnchorIds: input.anchorIds.filter((id) => id !== channelId),
-        spawnTeamMember: async (teamMemberId) => {
-          const project = data.launch.projects.find((candidate) =>
-            candidate.trusted && candidate.selectedByDefault && !candidate.scratch)
-            ?? data.launch.projects.find((candidate) => candidate.trusted && !candidate.scratch);
-          if (!project) {
-            throw new Error('A trusted linked project is required before @Tag can start a teammate session');
-          }
-          return data.spawn({
-            clientMutationId: `${mutationId}:spawn:${teamMemberId}`,
-            spaceId: data.spaceId,
-            teamMemberId,
-            taskIds: [],
-            projectId: project.id,
-            workdir: { mode: 'project' },
-            mode: 'worker',
-          });
-        },
-        post: (resolved) => data.postMessage({
-          clientMutationId: mutationId,
-          ...resolved,
-        }),
-      });
-    } else {
-      await data.postMessage({
-        clientMutationId: mutationId,
-        anchorIds: input.anchorIds,
-        body: input.body,
-        parentMessageId: input.parentMessageId,
-        mentionIds: input.mentionIds,
-        attachmentIds: input.attachmentIds,
-      });
-    }
-    await loadNewest();
-  }, [channelId, data, loadNewest, readMentionOptions]);
+    // The feed itself reloads inside useChannelFeed, keyed on channelId.
+  }, [channelId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -273,6 +107,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
+      debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       livenessOf={data.livenessOf}
       messages={selectedMessages}
       onPostMessage={(body) => data.postMessage({
@@ -354,26 +189,26 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
 
           <div className="chv-pane">
             {activeTab === FEED_KEY ? (
-              feedError ? (
+              feed.error ? (
                 <div className="chv-error" role="alert">
                   <strong>The channel feed could not be read.</strong>
-                  <span>{feedError}</span>
-                  <button type="button" onClick={() => void loadNewest()}>Retry feed</button>
+                  <span>{feed.error}</span>
+                  <button type="button" onClick={() => void feed.reload()}>Retry feed</button>
                 </div>
               ) : (
           <LazyChannelScreen
                   anchorId={channelId}
                   anchorNoun="this channel"
-                  page={page}
-                  loading={loading}
-                  loadingEarlier={loadingEarlier}
-                  refusal={refusal}
+                  page={feed.page}
+                  loading={feed.loading}
+                  loadingEarlier={feed.loadingEarlier}
+                  refusal={feed.refusal}
                   connection={data.connection}
-                  onPost={post}
-                  mentionOptions={mentionOptions}
-                  attachEntityOptions={attachEntityOptions}
-                  onStartAttachmentUpload={startAttachmentUpload}
-                  onLoadEarlier={loadEarlier}
+                  onPost={feed.post}
+                  mentionOptions={feed.mentionOptions}
+                  attachEntityOptions={feed.attachEntityOptions}
+                  onStartAttachmentUpload={feed.startAttachmentUpload}
+                  onLoadEarlier={feed.loadEarlier}
                   onOpenEntity={(id) => setSelectedId(id)}
                 />
               )
@@ -472,29 +307,6 @@ function channelContent(detail?: EntityDetail): {
     pinned: Array.isArray(content.pinned) ? content.pinned as EntitySummary[] : [],
     autoTabs: Array.isArray(content.autoTabs) ? content.autoTabs as ChannelTab[] : [],
   };
-}
-
-function mergeFeedItems(
-  older: EntityFeedPage['items'],
-  current: EntityFeedPage['items'],
-): EntityFeedPage['items'] {
-  const seen = new Set<string>();
-  return chronological([...older, ...current].filter((item) => {
-    if (seen.has(item.itemId)) return false;
-    seen.add(item.itemId);
-    return true;
-  }));
-}
-
-function chronological(items: EntityFeedPage['items']): EntityFeedPage['items'] {
-  return [...items].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt) || a.itemId.localeCompare(b.itemId));
-}
-
-function errorCode(error: unknown): string | null {
-  return typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string'
-    ? (error as { code: string }).code
-    : null;
 }
 
 function errorMessage(error: unknown, fallback: string): string {

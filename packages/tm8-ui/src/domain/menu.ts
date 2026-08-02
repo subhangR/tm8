@@ -27,19 +27,31 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 4;
+export const SHIPPED_DEFAULT_MENU_REVISION = 5;
 
 /**
  * WLT §2, encoded literally:
  *
- *   Home        → Dashboard · Feed · Inbox
+ *   Home        → Dashboard
  *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
  *                 Tasks · Sessions · Docs · Teammates · Memories · Artifacts
  *   Tracking    → Projects · Pull requests · Worktrees
  *   Collab      → Members
- *   Channels    → live per-space channel rows injected beneath this label
  *   Voice       → live per-space voice_channel rows injected beneath this label
  *   Settings    → Space settings
+ *
+ * Revision 5 (2026-08-01, user ruling): CHANNELS LEFT THE RAIL ENTIRELY. They
+ * are entities, so they belong in the Entity List Panel with every other
+ * collection — `channel` became `strategy: 'collection'` in the registry and
+ * the panel's kind switcher now offers it. A rail section AND a collection
+ * list would be two divergent homes for one kind, which is what the voice
+ * row's docblock warned about; this resolves it by keeping the collection.
+ * Feed and Inbox left the rail in the same ruling, so Home is Dashboard alone.
+ *
+ * NOTHING here was deleted from the app: `feed`, `inbox` and `channels` all
+ * keep their routes, their `MenuViewRef` membership and their chords, and the
+ * menu editor can put any of the three back — they are now the three FREE view
+ * refs. This is a rail edit, not a feature removal.
  *
  * Workspace is the one caret VIEW item (RULING E) — it is a `type:'view'`
  * MenuItem carrying `children`, visually distinct from a group header, which
@@ -52,11 +64,7 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     {
       id: 'home',
       label: 'Home',
-      items: [
-        { type: 'view', ref: 'dashboard' },
-        { type: 'view', ref: 'feed' },
-        { type: 'view', ref: 'inbox' },
-      ],
+      items: [{ type: 'view', ref: 'dashboard' }],
     },
     {
       id: 'workspace',
@@ -95,11 +103,8 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       ],
     },
     { id: 'collab', label: 'Collab', items: [{ type: 'kind', ref: 'member' }] },
-    // The config keeps the closed-union route ref for menu editing/deep links.
-    // GateApp replaces this authored item with the active space's live channel
-    // entities, so viewers see the Collab v2 grammar: a plain Channels label
-    // followed by #channel rows.
-    { id: 'channels', label: 'Channels', items: [{ type: 'view', ref: 'channels' }] },
+    // Revision 5 (2026-08-01): the Channels GROUP is gone — its route ref and
+    // its live rows both moved into Home. See the docblock.
     // Revision 3 (2026-07-31): the Voice group. Deliberately items-EMPTY —
     // there is no `voice` member of the closed `MenuViewRef` union to author,
     // and `voice_channel` is `strategy: 'special'` so it is not a menu-eligible

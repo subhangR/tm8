@@ -338,7 +338,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['sessionStatus', 'agentTool', 'model', 'activityAt'] },
     list: baseList({
       lifecycle: SESSION_TIERS,
-      tree: { by: 'hierarchy', guideLines: true },
+      tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
         anatomy: 'session-tree',
         badges: [
@@ -403,14 +403,30 @@ const ROWS: readonly KindConfig[] = [
     palette: { createLabel: 'New doc' },
   },
 
-  // -- channel (special strategy — reserved word, no k/ route) --------------
+  // -- channel (COLLECTION as of 2026-08-01 — user ruling) ------------------
+  //
+  // Was `special` + `slug: null` for as long as channels lived in the rail as
+  // their own section. The user ruling moved them into the Entity List Panel:
+  // a channel is an entity, it is listed and opened exactly like a task or a
+  // doc, so it is a collection kind and the panel's kind switcher (which reads
+  // `collectionKinds()`) offers it without any per-kind wiring.
+  //
+  // THE SLUG IS PLURAL BY NECESSITY, not by style: `channel` is a WLT §2.1
+  // RESERVED word (it is the `#/s/{space}/channel/{id}` route segment), so it
+  // can never be a kind slug. `channels` is not reserved and the collection
+  // route it produces — `#/s/{space}/k/channels` — is a different path from
+  // the `#/s/{space}/channels` view ref, which keeps working.
+  //
+  // `routeBuilder` deliberately KEEPS the singular channel route: that is
+  // where a single channel is addressed, and it did not change just because
+  // the collection got a home.
   {
     kind: 'channel',
     label: 'Channel',
     labelPlural: 'Channels',
     icon: '#',
-    slug: null,
-    strategy: 'special',
+    slug: 'channels',
+    strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
     defaultMode: 'list',
     hiddenModes: ['board', 'gallery'],

@@ -26,6 +26,7 @@ const SPECIMEN_IDENTITY: IdentityView = {
   displayName: 'Ada Osei',
   avatar: null,
   email: null,
+  globalId: null,
   isNodeAdmin: false,
   isOwner: true,
   status: 'active',

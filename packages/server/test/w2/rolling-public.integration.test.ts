@@ -220,10 +220,25 @@ const CONSOLIDATION_NET_NEW_OPERATIONS = [
   'spaces.counts',
 ] as const;
 
+/**
+ * Identity v2 Stage 0 (2026-08-01): the display-profile writer joined the
+ * G01 identity/spaces seam. Net-new — no replacements.
+ */
+const IDENTITY_V2_NET_NEW_OPERATIONS = [
+  'identity.profile.update',
+  // Stage 1 (2026-08-02): local accounts — the four auth.* operations joined
+  // as their own seam (handlers/w2/auth.ts). Net-new — no replacements.
+  'auth.signup',
+  'auth.login',
+  'auth.logout',
+  'auth.session.get',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
   ...CONSOLIDATION_NET_NEW_OPERATIONS,
+  ...IDENTITY_V2_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -343,12 +358,15 @@ describe('W2.I02 tranche-v2 public composition', () => {
     expect(registry.implemented()).toEqual(EXPECTED_TRANCHE_V3_FACADE_OPERATIONS);
     expect(new Set(registry.implemented()).size).toBe(registry.size);
     // 107 -> 108 on 2026-08-01: `spaces.counts` joined the facade tranche.
-    expect(registry.size).toBe(108);
+    // 108 -> 109: `identity.profile.update` (Identity v2 Stage 0).
+    // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
+    expect(registry.size).toBe(113);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
         + TRANCHE_V3_NET_NEW_OPERATIONS.length
-        + CONSOLIDATION_NET_NEW_OPERATIONS.length,
+        + CONSOLIDATION_NET_NEW_OPERATIONS.length
+        + IDENTITY_V2_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -491,7 +509,10 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 59 -> 64 on 2026-07-31: the consolidation wave bound serverConnections,
     // artifacts and voice command DTOs as it landed them.
     // 64 -> 65 on 2026-08-01: execution.resume, which had shipped UNBOUND.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(65);
+    // 65 -> 66: identity.profile.update (Identity v2 Stage 0).
+    // 66 -> 69 (2026-08-02): auth.signup/login/logout (Identity v2 Stage 1);
+    // auth.session.get is a GET and binds nothing.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(69);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -626,8 +647,12 @@ describe.sequential('W2.I02 real production public surface', () => {
     // already RED on the tree before either was reconciled — a count pin only
     // fails after the fact, which is why the residual check below derives from
     // the live catalog instead.
-    expect(health).toMatchObject({ ok: true, operations: 118, implemented: 116 });
-    expect(harness.production.server.registry.size).toBe(116);
+    // -> 120/118 later the same day: `execution.journal` (which also landed on
+    // a red pin) and `identity.profile.update` (which reconciled it).
+    // 120/118 -> 124/122 (2026-08-02): the four auth.* rows, all implemented.
+    expect(health).toMatchObject({ ok: true, operations: 124, implemented: 122 });
+    // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
+    expect(harness.production.server.registry.size).toBe(122);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -640,7 +665,8 @@ describe.sequential('W2.I02 real production public surface', () => {
       .map((op) => op.name);
     expect(residual).toEqual([]);
     // 114 -> 116: `execution.resume` + `spaces.counts`.
-    expect(registered.size + residual.length).toBe(116);
+    // 116 -> 118: `execution.journal` + `identity.profile.update`.
+    expect(registered.size + residual.length).toBe(122);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

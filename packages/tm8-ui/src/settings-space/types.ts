@@ -16,6 +16,7 @@ import type { SettingsPort } from './port';
  */
 export type SettingsSectionId =
   | 'profile'
+  | 'account'
   | 'members'
   | 'invites'
   | 'axes'
@@ -36,9 +37,16 @@ export interface SettingsSectionDef {
   externallyOwned?: boolean;
 }
 
-/** Oracle L33–L43, verbatim labels, verbatim order. */
+/**
+ * Oracle L33–L43, verbatim labels, verbatim order — PLUS `account`, which the
+ * oracle predates: `identity.profile.update` (067 / Identity v2) landed after
+ * that canvas was drawn, and the viewer's own display identity needs a home.
+ * It sits directly under the space Profile so "about the space" and "about
+ * you" read as neighbours, not as one thing.
+ */
 export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
   { id: 'profile', label: 'Profile', heading: 'Profile' },
+  { id: 'account', label: 'Your profile', heading: 'Your profile' },
   { id: 'members', label: 'Members & roles', heading: 'Members & roles' },
   { id: 'invites', label: 'Invites', heading: 'Invites' },
   { id: 'axes', label: 'Task axes', heading: 'Task axes' },

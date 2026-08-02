@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ab251303b3772e70dbc2a85d9169cfdf2ae8b5cc8268feefd097837379cfed20",
+  "catalogDigest": "sha256:ca0d14bbcbde8eb07440edd8e6dc9e8274482d90eb876733cc89fead91d08285",
   "catalog": {
-    "total": 120,
-    "v1": 118,
+    "total": 125,
+    "v1": 123,
     "reserved": 2,
-    "http": 119,
+    "http": 124,
     "ws": 1,
-    "registerableV1Http": 117,
+    "registerableV1Http": 122,
     "methods": {
-      "GET": 44,
-      "POST": 50,
+      "GET": 45,
+      "POST": 54,
       "PATCH": 10,
       "DELETE": 8,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 47,
-      "command": 72,
+      "read": 48,
+      "command": 76,
       "stream": 1
     },
-    "uniqueNames": 120,
-    "uniqueBindings": 120
+    "uniqueNames": 125,
+    "uniqueBindings": 125
   },
   "reservedOperations": [
     "search.query",
@@ -1032,6 +1032,41 @@
         "path": "/v2/artifacts/:artifactId/commands/restore-revision",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "identity.profile.update",
+        "method": "POST",
+        "path": "/v2/identity/profile",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.signup",
+        "method": "POST",
+        "path": "/v2/auth/signup",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.login",
+        "method": "POST",
+        "path": "/v2/auth/login",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.logout",
+        "method": "POST",
+        "path": "/v2/auth/logout",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "auth.session.get",
+        "method": "GET",
+        "path": "/v2/auth/session",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1244,7 +1279,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 89
+    "unimplementedV1Http": 94
   },
   "schemas": {
     "additive": {
@@ -3392,6 +3427,88 @@
         "intentTags": [
           "artifacts",
           "restore"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "identity.profile.update",
+        "noun": "identity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/identity.profile.update",
+        "intentTags": [
+          "identity",
+          "profile",
+          "update"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.signup",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.signup",
+        "intentTags": [
+          "auth",
+          "signup"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.login",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.login",
+        "intentTags": [
+          "auth",
+          "login"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.logout",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.logout",
+        "intentTags": [
+          "auth",
+          "logout"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "auth.session.get",
+        "noun": "auth",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/auth.session.get",
+        "intentTags": [
+          "auth",
+          "session",
+          "get"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

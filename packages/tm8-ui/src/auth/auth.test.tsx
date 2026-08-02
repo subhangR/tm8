@@ -59,6 +59,7 @@ const IDENTITY: IdentityView = {
   displayName: 'Amber',
   avatar: null,
   email: null,
+  globalId: null,
   isNodeAdmin: true,
   isOwner: true,
   status: 'active',

@@ -49,6 +49,7 @@ import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
+import { useMessagePulses, type MessagePulse } from '../panels/list/useMessagePulses';
 import {
   CORE_CHAT_LAUNCH_PRESENTATION,
   type LaunchCapacity,
@@ -68,6 +69,92 @@ const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
  * settled by the time they look back at the rail.
  */
 const COUNTS_DEBOUNCE_MS = 400;
+
+/**
+ * How many times one entity's detail or thread may be re-read after a FAILED
+ * read. Eight attempts, spaced by `readRetryDelayMs`, spans several minutes —
+ * deliberately longer than the 503 storm that produced this defect, because a
+ * budget that expires DURING the storm strands the panel exactly as the old
+ * never-retry rule did, just more slowly.
+ *
+ * The delay is consulted from RENDER, not from a timer: `renderPanel` calls
+ * `pull` whenever the detail is missing, so the next render at or after
+ * `nextAt` IS the retry. Nothing here schedules work of its own.
+ */
+const READ_MAX_ATTEMPTS = 8;
+
+/**
+ * Did the node give a FINAL answer about this entity? A 404/403/400 is not a
+ * transient condition — the node looked and told us. Re-asking cannot change
+ * it, and re-asking from a render-time caller is the unbounded loop wearing a
+ * different hat. Anything else (a served 503, a proxy 502/504, an unreachable
+ * node, the http client's own timeout abort) is worth another look.
+ */
+function isTerminalReadError(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null | undefined)?.code;
+  return code === 'not_found' || code === 'forbidden' || code === 'invalid_input';
+}
+
+/**
+ * Backoff for a failed detail/thread read, on the same principle as
+ * `bootRetryDelayMs`: an OVERLOADED node must be probed slowly, because the
+ * retry is itself the load that is keeping it down. An unreachable node or a
+ * timeout costs it nothing, so that ladder starts fast and stays tighter.
+ */
+function readRetryDelayMs(attempt: number, error: unknown): number {
+  return isOverloadResponse(error)
+    ? Math.min(3_000 * 2 ** (attempt - 1), 60_000)
+    : Math.min(700 * 2 ** (attempt - 1), 15_000);
+}
+
+/**
+ * One failed read's budget. `terminal` records that the node gave a FINAL
+ * answer, which is what keeps a 404 from being forgiven by an unrelated
+ * success later.
+ */
+interface ReadFailure {
+  attempts: number;
+  nextAt: number;
+  terminal: boolean;
+}
+
+/** Detail and thread budgets are separate records under one map. */
+function readKey(half: 'd' | 'm', id: string): string {
+  return `${half}:${id}`;
+}
+
+function readBlocked(failures: Map<string, ReadFailure>, key: string): boolean {
+  const failure = failures.get(key);
+  if (failure === undefined) return false;
+  return failure.attempts >= READ_MAX_ATTEMPTS || Date.now() < failure.nextAt;
+}
+
+function recordReadFailure(
+  failures: Map<string, ReadFailure>,
+  key: string,
+  error: unknown,
+): void {
+  // A terminal answer spends the whole budget at once: the node told us what it
+  // knows and asking again cannot change it. Retrying a 404 from a render-time
+  // caller is the unbounded loop with extra steps.
+  const terminal = isTerminalReadError(error);
+  const attempts = terminal ? READ_MAX_ATTEMPTS : (failures.get(key)?.attempts ?? 0) + 1;
+  failures.set(key, { attempts, terminal, nextAt: Date.now() + readRetryDelayMs(attempts, error) });
+}
+
+/**
+ * A read just succeeded, so the node serves reads again. Budgets spent against
+ * a node that was failing are evidence from a world that no longer exists —
+ * drop them so those panels get another chance. This, rather than a socket
+ * reconnect, is the signal that matches the failure this exists for: the WS
+ * heartbeat never touches the DB pool, so the socket typically SURVIVES the
+ * 503 storm that spends these budgets.
+ */
+function forgiveExhaustedReads(failures: Map<string, ReadFailure>): void {
+  for (const [key, failure] of failures) {
+    if (!failure.terminal && failure.attempts >= READ_MAX_ATTEMPTS) failures.delete(key);
+  }
+}
 
 export interface GateGraphData {
   nodes: readonly EntitySummary[];
@@ -180,6 +267,13 @@ export interface GateData {
   detailOf: (id: string) => EntityDetail | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
+  /**
+   * Messages that JUST arrived, sender included, for the session tree's wire
+   * pulse. Transient by construction: entries expire on their own, and this is
+   * empty in the steady state. Not liveness, and not a substitute for the
+   * thread — the durable message is in `messagesByAnchor` either way.
+   */
+  messagePulses: readonly MessagePulse[];
   /** Server-hydrated graph lens, projected live through entity/edge events. */
   graph: GateGraphData;
   /** Launch resources from the active seam; never presentation fixtures. */
@@ -314,6 +408,7 @@ export function useGateData(options: GateOptions): GateData {
    */
   const [rows, setRows] = useState<Record<string, readonly EntityId[]>>({});
   const activity = useTerminalActivityMap(terminalActivitySource);
+  const messagePulses = useMessagePulses(seam);
 
   /**
    * The event stream's own projection, subscribed. `useSyncExternalStore` and
@@ -653,6 +748,11 @@ export function useGateData(options: GateOptions): GateData {
         // a detail read fail.
         pulledDetails.current.clear();
         pulledMessages.current.clear();
+        // The retry budget is part of "re-run the reads": an entity whose
+        // attempts were spent against a node that was failing must get a fresh
+        // budget once catch-up integrity is re-established, or the resync would
+        // re-arm a read the backoff then refuses.
+        readFailures.current.clear();
         void hydrate(space);
       }),
     [seam, spaceId, hydrate],
@@ -699,6 +799,23 @@ export function useGateData(options: GateOptions): GateData {
       observed count permits one new read when the server counter advances,
       without turning a failed read into a render-time request loop. */
   const pulledMessages = useRef(new Map<string, number>());
+  /**
+   * Failed reads, per id, so a read that FAILED can be retried without becoming
+   * a request loop. Both halves of that sentence are load-bearing:
+   *
+   * - Never retrying strands the panel. A claim is taken BEFORE the await, so a
+   *   read that rejects leaves the id claimed with nothing cached, `needsDetail`
+   *   permanently false, and `loading={!detail}` permanently true. The owner's
+   *   session recorded 13 x 503 and 23 x 499 against 452 x 200: the node was
+   *   healthy for almost every read, and one failure per entity was enough.
+   * - Retrying without a bound is the loop the guard was written to prevent —
+   *   `renderPanel` calls `pull` FROM RENDER whenever the detail is missing, so
+   *   an entity that can never be read would be re-requested every render.
+   *
+   * So a failure is remembered with an attempt count and an earliest-next-try
+   * stamp. Bounded attempts, spaced by backoff, then it stops for good.
+   */
+  const readFailures = useRef(new Map<string, ReadFailure>());
   /**
    * The latest `rows`, for callbacks that only GUARD on it. `ensureKind`
    * used to take `rows` as a dependency — but calling it WRITES `rows` (via
@@ -954,16 +1071,56 @@ export function useGateData(options: GateOptions): GateData {
       const messagesStale = cachedMessages === undefined || cachedMessages.length < messageCount;
       const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
       if (!needsDetail && !needsMessages) return;
-      if (needsDetail) pulledDetails.current.add(id);
-      if (needsMessages) pulledMessages.current.set(id, messageCount);
+      // Each half carries its OWN budget. Detail and thread already hydrate
+      // independently, and a 404 on the detail must not also silence this
+      // anchor's thread for the rest of the page — they are different reads
+      // about different things and they fail for different reasons.
+      const readDetail = needsDetail && !readBlocked(readFailures.current, readKey('d', id));
+      const readMessages = needsMessages && !readBlocked(readFailures.current, readKey('m', id));
+      if (!readDetail && !readMessages) return;
+      if (readDetail) pulledDetails.current.add(id);
+      if (readMessages) pulledMessages.current.set(id, messageCount);
+      // Each rejection is CAPTURED next to the read that produced it, not
+      // merged: "the node is drowning" and "there is no such entity" are both
+      // failures, they must not be retried the same way, and one half's answer
+      // must not be attributed to the other. Downstream still reads `undefined`.
+      let detailError: unknown;
+      let threadError: unknown;
       const [detail, thread] = await Promise.all([
-        needsDetail ? seam.entity(id as never).catch(() => undefined) : Promise.resolve(undefined),
+        readDetail
+          ? seam.entity(id as never).catch((error: unknown) => { detailError = error; return undefined; })
+          : Promise.resolve(undefined),
         // The thread rides the same pull: a composer that posts into a tab
         // that never READS is only half a fix (Surface Audit). A read error
         // leaves the id absent — the tab renders its designed empty state
         // rather than a fabricated zero.
-        needsMessages ? seam.messages(id as never).catch(() => undefined) : Promise.resolve(undefined),
+        readMessages
+          ? seam.messages(id as never).catch((error: unknown) => { threadError = error; return undefined; })
+          : Promise.resolve(undefined),
       ]);
+      /* WHAT FAILED, AND WHETHER IT MAY BE ASKED AGAIN.
+         A claim is taken before the await so concurrent renders issue ONE
+         request. If the read then rejects, the claim is RELEASED — otherwise
+         the id is remembered as read while nothing was cached, which is
+         precisely what left the panel spinning — and the failure is recorded so
+         the release is bounded by attempts and spaced by backoff. */
+      const detailFailed = readDetail && detail === undefined;
+      const threadFailed = readMessages && thread === undefined;
+      if (detailFailed) recordReadFailure(readFailures.current, readKey('d', id), detailError);
+      if (threadFailed) recordReadFailure(readFailures.current, readKey('m', id), threadError);
+      if (detailFailed) pulledDetails.current.delete(id);
+      if (threadFailed) pulledMessages.current.delete(id);
+      // A half that ANSWERED clears its own record — a failure an hour from now
+      // gets a full budget rather than inheriting a spent one — and is also
+      // evidence about the NODE, not just this id: it just served a read, so
+      // every id whose budget was spent against a node that was failing is
+      // given another chance. Terminal records are left alone; a 404 does not
+      // become readable because some other entity did.
+      if (readDetail && !detailFailed) readFailures.current.delete(readKey('d', id));
+      if (readMessages && !threadFailed) readFailures.current.delete(readKey('m', id));
+      if ((readDetail && !detailFailed) || (readMessages && !threadFailed)) {
+        forgiveExhaustedReads(readFailures.current);
+      }
       /* THE DETAIL GOES INTO THE STORE, not beside it. `entity.upsert` then
          overlays the fresher envelope onto it (reducers.mergeSummary keeps the
          heavy sections), so an open panel shows a title someone else changed
@@ -971,15 +1128,16 @@ export function useGateData(options: GateOptions): GateData {
          The re-entrancy guard moved to a ref because the store's `details` is
          no longer this hook's state: guarding on it would re-arm the read
          every time an event touched the entity. */
-      /* A FAILED READ IS NOT RE-ARMED HERE, and that is deliberate now that
-         the default seam is a real node. `renderPanel` calls `pull` FROM
-         RENDER whenever the detail is missing, so clearing the guard on
-         failure turns one unreadable entity into an unbounded request loop
-         against the node — the fixture seam could never fail, so the shape was
-         invisible before the default flipped. Each read stays claimed
-         independently; `onResync` clears both sets, which is the same
-         "catch-up integrity was lost, re-run the reads" rule the rest of this
-         hook obeys. */
+      /* A FAILED READ IS RE-ARMED, BUT ONLY A BOUNDED NUMBER OF TIMES (see
+         `readFailures`). The older rule here — never re-arm — was written
+         against the right hazard and picked the wrong side of it: `renderPanel`
+         calls `pull` FROM RENDER whenever the detail is missing, so clearing
+         the guard unconditionally on failure IS an unbounded request loop. But
+         never clearing it means one 503 strands that entity's panel for the
+         life of the page, which is the defect this replaced. The bound is what
+         lets both be false at once. `onResync` still clears the claims, the
+         same "catch-up integrity was lost, re-run the reads" rule the rest of
+         this hook obeys. */
       if (detail) domain.store.getState().ingestDetail(detail);
       if (thread) domain.store.getState().ingestMessages(id as EntityId, [...thread.items]);
     },
@@ -1057,6 +1215,7 @@ export function useGateData(options: GateOptions): GateData {
       refreshCounts,
       detailOf,
       activity,
+      messagePulses,
       graph,
       launch,
       ensureKind,
@@ -1069,7 +1228,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

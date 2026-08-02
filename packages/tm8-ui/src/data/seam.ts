@@ -29,6 +29,15 @@
  * through a DTO. Additive, zero caller churn; it closes the SEAM GAP recorded
  * at `files/reasons.ts:DOWNLOAD_UNAVAILABLE`.
  *
+ * Amendment 4 (2026-08-01, identity display): `IdentityView` gains `globalId`
+ * — migration 067 landed the column and `identity.get` returns it — and
+ * `commands` gains `updateProfile`, the contract's `identity.profile.update`
+ * (`POST /v2/identity/profile`, catalog v1). Both contract-shaped and
+ * additive, zero caller churn. `globalId` is DISPLAY ONLY (Identity v2
+ * invariant I6): it is a claim the hosting server makes, never an
+ * authorization input — nothing in the UI may gate on it. Filed by the
+ * identity-display lane for dual re-consensus recording.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -76,6 +85,8 @@ import type {
   GraphQuery,
   GraphResult,
   HandoffView,
+  IdentityProfileUpdateInput,
+  IdentityProfileView,
   MenuConfig,
   MessageBatchResult,
   MessageDeliveryView,
@@ -146,6 +157,13 @@ export interface IdentityView {
   displayName: string | null;
   avatar: string | null;
   email: string | null;
+  /**
+   * Cross-server display binding, `issuer:subject` (e.g. `google:12345`) —
+   * migration 067. NULL on every row until the viewer sets it. Display only
+   * (Identity v2 I6): a claim by the hosting server, never an authorization
+   * input — no route, permission, or feature may gate on it.
+   */
+  globalId: string | null;
   isNodeAdmin: boolean;
   isOwner: boolean;
   status: string;
@@ -310,6 +328,14 @@ export interface Seam {
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;
     resolveAttention(id: EntityId, input: ResolveEntityAttentionInput): Promise<AttentionRequestMutationResult>;
+    /**
+     * Amendment 4: write the VIEWER'S OWN profile row — the DTO names no
+     * subject by design (`identity.profile.update`, contract.ts). All fields
+     * optional; only provided fields are written. The server enforces the
+     * `issuer:subject` shape on `globalId` with a check constraint; callers
+     * should validate first so users see a message, not a constraint error.
+     */
+    updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView>;
     markRead(notificationId: string): Promise<void>;
     upsertReadMark(anchorId: EntityId, lastReadAt: string): Promise<void>;
     /**

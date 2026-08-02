@@ -257,7 +257,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // restoreEntity ('rest' < 'resu'), which is not where it reads like it
       // belongs. Locked here the same way, so the seam cannot gain a command
       // without this list saying so.
-      'restoreEntity', 'resume', 'spawn', 'terminate', 'upsertReadMark', 'work',
+      'restoreEntity', 'resume', 'spawn', 'terminate',
+      // Amendment 4 (2026-08-01): updateProfile — identity display (067).
+      // The viewer's OWN profile row; the op names no subject by design.
+      'updateProfile',
+      'upsertReadMark', 'work',
     ]);
     expect(Object.keys(seam.liveness).sort()).toEqual(['onChange', 'refresh', 'statusOf']);
     // Amendment 3 (2026-08-01, attachments): `downloadHref` — the one seam

@@ -110,18 +110,34 @@ describe('PTY WebSocket', () => {
     expect(isPtyUpgrade(upgradeReq('/v2/ws'))).toBe(false);
   });
 
-  it('refuses a session with no live PTY (1011) instead of hanging', async () => {
+  it('refuses a session with no live PTY over plain HTTP, BEFORE the 101 (trap 5)', async () => {
+    // Identity v2 Stage 1 (2026-08-02): the old behaviour wrote the 101 first
+    // and then closed 1011, which made the socket a session-id oracle. A ghost
+    // session is now a plain-HTTP 404 and no WebSocket ever exists.
     host = new PtyHostService({ logger: quiet });
     const server = createPtyWsServer({ pty: host });
     const sock = new FakeSocket();
     await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=ghost&offset=0'), sock, Buffer.alloc(0));
 
-    const raw = sock.written();
-    expect(raw.toString('utf8')).toContain('101 Switching Protocols');
-    const close = decodeServerFrames(raw).find((f) => f.kind === 'close');
-    expect(close).toBeDefined();
-    expect(close!.payload.readUInt16BE(0)).toBe(1011);
-    expect(close!.payload.subarray(2).toString('utf8')).toBe('no live PTY for session');
+    const raw = sock.written().toString('utf8');
+    expect(raw).not.toContain('101 Switching Protocols');
+    expect(raw).toContain('404 Not Found');
+    expect(raw).toContain('no live PTY for session');
+  });
+
+  it('refuses the attach when the authorizer says no, BEFORE the 101', async () => {
+    host = new PtyHostService({ logger: quiet });
+    const server = createPtyWsServer({
+      pty: host,
+      authorize: async () => ({ ok: false, status: 404, message: 'no such session' }),
+    });
+    const sock = new FakeSocket();
+    await server.handleUpgrade(upgradeReq('/v2/ws?sessionId=ghost&offset=0'), sock, Buffer.alloc(0));
+
+    const raw = sock.written().toString('utf8');
+    expect(raw).not.toContain('101 Switching Protocols');
+    expect(raw).toContain('404 Not Found');
+    expect(raw).toContain('no such session');
   });
 
   it('sends size -> attached -> ONE replay frame, in that order, then live output', async () => {

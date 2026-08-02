@@ -24,6 +24,9 @@ import {
   ArtifactsPreviewStartInputSchema,
   ArtifactsPublishInputSchema,
   ArtifactsRestoreInputSchema,
+  AuthLoginInputSchema,
+  AuthLogoutInputSchema,
+  AuthSignupInputSchema,
   CollectionQuerySchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -46,6 +49,7 @@ import {
   FileUploadInitInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
+  IdentityProfileUpdateInputSchema,
   InboxMarkReadInputSchema,
   LinkCommitInputSchema,
   LinkPrInputSchema,
@@ -103,6 +107,16 @@ const UndoCommandInputSchema = z.object({
 }).strict();
 
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
+  // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
+  // refuses an actor on the wire rather than ignoring it.
+  'identity.profile.update': IdentityProfileUpdateInputSchema,
+
+  // auth (v2 Stage 1). No actorId and no clientMutationId on any of these —
+  // authentication has no authoring persona and no idempotency ledger entry.
+  'auth.signup': AuthSignupInputSchema,
+  'auth.login': AuthLoginInputSchema,
+  'auth.logout': AuthLogoutInputSchema,
+
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,
   'serverConnections.delete': ServerConnectionDeleteInputSchema,

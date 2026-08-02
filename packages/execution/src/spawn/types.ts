@@ -24,10 +24,16 @@ export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'fa
  * Permission posture handed to the agent. Named for old maestro's vocabulary
  * because the personas carry these exact strings in team_members.permission_mode
  * and an import must not have to translate them.
+ *
+ * `auto` is the one posture maestro never had, because the CLI it maps to did
+ * not have it either: Claude Code's `--permission-mode auto` lets the agent run
+ * the actions it judges safe and escalates only the risky ones. It sits between
+ * `acceptEdits` (edits free, every command asked) and `bypassPermissions` (ask
+ * nothing) and it is tm8's DEFAULT — see `DEFAULT_PERMISSION_MODE`.
  */
-export type PermissionMode = 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
+export type PermissionMode = 'auto' | 'acceptEdits' | 'interactive' | 'readOnly' | 'bypassPermissions';
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export type AccessMode = 'safe' | 'acceptEdits' | 'plan' | 'fullAccess';
+export type AccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 
 /** Working-directory semantics (contract `SpawnWorkdir`). */
 export type WorkdirMode = 'project' | 'scratch';
@@ -50,6 +56,21 @@ export interface LoadSpawnContextInput {
   teamMemberId: string;
   projectId?: string | null;
   taskIds?: string[];
+}
+
+/**
+ * How an EXISTING session was launched, read back from its recorded manifest.
+ *
+ * This is the fact a child needs in order to inherit its parent's posture, and
+ * the fact a resume needs in order not to silently downgrade its own. Both
+ * fields are nullable because the source is a stored JSON document: a session
+ * whose manifest row was never written (a spawn that died before step 4), or
+ * one written by an older build, answers "I don't know" rather than a wrong
+ * default.
+ */
+export interface SessionLaunchPosture {
+  accessMode: AccessMode | null;
+  permissionMode: PermissionMode | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -234,6 +255,20 @@ export interface GraphPort {
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
   /** Read the stored launch facts of an existing session, for resume. */
   loadWorkSessionForResume(auth: GraphAuth, sessionId: string): Promise<WorkSessionResumeInfo>;
+  /**
+   * The recorded permission posture of an existing session — the parent half of
+   * posture inheritance, and the session's own half on resume.
+   *
+   * A READ of `session_manifests`, under the caller's claims, because that row
+   * is where the resolved posture is already durable; `work_sessions` persists
+   * model/mode/agent_tool but has never had a permission column. Resolves
+   * `null` when there is no readable manifest — inheritance then simply does
+   * not apply, which is the same answer a root session gets.
+   */
+  loadSessionLaunchPosture(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<SessionLaunchPosture | null>;
   /**
    * `public.execution_resume` — the ONE legal path back from `exited`/`failed`
    * to `spawning`. Enforces persona authorization, the concurrency cap, and

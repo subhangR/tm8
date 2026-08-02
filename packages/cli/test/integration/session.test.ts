@@ -729,7 +729,8 @@ describe('O2 — tm8 exits 130 when interrupted', () => {
     // PROBE-RED: the filter finds a populated family when one exists, so the
     // single-element result above is a fact about `teamMembers` and not about
     // a broken predicate.
-    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(5);
+    // 5 -> 7: execution.resume and execution.journal joined the family.
+    expect(OPERATIONS.filter((o) => o.name.startsWith('execution.')).length).toBe(7);
 
     // A REAL Space, so the spawn refusal below cannot be dismissed as "your
     // space id was fake".

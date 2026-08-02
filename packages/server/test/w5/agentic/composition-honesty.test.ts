@@ -137,16 +137,19 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
   // wave: serverConnections, artifacts, attention, voice et al). Mechanical
   // denominator moves only — the two-world presence semantics this file
   // measures are untouched.
-  it('CONTROL — the denominator is the 114 v1 HTTP rows, by exact count and exact membership', () => {
-    expect(REGISTERABLE).toHaveLength(114);
-    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(114);
+  it('CONTROL — the denominator is the 122 v1 HTTP rows, by exact count and exact membership', () => {
+    // 118 -> 122 (2026-08-02): the four auth.* rows (Identity v2 Stage 1).
+    // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
+    // execution.journal, identity.profile.update.
+    expect(REGISTERABLE).toHaveLength(122);
+    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(122);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
   it('KNOWN-GOOD world — WITH a presence source, residual is the EMPTY SET', () => {
     const residual = REGISTERABLE.filter((name) => !withPresence.has(name));
     expect(residual, `residual with presence: ${residual.join(',')}`).toEqual([]);
-    expect(withPresence.size).toBe(114);
+    expect(withPresence.size).toBe(122);
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -156,7 +159,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // a substitution — a different operation going missing while presence.get
     // mounts would keep the count at 1 and this assertion would still catch it.
     expect(residual, `residual without presence: ${residual.join(',')}`).toEqual([PRESENCE_GATED]);
-    expect(withoutPresence.size).toBe(113);
+    expect(withoutPresence.size).toBe(121);
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -171,14 +174,14 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     expect(onlyWithout, `mounted only WITHOUT presence: ${onlyWithout.join(',')}`).toEqual([]);
   }, 15_000);
 
-  it('BOTH READINGS ARE CORRECT — 114/0 and 113/1 name the two compositions, not a defect', () => {
+  it('BOTH READINGS ARE CORRECT — 122/0 and 121/1 name the two compositions, not a defect', () => {
     // The sentence the frozen file could not say, wired to something that
     // fails. `test/w2/reserved-honesty.test.ts` composes WITHOUT presence
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that
     // BOTH of those numbers are reachable from the SAME production code, which
     // is what makes "the frozen file drifted" the wrong diagnosis.
-    expect([withPresence.size, 114 - withPresence.size]).toEqual([114, 0]);
-    expect([withoutPresence.size, 114 - withoutPresence.size]).toEqual([113, 1]);
+    expect([withPresence.size, 122 - withPresence.size]).toEqual([122, 0]);
+    expect([withoutPresence.size, 122 - withoutPresence.size]).toEqual([121, 1]);
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {

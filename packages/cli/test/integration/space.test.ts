@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(118);
+    expect(health.operations).toBe(124); // 120 -> 124 (2026-08-02): auth.* Identity v2 Stage 1 added four HTTP routes.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

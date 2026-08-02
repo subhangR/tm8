@@ -74,6 +74,7 @@ function makeSeam(options: {
         displayName: 'Ada',
         avatar: null,
         email: null,
+        globalId: null,
         isNodeAdmin: true,
         isOwner: true,
         status: 'active',

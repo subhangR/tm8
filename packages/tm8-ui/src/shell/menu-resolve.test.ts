@@ -18,15 +18,15 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the WLT §2 diagram: Home · Workspace · Tracking · Collab · Channels · Voice · Settings', () => {
+  it('encodes the WLT §2 diagram: Home · Workspace · Tracking · Collab · Voice · Settings', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       'Home',
       'Workspace',
       'Tracking',
       'Collab',
-      'Channels',
-      // Revision 3 (2026-07-31) — the Voice label, added beside Channels for
-      // the dynamic voice_channel rows.
+      // Revision 5 (2026-08-01) — the Channels label is GONE: channels moved
+      // into Home, where the dynamic group now hangs their rows. Voice keeps
+      // its own label because there is no `voice` MenuViewRef to move.
       'Voice',
       'Settings',
     ]);

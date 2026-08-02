@@ -105,3 +105,17 @@ describe('the exit funnel classifies everything', () => {
     expect(errorLines(new UnsettledDeliveryError('delivery did not settle', {}, []))[1]).toContain('do not resend');
   });
 });
+
+describe('an interrupt says WHY when it knows', () => {
+  it('bare SIGINT renders exactly as before', () => {
+    expect(errorLines(new InterruptedError())).toEqual(['tm8: interrupted']);
+  });
+
+  it('the attach stream close reason survives to stderr', () => {
+    // session attach constructs this from the WS close frame; rendering a
+    // fixed 'interrupted' here is how "no live PTY for session" used to vanish.
+    expect(
+      errorLines(new InterruptedError('terminal stream closed with 1011: no live PTY for session')),
+    ).toEqual(['tm8: terminal stream closed with 1011: no live PTY for session']);
+  });
+});

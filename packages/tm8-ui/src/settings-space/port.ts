@@ -16,14 +16,24 @@
  * `createFixtureSeam()` and the assertions are on what comes BACK, not on what
  * was called.
  *
- * READS ONLY, and that is the finding, not an omission. Every read here works.
- * Every WRITE this surface draws — role change, member removal, invite
+ * READS ONLY — WITH ONE EXCEPTION, and the exception carries its proof. Every
+ * SPACE write this surface draws — role change, member removal, invite
  * create/revoke/redeem, space rename, menu save — has no executor anywhere in
  * `seam.commands`; they live in `reasons.ts` as disabled-with-reason, and the
  * port deliberately exposes no method for them so a future component cannot
- * quietly acquire one.
+ * quietly acquire one. `updateProfile` is the exception because its executor
+ * EXISTS: `identity.profile.update` (contract catalog v1, seam Amendment 4)
+ * writes the viewer's OWN profile row and nothing else — the op names no
+ * subject, so this port still cannot touch another person's anything.
  */
-import type { EntitySummary, MenuConfig, SpaceId, SpaceSummary } from '@tm8/contract';
+import type {
+  EntitySummary,
+  IdentityProfileUpdateInput,
+  IdentityProfileView,
+  MenuConfig,
+  SpaceId,
+  SpaceSummary,
+} from '@tm8/contract';
 import type { IdentityView, Seam } from '../data/seam';
 import { allKinds } from '../domain';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
@@ -110,6 +120,20 @@ export interface SettingsPort {
    * the space has no stored menu at all.
    */
   loadMenu(): Promise<ResolvedMenu>;
+  /**
+   * The one write (see the header). Writes the VIEWER's own profile; the
+   * mutation id is minted here so components stay declarative about fields.
+   */
+  updateProfile(input: Omit<IdentityProfileUpdateInput, 'clientMutationId'>): Promise<IdentityProfileView>;
+}
+
+let profileMutationSeq = 0;
+
+/** Unique enough for idempotency-keying a hand-clicked save; injectable-free
+ *  because no caller ever needs to recognise the id later. */
+function newProfileMutationId(): string {
+  profileMutationSeq += 1;
+  return `profile_${profileMutationSeq.toString(36)}_${Date.now().toString(36)}`;
 }
 
 export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort {
@@ -126,6 +150,10 @@ export function settingsPortFromSeam(seam: Seam, spaceId: SpaceId): SettingsPort
 
     loadIdentity() {
       return seam.identity();
+    },
+
+    updateProfile(input) {
+      return seam.commands.updateProfile({ ...input, clientMutationId: newProfileMutationId() });
     },
 
     async loadMenu() {

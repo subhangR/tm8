@@ -47,6 +47,7 @@ import { createLoopbackOwnerResolver } from '../identity/loopback.js';
 import type { FacadeDeps } from './deps.js';
 import type { W2FilesServiceOptions } from './services/w2/files.js';
 
+import { registerW2AuthHandlers } from './handlers/w2/auth.js';
 import { registerW2EdgesPlacementsHandlers } from './handlers/w2/edges-placements.js';
 import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entities-commands-tracking.js';
 import { registerW2EntityKindsProfileHandlers } from './handlers/w2/entity-kinds-profiles.js';
@@ -123,6 +124,8 @@ export function registerFacadeHandlers(
    */
   registerW2EntitiesCommandsTrackingHandlers(registry, facade);
   registerW2IdentitySpacesHandlers(registry, facade);
+  // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
+  registerW2AuthHandlers(registry, facade);
   registerW2ServerConnectionHandlers(registry, facade);
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);

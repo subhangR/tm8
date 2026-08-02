@@ -86,7 +86,10 @@ describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () =
     project: 'projects',
     interaction_profile: 'interaction-profiles',
     artifact: 'artifacts',
-    channel: null,
+    // 2026-08-01 (user ruling): channel became a COLLECTION kind so it lists in
+    // the Entity List Panel. The slug is PLURAL because `channel` is a WLT
+    // §2.1 reserved word — see the registry row.
+    channel: 'channels',
     message: null,
   };
 
@@ -96,9 +99,17 @@ describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () =
     }
   });
 
-  it('makes channel special (with a route builder) and message anchored', () => {
+  it('makes channel a listable collection that KEEPS its singular route', () => {
+    // Both halves matter. The collection strategy is what puts Channels in the
+    // list panel's kind switcher; the route builder is unchanged, because
+    // where a single channel is addressed did not change when the collection
+    // got a home. `channels` (plural) is the collection slug — the singular is
+    // reserved, and the assertion below proves the two do not collide.
     const channel = getKind('channel');
-    expect(channel.strategy).toBe('special');
+    expect(channel.strategy).toBe('collection');
+    expect(channel.slug).toBe('channels');
+    expect(RESERVED_SLUGS).toContain('channel');
+    expect(collectionKinds().map((r) => r.kind)).toContain('channel');
     expect(channel.routeBuilder?.('space-1', 'chan-1')).toBe('#/s/space-1/channel/chan-1');
 
     const message = getKind('message');
@@ -157,7 +168,13 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('2. hierarchy expansion → list.tree', () => {
     expect(getKind('task').list.tree).toEqual({ by: 'hierarchy', guideLines: true });
-    expect(getKind('work_session').list.tree).toEqual({ by: 'hierarchy', guideLines: true });
+    // Sessions additionally bind their guide lines to live message provenance
+    // — the wire between two rows sweeps when one messages the other.
+    expect(getKind('work_session').list.tree).toEqual({
+      by: 'hierarchy',
+      guideLines: true,
+      messagePulse: true,
+    });
   });
 
   it('3. inline status / edit / complete → list.inlineEdit + list.rowActions (B1)', () => {

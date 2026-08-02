@@ -582,6 +582,19 @@ async function linkCreatedInSession(
   if (typeof entityId !== 'string' || entityId === '') return;
   if (entityId === sessionId) return; // nothing is born in itself
 
+  // A session id that is not a UUID can never be the benign cross-database
+  // answer the catch below swallows — it is a misconfigured TM8_SESSION_ID.
+  // The server reports it with the same not_found the benign case returns
+  // (22P02 maps to 404), so without this check the misconfiguration is
+  // indistinguishable from the harness leak and stays invisible forever.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+    cmd.out.warn(
+      `note: TM8_SESSION_ID ${JSON.stringify(sessionId)} is not a UUID, so the ` +
+        'created_in session link was not attempted. The entity was created.',
+    );
+    return;
+  }
+
   try {
     await clientFor(cmd.ctx).invoke('edges.create', {
       body: {

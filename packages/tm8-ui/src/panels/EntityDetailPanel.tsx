@@ -595,13 +595,33 @@ function PanelBody(
     );
   }
   if (config.panel.archetype === 'hub') {
+    /*
+     * THE HUB'S REDIRECT CAME HOME (user ruling 2026-08-01).
+     *
+     * HubBody's thesis was "content is the front door, never the feed", and it
+     * ended with a note pointing at the surface that DID render the feed. That
+     * surface was the rail's channel screen. Channels now live in the Entity
+     * List Panel and open HERE, so the note would point at nothing and the
+     * front door would be the only room in the house.
+     *
+     * So when the host supplies a feed, the hub renders its front-door regions
+     * AND the live feed beneath them. When it does not, HubBody is unchanged —
+     * a hub kind with no feed host still gets exactly what it always got.
+     * `chatSurface` is the same prop the terminal arm consumes: one host slot
+     * for "the live conversation for this entity", not a second channel-shaped
+     * one.
+     */
     return (
-      <HubBody
-        detail={detail}
-        blocks={config.panel.blocks ?? []}
-        messages={props.messages}
-        onOpenEntity={onOpenEntity}
-      />
+      <>
+        <HubBody
+          detail={detail}
+          blocks={config.panel.blocks ?? []}
+          messages={props.messages}
+          hasFeed={props.chatSurface != null}
+          onOpenEntity={onOpenEntity}
+        />
+        {props.chatSurface ? <div className="pn-hub-feed">{props.chatSurface}</div> : null}
+      </>
     );
   }
   if (config.panel.archetype === 'profile') {

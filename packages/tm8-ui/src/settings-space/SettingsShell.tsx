@@ -28,6 +28,7 @@ import type { SpaceSummary } from '@tm8/contract';
 import { DisabledAction } from '../panels';
 import { MembersSection } from './MembersSection';
 import { InvitesPanel } from './InviteFrames';
+import { IdentityProfileSection } from './IdentityProfileSection';
 import { MenuEditor } from './MenuEditor';
 import {
   AXES_UNREADABLE,
@@ -84,6 +85,17 @@ export function SettingsShell({
     onSectionChange?.(id);
   }
 
+  // After a profile save, the identity read is re-run rather than patched
+  // locally: the server is the authority on what was actually written, and
+  // every other section consuming `identity` (the members "you" row) should
+  // reflect the same answer.
+  function refreshIdentity() {
+    void port.loadIdentity().then(
+      (identity) => setData((d) => ({ ...d, identity })),
+      () => undefined,
+    );
+  }
+
   const spaceLabel = data.space?.name ?? '—';
 
   return (
@@ -125,7 +137,14 @@ export function SettingsShell({
               </span>
             </div>
           ) : null}
-          <SectionBody id={active} data={data} sections={sections} onGo={go} />
+          <SectionBody
+            id={active}
+            data={data}
+            sections={sections}
+            onGo={go}
+            port={port}
+            onProfileSaved={refreshIdentity}
+          />
         </div>
       </div>
     </div>
@@ -137,11 +156,15 @@ function SectionBody({
   data,
   sections,
   onGo,
+  port,
+  onProfileSaved,
 }: {
   id: SettingsSectionId;
   data: SettingsData;
   sections: SettingsShellProps['sections'];
   onGo: (id: SettingsSectionId) => void;
+  port: SettingsShellProps['port'];
+  onProfileSaved: () => void;
 }) {
   const injected = sections?.[id];
   if (injected !== undefined) return <>{injected}</>;
@@ -168,6 +191,14 @@ function SectionBody({
       );
     case 'profile':
       return <ProfileSection space={data.space} heading={def.heading} />;
+    case 'account':
+      return (
+        <IdentityProfileSection
+          identity={data.identity}
+          onSave={(input) => port.updateProfile(input)}
+          onSaved={onProfileSaved}
+        />
+      );
     case 'axes':
       return (
         <>

@@ -194,6 +194,20 @@ export const OPERATIONS = [
   { name: 'artifacts.preview.start',                     method: 'POST',   path: '/v2/artifacts/:artifactId/preview-sessions',                         kind: 'command', status: 'v1' },
   { name: 'artifacts.export',                            method: 'GET',    path: '/v2/artifacts/:artifactId/revisions/:revisionNumber/export',         kind: 'read',    status: 'v1' },
   { name: 'artifacts.restore',                           method: 'POST',   path: '/v2/artifacts/:artifactId/commands/restore-revision',                kind: 'command', status: 'v1' },
+
+  // Identity v2 Stage 0 (doc 4 §6): the caller writes their OWN display
+  // profile — display name, avatar, email, and the cross-server `globalId`
+  // claim. Server-authorized, no space, no actor.
+  { name: 'identity.profile.update',                     method: 'POST',   path: '/v2/identity/profile',                                               kind: 'command', status: 'v1' },
+
+  // Identity v2 Stage 1 (doc 4 §6): local accounts. The four operations the UI
+  // already names in MISSING_AUTH_OPS. `auth.signup` is node-admin gated —
+  // never open self-registration. `auth.login` exchanges a local credential
+  // for a `tm8s_…` bearer token; every other operation is unchanged.
+  { name: 'auth.signup',                                 method: 'POST',   path: '/v2/auth/signup',                                                    kind: 'command', status: 'v1' },
+  { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
+  { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
+  { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];
