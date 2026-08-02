@@ -471,13 +471,36 @@ export class PtyHostService {
       entry.exited = true;
       entry.exitCode = exitCode;
       this.logger.info('PtyHostService: session PTY exited', { sessionId, exitCode, signal });
-      const status: PtySessionStatus = exitCode === 0 ? 'completed' : 'failed';
       // The evidence, carried past this callback rather than collapsed here —
-      // see PtyExitInfo. `signal` is `undefined`, not absent-by-omission, when
-      // the process ended by return rather than by signal; normalised to
-      // `null` so every consumer sees an explicit tri-state instead of two
-      // different spellings of "no signal."
-      const exitInfo: PtyExitInfo = { exitCode: exitCode ?? null, signal: signal ?? null };
+      // see PtyExitInfo. node-pty spells "no signal" as `0` on Linux and as
+      // `undefined` when the field is absent entirely; BOTH are normalised to
+      // `null` so every consumer sees one explicit tri-state instead of three
+      // different spellings of the same fact.
+      //
+      // MEASURED 2026-08-02 against node-pty 1.1.0, the version this node runs:
+      //   `exit 0`  -> { exitCode: 0, signal: 0 }
+      //   `exit 7`  -> { exitCode: 7, signal: 0 }
+      //   SIGKILL   -> { exitCode: 0, signal: 9 }
+      // Without this normalisation `signal ?? null` leaves the clean cases
+      // holding `0`, which reads as a signal to every `signal !== null` test
+      // downstream — describePtyExit would narrate a plain `exit 7` as "exited
+      // with code 7 after signal 0".
+      const normalisedSignal = signal === undefined || signal === 0 ? null : signal;
+      const exitInfo: PtyExitInfo = { exitCode: exitCode ?? null, signal: normalisedSignal };
+      // A DEATH BY SIGNAL IS NOT A COMPLETION. The third measured row above is
+      // the whole reason this is not `exitCode === 0`: node-pty reports a
+      // SIGKILLed process as exit code 0 WITH signal 9, so classifying on the
+      // code alone files every signal death — SIGKILL, SIGTERM, the OOM killer,
+      // and the `KillMode=control-group` SIGTERM that a `systemctl restart
+      // tm8-prod.service` sends to every live agent — as a clean, successful
+      // exit. Measured on this node before the fix: SIGKILLing a live agent
+      // left `work_sessions` holding status='exited', exit_code=0, error=NULL,
+      // byte-for-byte identical to an agent that finished its work. It also
+      // made `describePtyExit` unreachable for precisely the case it was
+      // written to describe, so the signal captured just above was recorded
+      // nowhere at all.
+      const status: PtySessionStatus =
+        exitCode === 0 && normalisedSignal === null ? 'completed' : 'failed';
       const waiters = this.bootWaiters.get(sessionId);
       if (waiters) {
         this.bootWaiters.delete(sessionId);
