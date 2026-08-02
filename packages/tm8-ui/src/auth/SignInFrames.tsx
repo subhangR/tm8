@@ -27,7 +27,7 @@ import {
   AuthTitle,
 } from './AuthCard';
 import { useAuthActions } from './gate-context';
-import { readActiveServerId } from '../servers/server-key';
+import { canUseLoopbackAutoOwner, readActiveServerId } from '../servers/server-key';
 import { failureCopy, signInFailureLead } from './failures';
 import { EXPIRED, LOGIN, LOGIN_FAILED, SERVER, SIGNED_OUT } from './specimen';
 import {
@@ -64,6 +64,10 @@ export function FrameLogin(_props: FrameProps) {
   // oracle's specimen — the pass this mints is per server, and a viewer
   // pointed at a named connection is authenticating THERE.
   const serverId = actions ? readActiveServerId() : null;
+  const mayCreateAccount = Boolean(actions && serverId && canUseLoopbackAutoOwner(
+    serverId,
+    globalThis.location?.hostname ?? '',
+  ));
 
   return (
     <AuthStage meta={actions ? SERVER.localMeta : SERVER.secureMeta}>
@@ -137,11 +141,12 @@ export function FrameLogin(_props: FrameProps) {
               >
                 {LOGIN.toToken}
               </button>
-              {/* THE SECOND PATH, user-ordered: after signing out you must be
-                  able to make a new account as well as return to an existing
-                  one. Only offered inside the gate, where it can actually
-                  happen. */}
-              {actions ? (
+              {/* THE SECOND PATH, user-ordered, is truthful only where an
+                  unauthenticated signup can actually run: the local loopback
+                  auto-owner path. Remote and relayed nodes require operator
+                  provisioning, so advertising this there leads to a refusal
+                  the viewer cannot resolve. */}
+              {mayCreateAccount ? (
                 <>
                   <span className="auth-switch__sep" aria-hidden>
                     ·

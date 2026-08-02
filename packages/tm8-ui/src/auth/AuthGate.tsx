@@ -26,7 +26,7 @@ import { AuthFlow } from './AuthFlow';
 import { useAuthSession } from './useAuthSession';
 import { AuthActionsContext, AuthSessionContext, type AuthActions } from './gate-context';
 import { readKnownAccountsHere } from './session';
-import { LOCAL_SERVER_ID, readActiveServerId } from '../servers/server-key';
+import { canUseLoopbackAutoOwner, readActiveServerId } from '../servers/server-key';
 import type { AuthFrameId, AuthIdentity } from './types';
 
 /**
@@ -42,14 +42,7 @@ export function defaultSignedOutFrame(
   hostname: string,
 ): '1a' | '1d' {
   if (knownAccountCount > 0) return '1d';
-  if (serverId !== LOCAL_SERVER_ID) return '1d';
-
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
-  const loopback = host === 'localhost'
-    || host.endsWith('.localhost')
-    || host === '::1'
-    || /^127(?:\.\d{1,3}){3}$/.test(host);
-  return loopback ? '1a' : '1d';
+  return canUseLoopbackAutoOwner(serverId, hostname) ? '1a' : '1d';
 }
 
 export interface AuthGateProps {

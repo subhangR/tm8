@@ -29,6 +29,21 @@ export function readActiveServerId(): string {
 }
 
 /**
+ * Whether an unauthenticated browser request can truthfully rely on the
+ * server's loopback auto-owner arm. A named server always rides the relay;
+ * even the page's local node is remote when the browser origin is not a
+ * loopback hostname.
+ */
+export function canUseLoopbackAutoOwner(serverId: string, hostname: string): boolean {
+  if (serverId !== LOCAL_SERVER_ID) return false;
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  return host === 'localhost'
+    || host.endsWith('.localhost')
+    || host === '::1'
+    || /^127(?:\.\d{1,3}){3}$/.test(host);
+}
+
+/**
  * The base every request to `serverId` is routed under. Empty for the local
  * node (relative, same-origin — the vite dev server proxies `/v2`); the relay
  * path for a named server.

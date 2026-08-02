@@ -259,6 +259,12 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
     expect(defaultSignedOutFrame(0, 'local', 'worktree.localhost')).toBe('1a');
   });
 
+  it('does not offer create-another-account on a relayed server', () => {
+    localStorage.setItem('tm8-ui:active-server', 'staging');
+    render(<AuthGate initialFrame="1d">{APP}</AuthGate>);
+    expect(screen.queryByRole('button', { name: /create another account/i })).toBeNull();
+  });
+
   it('opens on the LOGIN frame when an account is known but no session exists', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
