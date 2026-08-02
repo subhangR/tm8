@@ -121,6 +121,23 @@ export interface SpawnContext {
   project: ProjectContext | null;
   teamMember: TeamMemberContext;
   tasks: TaskContext[];
+  /**
+   * Skills resolved across the team member's ancestor chain, nearest-first, and
+   * already de-duplicated — see `resolveSkills` in ./skills.ts. Optional only so
+   * that existing SpawnContext producers (the fake graph in tests, and any
+   * caller predating row #11) stay valid; absent is read as "none".
+   */
+  skills?: ManifestSkillContext[];
+  /**
+   * Skills the resolver dropped to stay inside its cap. Carried through to the
+   * manifest so a truncated persona is visible rather than merely smaller.
+   */
+  droppedSkills?: string[];
+}
+
+export interface ManifestSkillContext {
+  name: string;
+  body: string;
 }
 
 export interface CreateWorkSessionInput {

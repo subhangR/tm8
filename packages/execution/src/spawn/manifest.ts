@@ -886,10 +886,14 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       : null,
     interactionProfile,
     tasks: context.tasks,
-    // Composed as empty/null in G1A rather than omitted: the CLI reader is
-    // tolerant, but a stable shape means adding them later is a value change,
-    // not a schema change.
-    skills: [],
+    // Row #11: resolved across the persona's ancestor chain by loadSpawnContext
+    // and already de-duplicated nearest-first. Still defaults to [] — a spawn
+    // context predating this (the test fake, an older caller) is "no skills",
+    // not an error. This is the value change the shape was held stable for.
+    skills: context.skills ?? [],
+    // Composed as null in G1A rather than omitted: the CLI reader is tolerant,
+    // but a stable shape means adding them later is a value change, not a
+    // schema change.
     coordinator: null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
