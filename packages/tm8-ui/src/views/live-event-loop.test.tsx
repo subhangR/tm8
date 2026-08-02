@@ -447,6 +447,47 @@ describe('the live event loop — an event moves the screen, alone', () => {
       .toBe(before);
   });
 
+  it('projects a newly launched session into an already-open task Connections tab', async () => {
+    const anchor = task('ent-task-open');
+    const session = task('ent-session-new');
+    const h = harness([anchor]);
+    const { result } = renderHook(() =>
+      useGateData({ leftKind: 'task', rightKind: 'work_session', seam: h.seam }),
+    );
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      result.current.domain.store.getState().ingestDetail({
+        ...anchor,
+        content: { kind: 'task', description: '', acceptanceCriteria: [] },
+        hierarchy: { parent: null, children: { items: [], nextCursor: null }, path: [] },
+        connections: { outgoing: [], incoming: [], unresolvedHardDependencyCount: 0 },
+        capabilities: {
+          canEdit: true, canDelete: true, canAddChild: true, canLink: true,
+          canPull: true, canReact: true, canGrantPoints: true, canComplete: true,
+        },
+      } as EntityDetail);
+    });
+    expect(result.current.connectionsOf(anchor.id)?.incoming).toEqual([]);
+
+    const working = { ...edge('edge-working', session, anchor), type: 'working_on' };
+    act(() => {
+      h.emit({
+        type: 'edge.upsert',
+        spaceId: SPACE,
+        seq: 7,
+        edge: working,
+      } as unknown as DurableWorkspaceEvent);
+    });
+
+    expect(result.current.connectionsOf(anchor.id)?.incoming[0]).toMatchObject({
+      type: 'working_on',
+      label: 'Working on',
+    });
+    expect(result.current.connectionsOf(anchor.id)?.incoming[0].edges.map((item) => item.id))
+      .toEqual(['edge-working']);
+  });
+
   it('hydrates Discussion even when the entity detail is already cached', async () => {
     const base = task('ent-task-cached-detail');
     const anchor = task('ent-task-cached-detail', {

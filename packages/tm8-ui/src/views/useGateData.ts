@@ -45,7 +45,7 @@ import {
   type RealControls,
 } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
-import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/project/domain-store';
+import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
@@ -265,6 +265,8 @@ export interface GateData {
   /** Re-read the counters now — after a local action that changed what is seen. */
   refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
+  /** Live edge projection for a hydrated entity; unlike detail.connections it advances with events. */
+  connectionsOf: (id: string) => import('@tm8/contract').Connections | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
   /**
@@ -1051,6 +1053,13 @@ export function useGateData(options: GateOptions): GateData {
   }, [ready, spaceId, seam, pendingTick, absorb]);
 
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
+  const connectionsOf = useCallback(
+    (id: string) => selectConnectionsOf(id as EntityId)(domain.store.getState()),
+    // edgeProjection/details are subscribed snapshots: their identity changes
+    // re-create this callback and therefore re-render every consumer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [domain, edgeProjection, details],
+  );
 
   const reconcileCommand = useCallback(
     (result: CommandResult | AttentionRequestMutationResult) => {
@@ -1221,6 +1230,7 @@ export function useGateData(options: GateOptions): GateData {
       countsFor,
       refreshCounts,
       detailOf,
+      connectionsOf,
       activity,
       messagePulses,
       graph,
@@ -1235,7 +1245,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;
