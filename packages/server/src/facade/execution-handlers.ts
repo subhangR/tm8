@@ -31,6 +31,7 @@ import {
   type GraphPort,
   type LoadSpawnContextInput,
   type Logger,
+  type PtyActivity,
   type PtyExitInfo,
   type PtySessionStatus,
   type RecordCommandInput,
@@ -762,6 +763,12 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) =>
       spawnService.handlePtyExit(sessionId, status, exitInfo),
     onPromptSettled: promptSettlement.resolve,
+    // Same lazy-closure reason as onSessionStatus above: the activity sink also
+    // needs the SpawnService that holds the spawner's claims, and for the same
+    // identity reason — an idle transition is written by the same RPC, through
+    // the same require_identity path, as an exit transition.
+    onActivityChange: (sessionId: string, activity: PtyActivity) =>
+      spawnService.handlePtyActivity(sessionId, activity),
   });
 
   spawnService = new SpawnService({

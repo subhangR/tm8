@@ -50,6 +50,7 @@ export type {
   FrameSink,
   Logger,
   PtyHostOptions,
+  PtyActivity,
   PtyExitInfo,
   PtyKillOutcome,
   PtySessionStatus,

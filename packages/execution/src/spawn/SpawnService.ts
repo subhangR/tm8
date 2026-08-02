@@ -11,7 +11,7 @@ import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/pro
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
-import type { Logger, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
+import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
@@ -1322,6 +1322,63 @@ export class SpawnService {
     }
     return retired;
   }
+
+  /**
+   * The PTY-activity sink. Wire this into `PtyHostService`'s
+   * `onActivityChange` at construction, exactly as `handlePtyExit` is wired
+   * into `onSessionStatus`.
+   *
+   * WHAT THIS UNBLOCKS. `'idle'` has been a legal `work_session` status since
+   * migration 043 (which accepts it, and permits running -> idle -> running:
+   * only transitions OUT of a terminal status and INTO 'spawning' are refused),
+   * and `needs-you` has been a fully drawn UI state since R8 — the presentation
+   * verdict, the pill, the interrupt banner and the home-screen group all exist.
+   * The predicate that lights them is `live && status === 'idle'`, and until
+   * this method nothing in the product ever wrote that status, so the whole
+   * chain was unreachable on real data. This is the missing writer, and it is
+   * why no new UI is needed to make a blocked session visible.
+   *
+   * WHY THE GRAPH AND NOT A SIDE-CHANNEL. Writing status makes the signal an
+   * ordinary entity change, so it rides the durable event spine every other
+   * change rides: ordered by `seq`, deduplicated client-side by the
+   * drop-if-not-newer rule, replayed on reconnect from the client's cursor, and
+   * it nudges a liveness re-read on arrival. A bespoke socket would have had to
+   * re-earn all four.
+   *
+   * HONESTY BOUND. `'idle'` here means "this PTY has been silent for the host's
+   * quiescence threshold", nothing more. It is NOT proof an agent is waiting on
+   * a human — a silent `npm install` produces the same evidence — so no caller
+   * may render it as a specific question. Distinguishing the two needs a
+   * structured signal from the agent, which this repo does not have.
+   */
+  handlePtyActivity = async (sessionId: string, activity: PtyActivity): Promise<void> => {
+    const auth = this.sessionAuth.get(sessionId);
+    // No claims ⇒ nothing can be written (see the sessionAuth docstring). Unlike
+    // the exit path this is not worth shouting about: an activity signal for an
+    // unknown session is a missed nicety, not a ghost row, and the exit path
+    // legitimately deletes the claims before a late timer can fire.
+    if (auth === undefined) return;
+    // A PTY that has already gone means any status this would write is stale,
+    // and the RPC would refuse it with a 23514 anyway. Checking here keeps a
+    // routine race out of the error log.
+    if (!this.pty.hasSession(sessionId)) return;
+    try {
+      await this.graph.transition(auth, {
+        sessionId,
+        status: activity === 'idle' ? 'idle' : 'running',
+      });
+    } catch (error) {
+      // Deliberately NOT `loud`. A failed exit transition leaves a ghost that
+      // corrupts the concurrency cap forever; a failed activity transition
+      // leaves a session showing the previous one of two non-terminal states,
+      // and the next transition corrects it. Same reason it does not retry.
+      this.logger?.warn?.('SpawnService: failed to record session activity transition', {
+        sessionId,
+        activity,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   /**
    * The PTY-exit sink (R29's single writer). Wire this into
