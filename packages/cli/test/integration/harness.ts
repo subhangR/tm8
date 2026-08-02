@@ -392,7 +392,9 @@ export async function cli(
   // typed it — 2,737 of 3,018 measured records, the pollution that inverted
   // the headline failure rate. The suite journals NOTHING by default, and
   // anything a test explicitly journals via extraEnv is tagged harness.
-  const base = { ...process.env, TM8_JOURNAL_CLASS: 'harness', ...server.env };
+  // TM8_NO_CACHE keeps fixtures deterministic: a suite invocation must never
+  // serve a cached payload another suite invocation happened to store.
+  const base = { ...process.env, TM8_JOURNAL_CLASS: 'harness', TM8_NO_CACHE: '1', ...server.env };
   delete base.TM8_JOURNAL_PATH; // inherited only — an explicit extraEnv path survives below
   return await new Promise((resolve) => {
     const child = spawn('node', [entry, ...argv], {

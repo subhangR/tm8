@@ -53,6 +53,7 @@ const GLOBAL_OPTIONS: readonly string[] = [
   '--timeout',
   '--no-color',
   '--quiet',
+  '--fresh',
   '--help',
 ];
 

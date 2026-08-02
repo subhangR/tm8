@@ -36,6 +36,7 @@ import {
 } from './errors.js';
 import { CliError, EXIT_USAGE } from './exit.js';
 import { journal } from './journal.js';
+import { readCache, type CacheEntry, type ReadCache } from './read-cache.js';
 
 export type ResponseMode = 'envelope' | 'bytes' | 'stream';
 
@@ -75,6 +76,10 @@ export interface ClientOptions {
   /** Per-request timeout. A booting agent must not hang on a dead Server. */
   timeoutMs?: number | undefined;
   fetchImpl?: typeof fetch;
+  /** `--fresh`: skip the read-cache LOOKUP. The result is still stored. */
+  fresh?: boolean | undefined;
+  /** Injectable for tests; defaults to the session singleton (read-cache.ts). */
+  cache?: ReadCache;
 }
 
 export interface InvokeOptions {
@@ -105,12 +110,16 @@ export class Tm8Client {
   private readonly token: string | undefined;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly fresh: boolean;
+  private readonly cache: ReadCache;
 
   constructor(opts: ClientOptions) {
     this.baseUrl = opts.baseUrl;
     this.token = opts.token;
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.fresh = opts.fresh ?? false;
+    this.cache = opts.cache ?? readCache;
   }
 
   /** Invoke a catalog operation by NAME. The only way out of this package. */
@@ -201,16 +210,77 @@ export class Tm8Client {
     };
   }
 
+  /**
+   * The ~free revalidation: one `events.poll ?since=<seq>` against the entry's
+   * Space. UNCHANGED means no replayed event names any entity the payload is
+   * about. Every uncertain outcome — poll refused, envelope unparseable,
+   * transport down — answers CHANGED, so uncertainty always costs a refetch
+   * and never serves a stale byte. A quiet replay also advances the session's
+   * per-space watermark: evidence this cheap is worth keeping.
+   */
+  private async unchangedSince(entry: CacheEntry): Promise<boolean> {
+    try {
+      const { res, text } = await this.send(
+        'events.poll',
+        { params: { spaceId: entry.spaceId }, query: { since: String(entry.seq) } },
+        'text',
+        true,
+      );
+      if (res.status >= 400) return false;
+      const data = (JSON.parse(text) as { data?: unknown }).data;
+      const events = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { events?: unknown[] })?.events)
+          ? (data as { events: unknown[] }).events
+          : null;
+      if (events === null) return false; // a page shape this build cannot read
+      const replay = JSON.stringify(events).toLowerCase();
+      if (entry.entityIds.some((id) => replay.includes(id))) return false;
+      const seqs = events
+        .map((e) => (e as { seq?: unknown }).seq)
+        .filter((s): s is number => typeof s === 'number');
+      if (seqs.length > 0) this.cache.advanceWatermark(entry.spaceId, Math.max(...seqs));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async send(
     name: OperationName,
     opts: InvokeOptions,
     read: 'text' | 'bytes' = 'text',
+    revalidating = false,
   ): Promise<{ res: Response; url: URL; method: string; text: string }> {
     const op = getOperation(name);
     const url = new URL(bindPath(name, opts.params ?? {}), this.baseUrl);
     for (const [key, raw] of Object.entries(opts.query ?? {})) {
       if (raw === undefined) continue;
       for (const v of Array.isArray(raw) ? raw : [raw as string]) url.searchParams.append(key, v);
+    }
+
+    // ── The read-cache seam (F2). GET catalog reads only, never the poll that
+    // revalidates them. `--fresh` skips the LOOKUP but the fetch below still
+    // stores, so a forced refetch repairs the entry instead of orphaning it.
+    const cacheable =
+      !revalidating && read === 'text' && this.cache.enabled
+      && op.method === 'GET' && op.kind === 'read' && name !== 'events.poll';
+    if (cacheable && !this.fresh) {
+      const key = this.cache.keyFor(name, url.pathname, url.searchParams);
+      const entry = key === null ? null : this.cache.read(key);
+      if (entry !== null) {
+        if (await this.unchangedSince(entry)) {
+          this.cache.notice(entry);
+          // No HTTP happened, so no journal call is recorded — the journal
+          // records calls the caller PAID for, and this one was free.
+          const res = new Response(null, {
+            status: entry.status,
+            headers: { 'x-tm8-request-id': 'cached' },
+          });
+          return { res, url, method: op.method, text: entry.text };
+        }
+        this.cache.evict(key as string);
+      }
     }
 
     const headers: Record<string, string> = { accept: 'application/json' };
@@ -257,6 +327,25 @@ export class Tm8Client {
     // A byte response is only drained as text when it FAILED; a success is
     // read as an ArrayBuffer by the caller so no blob is ever utf8-decoded.
     const text = read === 'text' || res.status >= 400 ? await res.text() : '';
+
+    if (res.status < 400) {
+      if (cacheable && text !== '') {
+        // The store refuses entries with no coherence basis; see read-cache.ts.
+        this.cache.store(name, url.pathname, url.searchParams, res.status, text);
+      }
+      if (!revalidating && this.cache.enabled && op.kind === 'command') {
+        // A mutation this session made: every cached read about the entities
+        // it names is now suspect. Ids are swept from the URL and the body —
+        // over-invalidation costs a refetch, under-invalidation costs truth.
+        const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+        const bodyText = opts.body === undefined ? '' : JSON.stringify(opts.body);
+        this.cache.invalidate([
+          ...(url.pathname.match(UUID) ?? []),
+          ...(bodyText.match(UUID) ?? []),
+        ]);
+      }
+    }
+
     journal.noteCall({
       operation: name,
       method: op.method,

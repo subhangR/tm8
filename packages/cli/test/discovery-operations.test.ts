@@ -817,7 +817,9 @@ describe('flag parseability: what the projection publishes, the parser can repre
       expect(d.syntax, d.operation).not.toMatch(/--timeout <n>/);
       expect(d.syntax, d.operation).not.toMatch(/--limit <n>/);
     }
-    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet']);
+    // 'fresh' joined 2026-08-02 (F2 read-cache): a global, so it adds no
+    // per-command syntax and moves no catalog digest.
+    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh']);
   });
 });
 

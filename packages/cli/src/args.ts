@@ -32,7 +32,7 @@ import { journal } from './journal.js';
 import { OUTPUT_FORMATS, type OutputFormat } from './output.js';
 
 /** Global options. They bind target, context, and output, never payload. */
-export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet'] as const;
+export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh'] as const;
 
 /**
  * Every boolean in the frozen grammar. A flag NOT listed here consumes a value.
@@ -41,7 +41,7 @@ export const GLOBAL_OPTIONS = ['server', 'space', 'as', 'format', 'timeout', 'no
  */
 export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   // global + root discovery
-  'no-color', 'quiet', 'help', 'version',
+  'no-color', 'quiet', 'fresh', 'help', 'version',
   // §7.5 destructive confirmation
   'yes',
   // §4 per-command booleans
@@ -170,6 +170,8 @@ export interface GlobalOptions {
   timeoutMs: number | undefined;
   color: boolean;
   quiet: boolean;
+  /** `--fresh`: bypass the session read-cache lookup for this invocation. */
+  fresh: boolean;
   help: boolean;
   version: boolean;
 }
@@ -338,6 +340,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
   const rawTimeout = takeScalar('timeout');
   const noColor = takeBool('no-color');
   const quiet = takeBool('quiet');
+  const fresh = takeBool('fresh');
   const help = takeBool('help');
   // NOT takeBool: a colliding name never entered `bag` as a global, and any
   // occurrence still IN `bag` is the command's own and must stay there.
@@ -367,6 +370,7 @@ export function parseInvocation(argv: readonly string[]): ParsedInvocation {
     timeoutMs: rawTimeout === undefined ? undefined : parseTimeoutSeconds(rawTimeout),
     color: !noColor,
     quiet,
+    fresh,
     help,
     version,
   };

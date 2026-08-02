@@ -233,6 +233,7 @@ const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
   { option: '--timeout <seconds>', summary: 'per-request timeout, in SECONDS' },
   { option: '--no-color', summary: 'disable colour' },
   { option: '--quiet', summary: 'silence notes on stderr; warnings and errors are never silenced' },
+  { option: '--fresh', summary: 'bypass the session read-cache and re-fetch from the Server' },
 ];
 
 export function rootHelp(opts: ShardOptions = {}): RootHelp {
