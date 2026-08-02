@@ -370,7 +370,7 @@ export interface CollectionQuery {
   };
   layout?: 'list'|'board'|'tree'|'feed'|'gallery'|'graph';
   groupBy?: 'workStatus'|'assignee'|`axis:${string}`;
-  sort?: 'activityAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
+  sort?: 'activityAt_desc'|'updatedAt_desc'|'createdAt_desc'|'position'|'dueDate'|'priority';
   cursor?: Cursor; limit?: number;
 }
 

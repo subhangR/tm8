@@ -75,6 +75,9 @@ const SORTS: Record<SortName, SortSpec> = {
   activityAt_desc: {
     expr: 'e.activity_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.activity_at'),
   },
+  updatedAt_desc: {
+    expr: 'e.updated_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.updated_at'),
+  },
   createdAt_desc: {
     expr: 'e.created_at', dir: 'desc', cast: 'timestamptz', cursorExpr: MICROS('e.created_at'),
   },
