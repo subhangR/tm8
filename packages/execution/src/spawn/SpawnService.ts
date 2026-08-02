@@ -32,6 +32,7 @@ import type {
   GraphPort,
   InteractionProfilePinContext,
   ResumeRequest,
+  SessionLaunchPosture,
   SpawnRequest,
   SpawnResult,
   Tm8Manifest,
@@ -152,6 +153,62 @@ export class SpawnService {
   }
 
   /**
+   * A session's OWN recorded posture, for resume. Same read as
+   * `inheritedPosture` and the same failure posture (a warning, then the
+   * ordinary precedence chain), pointed at the session itself.
+   */
+  private async recordedPosture(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<SessionLaunchPosture | null> {
+    try {
+      return await this.graph.loadSessionLaunchPosture(auth, sessionId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not read the recorded posture of a resuming session', {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * The parent session's recorded posture, when this spawn is a child and named
+   * no posture of its own.
+   *
+   * A session spawned BY a session is unattended twice over: nobody is at its
+   * PTY, and nobody is at its parent's either. Dropping such a child back to the
+   * persona default is what makes a delegated agent sit forever on an approval
+   * prompt that no human will ever see, so the parent's posture carries down.
+   *
+   * Three deliberate silences, all of them "no inheritance" rather than a
+   * failure:
+   *   - an explicit `accessMode` on the request means the caller has already
+   *     answered the question; nothing is read at all
+   *   - a root spawn (no parent) has nothing to inherit from
+   *   - an unreadable or missing parent manifest is a WARNING, never a refused
+   *     spawn: posture inheritance is a default-selection convenience, and
+   *     failing a launch over a convenience would trade a stalled child for no
+   *     child at all
+   */
+  private async inheritedPosture(
+    auth: GraphAuth,
+    request: SpawnRequest,
+  ): Promise<SessionLaunchPosture | null> {
+    const parentSessionId = request.parentSessionId ?? null;
+    if (!parentSessionId || request.accessMode) return null;
+    try {
+      return await this.graph.loadSessionLaunchPosture(auth, parentSessionId);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: could not read the parent session posture to inherit', {
+        parentSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
    * The spawn flow, in the only order that is safe:
    *   1. read the graph (persona, project, tasks) — nothing has been created yet
    *   2. resolve launch config + cwd IN-PROCESS
@@ -176,7 +233,15 @@ export class SpawnService {
       taskIds,
     });
 
-    const launch = resolveLaunchConfig(request, context, this.env);
+    const inherited = await this.inheritedPosture(auth, request);
+    const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    if (inherited) {
+      this.logger?.info('SpawnService: child inherits its parent session posture', {
+        parentSessionId: request.parentSessionId,
+        accessMode: launch.accessMode,
+        permissionMode: launch.permissionMode,
+      });
+    }
     // Pre-mint Claude's NATIVE conversation id (maestro's claude-spawner
     // pattern): `--session-id <uuid>` makes Claude adopt tm8's uuid, so resume
     // needs no transcript parsing — the id is known before the agent exists.
@@ -450,6 +515,14 @@ export class SpawnService {
       taskIds: info.taskIds,
     });
 
+    // The posture is the one launch fact `work_sessions` does NOT carry (the
+    // row has model/mode/agent_tool and no permission column), so re-resolving
+    // from the row alone silently demoted every resumed session to the persona
+    // default — a session launched `fullAccess` came back on `auto` and stalled
+    // on its first approval. The recorded manifest is where that fact is
+    // durable, and resume does not rewrite it, so it still describes the launch.
+    const recordedPosture = await this.recordedPosture(auth, sessionId);
+
     // The stored row IS the request: same precedence chain as spawn, fed the
     // facts the session was actually launched with, so the two paths resolve
     // identically and cannot drift.
@@ -464,7 +537,7 @@ export class SpawnService {
       title: info.title || null,
       clientMutationId: request.clientMutationId ?? null,
     };
-    const launch = resolveLaunchConfig(syntheticRequest, context, this.env);
+    const launch = resolveLaunchConfig(syntheticRequest, context, this.env, recordedPosture);
 
     if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
       throw new SpawnError(

@@ -111,6 +111,70 @@ describe('resolveLaunchConfig', () => {
     expect(resolveLaunchConfig(base, context({ mode: 'nonsense' as never }), {}).mode).toBe('worker');
   });
 
+  /**
+   * The inherited link. A child spawned by a session nobody is watching must
+   * not quietly drop to a posture that stops and asks — that is the stall this
+   * link exists to remove.
+   */
+  it('inherits the spawning session posture over the persona default', () => {
+    const resolved = resolveLaunchConfig(base, context({ permissionMode: 'interactive' }), {}, {
+      accessMode: 'fullAccess',
+      permissionMode: 'bypassPermissions',
+    });
+    expect(resolved).toMatchObject({
+      permissionMode: 'bypassPermissions',
+      accessMode: 'fullAccess',
+    });
+    expect(buildAgentCommand(resolved, {})).toContain('--dangerously-skip-permissions');
+  });
+
+  it('inherits a RESTRICTIVE parent posture just as faithfully', () => {
+    // Inheritance is not a synonym for bypass: a parent launched in plan mode
+    // hands its children plan mode, even when the persona asks for more.
+    expect(
+      resolveLaunchConfig(base, context({ permissionMode: 'bypassPermissions' }), {}, {
+        accessMode: 'plan',
+        permissionMode: 'readOnly',
+      }),
+    ).toMatchObject({ permissionMode: 'readOnly', accessMode: 'plan' });
+  });
+
+  it('lets the request and the node override outrank what a parent held', () => {
+    const parent = { accessMode: 'fullAccess' as const, permissionMode: 'bypassPermissions' as const };
+    expect(
+      resolveLaunchConfig({ ...base, accessMode: 'safe' }, context(), {}, parent).permissionMode,
+    ).toBe('interactive');
+    expect(
+      resolveLaunchConfig(base, context(), { TM8_PERMISSION_MODE: 'readOnly' }, parent).permissionMode,
+    ).toBe('readOnly');
+  });
+
+  it('reconstructs an inherited posture from permissionMode alone', () => {
+    // A manifest written before `accessMode` existed still names the posture,
+    // just in the other half of the bijection.
+    expect(
+      resolveLaunchConfig(base, context(), {}, { accessMode: null, permissionMode: 'bypassPermissions' })
+        .accessMode,
+    ).toBe('fullAccess');
+  });
+
+  it('ignores an unrecognised inherited posture instead of launching on it', () => {
+    expect(
+      resolveLaunchConfig(base, context({ permissionMode: 'readOnly' }), {}, {
+        accessMode: 'yolo' as never,
+        permissionMode: 'yolo' as never,
+      }),
+    ).toMatchObject({ permissionMode: 'readOnly', accessMode: 'plan' });
+  });
+
+  it('has nothing to inherit for a root spawn', () => {
+    expect(resolveLaunchConfig(base, context(), {}, null).permissionMode).toBe('auto');
+    expect(
+      resolveLaunchConfig(base, context(), {}, { accessMode: null, permissionMode: null })
+        .permissionMode,
+    ).toBe('auto');
+  });
+
   it('maps model families to tools', () => {
     expect(agentToolForModel('claude-opus-5')).toBe('claude-code');
     expect(agentToolForModel('gpt-5')).toBe('codex');

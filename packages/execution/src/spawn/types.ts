@@ -58,6 +58,21 @@ export interface LoadSpawnContextInput {
   taskIds?: string[];
 }
 
+/**
+ * How an EXISTING session was launched, read back from its recorded manifest.
+ *
+ * This is the fact a child needs in order to inherit its parent's posture, and
+ * the fact a resume needs in order not to silently downgrade its own. Both
+ * fields are nullable because the source is a stored JSON document: a session
+ * whose manifest row was never written (a spawn that died before step 4), or
+ * one written by an older build, answers "I don't know" rather than a wrong
+ * default.
+ */
+export interface SessionLaunchPosture {
+  accessMode: AccessMode | null;
+  permissionMode: PermissionMode | null;
+}
+
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
 export interface ProjectContext {
   id: string;
@@ -240,6 +255,20 @@ export interface GraphPort {
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
   /** Read the stored launch facts of an existing session, for resume. */
   loadWorkSessionForResume(auth: GraphAuth, sessionId: string): Promise<WorkSessionResumeInfo>;
+  /**
+   * The recorded permission posture of an existing session — the parent half of
+   * posture inheritance, and the session's own half on resume.
+   *
+   * A READ of `session_manifests`, under the caller's claims, because that row
+   * is where the resolved posture is already durable; `work_sessions` persists
+   * model/mode/agent_tool but has never had a permission column. Resolves
+   * `null` when there is no readable manifest — inheritance then simply does
+   * not apply, which is the same answer a root session gets.
+   */
+  loadSessionLaunchPosture(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<SessionLaunchPosture | null>;
   /**
    * `public.execution_resume` — the ONE legal path back from `exited`/`failed`
    * to `spawning`. Enforces persona authorization, the concurrency cap, and

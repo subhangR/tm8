@@ -16,6 +16,7 @@ import type {
   RecordCommandInput,
   ResolvedInteractionProfileContext,
   ResumeWorkSessionResult,
+  SessionLaunchPosture,
   SpawnContext,
   Tm8Manifest,
   TransitionInput,
@@ -240,5 +241,24 @@ export class FakeGraph implements GraphPort {
     this.authSeen.push(auth);
     this.nativeIds.push({ sessionId, nativeSessionId });
     return this.nativeIdWriteAccepted;
+  }
+
+  // --- posture inheritance seam ----------------------------------------------
+
+  /** Recorded postures by session id — what a parent session was launched with. */
+  readonly postures = new Map<string, SessionLaunchPosture>();
+  /** Session ids `loadSessionLaunchPosture` was asked about, in order. */
+  readonly postureQueries: string[] = [];
+  /** When set, the posture read REJECTS — the unreadable-parent case. */
+  postureError: Error | null = null;
+
+  async loadSessionLaunchPosture(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<SessionLaunchPosture | null> {
+    this.authSeen.push(auth);
+    this.postureQueries.push(sessionId);
+    if (this.postureError) throw this.postureError;
+    return this.postures.get(sessionId) ?? null;
   }
 }

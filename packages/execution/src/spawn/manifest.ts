@@ -24,6 +24,7 @@ import type {
   AgentMode,
   PermissionMode,
   ReasoningEffort,
+  SessionLaunchPosture,
   SpawnContext,
   SpawnRequest,
   Tm8Manifest,
@@ -45,8 +46,9 @@ export const DEFAULT_AGENT_TOOL = 'claude-code';
  * branch below documents. `auto` is Claude Code's own answer to that (the agent
  * runs what it judges safe and escalates the rest), so it is what a session
  * that named no posture gets. It is a DEFAULT and nothing more: an explicit
- * `accessMode` on the request, `TM8_PERMISSION_MODE` on the node, or a persona's
- * recorded `permission_mode` all still win, in that order.
+ * `accessMode` on the request, `TM8_PERMISSION_MODE` on the node, the SPAWNING
+ * PARENT SESSION's own posture, or a persona's recorded `permission_mode` all
+ * still win, in that order.
  */
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
 /** The magic `TM8_AGENT_CMD` value that selects the built-in smoke agent. */
@@ -92,6 +94,17 @@ function asPermissionMode(value: string | null | undefined): PermissionMode | nu
   return (PERMISSION_MODES as readonly string[]).includes(value) ? (value as PermissionMode) : null;
 }
 
+const ACCESS_MODES: readonly AccessMode[] = ['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess'];
+
+/**
+ * A posture string read back out of a STORED manifest, which is a JSON document
+ * an older build may have written — so it is validated, never cast.
+ */
+function asAccessMode(value: string | null | undefined): AccessMode | null {
+  if (!value) return null;
+  return (ACCESS_MODES as readonly string[]).includes(value) ? (value as AccessMode) : null;
+}
+
 function asAgentMode(value: string | null | undefined): AgentMode | null {
   if (!value) return null;
   return (AGENT_MODES as readonly string[]).includes(value) ? (value as AgentMode) : null;
@@ -135,7 +148,8 @@ function accessModeForPermissionMode(mode: PermissionMode): AccessMode {
 }
 
 /**
- * Precedence: explicit request > persona defaults > built-in default.
+ * Precedence: explicit request > operator env > INHERITED PARENT POSTURE >
+ * persona defaults > built-in default.
  *
  * Old maestro had five links here (request → member override → task →
  * member/profile → reconstructed-from-bare-model). Links 2-4 all exist to carry
@@ -143,11 +157,27 @@ function accessModeForPermissionMode(mode: PermissionMode): AccessMode {
  * permissionMode, no launchConfig and no memberOverrides, and it names exactly
  * one teamMemberId. Adding the missing links now would be building branches with
  * no callers, so they are omitted and noted rather than stubbed.
+ *
+ * WHY `inherited` OUTRANKS THE PERSONA. A child spawned by a running session is
+ * launched by that session's decision, not by a human sitting at the terminal:
+ * nobody is watching its PTY to answer a permission prompt, so a child that
+ * drops from its parent's `fullAccess` back to the persona's default stalls on
+ * the first approval and looks like a hang. The parent's posture is the live,
+ * specific grant; the persona's is a static default, and a default is exactly
+ * what an inherited fact is entitled to replace.
+ *
+ * WHY THAT IS NOT AN ESCALATION. Inheritance can only ever hand a child what
+ * the PARENT already holds, and the parent could have performed the same work
+ * itself. It is a default-selection mechanism, not an authorization boundary —
+ * `parentSessionId` is client-asserted, so it must never be read as one. What a
+ * caller may spawn at all remains the space/persona question the server answers
+ * upstream of here.
  */
 export function resolveLaunchConfig(
   request: SpawnRequest,
   context: SpawnContext,
   env: NodeJS.ProcessEnv = process.env,
+  inherited?: SessionLaunchPosture | null,
 ): ResolvedLaunchConfig {
   const member = context.teamMember;
 
@@ -163,9 +193,18 @@ export function resolveLaunchConfig(
   // MAESTRO_PERMISSION_MODE (manifest-generator.ts:814-817). It is how an
   // operator forces a whole node's posture without touching any persona.
   const requestedAccessMode = request.accessMode ?? null;
+  // The inherited posture is carried as an accessMode when the parent recorded
+  // one, and reconstructed from its permissionMode when it did not — a manifest
+  // written before accessMode existed still names a posture, just in the other
+  // vocabulary, and the two are 1:1.
+  const inheritedPermissionMode = asPermissionMode(inherited?.permissionMode);
+  const inheritedAccessMode =
+    asAccessMode(inherited?.accessMode) ??
+    (inheritedPermissionMode ? accessModeForPermissionMode(inheritedPermissionMode) : null);
   const permissionMode = requestedAccessMode
     ? permissionModeForAccessMode(requestedAccessMode)
     : asPermissionMode(env.TM8_PERMISSION_MODE?.trim()) ??
+      (inheritedAccessMode ? permissionModeForAccessMode(inheritedAccessMode) : null) ??
       asPermissionMode(member.permissionMode) ??
       DEFAULT_PERMISSION_MODE;
   const accessMode = requestedAccessMode ?? accessModeForPermissionMode(permissionMode);

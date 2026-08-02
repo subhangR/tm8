@@ -35,6 +35,7 @@ import {
   type RecordCommandInput,
   type ResolvedInteractionProfileContext,
   type ResumeWorkSessionResult,
+  type SessionLaunchPosture,
   type SpawnContext,
   type SpawnRequest,
   type Tm8Manifest,
@@ -400,6 +401,47 @@ export class DbGraphPort implements GraphPort {
         nativeSessionId: row.native_session_id,
       };
     });
+  }
+
+  /**
+   * The permission posture one session was launched with, read back out of its
+   * recorded manifest.
+   *
+   * WHY THE MANIFEST AND NOT THE ROW. `work_sessions` persists the resolved
+   * model, mode and agent_tool but has never had a permission column, while
+   * `session_manifests.manifest -> 'launch'` has carried both `accessMode` and
+   * `permissionMode` since the manifest existed. So the fact is already durable
+   * for every session ever spawned, including the ones that ran before anything
+   * read it back — a column added today would answer `null` for all of them.
+   *
+   * A PLAIN READ, deliberately. Nothing is written, and the catalog has no
+   * "posture of a session" operation because this is not a caller-facing
+   * surface. RLS still decides: `session_manifests_select` requires
+   * `entity_readable(work_session_id)`, so a session the caller may not read is
+   * simply absent, and absent means "do not inherit" rather than an error.
+   */
+  async loadSessionLaunchPosture(
+    auth: GraphAuth,
+    sessionId: string,
+  ): Promise<SessionLaunchPosture | null> {
+    const rows = await this.db.query<{ access_mode: string | null; permission_mode: string | null }>(
+      this.claims(auth),
+      `select sm.manifest #>> '{launch,accessMode}'     as access_mode,
+              sm.manifest #>> '{launch,permissionMode}' as permission_mode
+         from public.session_manifests sm
+        where sm.work_session_id = $1`,
+      [sessionId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    // The strings are VALIDATED downstream (resolveLaunchConfig), not here: a
+    // manifest is a stored JSON document and an unrecognised posture in one must
+    // fall through to the ordinary precedence chain, not launch on a value
+    // nothing maps.
+    return {
+      accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
+      permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
+    };
   }
 
   async resumeWorkSession(
