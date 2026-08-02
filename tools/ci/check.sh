@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # tm8 CI — the merge gate. Same script locally, in the pre-push hook, and in GitHub Actions.
 #
-#   bash tools/ci/check.sh            full run (install + typecheck + tests + migrations)
-#   bash tools/ci/check.sh --fast     skip install and the migration check (pre-push default)
+#   bash tools/ci/check.sh                  full run (install + typecheck + tests + migrations)
+#   bash tools/ci/check.sh --fast           skip install AND the migration check (pre-push default:
+#                                           a local tree already has node_modules)
+#   bash tools/ci/check.sh --no-migrations  skip ONLY the migration check, still install. This is the
+#                                           CI `check` job's shape: a fresh runner has no node_modules,
+#                                           and the separate `migrations` job owns the migration apply.
 #   bash tools/ci/check.sh --no-install
 #
 # Rules this script enforces structurally:
@@ -24,6 +28,10 @@ DO_INSTALL=1
 for arg in "$@"; do
   case "$arg" in
     --fast) FAST=1; DO_INSTALL=0 ;;
+    # Skips the migration stage WITHOUT skipping install. `--fast` cannot serve
+    # a fresh CI runner: it also drops install, and every later stage then dies
+    # as `vitest: command not found` / `Cannot find module '@tm8/contract'`.
+    --no-migrations) FAST=1 ;;
     --no-install) DO_INSTALL=0 ;;
     -h|--help) sed -n '2,20p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
@@ -174,7 +182,7 @@ done
 
 # --- 4. migrations ----------------------------------------------------------
 if [ "$FAST" -eq 1 ]; then
-  skip "migrations" "--fast"
+  skip "migrations" "--fast/--no-migrations"
 else
   run_stage "migrations" bash tools/ci/migrations-check.sh
 fi
