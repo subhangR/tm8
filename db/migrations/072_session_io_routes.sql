@@ -123,6 +123,15 @@ create or replace function public.w2_record_session_message_routes(
   p_conversation_anchor_id uuid default null
 ) returns jsonb language plpgsql security definer
 set search_path = public, internal, pg_temp as $$
+-- `author_id` is BOTH a local below and a real column of public.messages, and
+-- the batch guard compares them in one predicate over that table:
+--   m.author_id is distinct from author_id
+-- Without this option that reference is ambiguous and every call dies with
+-- SQLSTATE 42702 — which is every messages.post, because the Server calls this
+-- function unconditionally inside the post transaction. Resolving to the
+-- variable is the intended reading everywhere here: every column reference in
+-- this body is table-qualified, so nothing else changes meaning.
+#variable_conflict use_variable
 declare
   message_count integer;
   batch_id text;
