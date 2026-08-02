@@ -36,6 +36,22 @@ interface PersistedSidePanels {
   rightWidth: number;
 }
 
+/**
+ * The persisted KIND choice's schema generation.
+ *
+ * Bumped to 2 on 2026-08-01, when the right dock's default became Channels.
+ * Every viewer who had ever opened the workspace carried `right: 'work_session'`
+ * in storage — chosen by the old default, not by them — and a stored value
+ * always beats a new default, so the change would have reached nobody with an
+ * existing profile. That is the class of bug where a fix ships and every
+ * existing user still reports it broken.
+ *
+ * A generation bump rather than a new storage key, and kinds-only rather than
+ * the whole record: widths ARE a deliberate choice and survive. A viewer who
+ * had genuinely picked their own kinds pays one re-pick, once.
+ */
+const KIND_SCHEMA = 2;
+
 export interface SidePanelKinds {
   leftKind: string;
   rightKind: string;
@@ -65,10 +81,13 @@ function read(
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return {};
-    const { left, right, leftWidth, rightWidth } = parsed as Record<string, unknown>;
+    const { left, right, leftWidth, rightWidth, v } = parsed as Record<string, unknown>;
+    // A record from an older generation keeps its widths and forfeits its
+    // kinds — see KIND_SCHEMA. `v` absent means generation 1.
+    const kindsAreCurrent = v === KIND_SCHEMA;
     return {
-      left: typeof left === 'string' ? left : undefined,
-      right: typeof right === 'string' ? right : undefined,
+      left: kindsAreCurrent && typeof left === 'string' ? left : undefined,
+      right: kindsAreCurrent && typeof right === 'string' ? right : undefined,
       leftWidth:
         typeof leftWidth === 'number' && Number.isFinite(leftWidth)
           ? Math.max(LEFT_PANEL_MIN, leftWidth)
@@ -126,7 +145,9 @@ export function useSidePanelKinds(options: SidePanelKindsOptions): SidePanelKind
       try {
         window.localStorage.setItem(
           storageKey(viewerId, spaceId),
-          JSON.stringify(next),
+          // Stamped with the generation, so the NEXT default change can tell a
+          // choice this viewer actually made from one an old default left here.
+          JSON.stringify({ ...next, v: KIND_SCHEMA }),
         );
       } catch {
         // Storage full or blocked (private mode). The choice still applies to

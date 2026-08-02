@@ -38,6 +38,7 @@ export class FakeGraph implements GraphPort {
   readonly commands: RecordCommandInput[] = [];
   readonly manifests: Array<{ sessionId: string; manifest: Tm8Manifest; envVarNames: string[] }> = [];
   readonly profilePins: Array<{ sessionId: string; profile: ResolvedInteractionProfileContext }> = [];
+  readonly issuedAgentTokens: Array<{ sessionId: string; teamMemberId: string }> = [];
   readonly authSeen: GraphAuth[] = [];
 
   /** Set to make the next createWorkSession throw, for the rollback test. */
@@ -76,6 +77,7 @@ export class FakeGraph implements GraphPort {
       },
       tasks: (input.taskIds ?? []).map((id, i) => ({
         id,
+        version: 1,
         title: `fixture task ${i + 1}`,
         description: 'prove the loop',
         priority: 'high',
@@ -143,6 +145,16 @@ export class FakeGraph implements GraphPort {
     this.authSeen.push(auth);
     this.profilePins.push({ sessionId: _sessionId, profile });
     return { ...profile, pinRevision: 1 };
+  }
+
+  async issueWorkSessionAgentToken(
+    auth: GraphAuth,
+    sessionId: string,
+    teamMemberId: string,
+  ): Promise<string> {
+    this.authSeen.push(auth);
+    this.issuedAgentTokens.push({ sessionId, teamMemberId });
+    return `tm8s_${sessionId}.fixture-agent-secret`;
   }
 
   async recordManifest(

@@ -17,6 +17,7 @@ import type {
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
+import { useRowLifecycle } from './useRowLifecycle';
 import type { ActionContext } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
@@ -96,6 +97,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const viewportWidth = useViewportWidth();
 
   const engine = usePanelEngine({ nav, centerWidth, onNotice: props.onNotice });
+
+  /* D67 — the expanded row's state dropdown and archive control, on BOTH side
+     panels. The same executor EntityView mounts. */
+  const rowLifecycle = useRowLifecycle({
+    data,
+    viewerMemberId: props.viewerMemberId,
+    onNotice: props.onNotice,
+  });
 
   const layout = useMemo(
     () =>
@@ -374,6 +383,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
+          onSetState={rowLifecycle.setState}
+          onArchive={rowLifecycle.archive}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -457,6 +468,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
+          onSetState={rowLifecycle.setState}
+          onArchive={rowLifecycle.archive}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           launch={launchPort}

@@ -92,9 +92,11 @@ describe('composePrompt', () => {
     // These are composed into the manifest from the graph and used to be
     // dropped by the CLI reader, so an agent could not tell when it was done.
     const { task } = composePrompt(manifest);
-    expect(task).toContain('<acceptance_criteria>');
-    expect(task).toContain('<criterion>xterm renders live output</criterion>');
-    expect(task).toContain('<criterion>no poll requests</criterion>');
+    expect(task).toContain('kind="task_assignment"');
+    expect(task).toContain('Acceptance criteria:');
+    expect(task).toContain('- xterm renders live output');
+    expect(task).toContain('- no poll requests');
+    expect(task).toContain('attribution="recorded_only"');
   });
 
   it('ignores non-string criteria and memory rather than rendering [object Object]', () => {
@@ -103,7 +105,7 @@ describe('composePrompt', () => {
       agent: { ...manifest.agent, memory: ['real note', { nested: true }, null] },
       tasks: [{ id: 't', acceptanceCriteria: [{ a: 1 }, 'kept'] }],
     });
-    expect(task).toContain('<criterion>kept</criterion>');
+    expect(task).toContain('- kept');
     expect(task).not.toContain('object Object');
     expect(system).toContain('<entry>real note</entry>');
     expect(system).not.toContain('object Object');
@@ -141,6 +143,24 @@ describe('composePrompt', () => {
   it('lets the runtime session id win over the manifest', () => {
     const { system } = composePrompt(manifest, { sessionId: 'from-pty' });
     expect(system).toContain('<session_id>from-pty</session_id>');
+  });
+
+  it('prohibits source edits when a Codex plan session uses workspace-write for graph access', () => {
+    const { system } = composePrompt({
+      ...manifest,
+      launch: { tool: 'codex', permissionMode: 'readOnly', accessMode: 'plan' },
+    });
+    expect(system).toContain('<authorization access_mode="plan">');
+    expect(system).toContain('Do not create, modify, rename, or delete workspace source files');
+    expect(system).toContain('workspace-write sandbox only so commands can reach the loopback tm8 graph API');
+  });
+
+  it('does not add plan authorization to an edit-capable launch', () => {
+    const { system } = composePrompt({
+      ...manifest,
+      launch: { tool: 'codex', permissionMode: 'acceptEdits', accessMode: 'acceptEdits' },
+    });
+    expect(system).not.toContain('<authorization access_mode="plan">');
   });
 
   it('defaults an unknown/absent mode to worker rather than throwing', () => {

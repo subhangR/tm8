@@ -669,7 +669,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
 
     // ── THE ONE ROW WHERE THE FLAG DOES NOT KEBAB ITS FIELD ─────────────────
     // `--expect-version` against `expectedArtifactVersion`. NOT a mistake and
-    // NOT to be "normalised": TM8-W0-AMENDMENT-DOSSIER.md §7:335 names the flag
+    // NOT to be "normalised": W0-AMENDMENT-DOSSIER.md §7:335 names the flag
     // verbatim in the table titled "CLI freeze", while §4:123-127 writes the
     // field as `expectedArtifactVersion`. The same document knew the field and
     // chose a shorter flag, so the authority wins over the kebab derivation.

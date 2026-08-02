@@ -236,6 +236,7 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
       await postMessage({
         clientMutationId: mutationId,
         anchorIds: input.anchorIds,
+        conversationAnchorId: channelId,
         body: input.body,
         parentMessageId: input.parentMessageId,
         mentionIds: input.mentionIds,

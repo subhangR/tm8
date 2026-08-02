@@ -31,6 +31,7 @@ import { assertWithinBudget } from './budgets.js';
 import { composeKernel } from './kernel.js';
 import {
   coordinatorBootstrapControl,
+  taskAssignmentInjection,
   workerBootstrapControl,
   type BootstrapControlFacts,
 } from './templates.js';
@@ -82,6 +83,13 @@ export interface PromptManifest {
       }
     | undefined;
   project?: { id?: string; name?: string; workingDir?: string } | null | undefined;
+  launch?:
+    | {
+        tool?: string | undefined;
+        permissionMode?: string | undefined;
+        accessMode?: string | undefined;
+      }
+    | undefined;
   interactionProfile?:
     | {
         profileId?: string | null | undefined;
@@ -96,6 +104,7 @@ export interface PromptManifest {
   tasks?:
     | ReadonlyArray<{
         id: string;
+        version?: number | undefined;
         title?: string | undefined;
         description?: string | undefined;
         priority?: string | undefined;
@@ -249,6 +258,17 @@ export const COMMAND_SURFACE_INSTRUCTION =
   'the graph on your behalf. This is not the command list — it is how to ask for ' +
   'one. Discover the syntax you need when you need it, and do not assume a command ' +
   'because it appeared in an earlier session.';
+
+/**
+ * Codex's legacy read-only sandbox cannot enable command networking. A tm8
+ * plan session therefore uses workspace-write for transport while this trusted
+ * authorization keeps source editing out of scope.
+ */
+export const CODEX_PLAN_AUTHORIZATION_INSTRUCTION =
+  'This is a plan/read-only tm8 session. Do not create, modify, rename, or delete ' +
+  'workspace source files. Codex uses the workspace-write sandbox only so commands ' +
+  'can reach the loopback tm8 graph API through its proxy; that transport capability ' +
+  'does not grant source-editing authority.';
 
 export const NO_TASK_NOTE_V1 =
   'No task is attached to this session. Wait for instructions rather ' +
@@ -554,6 +574,18 @@ export function composePrompt(
   }
   s.push('  </session_context>');
 
+  if (manifest.launch?.accessMode === 'plan') {
+    s.push('  <authorization access_mode="plan">');
+    s.push(
+      `    <instruction>${
+        manifest.launch.tool === 'codex'
+          ? CODEX_PLAN_AUTHORIZATION_INSTRUCTION
+          : 'This is a plan/read-only tm8 session. Do not create, modify, rename, or delete workspace source files.'
+      }</instruction>`,
+    );
+    s.push('  </authorization>');
+  }
+
   const interactionProfile = manifest.interactionProfile;
   if (interactionProfile) {
     s.push('  <interaction_profile>');
@@ -615,25 +647,25 @@ export function composePrompt(
   const t: string[] = [];
   t.push(`<tm8_task_prompt count="${tasks.length}">`);
   for (const task of tasks) {
-    t.push(`  <task id="${esc(task.id)}">`);
-    if (task.title) t.push(`    <title>${esc(task.title)}</title>`);
-    if (task.priority) t.push(`    <priority>${esc(task.priority)}</priority>`);
-    if (task.workStatus) t.push(`    <status>${esc(task.workStatus)}</status>`);
-    if (task.description) {
-      t.push('    <description>');
-      t.push(block(task.description, '      '));
-      t.push('    </description>');
-    }
-    // Acceptance criteria are the agent's definition of done. They are composed
-    // into the manifest from the graph and were previously dropped on the floor
-    // by the reader, so an agent could not tell when it was finished.
     const criteria = strings(task.acceptanceCriteria);
-    if (criteria.length > 0) {
-      t.push('    <acceptance_criteria>');
-      for (const c of criteria) t.push(`      <criterion>${esc(c)}</criterion>`);
-      t.push('    </acceptance_criteria>');
-    }
-    t.push('  </task>');
+    const body = [
+      task.title ? `Title: ${task.title}` : null,
+      task.priority ? `Priority: ${task.priority}` : null,
+      task.workStatus ? `Status: ${task.workStatus}` : null,
+      task.description ? `Description:\n${task.description}` : null,
+      criteria.length > 0 ? `Acceptance criteria:\n${criteria.map((item) => `- ${item}`).join('\n')}` : null,
+    ].filter((line): line is string => line !== null).join('\n\n');
+    t.push(taskAssignmentInjection({
+      messageId: null,
+      taskId: task.id,
+      taskVersion: task.version ?? 'unverified',
+      senderActorId: null,
+      senderActorKind: null,
+      senderAttribution: 'recorded_only',
+      sourceSessionId: null,
+      destinationSessionId: sessionId ?? 'none',
+      body,
+    }));
   }
   if (tasks.length === 0) {
     t.push(`  <note>${NO_TASK_NOTE_V1}</note>`);

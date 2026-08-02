@@ -31,6 +31,7 @@ import type {
   LiveTreatment,
   QueryFilter,
   SortSpec,
+  StateControl,
 } from './types';
 import { CUSTOM_KIND_FALLBACK } from './types';
 import type { SessionLiveness } from '../data/seam';
@@ -72,6 +73,59 @@ const statusFilter: FilterSpec = {
     { id: 'done', label: 'Done', filter: { workStatus: ['done'] } },
     { id: 'cancelled', label: 'Cancelled', filter: { workStatus: ['cancelled'] } },
   ],
+};
+
+/**
+ * D67 — the task state picker the expanded row draws.
+ *
+ * ORDER IS THE WORKFLOW as this node actually enforces it, which is to say:
+ * barely. `set_work_state` accepts ANY of these from ANY current value — there
+ * is no transition matrix in the database — so this list is a vocabulary in
+ * reading order, not a state machine, and it must not pretend otherwise by
+ * hiding options that "cannot" come next. When a real workflow lands (keyed on
+ * the `type` axis, space-scoped like `task_axes`), it narrows THIS list; the
+ * control does not change shape.
+ *
+ * `done` routes through `complete`, the only operation permitted to write it,
+ * and it carries a real gate: every acceptance criterion must be checked
+ * first. `cancelled` does NOT — the work verb writes it directly, and it also
+ * DELETES the actor's `working_on` edge, exactly as `open` does.
+ */
+const TASK_STATE_CONTROL: StateControl = {
+  source: 'workStatus',
+  label: 'State',
+  command: 'set-state',
+  options: [
+    { id: 'open' },
+    { id: 'pulled' },
+    { id: 'working' },
+    { id: 'in_review' },
+    { id: 'blocked' },
+    { id: 'done', via: 'complete' },
+    { id: 'cancelled' },
+  ],
+};
+
+/**
+ * A work session HAS a status and may not have it set. The lifecycle is
+ * OBSERVED — the node reports spawning → running → idle → exited/failed from
+ * the process itself — so the expanded row shows the current value read-only
+ * with this reason. That is a different statement from a kind with no state at
+ * all, and collapsing the two would tell a doc and a session the same lie.
+ */
+const SESSION_STATE_CONTROL: StateControl = {
+  source: 'status',
+  label: 'State',
+  command: 'set-state',
+  options: [
+    { id: 'spawning' },
+    { id: 'running' },
+    { id: 'idle' },
+    { id: 'exited' },
+    { id: 'failed' },
+  ],
+  readOnlyReason:
+    'A session’s state is observed, not chosen — the node reports it from the process. Use Terminate to stop a live session.',
 };
 
 const readyToPullFilter: FilterSpec = {
@@ -292,6 +346,7 @@ const ROWS: readonly KindConfig[] = [
       filters: [statusFilter, readyToPullFilter, deletedFilter],
       sort: [BY_ACTIVITY, BY_PRIORITY, BY_DUE, BY_POSITION, BY_CREATED],
       inlineEdit: { status: true, title: true },
+      stateControl: TASK_STATE_CONTROL,
       // D44: every task ROW gets Run, not just the panel primary. It resolves
       // to the same ActionRef the panel and palette use, and its `flow:'launch'`
       // marker means the row opens the launch config rather than bare-spawning.
@@ -360,6 +415,7 @@ const ROWS: readonly KindConfig[] = [
       // this true mounted a refused Save control whose full reason squeezed
       // Discussion/Connections/Activity out of the compact panel row.
       rowActions: ['complete', 'terminate'],
+      stateControl: SESSION_STATE_CONTROL,
     }),
     panel: {
       archetype: 'terminal',

@@ -2,11 +2,11 @@
  * @tm8/contract — DTO + command types. THE LAW.
  *
  * §1 of this file is a near-verbatim transcription of the Collab V2 UI's
- * `types/contract.ts` (vendored at docs/ui-snapshot/ui-types-contract.ts.txt),
- * itself transcribed from docs/COLLAB_V2_UI_DATA_CONTRACT.md. Keep the diff
+ * `types/contract.ts` (vendored at docs/history/collab-v2/ui-snapshot/ui-types-contract.ts.txt),
+ * itself transcribed from docs/history/collab-v2/UI-DATA-CONTRACT.md. Keep the diff
  * against that snapshot ~zero so the W3 UI transplant is mechanical.
  *
- * §2 is the tm8 extension block (docs/tm8-architecture/03-ENTITY-GRAPH-DELTAS):
+ * §2 is the tm8 extension block (docs/architecture/03-ENTITY-GRAPH-DELTAS):
  * `work_session` + `collection` core kinds, custom (`c:*`) kinds, and the
  * `execution.*` operation family (R16). Extensions are additive — they widen
  * unions, never reshape inherited members.
@@ -130,7 +130,7 @@ export type CoreEntityState =
    * Semantic lifecycle only (forward-only: active → merged|abandoned → deleted).
    * Operational disk health (preparing/ready/missing/…) deliberately does NOT
    * appear here — it lives in `worktree_allocations`, which is not entity-backed
-   * and never bumps the entity version (TM8-WORKTREE-DESIGN.md §3).
+   * and never bumps the entity version (WORKTREE-DESIGN.md §3).
    */
   | { kind: 'worktree'; status: WorktreeStatus; branch: string; baseRef: string;
       baseCommitOid: string; projectId: ProjectId };
@@ -981,6 +981,18 @@ export interface PlacementInput extends CommandContext {
 export interface PostMessageInput extends CommandContext {
   clientMutationId: string;
   anchorIds: EntityId[];
+  /**
+   * Canonical conversation origin for a multi-anchor post.  A session-target
+   * copy uses this anchor's sibling message as its durable reply destination;
+   * it must never infer the origin from array order.
+   */
+  conversationAnchorId?: EntityId | null;
+  /**
+   * CLI/session reply projection.  When present `anchorIds` is the canonical
+   * empty array and the Server derives both the destination anchor and parent
+   * from the immutable route recorded for this delivered message copy.
+   */
+  replyToMessageId?: EntityId;
   body: string;
   parentMessageId?: EntityId | null;
   mentionIds?: EntityId[];
@@ -1086,7 +1098,19 @@ export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph'
  * enforced the CREATE rule with a VISIBILITY lever, and the cost was a whole
  * kind unreachable from the rail.
  */
-export type MenuKindRef = Exclude<EntityKind, 'channel' | 'message'>;
+/**
+ * `channel` un-excluded 2026-08-01, in lockstep with `MenuKindRefSchema` and
+ * for the same reason `worktree` was un-excluded on 2026-07-31: the exclusion
+ * described a kind that no longer exists in that form.
+ *
+ * It was here because `channel` was `strategy: 'special'` with no `k/` route —
+ * a reserved word the rail could not address as a collection. The user ruling
+ * of 2026-08-01 made it a real collection kind with the slug `channels`, so it
+ * now has exactly the same list view every other menu-eligible kind has, and
+ * the rail must be able to name it. `message` stays excluded: it is anchored,
+ * has no slug, and still has no collection view.
+ */
+export type MenuKindRef = Exclude<EntityKind, 'message'>;
 
 export type MenuLeaf =
   | { type: 'view'; ref: MenuViewRef }

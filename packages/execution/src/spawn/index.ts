@@ -5,18 +5,30 @@ export {
   DEFAULT_MODEL,
   DEFAULT_PERMISSION_MODE,
   ECHO_AGENT_CMD,
+  CODEX_LOOPBACK_CONFIG_OVERRIDES,
+  CODEX_LOOPBACK_HOSTS,
   agentToolForModel,
   buildAgentCommand,
+  buildCodexArgs,
+  codexLoopbackConfigArgs,
   composeEnv,
   composeManifest,
   echoAgentPath,
   resolveLaunchConfig,
+  resolveCommandNetworkPolicy,
   resolveWorkdir,
   shellQuote,
   withAgentResume,
   type ComposeManifestInput,
   type ResolvedLaunchConfig,
 } from './manifest.js';
+export {
+  assertCodexNetworkFeatureList,
+  assertCodexNetworkRuntimeVersion,
+  MINIMUM_CODEX_LOOPBACK_PROXY_VERSION,
+  preflightCodexNetworkPolicy,
+  type CodexNetworkPreflight,
+} from './codex-network-preflight.js';
 export {
   extractCodexRolloutIdentity,
   resolveCodexNativeSessionId,
@@ -25,6 +37,7 @@ export {
 export { SpawnError } from './types.js';
 export type {
   AgentMode,
+  CommandNetworkPolicy,
   CreateWorkSessionInput,
   CreateWorkSessionResult,
   GraphAuth,

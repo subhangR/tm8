@@ -96,6 +96,7 @@ async function verifyInitialArgv(
       },
       tasks: [{
         id: '00000000-0000-4000-8000-000000000003',
+        version: 1,
         title: 'Prove the initial user turn runs',
         description: `Reply with exactly the single token ${m} and nothing else.`,
         priority: 'low',

@@ -47,7 +47,7 @@
  *                                   decides, and asserts nothing about intent
  *
  * ── DISPOSITION — SETTLED, AND IT WAS ALREADY IN THE TREE ─────────────────
- * `docs/plans/TM8-CHAT-SYSTEM-DESIGN.md` §8 "Gap register" row **G2** records
+ * `docs/chat-and-messaging/CHAT-SYSTEM-DESIGN.md` §8 "Gap register" row **G2** records
  * this exact fact with this exact fact basis — *"`authored_from` provenance
  * never written on the post path: `resolveAuthoredFromWorkSessionId` is a
  * declared, unwired seam … facade/index.ts wires only `messageDelivery`"*, at

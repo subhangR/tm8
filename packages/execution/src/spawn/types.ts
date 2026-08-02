@@ -35,6 +35,23 @@ export type PermissionMode = 'auto' | 'acceptEdits' | 'interactive' | 'readOnly'
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type AccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
 
+/**
+ * Effective command-network posture recorded in every launch manifest.
+ *
+ * This is deliberately separate from filesystem/approval posture. In
+ * particular, Codex plan sessions use a workspace-write sandbox so their
+ * commands can reach tm8 through the network proxy, while source edits remain
+ * prohibited by the trusted launch authorization.
+ */
+export interface CommandNetworkPolicy {
+  mode: 'loopback-proxy' | 'full-access' | 'provider-default' | 'operator-defined';
+  commandNetworkAccess: boolean | null;
+  proxyEnabled: boolean;
+  allowedHosts: string[];
+  /** Codex's current proxy rules are host-based, not port-scoped. */
+  portScoped: boolean;
+}
+
 /** Working-directory semantics (contract `SpawnWorkdir`). */
 export type WorkdirMode = 'project' | 'scratch';
 
@@ -100,6 +117,7 @@ export interface TeamMemberContext {
 
 export interface TaskContext {
   id: string;
+  version: number;
   title: string;
   description: string;
   priority: string;
@@ -244,6 +262,12 @@ export interface GraphPort {
     sessionId: string,
     profile: ResolvedInteractionProfileContext,
   ): Promise<InteractionProfilePinContext>;
+  /** Mint a credential bound to this exact work-session/persona pair. */
+  issueWorkSessionAgentToken(
+    auth: GraphAuth,
+    sessionId: string,
+    teamMemberId: string,
+  ): Promise<string>;
   /** `public.record_session_manifest` — names only, never values (S-redaction). */
   recordManifest(
     auth: GraphAuth,
@@ -362,6 +386,8 @@ export interface Tm8Manifest {
     permissionMode: PermissionMode;
     accessMode: AccessMode;
     reasoningEffort: ReasoningEffort | null;
+    /** Effective shell-command networking, independent of filesystem posture. */
+    commandNetwork: CommandNetworkPolicy;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
   };

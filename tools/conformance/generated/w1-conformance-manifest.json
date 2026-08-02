@@ -4322,7 +4322,7 @@
       "owner": "W4-W5",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "At the W1 target, parse the catalog and assert 101 unique operations, 99 v1 and 2 reserved; retain the 81-row pre-amendment count as historical baseline evidence.",
       "operations": []
     },
@@ -4330,7 +4330,7 @@
       "owner": "W4-W5",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Exact-operation help succeeds for every catalog operation and returns one catalog digest.",
       "operations": []
     },
@@ -4338,7 +4338,7 @@
       "owner": "W4-W5",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Every public/composite operation has a noun shard and every operation has intent tags.",
       "operations": []
     },
@@ -4346,7 +4346,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case D4; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4354,7 +4354,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case D5; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4362,7 +4362,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case D6; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4370,7 +4370,7 @@
       "owner": "W4-W5",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Reserved/internal help explains exposure and owner without executable public syntax.",
       "operations": []
     },
@@ -4378,7 +4378,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B1; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4386,7 +4386,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B2; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4394,7 +4394,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B3; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4402,7 +4402,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B4; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4410,7 +4410,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B5; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4418,7 +4418,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B6; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4426,7 +4426,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case B7; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4434,7 +4434,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P1; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4442,7 +4442,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P2; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4450,7 +4450,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P3; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4458,7 +4458,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P4; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4466,7 +4466,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P5; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4474,7 +4474,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P6; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4482,7 +4482,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P7; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4490,7 +4490,7 @@
       "owner": "W2-W5",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "No ui-template command, operation, graph entity kind, or agent-generated template exists.",
       "operations": []
     },
@@ -4498,7 +4498,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P9; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4506,7 +4506,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case P10; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4514,7 +4514,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case C1; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4522,7 +4522,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case C2; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4530,7 +4530,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case C3; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4538,7 +4538,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case C4; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4546,7 +4546,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case C5; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4554,7 +4554,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M1; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4562,7 +4562,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M2; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4570,7 +4570,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M3; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4578,7 +4578,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M4; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4586,7 +4586,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M5; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4594,7 +4594,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M6; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4602,7 +4602,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M7; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4610,7 +4610,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M8; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4618,7 +4618,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case M9; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4626,7 +4626,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Four cross-root Teammate reservations consume the unordered-pair allowance; the fifth fails permanently, falls back, and writes zero bytes.",
       "operations": []
     },
@@ -4634,7 +4634,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "execution.prompt exact help is internal/use_message_send and public principals are rejected before queue admission.",
       "operations": []
     },
@@ -4642,7 +4642,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "canMessage, canContactSession, and canHandoffEntity vary independently; none implies another.",
       "operations": []
     },
@@ -4650,7 +4650,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R1; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4658,7 +4658,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R2; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4666,7 +4666,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R3; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4674,7 +4674,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R4; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4682,7 +4682,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R5; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4690,7 +4690,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R6; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4698,7 +4698,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R7; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4706,7 +4706,7 @@
       "owner": "W4-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case R8; semantic execution remains with W4-W5.",
       "operations": []
     },
@@ -4714,7 +4714,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case S1; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4722,7 +4722,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case S2; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4730,7 +4730,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case S3; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4738,7 +4738,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case S4; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4746,7 +4746,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Named harness conformance case S5; semantic execution remains with W2-W5.",
       "operations": []
     },
@@ -4754,7 +4754,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
+      "source": "AGENT-HARNESS-AND-COMMAND-DISCOVERY.md §20",
       "assertion": "Bootstrap uses TM8_AGENT_TOKEN and never the retired TM8_AUTH_TOKEN literal.",
       "operations": []
     },
@@ -4762,7 +4762,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-ACTIONS is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4770,7 +4770,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-AUTH is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4778,7 +4778,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-B1 is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4786,7 +4786,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-B2 is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4794,7 +4794,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-BATCH is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4802,7 +4802,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-CONN is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4810,7 +4810,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-CONTEXT is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4818,7 +4818,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-CURSOR is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4826,7 +4826,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-DEFAULT is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4834,7 +4834,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-EVENT is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4842,7 +4842,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-FEED is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4850,7 +4850,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-HANDOFF is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4858,7 +4858,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-INBOX is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4866,7 +4866,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-MENU is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4874,7 +4874,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-OWNED is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4882,7 +4882,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-PROFILE is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4890,7 +4890,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-PROJ is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4898,7 +4898,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-SPAWN is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4906,7 +4906,7 @@
       "owner": "W2-W5",
       "status": "semantic-pending",
       "executableHere": false,
-      "source": "TM8-W0-CONSISTENCY-MATRICES.md §3",
+      "source": "W0-CONSISTENCY-MATRICES.md §3",
       "assertion": "Dossier suite W0-VERSION is catalogued for later public-boundary execution.",
       "operations": []
     },
@@ -4914,7 +4914,7 @@
       "owner": "W1.B",
       "status": "foundation",
       "executableHere": false,
-      "source": "TM8-W1-PREFLIGHT-AND-INTEGRATION-EVIDENCE.md §8.3",
+      "source": "W1-PREFLIGHT-AND-INTEGRATION-EVIDENCE.md §8.3",
       "assertion": "A03 and A20 share one Space settings revision; concurrent writes using one expected revision cannot both commit.",
       "operations": [
         "spaces.defaultChannel.set",
@@ -4925,7 +4925,7 @@
       "owner": "W1.C",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-W0-AMENDMENT-DOSSIER.md §§5.1,6.5",
+      "source": "W0-AMENDMENT-DOSSIER.md §§5.1,6.5",
       "assertion": "execution.prompt exact help is internal/use_message_send, has no invocation syntax, and points to messages.post.",
       "operations": [
         "execution.prompt",
@@ -4936,7 +4936,7 @@
       "owner": "W1.C",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-W0-AMENDMENT-DOSSIER.md §10",
+      "source": "W0-AMENDMENT-DOSSIER.md §10",
       "assertion": "Both reserved operations are route-reachable and return honest 501/not_implemented rather than 404.",
       "operations": [
         "search.query",
@@ -4947,7 +4947,7 @@
       "owner": "W1.C",
       "status": "foundation",
       "executableHere": true,
-      "source": "TM8-W0-AMENDMENT-DOSSIER.md §§3,9,10",
+      "source": "W0-AMENDMENT-DOSSIER.md §§3,9,10",
       "assertion": "events.subscribe is one WS skeleton and makes no semantic durability claim.",
       "operations": [
         "events.subscribe"

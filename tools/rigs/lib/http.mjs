@@ -2,7 +2,7 @@
  * The contract-checking HTTP client every golden-workflow step goes through.
  *
  * It is not a convenience wrapper — it is half the test. Every call asserts the
- * wire rules from `docs/collab-v2-api-design/04-COMMUNICATION-MODEL.md` before
+ * wire rules from `docs/history/collab-v2/api-design/04-COMMUNICATION-MODEL.md` before
  * the workflow ever looks at the payload:
  *
  *   §1  every success is `{ data, requestId }`; list pages carry `nextCursor`

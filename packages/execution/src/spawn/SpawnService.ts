@@ -16,15 +16,21 @@ import { composePrompt } from '@tm8/prompt';
 
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
 import {
+  preflightCodexNetworkPolicy,
+  type CodexNetworkPreflight,
+} from './codex-network-preflight.js';
+import {
   buildAgentCommand,
   composeEnv,
   composeManifest,
   resolveAgentBinary,
+  resolveCommandNetworkPolicy,
   resolveLaunchConfig,
   resolveSessionTitle,
   resolveWorkdir,
   withAgentPrompt,
   withAgentResume,
+  type ResolvedLaunchConfig,
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import type {
@@ -54,6 +60,8 @@ export interface SpawnServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Window in which a child exit makes spawn itself fail. Default 150ms. */
   bootSettlementMs?: number;
+  /** Injected only for deterministic compatibility-preflight tests. */
+  codexNetworkPreflight?: CodexNetworkPreflight;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -103,6 +111,7 @@ export class SpawnService {
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
+  private readonly codexNetworkPreflight: CodexNetworkPreflight;
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -130,6 +139,37 @@ export class SpawnService {
     this.logger = options.logger;
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
+    this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+  }
+
+  /**
+   * One spawn/resume gate for binary presence and Codex proxy compatibility.
+   */
+  private async assertAgentRuntime(
+    baseCommand: string,
+    launch: ResolvedLaunchConfig,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const binary = baseCommand.split(' ')[0] ?? '';
+    const unquoted = binary.replace(/^'|'$/g, '');
+    const resolved = resolveAgentBinary(unquoted, env.PATH ?? '');
+    if (resolved === null) {
+      throw new SpawnError(
+        `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
+          `Looked on PATH: ${env.PATH ?? '(empty)'}`,
+        'not_found',
+        { agentTool: launch.agentTool, binary: unquoted },
+      );
+    }
+
+    const override = this.env.TM8_AGENT_CMD?.trim();
+    if (
+      launch.agentTool === 'codex' &&
+      launch.permissionMode !== 'bypassPermissions' &&
+      (!override || override === 'codex')
+    ) {
+      await this.codexNetworkPreflight(resolved, env);
+    }
   }
 
   private manifestPathFor(sessionId: string): string {
@@ -235,6 +275,7 @@ export class SpawnService {
 
     const inherited = await this.inheritedPosture(auth, request);
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
     if (inherited) {
       this.logger?.info('SpawnService: child inherits its parent session posture', {
         parentSessionId: request.parentSessionId,
@@ -293,6 +334,7 @@ export class SpawnService {
         request,
         context,
         launch,
+        commandNetwork,
         interactionProfile: { ...resolvedProfile, pinRevision: 0 },
         workdir: { mode: workdir.mode, path: cwd },
         command,
@@ -324,6 +366,11 @@ export class SpawnService {
         sessionId,
         resolvedProfile,
       );
+      const agentToken = await this.graph.issueWorkSessionAgentToken(
+        auth,
+        sessionId,
+        request.teamMemberId,
+      );
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -335,6 +382,7 @@ export class SpawnService {
         request,
         context,
         launch,
+        commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
@@ -374,7 +422,14 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
+      const env = composeEnv(
+        manifest,
+        manifestPath,
+        this.baseUrl,
+        this.env,
+        this.journalPathFor(sessionId),
+        agentToken,
+      );
       const envVarNames = Object.keys(env).sort();
 
       // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
@@ -388,16 +443,7 @@ export class SpawnService {
       // binaries. `composeEnv` has already added the standard install dirs, so
       // reaching this branch means the CLI genuinely is not installed anywhere
       // tm8 knows to look — which is a `not_found`, not a retryable 503.
-      const binary = baseCommand.split(' ')[0] ?? '';
-      const unquoted = binary.replace(/^'|'$/g, '');
-      if (resolveAgentBinary(unquoted, env.PATH ?? '') === null) {
-        throw new SpawnError(
-          `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
-            `Looked on PATH: ${env.PATH ?? '(empty)'}`,
-          'not_found',
-          { agentTool: launch.agentTool, binary: unquoted },
-        );
-      }
+      await this.assertAgentRuntime(baseCommand, launch, env);
 
       await this.writeManifestFile(manifestPath, manifest);
       // Names only. The manifest row is read by the UI and included in backups;
@@ -538,6 +584,7 @@ export class SpawnService {
       clientMutationId: request.clientMutationId ?? null,
     };
     const launch = resolveLaunchConfig(syntheticRequest, context, this.env, recordedPosture);
+    const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
 
     if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
       throw new SpawnError(
@@ -619,6 +666,7 @@ export class SpawnService {
         request: syntheticRequest,
         context,
         launch,
+        commandNetwork,
         workdir: { mode: info.workdirMode, path: cwd },
         command,
         baseUrl: this.baseUrl,
@@ -661,6 +709,19 @@ export class SpawnService {
         });
       }
 
+      if (!info.teamMemberId) {
+        throw new SpawnError(
+          `work session ${sessionId} has no related team member and cannot receive a session-bound credential`,
+          'conflict',
+          { sessionId },
+        );
+      }
+      const agentToken = await this.graph.issueWorkSessionAgentToken(
+        auth,
+        sessionId,
+        info.teamMemberId,
+      );
+
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
       const baseCommand = buildAgentCommand(launch, this.env);
@@ -669,6 +730,7 @@ export class SpawnService {
         request: syntheticRequest,
         context,
         launch,
+        commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
         command: baseCommand,
@@ -683,19 +745,17 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
+      const env = composeEnv(
+        manifest,
+        manifestPath,
+        this.baseUrl,
+        this.env,
+        this.journalPathFor(sessionId),
+        agentToken,
+      );
       const envVarNames = Object.keys(env).sort();
 
-      const binary = baseCommand.split(' ')[0] ?? '';
-      const unquoted = binary.replace(/^'|'$/g, '');
-      if (resolveAgentBinary(unquoted, env.PATH ?? '') === null) {
-        throw new SpawnError(
-          `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
-            `Looked on PATH: ${env.PATH ?? '(empty)'}`,
-          'not_found',
-          { agentTool: launch.agentTool, binary: unquoted },
-        );
-      }
+      await this.assertAgentRuntime(baseCommand, launch, env);
 
       // The manifest FILE is rewritten (the agent re-reads it at boot); the
       // manifest ROW is not re-recorded — record_session_manifest documented

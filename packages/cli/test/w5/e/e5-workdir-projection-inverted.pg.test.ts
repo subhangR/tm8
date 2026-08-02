@@ -24,7 +24,7 @@
  *
  * ── AUTHORITY, STATED BECAUSE ONE SOURCE HERE HAS NONE ────────────────────
  *
- * `TM8-CLI-GRAMMAR-REDESIGN.md:705` ("without a launch Project, `scratch` is
+ * `CLI-GRAMMAR-REDESIGN.md:705` ("without a launch Project, `scratch` is
  * required") CORROBORATES the trap — an agent following it lands on the mode
  * that 501s. It is cited for colour ONLY. Per the class ruling that closed E-4,
  * **that document is a DESIGN RECORD AND NOT AN AUTHORITY over the shipped

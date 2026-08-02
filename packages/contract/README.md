@@ -7,9 +7,9 @@ packages (T-L12 / api-design L1). Runtime-agnostic (bun or node).
 ## Provenance
 
 - `src/contract.ts` §1 — near-verbatim transcription of the Collab V2 UI's
-  `types/contract.ts` (vendored at `docs/ui-snapshot/ui-types-contract.ts.txt`).
+  `types/contract.ts` (vendored at `docs/history/collab-v2/ui-snapshot/ui-types-contract.ts.txt`).
   Keep the diff ~zero: the W3 UI transplant depends on it.
-- `src/contract.ts` §2 — tm8 extensions per `docs/tm8-architecture/03-ENTITY-GRAPH-DELTAS.md`:
+- `src/contract.ts` §2 — tm8 extensions per `docs/architecture/03-ENTITY-GRAPH-DELTAS.md`:
   `work_session` + `collection` core kinds, custom `c:*` kinds (R7–R9),
   `execution.*` inputs (R16/R17), `entity_kinds` registry shapes.
 - `src/catalog.ts` — the closed operation catalog (api-design `02 §4` +

@@ -108,8 +108,14 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
 
     // Secret redaction: names only ever leave this process, never values.
     expect(result.envVarNames).toContain('TM8_MANIFEST_PATH');
+    expect(result.envVarNames).toContain('TM8_AGENT_TOKEN');
     expect(graph.manifests[0]?.envVarNames).toContain('TM8_SESSION_ID');
+    expect(graph.issuedAgentTokens).toEqual([{
+      sessionId: result.sessionId,
+      teamMemberId: MEMBER_ID,
+    }]);
     expect(JSON.stringify(graph.manifests[0])).not.toContain('sk-ant');
+    expect(JSON.stringify(graph.manifests[0])).not.toContain('fixture-agent-secret');
 
     // The agent proves it parsed the manifest at the path we put in its env.
     const output = await waitForOutput(pty, result.sessionId, 'TM8-ECHO-READY');

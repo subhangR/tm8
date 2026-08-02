@@ -148,6 +148,40 @@ describe('W1 frozen-row schema amendments', () => {
     expect(PostMessageInputSchema.safeParse({ ...canonical, surprise: true }).success).toBe(false);
   });
 
+  it('accepts a server-routed session reply and refuses caller-supplied reply routing', () => {
+    expect(PostMessageInputSchema.parse({
+      clientMutationId: 'mutation-reply-1',
+      replyToMessageId: 'message-context-1',
+      body: 'reply through the recorded origin',
+    })).toEqual({
+      clientMutationId: 'mutation-reply-1',
+      replyToMessageId: 'message-context-1',
+      anchorIds: [],
+      body: 'reply through the recorded origin',
+    });
+    expect(PostMessageInputSchema.safeParse({
+      clientMutationId: 'mutation-reply-2',
+      replyToMessageId: 'message-context-1',
+      anchorIds: ['caller-guessed-anchor'],
+      body: 'ambiguous',
+    }).success).toBe(false);
+  });
+
+  it('requires a declared conversation origin to belong to the message batch', () => {
+    expect(PostMessageInputSchema.safeParse({
+      clientMutationId: 'mutation-message-origin-1',
+      anchorIds: ['channel-1', 'session-1'],
+      conversationAnchorId: 'channel-1',
+      body: 'tagged',
+    }).success).toBe(true);
+    expect(PostMessageInputSchema.safeParse({
+      clientMutationId: 'mutation-message-origin-2',
+      anchorIds: ['channel-1', 'session-1'],
+      conversationAnchorId: 'somewhere-else',
+      body: 'tagged',
+    }).success).toBe(false);
+  });
+
   it('accepts the scratch/profile spawn delta and rejects drift', () => {
     const input = {
       clientMutationId: 'mutation-spawn-1',

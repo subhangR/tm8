@@ -4,7 +4,7 @@
 // Follows the voice-channels.mjs precedent: not "the migration parsed" but the
 // behaviors that fail silently when half-built. The two that matter most:
 //
-//  * V4 (docs/plans/TM8-FOUNDATION-VERIFICATION.md): the append-only trigger on
+//  * V4 (docs/features/foundation/FOUNDATION-VERIFICATION.md): the append-only trigger on
 //    artifact_bundle_revisions carries a purge exemption (WHEN pg_trigger_depth()
 //    = 0 on the DELETE trigger). The RED/GREEN PAIR the verification demanded is
 //    steps 10-11 below: direct UPDATE and DELETE refused with 42501, AND the

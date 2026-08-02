@@ -2,7 +2,7 @@
 // Memories (056_entity_memory.sql): the memory kind, its mark-edge vocabulary,
 // and append-only enforcement.
 //
-// THE LOAD-BEARING PAIR IS FIRST: V4 (TM8-FOUNDATION-VERIFICATION.md) refuted
+// THE LOAD-BEARING PAIR IS FIRST: V4 (FOUNDATION-VERIFICATION.md) refuted
 // the design's original D2 trigger — an unconditional append-only trigger on
 // public.edges breaks the FK purge cascade, and `spaces → entities → edges`
 // cascade TODAY. So this suite proves BOTH directions:

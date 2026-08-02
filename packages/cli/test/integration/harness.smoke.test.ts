@@ -65,7 +65,7 @@ it('observes availability THREE-STATE and never over-claims', async () => {
   //   2. PRECEDENCE (observed -> 'unavailable' on a v1 row): unit coverage ONLY,
   //      in discovery-availability.test.ts, which drives the ledger directly.
   // The archived witness — captured before G10 landed, and now unreproducible by
-  // anyone — is preserved verbatim in TM8-W4-CLI-IMPLEMENTATION-EVIDENCE.md §11.4.
+  // anyone — is preserved verbatim in W4-CLI-IMPLEMENTATION-EVIDENCE.md §11.4.
   //
   // `presence.get` composing is asserted POSITIVELY so this transition is a fact
   // in the suite rather than a deletion in a diff.
