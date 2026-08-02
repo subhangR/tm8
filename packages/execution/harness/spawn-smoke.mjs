@@ -43,6 +43,7 @@ const fakeGraph = (workingDir) => ({
       },
       tasks: (input.taskIds ?? []).map((id) => ({
         id,
+        version: 1,
         title: 'prove the G1A loop',
         description: '',
         priority: 'high',
@@ -54,6 +55,9 @@ const fakeGraph = (workingDir) => ({
   async createWorkSession() {
     const sessionId = randomUUID();
     return { sessionId, commandResult: { entity: { id: sessionId } } };
+  },
+  async issueWorkSessionAgentToken(_auth, sessionId) {
+    return `tm8s_${sessionId}.smoke-token`;
   },
   async recordManifest() {},
   async transition(_auth, input) {

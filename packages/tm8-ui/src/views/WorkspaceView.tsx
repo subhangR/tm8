@@ -17,6 +17,7 @@ import type {
   WorkSessionInteractionProfileProjection,
 } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
+import { useRowLifecycle } from './useRowLifecycle';
 import type { ActionContext } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
@@ -43,6 +44,7 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { representedThreadMessageCount } from './message-thread';
 
 /** The session collection is selected by capability, never by panel position
     or a kind literal. The empty centre must keep showing terminals after both
@@ -96,6 +98,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const viewportWidth = useViewportWidth();
 
   const engine = usePanelEngine({ nav, centerWidth, onNotice: props.onNotice });
+
+  /* D67 — the expanded row's state dropdown and archive control, on BOTH side
+     panels. The same executor EntityView mounts. */
+  const rowLifecycle = useRowLifecycle({
+    data,
+    viewerMemberId: props.viewerMemberId,
+    onNotice: props.onNotice,
+  });
 
   const layout = useMemo(
     () =>
@@ -201,7 +211,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       const messages = data.messagesOf(id);
       // Detail and Discussion are independent reads. A command result can
       // prefill the detail while the thread is still absent.
-      if (!detail || messages === undefined || messages.length < detail.counters.messages) {
+      if (
+        !detail
+        || messages === undefined
+        || representedThreadMessageCount(messages) < detail.counters.messages
+      ) {
         props.data.pull?.(id);
       }
 
@@ -374,6 +388,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
+          onSetState={rowLifecycle.setState}
+          onArchive={rowLifecycle.archive}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -457,6 +473,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
+          onSetState={rowLifecycle.setState}
+          onArchive={rowLifecycle.archive}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           launch={launchPort}

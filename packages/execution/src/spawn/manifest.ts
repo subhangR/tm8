@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import type {
   AccessMode,
   AgentMode,
+  CommandNetworkPolicy,
   PermissionMode,
   ReasoningEffort,
   SessionLaunchPosture,
@@ -53,6 +54,30 @@ export const DEFAULT_AGENT_TOOL = 'claude-code';
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
 /** The magic `TM8_AGENT_CMD` value that selects the built-in smoke agent. */
 export const ECHO_AGENT_CMD = 'echo-agent';
+
+/** Exact hosts tm8 grants to sandboxed Codex commands. */
+export const CODEX_LOOPBACK_HOSTS = ['127.0.0.1', 'localhost'] as const;
+
+/**
+ * tm8-owned Codex config overrides for command networking.
+ *
+ * Values are kept as raw argv entries and shell-quoted only at the final
+ * command-rendering seam. That makes TOML parsing and argument order directly
+ * unit-testable, and keeps spawn/resume on one policy source.
+ */
+export const CODEX_LOOPBACK_CONFIG_OVERRIDES = [
+  'sandbox_workspace_write.network_access=true',
+  'features.network_proxy.enabled=true',
+  'features.network_proxy.domains={"127.0.0.1"="allow", "localhost"="allow"}',
+  // Pin the safe default explicitly so a developer-global config cannot turn
+  // the exact-host policy into broad loopback/LAN/private-network access.
+  'features.network_proxy.allow_local_binding=false',
+] as const;
+
+/** Expand the tm8-owned Codex config overrides into their exact CLI argv. */
+export function codexLoopbackConfigArgs(): string[] {
+  return CODEX_LOOPBACK_CONFIG_OVERRIDES.flatMap((value) => ['-c', value]);
+}
 
 const PERMISSION_MODES: readonly PermissionMode[] = [
   'auto',
@@ -118,6 +143,57 @@ export interface ResolvedLaunchConfig {
   permissionMode: PermissionMode;
   accessMode: AccessMode;
   reasoningEffort: ReasoningEffort | null;
+}
+
+/**
+ * Resolve command networking independently from approval/filesystem posture.
+ *
+ * An operator wrapper remains operator-defined because tm8 cannot safely guess
+ * flags into its private CLI vocabulary. Explicit Codex full access remains
+ * unsandboxed and unchanged. Every tm8-owned, sandboxed Codex invocation gets
+ * the exact loopback proxy policy, including plan/readOnly sessions.
+ */
+export function resolveCommandNetworkPolicy(
+  launch: ResolvedLaunchConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): CommandNetworkPolicy {
+  const override = env.TM8_AGENT_CMD?.trim();
+  if (override && override !== 'codex') {
+    return {
+      mode: 'operator-defined',
+      commandNetworkAccess: null,
+      proxyEnabled: false,
+      allowedHosts: [],
+      portScoped: false,
+    };
+  }
+  if (launch.agentTool !== 'codex') {
+    return {
+      mode: 'provider-default',
+      commandNetworkAccess: null,
+      proxyEnabled: false,
+      allowedHosts: [],
+      portScoped: false,
+    };
+  }
+  if (launch.permissionMode === 'bypassPermissions') {
+    return {
+      mode: 'full-access',
+      commandNetworkAccess: true,
+      proxyEnabled: false,
+      allowedHosts: [],
+      portScoped: false,
+    };
+  }
+  return {
+    mode: 'loopback-proxy',
+    commandNetworkAccess: true,
+    proxyEnabled: true,
+    allowedHosts: [...CODEX_LOOPBACK_HOSTS],
+    // The proxy currently matches hosts only. An exact 127.0.0.1 rule can
+    // therefore reach every loopback port, not just tm8's configured port.
+    portScoped: false,
+  };
 }
 
 function asReasoningEffort(value: string | null | undefined): ReasoningEffort | null {
@@ -339,39 +415,7 @@ export function buildAgentCommand(
   }
 
   if (raw === 'codex') {
-    const args: string[] = [];
-    if (launch.model) args.push('--model', shellQuote(launch.model));
-
-    // Codex's approval prompts are the SAME unattended-hang hazard the Claude
-    // branch below documents at length, and this branch used to ignore them
-    // entirely: it emitted `--model` and nothing else, so a launched Codex
-    // stopped at its first approval request with no human at the terminal.
-    // Same authorization argument, same conclusion — tm8's spawn-time project
-    // TRUST gate (`execution_spawn` refuses an untrusted project) is the human
-    // authorization, so by the time we launch, an operator has vouched for this
-    // working directory. Mirrors maestro's codex-spawner buildCodexArgs.
-    if (launch.permissionMode === 'bypassPermissions') {
-      args.push('--dangerously-bypass-approvals-and-sandbox');
-    } else {
-      args.push('--ask-for-approval', mapCodexApprovalPolicy(launch.permissionMode));
-      args.push('--sandbox', mapCodexSandboxMode(launch.permissionMode));
-    }
-
-    // This PTY is always server-hosted and rendered into a browser xterm, so
-    // Codex must stay INLINE. Its default alternate-screen mode continuously
-    // redraws, which a reconnecting xterm client replays as a garbled buffer
-    // instead of ordinary scrollback. maestro gates this on
-    // `MAESTRO_PTY_HOST === 'server'`; in tm8 there is no other host.
-    args.push('--no-alt-screen');
-
-    if (launch.reasoningEffort) {
-      args.push('-c', shellQuote(`model_reasoning_effort=${JSON.stringify(launch.reasoningEffort)}`));
-    }
-
-    // NOT passed: `--cd`. The PTY spawns the child with `cwd` already set to the
-    // resolved working directory (SpawnService step 5), and naming it twice is
-    // two places for a future edit to disagree about.
-    return ['codex', ...args].join(' ');
+    return renderCodexCommand(buildCodexArgs(launch));
   }
 
   if (raw !== 'claude') return raw;
@@ -386,6 +430,52 @@ export function buildAgentCommand(
   if (launch.reasoningEffort) args.push('--effort', launch.reasoningEffort);
   if (opts.claudeSessionId) args.push('--session-id', shellQuote(opts.claudeSessionId));
   return ['claude', ...args].join(' ');
+}
+
+/**
+ * Build Codex's exact logical argv before any shell joining or quoting.
+ *
+ * This is the single source used by new sessions and by exact-id resume (which
+ * transforms only the executable/subcommand and retains these arguments).
+ */
+export function buildCodexArgs(launch: ResolvedLaunchConfig): string[] {
+  const args: string[] = [];
+  if (launch.model) args.push('--model', launch.model);
+
+  // Codex's approval prompts are the SAME unattended-hang hazard the Claude
+  // branch documents. tm8's project trust gate is the human authorization, so
+  // every non-bypass session receives an explicit non-interactive posture.
+  if (launch.permissionMode === 'bypassPermissions') {
+    // Explicit full access is preserved exactly: no proxy or sandbox flags are
+    // injected into the opt-in bypass path.
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+  } else {
+    args.push('--ask-for-approval', mapCodexApprovalPolicy(launch.permissionMode));
+    args.push('--sandbox', mapCodexSandboxMode(launch.permissionMode));
+    args.push(...codexLoopbackConfigArgs());
+  }
+
+  // This PTY is always server-hosted and rendered into a browser xterm, so
+  // Codex must stay inline for reconnectable scrollback.
+  args.push('--no-alt-screen');
+
+  if (launch.reasoningEffort) {
+    args.push('-c', `model_reasoning_effort=${JSON.stringify(launch.reasoningEffort)}`);
+  }
+
+  // NOT passed: `--cd`. The PTY already spawns with the graph-resolved cwd.
+  return args;
+}
+
+/** Quote only values whose content is not fixed CLI vocabulary. */
+function renderCodexCommand(args: readonly string[]): string {
+  const rendered: string[] = ['codex'];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] as string;
+    const previous = args[index - 1];
+    rendered.push(previous === '--model' || previous === '-c' ? shellQuote(arg) : arg);
+  }
+  return rendered.join(' ');
 }
 
 /**
@@ -548,15 +638,18 @@ function mapCodexApprovalPolicy(mode: PermissionMode): string {
   }
 }
 
-/** tm8's four postures → Codex's `--sandbox` mode (maestro: mapSandboxMode). */
+/** tm8 postures → Codex's `--sandbox` mode. */
 function mapCodexSandboxMode(mode: PermissionMode): string {
   switch (mode) {
     case 'auto':
     case 'acceptEdits':
     case 'interactive':
-      return 'workspace-write';
     case 'readOnly':
-      return 'read-only';
+      // Codex's legacy read-only sandbox has no supported network-enable key.
+      // tm8 plan agents still have to call the loopback graph API, so they run
+      // in workspace-write with source edits explicitly prohibited by the
+      // trusted launch prompt. See CODEX-COMMAND-NETWORK.md.
+      return 'workspace-write';
     case 'bypassPermissions':
       // Unreachable — see mapCodexApprovalPolicy.
       return 'danger-full-access';
@@ -616,9 +709,9 @@ const SAFE_BASE_ENV_KEYS = [
 /**
  * Compose the agent's environment.
  *
- * The three mandated variables (TM8_SESSION_ID / TM8_MANIFEST_PATH /
- * TM8_BASE_URL) are the whole boot contract — everything else is convenience an
- * agent may ignore.
+ * The session id, manifest path, base URL, and session-bound agent credential
+ * are the boot contract. The credential is supplied explicitly by SpawnService
+ * and is never inherited from the server process.
  *
  * The `CLAUDE_CODE_ENTRYPOINT` / `CLAUDECODE` deletions are a scar, not
  * housekeeping: when tm8-server is itself started from inside a Claude Code
@@ -642,6 +735,7 @@ export function composeEnv(
    * from these keys and already reaches the graph via `recordManifest`.
    */
   journalPath?: string,
+  agentToken?: string,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -654,6 +748,7 @@ export function composeEnv(
     TM8_TASK_IDS: manifest.tasks.map((t) => t.id).join(','),
   };
   if (journalPath) env.TM8_JOURNAL_PATH = journalPath;
+  if (agentToken) env.TM8_AGENT_TOKEN = agentToken;
 
   for (const key of SAFE_BASE_ENV_KEYS) {
     const value = parentEnv[key];
@@ -670,6 +765,14 @@ export function composeEnv(
   // Explicit empty strings also defend wrappers that interpret presence.
   env.CLAUDE_CODE_ENTRYPOINT = '';
   env.CLAUDECODE = '';
+
+  if (manifest.launch.commandNetwork.mode === 'loopback-proxy') {
+    // Codex's network proxy supplies HTTP(S)_PROXY to sandboxed commands.
+    // Node's built-in fetch does not use those variables unless this startup
+    // switch is present. Scope it to the proxy posture so explicit full access
+    // and non-Codex providers keep their previous process environment.
+    env.NODE_USE_ENV_PROXY = '1';
+  }
 
   // PROPHYLAXIS, not a fix for any observed cause. Confirmed on this machine
   // (2026-07-28) that Claude Code self-updates a `npm-global` install in the
@@ -688,13 +791,15 @@ export function composeEnv(
 
   // Put the `tm8` binary on the agent's PATH.
   //
-  // The system prompt instructs the agent to run `tm8 task report progress|
-  // complete|blocked` — that IS the reporting loop, and it is the only way its
-  // work becomes visible in the graph. `@tm8/cli` is a workspace package with a
-  // `bin` entry that nothing ever installs globally, so without this every one
-  // of those commands dies with "command not found" and the agent looks broken
-  // while believing it reported. PREPENDED so a stale globally-installed `tm8`
-  // cannot shadow the build this server actually shipped with.
+  // The system prompt instructs the agent to report durably with
+  // `tm8 message send --to <anchor-entity-id>` — that IS the reporting loop
+  // (the retired `task report` verbs are rejected vocabulary now), and it is
+  // the only way its work becomes visible in the graph. `@tm8/cli` is a
+  // workspace package with a `bin` entry that nothing ever installs globally,
+  // so without this every one of those commands dies with "command not found"
+  // and the agent looks broken while believing it reported. PREPENDED so a
+  // stale globally-installed `tm8` cannot shadow the build this server
+  // actually shipped with.
   const binDir = cliBinDir();
   if (binDir) {
     const inherited = parentEnv.PATH ?? '';
@@ -821,6 +926,8 @@ export interface ComposeManifestInput {
   request: SpawnRequest;
   context: SpawnContext;
   launch: ResolvedLaunchConfig;
+  /** Effective command-network policy resolved from launch + operator env. */
+  commandNetwork?: CommandNetworkPolicy;
   interactionProfile?: import('./types.js').InteractionProfilePinContext;
   workdir: { mode: WorkdirMode; path: string };
   command: string;
@@ -869,6 +976,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       permissionMode: launch.permissionMode,
       accessMode: launch.accessMode,
       reasoningEffort: launch.reasoningEffort,
+      commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       command,
     },
     session: {

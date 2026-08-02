@@ -1,7 +1,7 @@
 /**
  * GOLDEN WORKFLOW 3 — Ship & review.
  *
- * Source: docs/collab-v2-ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §3
+ * Source: docs/history/collab-v2/ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §3
  *   "PR link → in_review → side-by-side pinned splits → star → Complete →
  *    award moment → unblock ripple"
  *

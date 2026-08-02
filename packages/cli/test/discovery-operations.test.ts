@@ -46,8 +46,9 @@ import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/
 import { emitCommandHelp } from '../src/commands/help.js';
 import { createOutput } from '../src/output.js';
 
-// 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
-const EXPECTED_ROWS = 126;
+// 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+// 126 -> 127 (2026-08-02): execution.launch (public, with a command).
+const EXPECTED_ROWS = 127;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -113,7 +114,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 126 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 127 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -155,18 +156,14 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
   it('122 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 122, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 123, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
 describe('the CLI command projection', () => {
-  it('keeps the two internal/reserved rows and the UI-only directory read commandless', () => {
+  it('exactly two rows have no CLI command, and they are the asymmetric pair', () => {
     const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
-    expect(commandless.sort()).toEqual([
-      'bridge.fetchBlob',
-      'execution.prompt',
-      'projects.directories.list',
-    ]);
+    expect(commandless.sort()).toEqual(['bridge.fetchBlob', 'execution.prompt', 'projects.directories.list']);
   });
 
   it('ASYMMETRIC RESERVED HANDLING: search.query has a command, bridge.fetchBlob has none', () => {
@@ -673,7 +670,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
 
     // ── THE ONE ROW WHERE THE FLAG DOES NOT KEBAB ITS FIELD ─────────────────
     // `--expect-version` against `expectedArtifactVersion`. NOT a mistake and
-    // NOT to be "normalised": TM8-W0-AMENDMENT-DOSSIER.md §7:335 names the flag
+    // NOT to be "normalised": W0-AMENDMENT-DOSSIER.md §7:335 names the flag
     // verbatim in the table titled "CLI freeze", while §4:123-127 writes the
     // field as `expectedArtifactVersion`. The same document knew the field and
     // chose a shorter flag, so the authority wins over the kebab derivation.
@@ -821,7 +818,10 @@ describe('flag parseability: what the projection publishes, the parser can repre
       expect(d.syntax, d.operation).not.toMatch(/--timeout <n>/);
       expect(d.syntax, d.operation).not.toMatch(/--limit <n>/);
     }
-    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet']);
+    // 'fresh' joined 2026-08-02 (F2 read-cache); 'terse'/'full' joined
+    // 2026-08-02 (F5 render projection, opt-in). Globals all: no per-command
+    // syntax, no catalog digest movement.
+    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh', 'terse', 'full']);
   });
 });
 

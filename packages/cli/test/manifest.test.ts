@@ -12,6 +12,15 @@ import { parseManifest, readManifest } from '../src/manifest.js';
 const FIXTURE = fileURLToPath(new URL('./fixtures/manifest.sample.json', import.meta.url));
 
 describe('parseManifest', () => {
+  it('preserves launch authorization facts needed to recompose a plan prompt', () => {
+    expect(
+      parseManifest({
+        sessionId: 'ws_plan',
+        launch: { tool: 'codex', permissionMode: 'readOnly', accessMode: 'plan' },
+      }).launch,
+    ).toEqual({ tool: 'codex', permissionMode: 'readOnly', accessMode: 'plan' });
+  });
+
   it('reads every field the CLI consumes from the sample manifest', () => {
     const m = readManifest(FIXTURE);
     expect(m.sessionId).toBe('ws_01HZPHOENIXSESSION');

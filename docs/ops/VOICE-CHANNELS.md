@@ -1,7 +1,7 @@
 # Voice channels — from a fresh checkout to two tabs talking
 
 Discord-style voice channels, on a self-hosted [LiveKit](https://livekit.io) SFU.
-Design and rationale: `docs/plans/2026-07-31-voice-channels-plan.md`.
+Design and rationale: `docs/features/voice/VOICE-CHANNELS-PLAN.md`.
 
 **The one-sentence architecture:** the browser talks WebRTC directly to LiveKit;
 tm8-server only signs a token saying who may join which room, and only relays the

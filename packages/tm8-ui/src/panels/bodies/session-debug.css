@@ -36,6 +36,134 @@
   margin: var(--pn-space-4);
 }
 
+/* --- spawn configuration (what the session was TOLD) --------------------- */
+
+/* Capped and independently scrollable. The manifest, both prompts and the raw
+   JSON can run to thousands of lines between them; without a ceiling the
+   command journal below would be pushed off the panel entirely, and the two
+   halves of the debug surface have to remain readable at the same time. */
+.cv2-root .pn-debug__launch {
+  flex: none;
+  max-height: 46%;
+  overflow: auto;
+  border-bottom: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-debug__launch-summary,
+.cv2-root .pn-debug__block-summary {
+  cursor: pointer;
+  list-style: none;
+  font: 600 10px/1 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__launch-summary::-webkit-details-marker,
+.cv2-root .pn-debug__block-summary::-webkit-details-marker { display: none; }
+
+.cv2-root .pn-debug__launch-summary::before,
+.cv2-root .pn-debug__block-summary::before {
+  content: '▸ ';
+  color: var(--pn-ink-3);
+}
+
+.cv2-root details[open] > .pn-debug__launch-summary::before,
+.cv2-root details[open] > .pn-debug__block-summary::before { content: '▾ '; }
+
+.cv2-root .pn-debug__launch-summary {
+  padding: var(--pn-space-3) var(--pn-space-4);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-debug__launch-summary:hover,
+.cv2-root .pn-debug__block-summary:hover { color: var(--pn-ink); }
+
+.cv2-root .pn-debug__launch-when {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--pn-space-3) var(--pn-space-4);
+  padding: 0 var(--pn-space-4) var(--pn-space-3);
+}
+
+.cv2-root .pn-debug__field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cv2-root .pn-debug__field-label {
+  font: 600 10px/1 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__field-value {
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-debug__field-value[data-mono='true'] { font-family: var(--pn-mono); }
+
+/* An absent field is toned DOWN and worded, never blank — see the Field
+   component's note. */
+.cv2-root .pn-debug__field-absent {
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+  font-style: italic;
+}
+
+.cv2-root .pn-debug__block { padding: 0 var(--pn-space-4) var(--pn-space-2); }
+
+.cv2-root .pn-debug__block-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-2) 0 var(--pn-space-2) var(--pn-space-3);
+}
+
+.cv2-root .pn-debug__note {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-debug__envs,
+.cv2-root .pn-debug__tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .pn-debug__envs code,
+.cv2-root .pn-debug__task-id {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-debug__task-id {
+  margin-left: var(--pn-space-3);
+  color: var(--pn-ink-3);
+}
+
 /* --- header strip -------------------------------------------------------- */
 
 .cv2-root .pn-debug__header {

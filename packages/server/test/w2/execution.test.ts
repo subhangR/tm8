@@ -666,9 +666,30 @@ describe('registerFacadeHandlers carries messageDelivery to the messages seam', 
         },
       ],
     };
+    const routeResult = [{
+      targetMessageId: IDS.message,
+      targetWorkSessionId: IDS.session,
+      messageBatchId: 'batch-1',
+      senderActorId: IDS.member,
+      senderActorKind: 'member',
+      sourceAnchorId: ANCHOR,
+      sourceAnchorKind: 'channel',
+      sourceMessageId: IDS.message,
+      threadParentMessageId: null,
+      threadRootMessageId: IDS.message,
+      body: 'wake up',
+      addressingKind: 'channel_mention',
+      contextAnchors: [],
+      rollingControlMaxBytes: 16_384,
+      sessionInputAllowed: true,
+    }];
     const q: Querier = {
       query: async () => [] as never[],
-      rpc: async (fn: string) => (fn === 'w2_post_message_batch' ? rpcResult : {}) as never,
+      rpc: async (fn: string) => (
+        fn === 'w2_post_message_batch' ? rpcResult
+          : fn === 'w2_record_session_message_routes' ? routeResult
+            : {}
+      ) as never,
     };
     return {
       tx: async <T>(_c: DbClaims, fn: (qq: Querier) => Promise<T>) => fn(q),

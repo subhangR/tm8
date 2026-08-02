@@ -156,8 +156,11 @@ export function registerFacadeHandlers(
    * commands in `./input-schemas.ts`. Mounting it without them would put
    * unvalidated input in front of a handler that assumes the contract shape.
    */
-  registerW2MessagesHandoffsHandlers(registry, facade,
-    deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {});
+  registerW2MessagesHandoffsHandlers(registry, facade, {
+    ...(deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {}),
+    resolveAuthoredFromWorkSessionId: async (ctx) =>
+      ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null,
+  });
 
   /**
    * G12, G13 and G14 are pure additions — no operation below was registered by

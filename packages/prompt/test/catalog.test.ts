@@ -140,8 +140,9 @@ describe('no drift from the real composers', () => {
   });
 
   it('has one trusted-control entry per §14 template', () => {
-    // Ten templates in the frozen spec; the catalog must not quietly drop one.
-    expect(entriesInCategory('trusted-control').length).toBe(10);
+    // Session inputs now share one control type and reply routing lives in that
+    // envelope, leaving nine concrete templates for the catalog to enumerate.
+    expect(entriesInCategory('trusted-control').length).toBe(9);
   });
 
   it('lists every byte budget', () => {

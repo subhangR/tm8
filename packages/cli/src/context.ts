@@ -69,6 +69,8 @@ export interface CliContext {
   token: string | undefined;
   format: OutputFormat;
   timeoutMs: number | undefined;
+  /** `--fresh`: this invocation bypasses the session read-cache lookup. */
+  fresh: boolean;
 }
 
 /**
@@ -197,6 +199,7 @@ export function resolveContext(input: ResolveContextInput): CliContext {
     // parser has already applied it, so config only fills the default.
     format: input.formatExplicit === false && config.format ? config.format : globals.format,
     timeoutMs: globals.timeoutMs,
+    fresh: globals.fresh,
   };
 }
 

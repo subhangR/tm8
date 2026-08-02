@@ -176,13 +176,13 @@ describe('W5.C G04 messages.delete + attachments — behavioural branches', () =
    * asymmetry between two operations, not an opinion about one.
    *
    * ⚠ AND THE GOVERNING AUTHORITY IS EXPLICIT, WHICH LIFTS THIS ABOVE AN
-   * INTERNAL INCONSISTENCY. `TM8-W0-AMENDMENT-DOSSIER.md:82` — the frozen
+   * INTERNAL INCONSISTENCY. `W0-AMENDMENT-DOSSIER.md:82` — the frozen
    * contract, not a plan document — records the amendment for these operations
    * verbatim as:
    *
    *     | `messages.edit`, `messages.delete` | required `expectedVersion` … |
    *
-   * and `TM8-W0-CONSISTENCY-MATRICES.md:99` row 47 tags `messages.delete`
+   * and `W0-CONSISTENCY-MATRICES.md:99` row 47 tags `messages.delete`
    * `A expectedVersion` / `CR,W0-VERSION`. **REQUIRED, WITH NO EXCEPTION FOR AN
    * ALREADY-REDACTED MESSAGE.** So this is a contract-versus-implementation
    * divergence measured at the public boundary, and §21.3 governs it: when a
@@ -190,7 +190,7 @@ describe('W5.C G04 messages.delete + attachments — behavioural branches', () =
    *
    * CHECKED AGAINST `docs/` BEFORE FILING, per the rule that a gap register is a
    * finding already filed: the 14-row gap register in
-   * `docs/plans/TM8-CHAT-SYSTEM-DESIGN.md` §8 carries NO row for this, and no
+   * `docs/chat-and-messaging/CHAT-SYSTEM-DESIGN.md` §8 carries NO row for this, and no
    * doc mentions `w2_tombstone_message`'s version behaviour. NOT A REDISCOVERY.
    *
    * DISPOSITION (pin class: PRODUCTION state, so a disposition is mandatory).

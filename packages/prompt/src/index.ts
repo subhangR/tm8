@@ -31,6 +31,7 @@ import { assertWithinBudget } from './budgets.js';
 import { composeKernel } from './kernel.js';
 import {
   coordinatorBootstrapControl,
+  taskAssignmentInjection,
   workerBootstrapControl,
   type BootstrapControlFacts,
 } from './templates.js';
@@ -82,6 +83,13 @@ export interface PromptManifest {
       }
     | undefined;
   project?: { id?: string; name?: string; workingDir?: string } | null | undefined;
+  launch?:
+    | {
+        tool?: string | undefined;
+        permissionMode?: string | undefined;
+        accessMode?: string | undefined;
+      }
+    | undefined;
   interactionProfile?:
     | {
         profileId?: string | null | undefined;
@@ -96,6 +104,7 @@ export interface PromptManifest {
   tasks?:
     | ReadonlyArray<{
         id: string;
+        version?: number | undefined;
         title?: string | undefined;
         description?: string | undefined;
         priority?: string | undefined;
@@ -184,7 +193,13 @@ function block(text: string, pad: string): string {
 
 const WORKER_IDENTITY_INSTRUCTION =
   'You are an autonomous agent working inside a tm8 workspace. Work your assigned ' +
-  'tasks to completion. Discover syntax with `tm8 help --format json` and ask for ' +
+  'tasks to completion. Orient with one `tm8 entity context <anchor-id>` on your ' +
+  'assignment before any other read — it returns summary, hierarchy, recent ' +
+  'messages, and allowed actions with current version in one bounded call. ' +
+  'Re-read an entity only after an event names it: polling events since your last ' +
+  'seen seq tells you whether anything changed, and the context call\'s ' +
+  'provenance.eventSeq is your baseline. ' +
+  'Discover syntax with `tm8 help --format json` and ask for ' +
   'only the noun or action help the current step needs; do not assume a command ' +
   'because it appeared in an earlier session. Before mutating an entity, fetch its ' +
   'current allowed actions and version. Record task state through the owning domain ' +
@@ -192,32 +207,53 @@ const WORKER_IDENTITY_INSTRUCTION =
   '`tm8 message send --to <anchor-entity-id> "<body>"` on the assignment anchor is ' +
   'how a milestone, a result or a blocker becomes visible, and work nobody can see ' +
   'has not happened. Completion needs a verified result and a durable receipt — ' +
-  'your process exiting is not completion.';
+  'your process exiting is not completion: close out with one `tm8 message send` ' +
+  'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
+  'questions, and next-session pointers.';
 
 const COORDINATOR_IDENTITY_INSTRUCTION =
-  'You are a coordinating agent inside a tm8 workspace. Decompose your assigned work ' +
+  'You are a coordinating agent inside a tm8 workspace. Orient with one ' +
+  '`tm8 entity context <anchor-id>` on your assignment before any other read — it ' +
+  'returns summary, hierarchy, recent messages, and allowed actions with current ' +
+  'version in one bounded call. Re-read an entity only after an event names it: ' +
+  'polling events since your last seen seq tells you whether anything changed, and ' +
+  'the context call\'s provenance.eventSeq is your baseline. Decompose your assigned work ' +
   'into scoped units with explicit inputs, outputs and deliverables, and plan the ' +
   'order before you start. Delegate with `tm8 session spawn`; discover its spawn ' +
   'actions and the project associations first, and choose project, worktree or ' +
   'scratch explicitly. A spawned work session is an anchor like any other, so ' +
   '`tm8 message send --to <work-session-id> "<body>"` is how you brief it and how it ' +
   'answers you — there is no private child-result channel and nothing else delivers ' +
-  'on your behalf. Verify each unit against its success criteria, and record state ' +
+  'on your behalf. Hand off the shared anchor context to your workers yourself, once, ' +
+  'in each brief: a coordinator who does removes every worker\'s duplicate ' +
+  'orientation reads. Verify each unit against its success criteria, and record state ' +
   'through the owning domain command rather than announcing it.';
 
 const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'You are a worker agent in a coordinated multi-agent team. A coordinator spawned ' +
   'you and assigned the tasks below; execute them directly and autonomously. ' +
+  'Orient with one `tm8 entity context <anchor-id>` on your assignment before any ' +
+  'other read — it returns summary, hierarchy, recent messages, and allowed ' +
+  'actions with current version in one bounded call. Re-read an entity only after ' +
+  'an event names it: polling events since your last seen seq tells you whether ' +
+  'anything changed, and the context call\'s provenance.eventSeq is your baseline. ' +
   'Discover syntax with `tm8 help --format json`, and before mutating an entity ' +
   'fetch its current allowed actions and version. IMPORTANT — your coordinator is ' +
   'waiting on a durable answer, not on your process exiting: the moment you complete ' +
   'or block, send `tm8 message send --to <anchor-entity-id> "<body>"` on the ' +
-  'assignment anchor carrying outcome, verification, blockers and the entities or ' +
-  'artifacts you touched. Do not go idle after finishing.';
+  'assignment anchor carrying outcome, verification, blockers, the entities or ' +
+  'artifacts you touched, decisions and why, open questions, and next-session ' +
+  'pointers. Do not go idle after finishing.';
 
 const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'You are a sub-coordinator in a hierarchical multi-agent team. A parent coordinator ' +
-  'spawned you to own a slice of the work. Decompose that slice into scoped units ' +
+  'spawned you to own a slice of the work. Orient with one ' +
+  '`tm8 entity context <anchor-id>` on your assignment before any other read — it ' +
+  'returns summary, hierarchy, recent messages, and allowed actions with current ' +
+  'version in one bounded call. Re-read an entity only after an event names it: ' +
+  'polling events since your last seen seq tells you whether anything changed, and ' +
+  'the context call\'s provenance.eventSeq is your baseline. ' +
+  'Decompose that slice into scoped units ' +
   'with explicit deliverables and verify each against its success criteria. Delegate ' +
   'with `tm8 session spawn` and brief each child by messaging its work session; ' +
   'integrate every child result or report explicitly that you could not. IMPORTANT — ' +
@@ -248,7 +284,22 @@ export const COMMAND_SURFACE_INSTRUCTION =
   'are how your work becomes visible; nothing else in this environment writes to ' +
   'the graph on your behalf. This is not the command list — it is how to ask for ' +
   'one. Discover the syntax you need when you need it, and do not assume a command ' +
-  'because it appeared in an earlier session.';
+  'because it appeared in an earlier session. Read economically: prefer ' +
+  '`tm8 entity context <id>` for orientation — `entity get` returns the whole ' +
+  'entity unbounded, so reach for it only when you need the full body and version. ' +
+  'When a command pages, always pass --limit and continue with the returned ' +
+  'cursor. Never re-issue a read you have already made this session.';
+
+/**
+ * Codex's legacy read-only sandbox cannot enable command networking. A tm8
+ * plan session therefore uses workspace-write for transport while this trusted
+ * authorization keeps source editing out of scope.
+ */
+export const CODEX_PLAN_AUTHORIZATION_INSTRUCTION =
+  'This is a plan/read-only tm8 session. Do not create, modify, rename, or delete ' +
+  'workspace source files. Codex uses the workspace-write sandbox only so commands ' +
+  'can reach the loopback tm8 graph API through its proxy; that transport capability ' +
+  'does not grant source-editing authority.';
 
 export const NO_TASK_NOTE_V1 =
   'No task is attached to this session. Wait for instructions rather ' +
@@ -326,7 +377,7 @@ export function commandSurface(hasSession: boolean): CommandDoc[] {
     },
     {
       usage: 'tm8 entity context <entity-id> --format json',
-      what: 'bounded current context for one entity, with cursors instead of a whole subgraph',
+      what: 'bounded current context for one entity, with cursors instead of a whole subgraph; prefer this over `entity get`, which returns the whole entity unbounded',
     },
     {
       usage: 'tm8 entity attention <entity-id> --reason "<short reason>" --points <1-100>',
@@ -554,6 +605,18 @@ export function composePrompt(
   }
   s.push('  </session_context>');
 
+  if (manifest.launch?.accessMode === 'plan') {
+    s.push('  <authorization access_mode="plan">');
+    s.push(
+      `    <instruction>${
+        manifest.launch.tool === 'codex'
+          ? CODEX_PLAN_AUTHORIZATION_INSTRUCTION
+          : 'This is a plan/read-only tm8 session. Do not create, modify, rename, or delete workspace source files.'
+      }</instruction>`,
+    );
+    s.push('  </authorization>');
+  }
+
   const interactionProfile = manifest.interactionProfile;
   if (interactionProfile) {
     s.push('  <interaction_profile>');
@@ -615,25 +678,25 @@ export function composePrompt(
   const t: string[] = [];
   t.push(`<tm8_task_prompt count="${tasks.length}">`);
   for (const task of tasks) {
-    t.push(`  <task id="${esc(task.id)}">`);
-    if (task.title) t.push(`    <title>${esc(task.title)}</title>`);
-    if (task.priority) t.push(`    <priority>${esc(task.priority)}</priority>`);
-    if (task.workStatus) t.push(`    <status>${esc(task.workStatus)}</status>`);
-    if (task.description) {
-      t.push('    <description>');
-      t.push(block(task.description, '      '));
-      t.push('    </description>');
-    }
-    // Acceptance criteria are the agent's definition of done. They are composed
-    // into the manifest from the graph and were previously dropped on the floor
-    // by the reader, so an agent could not tell when it was finished.
     const criteria = strings(task.acceptanceCriteria);
-    if (criteria.length > 0) {
-      t.push('    <acceptance_criteria>');
-      for (const c of criteria) t.push(`      <criterion>${esc(c)}</criterion>`);
-      t.push('    </acceptance_criteria>');
-    }
-    t.push('  </task>');
+    const body = [
+      task.title ? `Title: ${task.title}` : null,
+      task.priority ? `Priority: ${task.priority}` : null,
+      task.workStatus ? `Status: ${task.workStatus}` : null,
+      task.description ? `Description:\n${task.description}` : null,
+      criteria.length > 0 ? `Acceptance criteria:\n${criteria.map((item) => `- ${item}`).join('\n')}` : null,
+    ].filter((line): line is string => line !== null).join('\n\n');
+    t.push(taskAssignmentInjection({
+      messageId: null,
+      taskId: task.id,
+      taskVersion: task.version ?? 'unverified',
+      senderActorId: null,
+      senderActorKind: null,
+      senderAttribution: 'recorded_only',
+      sourceSessionId: null,
+      destinationSessionId: sessionId ?? 'none',
+      body,
+    }));
   }
   if (tasks.length === 0) {
     t.push(`  <note>${NO_TASK_NOTE_V1}</note>`);

@@ -901,6 +901,21 @@
 
 /* --- shared tabs --------------------------------------------------------- */
 .cv2-root .pn-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.cv2-root .pn-thread__branch { display: flex; flex-direction: column; gap: 7px; }
+.cv2-root .pn-thread__replies {
+  list-style: none;
+  margin: 1px 0 0 13px;
+  padding: 0 0 0 17px;
+  border-left: 2px solid var(--pn-line-2);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.cv2-root .pn-thread__more {
+  margin: 0 0 0 39px;
+  color: var(--pn-ink-4);
+  font: 9.5px var(--pn-mono);
+}
 .cv2-root .pn-msg { display: flex; gap: 9px; }
 .cv2-root .pn-msg__col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cv2-root .pn-msg__byline { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
@@ -928,6 +943,19 @@
   cursor: help;
 }
 .cv2-root .pn-msg__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); text-wrap: pretty; }
+.cv2-root .pn-msg__reply-context {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  margin: 0 0 1px;
+  padding-left: 7px;
+  border-left: 2px solid var(--pn-brand);
+  color: var(--pn-ink-4);
+  font: 9.5px var(--pn-mono);
+}
+.cv2-root .pn-msg__reply-context strong { color: var(--pn-ink-2); }
+.cv2-root .pn-msg__reply-excerpt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A failed post is held HERE, beside the text that failed — T5-5's
    anti-toast law: a refusal never leaves the surface that asked. */
 .cv2-root .pn-composer__error {
@@ -2175,4 +2203,138 @@
   color: var(--pn-block);
   border-color: var(--pn-block);
   background: var(--pn-block-soft);
+}
+
+/* ---------------------------------------------------------------------------
+   D67 — the expanded row's state + archive strip
+   ---------------------------------------------------------------------------
+   ONE RULESET, THREE ANATOMIES. `.lp__rowdetail` mounts inside the standard
+   tile, inside the control-card's `pn-tt__meta` expand and inside the session
+   tile's — so the strip cannot look like three different controls depending on
+   which list you opened it from.
+
+   It repeats `.lp__flow`'s attached-card treatment (top hairline, recessed
+   fill) for the same reason that section exists: the writing surface stays
+   visibly PART of the row it writes to. */
+.cv2-root .lp__rowdetail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--pn-line);
+  background: color-mix(in srgb, var(--pn-surface) 72%, var(--pn-card));
+  cursor: default;
+}
+/* Nested inside a tile that already drew the hairline and the fill, the strip
+   is a continuation rather than a second card. */
+.cv2-root .pn-tt__meta .lp__rowdetail,
+.cv2-root .pn-st__tasklines + .lp__rowdetail {
+  padding-left: 0;
+  padding-right: 0;
+  background: none;
+}
+
+.cv2-root .lp__rowdetail-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.cv2-root .lp__rowdetail-label {
+  flex: none;
+  width: 54px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+}
+
+/* THE CARET IS A SIBLING PSEUDO-ELEMENT, NOT A BACKGROUND IMAGE.
+   Verified in Chrome, not assumed: the first build drew it with
+   `background-image` on the select, and `kit-pill--*` sets the `background`
+   SHORTHAND — which resets `background-image` — so the caret vanished and the
+   control was pixel-identical to the static status badge beside it. A user
+   could not tell it was a dropdown at all. A pseudo-element on a wrapper
+   cannot be reset by whatever tone class the pill happens to carry. */
+.cv2-root .lp__statewrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.cv2-root .lp__statewrap::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  width: 0;
+  height: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+  border-top: 4px solid currentColor;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+/* The select is styled as a PILL, not a form field: it sits in a row of pills
+   (status, priority) and a native control's chrome would make the one editable
+   fact the loudest thing on an otherwise quiet card. */
+.cv2-root .lp__statesel {
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid var(--pn-line);
+  border-radius: 999px;
+  background: var(--pn-card);
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 16px;
+  color: var(--pn-ink);
+}
+.cv2-root .lp__statesel--live {
+  /* Only the WRITABLE one gets a pointer and a hover: the disabled-with-reason
+     variants reuse this class for their pill and must not invite a click. */
+  cursor: pointer;
+  /* Room for the wrapper's caret. */
+  padding-right: 19px;
+}
+.cv2-root .lp__statesel--live:hover { border-color: var(--pn-ink-4); }
+.cv2-root .lp__statesel--live:focus-visible {
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+  outline: none;
+}
+.cv2-root .lp__statesel--absent {
+  color: var(--pn-ink-4);
+  font-style: italic;
+}
+
+/* The wide row-action carries its label.
+   `display` IS THE FIX, not the padding. The base `.lp__rowaction` is a
+   `grid` with `place-items: center` — sized for exactly one glyph — so a
+   second child became a second ROW and the word "Archive" rendered stacked
+   BELOW the button, outside its 22px box. Widening it alone did nothing.
+   Caught in Chrome; jsdom has no layout and reported the markup as correct. */
+.cv2-root .lp__rowaction--wide {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  gap: 5px;
+  padding: 0 9px;
+}
+.cv2-root .lp__rowaction-label {
+  font-size: 10.5px;
+  font-weight: 600;
+}
+/* The refused wide control: same silhouette as the live one, visibly inert.
+   Matching the shape matters — a refusal that looks like a different control
+   reads as "this feature is missing" rather than "you may not do this". */
+.cv2-root .lp__rowaction--off {
+  color: var(--pn-ink-4);
+  background: var(--pn-surface);
+  border-style: dashed;
+  cursor: default;
+  height: 22px;
+  box-sizing: border-box;
 }

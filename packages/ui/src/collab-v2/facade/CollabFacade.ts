@@ -1,7 +1,7 @@
 /**
  * CollabFacade — THE seam between the Collab V2 UI and any backend.
  *
- * One interface = the full route matrix of docs/COLLAB_V2_UI_DATA_CONTRACT.md
+ * One interface = the full route matrix of docs/history/collab-v2/UI-DATA-CONTRACT.md
  * (§3 reads, §4 commands, §5 realtime). The MockFacade implements it against a
  * seeded in-memory world; the real backend later is a new class implementing
  * the same interface — zero component changes.

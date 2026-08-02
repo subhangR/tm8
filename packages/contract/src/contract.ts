@@ -2,11 +2,11 @@
  * @tm8/contract — DTO + command types. THE LAW.
  *
  * §1 of this file is a near-verbatim transcription of the Collab V2 UI's
- * `types/contract.ts` (vendored at docs/ui-snapshot/ui-types-contract.ts.txt),
- * itself transcribed from docs/COLLAB_V2_UI_DATA_CONTRACT.md. Keep the diff
+ * `types/contract.ts` (vendored at docs/history/collab-v2/ui-snapshot/ui-types-contract.ts.txt),
+ * itself transcribed from docs/history/collab-v2/UI-DATA-CONTRACT.md. Keep the diff
  * against that snapshot ~zero so the W3 UI transplant is mechanical.
  *
- * §2 is the tm8 extension block (docs/tm8-architecture/03-ENTITY-GRAPH-DELTAS):
+ * §2 is the tm8 extension block (docs/architecture/03-ENTITY-GRAPH-DELTAS):
  * `work_session` + `collection` core kinds, custom (`c:*`) kinds, and the
  * `execution.*` operation family (R16). Extensions are additive — they widen
  * unions, never reshape inherited members.
@@ -130,7 +130,7 @@ export type CoreEntityState =
    * Semantic lifecycle only (forward-only: active → merged|abandoned → deleted).
    * Operational disk health (preparing/ready/missing/…) deliberately does NOT
    * appear here — it lives in `worktree_allocations`, which is not entity-backed
-   * and never bumps the entity version (TM8-WORKTREE-DESIGN.md §3).
+   * and never bumps the entity version (WORKTREE-DESIGN.md §3).
    */
   | { kind: 'worktree'; status: WorktreeStatus; branch: string; baseRef: string;
       baseCommitOid: string; projectId: ProjectId };
@@ -981,6 +981,18 @@ export interface PlacementInput extends CommandContext {
 export interface PostMessageInput extends CommandContext {
   clientMutationId: string;
   anchorIds: EntityId[];
+  /**
+   * Canonical conversation origin for a multi-anchor post.  A session-target
+   * copy uses this anchor's sibling message as its durable reply destination;
+   * it must never infer the origin from array order.
+   */
+  conversationAnchorId?: EntityId | null;
+  /**
+   * CLI/session reply projection.  When present `anchorIds` is the canonical
+   * empty array and the Server derives both the destination anchor and parent
+   * from the immutable route recorded for this delivered message copy.
+   */
+  replyToMessageId?: EntityId;
   body: string;
   parentMessageId?: EntityId | null;
   mentionIds?: EntityId[];
@@ -1086,7 +1098,19 @@ export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph'
  * enforced the CREATE rule with a VISIBILITY lever, and the cost was a whole
  * kind unreachable from the rail.
  */
-export type MenuKindRef = Exclude<EntityKind, 'channel' | 'message'>;
+/**
+ * `channel` un-excluded 2026-08-01, in lockstep with `MenuKindRefSchema` and
+ * for the same reason `worktree` was un-excluded on 2026-07-31: the exclusion
+ * described a kind that no longer exists in that form.
+ *
+ * It was here because `channel` was `strategy: 'special'` with no `k/` route —
+ * a reserved word the rail could not address as a collection. The user ruling
+ * of 2026-08-01 made it a real collection kind with the slug `channels`, so it
+ * now has exactly the same list view every other menu-eligible kind has, and
+ * the rail must be able to name it. `message` stays excluded: it is anchored,
+ * has no slug, and still has no collection view.
+ */
+export type MenuKindRef = Exclude<EntityKind, 'message'>;
 
 export type MenuLeaf =
   | { type: 'view'; ref: MenuViewRef }
@@ -1615,6 +1639,15 @@ export interface SessionJournalRecord {
   v: 1;
   /** Per-process counter. Pair with `startedAt` to order across processes. */
   seq: number;
+  /**
+   * Who this invocation was, decided AT WRITE TIME: a spawned agent, a test
+   * harness, or a human. OPTIONAL because records predating the field exist
+   * and must stay valid — readers fall back to heuristics for those. Without
+   * this split the corpus is unreadable: 2,737 of 3,018 measured records were
+   * the CLI integration suite inheriting `TM8_JOURNAL_PATH` from a parent
+   * agent, inverting the headline failure rate.
+   */
+  class?: 'agent' | 'harness' | 'human';
   sessionId: EntityId;
   spaceId: EntityId | null;
   teamMemberId: EntityId | null;
@@ -1690,6 +1723,69 @@ export interface SessionJournalPage {
   /** Oldest-first within the window. */
   records: SessionJournalRecord[];
   hasMore: boolean;
+}
+
+/**
+ * How ONE session was configured at the instant it was launched — the other
+ * half of the debug surface, alongside `SessionJournalPage`.
+ *
+ * The journal answers "what did this agent DO"; this answers "what was this
+ * agent TOLD". Both are needed to explain a session's behaviour, and until
+ * this existed the second question had no answer anywhere outside the node's
+ * own filesystem.
+ *
+ * EVERY FIELD IS A STORED FACT, never a re-derivation. In particular the two
+ * prompts are the bytes that went onto the child's argv, read back out of
+ * `session_manifests`, and NOT the output of running the composer again — a
+ * recomposed prompt describes the build doing the reading, not the launch
+ * being inspected, and the two diverge silently.
+ */
+export interface SessionLaunchRecord {
+  sessionId: EntityId;
+  /**
+   * false when the session has no manifest row at all: a spawn that failed
+   * before recording one, or a session whose row was never written. Renders as
+   * an explained empty, never as a blank configuration.
+   */
+  available: boolean;
+  /** Present only when `available` is false. Machine-readable reason. */
+  unavailableReason: 'no_manifest_row' | null;
+  /**
+   * The composed spawn manifest EXACTLY as stored: persona, resolved launch
+   * posture, command-network policy, workdir/project + trust, the pinned
+   * interaction profile, and the task list.
+   *
+   * DELIBERATELY UNTYPED. This is a JSON document written by whatever build
+   * spawned the session, and a strict schema here would refuse to show a
+   * manifest an older or newer build wrote — on the one surface whose entire
+   * job is to show what is actually there. Readers pick out the keys they know
+   * and render the rest verbatim.
+   */
+  manifest: Record<string, unknown> | null;
+  /**
+   * Environment variable NAMES handed to the agent process. Values are
+   * structurally absent (S15) — they are injected from the node's OS
+   * environment at spawn and never travel back into Postgres — so a reader
+   * must present these as names, never as configuration that can be inspected.
+   */
+  envVarNames: string[];
+  /**
+   * The two prompts, on the two channels they actually travel on: `system`
+   * configures the agent (`--append-system-prompt` / `developer_instructions`)
+   * and `task` is its first user turn (the CLI positional).
+   */
+  prompts: {
+    system: string | null;
+    task: string | null;
+    /**
+     * Why both are null. `not_recorded` means this session was launched before
+     * prompts were persisted, and the text is unrecoverable — it existed only
+     * in the spawn process's memory and on the child's argv.
+     */
+    unavailableReason: 'not_recorded' | null;
+  };
+  /** When the manifest row was written — i.e. when the session was launched. */
+  recordedAt: string | null;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------
@@ -1864,6 +1960,8 @@ export interface EntityFeedQuery {
 export interface DeliverySummary {
   deliveryId: string;
   targetWorkSessionId: EntityId;
+  /** Readable canonical session summary for direct navigation from a feed. */
+  targetWorkSession?: EntitySummary | null;
   status: MessageDeliveryStatus;
   attemptNo: number;
   failureReason: string | null;
@@ -1882,7 +1980,9 @@ export interface FeedItemBase {
 }
 
 export type FeedItem =
-  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[] })
+  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[];
+      /** Work-session siblings in this message batch (channel tag/spawn targets). */
+      linkedWorkSessions?: EntitySummary[] })
   | (FeedItemBase & { itemKind: 'activity'; activity: ActivityItem });
 
 export interface EntityFeedPage {

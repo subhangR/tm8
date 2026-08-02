@@ -377,6 +377,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             nodeAdmin: session.isNodeAdmin,
             accountId: session.accountId,
             sessionId: session.sessionId,
+            ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
             token: raw,
             // Agent sessions are persona-scoped (S8): the token may only act
             // as its team_member. Postgres still authorises via can_act_as.

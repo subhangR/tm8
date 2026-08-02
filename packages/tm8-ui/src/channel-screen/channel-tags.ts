@@ -286,6 +286,7 @@ export async function dispatchTaggedChannelMessage({
   spawnTeamMember: (teamMemberId: EntityId) => Promise<EntityId>;
   post: (input: {
     anchorIds: EntityId[];
+    conversationAnchorId: EntityId;
     body: string;
     parentMessageId: EntityId | null;
     mentionIds: EntityId[];
@@ -313,6 +314,7 @@ export async function dispatchTaggedChannelMessage({
   ])];
   await post({
     anchorIds,
+    conversationAnchorId: channelId,
     body,
     parentMessageId,
     mentionIds: [...new Set([...mentionIds, ...plan.mentionIds])],

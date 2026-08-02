@@ -44,6 +44,10 @@ describe('SHIPPED_DEFAULT_MENU', () => {
       'task',
       'work_session',
       'doc',
+      // Revision 6 (2026-08-01): Channels joins the collection rows. The
+      // contract's MenuKindRef un-excluded `channel` in the same change — it is
+      // a collection kind with a real list now, so the rail can name it.
+      'channel',
       'team_member',
       // Revision 4 (2026-07-31): Memories and Artifacts under the Workspace
       // caret, Worktrees beside the git-adjacent Tracking rows. All three
@@ -82,7 +86,10 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     // editor can offer them and a deep link still resolves. Channels moved to
     // the Entity List Panel — see the registry row's `strategy: 'collection'`.
     const refs = SHIPPED_DEFAULT_MENU.groups.flatMap((g) => g.items.map((i) => i.ref));
+    // The VIEW refs are gone; `channels` the view ref is not the same thing as
+    // `channel` the kind ref, which revision 6 put under the Workspace caret.
     for (const gone of ['feed', 'inbox', 'channels']) expect(refs).not.toContain(gone);
+    expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toContain('channel');
   });
 
   it('keeps depth at exactly ≤1 with Workspace as the one caret VIEW item', () => {

@@ -400,7 +400,7 @@ function continuesRun(previous: FeedItem | null, current: FeedItem): boolean {
   const a = previous.message;
   const b = current.message;
   if (a.state.redactedAt || b.state.redactedAt) return false;
-  if (b.state.rootMessageId || b.state.editedAt || b.pending) return false;
+  if (b.parentId || b.state.rootMessageId || b.state.editedAt || b.pending) return false;
   if (current.delivery.length > 0) return false;
   const authorA = a.state.author?.id ?? a.createdBy?.id ?? null;
   const authorB = b.state.author?.id ?? b.createdBy?.id ?? null;

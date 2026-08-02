@@ -168,6 +168,9 @@ const GLOBAL_PROBE: Readonly<Record<string, readonly string[]>> = {
   timeout: ['--timeout', '2'],
   'no-color': ['--no-color'],
   quiet: ['--quiet'],
+  fresh: ['--fresh'],
+  terse: ['--terse'],
+  full: ['--full'],
   help: ['--help'],
   version: ['--version'],
 };
@@ -288,9 +291,10 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
   }));
 
   it('sweeps the whole projection, not a subset', () => {
-    // Vacuity guards. The catalog is 126 rows, 123 of which publish syntax.
-    // 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
-    expect(rows.length).toBe(126);
+    // Vacuity guards. The catalog is 127 rows, 125 of which publish syntax.
+    // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+    // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
+    expect(rows.length).toBe(127);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

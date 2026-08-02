@@ -45,6 +45,7 @@ import {
   type Availability,
   type AvailabilityReason,
   type AvailabilitySource,
+  type CommandDiscovery,
   type Exposure,
   type Idempotency,
   type OperationDiscovery,
@@ -233,6 +234,9 @@ const GLOBAL_OPTIONS: { option: string; summary: string }[] = [
   { option: '--timeout <seconds>', summary: 'per-request timeout, in SECONDS' },
   { option: '--no-color', summary: 'disable colour' },
   { option: '--quiet', summary: 'silence notes on stderr; warnings and errors are never silenced' },
+  { option: '--fresh', summary: 'bypass the session read-cache and re-fetch from the Server' },
+  { option: '--terse', summary: 'project entity summaries to their work fields under json/jsonl; full envelope stays one flag away' },
+  { option: '--full', summary: 'render complete envelopes; defeats --terse wherever it came from' },
 ];
 
 export function rootHelp(opts: ShardOptions = {}): RootHelp {
@@ -386,10 +390,11 @@ function shardFrom(
   syntax: string | null,
   cap: number,
   effective?: EffectiveAvailability,
+  presentation?: Pick<CommandDiscovery, 'summary' | 'notes' | 'examples'>,
 ): CommandHelp {
   const head = rows[0] as OperationDiscovery;
-  const notes = [...new Set(rows.flatMap((r) => r.notes))];
-  const examples = command === null ? [] : head.examples.slice(0, 2);
+  const notes = presentation ? [...presentation.notes] : [...new Set(rows.flatMap((r) => r.notes))];
+  const examples = command === null ? [] : (presentation?.examples ?? head.examples).slice(0, 2);
   // A single-operation shard IS its own weakest stage, so the head row is the
   // effective verdict — the default is the composite rule, not an exception.
   const verdict: EffectiveAvailability = effective ?? {
@@ -405,7 +410,7 @@ function shardFrom(
       command,
       operations: rows.map((r) => r.operation),
       exposure: head.exposure,
-      summary: head.summary,
+      summary: presentation?.summary ?? head.summary,
       syntax,
       inputSchemaRef: head.inputSchemaRef,
       outputSchemaRef: head.outputSchemaRef,
@@ -442,7 +447,7 @@ export function commandHelp(path: readonly string[], opts: ShardOptions = {}): C
     availability: found.availability,
     availabilityReason: found.availabilityReason,
     availabilitySource: found.availabilitySource,
-  });
+  }, found);
 }
 
 /**

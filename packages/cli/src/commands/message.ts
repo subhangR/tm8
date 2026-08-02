@@ -1,5 +1,5 @@
 /**
- * `tm8 message list|send|update|delete|attachment add|attachment remove|delivery`
+ * `tm8 message list|send|reply|update|delete|attachment add|attachment remove|delivery`
  * — the durable communication surface (§4.7).
  *
  * MESSAGE SEND IS THE ONLY PUBLIC COMMUNICATION ACTION FOR TEXT. There is no
@@ -315,6 +315,17 @@ async function messageSend(cmd: CommandContext): Promise<ExitCode> {
   }
   const wait = parseWait(cmd.options.value('wait'));
   const body = await resolveBody(cmd.args[0], cmd.options.value('body'), 'message send');
+  const conversationAnchorId = cmd.options.value('conversation');
+  if (anchorIds.length > 1 && !conversationAnchorId) {
+    throw new CliError(
+      'tm8 message send with more than one --to requires --conversation <anchor-entity-id>',
+      EXIT_USAGE,
+      { hint: 'name the place this conversation came from; reply routing never guesses from --to order' },
+    );
+  }
+  if (conversationAnchorId && !anchorIds.includes(conversationAnchorId)) {
+    throw new CliError('--conversation must also appear as a --to anchor', EXIT_USAGE);
+  }
 
   const request: Record<string, unknown> = {
     anchorIds,
@@ -323,12 +334,44 @@ async function messageSend(cmd: CommandContext): Promise<ExitCode> {
     // correlates a retry with the batch it already created.
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   };
+  if (conversationAnchorId) request.conversationAnchorId = conversationAnchorId;
   const mentionIds = uniqueInOrder(cmd.options.values('mention'));
   const attachmentIds = uniqueInOrder(cmd.options.values('attach'));
   if (mentionIds.length > 0) request.mentionIds = mentionIds;
   if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
   if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
 
+  return postMessage(cmd, request, wait);
+}
+
+async function messageReply(cmd: CommandContext): Promise<ExitCode> {
+  const messageId = requireArg(cmd.args[0], 'a <message-id>', 'message reply');
+  if (cmd.options.values('to').length > 0 || cmd.options.value('conversation')) {
+    throw new CliError(
+      'tm8 message reply derives its anchor and thread from <message-id>; do not pass --to or --conversation',
+      EXIT_USAGE,
+    );
+  }
+  const wait = parseWait(cmd.options.value('wait'));
+  const body = await resolveBody(cmd.args[1], cmd.options.value('body'), 'message reply');
+  const request: Record<string, unknown> = {
+    replyToMessageId: messageId,
+    body,
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+  };
+  const mentionIds = uniqueInOrder(cmd.options.values('mention'));
+  const attachmentIds = uniqueInOrder(cmd.options.values('attach'));
+  if (mentionIds.length > 0) request.mentionIds = mentionIds;
+  if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
+  if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
+  return postMessage(cmd, request, wait);
+}
+
+async function postMessage(
+  cmd: CommandContext,
+  request: Record<string, unknown>,
+  wait: WaitMode,
+): Promise<ExitCode> {
   const client = clientFor(cmd.ctx);
   const batch = await observedInvoke<{ messages?: unknown }>(client, 'messages.post', {
     body: request,
@@ -548,6 +591,7 @@ function renderDelivery(dto: unknown): string {
 export const MESSAGE_COMMANDS: CommandModule[] = [
   { path: ['message', 'list'], run: messageList },
   { path: ['message', 'send'], run: messageSend },
+  { path: ['message', 'reply'], run: messageReply },
   { path: ['message', 'update'], run: messageUpdate },
   { path: ['message', 'delete'], run: messageDelete },
   {

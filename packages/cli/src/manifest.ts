@@ -62,6 +62,13 @@ export interface ManifestProject {
   workingDir?: string;
 }
 
+/** Launch authorization facts needed when `tm8 worker init` recomposes a prompt. */
+export interface ManifestLaunch {
+  tool?: string;
+  permissionMode?: string;
+  accessMode?: string;
+}
+
 /** Present when a coordinator spawned this session — the return path. */
 export interface ManifestCoordinator {
   sessionId?: string;
@@ -101,6 +108,7 @@ export interface Tm8Manifest {
   mode?: AgentMode;
   agent?: ManifestAgent;
   project?: ManifestProject | null;
+  launch?: ManifestLaunch;
   tasks?: ManifestTask[];
   coordinator?: ManifestCoordinator | null;
   directive?: ManifestDirective | null;
@@ -196,6 +204,7 @@ export function parseManifest(raw: unknown): Tm8Manifest {
 
   const agentRaw = isRecord(raw.agent) ? raw.agent : undefined;
   const projectRaw = isRecord(raw.project) ? raw.project : undefined;
+  const launchRaw = isRecord(raw.launch) ? raw.launch : undefined;
   const coordRaw = isRecord(raw.coordinator) ? raw.coordinator : undefined;
   const directiveRaw = isRecord(raw.directive) ? raw.directive : undefined;
 
@@ -247,6 +256,13 @@ export function parseManifest(raw: unknown): Tm8Manifest {
           id: str(projectRaw.id),
           name: str(projectRaw.name),
           workingDir: str(projectRaw.workingDir),
+        })
+      : undefined,
+    launch: launchRaw
+      ? defined<ManifestLaunch>({
+          tool: str(launchRaw.tool),
+          permissionMode: str(launchRaw.permissionMode),
+          accessMode: str(launchRaw.accessMode),
         })
       : undefined,
     tasks: tasks && tasks.length > 0 ? tasks : undefined,

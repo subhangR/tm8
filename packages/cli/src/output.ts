@@ -15,6 +15,7 @@ export const OUTPUT_FORMATS = ['human', 'json', 'jsonl'] as const;
 export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
 
 import { CliError, EXIT_USAGE } from './exit.js';
+import { projectTerse, type RenderMode } from './terse.js';
 
 export interface OutputStreams {
   stdout(chunk: string | Uint8Array): void;
@@ -34,6 +35,12 @@ export interface OutputOptions {
   color?: boolean;
   /** `--quiet` silences NOTES. Warnings and errors are never silenced. */
   quiet?: boolean;
+  /**
+   * `--terse` (F5, opt-in): project entity summaries to their work fields
+   * before `json`/`jsonl` serialization. Human renders are untouched — see
+   * `terse.ts` for the shape and the two load-bearing rules.
+   */
+  render?: RenderMode;
   streams?: OutputStreams;
 }
 
@@ -44,6 +51,7 @@ export class Output {
   readonly format: OutputFormat;
   readonly color: boolean;
   readonly quiet: boolean;
+  readonly render: RenderMode;
   private readonly streams: OutputStreams;
   private wroteBytes = false;
   private wroteStructured = false;
@@ -52,6 +60,7 @@ export class Output {
     this.format = opts.format;
     this.color = opts.color ?? false;
     this.quiet = opts.quiet ?? false;
+    this.render = opts.render ?? 'full';
     this.streams = opts.streams ?? processStreams;
   }
 
@@ -66,11 +75,12 @@ export class Output {
       this.streams.stdout(`${human(dto)}\n`);
       return;
     }
+    const payload = this.render === 'terse' ? projectTerse(dto) : dto;
     if (this.format === 'json') {
-      this.streams.stdout(`${JSON.stringify(dto, null, 2)}\n`);
+      this.streams.stdout(`${JSON.stringify(payload, null, 2)}\n`);
       return;
     }
-    this.streams.stdout(`${JSON.stringify(dto)}\n`);
+    this.streams.stdout(`${JSON.stringify(payload)}\n`);
   }
 
   /**
@@ -90,7 +100,9 @@ export class Output {
     }
     this.wroteStructured = true;
     this.streams.stdout(
-      this.format === 'human' ? `${human(dto)}\n` : `${JSON.stringify(dto)}\n`,
+      this.format === 'human'
+        ? `${human(dto)}\n`
+        : `${JSON.stringify(this.render === 'terse' ? projectTerse(dto) : dto)}\n`,
     );
   }
 

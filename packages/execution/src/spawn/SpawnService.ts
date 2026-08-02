@@ -7,7 +7,7 @@
 // point is that the PTY assertions can run with no Postgres at all.
 
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
@@ -16,15 +16,21 @@ import { composePrompt } from '@tm8/prompt';
 
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
 import {
+  preflightCodexNetworkPolicy,
+  type CodexNetworkPreflight,
+} from './codex-network-preflight.js';
+import {
   buildAgentCommand,
   composeEnv,
   composeManifest,
   resolveAgentBinary,
+  resolveCommandNetworkPolicy,
   resolveLaunchConfig,
   resolveSessionTitle,
   resolveWorkdir,
   withAgentPrompt,
   withAgentResume,
+  type ResolvedLaunchConfig,
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import type {
@@ -54,6 +60,8 @@ export interface SpawnServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Window in which a child exit makes spawn itself fail. Default 150ms. */
   bootSettlementMs?: number;
+  /** Injected only for deterministic compatibility-preflight tests. */
+  codexNetworkPreflight?: CodexNetworkPreflight;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -63,6 +71,52 @@ const EXIT_STATUS_MAP: Record<PtySessionStatus, WorkSessionStatus> = {
   completed: 'exited',
   failed: 'failed',
 };
+
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+/**
+ * Tighten an application-owned directory even when it predates the permission
+ * boundary. `mkdir({ mode })` only applies to directories it creates, so it is
+ * not enough for an upgraded node whose roots already exist as 0755.
+ */
+async function ensurePrivateDirectory(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  const info = await lstat(path);
+  if (!info.isDirectory()) {
+    throw new Error(`private tm8 data root is not a directory: ${path}`);
+  }
+  await chmod(path, PRIVATE_DIRECTORY_MODE);
+}
+
+/**
+ * Repair regular files already present in a private data root. Symlinks and
+ * special files are deliberately ignored: following one during remediation
+ * could chmod a target outside the tm8 data directory.
+ */
+async function repairPrivateFiles(path: string): Promise<void> {
+  const entries = await readdir(path, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = join(path, entry.name);
+      const info = await lstat(entryPath);
+      if (info.isFile()) await chmod(entryPath, PRIVATE_FILE_MODE);
+    }),
+  );
+}
+
+/** A 0700 scratch root is sufficient to protect everything below it, but its
+ * existing per-session directories are tightened as defence in depth. */
+async function repairPrivateChildDirectories(path: string): Promise<void> {
+  const entries = await readdir(path, { withFileTypes: true });
+  await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = join(path, entry.name);
+      const info = await lstat(entryPath);
+      if (info.isDirectory()) await chmod(entryPath, PRIVATE_DIRECTORY_MODE);
+    }),
+  );
+}
 
 /**
  * Turn a {@link PtyExitInfo} into the honest, human-readable statement that
@@ -103,6 +157,9 @@ export class SpawnService {
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
+  private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  /** One fail-closed remediation pass per service lifetime. */
+  private privateDataLayoutReady: Promise<void> | undefined;
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -130,6 +187,37 @@ export class SpawnService {
     this.logger = options.logger;
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
+    this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+  }
+
+  /**
+   * One spawn/resume gate for binary presence and Codex proxy compatibility.
+   */
+  private async assertAgentRuntime(
+    baseCommand: string,
+    launch: ResolvedLaunchConfig,
+    env: NodeJS.ProcessEnv,
+  ): Promise<void> {
+    const binary = baseCommand.split(' ')[0] ?? '';
+    const unquoted = binary.replace(/^'|'$/g, '');
+    const resolved = resolveAgentBinary(unquoted, env.PATH ?? '');
+    if (resolved === null) {
+      throw new SpawnError(
+        `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
+          `Looked on PATH: ${env.PATH ?? '(empty)'}`,
+        'not_found',
+        { agentTool: launch.agentTool, binary: unquoted },
+      );
+    }
+
+    const override = this.env.TM8_AGENT_CMD?.trim();
+    if (
+      launch.agentTool === 'codex' &&
+      launch.permissionMode !== 'bypassPermissions' &&
+      (!override || override === 'codex')
+    ) {
+      await this.codexNetworkPreflight(resolved, env);
+    }
   }
 
   private manifestPathFor(sessionId: string): string {
@@ -150,6 +238,44 @@ export class SpawnService {
    */
   private journalPathFor(sessionId: string): string {
     return join(this.dataDir, 'journals', `${sessionId}.jsonl`);
+  }
+
+  /**
+   * Manifests contain the full persona and task briefing, journals contain
+   * command output, and scratch directories contain the agent's files. They
+   * are one confidentiality boundary and must be repaired together.
+   *
+   * This runs lazily on the first non-replayed spawn/resume so a permission
+   * failure participates in the existing failed-session cleanup path. Caching
+   * the promise also prevents concurrent spawns from racing the same sweep.
+   */
+  private ensurePrivateDataLayout(): Promise<void> {
+    if (this.privateDataLayoutReady) return this.privateDataLayoutReady;
+
+    this.privateDataLayoutReady = (async () => {
+      const manifests = join(this.dataDir, 'manifests');
+      const journals = join(this.dataDir, 'journals');
+      const scratch = join(this.dataDir, 'scratch');
+
+      await Promise.all([
+        ensurePrivateDirectory(manifests),
+        ensurePrivateDirectory(journals),
+        ensurePrivateDirectory(scratch),
+      ]);
+      await Promise.all([
+        repairPrivateFiles(manifests),
+        repairPrivateFiles(journals),
+        repairPrivateChildDirectories(scratch),
+      ]);
+    })();
+
+    return this.privateDataLayoutReady;
+  }
+
+  private async ensurePrivateScratchDirectory(path: string): Promise<void> {
+    await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+    // As above, `mode` does not repair an existing directory (notably resume).
+    await chmod(path, PRIVATE_DIRECTORY_MODE);
   }
 
   /**
@@ -235,6 +361,7 @@ export class SpawnService {
 
     const inherited = await this.inheritedPosture(auth, request);
     const launch = resolveLaunchConfig(request, context, this.env, inherited);
+    const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
     if (inherited) {
       this.logger?.info('SpawnService: child inherits its parent session posture', {
         parentSessionId: request.parentSessionId,
@@ -293,6 +420,7 @@ export class SpawnService {
         request,
         context,
         launch,
+        commandNetwork,
         interactionProfile: { ...resolvedProfile, pinRevision: 0 },
         workdir: { mode: workdir.mode, path: cwd },
         command,
@@ -324,6 +452,11 @@ export class SpawnService {
         sessionId,
         resolvedProfile,
       );
+      const agentToken = await this.graph.issueWorkSessionAgentToken(
+        auth,
+        sessionId,
+        request.teamMemberId,
+      );
       // The base command is built FIRST and recorded in the manifest; the system
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
@@ -335,6 +468,7 @@ export class SpawnService {
         request,
         context,
         launch,
+        commandNetwork,
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
@@ -374,7 +508,14 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
+      const env = composeEnv(
+        manifest,
+        manifestPath,
+        this.baseUrl,
+        this.env,
+        this.journalPathFor(sessionId),
+        agentToken,
+      );
       const envVarNames = Object.keys(env).sort();
 
       // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
@@ -388,23 +529,24 @@ export class SpawnService {
       // binaries. `composeEnv` has already added the standard install dirs, so
       // reaching this branch means the CLI genuinely is not installed anywhere
       // tm8 knows to look — which is a `not_found`, not a retryable 503.
-      const binary = baseCommand.split(' ')[0] ?? '';
-      const unquoted = binary.replace(/^'|'$/g, '');
-      if (resolveAgentBinary(unquoted, env.PATH ?? '') === null) {
-        throw new SpawnError(
-          `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
-            `Looked on PATH: ${env.PATH ?? '(empty)'}`,
-          'not_found',
-          { agentTool: launch.agentTool, binary: unquoted },
-        );
-      }
+      await this.assertAgentRuntime(baseCommand, launch, env);
 
       await this.writeManifestFile(manifestPath, manifest);
       // Names only. The manifest row is read by the UI and included in backups;
       // an ANTHROPIC_API_KEY value in there would outlive every rotation.
-      await this.graph.recordManifest(auth, sessionId, manifest, envVarNames);
+      //
+      // The two prompts go down WITH the manifest, in the same write, because
+      // this is the only moment they exist as data: a second later they are
+      // argv on a child process and nothing can read them back. `task` is the
+      // one actually handed to the PTY — including the Codex session marker —
+      // so that a reader sees the real first user turn rather than the
+      // pre-marker composer output.
+      await this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
+        system: envelope.system,
+        task,
+      });
 
-      if (!context.project) await mkdir(cwd, { recursive: true });
+      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
 
       // Record the CLI's per-workspace trust BEFORE the child exists, because
       // afterwards is too late: the dialog blocks on first directory access, and
@@ -538,6 +680,7 @@ export class SpawnService {
       clientMutationId: request.clientMutationId ?? null,
     };
     const launch = resolveLaunchConfig(syntheticRequest, context, this.env, recordedPosture);
+    const commandNetwork = resolveCommandNetworkPolicy(launch, this.env);
 
     if (launch.agentTool !== 'claude-code' && launch.agentTool !== 'codex') {
       throw new SpawnError(
@@ -619,6 +762,7 @@ export class SpawnService {
         request: syntheticRequest,
         context,
         launch,
+        commandNetwork,
         workdir: { mode: info.workdirMode, path: cwd },
         command,
         baseUrl: this.baseUrl,
@@ -661,6 +805,19 @@ export class SpawnService {
         });
       }
 
+      if (!info.teamMemberId) {
+        throw new SpawnError(
+          `work session ${sessionId} has no related team member and cannot receive a session-bound credential`,
+          'conflict',
+          { sessionId },
+        );
+      }
+      const agentToken = await this.graph.issueWorkSessionAgentToken(
+        auth,
+        sessionId,
+        info.teamMemberId,
+      );
+
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
       const baseCommand = buildAgentCommand(launch, this.env);
@@ -669,6 +826,7 @@ export class SpawnService {
         request: syntheticRequest,
         context,
         launch,
+        commandNetwork,
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
         command: baseCommand,
@@ -683,26 +841,24 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
+      const env = composeEnv(
+        manifest,
+        manifestPath,
+        this.baseUrl,
+        this.env,
+        this.journalPathFor(sessionId),
+        agentToken,
+      );
       const envVarNames = Object.keys(env).sort();
 
-      const binary = baseCommand.split(' ')[0] ?? '';
-      const unquoted = binary.replace(/^'|'$/g, '');
-      if (resolveAgentBinary(unquoted, env.PATH ?? '') === null) {
-        throw new SpawnError(
-          `agent CLI '${unquoted}' was not found — install it, or point TM8_AGENT_CMD at it. ` +
-            `Looked on PATH: ${env.PATH ?? '(empty)'}`,
-          'not_found',
-          { agentTool: launch.agentTool, binary: unquoted },
-        );
-      }
+      await this.assertAgentRuntime(baseCommand, launch, env);
 
       // The manifest FILE is rewritten (the agent re-reads it at boot); the
       // manifest ROW is not re-recorded — record_session_manifest documented
       // the original launch, and this resume's exact command is in the ledger.
       await this.writeManifestFile(manifestPath, manifest);
 
-      if (!context.project) await mkdir(cwd, { recursive: true });
+      if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
       if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, this.env);
       if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, this.env);
 
@@ -739,14 +895,27 @@ export class SpawnService {
   }
 
   private async writeManifestFile(path: string, manifest: Tm8Manifest): Promise<void> {
-    await mkdir(dirname(path), { recursive: true });
+    await this.ensurePrivateDataLayout();
+    await ensurePrivateDirectory(dirname(path));
     // Write-then-rename: the agent boots concurrently and must never observe a
     // half-written manifest. A truncated JSON parse at boot is indistinguishable
     // from a malformed manifest, and the agent has no way to retry.
+    //
+    // The fixed temp name is removed first. `writeFile({ mode })` does not
+    // change an existing file's mode and follows symlinks; either behaviour
+    // would let a stale pre-fix `.tmp` preserve 0644 or redirect the write.
     const tmp = `${path}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    const { rename } = await import('node:fs/promises');
+    await rm(tmp, { force: true });
+    await writeFile(tmp, `${JSON.stringify(manifest, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: PRIVATE_FILE_MODE,
+      flag: 'wx',
+    });
+    // Assert the postcondition explicitly rather than trusting the process
+    // umask or creation semantics. The rename then publishes a 0600 inode.
+    await chmod(tmp, PRIVATE_FILE_MODE);
     await rename(tmp, path);
+    await chmod(path, PRIVATE_FILE_MODE);
   }
 
   private async failSession(

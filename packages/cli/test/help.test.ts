@@ -23,6 +23,9 @@ import {
 } from '../src/discovery/help.js';
 import { CATALOG_DIGEST, PUBLIC_NOUNS, commands, discoveryFor } from '../src/discovery/operations.js';
 import { completionScript } from '../src/discovery/completion.js';
+import { createOutput } from '../src/output.js';
+import { help } from '../src/commands/help.js';
+import { parseInvocation } from '../src/args.js';
 
 const json = (dto: unknown): string => JSON.stringify(dto);
 
@@ -103,17 +106,19 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       const e = discoveryFor(o.name).exposure;
       return e === 'public' || e === 'composite';
     }).map((o) => o.name);
-    expect(wanted).toHaveLength(123); // +1 public UI-only project directory read.
+    // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+    // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
+    expect(wanted).toHaveLength(124);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
-  it('D3: every one of the 126 operations has intent tags', () => {
+  it('D3: every one of the 127 operations has intent tags', () => {
     let swept = 0;
     for (const op of OPERATIONS) {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(126);
+    expect(swept).toBe(127);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -188,7 +193,7 @@ describe('command shards — tm8.help.command.v1, 16 KiB HARD', () => {
   });
 });
 
-describe('exact operation lookup — TOTAL over all 126 (conformance D2)', () => {
+describe('exact operation lookup — TOTAL over all 127 (conformance D2)', () => {
   it('succeeds for every catalog operation and returns ONE digest', () => {
     const digests = new Set<string>();
     const seen = new Set<string>();
@@ -200,7 +205,7 @@ describe('exact operation lookup — TOTAL over all 126 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(126);
+    expect(seen.size).toBe(127);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 
@@ -281,6 +286,25 @@ describe('intent search — tm8.help.search.v1, 16 KiB AND at most 5 (conformanc
     }
   });
 
+  it('notes are indexed: the body-cap fact is findable by intent', () => {
+    // The one discovery miss the corpus measured: the 10k body cap lives in a
+    // note, and note words were invisible to --query until NOTE_WORD.
+    const res = searchHelp('message body length limit');
+    const ops = res.matches.map((m) => m.operation);
+    // messages.edit ranks first by an honest SUMMARY_WORD ("body" is in its
+    // summary, 8 > 4); the note tier's job is to surface messages.post at all,
+    // and to lift it above the rows that match only on the "message" prefix.
+    expect(ops).toContain('messages.post');
+    expect(ops.indexOf('messages.post')).toBeLessThan(ops.indexOf('messages.list'));
+    const post = res.matches.find((m) => m.operation === 'messages.post');
+    expect(post?.command).toBe('message send');
+    expect(post?.reason).toContain('body');
+    // The :280 honesty rule must survive note indexing: messages.post notes
+    // contain the words "prompt, report, or progress", but the rendered reason
+    // quotes the summary only — never a retired verb as a command.
+    expect(json(res)).not.toMatch(/tm8 (session prompt|report|progress|whoami)/);
+  });
+
   it('every match carries a reason and a helpRef so the answer is followable', () => {
     for (const m of searchHelp('find my tasks').matches) {
       expect(m.reason.length).toBeGreaterThan(5);
@@ -330,8 +354,10 @@ describe('every dimensioned value names its dimension, on EVERY surface', () => 
         /<seconds>|SECONDS/,
       );
     }
-    // root help + all three completion scripts.
-    expect(mentioning).toBe(4);
+    // root help + all three completion scripts, plus the two renderings of the
+    // events.subscribe row (cmd:event watch, op:events.subscribe) whose F7 note
+    // names `--timeout <seconds>` for `--until-match`.
+    expect(mentioning).toBe(6);
   });
 
   it('`--limit` is rendered as a count, never a bare <n>', () => {
@@ -360,5 +386,94 @@ describe('byte caps are enforced by truncating LOUDLY, never silently', () => {
     const res = searchHelp('message', { cap: 400 });
     expect(byteLength(res)).toBeLessThanOrEqual(400);
     if (res.matches.length < 5) expect(res.truncated).toBeDefined();
+  });
+});
+
+describe('help router — quoted paths resolve like unquoted ones', () => {
+  /** Capture one help() run: the emitted stdout bytes and the exit path. */
+  const invoke = (args: string[]): { stdout: string; code: number } => {
+    let stdout = '';
+    const out = createOutput({
+      format: 'json',
+      streams: {
+        stdout: (chunk: string | Uint8Array) => { stdout += String(chunk); },
+        stderr: () => {},
+      },
+    });
+    const code = help(args, parseInvocation(['help', ...args]).options, out);
+    return { stdout, code };
+  };
+
+  it('`tm8 help "entity get"` (ONE argv element) is byte-identical to the unquoted form', () => {
+    const quoted = invoke(['entity get']);
+    const unquoted = invoke(['entity', 'get']);
+    expect(quoted.code).toBe(0);
+    expect(quoted.stdout).toBe(unquoted.stdout);
+    expect(quoted.stdout).toContain('tm8.help.command.v1');
+  });
+
+  it('a quoted three-token path resolves too, and stray whitespace is harmless', () => {
+    const quoted = invoke(['  space   task-axis create ']);
+    const unquoted = invoke(['space', 'task-axis', 'create']);
+    expect(quoted.stdout).toBe(unquoted.stdout);
+  });
+
+  it('a genuinely unknown command still fails with the ORIGINAL args in the message', () => {
+    expect(() => invoke(['utterly bogus'])).toThrowError(/utterly bogus/);
+  });
+});
+
+describe('help router — an unknown verb on a known noun is a usage error, not the noun shard', () => {
+  const invoke = (args: string[]): { stdout: string; code: number } => {
+    let stdout = '';
+    const out = createOutput({
+      format: 'json',
+      streams: {
+        stdout: (chunk: string | Uint8Array) => { stdout += String(chunk); },
+        stderr: () => {},
+      },
+    });
+    const code = help(args, parseInvocation(['help', ...args]).options, out);
+    return { stdout, code };
+  };
+
+  it('`tm8 help entity bogus` names the missing verb instead of exiting 0', () => {
+    expect(() => invoke(['entity', 'bogus'])).toThrowError(/no verb `bogus` on noun `entity`/);
+  });
+
+  it('the error hints with the noun REAL verbs, taken from the shard itself', () => {
+    try {
+      invoke(['entity', 'bogus']);
+      expect.unreachable('an unknown verb must throw');
+    } catch (e) {
+      expect((e as { hint?: string }).hint).toMatch(/\bget\b/);
+      expect((e as { hint?: string }).hint).toContain('entity');
+    }
+  });
+
+  it('hint verbs whose command path starts with ANOTHER noun render whole, not sliced', () => {
+    // `entities.commands.complete` / `linkPr` are family `entity` but command
+    // paths `task complete` / `task link-pr`. The hint used to slice the noun
+    // prefix off unconditionally, rendering `mplete` and `nk-pr`.
+    try {
+      invoke(['entity', 'bogus']);
+      expect.unreachable('an unknown verb must throw');
+    } catch (e) {
+      const hint = (e as { hint?: string }).hint ?? '';
+      expect(hint).toContain('task complete');
+      expect(hint).toContain('task link-pr');
+      expect(hint).not.toMatch(/\bmplete\b/);
+      expect(hint).not.toMatch(/\bnk-pr\b/);
+    }
+  });
+
+  it('the quoted form fails identically after retokenization', () => {
+    expect(() => invoke(['entity bogus'])).toThrowError(/no verb `bogus` on noun `entity`/);
+  });
+
+  it('bare `tm8 help entity` still renders the noun shard, exit 0', () => {
+    const bare = invoke(['entity']);
+    expect(bare.code).toBe(0);
+    expect(bare.stdout).toContain('tm8.help.noun.v1');
   });
 });

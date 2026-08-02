@@ -152,6 +152,15 @@ export const OPERATIONS = [
   // path: the handler computes the filename itself from a validated UUID, so
   // no request can ever name a file. See TM8-CLI-SESSION-COMMAND-JOURNAL §11.
   { name: 'execution.journal',        method: 'GET',   path: '/v2/work-sessions/:workSessionId/journal',    kind: 'read',    status: 'v1' },
+  // How the session was CONFIGURED, as opposed to what it then did. The stored
+  // spawn manifest (persona, resolved launch posture, command-network policy,
+  // workdir, project trust, interaction-profile pin, tasks), the environment
+  // variable NAMES, and the two verbatim prompts the agent was launched with.
+  // All of it is read back out of `public.session_manifests` under the caller's
+  // claims; none of it is recomposed, because a recomposed prompt describes the
+  // build doing the reading rather than the launch being inspected. Pairs with
+  // `execution.journal` on one debug surface: told, then did.
+  { name: 'execution.launch',         method: 'GET',   path: '/v2/work-sessions/:workSessionId/launch',     kind: 'read',    status: 'v1' },
 
   // custom entity kinds (T-L4, R7–R9)
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },

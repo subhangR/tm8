@@ -139,6 +139,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
   // measures are untouched.
   it('CONTROL — the denominator is the 123 v1 HTTP rows, by exact count and exact membership', () => {
     // 118 -> 122 (2026-08-02): the four auth.* rows (Identity v2 Stage 1).
+    // 122 -> 123 (2026-08-02): execution.launch.
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
     expect(REGISTERABLE).toHaveLength(123);

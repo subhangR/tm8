@@ -2,7 +2,7 @@
 
 **Reviewer:** LLD Adversary seat 2 (Fable-5), sess_1785218683236_d59zstxp1, task task_1785185030486_2my2voihe.
 **Target:** `packages/tm8-ui/LLD.md` — reviewed at BOTH working-tree states seen this session: the 584-line pre-fix text (read at session start) and the **current 623-line post-fix text** (the author's R1 fix round landed mid-review; detected via the charter-R13 re-read discipline). All findings below are stated against the **current 623-line text**.
-**Authority chain applied:** CHARTER.md R1–R15 → DECISIONS.md D1–D10 (re-read from file) → WLT v2.11 (uploads/08-SPECS copy; byte-identical to docs/plans copy) → TM8-UI-SPEC-FINAL → 01/02 requirement docs → canvases (D4 set). Seam consensus: `src/data/LLD.md` §4.
+**Authority chain applied:** CHARTER.md R1–R15 → DECISIONS.md D1–D10 (re-read from file) → WLT v2.11 (uploads/08-SPECS copy; byte-identical to docs/architecture copy) → TM8-UI-SPEC-FINAL → 01/02 requirement docs → canvases (D4 set). Seam consensus: `src/data/LLD.md` §4.
 
 ## CONTAMINATION DISCLOSURE (required by fe-coordinator [fe->adv2 2])
 

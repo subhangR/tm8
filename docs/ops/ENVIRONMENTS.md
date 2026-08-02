@@ -23,6 +23,62 @@ staging. Prod will not show it until someone rebuilds and redeploys the
 snapshot. Editing the tree and then checking 7777 proves nothing — that has
 burned people before.
 
+## Deploying prod — one command
+
+```bash
+cd ~/Desktop/Projects/tm8
+bun run prod                 # or: ./deploy/prod/deploy.sh
+```
+
+That builds **whatever is checked out right now** — current branch, uncommitted
+edits and all — from scratch, migrates `tm8_stable`, and restarts 7777/7778 on
+it. Roughly 30s on a warm tree. Everything it needs is in `deploy/prod/`:
+
+| | |
+|---|---|
+| `env.sh` | the single source of truth for prod's ports, DB, data dir and flags |
+| `deploy.sh` | the one command (below) |
+| `run-server.sh` / `run-ui.sh` | what the supervisors actually exec |
+| `supervise.sh` | keep-alive restart policy (there is no launchd agent) |
+
+```bash
+bun run prod:status      # what is listening, which build serves it, health
+bun run prod:restart     # restart the current build, no rebuild
+bun run prod:rollback    # swap the previous build back in
+bun run prod:stop
+./deploy/prod/deploy.sh --build-only   # stage + compile only; prod keeps running
+./deploy/prod/deploy.sh --no-backup --no-migrate
+```
+
+What it does, in this order: preflight → rsync the checkout to
+`~/.local/share/tm8-stable-next` → hardlink `node_modules` → `tsc -b --force`
+**and** a separate `vite build` → `pg_dump` → stop → `db/migrate.mjs up` →
+rotate (`-next` → live, live → `-prev`) → start supervised → verify.
+
+Properties worth knowing:
+
+- **The build happens before anything is stopped.** A compile error costs zero
+  downtime and prod keeps serving the previous build.
+- **The UI is a separate build.** `bun run build` is `tsc -b` only. Skipping the
+  `vite build` half ships a stale UI against a new server, silently. deploy.sh
+  does both and then asserts both artifacts exist.
+- **Rollback is one `mv`.** The previous build stays at
+  `~/.local/share/tm8-stable-prev`; the pre-migration dump is in
+  `~/.local/share/tm8-prod-backups` with the newest path in `LAST_PROD_BACKUP`.
+  A schema rollback is *not* automatic — restore the dump yourself.
+- **Stopping is anchored to absolute paths inside the prod directory.** A bare
+  `pkill -f packages/server/dist/index.js` also kills staging; this does not.
+  The pre-2026-08-02 supervisors were launched relatively, so they are matched
+  loosely by name and then filtered by CWD.
+- **Concurrent deploys are locked out.** Two at once silently corrupt each other:
+  one's `rm -rf …-next` deletes the other's staged build, and identical trees
+  produce identical vite hashes, so the collision looks like success.
+- **Logs survive deploys** — `~/.local/share/tm8-prod-logs/{server,ui}.log`,
+  outside the directory that rotates.
+- **Do not run a full deploy from inside a tm8-spawned session.** Spawned agents
+  are children of the prod server, so stopping it kills the session running the
+  deploy. Use `--build-only` there, or run the full deploy from a plain terminal.
+
 ## Starting staging
 
 ```bash

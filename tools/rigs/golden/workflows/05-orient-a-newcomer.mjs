@@ -1,7 +1,7 @@
 /**
  * GOLDEN WORKFLOW 5 — Orient a newcomer.
  *
- * Source: docs/collab-v2-ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §5
+ * Source: docs/history/collab-v2/ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §5
  *   "Home self-explains → Graph focus on milestone → channel shelf"
  *
  * This is the READ workflow, and it carries the read-side contract rules the

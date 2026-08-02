@@ -43,10 +43,14 @@ import type { GateData } from './useGateData';
 import { attachmentsPortFromSeam } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
+import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
+import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
+import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -146,11 +150,21 @@ export function EntityView(props: EntityViewProps) {
     [data.seam, data.spaceId],
   );
   const config = getKind(kind);
+  /* Stable identity so the feed hook's effects do not re-run every render. */
+  const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
   /* The list panel's Run expand, wired from the SAME source the workspace uses
      (`useLaunchPort`). Without this the expand rendered with `teammates ?? []`
      and the teammate and model selects were both empty. */
   const launchPort = useLaunchPort(data, props.onSpawn ? { onSpawn: props.onSpawn } : {});
+
+  /* D67 — the expanded row's state dropdown and archive control. Same executor
+     the workspace uses, so a task behaves identically in both surfaces. */
+  const rowLifecycle = useRowLifecycle({
+    data,
+    viewerMemberId: props.viewerMemberId,
+    onNotice: props.onNotice,
+  });
 
   /* Authoring mount 7a, EntityView host: +New in the list head creates for
      real and opens the new entity in the centre. quickCreate gates by
@@ -242,7 +256,9 @@ export function EntityView(props: EntityViewProps) {
   const detail = selectedId ? data.detailOf(selectedId) : null;
   const messages = selectedId ? data.messagesOf(selectedId) : undefined;
   if (selectedId && (
-    !detail || messages === undefined || messages.length < detail.counters.messages
+    !detail
+    || messages === undefined
+    || representedThreadMessageCount(messages) < detail.counters.messages
   )) props.data.pull?.(selectedId);
   const selectedContent = detail?.content as unknown as {
     interactionProfile?: WorkSessionInteractionProfileProjection | null;
@@ -278,7 +294,20 @@ export function EntityView(props: EntityViewProps) {
       onContentSurfaceChange={(surface) => {
         setContentSurfaces((current) => ({ ...current, [selectedId]: surface }));
       }}
-      chatSurface={detail ? (
+      /* Same archetype fork as WorkspaceView, and it belongs in BOTH hosts:
+         this one was missed when channels became a collection, so opening a
+         channel from its `k/` list handed the SESSION chat surface a channel
+         anchor and the server refused it — "feed scope session_chat_v1 is not
+         applicable to a channel anchor". The kind literal stays out of it; the
+         registry's archetype decides. */
+      chatSurface={detail && getKind(detail.kind).panel.archetype === 'hub' ? (
+        <LazyChannelChatSurface
+          port={channelFeedPort}
+          channelId={selectedId}
+          connection={data.connection}
+          onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+        />
+      ) : detail ? (
         <LazySessionChatSurface
           seam={data.seam}
           sessionId={selectedId}
@@ -349,6 +378,8 @@ export function EntityView(props: EntityViewProps) {
           selectedId={selectedId}
           onSelect={selectFromList}
           onKindChange={props.onKindChange}
+          onSetState={rowLifecycle.setState}
+          onArchive={rowLifecycle.archive}
           /* The SAME sources the workspace passes. `onFullOptions` is
              deliberately absent: the five-section sheet is mounted by the
              workspace centre and does not exist on this screen, so the escape

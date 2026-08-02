@@ -54,6 +54,7 @@ import {
   type Page,
   type ProjectResource,
   type SessionJournalPage,
+  type SessionLaunchRecord,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -266,6 +267,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       ops.handoffs(workSessionId, opts),
     journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
       ops.journal(workSessionId, opts),
+    launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),

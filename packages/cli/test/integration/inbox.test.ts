@@ -428,9 +428,9 @@ describe('G09 — actions, and the permission/availability separation on a real 
     };
     expect(row.operations, 'help answered about a different operation').toContain(named[0]);
     expect(row.availability, `${named[0]} inherited a persisted availability claim`).toBe('unknown');
-    // `contract` here means "no observation was in play at all" — the honest
-    // default, not a learned verdict carried over from the palette call.
-    expect(row.availabilitySource).toBe('contract');
+    // `none` means "no source was in play at all" — the honest default, not a
+    // learned verdict carried over from the palette call.
+    expect(row.availabilitySource).toBe('none');
     console.log(
       `[g7] actions.list named ${named.length} operations; a fresh process still reports ` +
         `${named[0]} availability=${row.availability} source=${row.availabilitySource}`,

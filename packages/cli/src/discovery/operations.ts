@@ -400,6 +400,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
+    notes: [
+      'returns the full entity unbounded — no limit or projection flags exist; for orientation prefer entity context (bounded, cursors)',
+    ],
   },
   'entities.create': {
     cmd: ['entity', 'create'],
@@ -411,8 +414,13 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate}',
+      "doc content shape: {kind: 'doc', body, format: 'markdown'}",
     ],
-    examples: ['tm8 entity create task "<title>" --space <space-id> --parent <entity-id>'],
+    examples: [
+      'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
+      'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
+    ],
   },
   'entities.patch': {
     cmd: ['entity', 'update'],
@@ -645,10 +653,14 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['read', 'thread', 'chat', 'conversation', 'inbox'],
+    notes: [
+      'pass --limit; unbounded listings measured several times larger',
+      'the anchor id is positional — there is no --to/--for/--entity/--anchor flag here; --to belongs to message send',
+    ],
   },
   'messages.post': {
     cmd: ['message', 'send'],
-    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     sum: 'Create one durable message per anchor and attempt delivery',
     authz: 'entity',
     input: 'bound',
@@ -664,6 +676,7 @@ const ROWS: Record<OperationName, Row> = {
       'a work session is addressed like any other anchor — the message is stored first and delivered second',
       '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
+      'body is limited to 10,000 characters (messages.post input schema, schemas.ts:1292); split longer reports into numbered messages on the same anchor',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
@@ -784,7 +797,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'projects.create': {
     cmd: ['project', 'create'],
-    syn: 'tm8 project create <name> --working-dir <absolute-path> [--ensure-working-dir] [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
+    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
     sum: 'Register a ProjectResource',
     authz: 'server',
     input: 'bound',
@@ -965,12 +978,12 @@ const ROWS: Record<OperationName, Row> = {
   // ── events & presence ────────────────────────────────────────────────────
   'events.subscribe': {
     cmd: ['event', 'watch'],
-    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence]',
-    sum: 'Stream Space events over the WebSocket',
+    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence] [--until-match]',
+    sum: 'Stream Space events over the WebSocket — or, with --until-match, block until one matches',
     authz: 'space',
     input: 'none',
     side: 'none',
-    tags: ['stream', 'follow', 'tail', 'live', 'realtime'],
+    tags: ['stream', 'follow', 'tail', 'live', 'realtime', 'wait', 'block', 'until'],
     // These notes state CONTRACT facts, not the state of this node. The row
     // previously said the socket was "an upgrade SKELETON … do not depend on it
     // for durable ordering yet", which was true when it was written and stopped
@@ -983,6 +996,7 @@ const ROWS: Record<OperationName, Row> = {
       'the contract defines a client→server control protocol on this socket: `subscribe`/`unsubscribe` are fan-out membership, `resume` is replay, `presence`/`presence.set` are the ephemeral channel, and a refused frame answers `control.refused` rather than going quiet',
       'a gap is repaired by re-watching with `--after <space-seq>`, which sends a `resume` frame replaying stored events over the socket; `event list` is the repair when no socket can be opened at all',
       'presence signals never advance the durable cursor',
+      'with `--until-match` the watch becomes a bounded blocking wait: the first event matching --type/--entity is printed and the process exits — 0 matched on the stream, 14 matched via the events.poll fallback after the socket was lost, 13 nothing matched before the timeout; the global --timeout <seconds> is required and capped at 300 — longer waits belong to a scheduler re-invoking this command',
     ],
   },
   'events.poll': {
@@ -1083,6 +1097,20 @@ const ROWS: Record<OperationName, Row> = {
       'token counts are BYTE-DERIVED ESTIMATES of text crossing the CLI boundary, not the model provider’s reported usage, and never the session’s token spend',
       'character counts are exact; the estimate is derived from them by the named estimator',
       'a session spawned before this feature, or one launched without journaling, answers `available: false` rather than an empty journal',
+    ],
+  },
+  'execution.launch': {
+    cmd: ['session', 'launch'],
+    syn: 'tm8 session launch <work-session-id>',
+    sum: "Read what a session was TOLD at spawn: its system prompt, its first task prompt, and the manifest it was launched with",
+    authz: 'entity',
+    input: 'none',
+    tags: ['manifest', 'prompt', 'spawn', 'config', 'teammate', 'debug', 'launch'],
+    notes: [
+      'the prompts are the BYTES that were sent to the agent, read back from storage — they are never recomposed from the manifest, so they cannot silently drift from what the agent actually received',
+      'environment variable NAMES are recorded; VALUES are structurally absent and cannot be recovered here',
+      'a session launched before prompt capture answers `prompts.unavailableReason: not_recorded` rather than an empty prompt',
+      'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
     ],
   },
   'execution.liveness': {
@@ -1243,17 +1271,24 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['timeline', 'history', 'chat', 'activity'],
+    notes: [
+      'unbounded calls return the whole merged timeline; pass --limit and continue with --cursor',
+    ],
   },
   'entities.context': {
     cmd: ['entity', 'context'],
-    syn: 'tm8 entity context <entity-id> [--depth 0|1|2|3] [--messages <0..50>] [--children <0..200>] [--edge-type <type>...]',
+    syn: 'tm8 entity context <entity-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
     sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
     authz: 'entity',
     input: 'none',
     tags: ['snapshot', 'around', 'brief', 'orient'],
     notes: [
-      'bounded by design: 32 KiB default and 128 KiB hard, with explicit per-section cursors and truncation flags',
+      'exactly three flags bind — --sections, --total-bytes, --section-bytes (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
+      'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
+      'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children has no consumer in this grammar',
+      '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
     ],
+    examples: ['tm8 entity context <entity-id> --sections summary,actions'],
   },
   'interactionProfiles.propose': {
     cmd: ['interaction-profile', 'propose'],
@@ -1516,7 +1551,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:fb517ae0749e0f49bb097c7a7450a98cdeb298a84b0edd62d8bdac3913eb9c80';
+  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -1663,6 +1698,28 @@ for (const row of BASE) {
   }
 }
 
+const COMMAND_ALIASES = new Map<string, {
+  path: readonly string[];
+  syntax: string;
+  summary: string;
+  notes: readonly string[];
+  examples: readonly string[];
+}>([
+  ['message reply', {
+    path: ['message', 'reply'],
+    syntax: 'tm8 message reply <message-id> [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    summary: 'Reply through a delivered message’s immutable source route',
+    notes: [
+      'the Server derives both anchor and parent from the delivered message id; no ambient last-source state is used',
+      'requires the session-bound agent credential for the work session that received that message',
+    ],
+    examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
+  }],
+]);
+COMMAND_OPS.set('message reply', ['messages.post']);
+const messageSendIndex = COMMAND_ORDER.indexOf('message send');
+COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+
 /**
  * A command is as available as its LEAST available stage. `file upload` that
  * can initialize but not complete is not an available command, and saying it is
@@ -1686,7 +1743,8 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
   const operations = COMMAND_OPS.get(key) as OperationName[];
   const rows = operations.map((o) => discoveryFor(o, from));
   const head = rows[0] as OperationDiscovery;
-  const path = head.command as readonly string[];
+  const alias = COMMAND_ALIASES.get(key);
+  const path = alias?.path ?? head.command as readonly string[];
   return {
     command: key,
     path,
@@ -1694,13 +1752,13 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
     verb: path[path.length - 1] as string,
     operations,
     exposure: head.exposure,
-    summary: head.summary,
-    syntax: head.syntax as string,
+    summary: alias?.summary ?? head.summary,
+    syntax: alias?.syntax ?? head.syntax as string,
     sideEffect: head.sideEffect,
     idempotency: head.idempotency,
     versioning: head.versioning,
-    notes: [...new Set(rows.flatMap((r) => r.notes))],
-    examples: head.examples,
+    notes: alias?.notes ?? [...new Set(rows.flatMap((r) => r.notes))],
+    examples: alias?.examples ?? head.examples,
     helpRef: `tm8://help/${path.join('/')}`,
     ...weakest(rows),
   };
@@ -1786,6 +1844,9 @@ export function commandsForNoun(noun: string, from?: AvailabilityLedger): readon
       .filter((r) => r.command !== null)
       .map((r) => (r.command as readonly string[]).join(' ')),
   );
+  for (const [key, alias] of COMMAND_ALIASES) {
+    if (alias.path[0] === noun) wanted.add(key);
+  }
   return COMMAND_ORDER.filter((k) => wanted.has(k)).map((k) => commandFrom(k, from));
 }
 

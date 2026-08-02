@@ -55,6 +55,7 @@ export interface ResolvedAuthSession {
   isOwner: boolean;
   kind: LoginKind;
   actingAsTeamMemberId: string | null;
+  workSessionId: string | null;
   expiresAt: string;
   label: string | null;
 }
