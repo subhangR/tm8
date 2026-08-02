@@ -449,6 +449,22 @@ describe('help router — an unknown verb on a known noun is a usage error, not 
     }
   });
 
+  it('hint verbs whose command path starts with ANOTHER noun render whole, not sliced', () => {
+    // `entities.commands.complete` / `linkPr` are family `entity` but command
+    // paths `task complete` / `task link-pr`. The hint used to slice the noun
+    // prefix off unconditionally, rendering `mplete` and `nk-pr`.
+    try {
+      invoke(['entity', 'bogus']);
+      expect.unreachable('an unknown verb must throw');
+    } catch (e) {
+      const hint = (e as { hint?: string }).hint ?? '';
+      expect(hint).toContain('task complete');
+      expect(hint).toContain('task link-pr');
+      expect(hint).not.toMatch(/\bmplete\b/);
+      expect(hint).not.toMatch(/\bnk-pr\b/);
+    }
+  });
+
   it('the quoted form fails identically after retokenization', () => {
     expect(() => invoke(['entity bogus'])).toThrowError(/no verb `bogus` on noun `entity`/);
   });

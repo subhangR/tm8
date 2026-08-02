@@ -232,7 +232,15 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
     // printed the noun shard and exited 0, so a typo read as a success. The
     // verbs in the hint come from the shard itself; there is no second list.
     if (tokens.length >= 2) {
-      const verbs = shard.commands.map((c) => c.command.slice(noun.length + 1));
+      // A noun shard indexes by operation FAMILY, and a family member's command
+      // path may start with a different first token — `entities.commands.complete`
+      // is family `entity` but command `task complete`. Blindly slicing the noun
+      // prefix off such a row corrupted the hint (`mplete`, `nk-pr`), so strip
+      // the prefix only when the command actually carries it, and otherwise show
+      // the full path — which is the real invocation anyway.
+      const verbs = shard.commands.map((c) =>
+        c.command.startsWith(`${noun} `) ? c.command.slice(noun.length + 1) : c.command,
+      );
       throw new CliError(`no verb \`${tokens.slice(1).join(' ')}\` on noun \`${noun}\``, EXIT_USAGE, {
         hint: `verbs on \`${noun}\`: ${verbs.join(', ')}`,
       });
