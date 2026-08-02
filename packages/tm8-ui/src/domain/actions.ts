@@ -36,6 +36,11 @@ export const REASONS = {
   noEntity: 'Nothing is selected.',
   unknownCapabilities: 'Waiting for this entity to load — its permissions are not known yet.',
   cannotEdit: 'You do not have permission to edit this entity.',
+  cannotArchive: 'You do not have permission to archive this entity.',
+  // D67. `entities.restore` shares `canDelete` — the facade publishes ONE
+  // tombstone capability, and inventing a `canRestore` here would be this
+  // package asserting a permission the server never answered for.
+  cannotRestore: 'You do not have permission to restore this entity.',
   cannotComplete: 'This entity cannot be completed.',
   cannotPull: 'This entity cannot be pulled.',
   cannotLink: 'You do not have permission to link this entity.',
@@ -169,6 +174,49 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     '✓',
     (ctx) =>
       opGate(ctx, 'tasks.complete') ?? capabilityGate(ctx, 'canComplete', REASONS.cannotComplete) ?? AVAILABLE,
+  ),
+
+  /**
+   * D67 — write the row's state from the expanded list row.
+   *
+   * Gated on `canEdit`, NOT `canComplete`: this verb moves a row through its
+   * ordinary lifecycle, and the one value that needs the completion gate
+   * declares `via: 'complete'` in registry data so it dispatches the gated
+   * verb instead. Keeping them separate is what stops "blocked" inheriting
+   * completion's acceptance-criteria refusal.
+   *
+   * The payload (which state) rides `ActionIntent.payload`; the surface
+   * dispatches directly because the value is a user choice, not a property of
+   * the verb, and `run(ctx)` has no place to carry it.
+   */
+  'set-state': define(
+    'set-state',
+    'Set state',
+    '◆',
+    (ctx) => opGate(ctx, 'entities.commands.work') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+  ),
+
+  /**
+   * D67 — the tombstone, the ONE lifecycle bit every kind shares.
+   *
+   * `entities.delete` is refused outright by the database for the kinds whose
+   * lifecycle is command-owned (member, message, work_session, project,
+   * interaction_profile: "entity lifecycle is command-owned for kind %"), and
+   * that refusal reaches this gate as `canDelete: false` — server truth, not a
+   * kind list duplicated in the client where it would drift.
+   */
+  archive: define(
+    'archive',
+    'Archive',
+    '▢',
+    (ctx) => opGate(ctx, 'entities.delete') ?? capabilityGate(ctx, 'canDelete', REASONS.cannotArchive) ?? AVAILABLE,
+  ),
+
+  restore: define(
+    'restore',
+    'Restore',
+    '↺',
+    (ctx) => opGate(ctx, 'entities.restore') ?? capabilityGate(ctx, 'canDelete', REASONS.cannotRestore) ?? AVAILABLE,
   ),
 
   pull: define(

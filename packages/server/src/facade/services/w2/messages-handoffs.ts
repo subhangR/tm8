@@ -20,6 +20,7 @@ import {
   type SendHandoffInput,
   type WithdrawHandoffInput,
 } from '@tm8/contract';
+import { incomingMessageInjection, utf8Bytes } from '@tm8/prompt';
 
 import { MICROS } from '../../entity-read.js';
 import type { DbClaims, Querier } from '../../../db/types.js';
@@ -107,6 +108,30 @@ interface BatchRpcResult {
   readonly messageBatchId: string;
   readonly messageIds: string[];
   readonly deliveryIntents?: MessageDeliveryIntent[];
+}
+
+interface SessionReplyRoute {
+  readonly targetMessageId: string;
+  readonly targetWorkSessionId: string;
+  readonly messageBatchId: string;
+  readonly senderActorId: string;
+  readonly senderActorKind: 'member' | 'team_member';
+  readonly sourceAnchorId: string;
+  readonly sourceAnchorKind: string;
+  readonly sourceMessageId: string;
+  readonly threadParentMessageId: string | null;
+  readonly threadRootMessageId: string;
+  readonly body: string;
+  readonly addressingKind: 'channel_mention' | 'direct_message' | 'anchored_message';
+  readonly contextAnchors: ReadonlyArray<{ id: string; kind: string }>;
+  readonly rollingControlMaxBytes: number;
+  readonly sessionInputAllowed: boolean;
+}
+
+interface ResolvedSessionReply {
+  readonly anchorId: string;
+  readonly parentMessageId: string;
+  readonly addressingKind: SessionReplyRoute['addressingKind'];
 }
 
 interface MessageCommandRpcResult {
@@ -307,30 +332,50 @@ export class W2MessagesHandoffsService {
     const sourceWorkSessionId = this.options.resolveAuthoredFromWorkSessionId
       ? await this.options.resolveAuthoredFromWorkSessionId(ctx)
       : null;
-    const anchorIds = uniqueIds(input.anchorIds, 'anchorIds');
+    const requestedAnchorIds = uniqueIds(input.anchorIds, 'anchorIds');
     const mentionIds = uniqueIds(input.mentionIds ?? [], 'mentionIds');
     const attachmentIds = uniqueIds(input.attachmentIds ?? [], 'attachmentIds');
-    if (anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');
-    if (anchorIds.length * attachmentIds.length > 64) {
+    if (!input.replyToMessageId && requestedAnchorIds.length === 0) {
+      throw new CollabError('invalid_input', 'anchorIds must not be empty');
+    }
+    if (input.replyToMessageId && !sourceWorkSessionId) {
+      throw new CollabError('forbidden', 'message reply requires a work-session-bound credential');
+    }
+    if (Math.max(1, requestedAnchorIds.length) * attachmentIds.length > 64) {
       throw new CollabError('invalid_input', 'anchor × attachment pairs must not exceed 64');
     }
 
     const stored = await withG04Reasons(() => this.deps.db.tx(claims, async (q) => {
+      let anchorIds = requestedAnchorIds;
+      let parentMessageId = input.parentMessageId ?? null;
+      if (input.replyToMessageId) {
+        const resolved = await q.rpc<ResolvedSessionReply>('w2_resolve_session_message_reply', [
+          input.replyToMessageId,
+          sourceWorkSessionId,
+        ]);
+        anchorIds = [resolved.anchorId];
+        parentMessageId = resolved.parentMessageId;
+      }
       const result = await q.rpc<BatchRpcResult>('w2_post_message_batch', [
         anchorIds,
         input.body,
-        input.parentMessageId ?? null,
+        parentMessageId,
         mentionIds,
         attachmentIds,
         sourceWorkSessionId,
         input.actorId ?? null,
         input.clientMutationId,
       ]);
+      const routeResult = await q.rpc<SessionReplyRoute[]>('w2_record_session_message_routes', [
+        result.messageIds,
+        input.replyToMessageId ? anchorIds[0] : input.conversationAnchorId ?? null,
+      ]);
+      const routes = Array.isArray(routeResult) ? routeResult : [];
       const messages = await loadMessageViewsByIds(q, result.messageIds, viewerIdentityId);
       if (messages.length !== result.messageIds.length) {
         throw new CollabError('upstream_unavailable', 'stored message batch could not be reloaded');
       }
-      return { result, messages };
+      return { result, messages, routes };
     }));
 
     // The transaction above has committed. Dispatch may block on a PTY write,
@@ -346,16 +391,43 @@ export class W2MessagesHandoffsService {
     // and still calls settle exactly once; this request's response just no
     // longer blocks on watching it do so.
     if (this.options.messageDelivery) {
-      for (const intent of stored.result.deliveryIntents ?? []) {
+      for (const route of stored.routes) {
+        if (!route.sessionInputAllowed || route.targetWorkSessionId === sourceWorkSessionId) continue;
+        const render = (deliveryAttemptId: string) => incomingMessageInjection({
+          kind: route.addressingKind,
+          messageId: route.targetMessageId,
+          messageBatchId: route.messageBatchId,
+          deliveryAttemptId,
+          deliveryAttemptNo: 1,
+          senderActorId: route.senderActorId,
+          senderActorKind: route.senderActorKind,
+          senderAttribution: 'verified',
+          sourceSessionId: sourceWorkSessionId,
+          destinationSessionId: route.targetWorkSessionId,
+          sourceAnchorId: route.sourceAnchorId,
+          sourceAnchorKind: route.sourceAnchorKind,
+          sourceMessageId: route.sourceMessageId,
+          contextAnchors: route.contextAnchors,
+          threadParentMessageId: route.threadParentMessageId,
+          threadRootMessageId: route.threadRootMessageId,
+          body: route.body,
+        });
         try {
+          const preview = render('00000000-0000-4000-8000-000000000000');
+          if (utf8Bytes(preview) > route.rollingControlMaxBytes) continue;
           const reservation = await this.options.messageDelivery.reserve({
-            ...intent,
+            messageId: route.targetMessageId,
+            targetWorkSessionId: route.targetWorkSessionId,
+            content: preview,
+            mode: 'send',
             requestId: ctx.requestId,
           });
           if (!reservation) continue;
+          const content = render(reservation.deliveryId);
           void this.options.messageDelivery.adapter
             .dispatch({
               ...reservation,
+              content,
               requestId: ctx.requestId,
               principal: this.options.messageDelivery.principalFor(reservation),
             })

@@ -41,6 +41,8 @@ export type {
   RouteStrategy,
   SortKey,
   SortSpec,
+  StateControl,
+  StateOption,
   StatusPillSpec,
   StatusSource,
   TileBadgeSource,

@@ -3,7 +3,7 @@
 **Target:** `packages/tm8-ui/LLD.md` (584 lines, uncommitted working tree, as reviewed 2026-07-28).
 **Reviewer:** LLD Adversary (Fable-5), sess_1785185045389_pmu4tgg56, task task_1785185030486_2my2voihe.
 **Verdict:** **REJECT** — 5 MAJOR / 4 MINOR / 0 BLOCKER. Per charter R5 this review gates Phase 2; iteration to APPROVE is underway with the LLD author (sess_1785178112973_u7gfr8aim).
-**Authority chain judged against:** charter R1–R15 → `packages/tm8-ui/DECISIONS.md` (D1–D8 as read; a D9 landed after review and enters Round-2 scope) → WLT v2.11 (08-SPECS copy; verified byte-identical to the docs/plans copy) → TM8-UI-SPEC-FINAL → 01/02/03 requirement docs → canvases (D4 canonical set). Seam consensus object: `packages/tm8-ui/src/data/LLD.md` §4 (stamped 2026-07-28).
+**Authority chain judged against:** charter R1–R15 → `packages/tm8-ui/DECISIONS.md` (D1–D8 as read; a D9 landed after review and enters Round-2 scope) → WLT v2.11 (08-SPECS copy; verified byte-identical to the docs/architecture copy) → TM8-UI-SPEC-FINAL → 01/02/03 requirement docs → canvases (D4 canonical set). Seam consensus object: `packages/tm8-ui/src/data/LLD.md` §4 (stamped 2026-07-28).
 **Transmission note:** findings were delivered to the author as `[adv->lld 2]` (a corrected RESEND after `[adv->lld 1]` was corrupted by shell backtick substitution in transit; caught via R15 unsuppressed-stderr discipline). This file is the durable copy of the same findings, verbatim in substance.
 
 ## What held under attack (do not relitigate)

@@ -250,6 +250,13 @@ export type ActionRef =
   | 'open'
   | 'create'
   | 'complete'
+  | 'set-state'
+  // D67 — archive is the TOMBSTONE (`entities.delete` / `entities.restore`),
+  // the one lifecycle bit every kind shares. Named `archive` rather than
+  // `delete` because that is what the Archived lifecycle tier reads back:
+  // the tier is `deleted: 'only'`, so the verb and the tab describe one act.
+  | 'archive'
+  | 'restore'
   | 'pull'
   | 'link'
   | 'add-child'
@@ -427,6 +434,62 @@ export interface ListConfig {
   inlineEdit?: { status?: boolean; title?: boolean };
   /** WLT §3 'inline complete' + the R-UI-6 verbs, kind-scoped. */
   rowActions?: readonly ActionRef[];
+  /**
+   * The expanded row's STATE PICKER (D67, user ruling 2026-08-02: "in every
+   * entity list style, each entity should have an option to change its state
+   * as a dropdown when the entity is expanded on the entity list itself").
+   *
+   * Absent means this kind HAS NO SETTABLE STATE, and the expanded row states
+   * that rather than drawing a dead control — 14 of 19 core kinds carry no
+   * state field at all, and a dropdown over an empty vocabulary would be the
+   * fabrication L6 forbids.
+   */
+  stateControl?: StateControl;
+}
+
+/**
+ * One selectable state, and how it is written.
+ *
+ * `via` exists because a state's value does not imply its command. A task's
+ * `done` is refused by the work verb outright (`set_work_state`: "completion
+ * goes through complete_task") because completion has an acceptance-criteria
+ * GATE, so a dropdown that wrote it through the same call as `working` would
+ * surface a server refusal as a mystery. Declaring the routing as DATA lets
+ * the panel dispatch the right verb without knowing which kind it is holding.
+ */
+export interface StateOption {
+  id: string;
+  /** Route this value through a different verb than the control's default. */
+  via?: ActionRef;
+}
+
+export interface StateControl {
+  /**
+   * Which `EntityState` member carries the CURRENT value. Read structurally,
+   * so the panel never names a kind to find the field it is editing.
+   */
+  source: 'workStatus' | 'status';
+  label: string;
+  /** The verb every option dispatches through unless it declares its own `via`. */
+  command: ActionRef;
+  /**
+   * The SETTABLE vocabulary, in reading order — ids only.
+   *
+   * DELIBERATELY NOT carrying its own label and tone. The kind ALREADY
+   * declares `panel.statusPill.{tones,labels}` for these same values, and the
+   * badge on the collapsed row is painted from it; a second copy here would be
+   * two sources for one fact, free to disagree the first time someone retones
+   * `blocked` in one of them. The picker reads the pill spec, so the option in
+   * the dropdown and the badge above it cannot drift.
+   */
+  options: readonly StateOption[];
+  /**
+   * Set when the kind HAS a state but the user may not author it — a work
+   * session's status is OBSERVED (spawning → running → exited), never chosen.
+   * The expanded row then shows the current value read-only with this reason,
+   * which is a different statement from having no state at all.
+   */
+  readOnlyReason?: string;
 }
 
 /**

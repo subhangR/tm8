@@ -648,7 +648,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'messages.post': {
     cmd: ['message', 'send'],
-    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     sum: 'Create one durable message per anchor and attempt delivery',
     authz: 'entity',
     input: 'bound',
@@ -1652,6 +1652,28 @@ for (const row of BASE) {
   }
 }
 
+const COMMAND_ALIASES = new Map<string, {
+  path: readonly string[];
+  syntax: string;
+  summary: string;
+  notes: readonly string[];
+  examples: readonly string[];
+}>([
+  ['message reply', {
+    path: ['message', 'reply'],
+    syntax: 'tm8 message reply <message-id> [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    summary: 'Reply through a delivered message’s immutable source route',
+    notes: [
+      'the Server derives both anchor and parent from the delivered message id; no ambient last-source state is used',
+      'requires the session-bound agent credential for the work session that received that message',
+    ],
+    examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
+  }],
+]);
+COMMAND_OPS.set('message reply', ['messages.post']);
+const messageSendIndex = COMMAND_ORDER.indexOf('message send');
+COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+
 /**
  * A command is as available as its LEAST available stage. `file upload` that
  * can initialize but not complete is not an available command, and saying it is
@@ -1675,7 +1697,8 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
   const operations = COMMAND_OPS.get(key) as OperationName[];
   const rows = operations.map((o) => discoveryFor(o, from));
   const head = rows[0] as OperationDiscovery;
-  const path = head.command as readonly string[];
+  const alias = COMMAND_ALIASES.get(key);
+  const path = alias?.path ?? head.command as readonly string[];
   return {
     command: key,
     path,
@@ -1683,13 +1706,13 @@ function commandFrom(key: string, from?: AvailabilityLedger): CommandDiscovery {
     verb: path[path.length - 1] as string,
     operations,
     exposure: head.exposure,
-    summary: head.summary,
-    syntax: head.syntax as string,
+    summary: alias?.summary ?? head.summary,
+    syntax: alias?.syntax ?? head.syntax as string,
     sideEffect: head.sideEffect,
     idempotency: head.idempotency,
     versioning: head.versioning,
-    notes: [...new Set(rows.flatMap((r) => r.notes))],
-    examples: head.examples,
+    notes: alias?.notes ?? [...new Set(rows.flatMap((r) => r.notes))],
+    examples: alias?.examples ?? head.examples,
     helpRef: `tm8://help/${path.join('/')}`,
     ...weakest(rows),
   };
@@ -1775,6 +1798,9 @@ export function commandsForNoun(noun: string, from?: AvailabilityLedger): readon
       .filter((r) => r.command !== null)
       .map((r) => (r.command as readonly string[]).join(' ')),
   );
+  for (const [key, alias] of COMMAND_ALIASES) {
+    if (alias.path[0] === noun) wanted.add(key);
+  }
   return COMMAND_ORDER.filter((k) => wanted.has(k)).map((k) => commandFrom(k, from));
 }
 

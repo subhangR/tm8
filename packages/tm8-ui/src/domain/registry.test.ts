@@ -339,6 +339,7 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'liveTreatment',
       'inlineEdit',
       'rowActions',
+      'stateControl',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {

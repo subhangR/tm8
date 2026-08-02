@@ -32,15 +32,17 @@ describe('the shipped default menu', () => {
     ]);
   });
 
-  it('makes Workspace the ONE caret view item, with its six leaves (RULING E)', () => {
+  it('makes Workspace the ONE caret view item, with its seven leaves (RULING E)', () => {
     const workspace = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .find((item) => item.ref === 'workspace');
     expect(workspace?.type).toBe('view');
     const children = workspace?.type === 'view' ? workspace.children ?? [] : [];
-    // Revision 4 (2026-07-31): memory + artifact joined the caret. Cap is 8.
+    // Revision 4 (2026-07-31): memory + artifact joined the caret.
+    // Revision 6 (2026-08-01): channel joined it, beside doc — it became a
+    // collection kind and was the only one the rail never named. Cap is 8.
     expect(children.map((c) => c.ref)).toEqual([
-      'task', 'work_session', 'doc', 'team_member', 'memory', 'artifact',
+      'task', 'work_session', 'doc', 'channel', 'team_member', 'memory', 'artifact',
     ]);
   });
 

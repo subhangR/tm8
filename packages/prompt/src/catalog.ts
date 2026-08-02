@@ -19,7 +19,7 @@
  *
  * HONESTY ABOUT REACH. `status` records whether a prompt reaches a real agent
  * today. Several do not: the v2 harness path is fully built and unwired, so its
- * kernel and all ten trusted-control blocks are dead code at runtime. A catalog
+ * kernel and its trusted-control blocks are dead code at runtime. A catalog
  * that showed them beside the live v1 frame with no distinction would tell the
  * reader something false.
  */
@@ -31,7 +31,6 @@ import {
   workerBootstrapControl,
   taskAssignmentInjection,
   incomingMessageInjection,
-  replyExpectationControl,
   entityHandoffInjection,
   commandHelpControl,
   permissionRefusalControl,
@@ -297,6 +296,8 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
       taskId: '{taskId}',
       taskVersion: '{taskVersion}',
       senderActorId: '{senderActorId}',
+      senderActorKind: '{senderActorKind}',
+      senderAttribution: 'verified',
       sourceSessionId: '{sourceSessionId}',
       destinationSessionId: '{destinationSessionId}',
       body: '{the task title and body, excerpted by the caller}',
@@ -310,23 +311,27 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
     summary:
       'A live delivery notification. States that the durable write already succeeded, so the agent does not treat it as a second message.',
     text: incomingMessageInjection({
+      kind: 'channel_mention',
       messageId: '{messageId}',
-      anchorId: '{anchorId}',
+      messageBatchId: '{messageBatchId}',
       deliveryAttemptId: '{deliveryAttemptId}',
+      deliveryAttemptNo: 1,
       senderActorId: '{senderActorId}',
+      senderActorKind: '{senderActorKind}',
+      senderAttribution: 'verified',
       sourceSessionId: '{sourceSessionId}',
+      destinationSessionId: '{destinationSessionId}',
+      sourceAnchorId: '{anchorId}',
+      sourceAnchorKind: 'channel',
+      sourceMessageId: '{sourceMessageId}',
+      contextAnchors: [{ id: '{contextAnchorId}', kind: '{contextAnchorKind}' }],
+      threadParentMessageId: '{parentMessageId}',
+      threadRootMessageId: '{rootMessageId}',
       body: '{the message body, excerpted by the caller}',
       truncated: false,
       fetchRef: '{fetchRef}',
     }),
     budget: 'incomingMessageInjection',
-  },
-  {
-    id: 'control.reply-expectation',
-    title: '§14.5 Reply expectation',
-    summary:
-      'Names the four fields a reply must carry — outcome, verification, blockers, referenced entities.',
-    text: replyExpectationControl({ anchorId: '{anchorId}', messageId: '{messageId}' }),
   },
   {
     id: 'control.entity-handoff',

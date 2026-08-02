@@ -1289,6 +1289,8 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   clientMutationId: z.string().min(1),
   anchorIds: uniqueArray(EntityIdSchema, 1, 16).optional(),
   anchorId: EntityIdSchema.optional(),
+  conversationAnchorId: EntityIdSchema.nullable().optional(),
+  replyToMessageId: EntityIdSchema.optional(),
   body: z.string().min(1).max(10_000),
   parentMessageId: EntityIdSchema.nullable().optional(),
   mentionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
@@ -1297,7 +1299,17 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
   PostMessageWireInputSchema.superRefine((value, context) => {
-    if ((value.anchorIds === undefined) === (value.anchorId === undefined)) {
+    const hasReplyTarget = value.replyToMessageId !== undefined;
+    const hasAnchorIds = value.anchorIds !== undefined;
+    const hasLegacyAnchor = value.anchorId !== undefined;
+    if (hasReplyTarget) {
+      if (hasAnchorIds || hasLegacyAnchor) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'replyToMessageId cannot be combined with anchorIds or deprecated anchorId' });
+      }
+      if (value.parentMessageId != null || value.conversationAnchorId != null) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'a routed reply derives its conversation anchor and parent on the Server' });
+      }
+    } else if (hasAnchorIds === hasLegacyAnchor) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'provide exactly one of anchorIds or deprecated anchorId' });
     }
     const anchorCount = value.anchorIds?.length ?? (value.anchorId ? 1 : 0);
@@ -1308,6 +1320,13 @@ export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, P
     if (value.parentMessageId != null && anchorCount !== 1) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'a reply must resolve to exactly one anchor' });
     }
+    if (
+      value.conversationAnchorId != null &&
+      ![...(value.anchorIds ?? []), ...(value.anchorId ? [value.anchorId] : [])]
+        .includes(value.conversationAnchorId)
+    ) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'conversationAnchorId must be one of the message anchors' });
+    }
     const { anchorId, ...rest } = value;
     const canonical = { ...rest, anchorIds: value.anchorIds ?? (anchorId ? [anchorId] : []) };
     if (Buffer.byteLength(JSON.stringify(canonical), 'utf8') > 256 * 1024) {
@@ -1315,7 +1334,7 @@ export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, P
     }
   }).transform(({ anchorId, ...value }): PostMessageInput => ({
     ...value,
-    anchorIds: value.anchorIds ?? [anchorId!],
+    anchorIds: value.anchorIds ?? (anchorId ? [anchorId] : []),
   }));
 
 export const PatchMessageInputSchema: z.ZodType<PatchMessageInput> = z.object({
@@ -1421,8 +1440,10 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'settings']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
+// `channel` un-excluded 2026-08-01, same lockstep — it became a collection
+// kind with a real `k/channels` list, so the rail can name it. See the type.
 export const MenuKindRefSchema = z.union([
-  CoreEntityKindSchema.exclude(['channel', 'message']),
+  CoreEntityKindSchema.exclude(['message']),
   CustomEntityKindSchema,
 ]);
 

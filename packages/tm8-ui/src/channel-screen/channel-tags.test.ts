@@ -106,6 +106,7 @@ describe('Channel @Tag discovery and routing', () => {
     expect(spawnTeamMember).toHaveBeenCalledWith('team-scout');
     expect(post).toHaveBeenCalledWith({
       anchorIds: ['channel-1', 'ws-forge', 'ws-review', 'ws-scout'],
+      conversationAnchorId: 'channel-1',
       body: '@Forge @Scout @Review check this',
       parentMessageId: null,
       mentionIds: ['member-noor', 'team-forge', 'team-scout'],

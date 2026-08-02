@@ -72,6 +72,8 @@ import {
   recordInteractionProfilePin as persistInteractionProfilePin,
   resolveInteractionProfileForLaunch,
 } from '../profiles/w2-profile-resolver.js';
+import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
+import { SESSION_TTL_MS } from '../identity/pg-auth.js';
 
 // Claims come from ./context.ts, deliberately NOT from a local helper.
 //
@@ -113,6 +115,7 @@ interface TeamMemberRow {
 
 interface TaskRow {
   entity_id: string;
+  version: number;
   title: string;
   description: string;
   priority: string;
@@ -192,7 +195,7 @@ export class DbGraphPort implements GraphPort {
         taskIds.length === 0
           ? []
           : await q.query<TaskRow>(
-              `select t.entity_id, t.title, t.description, t.priority, t.work_status,
+              `select t.entity_id, e.version, t.title, t.description, t.priority, t.work_status,
                       t.acceptance_criteria
                  from public.tasks t
                  join public.entities e on e.id = t.entity_id
@@ -224,6 +227,7 @@ export class DbGraphPort implements GraphPort {
           .filter((t): t is TaskRow => t !== undefined)
           .map((t) => ({
             id: t.entity_id,
+            version: t.version,
             title: t.title,
             description: t.description,
             priority: t.priority,
@@ -313,6 +317,24 @@ export class DbGraphPort implements GraphPort {
       pinRevision: pin.pinRevision,
       snapshot: profile.snapshot,
     };
+  }
+
+  async issueWorkSessionAgentToken(
+    auth: GraphAuth,
+    sessionId: string,
+    teamMemberId: string,
+  ): Promise<string> {
+    const secret = generateSecret();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent).toISOString();
+    const row = await this.db.rpc<{ id?: string }>(
+      this.claims(auth),
+      'public.issue_work_session_agent_session',
+      [sessionId, teamMemberId, hashToken(secret), expiresAt, `work-session:${sessionId}`],
+    );
+    if (typeof row?.id !== 'string') {
+      throw fail('upstream_unavailable', 'work-session token mint returned no auth session id');
+    }
+    return formatToken(row.id, secret);
   }
 
   async recordManifest(

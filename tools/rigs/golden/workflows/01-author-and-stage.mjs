@@ -1,7 +1,7 @@
 /**
  * GOLDEN WORKFLOW 1 — Author & stage.
  *
- * Source: docs/collab-v2-ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §1
+ * Source: docs/history/collab-v2/ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §1
  *   "create in channel → criteria → attach doc → drag-assign → bounty"
  *
  * Beyond the narrative, this workflow is where G1 pins the MUTATION invariants

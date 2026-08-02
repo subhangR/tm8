@@ -6,7 +6,7 @@
  * The registry and the projection answer two DIFFERENT questions and both
  * answers are load-bearing:
  *
- *   the PROJECTION  = what the grammar contains        (99 command paths)
+ *   the PROJECTION  = what the grammar contains        (including command aliases)
  *   the REGISTRY    = what this CLI build can execute  (a growing subset)
  *
  * So a path in neither is exit 2 "unknown command", and a path in the
@@ -104,7 +104,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // = 116 rows that have one; `files.uploadInit` + `files.uploadComplete` share
     // `file upload` and `artifacts.create` + `artifacts.publish` share
     // `artifact publish` ⇒ 113 DISTINCT paths.
-    expect(COMMAND_PATHS).toHaveLength(121);
+    expect(COMMAND_PATHS).toHaveLength(122);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);
