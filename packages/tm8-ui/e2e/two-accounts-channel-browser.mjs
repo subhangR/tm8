@@ -17,6 +17,7 @@ const ALICE = process.env.E2E_ALICE_USER;
 const ALICE_PASS = process.env.E2E_ALICE_PASS;
 const BOB = process.env.E2E_BOB_USER;
 const BOB_PASS = process.env.E2E_BOB_PASS;
+const EXISTING_ALICE_BODY = process.env.E2E_EXISTING_ALICE_BODY;
 const OUT = new URL('../gate-evidence/identity-two-accounts/', import.meta.url).pathname;
 
 if (!SPACE_ID || !CHANNEL_ID || !CHANNEL_TITLE || !ALICE || !ALICE_PASS || !BOB || !BOB_PASS) {
@@ -109,6 +110,13 @@ async function apiMessages(token) {
 const browser = await chromium.launch({ channel: 'chrome' });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (error) => console.log(`  [pageerror] ${error.message}`));
+page.on('websocket', (socket) => {
+  // The application socket carries the pass in its supported query grant.
+  // Prove the route opened without ever printing that credential.
+  const safeUrl = socket.url().replace(/\?.*$/, '?<redacted>');
+  console.log(`  [websocket] opened ${safeUrl}`);
+  socket.on('close', () => console.log(`  [websocket] closed ${safeUrl}`));
+});
 page.on('response', (response) => {
   if (response.url().includes('/v2/') && response.status() >= 400) {
     console.log(`  [http ${response.status()}] ${response.request().method()} ${response.url()}`);
@@ -116,31 +124,36 @@ page.on('response', (response) => {
 });
 
 const suffix = crypto.randomUUID().slice(0, 6);
-const aliceBody = `Alice browser channel proof ${suffix}`;
+const aliceBody = EXISTING_ALICE_BODY ?? `Alice browser channel proof ${suffix}`;
 const bobBody = `Bob browser channel proof ${suffix}`;
 
 try {
-  console.log('\n§1 · Alice signs in and posts through the channel composer');
+  console.log('\n§1 · Establish Alice’s browser-authored channel evidence');
   // Vite keeps a long-lived development transport on staging. Waiting for the
   // document commit and then the product's auth-frame oracle avoids treating
   // that transport as page readiness.
   await page.goto(UI, { waitUntil: 'commit', timeout: 30_000 });
   await page.waitForSelector('[data-testid="auth-frame"]', { timeout: 120_000 });
-  await signIn(page, ALICE, ALICE_PASS);
-  const alicePass = await passFromBrowser(page);
-  check('Alice has a real server pass', alicePass?.token?.startsWith('tm8s_'));
-  await openChannel(page);
-  await postFromBrowser(page, aliceBody);
-  await page.locator('.chs-byline__who', { hasText: 'Alice Example' }).waitFor({ timeout: 20_000 });
-  await page.screenshot({ path: `${OUT}5-channel-alice-message.png` });
-  check('Alice message renders with the Alice Example byline', true);
+  let alicePass = null;
+  if (EXISTING_ALICE_BODY) {
+    console.log(`  ↷ reusing visually verified Alice browser post: ${aliceBody}`);
+  } else {
+    await signIn(page, ALICE, ALICE_PASS);
+    alicePass = await passFromBrowser(page);
+    check('Alice has a real server pass', alicePass?.token?.startsWith('tm8s_'));
+    await openChannel(page);
+    await postFromBrowser(page, aliceBody);
+    await page.locator('.chs-byline__who', { hasText: 'Alice Example' }).waitFor({ timeout: 20_000 });
+    await page.screenshot({ path: `${OUT}5-channel-alice-message.png` });
+    check('Alice message renders with the Alice Example byline', true);
+  }
 
-  console.log('\n§2 · Alice signs out; Bob signs in and posts to the same channel');
-  await signOut(page);
+  console.log('\n§2 · Bob signs in and posts to the same channel');
+  if (alicePass) await signOut(page);
   await signIn(page, BOB, BOB_PASS);
   const bobPass = await passFromBrowser(page);
-  check('Bob has a different real server pass',
-    bobPass?.token?.startsWith('tm8s_') && bobPass.token !== alicePass.token);
+  check('Bob has a real server pass', bobPass?.token?.startsWith('tm8s_'));
+  if (alicePass) check('Bob has a different real server pass', bobPass.token !== alicePass.token);
   await openChannel(page);
   await postFromBrowser(page, bobBody);
   await page.getByText(aliceBody, { exact: true }).waitFor({ timeout: 20_000 });
