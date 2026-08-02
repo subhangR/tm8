@@ -218,6 +218,20 @@ describe('seam-real: wsUrl derivation refuses to guess', () => {
     expect(() => deriveWsUrl('')).toThrow(CollabError);
     expect(() => deriveWsUrl('/v2')).toThrow(/wsUrl is required/);
   });
+
+  it('puts the per-server pass on the browser socket grant URL', async () => {
+    const { seam, pool } = mk(() => ok({}), { getAuthToken: () => 'tm8s_session.secret/value' });
+    await seam.openSpace('sp-1');
+    expect(pool.urls).toEqual([
+      'ws://fake.invalid/v2/ws?token=tm8s_session.secret%2Fvalue',
+    ]);
+  });
+
+  it('keeps the loopback auto-owner socket unchanged when no pass exists', async () => {
+    const { seam, pool } = mk(() => ok({}), { getAuthToken: () => null });
+    await seam.openSpace('sp-1');
+    expect(pool.urls).toEqual(['ws://fake.invalid/v2/ws']);
+  });
 });
 
 describe('seam-real: prepare-not-wire is a type-level property', () => {
