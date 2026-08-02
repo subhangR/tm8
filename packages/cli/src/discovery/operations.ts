@@ -197,13 +197,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.login': {
     cmd: ['auth', 'login'],
-    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>]',
-    sum: 'Exchange a username and password for a tm8s_… bearer token, printed exactly once',
+    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>] [--print-token]',
+    sum: 'Exchange a username and password for a tm8s_… bearer session with this Server',
     authz: 'server',
     input: 'bound',
-    tags: ['login', 'token', 'session', 'bearer', 'password'],
+    tags: ['login', 'token', 'session', 'bearer', 'password', 'credential'],
     notes: [
-      'export the printed token as TM8_AGENT_TOKEN to authenticate subsequent CLI calls',
+      'the credential is stored per Server origin — macOS keychain, else a 0600 file — and later commands against that Server authenticate automatically',
+      'with --print-token (or in an agent session) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
       'the failure message never distinguishes an unknown username from a wrong password',
     ],
   },
@@ -214,6 +215,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'bound',
     tags: ['logout', 'revoke', 'session', 'token'],
+    notes: [
+      'revoking this shell\'s own session also removes the matching stored credential for this Server origin',
+    ],
   },
   'auth.session.get': {
     cmd: ['auth', 'session'],
