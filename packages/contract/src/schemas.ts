@@ -1686,6 +1686,7 @@ export const SessionJournalCallSchema: z.ZodType<SessionJournalCall> = z.object(
 export const SessionJournalRecordSchema: z.ZodType<SessionJournalRecord> = z.object({
   v: z.literal(1),
   seq: z.number().int().nonnegative(),
+  class: z.enum(['agent', 'harness', 'human']).optional(),
   sessionId: EntityIdSchema,
   spaceId: EntityIdSchema.nullable(),
   teamMemberId: EntityIdSchema.nullable(),

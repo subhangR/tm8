@@ -1581,6 +1581,15 @@ export interface SessionJournalRecord {
   v: 1;
   /** Per-process counter. Pair with `startedAt` to order across processes. */
   seq: number;
+  /**
+   * Who this invocation was, decided AT WRITE TIME: a spawned agent, a test
+   * harness, or a human. OPTIONAL because records predating the field exist
+   * and must stay valid — readers fall back to heuristics for those. Without
+   * this split the corpus is unreadable: 2,737 of 3,018 measured records were
+   * the CLI integration suite inheriting `TM8_JOURNAL_PATH` from a parent
+   * agent, inverting the headline failure rate.
+   */
+  class?: 'agent' | 'harness' | 'human';
   sessionId: EntityId;
   spaceId: EntityId | null;
   teamMemberId: EntityId | null;
