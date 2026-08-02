@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExecutionSpawnInput } from '@tm8/contract';
 import {
   accessModeLabel,
@@ -135,6 +135,29 @@ export function LaunchQuickConfig({
   const [config, setConfig] = useState<LaunchConfig>(() =>
     first ? defaultConfigFor(first, defaultProjectId) : emptyConfig(defaultProjectId),
   );
+
+  /**
+   * RE-SEED WHEN THE SELECTION STOPS EXISTING.
+   *
+   * The initializer above runs ONCE. Mounted before its sources arrived — or
+   * left open while the selected persona was deleted — the config held a
+   * `teamMemberId` that matches no option, so the teammate select rendered
+   * BLANK (a select whose value matches no option has no selected index) and
+   * the model select rendered "no known models", because the model list is
+   * derived from the SEEDING TEAMMATE's recorded `agentToolId` and there was
+   * none. Both selects then stayed empty for the life of the expand.
+   *
+   * Guarded on membership, not on arrival: a deliberate choice is never
+   * overwritten, because a chosen teammate is by definition still in the list.
+   */
+  useEffect(() => {
+    if (!first) return;
+    if (config.teamMemberId !== null && teammates.some((t) => t.id === config.teamMemberId)) return;
+    // Re-seed WHOLE, for the same reason the change handler does: a teammate's
+    // recorded tool and model travel together, and patching one field would mix
+    // two personas' settings.
+    setConfig(defaultConfigFor(first, defaultProjectId));
+  }, [first, teammates, config.teamMemberId, defaultProjectId]);
 
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);

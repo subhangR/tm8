@@ -30,7 +30,7 @@
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → centre → list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, WorkSessionInteractionProfileProjection } from '@tm8/contract';
+import type { EntityId, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, EmptyBody, type DetailReasons, type PanelTab } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
@@ -42,6 +42,7 @@ import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsPortFromSeam } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
+import { useLaunchPort } from './useLaunchPort';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
 import './entity-view.css';
@@ -57,6 +58,16 @@ export interface EntityViewProps {
   /** The rail row is the source of truth for WHICH kind; the in-panel kind
       switcher re-routes through it so the rail highlight never lies. */
   onKindChange?(kind: string): void;
+  /**
+   * Commits a quick-config spawn from a list tile's Run expand.
+   *
+   * This screen used to pass the list panel NO launch sources at all, so the
+   * expand opened with an empty teammate select and an empty model select while
+   * the identical panel in the workspace was fully populated. Reloading the page
+   * returns to the workspace (GateApp's `activeTarget` starts there and is not
+   * persisted), which is why the dropdowns "started working after a refresh".
+   */
+  onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
 }
 
 /**
@@ -135,6 +146,11 @@ export function EntityView(props: EntityViewProps) {
     [data.seam, data.spaceId],
   );
   const config = getKind(kind);
+
+  /* The list panel's Run expand, wired from the SAME source the workspace uses
+     (`useLaunchPort`). Without this the expand rendered with `teammates ?? []`
+     and the teammate and model selects were both empty. */
+  const launchPort = useLaunchPort(data, props.onSpawn ? { onSpawn: props.onSpawn } : {});
 
   /* Authoring mount 7a, EntityView host: +New in the list head creates for
      real and opens the new entity in the centre. quickCreate gates by
@@ -333,6 +349,12 @@ export function EntityView(props: EntityViewProps) {
           selectedId={selectedId}
           onSelect={selectFromList}
           onKindChange={props.onKindChange}
+          /* The SAME sources the workspace passes. `onFullOptions` is
+             deliberately absent: the five-section sheet is mounted by the
+             workspace centre and does not exist on this screen, so the escape
+             keeps its honest disabled-with-reason state rather than pretending
+             to open something that is not here. */
+          launch={launchPort}
         />
       </section>
 

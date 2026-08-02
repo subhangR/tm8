@@ -33,7 +33,8 @@ import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { allKinds, getKind } from '../domain/registry';
-import { newLaunchMutationId, type ProfileResolution } from '../domain/launch';
+import { newLaunchMutationId } from '../domain/launch';
+import { useLaunchPort } from './useLaunchPort';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -311,18 +312,16 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [linkedTasksBySession],
   );
 
-  const profileFor = useCallback((teamMemberId: string | null): ProfileResolution => {
-    const teammate = data.launch.teammates.find((candidate) => candidate.id === teamMemberId);
-    const teammateDefault = data.launch.profiles.find((profile) => profile.id === teammate?.defaultProfileId);
-    if (teammateDefault) {
-      return { profileId: teammateDefault.id, label: teammateDefault.name, source: 'teammate-default' };
-    }
-    const spaceDefault = data.launch.profiles.find((profile) => profile.isSpaceDefault);
-    if (spaceDefault) {
-      return { profileId: spaceDefault.id, label: spaceDefault.name, source: 'space-default' };
-    }
-    return { profileId: null, label: 'resolved by node at commit', source: 'none' };
-  }, [data.launch.teammates, data.launch.profiles]);
+  /* ONE construction, shared with EntityView. It used to be built inline here,
+     twice — and not at all on the kind screens, which is why their quick config
+     showed no teammates and no models. See `useLaunchPort`. */
+  const launchPort = useLaunchPort(data, {
+    ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
+    ...(props.onLaunchOpen
+      ? { onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId) }
+      : {}),
+  });
+  const profileFor = launchPort.profileFor;
 
   /* Each dock owns a create-flow hook so a quick-create panel keeps the
      behavior when it crosses the center. Both run unconditionally (rules of
@@ -388,26 +387,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           // panels/ importing views/ would point the dependency backwards,
           // since views compose panels. One map at the seam, no cast on
           // either side.
-          launch={{
-            spaceId: ctx.spaceId,
-            teammates: data.launch.teammates.map((t) => ({
-              id: t.id,
-              label: t.name,
-              agentTool: t.agentTool,
-              model: t.model,
-            })),
-            projects: data.launch.projects.map((project) => ({
-              projectId: project.id,
-              name: project.name,
-              trusted: project.trusted,
-              ...(project.reason ? { untrustedReason: project.reason } : {}),
-            })),
-            capacity: data.launch.capacity,
-            profileFor,
-            mutationId: () => newLaunchMutationId(),
-            onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
-            onSpawn: props.onSpawn,
-          }}
+          launch={launchPort}
         />
       }
       center={
@@ -479,26 +459,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
-          launch={{
-            spaceId: ctx.spaceId,
-            teammates: data.launch.teammates.map((t) => ({
-              id: t.id,
-              label: t.name,
-              agentTool: t.agentTool,
-              model: t.model,
-            })),
-            projects: data.launch.projects.map((project) => ({
-              projectId: project.id,
-              name: project.name,
-              trusted: project.trusted,
-              ...(project.reason ? { untrustedReason: project.reason } : {}),
-            })),
-            capacity: data.launch.capacity,
-            profileFor,
-            mutationId: () => newLaunchMutationId(),
-            onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId),
-            onSpawn: props.onSpawn,
-          }}
+          launch={launchPort}
         />
       }
     />

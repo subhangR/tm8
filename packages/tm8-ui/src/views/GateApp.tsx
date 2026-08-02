@@ -462,6 +462,15 @@ export function GateApp(props: GateAppProps = {}) {
               reasons={reasons}
               onNotice={notices.push}
               onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
+              /* The same verb the workspace's tiles commit. Passing it is what
+                 makes the tile's `Launch ▸` a live control here instead of a
+                 disabled-with-reason one; the sources behind it come from
+                 `useLaunchPort` inside the view. */
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
+                setActiveTarget({ type: 'view', ref: 'workspace' });
+                nav.push(sessionId);
+              }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
             /* T5-1 Home — the first void route dispatching to a real screen
