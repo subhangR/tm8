@@ -26,7 +26,31 @@ import { AuthFlow } from './AuthFlow';
 import { useAuthSession } from './useAuthSession';
 import { AuthActionsContext, AuthSessionContext, type AuthActions } from './gate-context';
 import { readKnownAccountsHere } from './session';
+import { LOCAL_SERVER_ID, readActiveServerId } from '../servers/server-key';
 import type { AuthFrameId, AuthIdentity } from './types';
+
+/**
+ * Account creation without an existing bearer is authorized only through the
+ * server's loopback auto-owner arm. A named server always rides the relay, and
+ * a page served from a non-loopback host reaches even its "local" node as a
+ * remote caller. Offering first-run signup in either case promises an action
+ * the server must refuse.
+ */
+export function defaultSignedOutFrame(
+  knownAccountCount: number,
+  serverId: string,
+  hostname: string,
+): '1a' | '1d' {
+  if (knownAccountCount > 0) return '1d';
+  if (serverId !== LOCAL_SERVER_ID) return '1d';
+
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  const loopback = host === 'localhost'
+    || host.endsWith('.localhost')
+    || host === '::1'
+    || /^127(?:\.\d{1,3}){3}$/.test(host);
+  return loopback ? '1a' : '1d';
+}
 
 export interface AuthGateProps {
   children: ReactNode;
@@ -39,8 +63,9 @@ export interface AuthGateProps {
   /** Fires on each transition into the signed-in state. */
   onSignedIn?: (handle: string) => void;
   /**
-   * Which frame the flow opens on when signed out. Default is chosen from the
-   * store: `1a` when no local account exists yet, `1d` when one does.
+   * Which frame the flow opens on when signed out. By default only a loopback
+   * local node with no known account opens on `1a`; remote and relayed nodes
+   * open on `1d`, because unauthenticated signup there is not authorized.
    */
   initialFrame?: AuthFrameId;
   /**
@@ -104,9 +129,14 @@ export function AuthGate({
   // Signed out. `children` is not rendered at all — not hidden, not mounted
   // behind an overlay. A gate that mounted the app underneath would run its
   // effects, open its sockets and fire its reads for a viewer who is not in.
-  // Any account known to have signed in here ⇒ the login frame, which offers
-  // "create another" as its second path. None ⇒ first run.
-  const frame = initialFrame ?? (readKnownAccountsHere().length > 0 ? '1d' : '1a');
+  // A known account always means sign-in. With none known, first-account
+  // creation is truthful only on the local loopback path; remote and relayed
+  // callers start at sign-in and ask their operator for provisioning.
+  const frame = initialFrame ?? defaultSignedOutFrame(
+    readKnownAccountsHere().length,
+    readActiveServerId(),
+    globalThis.location?.hostname ?? '',
+  );
 
   return (
     <AuthActionsContext.Provider value={actions}>

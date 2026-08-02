@@ -30,6 +30,7 @@ import {
   signOut,
   useAuthSession,
 } from './index';
+import { defaultSignedOutFrame } from './AuthGate';
 
 function installStorage(): void {
   // The realSeamFlag.test.ts pattern — LOAD-BEARING under this runner, whose
@@ -249,6 +250,13 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
   it('opens on the claim frame when no account has signed in here yet', () => {
     render(<AuthGate>{APP}</AuthGate>);
     expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a');
+  });
+
+  it('opens remote and relayed fresh browsers on sign-in, never on an unauthorized signup promise', () => {
+    expect(defaultSignedOutFrame(0, 'local', 'tm8-server.tail28ac62.ts.net')).toBe('1d');
+    expect(defaultSignedOutFrame(0, 'staging', 'localhost')).toBe('1d');
+    expect(defaultSignedOutFrame(0, 'local', '127.0.0.1')).toBe('1a');
+    expect(defaultSignedOutFrame(0, 'local', 'worktree.localhost')).toBe('1a');
   });
 
   it('opens on the LOGIN frame when an account is known but no session exists', async () => {
