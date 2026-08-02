@@ -5,6 +5,8 @@ import {
   TM8_CLIENT_HEADER_VALUE,
   type ServerConnection,
 } from '@tm8/contract';
+import { authTokenFor, noteServerOrigin } from '../auth/pass-store';
+import { ACTIVE_SERVER_KEY, LOCAL_SERVER_ID, routeBaseUrlFor } from './server-key';
 
 export type ServerReachability = 'checking' | 'online' | 'offline';
 
@@ -25,30 +27,28 @@ export interface AddServerInput {
   username?: string;
 }
 
-const ACTIVE_SERVER_KEY = 'tm8-ui:active-server';
-
 export const LOCAL_SERVER: UiServer = {
-  id: 'local',
-  name: 'local',
+  id: LOCAL_SERVER_ID,
+  name: LOCAL_SERVER_ID,
   label: 'local · this machine',
   baseUrl: '',
-  routeBaseUrl: '',
+  routeBaseUrl: routeBaseUrlFor(LOCAL_SERVER_ID),
   username: null,
   local: true,
   reachability: 'checking',
 };
 
-function routeBaseUrl(name: string): string {
-  return `/v2/server-connections/${encodeURIComponent(name)}/proxy`;
-}
-
 function toUiServer(connection: ServerConnection): UiServer {
+  // The auth pass store keys credentials by TARGET ORIGIN (the lead's
+  // programme-wide ruling); this cache is how the gate resolves a connection
+  // name to its origin synchronously, before any list fetch has run.
+  noteServerOrigin(connection.name, connection.baseUrl);
   return {
     id: connection.name,
     name: connection.name,
     label: connection.username ? `${connection.name} · ${connection.username}` : connection.name,
     baseUrl: connection.baseUrl,
-    routeBaseUrl: routeBaseUrl(connection.name),
+    routeBaseUrl: routeBaseUrlFor(connection.name),
     username: connection.username ?? null,
     local: false,
     reachability: 'checking',
@@ -75,14 +75,18 @@ function persistActiveServer(id: string): void {
  * This registry talks to the node directly rather than through
  * `src/data/real/http.ts`, so it needs its own S6 header — the gate does not
  * care which module the request came from. Merged here, once, so no caller has
- * to remember it.
+ * to remember it. The LOCAL pass rides along when one exists: server
+ * connections live on the local node, and a browser signed in there must act
+ * as its account, not as the loopback owner.
  */
 async function jsonData<T>(url: string, init?: RequestInit): Promise<T> {
+  const localToken = authTokenFor(LOCAL_SERVER_ID);
   const response = await fetch(url, {
     ...init,
     headers: {
       ...(init?.headers as Record<string, string> | undefined),
       [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+      ...(localToken ? { authorization: `Bearer ${localToken}` } : {}),
     },
   });
   const body = await response.json().catch(() => undefined) as

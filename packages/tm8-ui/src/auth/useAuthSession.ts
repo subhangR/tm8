@@ -1,26 +1,31 @@
 /**
  * useAuthSession — the gate's state, and the actions the frames dispatch.
  *
- * THERE IS NO `checking` STATUS, deliberately. The session is read from
- * storage in the state INITIALISER, so the first render is already correct and
- * the app never flashes on screen before the gate decides. A `checking` member
- * would be a state this hook can never be in — the same reason `AuthOutcome`
- * has no `signed-in` member. Unreachable union members are promises the type
- * makes on the code's behalf.
+ * THERE IS NO `checking` STATUS, deliberately. The stored pass is read in the
+ * state INITIALISER, so the first render is already correct and the app never
+ * flashes on screen before the gate decides. The pass is this browser's fact;
+ * the SERVER's word arrives asynchronously through `verifyStoredSession()`
+ * (`auth.session.get`), and the two disagree in exactly two ways, both
+ * handled: a revoked/expired pass flips the gate closed as soon as the server
+ * says so, and an unreachable node leaves the viewer signed in with the
+ * failure surfaced — the local pass and the node's reachability are different
+ * facts, and conflating them would eject people every time the node hiccups.
  */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthSessionContext } from './gate-context';
 import {
-  createLocalAccount,
-  readLocalAccount,
-  readLocalAccounts,
-  readLocalSession,
-  signInLocal,
-  signOutLocal,
+  createServerAccount,
+  readActiveAccount,
+  readKnownAccountsHere,
+  readStoredSession,
+  signInToServer,
+  signOutOfServer,
   subscribeToSession,
+  verifyStoredSession,
   watchCrossTabSignOut,
   type AuthFailure,
-  type LocalAccount,
+  type GateAccount,
+  type KnownAccount,
 } from './session';
 import type { AuthIdentity } from './types';
 
@@ -28,21 +33,23 @@ export type AuthStatus = 'signed-in' | 'signed-out';
 
 export interface AuthSessionState {
   status: AuthStatus;
-  /** The signed-in account, or null. */
-  account: LocalAccount | null;
-  /** EVERY local account on this browser. Drives "create another" vs "first run". */
-  accounts: LocalAccount[];
+  /** The signed-in account on the active server, or null. */
+  account: GateAccount | null;
+  /** EVERY account that has signed in on this browser, for the active server.
+   * Drives "create another" vs "first run". */
+  accounts: KnownAccount[];
   /** The signed-in handle, or null. */
   handle: string | null;
   /**
-   * What `identity.get` returned, once signed in and once a resolver was
-   * supplied. Independent of `status` ON PURPOSE — see `identityError`.
+   * What the server said about this viewer, once signed in — from
+   * `auth.session.get`, or from the host's `resolveIdentity` when supplied.
+   * Independent of `status` ON PURPOSE — see `identityError`.
    */
   serverIdentity: AuthIdentity | null;
   /**
-   * Set when `identity.get` rejected. The viewer stays signed in: the local
-   * session and the node's reachability are different facts, and conflating
-   * them would eject people every time the node hiccups.
+   * Set when the server could not be asked (or refused to answer) about the
+   * session or identity. The viewer stays signed in: an unreachable node and
+   * a revoked pass are different facts, and only the second ends a session.
    */
   identityError: string | null;
   /** The last failed credential attempt, for the frames to render. */
@@ -59,7 +66,8 @@ export interface UseAuthSessionOptions {
   /**
    * Usually `() => seam.identity()`. Called only while signed in — a gate that
    * probed the node before letting anyone in would make an unreachable node
-   * indistinguishable from a wrong password.
+   * indistinguishable from a wrong password. When omitted, the identity shown
+   * is the one `auth.session.get` returns.
    */
   resolveIdentity?: () => Promise<AuthIdentity | null>;
 }
@@ -88,18 +96,17 @@ export function useAuthSession(options: UseAuthSessionOptions = {}): AuthSession
 
 /**
  * The actual implementation. `inert` is set when a gate above us already owns
- * the session — it suppresses the identity resolution so a host consumer
- * cannot double-fire `identity.get`, which would be a real duplicate request
- * against the node rather than a harmless extra render.
+ * the session — it suppresses the identity resolution AND the session verify,
+ * so a host consumer cannot double-fire either against the node.
  */
 function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): AuthSessionState {
   const { resolveIdentity } = options;
 
   // Read synchronously. This is the whole no-flash mechanism.
   const [snapshot, setSnapshot] = useState(() => ({
-    account: readLocalAccount(),
-    accounts: readLocalAccounts(),
-    session: readLocalSession(),
+    account: readActiveAccount(),
+    accounts: readKnownAccountsHere(),
+    session: readStoredSession(),
   }));
   const [failure, setFailure] = useState<AuthFailure | null>(null);
   const [busy, setBusy] = useState(false);
@@ -108,9 +115,9 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
 
   const refresh = useCallback(() => {
     setSnapshot({
-      account: readLocalAccount(),
-      accounts: readLocalAccounts(),
-      session: readLocalSession(),
+      account: readActiveAccount(),
+      accounts: readKnownAccountsHere(),
+      session: readStoredSession(),
     });
   }, []);
 
@@ -121,9 +128,39 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
 
   const status: AuthStatus = snapshot.session ? 'signed-in' : 'signed-out';
 
-  // Resolve identity only while signed in, and drop the result if the session
-  // ends before it lands — otherwise a slow node could populate the identity of
-  // a viewer who has already signed out.
+  /**
+   * THE RELOAD CHECK — the server's word on the stored pass. An 'invalid'
+   * verdict has already cleared the store and notified, so `refresh` (via the
+   * subscription) flips the gate closed; nothing more to do here. Keyed on
+   * the handle so a sign-in as someone else re-verifies as them.
+   */
+  useEffect(() => {
+    if (inert || status !== 'signed-in') return;
+    let live = true;
+    void verifyStoredSession().then((verdict) => {
+      if (!live) return;
+      if (verdict.state === 'valid') {
+        refresh(); // the server's copy of the account may have moved
+        if (!resolveIdentity) {
+          setServerIdentity({
+            username: verdict.account.handle,
+            displayName: verdict.account.displayName,
+            avatar: null,
+            isOwner: verdict.account.isOwner,
+          });
+        }
+      } else if (verdict.state === 'unreachable') {
+        setIdentityError(verdict.message);
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [inert, status, snapshot.session?.handle, resolveIdentity, refresh]);
+
+  // Resolve the host's richer identity only while signed in, and drop the
+  // result if the session ends before it lands — otherwise a slow node could
+  // populate the identity of a viewer who has already signed out.
   useEffect(() => {
     if (inert || status !== 'signed-in' || !resolveIdentity) return;
     let live = true;
@@ -146,7 +183,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       setBusy(true);
       setFailure(null);
       try {
-        const result = await createLocalAccount(name, password);
+        const result = await createServerAccount(name, password);
         if (!result.ok) {
           setFailure(result.failure);
           return false;
@@ -165,7 +202,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
       setBusy(true);
       setFailure(null);
       try {
-        const result = await signInLocal(handle, password);
+        const result = await signInToServer(handle, password);
         if (!result.ok) {
           setFailure(result.failure);
           return false;
@@ -183,7 +220,7 @@ function useOwnAuthSession(options: UseAuthSessionOptions, inert: boolean): Auth
     setServerIdentity(null);
     setIdentityError(null);
     setFailure(null);
-    signOutLocal(); // notifies, which refreshes this hook and every other gate
+    signOutOfServer(); // notifies, which refreshes this hook and every other gate
   }, []);
 
   const clearFailure = useCallback(() => setFailure(null), []);

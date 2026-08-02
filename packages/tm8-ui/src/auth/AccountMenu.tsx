@@ -8,10 +8,9 @@
  *
  * This is the T3-3 surface (oracle 1p) as an anchored popover, sharing the
  * frame's markup and grammar. The differences from the standalone 1p frame are
- * only the ones the situation forces: it is anchored rather than staged, and
- * its identity line names a LOCAL account, because that is what the gate
- * actually has. Saying "owner of forge" here would be borrowing authority from
- * a node that never saw this account.
+ * only the ones the situation forces: it is anchored rather than staged. The
+ * identity line names the SERVER account the gate signed into — the node
+ * vouched for it at auth.login, so saying so borrows no authority.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTheme, type Theme } from '../theme/useTheme';
@@ -97,9 +96,11 @@ export function AccountMenu({
             </span>
             <div className="auth-server__text">
               <span className="auth-menu__name">{name}</span>
-              {/* NOT "owner of forge". The oracle's line borrows the node's
-                  authority, and no node vouched for this account. */}
-              <span className="auth-menu__handle">@{account.handle} · local account</span>
+              {/* The node vouched for this account at sign-in; the line may
+                  say so. `isOwner` comes from the server, never inferred. */}
+              <span className="auth-menu__handle">
+                @{account.handle} · {account.isOwner ? 'owner of this server' : 'server account'}
+              </span>
             </div>
           </div>
 
@@ -158,11 +159,11 @@ export function AccountMenu({
                 </span>
                 Sign out
               </span>
-              {/* The honest scope line. The oracle's "agents keep running" is
-                  true of a SERVER sign-out; this one only clears a local
-                  record, and says the thing it actually does. */}
+              {/* The honest scope line: auth.logout revokes THIS session on
+                  the server; everything else — the account, the entities,
+                  the running agents — is untouched. */}
               <span className="auth-menu__signout-note">
-                clears the local session — your account stays on this browser
+                revokes this session on the server — agents keep running
               </span>
             </button>
           </div>

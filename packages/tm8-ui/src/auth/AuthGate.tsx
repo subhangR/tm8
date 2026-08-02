@@ -1,20 +1,18 @@
 /**
  * AuthGate — the MANDATORY gate. Children render if and only if there is a
- * local session; otherwise the T3 flow does, and nothing of the app is on
- * screen.
+ * session; otherwise the T3 flow does, and nothing of the app is on screen.
  *
  * THE ACCEPTANCE LOOP this is built to, verbatim: reload → land on auth with
  * no app screen visible → create an account → the app renders → reload keeps
  * you in → sign-out returns to the gate. `gate.test.tsx` asserts each leg and
  * then the whole circuit in one go.
  *
- * WHAT KIND OF GATE THIS IS. The HTTP surface exposes `identity.get` and
- * nothing else — no signup, no login, no logout (see `reasons.ts` and the
- * handover's GAPS). So the account is LOCAL to this browser, the gate says so
- * on every frame that takes a credential, and the token path stays refused
- * because there is no executor for it either way. The one thing this must
- * never be is a login form that reports success against a server that never
- * saw it.
+ * WHAT KIND OF GATE THIS IS. Server-backed (Identity v2 Stage 1): the verbs
+ * behind it are `auth.signup`, `auth.login`, `auth.logout`, and the reload
+ * check is `auth.session.get` — see `session.ts`. Creating an account creates
+ * it on the server; signing in mints a revocable `tm8s_…` pass stored PER
+ * SERVER; signing out revokes it. The token-paste path stays refused because
+ * no operation redeems a pasted token, not because auth is missing.
  *
  * THE EXECUTOR IS THE DISCRIMINATOR. Frames read their actions from context:
  * inside the gate the context carries real verbs and the buttons are live;
@@ -27,7 +25,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { AuthFlow } from './AuthFlow';
 import { useAuthSession } from './useAuthSession';
 import { AuthActionsContext, AuthSessionContext, type AuthActions } from './gate-context';
-import { readLocalAccounts } from './session';
+import { readKnownAccountsHere } from './session';
 import type { AuthFrameId, AuthIdentity } from './types';
 
 export interface AuthGateProps {
@@ -106,9 +104,9 @@ export function AuthGate({
   // Signed out. `children` is not rendered at all — not hidden, not mounted
   // behind an overlay. A gate that mounted the app underneath would run its
   // effects, open its sockets and fire its reads for a viewer who is not in.
-  // Any local account at all ⇒ the login frame, which offers "create another"
-  // as its second path. No accounts ⇒ first run.
-  const frame = initialFrame ?? (readLocalAccounts().length > 0 ? '1d' : '1a');
+  // Any account known to have signed in here ⇒ the login frame, which offers
+  // "create another" as its second path. None ⇒ first run.
+  const frame = initialFrame ?? (readKnownAccountsHere().length > 0 ? '1d' : '1a');
 
   return (
     <AuthActionsContext.Provider value={actions}>
@@ -131,4 +129,4 @@ export function AuthGate({
  * Re-exported from `session.ts` so there is ONE implementation and both paths
  * notify the same subscribers.
  */
-export { signOutLocal as signOut } from './session';
+export { signOutOfServer as signOut } from './session';

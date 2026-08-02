@@ -87,6 +87,12 @@ export interface RealSeamOptions {
   wsUrl?: string;
   /** Page origin, used only to derive `wsUrl` when `baseUrl` is relative. */
   origin?: string;
+  /**
+   * The viewer's `tm8s_…` pass for THIS server, read per request. Absent ⇒ no
+   * Authorization header, which a loopback node resolves to the auto-owner
+   * (T-L7). Supplied by the host from the per-server pass store.
+   */
+  getAuthToken?: () => string | null;
   timers?: Timers;
   now?: () => number;
   random?: () => number;
@@ -152,6 +158,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     baseUrl,
     fetch: options.fetch,
     onTransport: (reachable) => conn?.noteTransport(reachable),
+    ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
   });
 
   const ops = createOps(http, { newClientMutationId: options.newClientMutationId });

@@ -1,19 +1,21 @@
 /**
  * THE GAP LEDGER, IN CODE.
  *
- * Every terminal act the T3 oracle draws, and the exact reason this build
- * cannot perform it. One file so the set is auditable in one read — a refusal
+ * Every terminal act the T3 oracle draws that this build cannot perform, and
+ * the exact reason. One file so the set is auditable in one read — a refusal
  * scattered across seventeen frames is a refusal nobody can count.
  *
- * THE MEASUREMENT BEHIND ALL OF THEM (`src/data/seam.ts`, read 2026-07-29):
- * the seam's ENTIRE identity surface is `identity(): Promise<IdentityView>` —
- * one read. `seam.commands` carries 18 verbs; not one of them is an auth verb.
- * There is no signIn, no signOut, no createAccount, no createSpace, no
- * redeemInvite, no token mint/list/revoke, no addServer. Two of these DO exist
- * as v1 operations in `packages/contract/src/catalog.ts` (`spaces.create`,
- * `spaces.invites.redeem`) and are simply not exposed through the seam — those
- * two say so, because "the server cannot" and "our seam does not carry it" are
- * different facts and a reader can act on the difference.
+ * WHAT CHANGED (Identity v2 Stage 1): the four auth operations exist and the
+ * gate CALLS them — `session.ts` performs `auth.signup`, `auth.login`,
+ * `auth.logout`, and verifies with `auth.session.get`. So the refusals below
+ * split into two honest kinds, and each names which it is:
+ *
+ *  - OUTSIDE-THE-GATE refusals: the identical frame on the review board has
+ *    no executor (no `AuthActionsContext`), so its verb refuses. Inside the
+ *    gate the verb is live and real.
+ *  - STILL-UNWIRED refusals: no operation or no wiring exists anywhere —
+ *    token sign-in, server naming, invites-in-the-gate, access tokens,
+ *    Phase 2 multi-server. These name the missing operation or phase.
  *
  * VOICE (T1-4, quoted from the canvas footer): "exact reason + consequence",
  * reasons name the thing that is missing so they read as fact, not apology.
@@ -24,32 +26,27 @@
 import type { UnavailableReason } from '../panels/honesty/DisabledWithReason';
 
 /**
- * THE MISSING OPERATIONS, NAMED. Flagged to the program lead as
- * additive-amendment candidates, so these are the names the UI would call —
- * stated here so the ask and the code agree, and so a reader can grep for
- * them when they land.
+ * THE OPERATIONS THE GATE PERFORMS. Formerly `MISSING_AUTH_OPS` — the ask the
+ * UI flagged to the program lead, which landed as v1 operations. Kept exported
+ * under the new name so the ask, the code, and the greps stay aligned:
+ * `session.ts` calls exactly these four.
  *
- *   auth.signup       POST /v2/auth/signup    → create an account, return a session
- *   auth.login        POST /v2/auth/login     → handle+password (or token) → session
+ *   auth.signup       POST /v2/auth/signup    → create an account (node-admin gated)
+ *   auth.login        POST /v2/auth/login     → handle+password → `tm8s_…` session pass
  *   auth.logout       POST /v2/auth/logout    → revoke the presented session
  *   auth.session.get  GET  /v2/auth/session   → is this session still valid, and whose
- *
- * With those four the gate stops being local: `createLocalAccount` becomes
- * `auth.signup`, `signInLocal` becomes `auth.login`, `signOutLocal` becomes
- * `auth.logout`, and the reload check becomes `auth.session.get` instead of a
- * localStorage read. Nothing else in this module has to move.
  */
-export const MISSING_AUTH_OPS = [
+export const GATE_AUTH_OPS = [
   'auth.signup',
   'auth.login',
   'auth.logout',
   'auth.session.get',
 ] as const;
 
-/** 1a — create the owner account. */
+/** 1a — create the owner account (review board only; the gate's copy is live). */
 export const CREATE_OWNER: UnavailableReason = {
-  cause: 'Creating a server account isn’t connected',
-  remedy: 'the node exposes identity.get and no auth operation — auth.signup does not exist, so this can only ever create the LOCAL account the gate uses',
+  cause: 'Creating an account isn’t connected here',
+  remedy: 'this surface renders outside the auth gate and has no executor — inside the gate this verb performs auth.signup and auth.login for real',
 };
 
 /** 1b — name the server / pick its tile. */
@@ -67,52 +64,52 @@ export const CREATE_SPACE: UnavailableReason = {
   remedy: 'spaces.create is a v1 contract op the stamped seam does not expose (same gap D13 rules for the tab bar’s ＋)',
 };
 
-/** 1d — sign in with a handle and password. */
+/** 1d — sign in with a handle and password (review board only). */
 export const SIGN_IN_PASSWORD: UnavailableReason = {
-  cause: 'Server sign-in isn’t connected',
-  remedy: 'auth.login does not exist on this node; the gate verifies against the local account instead, and says so where it does',
+  cause: 'Sign-in isn’t connected here',
+  remedy: 'this surface renders outside the auth gate and has no executor — inside the gate this verb performs auth.login and stores the tm8s_ pass per server',
 };
 
 /** 1d — sign in with an access token. */
 export const SIGN_IN_TOKEN: UnavailableReason = {
   cause: 'Token sign-in isn’t connected',
-  remedy: 'no token operation exists in the contract catalog and auth.login does not either — nothing can mint, present or verify one, in the gate or out of it',
+  remedy: 'no operation redeems a pasted token — auth.login exchanges a handle and password, and the tm8s_ pass it mints is stored, never re-entered',
 };
 
-/** 1e — retry after a failed sign-in. */
+/** 1e — retry after a failed sign-in (review board only). */
 export const SIGN_IN_RETRY: UnavailableReason = {
-  cause: 'Retrying sign-in isn’t connected',
-  remedy: 'auth.login does not exist, so there is no server attempt to retry — and nothing enforces the attempt counter this card draws',
+  cause: 'Retrying sign-in isn’t connected here',
+  remedy: 'this surface renders outside the auth gate — inside it, submitting again IS the retry via auth.login; nothing enforces the attempt counter this card draws',
 };
 
 /** 1f — re-authenticate in place after expiry. */
 export const REAUTH: UnavailableReason = {
-  cause: 'Re-authenticating isn’t connected',
-  remedy: 'auth.login and auth.session.get do not exist, and no expiry signal reaches the UI — nothing in this build can tell you a session ended',
+  cause: 'Re-authenticating in place isn’t connected',
+  remedy: 'auth.session.get verifies the pass on load only — no expiry signal reaches this modal mid-session, so its in-place re-auth has no trigger or executor',
 };
 
 /** 1f — sign in as someone else, which drops the kept view. */
 export const SWITCH_ACCOUNT: UnavailableReason = {
-  cause: 'Switching accounts isn’t connected',
-  remedy: 'the seam has no sign-in verb; there is no second identity to switch to',
+  cause: 'Switching accounts isn’t connected here',
+  remedy: 'not wired in this modal — sign out and sign back in; the gate performs auth.login for either account',
 };
 
-/** 1g — sign back in from the signed-out landing. */
+/** 1g — sign back in from the signed-out landing (review board only). */
 export const SIGN_BACK_IN: UnavailableReason = {
   cause: 'Signing back in isn’t connected here',
-  remedy: 'auth.login does not exist; inside the gate this returns to the sign-in frame, which verifies against the local account',
+  remedy: 'this surface renders outside the auth gate — inside it this returns to the sign-in frame, whose verb performs auth.login',
 };
 
-/** 1p — sign out. */
+/** 1p — sign out (review board only). */
 export const SIGN_OUT: UnavailableReason = {
-  cause: 'Server sign-out isn’t connected',
-  remedy: 'auth.logout does not exist; inside the gate this row clears the LOCAL session, which is a different act and says so',
+  cause: 'Sign-out isn’t connected here',
+  remedy: 'this surface renders outside the auth gate and has no session to revoke — inside the gate the account menu’s sign-out performs auth.logout',
 };
 
 /** 1h — redeem the invite (account + membership in one step). */
 export const REDEEM_INVITE: UnavailableReason = {
   cause: 'Redeeming this invite isn’t connected',
-  remedy: 'spaces.invites.redeem is a v1 contract op the seam does not expose, and no operation reads an invite before you join',
+  remedy: 'spaces.invites.redeem is a v1 contract op this gate does not call yet — the documented path is the CLI (tm8 space invite redeem), see docs/identity/PROVISION-SECOND-ACCOUNT.md',
 };
 
 /** 1k — resolve an endpoint. Phase 2, and D13 already refuses the affordance. */
@@ -124,7 +121,7 @@ export const CONNECT_ENDPOINT: UnavailableReason = {
 /** 1l — authenticate against a resolved server. */
 export const ADD_RESOLVED_SERVER: UnavailableReason = {
   cause: 'Adding this server isn’t connected',
-  remedy: 'per-server auth arrives in Phase 2 (D13); neither the handshake nor the credential exchange has an operation',
+  remedy: 'per-server auth arrives in Phase 2 (D13); neither the handshake nor the credential exchange has an operation here',
 };
 
 /** 1m — continue past the gateway to a hosted server. */
@@ -142,7 +139,7 @@ export const RETRY_CONNECT: UnavailableReason = {
 /** 1n — fall back to password after a refused token. */
 export const CONNECT_USE_PASSWORD: UnavailableReason = {
   cause: 'Switching to password auth isn’t connected',
-  remedy: 'per-server auth arrives in Phase 2 (D13); neither credential path has an operation',
+  remedy: 'per-server auth arrives in Phase 2 (D13); neither credential path has an operation on this frame',
 };
 
 /** 1n — the version-mismatch help link. */
@@ -153,8 +150,8 @@ export const UPDATE_INSTRUCTIONS: UnavailableReason = {
 
 /** 1p — profile editing. */
 export const EDIT_PROFILE: UnavailableReason = {
-  cause: 'Profile editing isn’t connected',
-  remedy: 'no account operation exists in the contract catalog — name, avatar and password have nowhere to be written',
+  cause: 'Profile editing isn’t connected here',
+  remedy: 'name and avatar are edited in Settings via the identity.profile.update operation; a password-change operation does not exist, and this modal is wired to neither',
 };
 
 /**
@@ -171,19 +168,19 @@ export const ACT_AS_TEAMMATE: UnavailableReason = {
 /** 1q — mint a new token. */
 export const MINT_TOKEN: UnavailableReason = {
   cause: 'Minting a token isn’t connected',
-  remedy: 'no token operation exists in the contract catalog — nothing to create, and nothing to reveal once',
+  remedy: 'no access-token operation exists in the contract catalog — auth.login mints session passes, and nothing here can create a standing token or reveal one once',
 };
 
 /** 1q — revoke a token. */
 export const REVOKE_TOKEN: UnavailableReason = {
   cause: 'Revoking a token isn’t connected',
-  remedy: 'no token operation exists in the contract catalog, so nothing here can be revoked',
+  remedy: 'no access-token listing operation exists in the contract catalog, so nothing here can be enumerated or revoked (auth.logout revokes only the presented session)',
 };
 
 /** 1q — copy the one-time secret. */
 export const COPY_TOKEN: UnavailableReason = {
   cause: 'There is no token to copy',
-  remedy: 'no token operation exists in the contract catalog — the value beside this control is a specimen, not a secret',
+  remedy: 'no access-token operation exists in the contract catalog — the value beside this control is a specimen, not a secret',
 };
 
 /**

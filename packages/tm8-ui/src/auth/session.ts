@@ -1,75 +1,66 @@
 /**
- * THE LOCAL SESSION STORE — what the gate is, stated once, in the place that
+ * THE SESSION STORE — what the gate is, stated once, in the place that
  * implements it.
  *
- * THIS IS NOT A SECURITY BOUNDARY, and every consumer of this file should read
- * that sentence before the code. The tm8 HTTP surface exposes exactly ONE
- * identity operation — `identity.get` (`GET /v2/identity`, v1). There is no
- * signup, no login, no logout, no session endpoint. The server has accounts
- * and auth_sessions internally; none of it is reachable from here. So an
- * account created through this gate exists in ONE browser's localStorage and
- * nowhere else, and anyone with access to this browser profile can read and
- * replace it.
+ * THE GATE IS SERVER-BACKED. The four operations the old localStorage gate
+ * named as missing — `auth.signup`, `auth.login`, `auth.logout`,
+ * `auth.session.get` — exist and are what this module calls (Identity v2
+ * Stage 1, doc 4 §6). Creating an account creates it ON THE SERVER; signing
+ * in exchanges the password for a `tm8s_…` bearer pass the server can revoke;
+ * signing out revokes it. The password itself is never stored anywhere on
+ * this browser — the server keeps a scrypt hash, this browser keeps the pass.
  *
- * The gate exists anyway, because the alternative the order forbids is worse:
- * a login form that accepts a password and reports success against a server
- * that never saw it. This gate does exactly what it says, and every frame that
- * takes a credential says it on screen (`AuthLocalNote`).
+ * THE PASS IS PER SERVER (`pass-store.ts`). This browser can point at the
+ * local node or at any named server connection, and a pass minted by one is
+ * meaningless at another. Every call this module makes is routed to the
+ * ACTIVE server — the one the workspace is pointed at — through the same
+ * relay the app itself uses.
  *
- * WHY THE PASSWORD IS STILL DERIVED PROPERLY (PBKDF2-SHA256, 210k iterations,
- * 16-byte random salt) even though this is not a security boundary: people
- * reuse passwords. A plaintext password sitting in localStorage is a hazard to
- * the person's OTHER accounts, which is not ours to create regardless of what
- * this gate protects. `crypto.subtle` was MEASURED as present under both the
- * test runner and a localhost browser (secure context) before this was
- * written; where it is genuinely absent, `createAccount` REFUSES with a reason
- * rather than falling back to something weaker and quiet.
+ * THE LOOPBACK PATH IS UNTOUCHED (D1, law T-L7). A request carrying no pass
+ * resolves server-side to the loopback auto-owner, so a single machine with
+ * no accounts behaves exactly as before: the CLI and the API need no
+ * credential, and `auth.signup` from this gate is authorized as the node
+ * owner. On a server where the caller is NOT the owner, signup is refused by
+ * the node-admin gate (F1 — never open self-registration), and the refusal is
+ * shown rather than translated into something softer.
  *
- * TWO RECORDS, NOT ONE — the account and the session are stored separately,
- * and it matters: sign-out must clear the session WITHOUT destroying the
- * account, and a surviving account must not imply a surviving session. A
- * single record would force sign-out either to delete the account or to not
- * work.
+ * TWO RECORDS, NOT ONE — the pass and the known-accounts list are stored
+ * separately, exactly as the account/session split worked before: sign-out
+ * must clear the pass WITHOUT forgetting which accounts have signed in here,
+ * or the gate could no longer offer "sign back in as @amber" after sign-out.
  */
+import { CollabError } from '@tm8/contract';
+import type {
+  AuthLoginResult,
+  AuthSessionGetResult,
+  AuthSignupResult,
+} from '@tm8/contract';
+import { createHttpClient, type HttpClient } from '../data/real/http';
+import { readActiveServerId, routeBaseUrlFor } from '../servers/server-key';
+import {
+  KNOWN_ACCOUNTS_KEY,
+  PASSES_STORAGE_KEY,
+  clearServerPass,
+  noteKnownAccount,
+  readKnownAccounts,
+  readServerPass,
+  resetPassStore,
+  writeServerPass,
+  type GateAccount,
+  type KnownAccount,
+  type ServerPass,
+} from './pass-store';
 
-/**
- * The account LIST. Viewer-local, same namespace as `tm8ui.theme`.
- *
- * It was a single record until the user asked to be able to create a second
- * account, which the single-record store refused with `account-exists`. That
- * refusal was right for a one-owner first run and wrong for what this gate is
- * actually used as — several people, or one person testing several identities,
- * on one browser. `ACCOUNT_STORAGE_KEY` below is the OLD key, still read once
- * so an account created before this change is not silently orphaned.
- */
-export const ACCOUNTS_STORAGE_KEY = 'tm8ui.auth.accounts';
-/** LEGACY single-record key. Read for migration, never written. */
-export const ACCOUNT_STORAGE_KEY = 'tm8ui.auth.account';
-/** The session record. Cleared by sign-out; the account outlives it. */
-export const SESSION_STORAGE_KEY = 'tm8ui.auth.session';
+export type { GateAccount, KnownAccount, ServerPass } from './pass-store';
 
-/**
- * 210k is OWASP's 2023 floor for PBKDF2-HMAC-SHA256. Recorded as a number
- * with a source rather than a round guess, and persisted ON the record so a
- * future raise can re-derive old accounts instead of locking them out.
- */
-export const PBKDF2_ITERATIONS = 210_000;
+/** LEGACY keys from the retired browser-local gate. Cleared on reset, never read. */
+export const LEGACY_ACCOUNTS_STORAGE_KEY = 'tm8ui.auth.accounts';
+export const LEGACY_ACCOUNT_STORAGE_KEY = 'tm8ui.auth.account';
+export const LEGACY_SESSION_STORAGE_KEY = 'tm8ui.auth.session';
 
-export interface LocalAccount {
-  /** Lower-cased; the handle the oracle writes as `@amber`. */
-  handle: string;
-  /** As typed, for display. The handle is derived from it. */
-  displayName: string;
-  /** base64. */
-  salt: string;
-  /** base64 of the PBKDF2 output. Never the password. */
-  hash: string;
-  iterations: number;
-  algo: 'PBKDF2-SHA256';
-  createdAt: string;
-}
-
-export interface LocalSession {
+/** The reload check's answer: which handle this browser is signed in as, where. */
+export interface StoredSession {
+  serverId: string;
   handle: string;
   signedInAt: string;
 }
@@ -85,132 +76,71 @@ export type AuthFailure =
   | { kind: 'account-exists'; handle: string }
   | { kind: 'bad-credentials' }
   | { kind: 'storage-blocked' }
-  | { kind: 'crypto-unavailable' };
+  | { kind: 'server-refused'; message: string }
+  | { kind: 'server-unreachable'; message: string };
 
 export type AuthResult<T> = { ok: true; value: T } | { ok: false; failure: AuthFailure };
 
-/** The oracle's own promise: "8+ characters · stored only on this server". */
+/** Matches the server's own floor: `AuthSignupInput.password` is `.min(8)`. */
 export const MIN_PASSWORD_LENGTH = 8;
 
-/* ── storage, defensively ──────────────────────────────────────────────── */
+/* ── the wire ──────────────────────────────────────────────────────────── */
 
-function readJson<T>(key: string): T | null {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch {
-    // Blocked storage OR a corrupt record. Both mean "nothing usable here",
-    // and neither may take the gate down — a throw at this point would render
-    // a white screen instead of a sign-in form.
-    return null;
-  }
+/**
+ * A catalog-bound client against the ACTIVE server, built per call. Cheap by
+ * design (`createHttpClient` holds no connection), and rebuilding it each
+ * time is what makes a server switch or a fresh sign-in take effect without
+ * any cache to invalidate. `getAuthToken` reads the pass store so the calls
+ * that must carry the pass (logout, session.get) carry the current one.
+ */
+function clientForActiveServer(): { client: HttpClient; serverId: string } {
+  const serverId = readActiveServerId();
+  const client = createHttpClient({
+    baseUrl: routeBaseUrlFor(serverId),
+    fetch: (url, init) => globalThis.fetch(url, init),
+    getAuthToken: () => readServerPass(serverId)?.token ?? null,
+  });
+  return { client, serverId };
 }
 
-function writeJson(key: string, value: unknown): boolean {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    // Reported, NEVER swallowed. Letting someone into an app we cannot keep
-    // them in is worse than refusing: their next reload would eject them with
-    // no explanation.
-    return false;
-  }
-}
-
-function isAccount(a: unknown): a is LocalAccount {
-  // A record missing its derivation is not an account — treat it as absent
-  // rather than letting `verify` compare against undefined.
-  const r = a as LocalAccount | null;
-  return !!r && typeof r.handle === 'string' && typeof r.hash === 'string' && !!r.salt;
-}
-
-/** Every local account on this browser, newest last. */
-export function readLocalAccounts(): LocalAccount[] {
-  const list = readJson<LocalAccount[]>(ACCOUNTS_STORAGE_KEY);
-  if (Array.isArray(list)) return list.filter(isAccount);
-  // MIGRATION, one way and idempotent: an account created before the list
-  // existed is adopted rather than stranded. Not written back here — a read
-  // that writes would make every render a storage mutation; `writeAccounts`
-  // persists the list the next time one is added.
-  const legacy = readJson<LocalAccount>(ACCOUNT_STORAGE_KEY);
-  return isAccount(legacy) ? [legacy] : [];
-}
-
-export function findLocalAccount(handle: string): LocalAccount | null {
-  const wanted = handleFrom(handle);
-  return readLocalAccounts().find((a) => a.handle === wanted) ?? null;
+function toGateAccount(account: {
+  username: string;
+  displayName: string | null;
+  accountId: string;
+  identityId: string;
+  isOwner: boolean;
+  isNodeAdmin: boolean;
+}): GateAccount {
+  return {
+    handle: account.username,
+    displayName: account.displayName ?? account.username,
+    accountId: account.accountId,
+    identityId: account.identityId,
+    isOwner: account.isOwner,
+    isNodeAdmin: account.isNodeAdmin,
+  };
 }
 
 /**
- * The account the current session belongs to, or null.
- *
- * NOTE the change in meaning: this used to be "the one account". With a list
- * it can only sensibly mean "the signed-in one", and callers wanting the set
- * want `readLocalAccounts()`.
+ * Wire error → failure. `unauthenticated` on a login IS the credential
+ * refusal, and the server deliberately says nothing about which half was
+ * wrong (no account enumeration) — this mapping preserves that. Everything
+ * else is surfaced as the server's own words: a refusal this gate cannot
+ * explain is still one the viewer can act on, and paraphrasing it would
+ * manufacture precision.
  */
-export function readLocalAccount(): LocalAccount | null {
-  const s = readJson<LocalSession>(SESSION_STORAGE_KEY);
-  if (!s || typeof s.handle !== 'string') return null;
-  return findLocalAccount(s.handle);
-}
-
-export function readLocalSession(): LocalSession | null {
-  const s = readJson<LocalSession>(SESSION_STORAGE_KEY);
-  if (!s || typeof s.handle !== 'string') return null;
-  // A session naming an account that no longer exists is stale, not valid.
-  return findLocalAccount(s.handle) ? s : null;
-}
-
-/* ── derivation ────────────────────────────────────────────────────────── */
-
-function subtle(): SubtleCrypto | null {
-  const c = globalThis.crypto;
-  return c && typeof c.subtle?.deriveBits === 'function' ? c.subtle : null;
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s);
-}
-
-function fromBase64(text: string): Uint8Array {
-  const bin = atob(text);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-async function derive(
-  password: string,
-  salt: Uint8Array,
-  iterations: number,
-): Promise<string | null> {
-  const s = subtle();
-  if (!s) return null;
-  const key = await s.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, [
-    'deriveBits',
-  ]);
-  const bits = await s.deriveBits(
-    { name: 'PBKDF2', salt: salt as unknown as BufferSource, iterations, hash: 'SHA-256' },
-    key,
-    256,
-  );
-  return toBase64(new Uint8Array(bits));
-}
-
-/**
- * Constant-time-ish comparison. Not meaningful against a local attacker who
- * already has the storage, and said so rather than implied: it is here because
- * comparing secrets with `===` is a habit worth not forming, not because it
- * defends this particular record.
- */
-function equalStrings(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+function failureFrom(err: unknown, act: 'signup' | 'login' | 'logout'): AuthFailure {
+  if (err instanceof CollabError) {
+    if (err.code === 'unauthenticated' && act === 'login') return { kind: 'bad-credentials' };
+    if (err.code === 'upstream_unavailable') {
+      return { kind: 'server-unreachable', message: err.message };
+    }
+    return { kind: 'server-refused', message: err.message };
+  }
+  return {
+    kind: 'server-unreachable',
+    message: err instanceof Error ? err.message : String(err),
+  };
 }
 
 /** `amber Smith` → `ambersmith`. The oracle writes handles as `@amber`. */
@@ -221,91 +151,188 @@ export function handleFrom(name: string): string {
     .replace(/[^a-z0-9_-]+/g, '');
 }
 
+/* ── reads ─────────────────────────────────────────────────────────────── */
+
+/** The signed-in account on the active server, or null. Synchronous — the
+ * no-flash first render depends on it. */
+export function readActiveAccount(): GateAccount | null {
+  return readServerPass(readActiveServerId())?.account ?? null;
+}
+
+/** Every account that has signed in on this browser, for the active server. */
+export function readKnownAccountsHere(): KnownAccount[] {
+  return readKnownAccounts(readActiveServerId());
+}
+
+/** Synchronous session read — the stored pass, as a fact about this browser.
+ * `verifyStoredSession` is the server's word on whether it still stands. */
+export function readStoredSession(): StoredSession | null {
+  const serverId = readActiveServerId();
+  const pass = readServerPass(serverId);
+  return pass ? { serverId, handle: pass.account.handle, signedInAt: pass.signedInAt } : null;
+}
+
+export type SessionVerdict =
+  | { state: 'valid'; account: GateAccount }
+  | { state: 'invalid' }
+  | { state: 'unreachable'; message: string }
+  | { state: 'signed-out' };
+
+/**
+ * THE RELOAD CHECK — `auth.session.get` under the stored pass. A revoked or
+ * expired pass comes back `unauthenticated`, and the stale record is cleared
+ * so the gate closes NOW rather than on the first failed mutation. An
+ * unreachable node is NOT a sign-out: the local pass and the node's
+ * reachability are different facts, and conflating them would eject the
+ * viewer every time the node hiccups.
+ */
+export async function verifyStoredSession(): Promise<SessionVerdict> {
+  const { client, serverId } = clientForActiveServer();
+  const pass = readServerPass(serverId);
+  if (!pass) return { state: 'signed-out' };
+
+  try {
+    const result = await client.call<AuthSessionGetResult>('auth.session.get');
+    const account = toGateAccount(result.account);
+    // The server's copy wins — a display name edited elsewhere lands here on
+    // the next reload rather than fossilising at what sign-in saw. But ONLY
+    // onto the pass that was verified: the viewer may have signed out (or in
+    // as someone else) while this call was in flight, and a stale write-back
+    // here would resurrect a session the viewer already ended.
+    const current = readServerPass(serverId);
+    if (current && current.token === pass.token) {
+      writeServerPass(serverId, { ...current, account });
+    }
+    return { state: 'valid', account };
+  } catch (err) {
+    if (err instanceof CollabError && err.code === 'unauthenticated') {
+      // Same in-flight guard: only the verified pass may be cleared.
+      const current = readServerPass(serverId);
+      if (current && current.token === pass.token) {
+        clearServerPass(serverId);
+        notify();
+      }
+      return { state: 'invalid' };
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    return { state: 'unreachable', message };
+  }
+}
+
 /* ── the three verbs ───────────────────────────────────────────────────── */
 
-export async function createLocalAccount(
+function storePass(
+  serverId: string,
+  login: AuthLoginResult,
+): AuthResult<GateAccount> {
+  const account = toGateAccount(login.account);
+  const pass: ServerPass = {
+    token: login.token,
+    account,
+    sessionId: login.session.sessionId,
+    expiresAt: login.session.expiresAt,
+    signedInAt: new Date().toISOString(),
+  };
+  // Write and CHECK. If storage refuses, the caller must learn now — a pass
+  // this browser cannot keep would eject the viewer on their next reload with
+  // no explanation. The minted session is revoked again so it does not linger
+  // server-side as a session nothing holds.
+  if (!writeServerPass(serverId, pass)) {
+    const { client } = clientForActiveServer();
+    void client
+      .call('auth.logout', { body: { sessionId: login.session.sessionId } })
+      .catch(() => {});
+    return { ok: false, failure: { kind: 'storage-blocked' } };
+  }
+  noteKnownAccount(serverId, {
+    handle: account.handle,
+    displayName: account.displayName,
+    lastSignedInAt: pass.signedInAt,
+  });
+  notify();
+  return { ok: true, value: account };
+}
+
+/**
+ * `auth.signup` + `auth.login`, in that order. Signup is node-admin gated in
+ * SQL under the CALLER's claims: from a loopback machine the credential-free
+ * request is the auto-owner and passes; anywhere else it is refused, and the
+ * documented provisioning path (an admin runs `tm8 auth signup`, then the
+ * person redeems a space invite) is the answer — see
+ * `docs/identity/PROVISION-SECOND-ACCOUNT.md`.
+ */
+export async function createServerAccount(
   name: string,
   password: string,
-): Promise<AuthResult<LocalAccount>> {
+): Promise<AuthResult<GateAccount>> {
   const handle = handleFrom(name);
   if (!handle) return { ok: false, failure: { kind: 'name-required' } };
   if (password.length < MIN_PASSWORD_LENGTH) {
     return { ok: false, failure: { kind: 'password-too-short', min: MIN_PASSWORD_LENGTH } };
   }
-  // Only a HANDLE COLLISION is a conflict now. Having other accounts is not.
-  const taken = findLocalAccount(handle);
-  if (taken) return { ok: false, failure: { kind: 'account-exists', handle: taken.handle } };
 
-  const salt = new Uint8Array(16);
-  if (!globalThis.crypto?.getRandomValues) {
-    return { ok: false, failure: { kind: 'crypto-unavailable' } };
+  const { client, serverId } = clientForActiveServer();
+  try {
+    await client.call<AuthSignupResult>('auth.signup', {
+      body: { username: handle, password, displayName: name.trim() },
+    });
+  } catch (err) {
+    if (err instanceof CollabError && err.code === 'conflict') {
+      return { ok: false, failure: { kind: 'account-exists', handle } };
+    }
+    return { ok: false, failure: failureFrom(err, 'signup') };
   }
-  globalThis.crypto.getRandomValues(salt);
 
-  const hash = await derive(password, salt, PBKDF2_ITERATIONS);
-  if (hash === null) return { ok: false, failure: { kind: 'crypto-unavailable' } };
-
-  const account: LocalAccount = {
-    handle,
-    displayName: name.trim(),
-    salt: toBase64(salt),
-    hash,
-    iterations: PBKDF2_ITERATIONS,
-    algo: 'PBKDF2-SHA256',
-    createdAt: new Date().toISOString(),
-  };
-
-  // Write the ACCOUNT LIST first and check it. If storage refuses, the caller
-  // must learn now — not after we have shown them an app they cannot return
-  // to. Appending rather than replacing is what keeps the first account alive.
-  if (!writeJson(ACCOUNTS_STORAGE_KEY, [...readLocalAccounts(), account])) {
-    return { ok: false, failure: { kind: 'storage-blocked' } };
+  try {
+    const login = await client.call<AuthLoginResult>('auth.login', {
+      body: { username: handle, password, kind: 'browser' },
+    });
+    return storePass(serverId, login);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'login') };
   }
-  if (!writeJson(SESSION_STORAGE_KEY, { handle, signedInAt: new Date().toISOString() })) {
-    return { ok: false, failure: { kind: 'storage-blocked' } };
-  }
-  return { ok: true, value: account };
 }
 
-export async function signInLocal(
+/** `auth.login` — the password for a `tm8s_…` pass, stored per server. */
+export async function signInToServer(
   handle: string,
   password: string,
-): Promise<AuthResult<LocalAccount>> {
-  const account = findLocalAccount(handle);
+): Promise<AuthResult<GateAccount>> {
+  const username = handleFrom(handle);
+  if (!username) return { ok: false, failure: { kind: 'name-required' } };
 
-  // ONE failure for both halves. Distinguishing "no such account" from "wrong
-  // password" tells anyone at this browser which handles exist, for free.
-  // Deriving anyway on the miss keeps the two paths similar in cost.
-  const salt = account ? fromBase64(account.salt) : new Uint8Array(16);
-  const iterations = account?.iterations ?? PBKDF2_ITERATIONS;
-  const attempt = await derive(password, salt, iterations);
-  if (attempt === null) return { ok: false, failure: { kind: 'crypto-unavailable' } };
-
-  if (!account || !equalStrings(attempt, account.hash)) {
-    return { ok: false, failure: { kind: 'bad-credentials' } };
+  const { client, serverId } = clientForActiveServer();
+  try {
+    const login = await client.call<AuthLoginResult>('auth.login', {
+      body: { username, password, kind: 'browser' },
+    });
+    return storePass(serverId, login);
+  } catch (err) {
+    return { ok: false, failure: failureFrom(err, 'login') };
   }
-
-  if (!writeJson(SESSION_STORAGE_KEY, { handle: account.handle, signedInAt: new Date().toISOString() })) {
-    return { ok: false, failure: { kind: 'storage-blocked' } };
-  }
-  return { ok: true, value: account };
 }
 
 /**
- * Clears the SESSION only. The account survives, so the viewer can sign back
- * in — and so that sign-out is not a destructive act wearing a mild verb.
+ * `auth.logout`, then the pass is gone either way. The revoke is
+ * fire-and-forget ON PURPOSE: the viewer asked to leave, and holding the UI
+ * hostage to a slow node would keep them visibly signed in after the act.
+ * If the revoke is lost the pass still ages out server-side (`expiresAt`),
+ * and the local copy is already destroyed — the asymmetry favours the viewer.
  *
  * Exported standalone as well as through the hook because the coordinator's
- * mount may want to call it from a menu that does not sit inside the gate's
- * React tree. The subscription below is what keeps both paths in sync.
+ * mount may call it from a menu outside the gate's React tree. The
+ * subscription below keeps both paths in sync.
  */
-export function signOutLocal(): void {
-  try {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY);
-  } catch {
-    // Storage that refuses to forget. The in-memory notification still fires,
-    // so the UI returns to the gate; the stale record is re-validated against
-    // the account on the next read.
+export function signOutOfServer(): void {
+  const { client, serverId } = clientForActiveServer();
+  const pass = readServerPass(serverId);
+  if (pass) {
+    // Capture-free: the client's getAuthToken still reads the store, so the
+    // revoke must be DISPATCHED before the pass is cleared.
+    void client.call('auth.logout', { body: {} }).catch(() => {
+      // The pass is gone locally regardless; a lost revoke expires server-side.
+    });
+    clearServerPass(serverId);
   }
   notify();
 }
@@ -317,7 +344,7 @@ export function signOutLocal(): void {
  * cannot rely on its own setState to hear about it. This is the smallest
  * mechanism that keeps every mounted gate consistent with the store — and the
  * `storage` event is subscribed too, so signing out in one tab returns the
- * others to the gate rather than leaving a live app behind a dead session.
+ * others to the gate rather than leaving a live app behind a dead pass.
  */
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -335,24 +362,19 @@ function notify(): void {
 export function watchCrossTabSignOut(): () => void {
   if (typeof window === 'undefined' || !window.addEventListener) return () => {};
   const onStorage = (e: StorageEvent) => {
-    if (
-      e.key === SESSION_STORAGE_KEY ||
-      e.key === ACCOUNTS_STORAGE_KEY ||
-      e.key === ACCOUNT_STORAGE_KEY ||
-      e.key === null
-    )
-      notify();
+    if (e.key === PASSES_STORAGE_KEY || e.key === KNOWN_ACCOUNTS_KEY || e.key === null) notify();
   };
   window.addEventListener('storage', onStorage);
   return () => window.removeEventListener('storage', onStorage);
 }
 
-/** Test/dev affordance: forget everything this gate stored. */
+/** Test/dev affordance: forget every pass, plus the retired local-gate keys. */
 export function resetLocalAuth(): void {
+  resetPassStore();
   try {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    window.localStorage.removeItem(ACCOUNTS_STORAGE_KEY);
-    window.localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_ACCOUNTS_STORAGE_KEY);
+    window.localStorage.removeItem(LEGACY_ACCOUNT_STORAGE_KEY);
   } catch {
     // Nothing to do; the records were unreachable to begin with.
   }

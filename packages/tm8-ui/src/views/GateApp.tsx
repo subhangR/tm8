@@ -41,7 +41,7 @@ import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { useTheme } from '../theme/useTheme';
-import { AccountMenu, useAuthActions } from '../auth';
+import { AccountMenu, authTokenFor, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { HomeScreen } from '../home';
@@ -81,6 +81,11 @@ export function GateApp(props: GateAppProps = {}) {
     leftKind: DEFAULT_LEFT_KIND,
     rightKind: DEFAULT_RIGHT_KIND,
     serverBaseUrl: activeServer.routeBaseUrl,
+    // The gate's per-server pass rides on every seam request. Read per call,
+    // so sign-in/out takes effect without rebuilding the seam; App keys this
+    // component on the server id, so a server switch remounts with the right
+    // store entry anyway.
+    getAuthToken: () => authTokenFor(activeServer.id),
   });
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',

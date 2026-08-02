@@ -311,6 +311,12 @@ export interface GateOptions {
   /** Relative same-origin base. Named Servers use the local node's relay. */
   serverBaseUrl?: string;
   /**
+   * The viewer's `tm8s_…` pass for the active server, read per request by the
+   * transport. Omitted ⇒ requests carry no Authorization header and a
+   * loopback node answers as the auto-owner (T-L7).
+   */
+  getAuthToken?: () => string | null;
+  /**
    * THE SEAM INJECTION PORT.
    *
    * Omitted — which is what every screen does — the hook constructs the seam
@@ -358,6 +364,7 @@ export function useGateData(options: GateOptions): GateData {
             : {}),
           // The local Server stays default-relative. A named Server uses the
           // same-origin relay above, so browser CORS never becomes transport.
+          ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
           origin: location.origin,

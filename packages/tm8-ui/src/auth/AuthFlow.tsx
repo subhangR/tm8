@@ -87,7 +87,7 @@ const FRAME_COMPONENTS: Record<AuthFrameId, ComponentType<FrameProps>> = {
  * or banner downstream that wants to repeat it.
  */
 export const DEV_BYPASS_NOTE =
-  'no account was created and no session was established — this build has no auth executor';
+  'no account was created and no session was established — the bypass skips the auth.signup / auth.login the gate would perform';
 
 function DevBypass({ onClick }: { onClick: () => void }) {
   return (
