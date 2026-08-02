@@ -24,6 +24,8 @@ export {
   checkHost,
   checkOrigin,
   checkCsrf,
+  hasForwardingEvidence,
+  isLoopbackPeer,
   BASE_SECURITY_HEADERS,
   type SecurityDecision,
 } from './security.js';
@@ -45,6 +47,7 @@ export {
   raw,
   type HandlerResult,
   type IdentityResolver,
+  type IdentityResolutionContext,
   type JsonResult,
   type OperationHandler,
   type RawResult,

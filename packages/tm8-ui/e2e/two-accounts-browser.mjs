@@ -17,12 +17,22 @@
  *
  *   UI_URL=http://127.0.0.1:4614 API_URL=http://127.0.0.1:8899 \
  *     node e2e/two-accounts-browser.mjs
+ *
+ * A secured remote deployment refuses browser signup by design. Provision
+ * both accounts and their shared space on-box, then run the same browser proof
+ * without signup:
+ *
+ *   E2E_LOGIN_ONLY=1 E2E_SPACE_ID=... \
+ *   E2E_AMBER_USER=... E2E_AMBER_PASS=... \
+ *   E2E_BOBBY_USER=... E2E_BOBBY_PASS=... \
+ *   UI_URL=https://... API_URL=https://... node e2e/two-accounts-browser.mjs
  */
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
 const UI = process.env.UI_URL ?? 'http://127.0.0.1:4614';
 const API = process.env.API_URL ?? 'http://127.0.0.1:8899';
+const LOGIN_ONLY = process.env.E2E_LOGIN_ONLY === '1';
 const OUT = new URL('../gate-evidence/identity-two-accounts/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 
@@ -62,6 +72,16 @@ async function createAccount(page, name, password) {
   await page.waitForSelector('[data-testid="auth-frame"]', { state: 'detached', timeout: 15000 });
 }
 
+async function signIn(page, handle, password) {
+  if ((await page.getByLabel('HANDLE').count()) === 0) {
+    await page.getByRole('button', { name: /already have an account.*sign in|back to sign in/i }).click();
+  }
+  await page.getByLabel('HANDLE').fill(handle);
+  await page.getByLabel('PASSWORD').fill(password);
+  await page.getByRole('button', { name: /^sign in$/i }).click();
+  await page.waitForSelector('[data-testid="auth-frame"]', { state: 'detached', timeout: 15000 });
+}
+
 async function signOut(page) {
   await page.getByTestId('account-menu-trigger').click();
   await page.getByRole('button', { name: /sign out/i }).click();
@@ -70,17 +90,28 @@ async function signOut(page) {
 
 const run = async () => {
   const suffix = crypto.randomUUID().slice(0, 6);
-  const AMBER = `amber_${suffix}`;
-  const BOBBY = `bobby_${suffix}`;
-  const PW_A = 'amber-browser-pass-1';
-  const PW_B = 'bobby-browser-pass-2';
+  const AMBER = LOGIN_ONLY ? process.env.E2E_AMBER_USER : `amber_${suffix}`;
+  const BOBBY = LOGIN_ONLY ? process.env.E2E_BOBBY_USER : `bobby_${suffix}`;
+  const PW_A = LOGIN_ONLY ? process.env.E2E_AMBER_PASS : 'amber-browser-pass-1';
+  const PW_B = LOGIN_ONLY ? process.env.E2E_BOBBY_PASS : 'bobby-browser-pass-2';
+  if (!AMBER || !BOBBY || !PW_A || !PW_B || (LOGIN_ONLY && !process.env.E2E_SPACE_ID)) {
+    throw new Error(
+      'login-only mode requires E2E_SPACE_ID, E2E_AMBER_USER/PASS, and E2E_BOBBY_USER/PASS',
+    );
+  }
 
-  // The space both humans will work in, made by the loopback owner (T-L7).
-  const space = await api('POST', '/v2/spaces', {
-    body: { clientMutationId: cmid(), name: `Browser Proof ${suffix}`, description: 'Slice 1 browser acceptance' },
-  });
-  check('owner creates the proof space', space.status === 201, JSON.stringify(space.error));
-  const spaceId = space.data?.space?.id;
+  // Local mode provisions through T-L7. A secured remote node receives the
+  // already-provisioned space id and performs no privileged browser/API call.
+  let spaceId = process.env.E2E_SPACE_ID;
+  if (!LOGIN_ONLY) {
+    const space = await api('POST', '/v2/spaces', {
+      body: { clientMutationId: cmid(), name: `Browser Proof ${suffix}`, description: 'Slice 1 browser acceptance' },
+    });
+    check('owner creates the proof space', space.status === 201, JSON.stringify(space.error));
+    spaceId = space.data?.space?.id;
+  } else {
+    check('login-only mode uses the on-box provisioned space', Boolean(spaceId));
+  }
 
   // channel: 'chrome' drives the machine's installed Chrome — the playwright
   // cache in this worktree has no downloaded binary for this version.
@@ -89,12 +120,13 @@ const run = async () => {
   page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));
 
   // ── §1 · first run: the gate, then a REAL account ─────────────────────
-  console.log('\n§1 · amber signs up through the gate');
+  console.log(`\n§1 · amber ${LOGIN_ONLY ? 'signs in' : 'signs up'} through the gate`);
   await page.goto(UI);
   await page.waitForSelector('[data-testid="auth-frame"]', { timeout: 15000 });
   check('the gate is on screen, the app is not', (await page.locator('[data-testid="auth-frame"]').count()) === 1);
-  await createAccount(page, AMBER, PW_A);
-  check('the gate closed after signup', true);
+  if (LOGIN_ONLY) await signIn(page, AMBER, PW_A);
+  else await createAccount(page, AMBER, PW_A);
+  check(`the gate closed after ${LOGIN_ONLY ? 'login' : 'signup'}`, true);
 
   const amberPass = await passFromBrowser(page);
   check('a tm8s_ pass is stored under the page ORIGIN', !!amberPass && amberPass.token.startsWith('tm8s_'));
@@ -106,12 +138,14 @@ const run = async () => {
 
   // Provision membership per the documented path: owner invites, amber
   // redeems under her own pass.
-  const invA = await api('POST', `/v2/spaces/${spaceId}/invites`, { body: { clientMutationId: cmid(), maxUses: 1 } });
-  const redeemA = await api('POST', '/v2/invites/redeem', {
-    token: amberPass.token,
-    body: { clientMutationId: cmid(), code: invA.data?.code ?? invA.data?.invite?.code },
-  });
-  check('amber redeems her invite', redeemA.status === 200 || redeemA.status === 201, JSON.stringify(redeemA.error));
+  if (!LOGIN_ONLY) {
+    const invA = await api('POST', `/v2/spaces/${spaceId}/invites`, { body: { clientMutationId: cmid(), maxUses: 1 } });
+    const redeemA = await api('POST', '/v2/invites/redeem', {
+      token: amberPass.token,
+      body: { clientMutationId: cmid(), code: invA.data?.code ?? invA.data?.invite?.code },
+    });
+    check('amber redeems her invite', redeemA.status === 200 || redeemA.status === 201, JSON.stringify(redeemA.error));
+  }
 
   await page.reload();
   await page.waitForTimeout(4000);
@@ -119,32 +153,40 @@ const run = async () => {
 
   // ── §2 · amber creates a task, in the browser ─────────────────────────
   console.log('\n§2 · amber creates a task');
-  await createTaskInUI(page, 1);
+  let openCount = await openTaskCount(page);
+  await createTaskInUI(page, openCount + 1);
   await page.screenshot({ path: `${OUT}2-amber-task.png` });
 
   // ── §3 · sign out, and bobby arrives ──────────────────────────────────
-  console.log('\n§3 · bobby signs up through the gate');
+  console.log(`\n§3 · bobby ${LOGIN_ONLY ? 'signs in' : 'signs up'} through the gate`);
   await signOut(page);
   check('sign-out returned to the gate', true);
-  // The sign-in frame offers "create another account" — the second human.
-  await page.getByRole('button', { name: /create another account/i }).click();
-  await createAccount(page, BOBBY, PW_B);
+  if (LOGIN_ONLY) {
+    await signIn(page, BOBBY, PW_B);
+  } else {
+    // The sign-in frame offers "create another account" — the second human.
+    await page.getByRole('button', { name: /create another account/i }).click();
+    await createAccount(page, BOBBY, PW_B);
+  }
   const bobbyPass = await passFromBrowser(page);
   check('bobby has his OWN tm8s_ pass now', !!bobbyPass && bobbyPass.token.startsWith('tm8s_') && bobbyPass.token !== amberPass.token);
   check('the pass names bobby', bobbyPass?.account?.handle === BOBBY, JSON.stringify(bobbyPass?.account));
 
-  const invB = await api('POST', `/v2/spaces/${spaceId}/invites`, { body: { clientMutationId: cmid(), maxUses: 1 } });
-  const redeemB = await api('POST', '/v2/invites/redeem', {
-    token: bobbyPass.token,
-    body: { clientMutationId: cmid(), code: invB.data?.code ?? invB.data?.invite?.code },
-  });
-  check('bobby redeems his invite', redeemB.status === 200 || redeemB.status === 201, JSON.stringify(redeemB.error));
+  if (!LOGIN_ONLY) {
+    const invB = await api('POST', `/v2/spaces/${spaceId}/invites`, { body: { clientMutationId: cmid(), maxUses: 1 } });
+    const redeemB = await api('POST', '/v2/invites/redeem', {
+      token: bobbyPass.token,
+      body: { clientMutationId: cmid(), code: invB.data?.code ?? invB.data?.invite?.code },
+    });
+    check('bobby redeems his invite', redeemB.status === 200 || redeemB.status === 201, JSON.stringify(redeemB.error));
+  }
 
   await page.reload();
   await page.waitForTimeout(4000);
 
   console.log('\n§4 · bobby creates a task');
-  await createTaskInUI(page, 2);
+  openCount = await openTaskCount(page);
+  await createTaskInUI(page, openCount + 1);
   await page.screenshot({ path: `${OUT}3-bobby-task.png` });
 
   // ── §5 · THE ACCEPTANCE ASSERTION — two tasks, two authors, on screen ──
@@ -215,6 +257,15 @@ async function createTaskInUI(page, expectedOpenCount) {
       `refusal: ${JSON.stringify(refusal)} status: ${JSON.stringify(status)}`,
     );
   }
+}
+
+async function openTaskCount(page) {
+  const labels = await page.locator('button').allTextContents();
+  for (const label of labels) {
+    const match = /^Open\s+(\d+)$/i.exec(label.trim());
+    if (match) return Number(match[1]);
+  }
+  return 0;
 }
 
 run().catch((e) => {

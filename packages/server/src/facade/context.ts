@@ -67,6 +67,9 @@ export function claimsFor(
   ctx: RequestContext,
   envelope: CommandEnvelope = {},
 ): DbClaims {
+  if (ctx.identity?.kind === 'anonymous') {
+    throw new CollabError('unauthenticated', 'authentication is required');
+  }
   const bearer = ctx.identity?.kind === 'bearer' ? ctx.identity : undefined;
   if (bearer && !bearer.identityId) {
     throw new CollabError('unauthenticated', 'bearer identity is unresolved');

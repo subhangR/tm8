@@ -62,15 +62,34 @@ rendering, not an error).
 the password in the request body. Utho staging has a real certificate
 (`tm8-server.tail28ac62.ts.net:8888`).
 
-### The browser-only variant, on a loopback/tailnet-forwarded server
+### Reverse-proxied and kill-switched deployments
 
-The gate's **"create another account"** path (sign-in card → create) performs
-`auth.signup` unauthenticated. On a server whose requests arrive via loopback
-(a single machine, or Utho staging behind `tailscale serve`), that request
-resolves to the auto-owner and **succeeds** — so account two can be created
-entirely in the browser there. The space invite (steps 2–3) is still CLI:
-the gate deliberately ships no invite UI (a documented CLI step was ruled
-acceptable; a half-built invite surface was not).
+A reverse proxy connects to tm8's loopback socket, but that does **not** make
+the remote browser local. The auto-owner arm refuses any request carrying
+`Forwarded`, `X-Forwarded-For`, `X-Forwarded-Host`, or `X-Real-IP`. Utho nginx
+sets `X-Forwarded-For`, so the gate's **"create another account"** path is an
+honest refusal there: `auth.signup` remains node-admin-only.
+
+Provision both accounts and both one-use invite codes from an on-box shell
+while local auto-owner is enabled, then have each human log in and redeem their
+code as in steps 1–3. After provisioning, a hardened node may set
+`TM8_DISABLE_AUTO_OWNER=1` and restart. That kill switch disables even bare
+loopback auto-owner; existing `tm8s_…` passes continue to authenticate. Further
+provisioning then requires a real node-admin pass or a deliberate maintenance
+window with the switch disabled.
+
+The browser acceptance harness has a login-only mode for this topology. It
+does no signup or privileged API work:
+
+```sh
+E2E_LOGIN_ONLY=1 \
+E2E_SPACE_ID='<shared-space-id>' \
+E2E_AMBER_USER='amber' E2E_AMBER_PASS='<password>' \
+E2E_BOBBY_USER='bobby' E2E_BOBBY_PASS='<password>' \
+UI_URL='https://tm8-server.tail28ac62.ts.net:8888' \
+API_URL='https://tm8-server.tail28ac62.ts.net:8888' \
+node packages/tm8-ui/e2e/two-accounts-browser.mjs
+```
 
 ## 5. The acceptance check
 

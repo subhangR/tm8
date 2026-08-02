@@ -53,7 +53,7 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { TM8_CLIENT_HEADER } from '@tm8/contract';
 import type { ServerConfig } from './config.js';
-import type { IdentityResolver, RequestIdentity } from './types.js';
+import type { IdentityResolutionContext, IdentityResolver, RequestIdentity } from './types.js';
 
 export interface SecurityDecision {
   /** `undefined` means "allowed". Otherwise the request is refused with this. */
@@ -220,17 +220,48 @@ export function checkUpgradeTransport(
   return checkOrigin(headers, config);
 }
 
+const FORWARDING_HEADERS = new Set([
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-real-ip',
+]);
+
+/** Node reports IPv4 loopback as either form depending on the listening socket. */
+export function isLoopbackPeer(remoteAddress: string | undefined): boolean {
+  return remoteAddress === '127.0.0.1'
+    || remoteAddress === '::1'
+    || remoteAddress === '::ffff:127.0.0.1';
+}
+
 /**
- * S5 — v1 local mode auto-authenticates the owner (T-L7). This is *only*
- * sound because S1 holds: the socket is loopback-only. The moment a
- * non-loopback bind is allowed, this resolver must be replaced by the
- * bearer-token path (S8) — the two changes are one change.
- *
- * W2 replaces this with the identity block's resolver (Lyra's package slice);
- * the returned `identityId`/`actorId` become `SET LOCAL tm8.identity_id` /
- * `tm8.actor_id` per transaction (Cygnus, R2).
+ * Forwarding headers are a privilege-reduction signal only. Their values are
+ * never trusted; mere presence proves the request traversed another HTTP hop.
  */
-export const autoOwnerResolver: IdentityResolver = (): RequestIdentity => ({ kind: 'auto-owner' });
+export function hasForwardingEvidence(headers: IncomingHttpHeaders): boolean {
+  return Object.keys(headers).some((name) => FORWARDING_HEADERS.has(name.toLowerCase()));
+}
+
+/**
+ * S5 / T-L7 — auto-owner is the degenerate single-machine path, not a
+ * property of the server's bind address. A reverse proxy also connects to the
+ * loopback socket, so all three conditions are required: the actual TCP peer
+ * is loopback, no forwarding header is present, and the operator has not set
+ * the kill switch. Any uncertainty narrows to anonymous.
+ */
+export const autoOwnerResolver: IdentityResolver = (
+  headers: IncomingHttpHeaders,
+  context: IdentityResolutionContext,
+): RequestIdentity => {
+  if (
+    context.disableAutoOwner
+    || !isLoopbackPeer(context.remoteAddress)
+    || hasForwardingEvidence(headers)
+  ) {
+    return { kind: 'anonymous' };
+  }
+  return { kind: 'auto-owner' };
+};
 
 /** Response headers applied to every response the frame writes. */
 export const BASE_SECURITY_HEADERS: Readonly<Record<string, string>> = {

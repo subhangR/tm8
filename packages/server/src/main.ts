@@ -9,7 +9,8 @@
  * W2 changes one line here — the registry gains handlers — and nothing else
  * about the frame moves.
  */
-import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import type { IncomingMessage } from 'node:http';
+import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
@@ -38,6 +39,7 @@ import { loadConfig, resolveServerDataDir, type ServerConfig } from './http/conf
 import { createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
+import { autoOwnerResolver } from './http/security.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
@@ -114,6 +116,35 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
   const blobStore = db ? createW2BlobStore({ dataDir, maxSizeBytes: fileMaxSizeBytes }) : undefined;
+
+  /**
+   * ONE identity path for every transport. A valid tm8 session is resolved
+   * independently of transport; every non-session request passes through the
+   * guarded local-only owner arm before the database owner is attached.
+   */
+  const identityResolver: IdentityResolver | undefined = db
+    ? async (headers, context) => {
+        const header = headers.authorization;
+        const raw = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+        if (raw.startsWith(TOKEN_PREFIX)) {
+          const session = await resolveBearerIdentity(db, raw);
+          return {
+            kind: 'bearer',
+            identityId: session.identityId,
+            nodeAdmin: session.isNodeAdmin,
+            accountId: session.accountId,
+            sessionId: session.sessionId,
+            token: raw,
+            ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
+          };
+        }
+
+        const fallback = await autoOwnerResolver(headers, context);
+        if (fallback.kind === 'anonymous') return fallback;
+        const resolved = await owner!();
+        return { kind: 'auto-owner', identityId: resolved.identityId };
+      }
+    : undefined;
 
   /**
    * The execution block builds its OWN PtyHostService and hands it back.
@@ -208,8 +239,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   // at all, so no durable event reached a socket however well the log worked.
   const eventLog = db ? new PgDurableEventLog(db) : undefined;
   const wsClaimsFor = async (identity: RequestIdentity): Promise<DbClaims> => {
-    const resolved = await owner!();
-    return { identityId: identity.identityId ?? resolved.identityId, nodeAdmin: false };
+    if (!identity.identityId || identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    return { identityId: identity.identityId, nodeAdmin: identity.nodeAdmin === true };
   };
 
   const pump = db && eventLog
@@ -253,8 +286,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
 
+  /** Browser sockets carry a pass in the grant URL because they cannot set headers. */
+  const resolveSocketIdentity = async (req: IncomingMessage): Promise<RequestIdentity> => {
+    const url = new URL(req.url ?? '/', 'http://tm8.invalid');
+    const token = url.searchParams.get('token');
+    const headers = token
+      ? { ...req.headers, authorization: `Bearer ${token}` }
+      : req.headers;
+    const resolver = identityResolver ?? autoOwnerResolver;
+    const identity = await resolver(headers, {
+      remoteAddress: req.socket.remoteAddress,
+      disableAutoOwner: config.disableAutoOwner === true,
+    });
+    if (identity.kind === 'anonymous') {
+      throw new CollabError('unauthenticated', 'authentication is required');
+    }
+    return identity;
+  };
+
   const ws = createWsServer({
     registry: subscriptions,
+    authorize: resolveSocketIdentity,
     ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
     onDisconnect: (connId) => {
       presence.dropConnection(connId);
@@ -299,12 +351,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         }
         let identity: RequestIdentity;
         try {
-          const url = new URL(req.url ?? '/', 'http://tm8.invalid');
-          const token = url.searchParams.get('token');
-          const headers = token
-            ? { ...req.headers, authorization: `Bearer ${token}` }
-            : req.headers;
-          identity = await identityResolver!(headers);
+          identity = await resolveSocketIdentity(req);
         } catch {
           return { ok: false, status: 401, message: 'authentication required' };
         }
@@ -339,54 +386,6 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }
     : ws;
-
-  /**
-   * ONE identity path for every handler.
-   *
-   * The frame's default resolver reports `auto-owner` with no identityId,
-   * because the skeleton had no database to look one up in. The facade block
-   * grew its own owner resolver over `Db` — which was fine while it was the
-   * only consumer, and wrong the moment a second block read `ctx.identity`:
-   * the execution handlers correctly derived their claims from the request
-   * context, got an undefined identityId, and every spawn died with
-   * `28000 no identity bound to this transaction`. Neither lane was at fault;
-   * the composition root was, for leaving two paths where there should be one.
-   *
-   * Resolving it here means `ctx.identity` carries the real owner for every
-   * handler in the process, and any future block gets it for free.
-   *
-   * THE BEARER ARM (Identity v2 Stage 1). This resolver is the single seam
-   * the whole design plugs into (doc 3 §2): an arm, never a second path —
-   * `test/one-identity-path.test.ts` holds. `Authorization: Bearer tm8s_…`
-   * is verified against `auth_sessions` (claim-free by design) and any
-   * failure is a uniform 401. Every OTHER Authorization shape falls through
-   * to the loopback owner untouched, because the raw file-upload PUT already
-   * carries FileUploadGrant bearer tokens on the same header and those are
-   * not identities. Local single-machine behaviour is byte-identical: no
-   * header, same auto-owner (T-L7 — local is the degenerate case).
-   */
-  const identityResolver: IdentityResolver | undefined = db
-    ? async (headers) => {
-        const header = headers.authorization;
-        const raw = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
-        if (raw.startsWith(TOKEN_PREFIX)) {
-          const session = await resolveBearerIdentity(db, raw);
-          return {
-            kind: 'bearer',
-            identityId: session.identityId,
-            nodeAdmin: session.isNodeAdmin,
-            accountId: session.accountId,
-            sessionId: session.sessionId,
-            token: raw,
-            // Agent sessions are persona-scoped (S8): the token may only act
-            // as its team_member. Postgres still authorises via can_act_as.
-            ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
-          };
-        }
-        const resolved = await owner!();
-        return { kind: 'auto-owner', identityId: resolved.identityId };
-      }
-    : undefined;
 
   const rawUpload = db && blobStore
     ? createW2FileUploadRoute({ deps: { db, config, owner: owner! }, blobStore })
