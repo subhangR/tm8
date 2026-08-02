@@ -76,6 +76,7 @@ import {
   type ProjectResource,
   type ReactionInput,
   type SessionJournalPage,
+  type SessionLaunchRecord,
   type SessionJournalRecord,
   type SpaceId,
   type SpaceKindCounts,
@@ -246,6 +247,97 @@ function fixtureJournalRecords(sessionId: EntityId): SessionJournalRecord[] {
       tokens: { estimator: 'chars/4', agentToCli: 12, cliToAgent: 22 },
     },
   ];
+}
+
+/**
+ * The spawn-time configuration for the live fixture session: a manifest shaped
+ * like the one `composeManifest` writes, the env var NAMES (values are never
+ * recorded anywhere, so there is nothing here to omit), and the two prompt
+ * channels as bytes.
+ *
+ * The manifest is deliberately typed `Record<string, unknown>` all the way from
+ * the contract, so this fixture is not obliged to track `Tm8Manifest` — which is
+ * the point: the DEBUG surface renders whatever document a node wrote, and a
+ * fixture pinned to today's interface would hide that.
+ */
+function fixtureLaunchRecord(sessionId: EntityId): SessionLaunchRecord {
+  return {
+    sessionId,
+    available: true,
+    unavailableReason: null,
+    manifest: {
+      manifestVersion: '1',
+      sessionId,
+      spaceId: FIXTURE_SPACE_ID,
+      generatedAt: new Date(FIXTURE_BASE_MS - 60_000).toISOString(),
+      mode: 'worker',
+      baseUrl: 'http://127.0.0.1:4610',
+      agent: {
+        teamMemberId: '01900000-0000-7000-8000-0000000000b1',
+        name: 'Draco',
+        avatar: '🖥️',
+        role: 'PTY engineer',
+        identity: 'You own the terminal seam. Read the bytes before believing a status.',
+        memory: [],
+        capabilities: { canReportProgress: true },
+        commandPermissions: {},
+      },
+      launch: {
+        tool: 'claude',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+        accessMode: 'workspace-write',
+        reasoningEffort: null,
+        commandNetwork: 'enabled',
+        command: 'claude --permission-mode acceptEdits --append-system-prompt <system> <task>',
+      },
+      session: {
+        title: 'Wire the DEBUG surface',
+        workingDirectory: '/work/tm8',
+        workdirMode: 'project',
+      },
+      project: { id: '01900000-0000-7000-8000-0000000000c1', name: 'tm8', workingDir: '/work/tm8', trust: 'trusted' },
+      interactionProfile: {
+        profileId: null,
+        profileVersion: null,
+        templateKey: 'tm8.chat.core',
+        templateVersion: 1,
+        source: 'core_default',
+        resolvedHash: 'sha256:fixture-core-profile-hash',
+        pinRevision: 1,
+      },
+      tasks: [
+        {
+          id: '01900000-0000-7000-8000-0000000000aa',
+          version: 3,
+          title: 'Wire the DEBUG surface',
+          description: 'Show the spawn-time configuration, not just the command journal.',
+          priority: 'high',
+          workStatus: 'in_progress',
+          acceptanceCriteria: [],
+        },
+      ],
+      skills: [],
+      coordinator: null,
+      directive: null,
+      promptExtra: null,
+    },
+    envVarNames: ['TM8_BASE_URL', 'TM8_SESSION_ID', 'TM8_SPACE_ID', 'TM8_AGENT_TOKEN', 'TM8_MANIFEST_PATH'],
+    prompts: {
+      system:
+        '<tm8_system_prompt version="1.0" mode="worker">\n'
+        + '  <identity>\n'
+        + '    <name>Draco</name>\n'
+        + '    <role>PTY engineer</role>\n'
+        + '  </identity>\n'
+        + '</tm8_system_prompt>',
+      task:
+        '<tm8_task_prompt>\nTitle: Wire the DEBUG surface\n'
+        + 'Show the spawn-time configuration, not just the command journal.\n</tm8_task_prompt>',
+      unavailableReason: null,
+    },
+    recordedAt: new Date(FIXTURE_BASE_MS - 60_000).toISOString(),
+  };
 }
 
 /** Minimal kind-correct content for summaries the dataset gives no detail for. */
@@ -877,6 +969,24 @@ export function createFixtureSeam(): FixtureSeam {
         records: windowed,
         hasMore: windowed.length < all.length,
       });
+    },
+    async launch(workSessionId): Promise<SessionLaunchRecord> {
+      requireSummary(workSessionId);
+      // Same shape as the journal above: only the live PTY (C-5) carries a
+      // recorded manifest, so every other session exercises the explained
+      // empty rather than an empty manifest that looks like a real one.
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_manifest_row',
+          manifest: null,
+          envVarNames: [],
+          prompts: { system: null, task: null, unavailableReason: 'not_recorded' },
+          recordedAt: null,
+        });
+      }
+      return clone(fixtureLaunchRecord(workSessionId));
     },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.

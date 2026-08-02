@@ -448,7 +448,17 @@ export class SpawnService {
       await this.writeManifestFile(manifestPath, manifest);
       // Names only. The manifest row is read by the UI and included in backups;
       // an ANTHROPIC_API_KEY value in there would outlive every rotation.
-      await this.graph.recordManifest(auth, sessionId, manifest, envVarNames);
+      //
+      // The two prompts go down WITH the manifest, in the same write, because
+      // this is the only moment they exist as data: a second later they are
+      // argv on a child process and nothing can read them back. `task` is the
+      // one actually handed to the PTY — including the Codex session marker —
+      // so that a reader sees the real first user turn rather than the
+      // pre-marker composer output.
+      await this.graph.recordManifest(auth, sessionId, manifest, envVarNames, {
+        system: envelope.system,
+        task,
+      });
 
       if (!context.project) await mkdir(cwd, { recursive: true });
 

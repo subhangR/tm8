@@ -46,7 +46,7 @@ import { InterruptedError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
-import type { SessionJournalPage } from '@tm8/contract';
+import type { SessionJournalPage, SessionLaunchRecord } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
@@ -191,6 +191,68 @@ function renderJournal(page: SessionJournalPage): string {
     );
   }
   if (page.hasMore) lines.push('', '(older records exist — page back with --before)');
+  return lines.join('\n');
+}
+
+/**
+ * `tm8 session launch <id>` — what a session was TOLD at spawn.
+ *
+ * The journal answers "what did this agent DO". This answers "what was this
+ * agent GIVEN": the composed manifest, the environment variable NAMES, and the
+ * two prompt channels as the bytes that were actually sent.
+ */
+async function sessionLaunch(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('session launch', cmd.options.value('mutation-id'));
+  const workSessionId = cmd.args[0];
+  if (workSessionId === undefined) {
+    throw new CliError('tm8 session launch requires a work-session id', EXIT_USAGE, {
+      hint: 'find one with `tm8 session liveness` or `tm8 entity query`',
+    });
+  }
+  const record = await observedInvoke<SessionLaunchRecord>(
+    clientFor(cmd.ctx),
+    'execution.launch',
+    { params: { workSessionId } },
+  );
+  cmd.out.data(record, renderLaunch);
+  return EXIT_OK;
+}
+
+function renderLaunch(record: SessionLaunchRecord): string {
+  if (!record.available) {
+    // An explained empty: "no manifest recorded" is a different fact from "a
+    // manifest with nothing in it", and an unreadable session looks the same as
+    // one that has none, on purpose.
+    return `no launch record for ${record.sessionId}: no manifest was recorded for it, `
+      + 'or it is not readable by this caller';
+  }
+  const lines: string[] = [];
+  if (record.recordedAt !== null) lines.push(`recorded at ${record.recordedAt}`);
+
+  const m = record.manifest;
+  if (m === null) {
+    lines.push('manifest: recorded, but not a JSON object — shown raw under --format json');
+  } else {
+    lines.push('', 'manifest:', JSON.stringify(m, null, 2));
+  }
+
+  lines.push('');
+  if (record.envVarNames.length === 0) {
+    lines.push('environment: no variable names recorded');
+  } else {
+    // Names, never values. The storage guard enforces this; saying so here
+    // stops a reader concluding the values were merely omitted from the render.
+    lines.push(`environment (${String(record.envVarNames.length)} names; values are never recorded):`);
+    for (const name of record.envVarNames) lines.push(`  ${name}`);
+  }
+
+  lines.push('');
+  if (record.prompts.unavailableReason === 'not_recorded') {
+    lines.push('prompts: not recorded — this session was launched before prompt capture existed');
+  } else {
+    lines.push('system prompt:', record.prompts.system ?? '  (none sent)');
+    lines.push('', 'task prompt:', record.prompts.task ?? '  (none sent)');
+  }
   return lines.join('\n');
 }
 
@@ -489,6 +551,7 @@ function renderLiveness(dto: ExecutionLivenessDto): string {
 export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'liveness'], run: sessionLiveness },
   { path: ['session', 'journal'], run: sessionJournal },
+  { path: ['session', 'launch'], run: sessionLaunch },
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },

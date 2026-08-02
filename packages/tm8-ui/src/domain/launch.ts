@@ -629,3 +629,133 @@ export function newLaunchMutationId(): string {
   launchMutationSequence += 1;
   return `launch:${Date.now().toString(36)}:${launchMutationSequence.toString(36)}`;
 }
+
+// ---------------------------------------------------------------------------
+// Reading a manifest BACK
+// ---------------------------------------------------------------------------
+
+/**
+ * One fact read out of a stored launch manifest.
+ *
+ * `value: null` means the document did not carry the field — which is not the
+ * same as carrying an empty one, so the renderer can say "not recorded" rather
+ * than leave a blank cell that looks like a display bug.
+ */
+export interface ManifestFact {
+  label: string;
+  value: string | null;
+  /** The value is an identifier, a path or a posture keyword — render as code. */
+  mono: boolean;
+}
+
+/** A manifest as a surface can render it: named facts, the command, the tasks. */
+export interface ManifestDescription {
+  facts: ManifestFact[];
+  command: string | null;
+  tasks: { id: string | null; title: string }[];
+}
+
+/**
+ * Describe a STORED manifest — the document a session was actually launched
+ * with, read back out of the graph.
+ *
+ * It arrives untyped (`Record<string, unknown>`) on purpose, and it is read
+ * defensively here rather than parsed by a schema, because a manifest is a
+ * durable record written by whatever build was running at spawn time. A strict
+ * schema would refuse a document from an older or newer build ENTIRELY, so the
+ * one surface whose whole job is to explain a past launch would go blank
+ * exactly for the sessions worth explaining. Reading field by field degrades
+ * instead: what is present renders, what is missing says so, and the caller
+ * keeps the raw document to show alongside.
+ *
+ * It lives HERE rather than in the debug component for the §15.2 reason: the
+ * manifest's field vocabulary is data, and a component that knew it would be a
+ * component that has to be edited every time the manifest grows a field.
+ */
+export function describeLaunchManifest(
+  manifest: Record<string, unknown> | null,
+): ManifestDescription {
+  const agent = readObject(manifest, 'agent');
+  const launch = readObject(manifest, 'launch');
+  const session = readObject(manifest, 'session');
+  const proj = readObject(manifest, 'project');
+  const profile = readObject(manifest, 'interactionProfile');
+  const network = readObject(launch, 'commandNetwork');
+
+  const facts: ManifestFact[] = [
+    { label: 'Teammate', value: joinParts([readText(agent, 'name'), readText(agent, 'role')], ' · '), mono: false },
+    { label: 'Agent mode', value: readText(manifest, 'mode'), mono: true },
+    { label: 'Tool', value: readText(launch, 'tool'), mono: true },
+    { label: 'Model', value: readText(launch, 'model'), mono: true },
+    { label: 'Permission mode', value: readText(launch, 'permissionMode'), mono: true },
+    { label: 'Access mode', value: readText(launch, 'accessMode'), mono: true },
+    { label: 'Reasoning effort', value: readText(launch, 'reasoningEffort'), mono: true },
+    {
+      label: 'Command network',
+      value: joinParts([readText(network, 'mode'), joinStrings(readArray(network, 'allowedHosts'))], ' · '),
+      mono: true,
+    },
+    {
+      label: 'Working directory',
+      value: joinParts([readText(session, 'workingDirectory'), bracket(readText(session, 'workdirMode'))], ' '),
+      mono: true,
+    },
+    { label: 'Project', value: joinParts([readText(proj, 'name'), bracket(readText(proj, 'trust'))], ' '), mono: false },
+    {
+      label: 'Interaction profile',
+      value: joinParts([readText(profile, 'templateKey'), bracket(readText(profile, 'source'))], ' '),
+      mono: true,
+    },
+    { label: 'Base URL', value: readText(manifest, 'baseUrl'), mono: true },
+    { label: 'Session title', value: readText(session, 'title'), mono: false },
+    { label: 'Space', value: readText(manifest, 'spaceId'), mono: true },
+    { label: 'Manifest version', value: readText(manifest, 'manifestVersion'), mono: true },
+    { label: 'Composed at', value: readText(manifest, 'generatedAt'), mono: true },
+  ];
+
+  const tasks = readArray(manifest, 'tasks').map((entry) => {
+    const task = asObject(entry);
+    return { id: readText(task, 'id'), title: readText(task, 'title') ?? 'untitled task' };
+  });
+
+  return { facts, command: readText(launch, 'command'), tasks };
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function readObject(source: Record<string, unknown> | null, key: string): Record<string, unknown> | null {
+  return source === null ? null : asObject(source[key]);
+}
+
+/** Scalars become text; anything structural is left to the raw document. */
+function readText(source: Record<string, unknown> | null, key: string): string | null {
+  if (source === null) return null;
+  const value = source[key];
+  if (typeof value === 'string') return value.trim() === '' ? null : value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
+}
+
+function readArray(source: Record<string, unknown> | null, key: string): unknown[] {
+  if (source === null) return [];
+  const value = source[key];
+  return Array.isArray(value) ? value : [];
+}
+
+function joinParts(parts: (string | null)[], sep: string): string | null {
+  const kept = parts.filter((p): p is string => p !== null);
+  return kept.length === 0 ? null : kept.join(sep);
+}
+
+function bracket(value: string | null): string | null {
+  return value === null ? null : `(${value})`;
+}
+
+function joinStrings(values: unknown[]): string | null {
+  const kept = values.filter((v): v is string => typeof v === 'string');
+  return kept.length === 0 ? null : kept.join(', ');
+}

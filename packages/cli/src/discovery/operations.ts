@@ -1088,6 +1088,20 @@ const ROWS: Record<OperationName, Row> = {
       'a session spawned before this feature, or one launched without journaling, answers `available: false` rather than an empty journal',
     ],
   },
+  'execution.launch': {
+    cmd: ['session', 'launch'],
+    syn: 'tm8 session launch <work-session-id>',
+    sum: "Read what a session was TOLD at spawn: its system prompt, its first task prompt, and the manifest it was launched with",
+    authz: 'entity',
+    input: 'none',
+    tags: ['manifest', 'prompt', 'spawn', 'config', 'teammate', 'debug', 'launch'],
+    notes: [
+      'the prompts are the BYTES that were sent to the agent, read back from storage — they are never recomposed from the manifest, so they cannot silently drift from what the agent actually received',
+      'environment variable NAMES are recorded; VALUES are structurally absent and cannot be recovered here',
+      'a session launched before prompt capture answers `prompts.unavailableReason: not_recorded` rather than an empty prompt',
+      'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
+    ],
+  },
   'execution.liveness': {
     cmd: ['session', 'liveness'],
     syn: 'tm8 session liveness [--space <space-id>]',
@@ -1526,7 +1540,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:ca0d14bbcbde8eb07440edd8e6dc9e8274482d90eb876733cc89fead91d08285';
+  'sha256:954873433ecaf3e168d282a6120496c0155fb30b000268d9a6f1456ad98c0e30';
 
 export const GRAMMAR_VERSION = '2';
 

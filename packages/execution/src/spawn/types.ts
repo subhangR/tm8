@@ -268,12 +268,21 @@ export interface GraphPort {
     sessionId: string,
     teamMemberId: string,
   ): Promise<string>;
-  /** `public.record_session_manifest` — names only, never values (S-redaction). */
+  /**
+   * `public.record_session_manifest` — names only, never values (S-redaction).
+   *
+   * `prompts` carries the two composed launch prompts VERBATIM, because they
+   * exist nowhere else once the child process starts: they are appended to its
+   * argv and the composer's output is not otherwise retained. Recording them
+   * here is what lets a reader later show what the agent was actually told,
+   * rather than what re-running today's composer would produce.
+   */
   recordManifest(
     auth: GraphAuth,
     sessionId: string,
     manifest: Tm8Manifest,
     envVarNames: string[],
+    prompts: { system: string; task: string },
   ): Promise<void>;
   /** `public.work_session_transition` — R29's single writer. Never UPDATE directly. */
   transition(auth: GraphAuth, input: TransitionInput): Promise<void>;
