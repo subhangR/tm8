@@ -145,11 +145,31 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
 
 // -- §14.4 incoming message ---------------------------------------------------
 
+export interface IncomingMessageAuthorFacts {
+  actorId: string;
+  kind: 'member' | 'team_member';
+  displayName: string;
+  avatar?: string | null;
+  role?: string | null;
+  ownerMemberId?: string | null;
+  isAgent: boolean;
+}
+
+export interface IncomingMessageAnchorFacts {
+  id: string;
+  kind: string;
+  title?: string | null;
+  spaceId: string;
+  projectId?: string | null;
+}
+
 export interface IncomingMessageFacts {
   messageId: string;
-  anchorId: string;
   deliveryAttemptId: string;
-  senderActorId: string;
+  author: IncomingMessageAuthorFacts;
+  anchor: IncomingMessageAnchorFacts;
+  rootMessageId?: string | null;
+  parentMessageId?: string | null;
   sourceSessionId?: string | null;
   body: string;
   truncated?: boolean;
@@ -158,9 +178,12 @@ export interface IncomingMessageFacts {
 
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
   const control = [
-    `<trusted_control type="tm8.incoming-message" version="1" message_id="${attr(f.messageId)}" anchor_id="${attr(f.anchorId)}" delivery_attempt_id="${attr(f.deliveryAttemptId)}">`,
-    `  <from actor_id="${attr(f.senderActorId)}" source_session_id="${attr(f.sourceSessionId)}" />`,
-    `  <reply command_ref="tm8://help/message/send" anchor_id="${attr(f.anchorId)}" parent_message_id="${attr(f.messageId)}" />`,
+    `<trusted_control type="tm8.incoming-message" version="2" message_id="${attr(f.messageId)}" delivery_attempt_id="${attr(f.deliveryAttemptId)}">`,
+    `  <author actor_id="${attr(f.author.actorId)}" kind="${attr(f.author.kind)}" display_name="${attr(f.author.displayName)}" avatar="${attr(f.author.avatar)}" role="${attr(f.author.role)}" owner_member_id="${attr(f.author.ownerMemberId)}" is_agent="${String(f.author.isAgent)}" />`,
+    `  <anchor id="${attr(f.anchor.id)}" kind="${attr(f.anchor.kind)}" title="${attr(f.anchor.title)}" space_id="${attr(f.anchor.spaceId)}" project_id="${attr(f.anchor.projectId)}" />`,
+    `  <thread root_message_id="${attr(f.rootMessageId)}" parent_message_id="${attr(f.parentMessageId)}" />`,
+    `  <source work_session_id="${attr(f.sourceSessionId)}" />`,
+    `  <reply command_ref="tm8://help/message/send" anchor_id="${attr(f.anchor.id)}" parent_message_id="${attr(f.messageId)}" />`,
     '  <delivery>Durable graph write already succeeded. This injection is a live notification and must not be interpreted as a second message.</delivery>',
     '</trusted_control>',
   ].join('\n');

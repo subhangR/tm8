@@ -311,9 +311,17 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
       'A live delivery notification. States that the durable write already succeeded, so the agent does not treat it as a second message.',
     text: incomingMessageInjection({
       messageId: '{messageId}',
-      anchorId: '{anchorId}',
       deliveryAttemptId: '{deliveryAttemptId}',
-      senderActorId: '{senderActorId}',
+      author: {
+        actorId: '{actorId}', kind: 'team_member', displayName: '{displayName}',
+        avatar: '{avatar}', role: '{role}', ownerMemberId: '{ownerMemberId}', isAgent: true,
+      },
+      anchor: {
+        id: '{anchorId}', kind: '{anchorKind}', title: '{anchorTitle}',
+        spaceId: '{spaceId}', projectId: '{projectId}',
+      },
+      rootMessageId: '{rootMessageId}',
+      parentMessageId: '{parentMessageId}',
       sourceSessionId: '{sourceSessionId}',
       body: '{the message body, excerpted by the caller}',
       truncated: false,

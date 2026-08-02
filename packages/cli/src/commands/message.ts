@@ -327,7 +327,10 @@ async function messageSend(cmd: CommandContext): Promise<ExitCode> {
   const attachmentIds = uniqueInOrder(cmd.options.values('attach'));
   if (mentionIds.length > 0) request.mentionIds = mentionIds;
   if (attachmentIds.length > 0) request.attachmentIds = attachmentIds;
+  const replyTo = cmd.options.value('reply-to');
+  if (replyTo) request.parentMessageId = replyTo;
   if (cmd.ctx.actor) request.actorId = cmd.ctx.actor.value;
+  if (cmd.ctx.sessionId) request.workSessionId = cmd.ctx.sessionId;
 
   const client = clientFor(cmd.ctx);
   const batch = await observedInvoke<{ messages?: unknown }>(client, 'messages.post', {

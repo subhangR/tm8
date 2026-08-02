@@ -28,6 +28,7 @@ import {
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import type {
+  AgentCredentialPort,
   GraphAuth,
   GraphPort,
   InteractionProfilePinContext,
@@ -54,6 +55,8 @@ export interface SpawnServiceOptions {
   env?: NodeJS.ProcessEnv;
   /** Window in which a child exit makes spawn itself fail. Default 150ms. */
   bootSettlementMs?: number;
+  /** Persona-pinned, per-run bearer minting supplied by the server. */
+  credentials?: AgentCredentialPort;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -103,6 +106,7 @@ export class SpawnService {
   private readonly logger: Logger | undefined;
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
+  private readonly credentials: AgentCredentialPort | undefined;
 
   /**
    * Claims captured at spawn time, replayed for that session's exit transition.
@@ -130,6 +134,21 @@ export class SpawnService {
     this.logger = options.logger;
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
+    this.credentials = options.credentials;
+  }
+
+  /** Revoke by work-session id; cleanup is idempotent and never masks the real failure. */
+  private async revokeCredential(auth: GraphAuth, sessionId: string): Promise<void> {
+    if (!this.credentials) return;
+    try {
+      await this.credentials.revoke(auth, sessionId);
+    } catch (error) {
+      this.logger?.error?.(
+        'SpawnService: failed to revoke agent credential',
+        error instanceof Error ? error : new Error(String(error)),
+        { sessionId },
+      );
+    }
   }
 
   private manifestPathFor(sessionId: string): string {
@@ -311,8 +330,16 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    let credentialMinted = false;
 
     try {
+      const credential = this.credentials
+        ? await this.credentials.mint(auth, {
+          workSessionId: sessionId,
+          teamMemberId: request.teamMemberId,
+        })
+        : undefined;
+      credentialMinted = credential !== undefined;
       // The pre-minted Claude id is graph truth from the moment the session
       // exists — recorded BEFORE the PTY spawns, so even a session that dies
       // in its boot window is already resume-capable.
@@ -374,7 +401,14 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
+      const env = composeEnv(
+        manifest,
+        manifestPath,
+        this.baseUrl,
+        this.env,
+        this.journalPathFor(sessionId),
+        credential?.token,
+      );
       const envVarNames = Object.keys(env).sort();
 
       // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
@@ -454,6 +488,7 @@ export class SpawnService {
       // failed before rethrowing — and do not let a cleanup failure mask the
       // original error, which is the one that explains what happened.
       await this.failSession(auth, sessionId, error, bootExit);
+      if (credentialMinted) await this.revokeCredential(auth, sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -636,8 +671,18 @@ export class SpawnService {
     }
 
     this.sessionAuth.set(sessionId, auth);
+    let credentialMinted = false;
 
     try {
+      // Resume starts a new process run. The database mint atomically revokes
+      // the previous bearer, so plaintext never has to survive between runs.
+      const credential = this.credentials
+        ? await this.credentials.mint(auth, {
+          workSessionId: sessionId,
+          teamMemberId: info.teamMemberId,
+        })
+        : undefined;
+      credentialMinted = credential !== undefined;
       // Re-pin the interaction profile for the new run; non-fatal on failure —
       // a resume that degrades to the core-default profile frame is strictly
       // better than one that refuses, because the restored conversation already
@@ -683,7 +728,14 @@ export class SpawnService {
         this.env,
       );
 
-      const env = composeEnv(manifest, manifestPath, this.baseUrl, this.env, this.journalPathFor(sessionId));
+      const env = composeEnv(
+        manifest,
+        manifestPath,
+        this.baseUrl,
+        this.env,
+        this.journalPathFor(sessionId),
+        credential?.token,
+      );
       const envVarNames = Object.keys(env).sort();
 
       const binary = baseCommand.split(' ')[0] ?? '';
@@ -733,6 +785,7 @@ export class SpawnService {
       return { sessionId, manifestPath, manifest, command, cwd, envVarNames, reused, commandResult };
     } catch (error) {
       await this.failSession(auth, sessionId, error, bootExit);
+      if (credentialMinted) await this.revokeCredential(auth, sessionId);
       this.sessionAuth.delete(sessionId);
       throw error;
     }
@@ -885,6 +938,9 @@ export class SpawnService {
 
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
+    // Even a failed kill must lose graph authority: a process whose lifecycle
+    // is no longer under control is the least safe process to leave credentialed.
+    await this.revokeCredential(auth, sessionId);
 
     // Phase 1b — a genuine kill FAILURE must not be reported as a successful
     // exit. Ported from old maestro's own discrimination
@@ -1060,6 +1116,8 @@ export class SpawnService {
         error instanceof Error ? error : new Error(String(error)),
         { sessionId, status, sqlState },
       );
+    } finally {
+      await this.revokeCredential(auth, sessionId);
     }
   };
 

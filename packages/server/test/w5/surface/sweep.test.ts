@@ -390,7 +390,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // moving it, the same drift 067 had just reconciled. 069 (channels into
     // Home) is the second of the two.
     // 65 -> 66 on 2026-08-02: 070 (entities_select restricted-projection policy).
-    expect(server.appliedMigrations.length).toBe(66);
+    // 66 -> 67 on 2026-08-02: 072 (persona-pinned agent run credentials).
+    expect(server.appliedMigrations.length).toBe(67);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

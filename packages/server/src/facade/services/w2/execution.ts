@@ -39,6 +39,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { CollabError } from '@tm8/contract';
+import { incomingMessageInjection } from '@tm8/prompt';
 import {
   W2MessageDeliveryAdapter,
   type Logger,
@@ -713,7 +714,12 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       // real value goes to the RPCs through `inFlight`, never through here.
       reservationVersion: stored.pairBudgetVersion ?? 0,
       expiresAt: lease.expiresAt,
-      content: intent.content,
+      content: intent.incomingMessage
+        ? incomingMessageInjection({
+          ...intent.incomingMessage,
+          deliveryAttemptId: lease.deliveryId,
+        })
+        : intent.content,
       mode: intent.mode,
     };
   }

@@ -519,6 +519,50 @@ describe('B2 — the delivery path, over a fake RPC port', () => {
     expect(rpc.statusOf(result.deliveryId!)).toBe('delivered');
   });
 
+  it('renders the full trusted reply envelope after the delivery id is minted', async () => {
+    const pty = new RecordingPty();
+    const { service: svc } = service(pty);
+    const reservation = await svc.reserve({
+      messageId: IDS.message,
+      targetWorkSessionId: IDS.session,
+      content: 'untrusted body',
+      mode: 'send',
+      requestId: 'req-envelope',
+      incomingMessage: {
+        messageId: IDS.message,
+        author: {
+          actorId: 'persona-1', kind: 'team_member', displayName: 'Research Agent',
+          avatar: 'https://example.test/agent.png', role: 'researcher',
+          ownerMemberId: 'member-1', isAgent: true,
+        },
+        anchor: {
+          id: 'channel-1', kind: 'channel', title: 'Identity', spaceId: 'space-1',
+          projectId: null,
+        },
+        rootMessageId: 'root-1',
+        parentMessageId: 'parent-1',
+        sourceSessionId: 'source-session-1',
+        body: 'untrusted body',
+      },
+    });
+    expect(reservation).not.toBeNull();
+    await svc.dispatch({
+      ...reservation!,
+      requestId: 'req-envelope',
+      principal: svc.principalFor(reservation!),
+    });
+
+    const content = pty.deliveries[0]?.content ?? '';
+    expect(content).toContain('type="tm8.incoming-message" version="2"');
+    expect(content).toContain(`delivery_attempt_id="${reservation!.deliveryId}"`);
+    expect(content).toContain('display_name="Research Agent"');
+    expect(content).toContain('anchor id="channel-1" kind="channel"');
+    expect(content).toContain('root_message_id="root-1" parent_message_id="parent-1"');
+    expect(content).toContain('work_session_id="source-session-1"');
+    expect(content).toContain('anchor_id="channel-1" parent_message_id="');
+    expect(content).toContain('<untrusted_data type="message-body"');
+  });
+
   it('holds NO wake state: a rebuilt service does not mint a fresh allowance', async () => {
     const rpc = new FakeDeliveryRpc();
     const first = new W2ExecutionDeliveryService({

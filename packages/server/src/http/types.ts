@@ -37,6 +37,8 @@ export interface RequestIdentity {
   accountId?: string;
   /** Verified `auth_sessions` row id when `kind === 'bearer'`. */
   sessionId?: string;
+  /** Work session pinned to an agent bearer; absent for human sessions. */
+  workSessionId?: string;
 }
 
 /** Everything a handler is allowed to know about one request. */

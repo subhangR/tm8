@@ -459,11 +459,26 @@ describe('composeEnv', () => {
     baseUrl: 'http://127.0.0.1:4610',
   });
 
-  it('sets the three variables that are the whole boot contract', () => {
+  it('sets the session and exact persona variables in the boot contract', () => {
     const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {});
     expect(env.TM8_SESSION_ID).toBe('sess-1');
     expect(env.TM8_MANIFEST_PATH).toBe('/tmp/m.json');
     expect(env.TM8_BASE_URL).toBe('http://127.0.0.1:4610');
+    expect(env.TM8_TEAM_MEMBER_ID).toBe('tm-1');
+    expect(env.TM8_ACTOR_ID).toBe('tm-1');
+  });
+
+  it('injects a run-scoped agent bearer separately from the manifest', () => {
+    const env = composeEnv(
+      manifest,
+      '/tmp/m.json',
+      'http://127.0.0.1:4610',
+      {},
+      '/data/journals/sess-1.jsonl',
+      'tm8s_run-secret',
+    );
+    expect(env.TM8_AGENT_TOKEN).toBe('tm8s_run-secret');
+    expect(JSON.stringify(manifest)).not.toContain('tm8s_run-secret');
   });
 
   it('injects TM8_JOURNAL_PATH when a journal path is given', () => {

@@ -174,6 +174,45 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     expect(graph.commands).toHaveLength(0);
   });
 
+  it('mints a persona-pinned run credential and revokes it on terminate', async () => {
+    const events: string[] = [];
+    service = new SpawnService({
+      graph,
+      pty,
+      baseUrl: 'http://127.0.0.1:4614',
+      dataDir,
+      nodeId: 'test-node',
+      env: { ...process.env, TM8_AGENT_CMD: 'echo-agent' },
+      credentials: {
+        mint: async (auth, input) => {
+          expect(auth).toBe(AUTH);
+          events.push(`mint:${input.workSessionId}:${input.teamMemberId}`);
+          return { token: 'tm8s_agent-run-secret', authSessionId: 'auth-session-1' };
+        },
+        revoke: async (auth, workSessionId) => {
+          expect(auth).toBe(AUTH);
+          events.push(`revoke:${workSessionId}`);
+        },
+      },
+    });
+
+    const result = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      projectId: '44444444-4444-4444-8444-444444444444',
+    });
+    expect(events).toEqual([`mint:${result.sessionId}:${MEMBER_ID}`]);
+    expect(result.envVarNames).toContain('TM8_AGENT_TOKEN');
+    expect(result.envVarNames).toContain('TM8_ACTOR_ID');
+    expect(JSON.stringify(result.manifest)).not.toContain('tm8s_agent-run-secret');
+
+    await service.terminate(AUTH, result.sessionId);
+    expect(events).toEqual([
+      `mint:${result.sessionId}:${MEMBER_ID}`,
+      `revoke:${result.sessionId}`,
+    ]);
+  });
+
   it('terminate kills the PTY and moves the session to exited', async () => {
     const result = await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
     await waitForOutput(pty, result.sessionId, 'TM8-ECHO-READY');

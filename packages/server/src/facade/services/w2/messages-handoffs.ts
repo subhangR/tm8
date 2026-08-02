@@ -20,8 +20,9 @@ import {
   type SendHandoffInput,
   type WithdrawHandoffInput,
 } from '@tm8/contract';
+import type { IncomingMessageFacts } from '@tm8/prompt';
 
-import { MICROS } from '../../entity-read.js';
+import { loadEntitySummariesByIds, MICROS } from '../../entity-read.js';
 import type { DbClaims, Querier } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import {
@@ -49,6 +50,8 @@ export interface MessageDeliveryIntent {
   readonly targetWorkSessionId: string;
   readonly content: string;
   readonly mode: 'send' | 'paste';
+  /** Trusted facts rendered only after reserve() mints the delivery attempt id. */
+  readonly incomingMessage?: Omit<IncomingMessageFacts, 'deliveryAttemptId'>;
 }
 
 export interface MessageDeliveryReservationIntent extends MessageDeliveryIntent {
@@ -85,7 +88,11 @@ export interface HandoffDeliveryAdapter {
 }
 
 export interface W2MessagesHandoffsServiceOptions {
-  /** Server-owned provenance resolver; request bodies and headers are never consulted. */
+  /**
+   * Server-owned provenance resolver. It reads the validated command envelope
+   * and gives a token-pinned agent session precedence; SQL authorizes the
+   * resulting session against the resolved actor before writing authored_from.
+   */
   readonly resolveAuthoredFromWorkSessionId?: (ctx: RequestContext) => Promise<string | null>;
   /** Server-owned first-attempt PTY epoch; never accepted from request input. */
   readonly resolveTargetWorkSessionEpoch?: (
@@ -107,6 +114,11 @@ interface BatchRpcResult {
   readonly messageBatchId: string;
   readonly messageIds: string[];
   readonly deliveryIntents?: MessageDeliveryIntent[];
+}
+
+interface MentionSessionRow {
+  readonly team_member_id: string;
+  readonly work_session_id: string;
 }
 
 interface MessageCommandRpcResult {
@@ -330,7 +342,85 @@ export class W2MessagesHandoffsService {
       if (messages.length !== result.messageIds.length) {
         throw new CollabError('upstream_unavailable', 'stored message batch could not be reloaded');
       }
-      return { result, messages };
+
+      const anchorSummaries = await loadEntitySummariesByIds(q, anchorIds, viewerIdentityId);
+      const anchorsById = new Map(anchorSummaries.map((summary) => [summary.id, summary]));
+      const mentionSessions = mentionIds.length === 0
+        ? []
+        : await q.query<MentionSessionRow>(
+          `select distinct on (participant.src_id)
+                  participant.src_id as team_member_id,
+                  session.entity_id as work_session_id
+             from public.edges participant
+             join public.work_sessions session on session.entity_id = participant.dst_id
+             join public.entities session_entity on session_entity.id = session.entity_id
+            where participant.type = 'participates_in'
+              and participant.src_id = any($1::uuid[])
+              and session.status in ('spawning', 'running', 'idle')
+              and session_entity.deleted_at is null
+            order by participant.src_id,
+                     coalesce(session.started_at, session_entity.created_at) desc,
+                     session.entity_id desc`,
+          [mentionIds],
+        );
+
+      const targetsByMessage = new Map<string, Set<string>>();
+      const deliveryIntents: MessageDeliveryIntent[] = [];
+      const addIntent = (message: MessageView, targetWorkSessionId: string, mode: 'send' | 'paste') => {
+        const targets = targetsByMessage.get(message.id) ?? new Set<string>();
+        if (targets.has(targetWorkSessionId)) return;
+        targets.add(targetWorkSessionId);
+        targetsByMessage.set(message.id, targets);
+
+        const anchor = anchorsById.get(message.state.anchorId);
+        if (!anchor) {
+          throw new CollabError('upstream_unavailable', 'message anchor could not be loaded for delivery');
+        }
+        const author = message.state.author;
+        deliveryIntents.push({
+          messageId: message.id,
+          targetWorkSessionId,
+          content: message.content.body,
+          mode,
+          incomingMessage: {
+            messageId: message.id,
+            author: {
+              actorId: author.id,
+              kind: author.kind,
+              displayName: author.displayName,
+              avatar: author.avatar ?? null,
+              role: author.role ?? null,
+              ownerMemberId: author.ownerMemberId ?? null,
+              isAgent: author.isAgent,
+            },
+            anchor: {
+              id: anchor.id,
+              kind: anchor.kind,
+              title: anchor.title,
+              spaceId: anchor.spaceId,
+              projectId: null,
+            },
+            rootMessageId: message.state.rootMessageId,
+            parentMessageId: message.parentId,
+            sourceSessionId: sourceWorkSessionId,
+            body: message.content.body,
+          },
+        });
+      };
+
+      const messagesById = new Map(messages.map((message) => [message.id, message]));
+      for (const intent of result.deliveryIntents ?? []) {
+        const message = messagesById.get(intent.messageId);
+        if (message) addIntent(message, intent.targetWorkSessionId, intent.mode);
+        else deliveryIntents.push(intent);
+      }
+      for (const message of messages) {
+        for (const target of mentionSessions) {
+          addIntent(message, target.work_session_id, 'send');
+        }
+      }
+
+      return { result: { ...result, deliveryIntents }, messages };
     }));
 
     // The transaction above has committed. Dispatch may block on a PTY write,
