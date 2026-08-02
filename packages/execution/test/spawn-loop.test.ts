@@ -18,7 +18,7 @@
 // would put the raw prompt text in the output whether or not the agent ever ran,
 // which is exactly why the assertion is on the PREFIX and not on the text alone.
 
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -128,6 +128,80 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     expect(output).toContain('TM8-ECHO-BASE-URL http://127.0.0.1:4614');
 
     expect(graph.statusesFor(result.sessionId)).toEqual(['running']);
+  }, 30000);
+
+  it('makes session data private and repairs roots left by older versions', async () => {
+    const sessionId = '66666666-6666-4666-8666-666666666666';
+    const manifests = join(dataDir, 'manifests');
+    const journals = join(dataDir, 'journals');
+    const scratch = join(dataDir, 'scratch');
+    const oldScratch = join(scratch, 'old-session');
+
+    await Promise.all([
+      mkdir(manifests, { recursive: true, mode: 0o755 }),
+      mkdir(journals, { recursive: true, mode: 0o755 }),
+      mkdir(oldScratch, { recursive: true, mode: 0o755 }),
+    ]);
+    await Promise.all([
+      chmod(manifests, 0o755),
+      chmod(journals, 0o755),
+      chmod(scratch, 0o755),
+      chmod(oldScratch, 0o755),
+    ]);
+
+    const oldManifest = join(manifests, 'old.json');
+    const oldTemp = join(manifests, 'orphan.json.tmp');
+    const oldJournal = join(journals, 'old.jsonl');
+    await Promise.all([
+      writeFile(oldManifest, '{}\n', { mode: 0o644 }),
+      writeFile(oldTemp, '{}\n', { mode: 0o644 }),
+      writeFile(oldJournal, '{}\n', { mode: 0o644 }),
+    ]);
+    await Promise.all([
+      chmod(oldManifest, 0o644),
+      chmod(oldTemp, 0o644),
+      chmod(oldJournal, 0o644),
+    ]);
+
+    // A stale fixed-name temp symlink must be unlinked, never followed. The
+    // victim models any file outside the manifest root that the service user
+    // can write; its bytes must survive the spawn unchanged.
+    const victim = join(dataDir, 'victim.txt');
+    await writeFile(victim, 'do not touch\n', { mode: 0o644 });
+    await symlink(victim, join(manifests, `${sessionId}.json.tmp`));
+
+    graph = new FakeGraph({ workingDir: projectDir, withProject: false, sessionId });
+    service = new SpawnService({
+      graph,
+      pty,
+      baseUrl: 'http://127.0.0.1:4614',
+      dataDir,
+      nodeId: 'test-node',
+      env: { ...process.env, TM8_AGENT_CMD: 'echo-agent' },
+    });
+
+    const result = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      taskIds: [TASK_ID],
+    });
+    await waitForOutput(pty, result.sessionId, 'TM8-ECHO-READY');
+
+    const permissions = async (path: string): Promise<number> => (await stat(path)).mode & 0o777;
+    await expect(Promise.all([
+      permissions(manifests),
+      permissions(journals),
+      permissions(scratch),
+      permissions(oldScratch),
+      permissions(result.cwd),
+    ])).resolves.toEqual([0o700, 0o700, 0o700, 0o700, 0o700]);
+    await expect(Promise.all([
+      permissions(oldManifest),
+      permissions(oldTemp),
+      permissions(oldJournal),
+      permissions(result.manifestPath),
+    ])).resolves.toEqual([0o600, 0o600, 0o600, 0o600]);
+    await expect(readFile(victim, 'utf8')).resolves.toBe('do not touch\n');
   }, 30000);
 
   it('execution.prompt reaches the PTY — asserted on the bytes the agent echoed', async () => {
