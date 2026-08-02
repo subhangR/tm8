@@ -63,6 +63,7 @@ import {
   type LaunchProject,
   type LaunchTeammate,
 } from '../domain/launch';
+import { representedThreadMessageCount } from './message-thread';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
@@ -1189,7 +1190,8 @@ export function useGateData(options: GateOptions): GateData {
         ?? state.details[id as EntityId]?.counters.messages
         ?? cachedMessages?.length
         ?? -1;
-      const messagesStale = cachedMessages === undefined || cachedMessages.length < messageCount;
+      const messagesStale = cachedMessages === undefined
+        || representedThreadMessageCount(cachedMessages) < messageCount;
       const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
       if (!needsDetail && !needsMessages) return;
       // Each half carries its OWN budget. Detail and thread already hydrate

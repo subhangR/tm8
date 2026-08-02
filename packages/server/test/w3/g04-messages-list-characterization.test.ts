@@ -149,7 +149,13 @@ describe.sequential('W3.G04-CHAR messages.list behavioural characterization', ()
       observed[`postReply${index}Status`] = posted.status;
     }
 
-    const roots = successData<{ items: Array<{ id: string; replyCount: number }> }>(
+    const roots = successData<{
+      items: Array<{
+        id: string;
+        replyCount: number;
+        replies?: { items: Array<{ content: unknown }>; nextCursor: string | null };
+      }>;
+    }>(
       await harness.request('GET', `/v2/entities/${anchorId}/messages`),
     );
     const replies = successData<{ items: Array<{ content: unknown }> }>(
@@ -163,8 +169,18 @@ describe.sequential('W3.G04-CHAR messages.list behavioural characterization', ()
     expect({
       repliesReturned: replies.items.length,
       replyCountOnParent: roots.items.find((item) => item.id === root)?.replyCount ?? null,
+      embeddedReplies: roots.items.find((item) => item.id === root)?.replies?.items.length ?? 0,
       postStatuses: [observed['postReply0Status'], observed['postReply1Status']],
-    }).toMatchObject({ repliesReturned: REPLY_BODIES.length });
+    }).toMatchObject({
+      repliesReturned: REPLY_BODIES.length,
+      embeddedReplies: REPLY_BODIES.length,
+    });
+    const embeddedBodies = roots.items
+      .find((item) => item.id === root)
+      ?.replies?.items.map((item) => JSON.stringify(item.content)) ?? [];
+    for (const [index, expected] of REPLY_BODIES.entries()) {
+      expect(embeddedBodies[index], `embedded reply ${index} out of send order`).toContain(expected);
+    }
   });
 
   it('OBSERVED: a cursor pages forward without overlap and stops cleanly', async () => {

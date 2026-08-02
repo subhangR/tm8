@@ -5,9 +5,11 @@
  * Threads are ADDRESSED BY ANCHOR (02 §3.4): a message hangs off whatever
  * entity it is about, so a task's discussion and a channel's discussion are the
  * same mechanism. `messages.list` returns the ROOTS of the thread with their
- * reply counts; replies are fetched per root. A flat list of every message
- * would make a 500-message channel unusable and would lose the reply structure
- * the UI renders.
+ * reply counts and embeds a bounded reply page when that complete branch fits
+ * under the preview cap. The explicit `?rootMessageId=` read remains the
+ * pagination path for larger branches. A flat list of every message would make
+ * a 500-message channel unusable and would lose the reply structure the UI
+ * renders.
  */
 import {
   CollabError,
@@ -85,6 +87,51 @@ export async function loadMessageViewsByIds(
   const views = await toMessageViews(q, rows, viewerIdentityId);
   const byId = new Map(views.map((view) => [view.id, view]));
   return unique.map((id) => byId.get(id)).filter((view): view is MessageView => view !== undefined);
+}
+
+/**
+ * A Discussion tab needs enough of a normal branch to show that an agent's
+ * message is a reply, without turning the roots read into an unbounded thread
+ * dump. Only branches whose complete reply set fits under this cap are
+ * embedded; larger branches retain their authoritative `replyCount` and stay
+ * available through the existing root-scoped pagination endpoint.
+ */
+const EMBEDDED_REPLY_LIMIT = 20;
+
+async function embedBoundedReplies(
+  q: Querier,
+  anchorId: string,
+  roots: readonly MessageView[],
+  viewerIdentityId: string,
+): Promise<MessageView[]> {
+  const eligibleRootIds = roots
+    .filter((root) => root.replyCount > 0 && root.replyCount <= EMBEDDED_REPLY_LIMIT)
+    .map((root) => root.id);
+  if (eligibleRootIds.length === 0) return [...roots];
+
+  const rows = await q.query<EntityRow>(
+    `select ${ENTITY_COLUMNS} ${ENTITY_FROM}
+      where msg.anchor_id = $1
+        and msg.root_message_id = any($2::uuid[])
+      order by msg.root_message_id asc, msg.created_at asc, e.id asc`,
+    [anchorId, eligibleRootIds],
+  );
+  const replies = await toMessageViews(q, rows, viewerIdentityId);
+  const byRoot = new Map<string, MessageView[]>();
+  for (const reply of replies) {
+    const rootId = reply.state.rootMessageId;
+    if (!rootId) continue;
+    const branch = byRoot.get(rootId) ?? [];
+    branch.push(reply);
+    byRoot.set(rootId, branch);
+  }
+
+  return roots.map((root) => {
+    const branch = byRoot.get(root.id);
+    return branch
+      ? { ...root, replies: { items: branch, nextCursor: null } }
+      : root;
+  });
 }
 
 function cursorFingerprint(anchorId: string, rootMessageId: string | null): string {
@@ -170,7 +217,10 @@ export function messagesList(deps: FacadeDeps): OperationHandler {
 
       const hasMore = rows.length > limit;
       const pageRows = hasMore ? rows.slice(0, limit) : rows;
-      const items = await toMessageViews(q, pageRows, viewerIdentityId);
+      const listed = await toMessageViews(q, pageRows, viewerIdentityId);
+      const items = rootMessageId
+        ? listed
+        : await embedBoundedReplies(q, anchorId, listed, viewerIdentityId);
       const last = pageRows[pageRows.length - 1];
 
       const page: Page<MessageView> = {
