@@ -228,6 +228,15 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
     const shard = nounHelp(noun);
     /* c8 ignore next */
     if (shard === undefined) throw new CliError(`no help for noun ${noun}`, EXIT_USAGE);
+    // An unknown verb used to be silently discarded — `tm8 help entity bogus`
+    // printed the noun shard and exited 0, so a typo read as a success. The
+    // verbs in the hint come from the shard itself; there is no second list.
+    if (tokens.length >= 2) {
+      const verbs = shard.commands.map((c) => c.command.slice(noun.length + 1));
+      throw new CliError(`no verb \`${tokens.slice(1).join(' ')}\` on noun \`${noun}\``, EXIT_USAGE, {
+        hint: `verbs on \`${noun}\`: ${verbs.join(', ')}`,
+      });
+    }
     out.data(shard, renderNoun);
     return EXIT_OK;
   }

@@ -399,3 +399,42 @@ describe('help router — quoted paths resolve like unquoted ones', () => {
     expect(() => invoke(['utterly bogus'])).toThrowError(/utterly bogus/);
   });
 });
+
+describe('help router — an unknown verb on a known noun is a usage error, not the noun shard', () => {
+  const invoke = (args: string[]): { stdout: string; code: number } => {
+    let stdout = '';
+    const out = createOutput({
+      format: 'json',
+      streams: {
+        stdout: (chunk: string | Uint8Array) => { stdout += String(chunk); },
+        stderr: () => {},
+      },
+    });
+    const code = help(args, parseInvocation(['help', ...args]).options, out);
+    return { stdout, code };
+  };
+
+  it('`tm8 help entity bogus` names the missing verb instead of exiting 0', () => {
+    expect(() => invoke(['entity', 'bogus'])).toThrowError(/no verb `bogus` on noun `entity`/);
+  });
+
+  it('the error hints with the noun REAL verbs, taken from the shard itself', () => {
+    try {
+      invoke(['entity', 'bogus']);
+      expect.unreachable('an unknown verb must throw');
+    } catch (e) {
+      expect((e as { hint?: string }).hint).toMatch(/\bget\b/);
+      expect((e as { hint?: string }).hint).toContain('entity');
+    }
+  });
+
+  it('the quoted form fails identically after retokenization', () => {
+    expect(() => invoke(['entity bogus'])).toThrowError(/no verb `bogus` on noun `entity`/);
+  });
+
+  it('bare `tm8 help entity` still renders the noun shard, exit 0', () => {
+    const bare = invoke(['entity']);
+    expect(bare.code).toBe(0);
+    expect(bare.stdout).toContain('tm8.help.noun.v1');
+  });
+});
