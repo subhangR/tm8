@@ -323,6 +323,25 @@ export function buildAgentCommand(
      * flag vocabulary is unknown, so both ignore this.
      */
     claudeSessionId?: string | null;
+    /**
+     * This node cannot actually confine a codex command, as established by
+     * RUNNING the provider's own sandbox rather than inferring from paths or
+     * capability bits — see `sandbox-probe.ts`.
+     *
+     * When set, the codex branch stops emitting `--sandbox`, because emitting
+     * it is what produced the defect this flag exists to end: the flag went
+     * out, codex accepted it, the session came up healthy in every tm8 surface,
+     * and then failed EVERY shell command with `bwrap: loopback: Failed
+     * RTM_NEWADDR: Operation not permitted`. tm8 was calling that a sandbox.
+     * It was a session that could not run anything.
+     *
+     * The caller decides WHETHER a launch may proceed unconfined — that is a
+     * security question and it is answered in SpawnService, which refuses by
+     * default. By the time this flag is true the decision is already made, and
+     * this function's only job is to emit a command line that tells the truth
+     * about it.
+     */
+    sandboxUnavailable?: boolean;
   } = {},
 ): string {
   const override = env.TM8_AGENT_CMD?.trim();
@@ -350,7 +369,16 @@ export function buildAgentCommand(
     // TRUST gate (`execution_spawn` refuses an untrusted project) is the human
     // authorization, so by the time we launch, an operator has vouched for this
     // working directory. Mirrors maestro's codex-spawner buildCodexArgs.
-    if (launch.permissionMode === 'bypassPermissions') {
+    //
+    // `opts.sandboxUnavailable` collapses the second branch into the first.
+    // WHY NOT KEEP `--ask-for-approval` AND DROP ONLY `--sandbox`: that is the
+    // tempting half-measure, and it is worse than either whole. Approvals with
+    // no sandbox is a policy that stops to ask with nobody at the terminal to
+    // answer — the exact unattended hang this branch was written to design out,
+    // one paragraph up — and it would buy no confinement in exchange for it. If
+    // the node cannot confine, the honest command line says so in one flag
+    // rather than implying a gate that will never open.
+    if (launch.permissionMode === 'bypassPermissions' || opts.sandboxUnavailable === true) {
       args.push('--dangerously-bypass-approvals-and-sandbox');
     } else {
       args.push('--ask-for-approval', mapCodexApprovalPolicy(launch.permissionMode));
@@ -825,6 +853,8 @@ export interface ComposeManifestInput {
   workdir: { mode: WorkdirMode; path: string };
   command: string;
   baseUrl: string;
+  /** Why the launch runs unconfined, when it does. See `Tm8Manifest.launch.sandboxDegraded`. */
+  sandboxDegraded?: string | null;
   now?: Date;
 }
 
@@ -869,6 +899,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       permissionMode: launch.permissionMode,
       accessMode: launch.accessMode,
       reasoningEffort: launch.reasoningEffort,
+      sandboxDegraded: input.sandboxDegraded ?? null,
       command,
     },
     session: {
@@ -886,10 +917,14 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       : null,
     interactionProfile,
     tasks: context.tasks,
-    // Composed as empty/null in G1A rather than omitted: the CLI reader is
-    // tolerant, but a stable shape means adding them later is a value change,
-    // not a schema change.
-    skills: [],
+    // Row #11: resolved across the persona's ancestor chain by loadSpawnContext
+    // and already de-duplicated nearest-first. Still defaults to [] — a spawn
+    // context predating this (the test fake, an older caller) is "no skills",
+    // not an error. This is the value change the shape was held stable for.
+    skills: context.skills ?? [],
+    // Composed as null in G1A rather than omitted: the CLI reader is tolerant,
+    // but a stable shape means adding them later is a value change, not a
+    // schema change.
     coordinator: null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
