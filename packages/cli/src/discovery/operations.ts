@@ -400,6 +400,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
+    notes: [
+      'returns the full entity unbounded — no limit or projection flags exist; for orientation prefer entity context (bounded, cursors)',
+    ],
   },
   'entities.create': {
     cmd: ['entity', 'create'],
@@ -411,8 +414,13 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate}',
+      "doc content shape: {kind: 'doc', body, format: 'markdown'}",
     ],
-    examples: ['tm8 entity create task "<title>" --space <space-id> --parent <entity-id>'],
+    examples: [
+      'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
+      'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
+    ],
   },
   'entities.patch': {
     cmd: ['entity', 'update'],
@@ -645,6 +653,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['read', 'thread', 'chat', 'conversation', 'inbox'],
+    notes: [
+      'pass --limit; unbounded listings measured several times larger',
+      'the anchor id is positional — there is no --to/--for/--entity/--anchor flag here; --to belongs to message send',
+    ],
   },
   'messages.post': {
     cmd: ['message', 'send'],
@@ -664,6 +676,7 @@ const ROWS: Record<OperationName, Row> = {
       'a work session is addressed like any other anchor — the message is stored first and delivered second',
       '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
+      'body is limited to 10,000 characters (messages.post input schema, schemas.ts:1292); split longer reports into numbered messages on the same anchor',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
@@ -1232,6 +1245,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['timeline', 'history', 'chat', 'activity'],
+    notes: [
+      'unbounded calls return the whole merged timeline; pass --limit and continue with --cursor',
+    ],
   },
   'entities.context': {
     cmd: ['entity', 'context'],
