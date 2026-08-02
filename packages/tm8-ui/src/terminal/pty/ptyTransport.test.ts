@@ -101,6 +101,21 @@ describe('pty transport — offset resume', () => {
     expect(url.searchParams.get('offset')).toBe('0');
   });
 
+  it('authenticates a remote-browser PTY and reads a fresh pass on reconnect', () => {
+    let token = 'tm8s_first.secret/value';
+    ptyTransport.openSession('s1', '', () => token);
+    expect(new URL(last().url).searchParams.get('token')).toBe(token);
+
+    last().text({ type: 'attached', base: 0, gap: 0, next: 42, hasReplay: false, epoch: 'e1' });
+    token = 'tm8s_second.new-secret';
+    ptyTransport.suspend('s1');
+    ptyTransport.resume('s1');
+
+    const resumed = new URL(last().url);
+    expect(resumed.searchParams.get('offset')).toBe('42');
+    expect(resumed.searchParams.get('token')).toBe(token);
+  });
+
   it('keeps the selected server relay when the PTY reconnects', () => {
     ptyTransport.openSession('s1', '/v2/server-connections/ec2/proxy/');
     last().text({ type: 'attached', base: 0, gap: 0, next: 42, hasReplay: false, epoch: 'e1' });
