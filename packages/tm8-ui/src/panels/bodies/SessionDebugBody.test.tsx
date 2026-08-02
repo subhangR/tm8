@@ -15,7 +15,7 @@
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { SessionJournalPage, SessionJournalRecord } from '@tm8/contract';
+import type { SessionJournalPage, SessionJournalRecord, SessionLaunchRecord } from '@tm8/contract';
 import { SessionDebugBody } from './SessionDebugBody.js';
 import type { Seam } from '../../data/seam.js';
 
@@ -52,8 +52,48 @@ function page(over: Partial<SessionJournalPage> = {}): SessionJournalPage {
   };
 }
 
-function seamWith(p: SessionJournalPage): Seam {
-  return { journal: vi.fn().mockResolvedValue(p) } as unknown as Seam;
+const SYSTEM_PROMPT = '<tm8_system_prompt>you are Draco, the PTY engineer</tm8_system_prompt>';
+const TASK_PROMPT = '<tm8_task_prompt count="1">Fix the resize race</tm8_task_prompt>';
+
+function launched(over: Partial<SessionLaunchRecord> = {}): SessionLaunchRecord {
+  return {
+    sessionId: SESSION,
+    available: true,
+    unavailableReason: null,
+    manifest: {
+      manifestVersion: '1',
+      sessionId: SESSION,
+      spaceId: '019fb748-0068-76dc-9869-1bb36133c554',
+      generatedAt: '2026-08-01T14:20:00.000Z',
+      mode: 'worker',
+      baseUrl: 'http://127.0.0.1:7778',
+      agent: { teamMemberId: 'tm-1', name: 'Draco', role: 'PTY engineer', identity: 'a one-bug brief' },
+      launch: {
+        tool: 'claude-code',
+        model: 'opus',
+        permissionMode: 'acceptEdits',
+        accessMode: 'workspace-write',
+        reasoningEffort: null,
+        commandNetwork: { mode: 'loopback-proxy', allowedHosts: ['127.0.0.1', 'localhost'] },
+        command: "claude --permission-mode acceptEdits --model 'opus'",
+      },
+      session: { title: 'Fix the resize race', workingDirectory: '/work/tm8', workdirMode: 'project' },
+      project: { id: 'pr-1', name: 'tm8', workingDir: '/work/tm8', trust: 'trusted' },
+      interactionProfile: { templateKey: 'tm8.chat.core', templateVersion: 1, source: 'core_default' },
+      tasks: [{ id: 'tk-1', title: 'Fix the resize race' }],
+    },
+    envVarNames: ['TM8_BASE_URL', 'TM8_SESSION_ID', 'TM8_AGENT_TOKEN'],
+    prompts: { system: SYSTEM_PROMPT, task: TASK_PROMPT, unavailableReason: null },
+    recordedAt: '2026-08-01T14:20:00.000Z',
+    ...over,
+  };
+}
+
+function seamWith(p: SessionJournalPage, l: SessionLaunchRecord = launched()): Seam {
+  return {
+    journal: vi.fn().mockResolvedValue(p),
+    launch: vi.fn().mockResolvedValue(l),
+  } as unknown as Seam;
 }
 
 describe('direction is stated from the agent’s perspective, everywhere', () => {
@@ -144,6 +184,83 @@ describe('honesty', () => {
   });
 });
 
+/**
+ * WHAT THE SESSION WAS TOLD.
+ *
+ * The journal answers "what did this agent do". These pin the other half: the
+ * bytes it was GIVEN at spawn. The two facts most worth guarding are that the
+ * prompts shown are the STORED ones (so they cannot drift from what was sent)
+ * and that the two dead ends — no manifest row at all, versus a manifest
+ * written before prompts were captured — stay distinguishable.
+ */
+describe('spawn configuration', () => {
+  it('shows the prompt bytes that were actually sent, on both channels', async () => {
+    render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
+    expect((await screen.findByTestId('session-debug-system-prompt')).textContent).toBe(SYSTEM_PROMPT);
+    expect(screen.getByTestId('session-debug-task-prompt').textContent).toBe(TASK_PROMPT);
+  });
+
+  it('shows the spawn-time configuration: teammate, launch posture, workdir, project, profile', async () => {
+    render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
+    const fields = (await screen.findByTestId('session-debug-launch-fields')).textContent ?? '';
+    for (const fact of [
+      'Draco', 'PTY engineer', 'worker', 'claude-code', 'opus', 'acceptEdits',
+      'workspace-write', 'loopback-proxy', '/work/tm8', '(project)', 'tm8', '(trusted)',
+      'tm8.chat.core', '(core_default)', 'http://127.0.0.1:7778',
+    ]) {
+      expect(fields).toContain(fact);
+    }
+    // …and the whole document is still reachable, so a field this grid does not
+    // know about is visible rather than swallowed.
+    expect(screen.getByTestId('session-debug-raw-manifest').textContent).toContain('manifestVersion');
+  });
+
+  it('lists environment variable NAMES and says the values are never recorded', async () => {
+    render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
+    const section = await screen.findByTestId('session-debug-launch');
+    expect(section.textContent).toContain('TM8_AGENT_TOKEN');
+    // S15: their absence must read as structural, not as a display choice.
+    expect(section.textContent).toMatch(/values are never recorded/i);
+  });
+
+  it('keeps "no manifest row" and "prompts not recorded" as two DIFFERENT explained empties', async () => {
+    const noRow = seamWith(page(), launched({
+      available: false,
+      unavailableReason: 'no_manifest_row',
+      manifest: null,
+      envVarNames: [],
+      prompts: { system: null, task: null, unavailableReason: 'not_recorded' },
+      recordedAt: null,
+    }));
+    const { unmount } = render(<SessionDebugBody seam={noRow} sessionId={SESSION} live={false} />);
+    const missing = await screen.findByTestId('session-debug-launch-empty');
+    expect(missing.textContent).toMatch(/no manifest was recorded/i);
+    expect(screen.queryByTestId('session-debug-launch-fields')).toBeNull();
+    unmount();
+
+    const oldRow = seamWith(page(), launched({
+      prompts: { system: null, task: null, unavailableReason: 'not_recorded' },
+    }));
+    render(<SessionDebugBody seam={oldRow} sessionId={SESSION} live={false} />);
+    const stale = await screen.findByTestId('session-debug-prompts-empty');
+    expect(stale.textContent).toMatch(/before launch prompts were captured/i);
+    // The manifest it DOES have is still shown — a prompt gap is not a spawn gap.
+    expect(screen.getByTestId('session-debug-launch-fields')).toBeTruthy();
+    expect(screen.queryByTestId('session-debug-system-prompt')).toBeNull();
+  });
+
+  it('a failed launch read does not blank the journal, and vice versa', async () => {
+    const seam = {
+      journal: vi.fn().mockResolvedValue(page()),
+      launch: vi.fn().mockRejectedValue(new Error('launch read exploded')),
+    } as unknown as Seam;
+    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
+    const err = await screen.findByTestId('session-debug-launch-error');
+    expect(err.textContent).toMatch(/launch read exploded/i);
+    expect(screen.getByTestId('session-debug-table')).toBeTruthy();
+  });
+});
+
 describe('polling', () => {
   it('reads once and does NOT poll a session that is not live', async () => {
     vi.useFakeTimers();
@@ -152,6 +269,21 @@ describe('polling', () => {
       render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
       await vi.advanceTimersByTimeAsync(30_000);
       expect((seam.journal as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // A launch record is written once at spawn and can never change, so re-reading
+  // it every 5s would ship a whole manifest to learn nothing.
+  it('never polls the launch record, even while the session is live', async () => {
+    vi.useFakeTimers();
+    try {
+      const seam = seamWith(page());
+      render(<SessionDebugBody seam={seam} sessionId={SESSION} live />);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect((seam.journal as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1);
+      expect((seam.launch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
     } finally {
       vi.useRealTimers();
     }

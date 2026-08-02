@@ -155,7 +155,7 @@ describe('what this node is, measured rather than assumed', () => {
       `[g06] ${server.baseUrl} operations=${h.operations} registered=${h.implemented} ` +
         `bind-start ${server.bindStart.files}/${server.bindStart.digest}`,
     );
-    expect(h.operations).toBe(124); // 120 -> 124 (2026-08-02): auth.* Identity v2 Stage 1 added four HTTP routes.
+    expect(h.operations).toBe(125); // 124 -> 125 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

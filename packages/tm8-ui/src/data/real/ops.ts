@@ -77,6 +77,7 @@ import {
   type ReactionInput,
   type ResolveEntityAttentionInput,
   type SessionJournalPage,
+  type SessionLaunchRecord,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -233,6 +234,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { workSessionId },
         query: { limit: opts?.limit, before: opts?.before },
       });
+    },
+    launch(workSessionId: EntityId): Promise<SessionLaunchRecord> {
+      // No query at all: the launch record is a whole document, not a window.
+      return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
     },
 
     inbox(opts?: PageOpts): Promise<Page<NotificationItem>> {

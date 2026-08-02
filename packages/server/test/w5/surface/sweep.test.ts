@@ -286,16 +286,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 98 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 123 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
     // 114 -> 118 on 2026-08-01: execution.resume, spaces.counts,
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
-    expect(SURFACE).toHaveLength(122);
-    expect(rows).toHaveLength(122);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(122);
+    // 122 -> 123 on 2026-08-02: execution.launch.
+    expect(SURFACE).toHaveLength(123);
+    expect(rows).toHaveLength(123);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
   });
 
   /**
@@ -390,7 +391,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // moving it, the same drift 067 had just reconciled. 069 (channels into
     // Home) is the second of the two.
     // 65 -> 66 on 2026-08-02: 070 (entities_select restricted-projection policy).
-    expect(server.appliedMigrations.length).toBe(66);
+    // 66 -> 69 on 2026-08-02: the pin was ALREADY red at 68 when this lane
+    // arrived — 071 and 072 landed from other lanes without moving it. 073
+    // (session launch prompts) is the third of the three.
+    expect(server.appliedMigrations.length).toBe(69);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
