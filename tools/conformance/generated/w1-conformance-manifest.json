@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:ca0d14bbcbde8eb07440edd8e6dc9e8274482d90eb876733cc89fead91d08285",
+  "catalogDigest": "sha256:fb517ae0749e0f49bb097c7a7450a98cdeb298a84b0edd62d8bdac3913eb9c80",
   "catalog": {
-    "total": 125,
-    "v1": 123,
+    "total": 126,
+    "v1": 124,
     "reserved": 2,
-    "http": 124,
+    "http": 125,
     "ws": 1,
-    "registerableV1Http": 122,
+    "registerableV1Http": 123,
     "methods": {
-      "GET": 45,
+      "GET": 46,
       "POST": 54,
       "PATCH": 10,
       "DELETE": 8,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 48,
+      "read": 49,
       "command": 76,
       "stream": 1
     },
-    "uniqueNames": 125,
-    "uniqueBindings": 125
+    "uniqueNames": 126,
+    "uniqueBindings": 126
   },
   "reservedOperations": [
     "search.query",
@@ -638,6 +638,13 @@
         "operation": "projects.create",
         "method": "POST",
         "path": "/v2/projects",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.directories.list",
+        "method": "GET",
+        "path": "/v2/project-directories",
         "status": "registered",
         "source": "server-router"
       },
@@ -1279,7 +1286,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 94
+    "unimplementedV1Http": 95
   },
   "schemas": {
     "additive": {
@@ -2478,6 +2485,23 @@
           "create"
         ],
         "inputSchemaRef": "ProjectCreateInputSchema",
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.directories.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.directories.list",
+        "intentTags": [
+          "projects",
+          "directories",
+          "list"
+        ],
+        "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
         "actionDiscoverable": true,

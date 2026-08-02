@@ -784,10 +784,21 @@ const ROWS: Record<OperationName, Row> = {
   },
   'projects.create': {
     cmd: ['project', 'create'],
-    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
+    syn: 'tm8 project create <name> --working-dir <absolute-path> [--ensure-working-dir] [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
     sum: 'Register a ProjectResource',
     authz: 'server',
     input: 'bound',
+  },
+  'projects.directories.list': {
+    cmd: null,
+    sum: 'Browse allowed node-local directories for Space project onboarding',
+    authz: 'server',
+    input: 'none',
+    tags: ['folder', 'directory', 'browse', 'workdir', 'local'],
+    reason: 'ui_onboarding_only',
+    notes: [
+      'the browser onboarding flow invokes this root-confined read; tm8 CLI exposes no general filesystem browser',
+    ],
   },
   'projects.get': {
     cmd: ['project', 'get'],
@@ -1505,7 +1516,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:ca0d14bbcbde8eb07440edd8e6dc9e8274482d90eb876733cc89fead91d08285';
+  'sha256:fb517ae0749e0f49bb097c7a7450a98cdeb298a84b0edd62d8bdac3913eb9c80';
 
 export const GRAMMAR_VERSION = '2';
 

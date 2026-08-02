@@ -50,6 +50,7 @@ import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } fro
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { nodeKeyOf } from '../data/launch-cache';
+import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -105,11 +106,20 @@ export function GateApp(props: GateAppProps = {}) {
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [menuCollapsed, setMenuCollapsed] = useState(false);
   const [addServerOpen, setAddServerOpen] = useState(false);
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
     type: 'view',
     ref: 'workspace',
   });
+  const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
+    const setup = data.seam.projectSetup;
+    if (!setup) return null;
+    return {
+      ...setup,
+      createMemory: (input) => data.seam.commands.createEntity(input),
+    };
+  }, [data.seam]);
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
@@ -363,6 +373,7 @@ export function GateApp(props: GateAppProps = {}) {
             setActiveTarget({ type: 'view', ref: 'workspace' });
             data.selectSpace(id);
           }}
+          onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenPrompts={() => setPromptsOpen(true)}
@@ -596,7 +607,12 @@ export function GateApp(props: GateAppProps = {}) {
             data.bootError.startsWith('this node has no spaces') ? (
               <div className="shell-boot" role="alert">
                 <strong>No spaces on this node.</strong>
-                <div>{data.bootError}</div>
+                <div>Create a Space and connect the local folder where its project work should be saved.</div>
+                {projectOnboardingPort ? (
+                  <button type="button" className="gov-btn gov-btn--ink" onClick={() => setNewSpaceOpen(true)}>
+                    Create Space & add project
+                  </button>
+                ) : <div>{data.bootError}</div>}
               </div>
             ) : (
               <div className="shell-boot" role="alert">
@@ -635,6 +651,23 @@ export function GateApp(props: GateAppProps = {}) {
             await props.onAddServer(input);
           }}
         />
+        {projectOnboardingPort ? (
+          <NewSpaceProjectDialog
+            key={activeServer.id}
+            open={newSpaceOpen}
+            nodeLabel={activeServer.label}
+            port={projectOnboardingPort}
+            onDismiss={() => setNewSpaceOpen(false)}
+            onCreated={(space) => {
+              navStore.getState().applyNormalization({ stack: [], pinned: [] });
+              navStore.getState().setSession(null);
+              screenStackStore.getState().clearAll();
+              setActiveTarget({ type: 'view', ref: 'workspace' });
+              data.acceptSpace(space);
+              setNewSpaceOpen(false);
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

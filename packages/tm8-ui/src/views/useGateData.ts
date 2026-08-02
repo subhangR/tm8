@@ -306,6 +306,8 @@ export interface GateData {
   ensureKind: (kind: string) => void;
   /** Switch the active space and hydrate its own menu, channels, and data. */
   selectSpace: (spaceId: SpaceId) => void;
+  /** Add and immediately open a Space returned by the onboarding saga. */
+  acceptSpace: (space: SpaceSummary) => void;
   /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
@@ -757,6 +759,14 @@ export function useGateData(options: GateOptions): GateData {
     if (next === spaceId || !spaces.some((space) => space.id === next)) return;
     setSpaceId(next);
   }, [spaceId, spaces]);
+
+  const acceptSpace = useCallback((space: SpaceSummary) => {
+    setSpaces((current) => current.some((candidate) => candidate.id === space.id)
+      ? current.map((candidate) => candidate.id === space.id ? space : candidate)
+      : [...current, space]);
+    setBootError(null);
+    setSpaceId(space.id);
+  }, []);
 
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
@@ -1341,6 +1351,7 @@ export function useGateData(options: GateOptions): GateData {
       launch,
       ensureKind,
       selectSpace,
+      acceptSpace,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
@@ -1349,7 +1360,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

@@ -99,7 +99,8 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
   });
 
   it('the projection holds 121 command paths; the registry is an honest subset of them', () => {
-    // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
+    // 126 catalog rows − 3 with no command (project directory browser,
+    // execution.prompt, bridge.fetchBlob) = 123 command-bearing rows.
     // 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // = 116 rows that have one; `files.uploadInit` + `files.uploadComplete` share
     // `file upload` and `artifacts.create` + `artifacts.publish` share
