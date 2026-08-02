@@ -228,11 +228,18 @@ export class Tm8Client {
       );
       if (res.status >= 400) return false;
       const data = (JSON.parse(text) as { data?: unknown }).data;
+      // The LIVE page shape is `{items, nextCursor}` (poll.ts DurableEventPage,
+      // pinned by the conformance suite). `data.events` and a bare array are
+      // kept as accepted legacy shapes; anything else is still unreadable and
+      // fails CLOSED to a refetch.
+      const page = data as { events?: unknown; items?: unknown } | null | undefined;
       const events = Array.isArray(data)
         ? data
-        : Array.isArray((data as { events?: unknown[] })?.events)
-          ? (data as { events: unknown[] }).events
-          : null;
+        : Array.isArray(page?.events)
+          ? (page.events as unknown[])
+          : Array.isArray(page?.items)
+            ? (page.items as unknown[])
+            : null;
       if (events === null) return false; // a page shape this build cannot read
       const replay = JSON.stringify(events).toLowerCase();
       if (entry.entityIds.some((id) => replay.includes(id))) return false;

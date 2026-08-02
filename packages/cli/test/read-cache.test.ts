@@ -42,6 +42,16 @@ function pollBody(events: unknown[]): string {
   return JSON.stringify({ data: { events }, requestId: 'r2' });
 }
 
+/**
+ * The LIVE `events.poll` page shape — `{items, nextCursor}` (server poll.ts
+ * `DurableEventPage`, pinned by the conformance suite). The staging defect:
+ * the revalidator only read `data.events`/bare-array, so every real poll was
+ * "unreadable", evicted, and refetched — the cache never served once.
+ */
+function livePollBody(items: unknown[], nextCursor: string | null = null): string {
+  return JSON.stringify({ data: { items, nextCursor }, requestId: 'r2' });
+}
+
 describe('the gate (property 2)', () => {
   it('is inert without the journal env, under TM8_NO_CACHE, and for harness class', () => {
     expect(createReadCache({}, AGENT_CWD).enabled).toBe(false);
@@ -162,6 +172,52 @@ describe('the client seam: hit, revalidate, serve, invalidate, --fresh', () => {
     expect(contextCalls).toHaveLength(1);
     expect(pollCalls).toHaveLength(1);
     expect(pollCalls[0]).toContain('since=41');
+  });
+
+  it('the LIVE {items, nextCursor} poll page serves the cached payload (staging regression)', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let served = 0;
+    const routes: Route[] = [
+      contextRoute(() => 41, () => { served += 1; return `serve-${served}`; }),
+      { match: (u) => u.includes('/events'), body: () => livePollBody([]) },
+    ];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+
+    expect(second.marker).toBe('serve-1'); // cached, NOT the pre-fix silent refetch
+    expect(calls.filter((u) => u.includes('/context'))).toHaveLength(1);
+    expect(calls.filter((u) => u.includes('/events'))).toHaveLength(1);
+  });
+
+  it('a live-page ITEM naming the entity still forces a refetch, and its seq advances the watermark', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    const routes: Route[] = [
+      contextRoute(() => 41, () => { version += 1; return `v${version}`; }),
+      { match: (u) => u.includes('/events'), body: () => livePollBody([{ seq: 42, entity: { id: ENTITY } }], '42') },
+    ];
+    const { client, calls } = clientWith(cache, routes);
+
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2');
+    expect(calls.filter((u) => u.includes('/context'))).toHaveLength(2);
+  });
+
+  it('an unknown poll page shape still fails CLOSED to the network', async () => {
+    const cache = createReadCache(tempEnv(), AGENT_CWD);
+    let version = 0;
+    const routes: Route[] = [
+      contextRoute(() => 41, () => { version += 1; return `v${version}`; }),
+      { match: (u) => u.includes('/events'), body: () => JSON.stringify({ data: { rows: [] }, requestId: 'r2' }) },
+    ];
+    const { client, calls } = clientWith(cache, routes);
+    await client.invoke('entities.context', { params: { id: ENTITY } });
+    const second = await client.invoke<{ marker: string }>('entities.context', { params: { id: ENTITY } });
+    expect(second.marker).toBe('v2');
+    expect(calls.filter((u) => u.includes('/context'))).toHaveLength(2);
   });
 
   it('an event naming the entity forces a REFETCH — never a stale byte', async () => {
