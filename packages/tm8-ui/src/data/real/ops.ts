@@ -136,9 +136,21 @@ export interface OpsOptions {
 
 let mutationSeq = 0;
 
+/**
+ * Sequence + timestamp + real entropy. The entropy is not optional: ids
+ * carrying only a counter and a clock collide ACROSS PRINCIPALS (two humans'
+ * first mutations in the same millisecond), and `require_replay_principal`
+ * refuses the later one as a replay. Proven the hard way by the bare `au-<n>`
+ * counter in `authoring/commands.ts` — see its docblock.
+ */
 function defaultMutationId(prefix: string): string {
   mutationSeq += 1;
-  return `${prefix}_${mutationSeq.toString(36)}_${Date.now().toString(36)}`;
+  const c = globalThis.crypto;
+  const entropy =
+    c && typeof c.randomUUID === 'function'
+      ? c.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${mutationSeq.toString(36)}_${entropy}`;
 }
 
 export type Ops = ReturnType<typeof createOps>;
