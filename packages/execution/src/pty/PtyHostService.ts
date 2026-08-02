@@ -7,6 +7,7 @@ import type {
   AttachResult,
   FrameSink,
   Logger,
+  PtyActivity,
   PtyExitInfo,
   PtyHostOptions,
   PtyKillOutcome,
@@ -72,11 +73,27 @@ interface PtyEntry {
    *  quiescence; once true the agent is up and later prompts use the short warm
    *  gate so messaging a busy agent is never stalled. Latches true, never back. */
   bootSettled: boolean;
+  /** Last activity reported through {@link PtyHostOptions.onActivityChange}. The
+   *  callback fires on TRANSITIONS only, so this is what makes it idempotent —
+   *  a busy PTY emitting hundreds of chunks/sec must not emit hundreds of
+   *  "still busy" notifications, each of which is a database write downstream. */
+  activity: PtyActivity;
+  /** Pending "declare idle" timer, rescheduled by every output chunk. Null when
+   *  the entry is already idle or has exited. */
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  /** Whether this PTY has produced ANY output yet. A PTY that has never spoken
+   *  is not idle, it is unproven — reporting silence before first output would
+   *  label every agent's boot window as "needs you". */
+  everSpoke: boolean;
 }
 
 /** Coalescing window for live output fan-out. Well under perceptible echo
  *  latency. SCAR: this default MUST stay 16ms (commit 07d504d) — parity bar. */
 const DEFAULT_SEND_COALESCE_MS = 16;
+/** Silence after which a live PTY reports `'idle'`. See
+ *  {@link PtyHostOptions.idleAfterMs} for why it is well above the 1500ms
+ *  boot-quiescence gate and why it is a default rather than a measurement. */
+const DEFAULT_IDLE_AFTER_MS = 10_000;
 /** Force a flush when this much output accumulates inside one window. */
 const DEFAULT_SEND_COALESCE_MAX_BYTES = 64 * 1024;
 
@@ -326,6 +343,11 @@ export class PtyHostService {
     outcome: 'delivered' | 'unknown',
     reason?: string,
   ) => void | Promise<void>;
+  private readonly onActivityChange?: (
+    sessionId: string,
+    activity: PtyActivity,
+  ) => void | Promise<void>;
+  private readonly idleAfterMs: number;
   private readonly coalesceMs: number;
   private readonly coalesceMaxBytes: number;
   private readonly outputCapBytes: number;
@@ -360,6 +382,8 @@ export class PtyHostService {
     this.logger = options.logger ?? NOOP_LOGGER;
     this.onSessionStatus = options.onSessionStatus;
     this.onPromptSettled = options.onPromptSettled;
+    this.onActivityChange = options.onActivityChange;
+    this.idleAfterMs = options.idleAfterMs ?? DEFAULT_IDLE_AFTER_MS;
     this.coalesceMs = options.coalesceMs ?? DEFAULT_SEND_COALESCE_MS;
     this.coalesceMaxBytes = options.coalesceMaxBytes ?? DEFAULT_SEND_COALESCE_MAX_BYTES;
     this.outputCapBytes = options.outputCapBytes ?? 1024 * 1024;
@@ -422,6 +446,15 @@ export class PtyHostService {
       sendTimer: null,
       lastOutputAt: Date.now(),
       bootSettled: false,
+      // A fresh PTY is 'busy': it was just spawned and is booting its agent.
+      // Starting at 'idle' would make the first output chunk report a
+      // busy-transition for every session that ever spawns, and starting at a
+      // third "unknown" value would put a state on the wire that no consumer can
+      // do anything with. `everSpoke` is what actually gates the first idle
+      // claim.
+      activity: 'busy',
+      idleTimer: null,
+      everSpoke: false,
     };
     this.sessions.set(sessionId, entry);
 
@@ -435,6 +468,11 @@ export class PtyHostService {
       // Timestamp the stream so the prompt readiness gate can wait for it to fall
       // quiet before injecting a prompt/Enter.
       entry.lastOutputAt = Date.now();
+      entry.everSpoke = true;
+      // Bytes moving is the ONLY evidence that ends a block, and it must be
+      // byte-driven rather than timer-driven so a session that resumes work
+      // leaves 'idle' within one output frame instead of on the next tick.
+      this.markBusy(sessionId, entry);
       entry.sendBuf.push(chunk);
       entry.sendBytes += chunk.length;
       if (entry.sendBytes >= this.coalesceMaxBytes) {
@@ -493,6 +531,11 @@ export class PtyHostService {
       // socket drop (tab close, reload, network blip — those only detach). The
       // web adapter listens for this {type:'exit'} text frame.
       this.notifyExit(entry, exitCode ?? null);
+      // An exited PTY has no activity to report. Cancel the pending idle timer
+      // rather than letting it fire into a dead entry: 'exited' is already a
+      // terminal status, and the transition RPC rejects exited -> idle with a
+      // 23514 that would surface as a spurious error in the logs.
+      this.clearIdleTimer(entry);
       entry.state.dispose();
       this.sessions.delete(sessionId);
       const queuedAtExit = this.pendingPrompts.get(sessionId);
@@ -1347,6 +1390,84 @@ export class PtyHostService {
   }
 
   /** Close every subscriber socket and clear the set (no exit frame). */
+  // --- Block detection ------------------------------------------------------
+  //
+  // The whole detector is these three methods. It is deliberately tiny and
+  // deliberately dumb: it reports that bytes stopped, and nothing else. Every
+  // temptation to make it smarter — parse the screen for a dialog, guess at
+  // which tool is waiting, infer a question from the last line of output —
+  // belongs to the structured-signal work, not here. A detector that guesses is
+  // worse than one that only reports silence, because a wrong guess is
+  // indistinguishable from a right one at the point of use.
+
+  /** Cancel any pending idle declaration. Safe to call on an entry with none. */
+  private clearIdleTimer(entry: PtyEntry): void {
+    if (entry.idleTimer !== null) {
+      clearTimeout(entry.idleTimer);
+      entry.idleTimer = null;
+    }
+  }
+
+  /**
+   * Output happened: end any block and restart the silence clock.
+   *
+   * Runs on EVERY output chunk, so it must stay allocation-free on the path
+   * where nothing changes — a busy TUI emits hundreds of chunks/sec and the
+   * common case here is "already busy, just push the timer out".
+   */
+  private markBusy(sessionId: string, entry: PtyEntry): void {
+    if (entry.exited) return;
+    if (entry.activity !== 'busy') {
+      entry.activity = 'busy';
+      this.emitActivity(sessionId, 'busy');
+    }
+    this.clearIdleTimer(entry);
+    entry.idleTimer = setTimeout(() => {
+      entry.idleTimer = null;
+      // Re-check identity and liveness at fire time: the timer outlives the turn
+      // that scheduled it, and in between the PTY may have exited or been
+      // replaced by a respawn installing a fresh entry under the same id.
+      if (entry.exited || this.sessions.get(sessionId) !== entry) return;
+      // A PTY that has never produced a byte is not idle, it is unproven.
+      if (!entry.everSpoke) return;
+      if (entry.activity === 'idle') return;
+      entry.activity = 'idle';
+      this.emitActivity(sessionId, 'idle');
+    }, this.idleAfterMs);
+    // Never hold the process open for a silence timer. If nothing else is
+    // running, an idle declaration nobody is waiting for is not worth a live
+    // handle.
+    (entry.idleTimer as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * Dispatch one activity transition to the injected sink, swallowing its
+   * failures exactly as the `onSessionStatus` dispatch does — for the same
+   * reason. This callback ends in a database write, and a database that is
+   * briefly unreachable must not take down the PTY host with it. The signal is
+   * self-healing: the next transition re-asserts the current state.
+   */
+  private emitActivity(sessionId: string, activity: PtyActivity): void {
+    try {
+      const result = this.onActivityChange?.(sessionId, activity);
+      if (result && typeof (result as Promise<void>).catch === 'function') {
+        void (result as Promise<void>).catch((err: unknown) =>
+          this.logger.error(
+            'PtyHostService: failed to record session activity change',
+            err instanceof Error ? err : new Error(String(err)),
+            { sessionId, activity },
+          ),
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        'PtyHostService: failed to record session activity change',
+        err instanceof Error ? err : new Error(String(err)),
+        { sessionId, activity },
+      );
+    }
+  }
+
   private closeSubscribers(entry: PtyEntry): void {
     this.flushOutput(entry);
     for (const sink of entry.subscribers) {
