@@ -33,7 +33,7 @@ import {
   type ParsedInvocation,
 } from './args.js';
 import { loadLocalConfig, resolveContext, sessionContextFromEnv, type CliContext } from './context.js';
-import { errorLines, exitCodeFor, RetiredCommandError } from './errors.js';
+import { ApiError, errorLines, exitCodeFor, RetiredCommandError } from './errors.js';
 import {
   CliError,
   EXIT_MEANING,
@@ -218,22 +218,58 @@ async function dispatch(
     config: loadLocalConfig(),
   });
 
+  // Humans authenticate from the per-server credential store (doc 13 §4.1),
+  // keyed by the origin of whichever Server the request actually goes to. The
+  // lookup runs TWICE around `--server` on purpose: once for the local node
+  // (so the registry lookup itself is authenticated where a credential
+  // exists), and again after retargeting — `resolveServerTarget` drops A's
+  // token, and only a credential stored under B's OWN origin may replace it.
+  // Agent contexts never reach the store (`credentialStoreFor` refuses), and
+  // `auth login` must stay claim-free: a stale stored credential presented on
+  // the login request itself would 401 before the handler and lock the user
+  // out of the one command that fixes it.
+  const isLogin = match.path[0] === 'auth' && match.path[1] === 'login';
+  let usedStoredCredential = false;
+  const applyStoredCredential = async (): Promise<void> => {
+    if (isLogin || ctx.token !== undefined) return;
+    const { credentialOrigin, credentialStoreFor } = await import('./credentials.js');
+    const stored = credentialStoreFor()?.get(credentialOrigin(ctx.baseUrl.value));
+    if (stored) {
+      ctx = { ...ctx, token: stored };
+      usedStoredCredential = true;
+    }
+  };
+  await applyStoredCredential();
+
   if (globals.server !== undefined) {
     if (match.path[0] === 'server') {
       throw new CliError('server registry commands always act on the local Server; omit --server', EXIT_USAGE);
     }
     const { resolveServerTarget } = await import('./server-target.js');
     ctx = await resolveServerTarget(ctx, globals.server);
+    usedStoredCredential = false;
+    await applyStoredCredential();
   }
 
-  return command.run({
-    path: match.path,
-    args: match.args,
-    options: invocation.options,
-    passthrough: invocation.passthrough,
-    ctx,
-    out,
-  });
+  try {
+    return await command.run({
+      path: match.path,
+      args: match.args,
+      options: invocation.options,
+      passthrough: invocation.passthrough,
+      ctx,
+      out,
+    });
+  } catch (err) {
+    // An expired pass must surface as a re-login prompt, never as a silent
+    // failure that looks like a bug (doc 13 §4.1).
+    if (usedStoredCredential && err instanceof ApiError && err.code === 'unauthenticated') {
+      err.hint =
+        `the stored credential for ${ctx.baseUrl.value} was refused — it may have expired or been revoked; ` +
+        'run `tm8 auth login <username>` against that Server to store a fresh one';
+    }
+    throw err;
+  }
 }
 
 /**

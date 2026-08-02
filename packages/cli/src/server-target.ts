@@ -27,8 +27,11 @@ export async function resolveServerTarget(
   return {
     ...registryContext,
     baseUrl: { value: parsed.data.baseUrl, source: 'flag' },
-    // Server A's token belongs to A. Authentication for B is a later slice;
-    // never leak one node's bearer material to another origin.
+    // Server A's token belongs to A: never leak one node's bearer material to
+    // another origin. Dispatch refills this from the per-server credential
+    // store under B's OWN origin (run.ts), or leaves it absent — identity is
+    // end-to-end between the client and the authority Server; a hop is a
+    // pipe, never an identity boundary.
     token: undefined,
   };
 }

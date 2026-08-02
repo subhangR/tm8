@@ -57,6 +57,7 @@ export const BOOLEAN_OPTIONS: ReadonlySet<string> = new Set([
   'confirm-agent-generated', // teammate interaction-profile set-default
   'no-session-link',     // entity create — suppress the automatic created_in edge
   'node-admin',          // auth signup --node-admin
+  'print-token',         // auth login — print instead of storing per-server
 ]);
 
 /**
