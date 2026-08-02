@@ -1251,14 +1251,18 @@ const ROWS: Record<OperationName, Row> = {
   },
   'entities.context': {
     cmd: ['entity', 'context'],
-    syn: 'tm8 entity context <entity-id> [--depth 0|1|2|3] [--messages <0..50>] [--children <0..200>] [--edge-type <type>...]',
+    syn: 'tm8 entity context <entity-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
     sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
     authz: 'entity',
     input: 'none',
     tags: ['snapshot', 'around', 'brief', 'orient'],
     notes: [
-      'bounded by design: 32 KiB default and 128 KiB hard, with explicit per-section cursors and truncation flags',
+      'exactly three flags bind — --sections, --total-bytes, --section-bytes (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
+      'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
+      'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children has no consumer in this grammar',
+      '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
     ],
+    examples: ['tm8 entity context <entity-id> --sections summary,actions'],
   },
   'interactionProfiles.propose': {
     cmd: ['interaction-profile', 'propose'],
