@@ -386,8 +386,9 @@ export class PgIdentityRepository implements IdentityRepository {
   // --- graph-side identity -------------------------------------------------
 
   async getActorScope(identityId: IdentityId): Promise<ActorScope> {
-    // Two indexed reads rather than a join, because `team_members` is an entity
-    // detail table and the owning join key is the member's entity id.
+    // Two indexed reads: membership chooses the spaces, then every live persona
+    // in those spaces is launchable. owner_member_id governs configuration,
+    // not the shared launch/use boundary.
     const members = await this.run<MemberRow>(
       `SELECT entity_id, space_id, identity_id, role, display_name, joined_at
          FROM members WHERE identity_id = $1`,
@@ -396,11 +397,11 @@ export class PgIdentityRepository implements IdentityRepository {
     if (members.length === 0) return { members: [], teamMembers: [] };
 
     const teamMembers = await this.run<TeamMemberRow>(
-      `SELECT tm.entity_id, m.space_id, tm.owner_member_id, tm.name, tm.avatar
+      `SELECT tm.entity_id, e.space_id, tm.owner_member_id, tm.name, tm.avatar
          FROM team_members tm
-         JOIN members m ON m.entity_id = tm.owner_member_id
-        WHERE tm.owner_member_id = ANY($1::uuid[])`,
-      [members.map((m) => m.entity_id)],
+         JOIN entities e ON e.id = tm.entity_id AND e.deleted_at IS NULL
+        WHERE e.space_id = ANY($1::uuid[])`,
+      [members.map((m) => m.space_id)],
     );
     return { members: members.map(toMember), teamMembers: teamMembers.map(toTeamMember) };
   }

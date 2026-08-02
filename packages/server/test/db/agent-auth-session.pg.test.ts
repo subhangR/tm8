@@ -160,12 +160,59 @@ describe('072 persona-pinned agent auth sessions', () => {
       )).rows[0]!.value)).toBeNull();
   });
 
-  it('does not let another member mint authority for someone else\'s persona', async () => {
-    await expect(asApp(fixture.identityB, async (client) => {
-      await client.query(
-        `select public.issue_agent_auth_session($1,$2,$3,now()+interval '1 hour',null)`,
-        [fixture.workSessionId, fixture.personaId, 'c'.repeat(64)],
+  it('lets another space member launch the shared persona and preserves that member as the doer', async () => {
+    await asApp(fixture.identityB, async (client) => {
+      const profile = await client.query<{ value: Record<string, unknown> }>(
+        `select internal.w2_resolve_interaction_profile_for_launch($1,$2,null) value`,
+        [fixture.spaceId, fixture.personaId],
       );
-    })).rejects.toMatchObject({ code: '42501' });
+      expect(profile.rows[0]?.value).toBeTruthy();
+    });
+
+    const launched = await asApp(fixture.identityB, async (client) => {
+      const result = await client.query<{ value: { entity: { id: string } } }>(
+        `select public.execution_spawn(
+           p_space_id => $1,
+           p_team_member_id => $2,
+           p_workdir_mode => 'scratch',
+           p_client_mutation_id => $3
+         ) value`,
+        [fixture.spaceId, fixture.personaId, `shared-launch-${randomUUID()}`],
+      );
+      return result.rows[0]!.value.entity.id;
+    });
+
+    const receipt = await database.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      return (await client.query<{
+        created_by: string;
+        relates_to: boolean;
+        participates_in: boolean;
+      }>(
+        `select entity_row.created_by::text,
+                exists (select 1 from public.edges edge_row
+                         where edge_row.src_id = entity_row.id
+                           and edge_row.dst_id = $2 and edge_row.type = 'relates_to') relates_to,
+                exists (select 1 from public.edges edge_row
+                         where edge_row.src_id = $2
+                           and edge_row.dst_id = entity_row.id and edge_row.type = 'participates_in') participates_in
+           from public.entities entity_row where entity_row.id = $1`,
+        [launched, fixture.personaId],
+      )).rows[0]!;
+    });
+    expect(receipt).toEqual({
+      created_by: fixture.memberB,
+      relates_to: true,
+      participates_in: true,
+    });
+
+    const issued = await asApp(fixture.identityB, async (client) => {
+      const result = await client.query<{ value: { id: string } }>(
+        `select public.issue_agent_auth_session($1,$2,$3,now()+interval '1 hour',null) value`,
+        [launched, fixture.personaId, 'c'.repeat(64)],
+      );
+      return result.rows[0]!.value;
+    });
+    expect(issued.id).toBeTruthy();
   });
 });

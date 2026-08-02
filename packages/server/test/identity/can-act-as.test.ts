@@ -1,15 +1,10 @@
-/**
- * T-L7 — agents act as themselves; authorization resolves through their owner.
- *
- * The escalation this guards against: an agent token that can act as a persona
- * someone else owns, or that quietly widens into the owner's full authority.
- */
+/** Shared teammates — agents act as themselves; space membership authorizes use. */
 
 import { describe, expect, it } from 'vitest';
 import { makeHarness, expectCode, SPACE_A, SPACE_B } from './harness.js';
 
-describe('can_act_as resolution (T-L7/S8)', () => {
-  it('resolves exactly the personas owned by this identity', async () => {
+describe('can_act_as resolution (shared teammates/S8)', () => {
+  it('resolves every persona in a space this identity has joined', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     const member = h.join(owner.identityId, SPACE_A);
@@ -20,8 +15,7 @@ describe('can_act_as resolution (T-L7/S8)', () => {
     const theirs = h.persona(theirMember.id, SPACE_A);
 
     const canActAs = await h.service.listCanActAs(owner.identityId);
-    expect(canActAs.sort()).toEqual([mine.id, alsoMine.id].sort());
-    expect(canActAs).not.toContain(theirs.id);
+    expect(canActAs.sort()).toEqual([mine.id, alsoMine.id, theirs.id].sort());
   });
 
   it('spans every space the identity is a member of', async () => {
@@ -36,18 +30,18 @@ describe('can_act_as resolution (T-L7/S8)', () => {
     expect(canActAs.sort()).toEqual([personaA.id, personaB.id].sort());
   });
 
-  it('node-admin does NOT widen can_act_as', async () => {
+  it('node-admin does NOT grant teammate authority outside joined spaces', async () => {
     const h = makeHarness();
     const admin = await h.service.bootstrapOwner();
     expect(admin.isNodeAdmin).toBe(true);
     h.join(admin.identityId, SPACE_A);
 
-    const strangerMember = h.join('id_stranger', SPACE_A);
-    const strangersPersona = h.persona(strangerMember.id, SPACE_A);
+    const strangerMember = h.join('id_stranger', SPACE_B);
+    const strangersPersona = h.persona(strangerMember.id, SPACE_B);
 
     // Node-level roles (accounts, invites, limits) and space-level roles are
-    // never mixed — being node admin buys no authorship rights over someone
-    // else's agent.
+    // never mixed — being node admin buys no authorship rights in another
+    // space. Shared authority comes from membership, not the node role.
     expect(await h.service.canActAs(admin.identityId, strangersPersona.id)).toBe(false);
     await expectCode(
       h.service.buildClaims({ accountId: admin.id, actingAsTeamMemberId: strangersPersona.id }),
@@ -63,8 +57,8 @@ describe('can_act_as resolution (T-L7/S8)', () => {
     expect(await h.service.canActAs(owner.identityId, persona.id)).toBe(true);
 
     h.repo.removeMember(member.id);
-    // Authorization resolves through the owner's member row; remove the row and
-    // the persona is not reachable by anyone.
+    // Persona ownership still has lifecycle meaning: removing the owning member
+    // cascades the persona, so there is no shared actor left to resolve.
     expect(await h.service.canActAs(owner.identityId, persona.id)).toBe(false);
   });
 
@@ -73,29 +67,27 @@ describe('can_act_as resolution (T-L7/S8)', () => {
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
 
-    // An unscoped agent token would carry the owner's full authority into a
-    // spawned shell — the exact escalation S13 forbids.
+    // An unscoped token would carry the launching human's authority into the
+    // shell instead of staying pinned to one shared teammate.
     await expectCode(
       h.service.issueSession({ accountId: owner.id, kind: 'agent' }),
       'invalid_input',
     );
   });
 
-  it('refuses an agent session scoped to a persona the account does not own', async () => {
+  it('allows an agent session scoped to another member\'s persona in the same space', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
     const strangerMember = h.join('id_stranger', SPACE_A);
     const strangersPersona = h.persona(strangerMember.id, SPACE_A);
 
-    await expectCode(
-      h.service.issueSession({
-        accountId: owner.id,
-        kind: 'agent',
-        actingAsTeamMemberId: strangersPersona.id,
-      }),
-      'forbidden',
-    );
+    const issued = await h.service.issueSession({
+      accountId: owner.id,
+      kind: 'agent',
+      actingAsTeamMemberId: strangersPersona.id,
+    });
+    expect(issued.session.actingAsTeamMemberId).toBe(strangersPersona.id);
   });
 
   it('distinguishes a missing persona from an unauthorized one at issue time', async () => {
@@ -113,7 +105,7 @@ describe('can_act_as resolution (T-L7/S8)', () => {
     );
   });
 
-  it('an agent token authors as the persona while authorizing through the owner', async () => {
+  it('an agent token authors as the persona while authorizing through the launcher\'s membership', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     const member = h.join(owner.identityId, SPACE_A);
@@ -129,12 +121,12 @@ describe('can_act_as resolution (T-L7/S8)', () => {
     // Authorship is the agent...
     expect(ctx.claims.actorId).toBe(persona.id);
     expect(ctx.claims.actingAsTeamMemberId).toBe(persona.id);
-    // ...authorization is still the owner's identity and the owner's memberships.
+    // ...authorization remains the launching human's identity and memberships.
     expect(ctx.claims.identityId).toBe(owner.identityId);
     expect(ctx.claims.memberIds).toEqual([member.id]);
   });
 
-  it('an agent token stops working the moment its owner is disabled', async () => {
+  it('an agent token stops working the moment its launching account is disabled', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     const member = h.join(owner.identityId, SPACE_A);
