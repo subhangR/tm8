@@ -576,37 +576,63 @@ describe('entity query', () => {
 // ── entity context: the disclosed contract conflict ─────────────────────────
 
 /**
- * `EntityContextQuerySchema` is `.strict()` over exactly `sections`,
- * `totalBytes` and `sectionBytes`. The frozen CLI syntax for this row names
- * `--depth`, `--messages`, `--children` and `--edge-type` — four flags the
- * frozen contract query schema physically cannot accept. Binding them would
- * send a request guaranteed to answer `400 invalid_input`; inventing
- * `--sections` instead would be inventing a flag outside the authorities. So
- * the command ships its contract-legal surface and REFUSES the four locally,
- * naming the amendment. The conflict is reported, not normalised.
+ * The J2 amendment: the syntax now names exactly the fields
+ * `EntityContextQuerySchema` (`.strict()`) accepts — `sections`, `totalBytes`,
+ * `sectionBytes` — and they BIND. The four phantom flags the old syntax
+ * advertised (`--depth --messages --children --edge-type`) are gone from the
+ * projection, so the ordinary unknown-option refusal quoting the real syntax
+ * is now the honest answer for them.
  */
 describe('entity context', () => {
-  it('sends no query parameters — the contract-legal surface is empty', async () => {
+  it('the bare form still sends no query parameters', async () => {
     const r = await drive(['entity', 'context', ENT]);
     expect(r.code).toBe(0);
     expect(seen[0]?.query).toBe('');
   });
 
-  /**
-   * The refusal must NAME the conflict, not merely reject the flag. A mutation
-   * test showed that "exit 2 and nothing sent" is satisfied by the generic
-   * unknown-option guard too — so the assertion could not tell a caller who
-   * learns WHY from one who is told only "no such flag". The frozen syntax
-   * DOES name these four, so "unknown option" would be an actively misleading
-   * answer here.
-   */
+  it('--sections is sent as ONE comma-separated value, the shape the Server splits', async () => {
+    const r = await drive(['entity', 'context', ENT, '--sections', 'summary,actions']);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.query).toBe('?sections=summary%2Cactions');
+  });
+
+  it('--total-bytes and --section-bytes bind as integers', async () => {
+    const r = await drive([
+      'entity', 'context', ENT,
+      '--sections', 'summary', '--total-bytes', '2048', '--section-bytes', '1024',
+    ]);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.query).toBe('?sections=summary&totalBytes=2048&sectionBytes=1024');
+  });
+
+  it('a typoed section fails locally as usage, never as a wire 400', async () => {
+    const r = await drive(['entity', 'context', ENT, '--sections', 'summary,bogus']);
+    expect(r.code).toBe(2);
+    expect(seen).toHaveLength(0);
+    expect(r.stderr).toContain('bogus');
+    expect(r.stderr).toContain('summary|hierarchy|connections|messages|activity|actions');
+  });
+
+  it('a byte budget outside the frozen schema range fails locally with the bounds', async () => {
+    for (const argv of [
+      ['entity', 'context', ENT, '--total-bytes', '512'],
+      ['entity', 'context', ENT, '--total-bytes', '65536'],
+      ['entity', 'context', ENT, '--section-bytes', '256'],
+      ['entity', 'context', ENT, '--section-bytes', '16384'],
+    ]) {
+      const r = await drive(argv);
+      expect(r.code, argv.join(' ')).toBe(2);
+      expect(seen).toHaveLength(0);
+    }
+  });
+
   for (const flag of ['--depth', '--messages', '--children', '--edge-type']) {
-    it(`refuses ${flag} locally, naming the contract conflict rather than calling it unknown`, async () => {
+    it(`${flag} is an ordinary unknown option now — the refusal quotes the REAL syntax`, async () => {
       const r = await drive(['entity', 'context', ENT, flag, '1']);
       expect(r.code).toBe(2);
       expect(seen).toHaveLength(0);
-      expect(r.stderr).toContain('EntityContextQuery');
-      expect(r.stderr).toContain('amendment');
+      expect(r.stderr).toContain(`has no ${flag}`);
+      expect(r.stderr).toContain('--sections');
     });
   }
 });

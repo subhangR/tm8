@@ -157,7 +157,9 @@ const MODE_SUMMARIES: Record<AgentMode, string> = {
 
 const V2_UNWIRED =
   'The v2 harness path is built and tested but nothing constructs the manifest key that selects it — ' +
-  'composeManifest still emits manifestVersion "1", so the live spawn path takes the v1 frame below.';
+  'composeManifest still emits manifestVersion "1", so the live spawn path takes the v1 frame below; ' +
+  'and nothing sets manifest.bootstrap either, so a wirer must clear both gates — version selection ' +
+  'in composeManifest and a bootstrap block on the manifest.';
 
 const NO_CALLER =
   'Implemented and covered by tests, but no production code calls it yet. It reaches no agent today.';
@@ -505,7 +507,10 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     categoryId: 'frame',
     title: 'Coordination note',
     summary: 'Tells a spawned agent that a coordinator is blocked on a durable reply, not on its exit.',
-    status: 'live',
+    status: 'unwired',
+    statusNote:
+      'The composer renders this only when the manifest names a coordinator, and composeManifest ' +
+      'hardcodes coordinator: null — so it has never rendered for any real agent.',
     rendering: 'verbatim',
     source: 'packages/prompt/src/index.ts',
     injectedWhen: 'Inside <coordination>, only when the manifest names a coordinator.',

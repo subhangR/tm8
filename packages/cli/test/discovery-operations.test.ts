@@ -818,7 +818,10 @@ describe('flag parseability: what the projection publishes, the parser can repre
       expect(d.syntax, d.operation).not.toMatch(/--timeout <n>/);
       expect(d.syntax, d.operation).not.toMatch(/--limit <n>/);
     }
-    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet']);
+    // 'fresh' joined 2026-08-02 (F2 read-cache); 'terse'/'full' joined
+    // 2026-08-02 (F5 render projection, opt-in). Globals all: no per-command
+    // syntax, no catalog digest movement.
+    expect(GLOBAL_OPTIONS).toEqual(['server', 'space', 'as', 'format', 'timeout', 'no-color', 'quiet', 'fresh', 'terse', 'full']);
   });
 });
 
