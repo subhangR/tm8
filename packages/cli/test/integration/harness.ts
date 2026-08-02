@@ -386,9 +386,19 @@ export async function cli(
   extraEnv: Record<string, string> = {},
 ): Promise<{ stdout: string; stderr: string; code: number }> {
   const entry = join(REPO_ROOT, 'packages/cli/dist/index.js');
+  // THE 91% LEAK, closed at the source (F8): when this suite runs inside a
+  // spawned agent's session, the child inherits that agent's TM8_JOURNAL_PATH
+  // and every fixture invocation lands in the agent's journal as if the agent
+  // typed it — 2,737 of 3,018 measured records, the pollution that inverted
+  // the headline failure rate. The suite journals NOTHING by default, and
+  // anything a test explicitly journals via extraEnv is tagged harness.
+  // TM8_NO_CACHE keeps fixtures deterministic: a suite invocation must never
+  // serve a cached payload another suite invocation happened to store.
+  const base = { ...process.env, TM8_JOURNAL_CLASS: 'harness', TM8_NO_CACHE: '1', ...server.env };
+  delete base.TM8_JOURNAL_PATH; // inherited only — an explicit extraEnv path survives below
   return await new Promise((resolve) => {
     const child = spawn('node', [entry, ...argv], {
-      env: { ...process.env, ...server.env, ...extraEnv },
+      env: { ...base, ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

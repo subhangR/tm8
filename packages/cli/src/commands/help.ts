@@ -209,18 +209,42 @@ export function help(args: readonly string[], options: OptionBag, out: Output): 
     return EXIT_OK;
   }
 
+  // A quoted path arrives as ONE argv element — the shell never re-splits it —
+  // so `tm8 help "entity get"` used to die in the fallthrough with a message
+  // byte-identical to a genuinely unknown command. Retokenize first: the quoted
+  // form resolves exactly like the unquoted one, and true unknowns still fall
+  // through below with the ORIGINAL args in the message.
+  const tokens = args.flatMap((a) => a.trim().split(/\s+/)).filter(Boolean);
+
   // Longest match first, so `tm8 help space task-axis create` resolves to the
   // three-token command rather than to the `space` noun with two stray args.
-  for (let n = Math.min(3, args.length); n >= 2; n--) {
-    const path = args.slice(0, n);
+  for (let n = Math.min(3, tokens.length); n >= 2; n--) {
+    const path = tokens.slice(0, n);
     if (isCommandPath(path)) return emitCommandHelp(path, out);
   }
 
-  const noun = args[0] as string;
-  if (isNoun(noun)) {
+  const noun = tokens[0] as string;
+  if (noun !== undefined && isNoun(noun)) {
     const shard = nounHelp(noun);
     /* c8 ignore next */
     if (shard === undefined) throw new CliError(`no help for noun ${noun}`, EXIT_USAGE);
+    // An unknown verb used to be silently discarded — `tm8 help entity bogus`
+    // printed the noun shard and exited 0, so a typo read as a success. The
+    // verbs in the hint come from the shard itself; there is no second list.
+    if (tokens.length >= 2) {
+      // A noun shard indexes by operation FAMILY, and a family member's command
+      // path may start with a different first token — `entities.commands.complete`
+      // is family `entity` but command `task complete`. Blindly slicing the noun
+      // prefix off such a row corrupted the hint (`mplete`, `nk-pr`), so strip
+      // the prefix only when the command actually carries it, and otherwise show
+      // the full path — which is the real invocation anyway.
+      const verbs = shard.commands.map((c) =>
+        c.command.startsWith(`${noun} `) ? c.command.slice(noun.length + 1) : c.command,
+      );
+      throw new CliError(`no verb \`${tokens.slice(1).join(' ')}\` on noun \`${noun}\``, EXIT_USAGE, {
+        hint: `verbs on \`${noun}\`: ${verbs.join(', ')}`,
+      });
+    }
     out.data(shard, renderNoun);
     return EXIT_OK;
   }

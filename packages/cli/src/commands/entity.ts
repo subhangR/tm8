@@ -31,16 +31,10 @@
  *
  * ── A DISCLOSED AUTHORITY CONFLICT: FLAGS WITH NO WIRE DESTINATION ─────────
  *
- * Five flags in this slot's frozen CLI syntax have NO field in the frozen
- * contract to carry them. Verified against `packages/contract/src/`, not
+ * One flag in this slot's frozen CLI syntax has NO field in the frozen
+ * contract to carry it. Verified against `packages/contract/src/`, not
  * against a design doc:
  *
- *   `entity context --depth --messages --children --edge-type`
- *       `EntityContextQuery` is `.strict()` over exactly
- *       {sections, totalBytes, sectionBytes}. The other four names appear ZERO
- *       times in it, and the Server validates the WHOLE query string against
- *       that schema — so binding them sends a request guaranteed to answer
- *       `400 invalid_input`.
  *   `entity hierarchy --depth`
  *       there is no hierarchy query type in the contract AT ALL — zero
  *       occurrences of any `HierarchyQuery` — so the flag has nowhere to land
@@ -48,17 +42,17 @@
  *
  * A FLAG WITH NO WIRE DESTINATION IS A PROMISE THE CLI CANNOT KEEP. An agent
  * that sees `--depth` reasonably concludes the read is depth-bounded, plans a
- * context budget around it, and is wrong — and nothing anywhere goes red. The
- * two failure shapes differ (a hard 400 versus a silent no-op) but the defect
- * is one defect, so both get one treatment: the command ships its
- * CONTRACT-LEGAL surface and refuses the unbacked flags locally, NAMING the
- * conflict rather than calling them unknown options — the frozen syntax does
- * name them, so "unknown option" would itself be misleading.
+ * context budget around it, and is wrong — and nothing anywhere goes red. So
+ * the command ships its CONTRACT-LEGAL surface and refuses the unbacked flag
+ * locally, NAMING the conflict rather than calling it unknown — the frozen
+ * syntax does name it, so "unknown option" would itself be misleading.
  *
- * Inventing `--sections` in their place would be inventing a flag outside the
- * authorities, so that is not done either. The conflict is REPORTED for
- * amendment; `src/discovery/operations.ts` has one owner and is not edited
- * here.
+ * `entity context` carried the same disclosure for `--depth --messages
+ * --children --edge-type` until the J2 amendment landed: its syntax now names
+ * exactly the fields `EntityContextQuery` accepts ({sections, totalBytes,
+ * sectionBytes}), the four phantom flags are gone from the projection, and a
+ * caller who still passes one gets the ordinary unknown-option refusal quoting
+ * the real syntax — which is now the honest answer.
  */
 import { readJsonSource } from '../args.js';
 import { requireSpace } from '../context.js';
@@ -427,19 +421,60 @@ async function entityFeed(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
-/** See the module header: four projected flags the frozen query schema cannot accept. */
-const CONTEXT_UNBACKED = ['depth', 'messages', 'children', 'edge-type'] as const;
+/** The closed section set — `EntityContextQuery.sections`, spelled once. */
+const CONTEXT_SECTIONS = ['summary', 'hierarchy', 'connections', 'messages', 'activity', 'actions'] as const;
+
+/**
+ * A byte-budget option, range-checked locally: the schema bounds are frozen
+ * (`EntityContextQuerySchema`), so an out-of-range value is a typo that must
+ * not reach the wire just to be told the same numbers by a 400.
+ */
+function byteBudgetOption(cmd: CommandContext, name: string, min: number, max: number): number | undefined {
+  const value = cmd.options.integer(name);
+  if (value === undefined) return undefined;
+  if (value < min || value > max) {
+    throw new CliError(`--${name} expects ${min}..${max}, got ${value}`, EXIT_USAGE);
+  }
+  return value;
+}
 
 async function entityContext(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('entity context', cmd.options.value('mutation-id'));
-  refuseUnbackedOptions(
-    cmd,
-    CONTEXT_UNBACKED,
-    'EntityContextQuery is strict over {sections, totalBytes, sectionBytes} and has no such parameter',
-  );
-  assertKnownOptions(cmd, []);
+  assertKnownOptions(cmd, ['sections', 'total-bytes', 'section-bytes']);
   const id = requireArg(cmd, 0, '<entity-id>');
-  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', { params: { id } });
+
+  // One comma-separated value, exactly as the Server splits it. Each part is
+  // validated HERE against the closed enum — a typoed section name must fail
+  // as a usage error, not as a wire 400 quoting zod internals.
+  const rawSections = cmd.options.value('sections');
+  let sections: string | undefined;
+  if (rawSections !== undefined) {
+    const parts = rawSections.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    if (parts.length === 0) {
+      throw new CliError('--sections expects a comma-separated list of sections', EXIT_USAGE, {
+        hint: `sections: ${CONTEXT_SECTIONS.join('|')}`,
+      });
+    }
+    for (const part of parts) {
+      if (!(CONTEXT_SECTIONS as readonly string[]).includes(part)) {
+        throw new CliError(`--sections has no section ${JSON.stringify(part)}`, EXIT_USAGE, {
+          hint: `sections: ${CONTEXT_SECTIONS.join('|')}`,
+        });
+      }
+    }
+    sections = parts.join(',');
+  }
+  const totalBytes = byteBudgetOption(cmd, 'total-bytes', 1024, 32_768);
+  const sectionBytes = byteBudgetOption(cmd, 'section-bytes', 512, 8192);
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.context', {
+    params: { id },
+    query: {
+      ...(sections === undefined ? {} : { sections }),
+      ...(totalBytes === undefined ? {} : { totalBytes: String(totalBytes) }),
+      ...(sectionBytes === undefined ? {} : { sectionBytes: String(sectionBytes) }),
+    },
+  });
   cmd.out.data(data, renderContext);
   return EXIT_OK;
 }

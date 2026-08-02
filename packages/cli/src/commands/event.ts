@@ -56,10 +56,12 @@ import {
   CliError,
   EXIT_FORBIDDEN,
   EXIT_INTERRUPTED,
+  EXIT_MATCHED_VIA_POLL,
   EXIT_OK,
   EXIT_PROTOCOL,
   EXIT_RETRYABLE,
   EXIT_USAGE,
+  EXIT_WAIT_TIMEOUT,
   type ExitCode,
 } from '../exit.js';
 import { refuseMutationId } from '../mutation.js';
@@ -425,15 +427,39 @@ function assertStreamFormat(out: Output): void {
   }
 }
 
+/** One `events.poll` page, exactly as `invoke('events.poll')` unwraps it. */
+export interface EventPollPage {
+  items?: unknown;
+  nextCursor?: unknown;
+}
+
+/** The fallback's transport seam — injected so the loop is testable dry. */
+export type EventPoller = (sinceSeq: string) => Promise<EventPollPage>;
+
+/**
+ * How often the poll fallback re-asks. 1.5s: fast enough that a wait feels
+ * event-driven, slow enough that a 300s worst case is 200 polls, not 3,000.
+ */
+const FALLBACK_POLL_INTERVAL_MS = 1_500;
+
 /**
  * Drive one subscription to its end and return the exit code it earned.
  *
  * EXIT CODES, and each is a distinct sentence:
- *   0   the stream ended cleanly, or `--timeout` expired.
+ *   0   the stream ended cleanly, or `--timeout` expired — or, with
+ *       `--until-match`, a matching event arrived ON THE STREAM.
  *   4   the node REFUSED the subscribe (`control.refused`, `forbidden`).
  *   7   the socket dropped uncleanly — retryable, the caller lost their place.
+ *       With `--until-match`: the fallback could not run either (no resume
+ *       point, or the node never answered a poll), so nothing was learned.
  *   10  the node called one of OUR frames malformed. That is this CLI's defect,
  *       not the caller's, so it is never reported as a usage error.
+ *   13  `--until-match` only: `--timeout` expired and no matching event exists
+ *       past the resume point. A real answer — "it has not happened yet".
+ *   14  `--until-match` only: MATCHED, but via the `events.poll` fallback after
+ *       the socket was lost. The event is printed exactly as 0 would print it;
+ *       the code differs so a script knows its live subscription did not
+ *       survive, without parsing stderr.
  *   130 interrupted.
  */
 export async function runWatch(opts: {
@@ -441,10 +467,28 @@ export async function runWatch(opts: {
   socket: WatchSocket;
   out: Output;
   timeoutMs: number | undefined;
+  /** `--until-match`: settle on the FIRST matching event instead of streaming. */
+  untilMatch?: boolean;
+  /** The socket-down repair path. Required for the fallback to exist at all. */
+  poll?: EventPoller;
+  /** Test seam. Defaults to FALLBACK_POLL_INTERVAL_MS. */
+  pollIntervalMs?: number;
 }): Promise<ExitCode> {
   const { request, socket, out, timeoutMs } = opts;
+  const untilMatch = opts.untilMatch ?? false;
   assertStreamFormat(out);
   const protocol = wsControlProtocol();
+
+  /** The wait's absolute end. Shared by the timer and the poll fallback. */
+  const deadline = timeoutMs === undefined ? undefined : Date.now() + timeoutMs;
+
+  /**
+   * The highest seq THIS process has durably seen — every stream event counts,
+   * matching or not, because it is the fallback's resume point. Seeded from
+   * `--after` so a resumed watch can degrade even if the socket dies at once.
+   */
+  let lastSeq: string | undefined = request.afterSeq;
+  let interrupted = false;
 
   /** Set by whatever ENDED the stream; a plain close does not set it. */
   let verdict: ExitCode | undefined;
@@ -462,13 +506,77 @@ export async function runWatch(opts: {
     }
   };
 
+  /**
+   * The documented socket-down repair path (`events.poll --after`), run when a
+   * `--until-match` wait loses its socket before matching. Resumes from the
+   * last seq the stream durably showed us; REFUSES to run with no resume point
+   * rather than replaying a Space's history from 0 — a poll from nothing would
+   * happily "match" an event that happened last week, and a wait that answers
+   * from the past is worse than one that admits it lost its place.
+   */
+  const runPollFallback = async (): Promise<ExitCode> => {
+    if (opts.poll === undefined || deadline === undefined) return EXIT_RETRYABLE;
+    if (lastSeq === undefined) {
+      out.warn(
+        '`tm8 event watch`: the socket was lost before any event (and no --after was given), so ' +
+          'the events.poll fallback has no seq to resume from and is refused — a poll from 0 could ' +
+          'match history, not arrival. Re-run with --after <space-seq> to make the wait resumable.',
+      );
+      return EXIT_RETRYABLE;
+    }
+    out.warn(
+      `\`tm8 event watch\`: the socket was lost — continuing this wait over events.poll from seq ${lastSeq}`,
+    );
+    let anyPollAnswered = false;
+    const interval = opts.pollIntervalMs ?? FALLBACK_POLL_INTERVAL_MS;
+    for (;;) {
+      if (interrupted) return EXIT_INTERRUPTED;
+      try {
+        const page = await opts.poll(lastSeq);
+        anyPollAnswered = true;
+        const items = Array.isArray(page.items) ? page.items : [];
+        for (const raw of items) {
+          const event = (raw ?? {}) as Record<string, unknown>;
+          const seq = event['seq'];
+          if (typeof seq === 'number' || typeof seq === 'string') lastSeq = String(seq);
+          if (matches(event, request)) {
+            out.line(event, renderEvent);
+            return EXIT_MATCHED_VIA_POLL;
+          }
+        }
+        // The cursor covers rows the mapper skipped, so progress never stalls.
+        if (typeof page.nextCursor === 'string' || typeof page.nextCursor === 'number') {
+          lastSeq = String(page.nextCursor);
+        }
+      } catch {
+        // The node is (still) unreachable. The deadline decides, not this poll.
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        // Timeout with answers is "it has not happened"; timeout where every
+        // poll ALSO failed is "nothing was learned" — those are different
+        // sentences and must be different codes.
+        return anyPollAnswered ? EXIT_WAIT_TIMEOUT : EXIT_RETRYABLE;
+      }
+      await new Promise((resolve) => setTimeout(resolve, Math.min(interval, remaining)));
+    }
+  };
+
   socket.onClose((code) => {
     if (ended) return;
     ended = true;
+    if (untilMatch && verdict === undefined) {
+      // The wait is not over because the socket is: degrade to polling.
+      void runPollFallback().then(settle);
+      return;
+    }
     settle(verdict ?? (CLEAN_CLOSE.has(code) ? EXIT_OK : EXIT_RETRYABLE));
   });
 
   socket.onMessage((text) => {
+    // A frame can race the close (ours or the peer's). Once the wait settled,
+    // nothing may reach stdout — a second "first match" is a contradiction.
+    if (ended || verdict !== undefined) return;
     const frame = protocol.classify(text);
 
     if (frame.kind === 'unintelligible') {
@@ -496,29 +604,47 @@ export async function runWatch(opts: {
       return;
     }
 
+    // EVERY event advances the resume point, matching or not — the fallback
+    // must never replay what this stream already showed.
+    const seq = frame.event['seq'];
+    if (typeof seq === 'number' || typeof seq === 'string') lastSeq = String(seq);
+
     if (!matches(frame.event, request)) return;
     // Faithful render: the event is emitted as it ARRIVED, not as a shape this
     // client re-derived. A node that adds a field must not be able to make the
     // CLI go silent, so nothing here validates before printing.
     out.line(frame.event, renderEvent);
+    if (untilMatch) {
+      verdict = EXIT_OK;
+      stop();
+    }
   });
 
   const timer =
     timeoutMs === undefined
       ? undefined
       : setTimeout(() => {
-          verdict = EXIT_OK;
+          verdict = untilMatch ? EXIT_WAIT_TIMEOUT : EXIT_OK;
           stop();
         }, timeoutMs);
 
   const onInterrupt = (): void => {
+    interrupted = true;
     verdict = EXIT_INTERRUPTED;
     stop();
   };
   process.once('SIGINT', onInterrupt);
 
   try {
-    await socket.open();
+    try {
+      await socket.open();
+    } catch (err) {
+      // With `--until-match`, a socket that never opened is the same repair
+      // path as one that dropped: the wait continues over events.poll.
+      if (!untilMatch || ended) throw err;
+      ended = true;
+      return await runPollFallback();
+    }
     for (const frame of protocol.frames(request)) socket.send(protocol.encode(frame));
     if (request.eventTypes.length > 0 || request.entityIds.length > 0) {
       // DISCLOSED, not silently done. The contract's control frames carry no
@@ -566,7 +692,16 @@ export async function runWatch(opts: {
  * lifetime of the subscription — the nearest honest meaning, and the only way an
  * agent can ask for a bounded watch without this slot inventing a flag. Without
  * it the watch runs until the peer closes it or the caller interrupts (130).
+ *
+ * `--until-match` (F7) turns the watch into a BLOCKING WAIT: the first event
+ * matching the local predicate is printed and the process exits — 0 from the
+ * stream, 14 via the poll fallback, 13 if `--timeout` expires first. A wait
+ * holds a process and a socket, so `--timeout` is REQUIRED with it and capped:
+ * waits longer than 300 seconds belong to a scheduler that re-invokes this
+ * command, not to a shell hanging on one process.
  */
+const MAX_WAIT_SECONDS = 300;
+
 async function eventWatch(cmd: CommandContext): Promise<ExitCode> {
   refuseMutationId('event watch', cmd.options.value('mutation-id'));
   assertStreamFormat(cmd.out);
@@ -574,12 +709,43 @@ async function eventWatch(cmd: CommandContext): Promise<ExitCode> {
   // Validated BEFORE a socket exists: a malformed invocation must not cost a
   // connection, and `--space` must be resolved before a frame can name it.
   const request = watchRequestFrom({ options: cmd.options, ctx: cmd.ctx });
+  const untilMatch = cmd.options.bool('until-match');
+
+  if (untilMatch) {
+    if (cmd.ctx.timeoutMs === undefined) {
+      throw new CliError(
+        '`--until-match` is a blocking wait and must be bounded: pass --timeout <seconds>',
+        EXIT_USAGE,
+        { hint: `the cap is ${MAX_WAIT_SECONDS}s — longer waits belong to a scheduler re-invoking this command` },
+      );
+    }
+    if (cmd.ctx.timeoutMs > MAX_WAIT_SECONDS * 1_000) {
+      throw new CliError(
+        `--timeout ${Math.round(cmd.ctx.timeoutMs / 1_000)}s exceeds the ${MAX_WAIT_SECONDS}s cap for ` +
+          '`--until-match`: a longer wait holds a process and a socket that a scheduler should own',
+        EXIT_USAGE,
+        { hint: 'chain bounded waits (each resuming from the last seq) or schedule the re-check' },
+      );
+    }
+  }
+
+  // The fallback poller reuses the client seam rather than opening a second
+  // one. `events.poll` is exempt from the read-cache by construction, so a
+  // revalidation-style loop can never be served its own cached answer.
+  const client = clientFor(cmd.ctx);
+  const poll: EventPoller = async (sinceSeq) =>
+    await client.invoke<EventPollPage>('events.poll', {
+      params: { spaceId: request.spaceId },
+      query: { since: sinceSeq },
+    });
 
   return await runWatch({
     request,
     socket: runtimeSocket(cmd.ctx),
     out: cmd.out,
     timeoutMs: cmd.ctx.timeoutMs,
+    untilMatch,
+    ...(untilMatch ? { poll } : {}),
   });
 }
 

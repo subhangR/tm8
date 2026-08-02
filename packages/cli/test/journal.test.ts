@@ -170,6 +170,106 @@ describe('redaction happens at write time, so the secret never reaches the disk'
   });
 });
 
+describe('class is decided at write time (F8)', () => {
+  const CALL = {
+    operation: 'entities.get', method: 'GET', path: '/v2/entities/x',
+    status: 200, requestChars: 0, responseChars: 10, durationMs: 5,
+  };
+
+  function classWritten(env: Partial<NodeJS.ProcessEnv>, baseUrl: string): string | undefined {
+    const path = tempJournal();
+    const j = createJournal({ ...envFor(path), ...env });
+    j.noteCall({ ...CALL, baseUrl });
+    j.finish({ path: ['entity', 'get'], argv: ['entity', 'get', 'x'], exitCode: 0 });
+    return readRecords(path)[0]!.class;
+  }
+
+  it('an explicit TM8_JOURNAL_CLASS wins over every heuristic', () => {
+    // A stable-port call would say agent; the env says harness. Env wins.
+    expect(classWritten({ TM8_JOURNAL_CLASS: 'harness' }, 'http://127.0.0.1:7778')).toBe('harness');
+    expect(classWritten({ TM8_JOURNAL_CLASS: 'human' }, 'http://127.0.0.1:55555')).toBe('human');
+  });
+
+  it('an INVALID TM8_JOURNAL_CLASS falls through to the heuristics, never onto the disk', () => {
+    const path = tempJournal();
+    const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'robot' });
+    j.finish({ path: ['help'], argv: ['help'], exitCode: 0 });
+    const [rec] = readRecords(path);
+    expect(['agent', 'harness', 'human']).toContain(rec.class);
+    expect(rec.class).not.toBe('robot');
+  });
+
+  it('this very test run classifies as harness WITHOUT being told — the cwd heuristic', () => {
+    // vitest runs from packages/cli, so even a record whose mocked call names
+    // a stable node is tagged harness here. That is the safety property: an
+    // in-process unit test with a stale inherited journal env cannot pollute
+    // the agent corpus. The port heuristic with a CONTROLLED cwd is pinned in
+    // journal-stats.test.ts, where cwd is an explicit argument.
+    expect(classWritten({}, 'http://127.0.0.1:53211')).toBe('harness');
+    expect(classWritten({}, 'http://127.0.0.1:7778')).toBe('harness');
+  });
+
+  it('every record carries a class — the field is never omitted at write time', () => {
+    const path = tempJournal();
+    const j = createJournal(envFor(path));
+    j.finish({ path: ['help'], argv: ['help'], exitCode: 0 });
+    // The default-agent path needs a non-repo cwd, which a unit test cannot
+    // honestly fake (see journal-stats.test.ts for the controlled version).
+    // What must hold HERE is that the writer always answers.
+    expect(['agent', 'harness', 'human']).toContain(readRecords(path)[0]!.class);
+  });
+});
+
+describe('the spend line (F8 visible spend)', () => {
+  function stderrDuring(fn: () => void): string {
+    const chunks: string[] = [];
+    const original = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      chunks.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      fn();
+    } finally {
+      process.stderr.write = original;
+    }
+    return chunks.join('');
+  }
+
+  it('an agent invocation prints exactly one stderr line, after the record is written', () => {
+    const path = tempJournal();
+    const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'agent' });
+    j.wrapStreams(sink).stdout('x'.repeat(4_000));
+    const text = stderrDuring(() => j.finish({ path: ['entity', 'get'], argv: ['entity', 'get', 'x'], exitCode: 0 }));
+    expect(text).toMatch(/^\[journal: ~\d+k? est chars-over-4 this session; \d+% on re-fetches\]\n$/);
+    expect(readRecords(path)).toHaveLength(1); // the line never replaces the record
+  });
+
+  it('totals accumulate across sibling invocations of one session', () => {
+    const path = tempJournal();
+    for (let i = 0; i < 3; i += 1) {
+      const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'agent' });
+      j.wrapStreams(sink).stdout('x'.repeat(4_000)); // 1k est tokens each
+    // identical argv on purpose: run 2 and 3 are byte-identical re-fetches
+      const text = stderrDuring(() => j.finish({ path: ['entity', 'get'], argv: ['entity', 'get', 'x'], exitCode: 0 }));
+      if (i === 2) {
+        expect(text).toContain('~3k est chars-over-4');
+        // 2 of 3 cli→agent payloads are repeats of the first → 66%.
+        expect(text).toMatch(/6[67]% on re-fetches/);
+      }
+    }
+  });
+
+  it('a harness invocation prints NOTHING — fixtures must stay byte-deterministic', () => {
+    const path = tempJournal();
+    const j = createJournal({ ...envFor(path), TM8_JOURNAL_CLASS: 'harness' });
+    const text = stderrDuring(() => j.finish({ path: ['help'], argv: ['help'], exitCode: 0 }));
+    expect(text).toBe('');
+    expect(readRecords(path)).toHaveLength(1); // still journalled, still tagged
+    expect(readRecords(path)[0]!.class).toBe('harness');
+  });
+});
+
 describe('concurrent sibling invocations', () => {
   it('appends whole lines rather than corrupting each other', () => {
     const path = tempJournal();

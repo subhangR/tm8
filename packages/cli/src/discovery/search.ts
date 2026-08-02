@@ -45,6 +45,13 @@ export function tokenize(query: string): string[] {
 const EXACT_TAG = 40;
 const PREFIX_TAG = 12;
 const SUMMARY_WORD = 8;
+/**
+ * Notes carry facts the summary has no room for (bounds, caps, flag ownership),
+ * so they are indexed — at half a summary word, because a note mentions many
+ * things in passing. `syn` and `examples` stay UNINDEXED: syn is flag soup and
+ * examples restate syn.
+ */
+const NOTE_WORD = 4;
 /** Internal and reserved rows stay discoverable but must never be the answer. */
 const UNINVOCABLE_FACTOR = 0.25;
 
@@ -59,9 +66,16 @@ function summaryWords(row: OperationDiscovery): Set<string> {
   return new Set(row.summary.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean));
 }
 
+function noteWords(row: OperationDiscovery): Set<string> {
+  return new Set(
+    row.notes.flatMap((n) => n.toLowerCase().split(/[^a-z0-9-]+/)).filter(Boolean),
+  );
+}
+
 export function score(tokens: readonly string[], row: OperationDiscovery): Scored {
   const tags = new Set(row.intentTags);
   const words = summaryWords(row);
+  const notes = noteWords(row);
   let total = 0;
   const hits: string[] = [];
 
@@ -80,6 +94,11 @@ export function score(tokens: readonly string[], row: OperationDiscovery): Score
     }
     if (token.length >= 4 && words.has(token)) {
       total += SUMMARY_WORD;
+      hits.push(token);
+      continue;
+    }
+    if (token.length >= 4 && notes.has(token)) {
+      total += NOTE_WORD;
       hits.push(token);
     }
   }

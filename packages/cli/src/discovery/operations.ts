@@ -400,6 +400,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['read', 'show', 'task', 'doc', 'session'],
+    notes: [
+      'returns the full entity unbounded — no limit or projection flags exist; for orientation prefer entity context (bounded, cursors)',
+    ],
   },
   'entities.create': {
     cmd: ['entity', 'create'],
@@ -411,8 +414,13 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'restricted kinds (project, interaction_profile) refuse generic creation and use their named writers',
       'hierarchy is homogeneous: a parent and its direct children share one kind and one Space',
+      'task content shape: {description, acceptanceCriteria: [{id, done, text}], pointsEstimate}',
+      "doc content shape: {kind: 'doc', body, format: 'markdown'}",
     ],
-    examples: ['tm8 entity create task "<title>" --space <space-id> --parent <entity-id>'],
+    examples: [
+      'tm8 entity create task "<title>" --space <space-id> --parent <entity-id>',
+      'tm8 entity create doc "<title>" --space <space-id> --content \'{"kind":"doc","body":"…","format":"markdown"}\'',
+    ],
   },
   'entities.patch': {
     cmd: ['entity', 'update'],
@@ -645,6 +653,10 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['read', 'thread', 'chat', 'conversation', 'inbox'],
+    notes: [
+      'pass --limit; unbounded listings measured several times larger',
+      'the anchor id is positional — there is no --to/--for/--entity/--anchor flag here; --to belongs to message send',
+    ],
   },
   'messages.post': {
     cmd: ['message', 'send'],
@@ -664,6 +676,7 @@ const ROWS: Record<OperationName, Row> = {
       'a work session is addressed like any other anchor — the message is stored first and delivered second',
       '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
+      'body is limited to 10,000 characters (messages.post input schema, schemas.ts:1292); split longer reports into numbered messages on the same anchor',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
@@ -954,12 +967,12 @@ const ROWS: Record<OperationName, Row> = {
   // ── events & presence ────────────────────────────────────────────────────
   'events.subscribe': {
     cmd: ['event', 'watch'],
-    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence]',
-    sum: 'Stream Space events over the WebSocket',
+    syn: 'tm8 event watch [--space <space-id>] [--after <space-seq>] [--type <event-type>...] [--entity <entity-id>...] [--presence] [--until-match]',
+    sum: 'Stream Space events over the WebSocket — or, with --until-match, block until one matches',
     authz: 'space',
     input: 'none',
     side: 'none',
-    tags: ['stream', 'follow', 'tail', 'live', 'realtime'],
+    tags: ['stream', 'follow', 'tail', 'live', 'realtime', 'wait', 'block', 'until'],
     // These notes state CONTRACT facts, not the state of this node. The row
     // previously said the socket was "an upgrade SKELETON … do not depend on it
     // for durable ordering yet", which was true when it was written and stopped
@@ -972,6 +985,7 @@ const ROWS: Record<OperationName, Row> = {
       'the contract defines a client→server control protocol on this socket: `subscribe`/`unsubscribe` are fan-out membership, `resume` is replay, `presence`/`presence.set` are the ephemeral channel, and a refused frame answers `control.refused` rather than going quiet',
       'a gap is repaired by re-watching with `--after <space-seq>`, which sends a `resume` frame replaying stored events over the socket; `event list` is the repair when no socket can be opened at all',
       'presence signals never advance the durable cursor',
+      'with `--until-match` the watch becomes a bounded blocking wait: the first event matching --type/--entity is printed and the process exits — 0 matched on the stream, 14 matched via the events.poll fallback after the socket was lost, 13 nothing matched before the timeout; the global --timeout <seconds> is required and capped at 300 — longer waits belong to a scheduler re-invoking this command',
     ],
   },
   'events.poll': {
@@ -1232,17 +1246,24 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'entity',
     input: 'none',
     tags: ['timeline', 'history', 'chat', 'activity'],
+    notes: [
+      'unbounded calls return the whole merged timeline; pass --limit and continue with --cursor',
+    ],
   },
   'entities.context': {
     cmd: ['entity', 'context'],
-    syn: 'tm8 entity context <entity-id> [--depth 0|1|2|3] [--messages <0..50>] [--children <0..200>] [--edge-type <type>...]',
+    syn: 'tm8 entity context <entity-id> [--sections <summary|hierarchy|connections|messages|activity|actions>[,...]] [--total-bytes <1024..32768>] [--section-bytes <512..8192>]',
     sum: 'Read a bounded snapshot of an entity with its parents, children, edges, recent messages, and available actions',
     authz: 'entity',
     input: 'none',
     tags: ['snapshot', 'around', 'brief', 'orient'],
     notes: [
-      'bounded by design: 32 KiB default and 128 KiB hard, with explicit per-section cursors and truncation flags',
+      'exactly three flags bind — --sections, --total-bytes, --section-bytes (EntityContextQuery); --depth/--messages/--children/--edge-type never bound and are gone',
+      'bounded by design: defaults are 16 KiB total and 4 KiB per section (service source); hard caps 32 KiB and 8 KiB (frozen schema)',
+      'returned cursors.messages/.activity continue in `entity feed --cursor` (--order newest); cursors.children has no consumer in this grammar',
+      '--sections summary,actions is a precise pre-mutation capability + version check for a few hundred tokens',
     ],
+    examples: ['tm8 entity context <entity-id> --sections summary,actions'],
   },
   'interactionProfiles.propose': {
     cmd: ['interaction-profile', 'propose'],
