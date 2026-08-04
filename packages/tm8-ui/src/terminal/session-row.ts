@@ -1,4 +1,4 @@
-import type { EntitySummary, WorkSessionStatus } from '@tm8/contract';
+import type { ActorSummary, EntitySummary, WorkSessionStatus } from '@tm8/contract';
 
 /**
  * SessionRow — the narrow view-model the live-session bar and the roster
@@ -19,6 +19,8 @@ import type { EntitySummary, WorkSessionStatus } from '@tm8/contract';
  */
 export interface SessionRow {
   id: string;
+  /** Actor attributed by the server; real projections always supply it. */
+  actor?: ActorSummary;
   /** Persona name — "forge", "scout". */
   name: string;
   /** Avatar initial; defaults to the first character of `name`. */
@@ -53,6 +55,7 @@ export function toSessionRow(summary: EntitySummary, meta?: string): SessionRow 
 
   return {
     id: summary.id,
+    actor: summary.createdBy,
     // Fixture personas read "forge · tm8-ui kit"; the persona is the head.
     name: summary.title.split('·')[0]?.trim() || summary.title,
     provider: model ?? tool,

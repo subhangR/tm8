@@ -66,13 +66,13 @@ describe('globalIdProblem — the constraint as a sentence', () => {
 
 describe('IdentityProfileSection — empty is the normal state', () => {
   it('renders the honest absence when identity could not be read', () => {
-    render(<IdentityProfileSection identity={null} onSave={() => Promise.resolve(view())} />);
+    render(<IdentityProfileSection identity={null} spaceId="sp-1" onSave={() => Promise.resolve(view())} />);
     screen.getByTestId('profile-absent');
   });
 
   it('renders all-NULL profile with "not set" placeholders and a monogram, no img', () => {
     const { container } = render(
-      <IdentityProfileSection identity={EMPTY_IDENTITY} onSave={() => Promise.resolve(view())} />,
+      <IdentityProfileSection identity={EMPTY_IDENTITY} spaceId="sp-1" onSave={() => Promise.resolve(view())} />,
     );
     expect(screen.getByTestId<HTMLInputElement>('profile-display-name').placeholder).toBe('not set');
     expect(screen.getByTestId<HTMLInputElement>('profile-global-id').placeholder).toContain('not set');
@@ -83,7 +83,7 @@ describe('IdentityProfileSection — empty is the normal state', () => {
 
   it('explains what globalId is — display only, never permissions', () => {
     render(
-      <IdentityProfileSection identity={EMPTY_IDENTITY} onSave={() => Promise.resolve(view())} />,
+      <IdentityProfileSection identity={EMPTY_IDENTITY} spaceId="sp-1" onSave={() => Promise.resolve(view())} />,
     );
     screen.getByText(GLOBAL_ID_EXPLAINER);
     expect(GLOBAL_ID_EXPLAINER).toMatch(/not a login/);
@@ -92,7 +92,7 @@ describe('IdentityProfileSection — empty is the normal state', () => {
 
   it('refuses a malformed globalId BEFORE the wire and never calls onSave', async () => {
     const onSave = vi.fn(() => Promise.resolve(view()));
-    render(<IdentityProfileSection identity={EMPTY_IDENTITY} onSave={onSave} />);
+    render(<IdentityProfileSection identity={EMPTY_IDENTITY} spaceId="sp-1" onSave={onSave} />);
     fireEvent.change(screen.getByTestId('profile-global-id'), { target: { value: 'not-an-id' } });
     fireEvent.click(screen.getByTestId('profile-save'));
     await screen.findByTestId('profile-problem');
@@ -105,7 +105,7 @@ describe('IdentityProfileSection — empty is the normal state', () => {
     );
     const onSaved = vi.fn();
     render(
-      <IdentityProfileSection identity={EMPTY_IDENTITY} onSave={onSave} onSaved={onSaved} />,
+      <IdentityProfileSection identity={EMPTY_IDENTITY} spaceId="sp-1" onSave={onSave} onSaved={onSaved} />,
     );
     fireEvent.change(screen.getByTestId('profile-display-name'), { target: { value: 'Ada Osei' } });
     fireEvent.change(screen.getByTestId('profile-global-id'), { target: { value: 'google:12345' } });
@@ -117,7 +117,7 @@ describe('IdentityProfileSection — empty is the normal state', () => {
 
   it('a no-change save is refused locally — nothing to write, nothing sent', async () => {
     const onSave = vi.fn(() => Promise.resolve(view()));
-    render(<IdentityProfileSection identity={EMPTY_IDENTITY} onSave={onSave} />);
+    render(<IdentityProfileSection identity={EMPTY_IDENTITY} spaceId="sp-1" onSave={onSave} />);
     fireEvent.click(screen.getByTestId('profile-save'));
     await screen.findByTestId('profile-problem');
     expect(onSave).not.toHaveBeenCalled();
@@ -125,7 +125,7 @@ describe('IdentityProfileSection — empty is the normal state', () => {
 
   it('a server refusal renders as a visible refusal, not a silent nothing', async () => {
     const onSave = vi.fn(() => Promise.reject(new Error('conflict: global id already bound')));
-    render(<IdentityProfileSection identity={EMPTY_IDENTITY} onSave={onSave} />);
+    render(<IdentityProfileSection identity={EMPTY_IDENTITY} spaceId="sp-1" onSave={onSave} />);
     fireEvent.change(screen.getByTestId('profile-display-name'), { target: { value: 'Ada' } });
     fireEvent.click(screen.getByTestId('profile-save'));
     const refusal = await screen.findByTestId('profile-refused');
@@ -135,7 +135,7 @@ describe('IdentityProfileSection — empty is the normal state', () => {
   it('previews the avatar URL through the shared Avatar (fallback machinery included)', () => {
     const withAvatar = { ...EMPTY_IDENTITY, avatar: 'https://example.test/ada.png' };
     const { container } = render(
-      <IdentityProfileSection identity={withAvatar} onSave={() => Promise.resolve(view())} />,
+      <IdentityProfileSection identity={withAvatar} spaceId="sp-1" onSave={() => Promise.resolve(view())} />,
     );
     expect(
       container.querySelector('.kit-avatar__img')?.getAttribute('src'),

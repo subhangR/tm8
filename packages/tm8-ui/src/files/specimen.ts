@@ -22,8 +22,8 @@ import type { MessageBubble } from './FilesScreen';
 import type { ProviderRow } from './NodeRoom';
 import type { NodeFacts } from './port';
 
-const ADA = { displayName: 'ada', isAgent: false };
-const FORGE = { displayName: 'forge', isAgent: true };
+const ADA = { id: 'actor-ada', displayName: 'ada', isAgent: false };
+const FORGE = { id: 'actor-forge', displayName: 'forge', isAgent: true };
 
 /** L42–L64: the three queue phases, in the oracle's own order. */
 export const SPECIMEN_QUEUE: readonly UploadItem[] = [
@@ -61,6 +61,7 @@ export const SPECIMEN_CHIP_FILES: readonly FileRow[] = [
 ];
 
 export const SPECIMEN_BUBBLE: MessageBubble = {
+  authorId: ADA.id,
   authorName: 'ada',
   authorIsAgent: false,
   meta: 'to this session · 2m',

@@ -208,6 +208,12 @@ const APP = <div data-testid="the-app">THE APP</div>;
 /** The acceptance loop's own vocabulary, so a rename cannot silently pass. */
 const NAME = 'amber';
 const PASSWORD = 'correct-horse';
+const DISPLAY_ACTOR = {
+  id: 'm-amber',
+  kind: 'member' as const,
+  displayName: 'amber',
+  isAgent: false,
+};
 
 async function createAccountThroughTheUI(name = NAME, password = PASSWORD) {
   fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: name } });
@@ -716,7 +722,7 @@ describe('the workspace account menu — name + logout, in the app', () => {
       const [theme, setTheme] = useState<'light' | 'dark'>('light');
       return (
         <div data-testid="the-app" data-theme={theme === 'dark' ? 'dark' : undefined}>
-          <AccountMenu theme={theme} onThemeChange={setTheme} />
+          <AccountMenu actor={DISPLAY_ACTOR} theme={theme} onThemeChange={setTheme} />
         </div>
       );
     }
@@ -733,7 +739,7 @@ describe('the workspace account menu — name + logout, in the app', () => {
     function AppWithMenu() {
       return (
         <div data-testid="the-app">
-          <AccountMenu />
+          <AccountMenu actor={DISPLAY_ACTOR} />
         </div>
       );
     }
@@ -769,7 +775,7 @@ describe('the workspace account menu — name + logout, in the app', () => {
     function AppWithMenu() {
       return (
         <div data-testid="the-app">
-          <AccountMenu />
+          <AccountMenu actor={DISPLAY_ACTOR} />
         </div>
       );
     }

@@ -325,9 +325,11 @@ function Row({
       <span className={row.unread ? 'ibx-dot' : 'ibx-dot ibx-dot--off'} aria-hidden />
       {row.actor ? (
         <Avatar
+          actorId={row.actor.id}
           provenance={row.actor.isAgent ? 'agent' : 'human'}
           label={row.actor.label}
           size={20}
+          src={row.actor.avatar ?? null}
         />
       ) : (
         <span className="ibx-glyph" aria-hidden>

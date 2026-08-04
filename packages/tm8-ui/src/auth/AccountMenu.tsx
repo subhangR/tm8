@@ -9,15 +9,20 @@
  * This is the T3-3 surface (oracle 1p) as an anchored popover, sharing the
  * frame's markup and grammar. The differences from the standalone 1p frame are
  * only the ones the situation forces: it is anchored rather than staged. The
- * identity line names the SERVER account the gate signed into — the node
- * vouched for it at auth.login, so saying so borrows no authority.
+ * face and display name are the active space actor; the handle and sign-out
+ * verb remain the LOCAL login account. Keeping those two identities explicit
+ * avoids borrowing server authority for a browser-local credential.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { ActorSummary } from '@tm8/contract';
+import { Avatar } from '../kit';
 import { useTheme, type Theme } from '../theme/useTheme';
 import { useAuthActions } from './gate-context';
 import { ACCOUNT_MENU } from './specimen';
 
 export interface AccountMenuProps {
+  /** Display actor in the active space; distinct from the local login account. */
+  actor: ActorSummary;
   /** Open the full T3-3 screen. Omitted ⇒ the row is not offered. */
   onOpenAccountScreen?: () => void;
   /** Controlled by the workspace so changing Appearance updates the same
@@ -27,10 +32,11 @@ export interface AccountMenuProps {
 }
 
 export function AccountMenu({
+  actor,
   onOpenAccountScreen,
   theme: controlledTheme,
   onThemeChange,
-}: AccountMenuProps = {}) {
+}: AccountMenuProps) {
   const actions = useAuthActions();
   const localTheme = useTheme();
   const theme = controlledTheme ?? localTheme.theme;
@@ -66,8 +72,7 @@ export function AccountMenu({
   if (!actions?.account) return null;
 
   const account = actions.account;
-  const name = account.displayName || account.handle;
-  const initial = name.trim()[0]?.toUpperCase() ?? '?';
+  const name = actor.displayName;
 
   return (
     <div className="auth-accountmenu" ref={wrapRef}>
@@ -79,9 +84,14 @@ export function AccountMenu({
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="auth-avatar auth-avatar--sm" aria-hidden>
-          {initial}
-        </span>
+        <Avatar
+          actorId={actor.id}
+          provenance={actor.isAgent ? 'agent' : 'human'}
+          label={name}
+          size={20}
+          src={actor.avatar ?? null}
+          className="auth-avatar auth-avatar--sm"
+        />
         <span className="auth-accountmenu__name">{name}</span>
         <span className="auth-accountmenu__caret" aria-hidden>
           ▾
@@ -91,9 +101,14 @@ export function AccountMenu({
       {open ? (
         <div className="auth-menu auth-menu--anchored" role="menu" data-testid="auth-account-menu">
           <div className="auth-menu__head">
-            <span className="auth-avatar auth-avatar--lg" aria-hidden>
-              {initial}
-            </span>
+            <Avatar
+              actorId={actor.id}
+              provenance={actor.isAgent ? 'agent' : 'human'}
+              label={name}
+              size={32}
+              src={actor.avatar ?? null}
+              className="auth-avatar auth-avatar--lg"
+            />
             <div className="auth-server__text">
               <span className="auth-menu__name">{name}</span>
               {/* The node vouched for this account at sign-in; the line may

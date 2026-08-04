@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { SessionLiveness } from '../data/seam';
+import { Avatar } from '../kit';
 import {
   presentSession,
   presentationStyle,
@@ -165,22 +166,26 @@ function RosterRow({
     .filter(Boolean)
     .join(' ');
 
-  const avatarCls = [
-    'roster__avatar',
-    tint ? 'roster__avatar--attention' : '',
-    s.isLive ? '' : 'roster__avatar--ended',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   const wordCls = `roster__word roster__word--${wordVariant(presentation)}`;
 
   return (
     <button type="button" role="menuitem" className={cls} onClick={() => onSelect?.(row.id)}>
       <span className={dotCls} aria-hidden />
-      <span className={avatarCls} aria-hidden>
-        {(row.initial ?? row.name.charAt(0)).toUpperCase()}
-      </span>
+      {row.actor ? (
+        <Avatar
+          actorId={row.actor.id}
+          provenance={row.actor.isAgent ? 'agent' : 'human'}
+          label={row.actor.displayName}
+          initials={row.initial}
+          size={22}
+          src={row.actor.avatar ?? null}
+          className={[
+            'roster__avatar',
+            tint ? 'roster__avatar--attention' : '',
+            s.isLive ? '' : 'roster__avatar--ended',
+          ].filter(Boolean).join(' ')}
+        />
+      ) : null}
       <span className={s.isLive ? 'roster__name' : 'roster__name roster__name--ended'}>
         {row.name}
       </span>

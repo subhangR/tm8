@@ -399,6 +399,7 @@ const ROWS: readonly KindConfig[] = [
         anatomy: 'session-tree',
         badges: [
           { source: 'sessionStatus' },
+          { source: 'createdBy' },
           { source: 'agentTool' },
           { source: 'model' },
           { source: 'shareMode' },
@@ -576,7 +577,7 @@ const ROWS: readonly KindConfig[] = [
     card: { fields: ['memberRole', 'score', 'taskDoneCount'] },
     list: baseList({
       quickCreate: false,
-      tile: { badges: [{ source: 'memberRole' }, { source: 'score' }, { source: 'taskDoneCount' }] },
+      tile: { badges: [{ source: 'entityActor' }, { source: 'memberRole' }, { source: 'score' }, { source: 'taskDoneCount' }] },
     }),
     panel: {
       archetype: 'profile',
@@ -619,7 +620,7 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
-      tile: { badges: [{ source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
+      tile: { badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
     }),

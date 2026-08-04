@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import type { EntityId, FeedItem, MessageView } from '@tm8/contract';
+import type { ActorSummary, EntityId, FeedItem, MessageView } from '@tm8/contract';
 import { Avatar, Pill } from '../kit';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import {
@@ -112,11 +112,12 @@ function FeedRow({
  * rows: the timestamp, so every row still answers "when" without a byline.
  */
 function Gutter({ item, clustered }: { item: FeedItem; clustered: boolean }) {
-  if (item.itemKind === 'message' && !clustered && !item.message.state.redactedAt) {
+  if (item.itemKind === 'message' && !clustered) {
     const author = item.message.state.author ?? item.message.createdBy;
     return (
       <div className="chs-gutter">
         <Avatar
+          actorId={author.id}
           provenance={author?.isAgent ? 'agent' : 'human'}
           label={author?.displayName ?? 'unknown'}
           size={32}
@@ -624,7 +625,7 @@ function ParentPreview({
   onOpenEntity?: (id: EntityId) => void;
   onFocusMessage?: (id: EntityId) => void;
 }) {
-  const author = parent?.state.author?.displayName ?? parent?.createdBy?.displayName ?? null;
+  const author = parent?.state.author ?? parent?.createdBy ?? null;
   const preview = parent
     ? parent.state.redactedAt
       ? 'redacted message'
@@ -634,7 +635,7 @@ function ParentPreview({
     <>
       <span aria-hidden className="chs-parent__glyph">↩</span>
       <span className="chs-parent__label">in reply to</span>
-      {author ? <span className="chs-parent__author">{author}</span> : null}
+      {author ? <InlineActor actor={author} className="chs-parent__author" /> : null}
       <span className="chs-parent__excerpt">{preview}</span>
     </>
   );
@@ -690,9 +691,9 @@ function ActivityContent({
         <strong className="chs-artifact__title">{entity.title}</strong>
         {entity.excerpt ? <span className="chs-artifact__excerpt">{entity.excerpt}</span> : null}
         <span className="chs-artifact__provenance">
-          {`${presentation.verb} by ${item.actor?.displayName ?? 'unknown'}${
-            item.sourceWorkSessionId ? ` · session ${item.sourceWorkSessionId}` : ''
-          }`}
+          <span>{`${presentation.verb} by `}</span>
+          {item.actor ? <InlineActor actor={item.actor} /> : <span>unknown</span>}
+          {item.sourceWorkSessionId ? <span>{` · session ${item.sourceWorkSessionId}`}</span> : null}
         </span>
         {handlers.onOpenEntity ? (
           <button
@@ -712,7 +713,7 @@ function ActivityContent({
     return (
       <p className="chs-state" data-testid="chs-state">
         <span aria-hidden className="chs-state__dot" />
-        {item.actor ? <span className="chs-state__actor">{item.actor.displayName}</span> : null}
+        {item.actor ? <InlineActor actor={item.actor} className="chs-state__actor" /> : null}
         <span className="chs-state__verb">{presentation.label}</span>
         {presentation.from ? (
           <>
@@ -730,7 +731,7 @@ function ActivityContent({
       <p className="chs-state chs-state--event" data-testid="chs-event">
         <span aria-hidden className="chs-state__dot" />
         <span className="chs-state__verb">{presentation.label}</span>
-        {item.actor ? <span>{`by ${item.actor.displayName}`}</span> : null}
+        {item.actor ? <InlineActor actor={item.actor} prefix="by " /> : null}
       </p>
     );
   }
@@ -742,7 +743,7 @@ function ActivityContent({
       </span>
       <span className="chs-unknown__label">unknown activity</span>
       <span className="chs-unknown__variant">{activity.verb}</span>
-      {item.actor ? <span className="chs-unknown__actor">{item.actor.displayName}</span> : null}
+      {item.actor ? <InlineActor actor={item.actor} className="chs-unknown__actor" /> : null}
       <span className="chs-byline__gap" />
       <OpenDetails id={activity.entityId ?? item.anchor?.id ?? null} onOpenEntity={handlers.onOpenEntity} />
     </div>
@@ -790,7 +791,7 @@ function OpenDetails({ id, onOpenEntity }: { id: EntityId | null; onOpenEntity?:
 function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operation' }> }) {
   const [open, setOpen] = useState(false);
   const head = group.items[0];
-  const actor = head.actor?.displayName ?? 'someone';
+  const actor = head.actor;
   return (
     <li className="chs-row chs-row--activity">
       <article className="chs-row__grid">
@@ -808,7 +809,8 @@ function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operat
             <span aria-hidden className="chs-group__glyph">
               ⇄
             </span>
-            <span className="chs-group__text">{`${actor} changed ${group.items.length} records`}</span>
+            {actor ? <InlineActor actor={actor} /> : <span className="chs-group__text">someone</span>}
+            <span className="chs-group__text">{`changed ${group.items.length} records`}</span>
             <button
               type="button"
               className="chs-chip-btn"
@@ -831,5 +833,30 @@ function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operat
         </div>
       </article>
     </li>
+  );
+}
+
+/** One compact actor spelling for every activity/reply variant. */
+function InlineActor({
+  actor,
+  prefix = '',
+  className = '',
+}: {
+  actor: ActorSummary;
+  prefix?: string;
+  className?: string;
+}) {
+  return (
+    <span className={`chs-inline-actor ${className}`.trim()}>
+      {prefix ? <span>{prefix}</span> : null}
+      <Avatar
+        actorId={actor.id}
+        provenance={actor.isAgent ? 'agent' : 'human'}
+        label={actor.displayName}
+        size={15}
+        src={actor.avatar ?? null}
+      />
+      <span>{actor.displayName}</span>
+    </span>
   );
 }

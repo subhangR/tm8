@@ -158,7 +158,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
             <span className="sb-actor" key={actor.id}>
               {/* Shape IS provenance (kit law): humans round, agents rounded-
                   square. The oracle's ◯ is that same round mark for a human. */}
-              <Avatar provenance={actor.isAgent ? 'agent' : 'human'} label={actor.displayName} size={15} />
+              <Avatar actorId={actor.id} provenance={actor.isAgent ? 'agent' : 'human'} label={actor.displayName} size={15} src={actor.avatar ?? null} />
               <span className="sb-grid__strong">@{actor.displayName}</span>
             </span>
           ))}
@@ -429,7 +429,7 @@ function RunRow({
         className={`sb-run__dot${treatment?.dot === 'solid' ? ` sb-run__dot--${treatment.tone}` : ' sb-run__dot--none'}`}
         aria-hidden
       />
-      <Avatar provenance={run.createdBy.isAgent ? 'agent' : 'human'} label={run.createdBy.displayName} size={15} />
+      <Avatar actorId={run.createdBy.id} provenance={run.createdBy.isAgent ? 'agent' : 'human'} label={run.createdBy.displayName} size={15} src={run.createdBy.avatar ?? null} />
       <span className="sb-run__name">{run.title}</span>
       {model ? <span className="sb-run__meta">{model}</span> : null}
       <span className="sb-run__spacer" />

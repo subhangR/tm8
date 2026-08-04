@@ -57,8 +57,10 @@ import {
 export type DownloadHref = (fileEntityId: string) => string | null;
 
 export interface MessageBubble {
+  authorId: string;
   authorName: string;
   authorIsAgent: boolean;
+  authorAvatar?: string | null;
   /** The oracle's "to this session · 2m" — supplied whole, never assembled. */
   meta: string;
   body: string;
@@ -305,9 +307,11 @@ function AttachmentsCard({
         <div className="fn-bubble" data-testid="message-bubble">
           <div className="fn-bubble__head">
             <Avatar
+              actorId={bubble.authorId}
               provenance={bubble.authorIsAgent ? 'agent' : 'human'}
               label={bubble.authorName}
               size={15}
+              src={bubble.authorAvatar ?? null}
             />
             <span className="fn-bubble__author">@{bubble.authorName}</span>
             <span className="fn-bubble__meta">{bubble.meta}</span>
@@ -423,9 +427,7 @@ function FileListRow({
   downloadHref?: DownloadHref;
   onPreview: (file: FileRow) => void;
 }) {
-  const meta = [formatSizeChip(file.sizeBytes), file.attributedTo ? `@${file.attributedTo.displayName}` : null]
-    .filter(Boolean)
-    .join(' · ');
+  const size = formatSizeChip(file.sizeBytes);
 
   return (
     <div className="fn-frow" data-testid="file-row" data-missing={file.sourceMissing ? 'true' : undefined}>
@@ -443,7 +445,22 @@ function FileListRow({
         <span className="fn-frow__missing">{failureWord('missing').word}</span>
       ) : (
         <>
-          <span className="fn-frow__meta">{meta}</span>
+          <span className="fn-frow__meta">
+            {size ? <span>{size}</span> : null}
+            {size && file.attributedTo ? <span aria-hidden> · </span> : null}
+            {file.attributedTo ? (
+              <span className="fn-frow__actor">
+                <Avatar
+                  actorId={file.attributedTo.id}
+                  provenance={file.attributedTo.isAgent ? 'agent' : 'human'}
+                  label={file.attributedTo.displayName}
+                  size={15}
+                  src={file.attributedTo.avatar ?? null}
+                />
+                <span>{`@${file.attributedTo.displayName}`}</span>
+              </span>
+            ) : null}
+          </span>
           <DownloadControl file={file} downloadHref={downloadHref} compact />
         </>
       )}

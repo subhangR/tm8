@@ -138,7 +138,7 @@ describe('model — rows from contract shapes', () => {
   it('reads a file row off a file entity’s own state', () => {
     const row = rowFromEntity(fileEntity);
     expect(row).toMatchObject({ fileEntityId: 'f1', name: 'shot.png', sizeBytes: 340 });
-    expect(row?.attributedTo).toEqual({ displayName: 'ada', isAgent: false });
+    expect(row?.attributedTo).toMatchObject({ id: 'a', displayName: 'ada', isAgent: false });
   });
 
   it('returns null for an entity that is not a file — no kind literal involved', () => {

@@ -16,7 +16,7 @@
  * the failure vocabulary is closed. `failureWord()` below returns one of
  * exactly three strings and has no default branch that could invent a fourth.
  */
-import type { EntityDetail, EntitySummary, FileAttachment, MessageView } from '@tm8/contract';
+import type { ActorSummary, EntityDetail, EntitySummary, FileAttachment, MessageView } from '@tm8/contract';
 
 // ---------------------------------------------------------------------------
 // File type → glyph, preview capability
@@ -152,7 +152,7 @@ export interface FileRow {
    * `kit/Avatar` already encodes that law (round human / rounded-square
    * agent), so the row only has to keep the flag.
    */
-  attributedTo: { displayName: string; isAgent: boolean } | null;
+  attributedTo: Pick<ActorSummary, 'id' | 'displayName' | 'isAgent' | 'avatar'> | null;
   attributedAt: string | null;
   /**
    * The bytes are known-absent on this node. NOTHING in the contract reports
@@ -185,7 +185,12 @@ export function rowFromEntity(entity: EntitySummary): FileRow | null {
     name: state.name,
     mime: state.mimeType,
     sizeBytes: state.sizeBytes,
-    attributedTo: { displayName: entity.createdBy.displayName, isAgent: entity.createdBy.isAgent },
+    attributedTo: {
+      id: entity.createdBy.id,
+      displayName: entity.createdBy.displayName,
+      isAgent: entity.createdBy.isAgent,
+      avatar: entity.createdBy.avatar,
+    },
     attributedAt: entity.createdAt,
     sourceMissing: false,
   };
@@ -206,8 +211,10 @@ export function rowFromAttachment(
     mime: attachment.mime,
     sizeBytes: null,
     attributedTo: {
+      id: message.state.author.id,
       displayName: message.state.author.displayName,
       isAgent: message.state.author.isAgent,
+      avatar: message.state.author.avatar,
     },
     attributedAt: message.createdAt,
     sourceMissing: false,

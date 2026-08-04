@@ -253,7 +253,7 @@ function IdentityBlock({ detail, params }: { detail: EntityDetail; params: Param
       {/* 32 is the kit's largest declared size; the oracle draws 40 here.
           Stated as a divergence in the handover rather than fixed silently —
           `AvatarSize` is a closed union in kit/Avatar.tsx, another lane's file. */}
-      <Avatar provenance={provenance} label={detail.title} size={32} />
+      <Avatar actorId={detail.id} provenance={provenance} label={detail.title} size={32} />
       <div className="pn-profile__identity-text">
         <div className="pn-profile__name">
           <span className="pn-profile__name-text">{detail.title}</span>
@@ -358,7 +358,13 @@ function FieldValue({ value, label }: { value: unknown; label: string }) {
   if (isActor(value)) {
     return (
       <span className="pn-profile__actor">
-        <span aria-hidden>{value.isAgent === true ? '◇' : '◯'}</span>
+        <Avatar
+          actorId={value.id}
+          provenance={value.isAgent === true ? 'agent' : 'human'}
+          label={value.displayName}
+          size={15}
+          src={value.avatar ?? null}
+        />
         {`@${value.displayName}`}
       </span>
     );
@@ -731,8 +737,9 @@ function scalar(value: unknown): string | null {
   return null;
 }
 
-function isActor(value: unknown): value is { displayName: string; isAgent?: boolean } {
-  return typeof record(value).displayName === 'string';
+function isActor(value: unknown): value is { id: string; displayName: string; isAgent?: boolean; avatar?: string | null } {
+  const bag = record(value);
+  return typeof bag.id === 'string' && typeof bag.displayName === 'string';
 }
 
 function isSummary(value: unknown): value is EntitySummary {
