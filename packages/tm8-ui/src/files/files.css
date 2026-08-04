@@ -433,11 +433,15 @@
 }
 
 .cv2-root .fn-frow__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-family: var(--pn-mono);
   font-size: 8.5px; /* L84 */
   color: var(--pn-ink-4);
   white-space: nowrap;
 }
+.cv2-root .fn-frow__actor { display: inline-flex; align-items: center; gap: 4px; }
 
 .cv2-root .fn-frow__missing {
   font-family: var(--pn-mono);

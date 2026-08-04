@@ -82,6 +82,8 @@ export type TileBadgeSource =
   | 'workingAgents'
   | 'docFormat'
   | 'childCount'
+  | 'entityActor'
+  | 'createdBy'
   | 'memberRole'
   | 'score'
   | 'taskDoneCount'

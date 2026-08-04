@@ -177,6 +177,7 @@ function MessageRow({
   return (
     <article className={`pn-msg${replyTo ? ' pn-msg--reply' : ''}`} data-message-id={message.id}>
       <Avatar
+        actorId={author.id}
         provenance={isAgent ? 'agent' : 'human'}
         label={author.displayName}
         size={22}
@@ -402,6 +403,15 @@ export function ActivityTab({ items }: { items: readonly ActivityItem[] }) {
           {items.map((item) => (
             <li className="pn-activity__row" key={item.id}>
               <span className={`pn-activity__dot pn-activity__dot--${verbTone(item.verb)}`} aria-hidden />
+              {item.actor ? (
+                <Avatar
+                  actorId={item.actor.id}
+                  provenance={item.actor.isAgent ? 'agent' : 'human'}
+                  label={item.actor.displayName}
+                  size={20}
+                  src={item.actor.avatar ?? null}
+                />
+              ) : null}
               <span className="pn-activity__text">
                 {`${item.actor?.displayName ?? 'someone'} ${humanizeVerb(item.verb)}`}
               </span>

@@ -10,7 +10,7 @@
  * wrong: the badge is computed in SQL over the full table, while this sees only
  * the page it was handed.
  */
-import type { AttentionRequest, EntityId } from '@tm8/contract';
+import type { ActorSummary, AttentionRequest, EntityId } from '@tm8/contract';
 
 /** One entity's combined attention, shaped like `EntityAttentionSummary`. */
 export interface AttentionEntityGroup {
@@ -23,6 +23,8 @@ export interface AttentionEntityGroup {
   maxPoints: number;
   /** Reason of the most recently created request. */
   latestReason: string;
+  /** Requester paired with latestReason; never inferred from another row. */
+  latestRequester: ActorSummary;
   /** When the entity FIRST started waiting — the honest age of the wait. */
   oldestRequestedAt: string;
 }
@@ -47,6 +49,7 @@ export function groupAttentionByEntity(
         totalPoints: row.points,
         maxPoints: row.points,
         latestReason: row.reason,
+        latestRequester: row.requestedBy,
         oldestRequestedAt: row.createdAt,
         latestAt: row.createdAt,
       });
@@ -60,6 +63,7 @@ export function groupAttentionByEntity(
     if (row.createdAt > existing.latestAt) {
       existing.latestAt = row.createdAt;
       existing.latestReason = row.reason;
+      existing.latestRequester = row.requestedBy;
     }
     if (row.createdAt < existing.oldestRequestedAt) existing.oldestRequestedAt = row.createdAt;
   }

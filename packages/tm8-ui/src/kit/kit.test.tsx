@@ -40,8 +40,8 @@ describe('kit primitives', () => {
   });
 
   it('Avatar shape follows provenance: humans round, agents rounded-square', () => {
-    const human = render(<Avatar provenance="human" label="Ada" size={22} />);
-    const agent = render(<Avatar provenance="agent" label="forge" size={22} />);
+    const human = render(<Avatar actorId="actor-ada" provenance="human" label="Ada" size={22} />);
+    const agent = render(<Avatar actorId="actor-forge" provenance="agent" label="forge" size={22} />);
     expect(human.container.querySelector('.kit-avatar--human')).not.toBeNull();
     expect(agent.container.querySelector('.kit-avatar--agent')).not.toBeNull();
     // shape is never the only carrier — the display name is the accessible name
@@ -50,7 +50,7 @@ describe('kit primitives', () => {
   });
 
   it('Avatar defaults initials to the first character, uppercased', () => {
-    const { container } = render(<Avatar provenance="agent" label="forge" size={15} />);
+    const { container } = render(<Avatar actorId="actor-forge" provenance="agent" label="forge" size={15} />);
     expect(container.textContent).toBe('F');
     expect(container.querySelector('.kit-avatar--mono')).not.toBeNull();
   });

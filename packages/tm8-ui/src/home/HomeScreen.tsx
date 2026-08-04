@@ -33,7 +33,7 @@
 import { useMemo, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { DisabledAction, DisabledIconControl, type UnavailableReason } from '../panels';
-import { Eyebrow, Kbd } from '../kit';
+import { Avatar, Eyebrow, Kbd } from '../kit';
 import { useMeasuredWidth } from '../shell';
 import { homeActivityLoadEarlierReason } from '../fixtures';
 import { assignableKinds, composeMyWork, type HomeRow, type HomeSection } from './home-model';
@@ -292,6 +292,15 @@ export function HomeScreen(props: HomeScreenProps) {
                       <span className="hm-act__text">
                         {row.actor ? (
                           <>
+                            {row.actorId ? (
+                              <Avatar
+                                actorId={row.actorId}
+                                provenance={row.isAgent ? 'agent' : 'human'}
+                                label={row.actor}
+                                size={20}
+                                src={row.actorAvatar ?? null}
+                              />
+                            ) : null}
                             <span className="hm-act__actor">{row.actor}</span>
                             {row.isAgent ? <span className="hm-act__agent">agent</span> : null}{' '}
                           </>
@@ -392,6 +401,15 @@ function Row({ row, onOpen }: { row: HomeRow; onOpen(id: EntityId): void }) {
       <span aria-hidden className="hm-row__glyph">
         {row.glyph}
       </span>
+      {row.actor ? (
+        <Avatar
+          actorId={row.actor.id}
+          provenance={row.actor.isAgent ? 'agent' : 'human'}
+          label={row.actor.displayName}
+          size={20}
+          src={row.actor.avatar ?? null}
+        />
+      ) : null}
       <span className="hm-row__title">{row.title}</span>
       {row.word ? (
         <span className="hm-row__word" data-tone={row.tone}>

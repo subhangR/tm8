@@ -361,6 +361,7 @@ export function EntityView(props: EntityViewProps) {
         <EntityListPanel
           kind={kind}
           rowsFor={data.rowsFor(kind) as never}
+          members={data.members}
           ctx={ctx}
           createSlot={
             config.list.quickCreate ? (

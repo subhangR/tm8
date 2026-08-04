@@ -1,4 +1,5 @@
-import { IconBtn } from '../../kit';
+import type { ActorSummary } from '@tm8/contract';
+import { Avatar, IconBtn } from '../../kit';
 
 /**
  * PANEL STATES — part of the anatomy, not per-archetype decoration (T0-4
@@ -134,7 +135,7 @@ export function TombstoneBody({
   canRestore,
   onRestore,
 }: {
-  deletedBy?: string;
+  deletedBy?: ActorSummary;
   deletedAgo?: string;
   canRestore?: boolean;
   onRestore?: () => void;
@@ -144,8 +145,21 @@ export function TombstoneBody({
       <span className="pn-state__icon pn-state__icon--dashed" aria-hidden>
         ◔
       </span>
-      <span className="pn-state__title">
-        {`Deleted${deletedBy ? ` by ${deletedBy}` : ''}${deletedAgo ? ` · ${deletedAgo}` : ''}`}
+      <span className="pn-state__title pn-state__title--actor">
+        <span>{`Deleted${deletedBy ? ' by' : ''}`}</span>
+        {deletedBy ? (
+          <>
+            <Avatar
+              actorId={deletedBy.id}
+              provenance={deletedBy.isAgent ? 'agent' : 'human'}
+              label={deletedBy.displayName}
+              size={20}
+              src={deletedBy.avatar ?? null}
+            />
+            <span>{deletedBy.displayName}</span>
+          </>
+        ) : null}
+        {deletedAgo ? <span>{` · ${deletedAgo}`}</span> : null}
       </span>
       <span className="pn-state__body">
         Tombstones keep their place in threads, rails and feeds — references to this entity stay

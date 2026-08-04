@@ -137,6 +137,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
               {assignees.slice(0, 3).map((actor) => (
                 <Avatar
                   key={actor.id}
+                  actorId={actor.id}
                   provenance={actor.isAgent ? 'agent' : 'human'}
                   label={actor.displayName}
                   /* 15, not 20 — nothing in this row may exceed the 17px that

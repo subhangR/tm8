@@ -23,6 +23,7 @@
  */
 import { useEffect, useId, useMemo, useState } from 'react';
 import type { EntityId } from '@tm8/contract';
+import { Avatar } from '../kit';
 import {
   accessModeLabel,
   agentTool,
@@ -186,7 +187,14 @@ export function LaunchSheet(props: LaunchSheetProps) {
                   setModel(t.model);
                 }}
               >
-                <span className="ls__avatar" aria-hidden="true">{t.initial}</span>
+                <Avatar
+                  actorId={t.id}
+                  provenance="agent"
+                  label={t.name}
+                  initials={t.initial}
+                  size={22}
+                  className="ls__avatar"
+                />
                 <span className="ls__rowtext">
                   <span className="ls__rowname">{t.name}</span>
                   {/* Model is the row's SUBTITLE, not a fourth section — D51's

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { EntityId, MessageView } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
+import { Avatar } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import type { ChannelPostInput } from './feed-model';
 import type { ComposerMentionOption } from './channel-tags';
@@ -148,6 +149,7 @@ export function Composer({
     ? Math.min(mentionActive, availableMentionOptions.length - 1)
     : 0;
   const activeMentionOption = availableMentionOptions[mentionActiveIndex];
+  const replyAuthor = replyTo ? (replyTo.state.author ?? replyTo.createdBy) : null;
 
   const closeMentionPicker = (): void => {
     setMentionOpen(false);
@@ -377,6 +379,15 @@ export function Composer({
 
       {replyTo ? (
         <div className="chs-replying" data-testid="chs-replying">
+          {replyAuthor ? (
+            <Avatar
+              actorId={replyAuthor.id}
+              provenance={replyAuthor.isAgent ? 'agent' : 'human'}
+              label={replyAuthor.displayName}
+              size={20}
+              src={replyAuthor.avatar ?? null}
+            />
+          ) : null}
           <span className="chs-replying__label">
             {`REPLYING TO ${replyTo.state.author?.displayName ?? replyTo.createdBy?.displayName ?? 'message'}`}
           </span>
@@ -438,6 +449,7 @@ export function Composer({
         <ul className="chs-mention-list" aria-label="Mentioned people and session targets">
           {selectedMentions.map((mention) => (
             <li key={mention.id}>
+              <MentionFace option={mention} />
               <span>{`@${mention.display}`}</span>
               <button
                 type="button"
@@ -502,7 +514,10 @@ export function Composer({
                 onMouseEnter={() => setAttachActive(index)}
                 onClick={() => selectAttachOption(option)}
               >
-                <span className="chs-mention-picker__name">{option.display}</span>
+                <span className="chs-mention-picker__identity">
+                  <MentionFace option={option} />
+                  <span className="chs-mention-picker__name">{option.display}</span>
+                </span>
                 <span className="chs-mention-picker__meta">{option.meta ?? option.group ?? option.kind}</span>
               </button>
             ))}
@@ -541,7 +556,10 @@ export function Composer({
                 onMouseEnter={() => setMentionActive(index)}
                 onClick={() => selectMention(option)}
               >
-                <span className="chs-mention-picker__name">{option.display}</span>
+                <span className="chs-mention-picker__identity">
+                  <MentionFace option={option} />
+                  <span className="chs-mention-picker__name">{option.display}</span>
+                </span>
                 <span className="chs-mention-picker__meta">
                   {option.meta ?? option.group ?? (option.kind === 'team_member' ? 'agent' : 'member')}
                 </span>
@@ -708,6 +726,19 @@ export function Composer({
         <span>Enter sends · Shift+Enter newline</span>
       </p>
     </div>
+  );
+}
+
+/** Task/doc/session options are entities; only member rows carry actor faces. */
+function MentionFace({ option }: { option: ComposerMentionOption }) {
+  if (option.kind !== 'member' && option.kind !== 'team_member') return null;
+  return (
+    <Avatar
+      actorId={option.id}
+      provenance={option.kind === 'team_member' ? 'agent' : 'human'}
+      label={option.display}
+      size={20}
+    />
   );
 }
 

@@ -142,27 +142,10 @@ export function GateApp(props: GateAppProps = {}) {
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
   const contentSurface = useNavStore((s) => s.contentSurface);
-  const [viewerMemberId, setViewerMemberId] = useState<string | null>(null);
-
-  // Surface preferences are member+session scoped. Identity is a read-only
-  // browser fact; it does not participate in provider/model launch selection.
-  useEffect(() => {
-    let active = true;
-    if (!data.spaceId) {
-      setViewerMemberId(null);
-      return () => { active = false; };
-    }
-    void data.seam.identity().then((identity) => {
-      if (!active) return;
-      setViewerMemberId(
-        identity.memberships.find((membership) => membership.spaceId === data.spaceId)?.memberId
-          ?? identity.identityId,
-      );
-    }).catch(() => {
-      if (active) setViewerMemberId(null);
-    });
-    return () => { active = false; };
-  }, [data.seam, data.spaceId]);
+  // Hydration resolves the active-space display actor through the same
+  // identity read that supplies the account face. Reuse its canonical member
+  // id here: a second resolver/read would let the two surfaces disagree.
+  const viewerMemberId = data.viewerActor?.id ?? null;
 
   // D44/D51 launch sheet. Transient client state — never the URL (§11), so a
   // shared link cannot open someone else's half-configured spawn surface.
@@ -403,7 +386,9 @@ export function GateApp(props: GateAppProps = {}) {
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
           accountSlot={
-            authAccount ? <AccountMenu theme={theme} onThemeChange={setTheme} /> : undefined
+            authAccount && data.viewerActor ? (
+              <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
+            ) : undefined
           }
         />
 

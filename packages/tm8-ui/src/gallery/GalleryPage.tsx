@@ -3,7 +3,9 @@ import type { EntitySummary } from '@tm8/contract';
 import { Avatar, Chip, Eyebrow, HRule, IconBtn, Kbd, Pill, VRule, type PillTone } from '../kit';
 import {
   authoredFromHollowReason,
+  ada,
   fixtureSummaries,
+  forge,
   homeActivityLoadEarlierReason,
   homeActivityPage,
   presenceHollowReason,
@@ -82,7 +84,7 @@ function FixtureStrip() {
           {(s.badges.pulls ?? []).some((p) => p.contentStale || p.discussionMoved) ? <Pill tone="wait">◌ delivery</Pill> : null}
           {(s.badges.workingActors ?? []).length > 0 ? <Pill tone="run" dot="pulse">live</Pill> : null}
           <Pill tone={statusTone(s)}>{statusWord(s)}</Pill>
-          <Avatar provenance={s.createdBy.isAgent ? 'agent' : 'human'} label={s.createdBy.displayName} size={15} />
+          <Avatar actorId={s.createdBy.id} provenance={s.createdBy.isAgent ? 'agent' : 'human'} label={s.createdBy.displayName} size={15} />
         </div>
       ))}
     </div>
@@ -149,11 +151,11 @@ function ThemePane({ theme }: { theme: 'light' | 'dark' }) {
 
         <Section title="Avatar · shape is provenance">
           {([15, 20, 22, 32] as const).map((n) => (
-            <Avatar key={`h${n}`} provenance="human" label="Ada" size={n} />
+            <Avatar key={`h${n}`} actorId={ada.id} provenance="human" label={ada.displayName} size={n} />
           ))}
           <VRule height={18} />
           {([15, 20, 22, 32] as const).map((n) => (
-            <Avatar key={`a${n}`} provenance="agent" label="forge" size={n} />
+            <Avatar key={`a${n}`} actorId={forge.id} provenance="agent" label={forge.displayName} size={n} />
           ))}
         </Section>
 

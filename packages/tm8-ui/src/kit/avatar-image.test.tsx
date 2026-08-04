@@ -15,19 +15,19 @@ import { Avatar } from './Avatar';
 
 describe('Avatar image layering', () => {
   it('renders NO img without a src — the monogram is the base state', () => {
-    const { container } = render(<Avatar provenance="human" label="Ada Osei" />);
+    const { container } = render(<Avatar actorId="actor-ada" provenance="human" label="Ada Osei" />);
     expect(container.querySelector('.kit-avatar__img')).toBeNull();
     expect(container.querySelector('.kit-avatar')?.textContent).toBe('A');
   });
 
   it('null src is the same as no src (every profile row today)', () => {
-    const { container } = render(<Avatar provenance="human" label="Ada Osei" src={null} />);
+    const { container } = render(<Avatar actorId="actor-ada" provenance="human" label="Ada Osei" src={null} />);
     expect(container.querySelector('.kit-avatar__img')).toBeNull();
   });
 
   it('layers the image over a still-painted monogram when a URL exists', () => {
     const { container } = render(
-      <Avatar provenance="human" label="Ada Osei" src="https://example.test/ada.png" />,
+      <Avatar actorId="actor-ada" provenance="human" label="Ada Osei" src="https://example.test/ada.png" />,
     );
     const img = container.querySelector('.kit-avatar__img');
     expect(img?.getAttribute('src')).toBe('https://example.test/ada.png');
@@ -38,7 +38,7 @@ describe('Avatar image layering', () => {
 
   it('falls back to the monogram when the image errors (broken/404 URL)', () => {
     const { container } = render(
-      <Avatar provenance="human" label="Ada Osei" src="https://example.test/404.png" />,
+      <Avatar actorId="actor-ada" provenance="human" label="Ada Osei" src="https://example.test/404.png" />,
     );
     const img = container.querySelector('.kit-avatar__img')!;
     fireEvent.error(img);
@@ -48,16 +48,33 @@ describe('Avatar image layering', () => {
 
   it('keeps provenance shape class with an image — shape survives the photo', () => {
     const { container } = render(
-      <Avatar provenance="agent" label="Haiku" src="https://example.test/a.png" />,
+      <Avatar actorId="actor-haiku" provenance="agent" label="Haiku" src="https://example.test/a.png" />,
     );
     expect(container.querySelector('.kit-avatar--agent')).not.toBeNull();
   });
 
   it('accessible name stays the actor label, image stays decorative', () => {
     const { getByRole, container } = render(
-      <Avatar provenance="human" label="Ada Osei" src="https://example.test/ada.png" />,
+      <Avatar actorId="actor-ada" provenance="human" label="Ada Osei" src="https://example.test/ada.png" />,
     );
     getByRole('img', { name: 'Ada Osei' });
     expect(container.querySelector('.kit-avatar__img')?.getAttribute('alt')).toBe('');
+    expect(container.querySelector('.kit-avatar__img')?.getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  it('derives colour from actor id, never the mutable display name', () => {
+    const first = render(<Avatar actorId="actor-ada" provenance="human" label="Ada Osei" />);
+    const renamed = render(<Avatar actorId="actor-ada" provenance="human" label="Ada Mensah" />);
+    expect(first.container.querySelector('.kit-avatar')?.getAttribute('data-avatar-tone')).toBe(
+      renamed.container.querySelector('.kit-avatar')?.getAttribute('data-avatar-tone'),
+    );
+  });
+
+  it('gives different stable actor ids distinct palette tones', () => {
+    const ada = render(<Avatar actorId="actor-ada" provenance="human" label="Ada" />);
+    const noor = render(<Avatar actorId="actor-noor" provenance="human" label="Noor" />);
+    expect(ada.container.querySelector('.kit-avatar')?.getAttribute('data-avatar-tone')).not.toBe(
+      noor.container.querySelector('.kit-avatar')?.getAttribute('data-avatar-tone'),
+    );
   });
 });

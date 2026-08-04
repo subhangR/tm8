@@ -80,6 +80,21 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+.cv2-root .att-inbox__requester {
+  flex: none;
+  width: 72px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+  overflow: hidden;
+}
+.cv2-root .att-inbox__requester > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .cv2-root .att-inbox__body {
   display: flex;

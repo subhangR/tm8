@@ -20,6 +20,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
+  ActorSummary,
   AttentionRequestMutationResult,
   CollectionQuery,
   CommandResult,
@@ -263,6 +264,10 @@ export interface GateData {
   ready: boolean;
   spaceId: SpaceId;
   spaces: SpaceSummary[];
+  /** Real membership of the active space, never inferred from result authors. */
+  members: readonly ActorSummary[];
+  /** The active identity's member actor in this space, when one is bound. */
+  viewerActor: ActorSummary | null;
   menu: ResolvedMenu;
   connection: ConnectionState;
   /** Set when the first read failed — an unreachable node, honestly held. */
@@ -394,6 +399,8 @@ export function useGateData(options: GateOptions): GateData {
 
   const [ready, setReady] = useState(false);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
+  const [members, setMembers] = useState<readonly ActorSummary[]>([]);
+  const [viewerActor, setViewerActor] = useState<ActorSummary | null>(null);
   const [spaceId, setSpaceId] = useState<SpaceId>('' as SpaceId);
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
@@ -493,7 +500,7 @@ export function useGateData(options: GateOptions): GateData {
    */
   const hydrate = useCallback(
     async (space: SpaceId) => {
-      const [menuRaw, snapshot, projects, settings, , counts] = await Promise.all([
+      const [menuRaw, snapshot, projects, settings, identity, , counts] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
           setMenu(resolveMenu(undefined, error));
           return undefined;
@@ -504,6 +511,10 @@ export function useGateData(options: GateOptions): GateData {
         seam.liveness.refresh(space).catch(() => undefined),
         seam.projects(space),
         seam.spaceSettings(space),
+        // Display identity is an enhancement to boot, not an availability
+        // gate. Membership still drives the people filter when identity is
+        // unreadable; only the viewer-specific face stays absent.
+        seam.identity().catch(() => null),
         loadGraph(space),
         // SOFT-FAILS to `undefined`, like `menu` above and unlike the reads
         // that gate boot. The rail's numbers are an enhancement: a node that
@@ -523,6 +534,12 @@ export function useGateData(options: GateOptions): GateData {
         setExecutionCapacity(snapshot.capacity);
       }
       setLinkedProjects(projects);
+      // Rolling/fixture seams from before membership projection may omit the
+      // array. Treat that as unread membership, never as a fabricated actor.
+      const memberActors = (settings.members ?? []).map((member) => member.actor);
+      const viewerMemberId = identity?.memberships.find((membership) => membership.spaceId === space)?.memberId;
+      setMembers(memberActors);
+      setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
 
@@ -694,6 +711,8 @@ export function useGateData(options: GateOptions): GateData {
     setReady(false);
     setBootError(null);
     setRows({});
+    setMembers([]);
+    setViewerActor(null);
     setMenu(resolveMenu(null));
     setLiveIds([]);
     // Back to "unknown", not to `{}`: the previous space's numbers must not
@@ -1338,6 +1357,8 @@ export function useGateData(options: GateOptions): GateData {
       ready,
       spaceId,
       spaces,
+      members,
+      viewerActor,
       menu,
       connection,
       bootError,
@@ -1362,7 +1383,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

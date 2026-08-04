@@ -221,7 +221,7 @@ function LatestMessage({ messages, now }: { messages?: readonly MessageView[]; n
 
   return (
     <div className="hub-latest" data-testid="hub-latest">
-      <Avatar provenance={author.isAgent ? 'agent' : 'human'} label={author.displayName} size={22} />
+      <Avatar actorId={author.id} provenance={author.isAgent ? 'agent' : 'human'} label={author.displayName} size={22} src={author.avatar ?? null} />
       <div className="hub-latest__col">
         <div className="hub-latest__line">
           <span className="hub-latest__who">{author.displayName}</span> {latest.content.body}

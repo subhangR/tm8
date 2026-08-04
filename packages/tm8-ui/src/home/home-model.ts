@@ -32,7 +32,7 @@
  * composes the same meaning from facts BOTH implementations honour. See
  * HANDOVER.md GAPS.
  */
-import type { EntitySummary, NotificationItem } from '@tm8/contract';
+import type { ActorSummary, EntitySummary, NotificationItem } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import { allKinds, getKind } from '../domain';
 import type { KindConfig, StatusSource } from '../domain/types';
@@ -111,6 +111,8 @@ export interface HomeRow {
   word: string | null;
   tone: PillTone;
   dot: HomeDot;
+  /** Present only when this row explicitly names an actor (inbox notices). */
+  actor?: ActorSummary;
   /**
    * The long-form honest sentence for the degraded verdicts, carried on
    * `title=` so the short word never loses its explanation (D34).
@@ -381,6 +383,7 @@ export function notificationRows(items: readonly NotificationItem[] | null): Hom
         word: verb,
         tone: (n.kind === 'review_request' ? 'wait' : 'info') as PillTone,
         dot: null as HomeDot,
+        ...(n.actor ? { actor: n.actor } : {}),
       };
     });
 }
