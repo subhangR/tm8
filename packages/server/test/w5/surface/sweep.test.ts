@@ -74,6 +74,8 @@ import {
   type OperationBinding,
   type OperationName,
 } from '@tm8/contract';
+import { fileURLToPath } from 'node:url';
+
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 
@@ -286,7 +288,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 123 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 126 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -294,9 +296,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    expect(SURFACE).toHaveLength(123);
-    expect(rows).toHaveLength(123);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
+    // 123 -> 125 on 2026-08-04: projects.files.list and projects.files.attach.
+    expect(SURFACE).toHaveLength(126);
+    expect(rows).toHaveLength(126);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(126);
   });
 
   /**
@@ -339,9 +342,16 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // frames live under `node_modules/.bun/@vitest+runner/dist/`, so the
     // unscoped form went red on the test harness while the thing it was
     // actually asserting about was already correct.
+    // The repo's own package root, DERIVED from this file rather than written
+    // down. The literal that used to sit here ('/Projects/tm8/packages/') was
+    // one checkout's absolute path: anywhere else it matched nothing, and an
+    // instrument that matches nothing reports a clean bill of health for a
+    // build it never looked at. `toBeGreaterThan(0)` below is what catches
+    // that, and it is why this filter must not be a hardcoded string.
+    const packagesRoot = fileURLToPath(new URL('../../../../', import.meta.url));
     const tm8Frames = stack
       .split('\n')
-      .filter((line) => line.includes('/Projects/tm8/packages/'));
+      .filter((line) => line.includes(packagesRoot));
     expect(tm8Frames.length).toBeGreaterThan(0);
     expect(tm8Frames.filter((line) => line.includes('/dist/'))).toEqual([]);
   });

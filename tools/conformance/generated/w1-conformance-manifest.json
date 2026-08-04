@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114",
+  "catalogDigest": "sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24",
   "catalog": {
-    "total": 127,
-    "v1": 125,
+    "total": 129,
+    "v1": 127,
     "reserved": 2,
-    "http": 126,
+    "http": 128,
     "ws": 1,
-    "registerableV1Http": 124,
+    "registerableV1Http": 126,
     "methods": {
-      "GET": 47,
-      "POST": 54,
+      "GET": 48,
+      "POST": 55,
       "PATCH": 10,
       "DELETE": 8,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 50,
-      "command": 76,
+      "read": 51,
+      "command": 77,
       "stream": 1
     },
-    "uniqueNames": 127,
-    "uniqueBindings": 127
+    "uniqueNames": 129,
+    "uniqueBindings": 129
   },
   "reservedOperations": [
     "search.query",
@@ -677,6 +677,20 @@
         "source": "server-router"
       },
       {
+        "operation": "projects.files.list",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/files",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.files.attach",
+        "method": "POST",
+        "path": "/v2/projects/:projectId/files/attach",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "files.uploadInit",
         "method": "POST",
         "path": "/v2/files/uploads",
@@ -1293,7 +1307,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 96
+    "unimplementedV1Http": 98
   },
   "schemas": {
     "additive": {
@@ -2571,6 +2585,40 @@
         "intentTags": [
           "projects",
           "unlink"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.files.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.files.list",
+        "intentTags": [
+          "projects",
+          "files",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.files.attach",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.files.attach",
+        "intentTags": [
+          "projects",
+          "files",
+          "attach"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
