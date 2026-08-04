@@ -726,7 +726,15 @@ export interface CommandResult {
 }
 
 /** Common envelope on every command (§4 preamble). */
-export interface CommandContext { actorId?: EntityId; clientMutationId?: string }
+export interface CommandContext {
+  actorId?: EntityId;
+  clientMutationId?: string;
+  /**
+   * Work session that originated this command. The database authorizes the
+   * claimed session against the resolved actor before recording provenance.
+   */
+  workSessionId?: EntityId;
+}
 
 /** A node-local, named route to another tm8 Server. Credentials are a later transport concern. */
 export interface ServerConnection {

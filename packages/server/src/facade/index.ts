@@ -91,6 +91,13 @@ export interface RegisterFacadeHandlersDeps {
    * not be reached from inside the tree, so it had to be decided here.
    */
   readonly messageDelivery?: W2MessagesHandoffsServiceOptions['messageDelivery'];
+  /**
+   * Server-owned message provenance resolver. Optional because the default
+   * below covers the token-pinned case; `main.ts` overrides it with the
+   * envelope-aware resolver, which also reconciles a claimed `workSessionId`
+   * against the pinned one.
+   */
+  readonly resolveAuthoredFromWorkSessionId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromWorkSessionId'];
 }
 
 /**
@@ -158,8 +165,8 @@ export function registerFacadeHandlers(
    */
   registerW2MessagesHandoffsHandlers(registry, facade, {
     ...(deps.messageDelivery ? { messageDelivery: deps.messageDelivery } : {}),
-    resolveAuthoredFromWorkSessionId: async (ctx) =>
-      ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null,
+    resolveAuthoredFromWorkSessionId: deps.resolveAuthoredFromWorkSessionId
+      ?? (async (ctx) => (ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null)),
   });
 
   /**

@@ -88,6 +88,14 @@ export interface RealSeamOptions {
   wsUrl?: string;
   /** Page origin, used only to derive `wsUrl` when `baseUrl` is relative. */
   origin?: string;
+  /**
+   * The viewer's `tm8s_…` pass for THIS server, read per request. Absent ⇒ no
+   * Authorization header and no socket token, which a loopback node resolves
+   * to the auto-owner (T-L7). Browser WebSockets cannot set Authorization, so
+   * the same pass is put in the server's supported `token` query parameter.
+   * Supplied by the host from the per-server pass store.
+   */
+  getAuthToken?: () => string | null;
   timers?: Timers;
   now?: () => number;
   random?: () => number;
@@ -143,6 +151,11 @@ export function deriveWsUrl(baseUrl: string, origin?: string): string {
 export function createRealSeam(options: RealSeamOptions): RealSeam {
   const baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
   const onError = options.onError ?? (() => {});
+  const plainWsUrl = options.wsUrl ?? deriveWsUrl(baseUrl, options.origin);
+  const authToken = options.getAuthToken?.();
+  const wsUrl = authToken
+    ? `${plainWsUrl}${plainWsUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(authToken)}`
+    : plainWsUrl;
 
   // Late-bound so http can signal transport reachability into a manager that
   // does not exist yet — the alternative is an extra setter on http, which
@@ -153,12 +166,13 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     baseUrl,
     fetch: options.fetch,
     onTransport: (reachable) => conn?.noteTransport(reachable),
+    ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
   });
 
   const ops = createOps(http, { newClientMutationId: options.newClientMutationId });
 
   const connection = createConnectionManager({
-    wsUrl: options.wsUrl ?? deriveWsUrl(baseUrl, options.origin),
+    wsUrl,
     webSocketFactory: options.webSocketFactory,
     poll: (spaceId, since, limit) => ops.pollEvents(spaceId, since, limit),
     timers: options.timers,

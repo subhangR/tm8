@@ -57,7 +57,7 @@ export interface AccountCredentialRow {
  */
 export interface ActorScope {
   members: MemberRecord[];
-  /** Personas owned by any of `members` — the `can_act_as` set (T-L7). */
+  /** Shared personas in any space represented by `members` — the `can_act_as` set. */
   teamMembers: TeamMemberRecord[];
 }
 

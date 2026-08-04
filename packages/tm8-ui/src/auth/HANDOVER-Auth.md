@@ -6,7 +6,46 @@ Oracle: `T0-1 workspace structure review (1)/T3 Auth & Onboarding Flows.dc.html`
 
 ---
 
-## GATE UPGRADE (2026-07-29, user-ordered) — read this first
+## ⚠ SERVER-BACKED GATE (2026-08-02, Identity v2 Stage 1) — read this first
+
+**The gate is no longer browser-local.** The four operations §GAPS below asked
+for landed as v1 (`auth.signup`, `auth.login`, `auth.logout`,
+`auth.session.get`), and `session.ts` now calls them exactly as that section
+predicted: `createLocalAccount` → `createServerAccount` (signup + login),
+`signInLocal` → `signInToServer`, `signOutLocal` → `signOutOfServer`, and the
+reload check is `verifyStoredSession()` (`auth.session.get`) instead of a
+localStorage read. Nothing else in the module moved.
+
+What changed with it:
+
+- **The pass is per server** (`pass-store.ts`): `tm8s_…` tokens are stored
+  under `tm8ui.auth.passes.v1` keyed by server id (`'local'` or a
+  `server_connections` name), never globally. The seam attaches the active
+  server's pass to every request via `getAuthToken`
+  (`http.ts`/`seam-real.ts`/`useGateData`/`GateApp`).
+- **The honest-refusal copy is gone.** `AuthLocalNote` is deleted; the GATE
+  COPY in `specimen.ts`, the reasons in `reasons.ts`, and the failure copy in
+  `failures.ts` now state the real acts. `MISSING_AUTH_OPS` is renamed
+  `GATE_AUTH_OPS`.
+- **The loopback path is intact** (D1 / T-L7): requests without a pass resolve
+  server-side to the auto-owner, so first-run signup from the server's own
+  machine is authorized automatically and a single-machine install needs no
+  credential anywhere else.
+- **PBKDF2 is gone from the browser.** The password goes to the server in the
+  request body (scrypt server-side) — which is why TLS is mandatory off
+  localhost (review finding F8). No password, hash, or salt is ever stored in
+  the browser; asserted in `gate.test.tsx`.
+- **Provisioning the second account** is documented in
+  `docs/identity/PROVISION-SECOND-ACCOUNT.md` (admin `tm8 auth signup` +
+  space invite; signup stays node-admin gated by design).
+
+Sections below describe the 2026-07-29 build. Where they say the gate is
+local, THIS section supersedes them; the frame inventory, the executor
+discriminator, and the acceptance-loop structure all still stand.
+
+---
+
+## GATE UPGRADE (2026-07-29, user-ordered)
 
 Scope moved from screens to **the mandatory gate**, built to the acceptance loop verbatim. Everything in §1–§9 below still stands and still describes the seventeen frames; this section describes the gate that now wraps them.
 

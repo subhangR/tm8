@@ -1054,6 +1054,8 @@ export class SpawnService {
 
     const outcome = this.pty.kill(sessionId, true);
     this.sessionAuth.delete(sessionId);
+    // Even a failed kill must lose graph authority: a process whose lifecycle
+    // is no longer under control is the least safe process to leave credentialed.
 
     // Phase 1b — a genuine kill FAILURE must not be reported as a successful
     // exit. Ported from old maestro's own discrimination
@@ -1229,6 +1231,7 @@ export class SpawnService {
         error instanceof Error ? error : new Error(String(error)),
         { sessionId, status, sqlState },
       );
+    } finally {
     }
   };
 

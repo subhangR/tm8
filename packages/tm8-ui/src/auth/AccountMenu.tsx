@@ -111,9 +111,11 @@ export function AccountMenu({
             />
             <div className="auth-server__text">
               <span className="auth-menu__name">{name}</span>
-              {/* NOT "owner of forge". The oracle's line borrows the node's
-                  authority, and no node vouched for this account. */}
-              <span className="auth-menu__handle">@{account.handle} · local account</span>
+              {/* The node vouched for this account at sign-in; the line may
+                  say so. `isOwner` comes from the server, never inferred. */}
+              <span className="auth-menu__handle">
+                @{account.handle} · {account.isOwner ? 'owner of this server' : 'server account'}
+              </span>
             </div>
           </div>
 
@@ -172,11 +174,11 @@ export function AccountMenu({
                 </span>
                 Sign out
               </span>
-              {/* The honest scope line. The oracle's "agents keep running" is
-                  true of a SERVER sign-out; this one only clears a local
-                  record, and says the thing it actually does. */}
+              {/* The honest scope line: auth.logout revokes THIS session on
+                  the server; everything else — the account, the entities,
+                  the running agents — is untouched. */}
               <span className="auth-menu__signout-note">
-                clears the local session — your account stays on this browser
+                revokes this session on the server — agents keep running
               </span>
             </button>
           </div>

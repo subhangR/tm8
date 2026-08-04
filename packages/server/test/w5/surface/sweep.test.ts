@@ -391,10 +391,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // moving it, the same drift 067 had just reconciled. 069 (channels into
     // Home) is the second of the two.
     // 65 -> 66 on 2026-08-02: 070 (entities_select restricted-projection policy).
-    // 66 -> 69 on 2026-08-02: the pin was ALREADY red at 68 when this lane
-    // arrived — 071 and 072 landed from other lanes without moving it. 073
-    // (session launch prompts) is the third of the three.
-    expect(server.appliedMigrations.length).toBe(69);
+    // 66 -> 71 on 2026-08-04: the identity composite (072 agent session
+    // credentials, 073 shared teammate authority) merged with main's 071,
+    // 072 session io routes and 073 session launch prompts.
+    expect(server.appliedMigrations.length).toBe(71);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

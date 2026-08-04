@@ -24,23 +24,29 @@ export { AccountMenu, type AccountMenuProps } from './AccountMenu';
 export { useAuthActions, useGateSession, type AuthActions } from './gate-context';
 export { useAuthSession, type AuthSessionState, type AuthStatus } from './useAuthSession';
 export {
-  readLocalAccount,
-  readLocalAccounts,
-  findLocalAccount,
-  readLocalSession,
+  readActiveAccount,
+  readKnownAccountsHere,
+  readStoredSession,
+  verifyStoredSession,
   resetLocalAuth,
-  ACCOUNT_STORAGE_KEY,
-  ACCOUNTS_STORAGE_KEY,
-  SESSION_STORAGE_KEY,
   MIN_PASSWORD_LENGTH,
   type AuthFailure,
-  type LocalAccount,
-  type LocalSession,
+  type GateAccount,
+  type KnownAccount,
+  type ServerPass,
+  type StoredSession,
+  type SessionVerdict,
 } from './session';
+export {
+  authTokenFor,
+  readServerPass,
+  PASSES_STORAGE_KEY,
+  KNOWN_ACCOUNTS_KEY,
+} from './pass-store';
 /** DEV-ONLY review surface — all 17 frames, both themes. Never product. */
 export { AuthBoard } from './AuthBoard';
 export { ORIENTATION_STORAGE_KEY, isOrientationDismissed } from './InviteFrames';
-export { ALL_AUTH_REASONS, MISSING_AUTH_OPS } from './reasons';
+export { ALL_AUTH_REASONS, GATE_AUTH_OPS } from './reasons';
 export type {
   AuthFlowName,
   AuthFlowProps,

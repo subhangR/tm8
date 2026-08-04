@@ -66,6 +66,18 @@ export type WorkdirMode = 'project' | 'scratch';
  */
 export type GraphAuth = unknown;
 
+/**
+ * Server-owned credential minting. Execution carries opaque claims but never
+ * imports a database driver or sees a human bearer token.
+ */
+export interface AgentCredentialPort {
+  mint(
+    auth: GraphAuth,
+    input: { workSessionId: string; teamMemberId: string },
+  ): Promise<{ token: string; authSessionId: string }>;
+  revoke(auth: GraphAuth, workSessionId: string): Promise<void>;
+}
+
 // --- what the graph must be able to do for us --------------------------------
 
 export interface LoadSpawnContextInput {

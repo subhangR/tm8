@@ -86,7 +86,11 @@ export interface HandoffDeliveryAdapter {
 }
 
 export interface W2MessagesHandoffsServiceOptions {
-  /** Server-owned provenance resolver; request bodies and headers are never consulted. */
+  /**
+   * Server-owned provenance resolver. It reads the validated command envelope
+   * and gives a token-pinned agent session precedence; SQL authorizes the
+   * resulting session against the resolved actor before writing authored_from.
+   */
   readonly resolveAuthoredFromWorkSessionId?: (ctx: RequestContext) => Promise<string | null>;
   /** Server-owned first-attempt PTY epoch; never accepted from request input. */
   readonly resolveTargetWorkSessionEpoch?: (

@@ -197,13 +197,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.login': {
     cmd: ['auth', 'login'],
-    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>]',
-    sum: 'Exchange a username and password for a tm8s_… bearer token, printed exactly once',
+    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>] [--print-token]',
+    sum: 'Exchange a username and password for a tm8s_… bearer session with this Server',
     authz: 'server',
     input: 'bound',
-    tags: ['login', 'token', 'session', 'bearer', 'password'],
+    tags: ['login', 'token', 'session', 'bearer', 'password', 'credential'],
     notes: [
-      'export the printed token as TM8_AGENT_TOKEN to authenticate subsequent CLI calls',
+      'the credential is stored per Server origin — macOS keychain, else a 0600 file — and later commands against that Server authenticate automatically',
+      'with --print-token (or in an agent session) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
       'the failure message never distinguishes an unknown username from a wrong password',
     ],
   },
@@ -214,6 +215,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'bound',
     tags: ['logout', 'revoke', 'session', 'token'],
+    notes: [
+      'revoking this shell\'s own session also removes the matching stored credential for this Server origin',
+    ],
   },
   'auth.session.get': {
     cmd: ['auth', 'session'],
@@ -660,7 +664,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'messages.post': {
     cmd: ['message', 'send'],
-    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [--reply-to <parent-message-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     sum: 'Create one durable message per anchor and attempt delivery',
     authz: 'entity',
     input: 'bound',
@@ -674,13 +678,13 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'this is the ONLY public communication action for text; there is no prompt, report, or progress command',
       'a work session is addressed like any other anchor — the message is stored first and delivered second',
-      '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
+      'reply with the exact target from an incoming envelope: `--to <anchor-id> --reply-to <message-id>`',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
       'body is limited to 10,000 characters (messages.post input schema, schemas.ts:1292); split longer reports into numbered messages on the same anchor',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
-      "tm8 message reply <message-id> '<body>' --mutation-id <uuid>",
+      "tm8 message send --to <anchor-entity-id> --reply-to <message-id> '<body>' --mutation-id <uuid>",
     ],
   },
   'messages.edit': {

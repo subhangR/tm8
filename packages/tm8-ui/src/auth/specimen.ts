@@ -37,10 +37,10 @@ export const SERVER = {
   endpoint: 'wss://forge.tm8.dev',
   /** Oracle L309 — how a resolved server identifies itself. */
   resolvedMeta: 'tm8-server v0.9.2 · protocol v3',
-  /* GATE COPY — not oracle. The gate is local, so the chrome must not claim
-     a secured remote connection it does not have. */
-  localMeta: 'local session · this browser',
-  localEndpoint: 'account stored in this browser',
+  /* GATE COPY — not oracle. The chrome must claim exactly what it has: a
+     server-backed sign-in against the node this browser is pointed at. */
+  localMeta: 'server sign-in · auth.login',
+  localEndpoint: 'account on this server',
 } as const;
 
 /** 1a — the claim step. Oracle L39–L44. */
@@ -58,22 +58,28 @@ export const CLAIM = {
   /* ── GATE COPY (not oracle transcription — see the note below) ────────── */
   /**
    * These strings are NOT from the canvas. The oracle was drawn for a server
-   * that claims itself; this gate creates an account in one browser, and the
-   * copy has to say what actually happens. Kept beside the transcription so
-   * the two are never confused: everything above this line is the oracle's,
-   * everything below is ours and is load-bearing honesty.
+   * that claims itself; this gate creates a real account ON the server via
+   * auth.signup, and the copy has to say what actually happens. Kept beside
+   * the transcription so the two are never confused: everything above this
+   * line is the oracle's, everything below is ours and is load-bearing
+   * honesty.
    */
+  gateTitle: 'Create your account on this server.',
+  /** Not "Create owner account": auth.signup never mints an owner (the
+      loopback owner already exists), and a button must not promise a role
+      the operation cannot grant. */
+  gateAction: 'Create account',
   gateBody:
-    'No account exists in this browser yet. The one you create here is stored locally and signs you into this app — it is not registered on the tm8 node, because this node exposes no auth operations.',
+    'This creates a real account on the tm8 node (auth.signup) and signs you in (auth.login). Account creation is the node admin’s act: from the server’s own machine it is authorized automatically; on a shared server it may be refused — ask the operator for an account and a space invite.',
   handleHintTail: 'how agents and members mention you',
   nameHintEmpty: 'your handle is derived from this name',
-  gatePasswordHint: '8+ characters · derived with PBKDF2 before it is stored, never kept as typed',
-  gateFooter: 'local connection · nothing leaves this machine',
-  toSignIn: 'already created one here? sign in',
+  gatePasswordHint: '8+ characters · sent to this server, stored only as a hash — use HTTPS off this machine',
+  gateFooter: 'the password goes to this tm8 node and nowhere else',
+  toSignIn: 'already have an account? sign in',
   backToSignIn: '← back to sign in',
-  anotherTitle: 'Create another local account.',
+  anotherTitle: 'Create another account.',
   anotherBody:
-    'This browser already has at least one account. A new one is stored alongside it — you can sign in as either. Neither is registered on the tm8 node.',
+    'Accounts on this server are separate people. Creating another registers it on the node alongside the first — you can sign in as either.',
   anotherAction: 'Create account',
   stepsNote:
     'Steps 2 and 3 of the oracle’s first run — name the server, create the first space — are not connected: nothing sets a server’s name, and spaces.create is a contract operation the seam does not expose. The gate completes at step 1.',
@@ -154,13 +160,13 @@ export const SIGNED_OUT = {
   /** Oracle L182 renders "2 live sessions". The COUNT is a prop, never this. */
   liveSuffix: 'still running · visible after sign-in',
 
-  /* GATE COPY — not oracle. The oracle's line promises the server kept your
-     work; this gate only ever held a local session, so it says that instead.
-     Claiming the stronger thing would be free and false. */
+  /* GATE COPY — not oracle. Now TRUE in the way the oracle promised: the
+     session is revoked on the server (auth.logout), and everything you made
+     stays there. */
   gateBody:
-    'This browser’s local session is cleared. Your account is still stored here, so you can sign back in — nothing was sent to the node, and nothing on it was stopped.',
+    'Your session on this server is revoked. Your account, entities, spaces, and running agents stay on the server — signing out stops nothing.',
   gateNote:
-    'Sign-out clears the local session record only. The account stays in this browser until you clear its storage.',
+    'Sign-out revokes the tm8s session pass on the server and forgets it here. Sign back in anytime.',
 } as const;
 
 /** 1h — the invite redeem landing. Oracle L202–L209. */
@@ -309,10 +315,9 @@ export const ACCOUNT_MENU = {
   actAsPill: 'phase 2',
   signOut: 'Sign out of forge',
   signOutNote: 'clears this browser only — agents keep running',
-  /* GATE COPY — not oracle. This sign-out clears a LOCAL record; saying it
-     "clears this browser" would be true but would imply a server session was
-     ended, and none exists. */
-  gateSignOutNote: 'clears the local session — the node was never signed into',
+  /* GATE COPY — not oracle. This sign-out is a real server act: auth.logout
+     revokes the session pass, and the copy says exactly that. */
+  gateSignOutNote: 'revokes this session on the server — agents keep running',
 } as const;
 
 /** 1q — the token surface. Oracle L433–L448. */

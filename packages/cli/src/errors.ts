@@ -94,6 +94,13 @@ function reasonOf(details: unknown): string | undefined {
 
 /** A typed refusal carrying the Server's own taxonomy code. */
 export class ApiError extends Error {
+  /**
+   * Local advice attached AFTER the fact by a caller that knows something the
+   * wire cannot (e.g. "this bearer came from the credential store — re-login").
+   * Rendered as an indented follow-up line; never part of the Server's facts.
+   */
+  hint?: string;
+
   constructor(
     readonly status: number,
     readonly code: CommandErrorCode,
@@ -237,6 +244,7 @@ export function errorLines(err: unknown): string[] {
     if (err.code === 'not_implemented') {
       lines.push('  this operation is catalogued but not implemented on this node (honest 501)');
     }
+    if (err.hint) lines.push(`  ${err.hint}`);
     return lines;
   }
   if (err instanceof CliError) {

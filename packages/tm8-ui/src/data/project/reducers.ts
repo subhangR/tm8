@@ -296,9 +296,21 @@ export function ingestEdges(state: DomainState, list: EdgeView[]): Partial<Domai
 }
 
 export function ingestDetail(state: DomainState, detail: EntityDetail): Partial<DomainState> {
+  // EntityDetail carries the connection snapshot that was authoritative when
+  // the read completed. Normalize those edges into the SAME family that live
+  // edge.upsert/edge.deleted events update; otherwise a panel can only render
+  // the frozen detail snapshot and will miss a relation created after it was
+  // opened (or keep one after edge.deleted).
+  const connectionEdges = [
+    ...(detail.connections?.outgoing ?? []).flatMap((group) => group.edges),
+    ...(detail.connections?.incoming ?? []).flatMap((group) => group.edges),
+  ];
+  const projected = ingestEdges(state, connectionEdges);
   return {
     details: { ...state.details, [detail.id]: detail },
     entities: { ...state.entities, [detail.id]: detail },
+    edges: projected.edges,
+    edgeIdsByEntity: projected.edgeIdsByEntity,
   };
 }
 

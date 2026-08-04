@@ -66,6 +66,15 @@ export interface HttpOptions {
    */
   onTransport?: (reachable: boolean) => void;
   /**
+   * The viewer's `tm8s_…` pass for THIS server, or null. Read per request —
+   * not captured at construction — so a sign-in or sign-out takes effect on
+   * the next call without rebuilding the client. Absent or null means no
+   * Authorization header at all, which on a loopback node resolves to the
+   * auto-owner exactly as before this option existed (T-L7: local is the
+   * degenerate case, and it must keep working credential-free).
+   */
+  getAuthToken?: () => string | null;
+  /**
    * Ceiling on any single request, headers-to-body. Without one, a node whose
    * pool is wedged (accepts the socket, never answers) produces a promise that
    * NEVER SETTLES — no catch runs, no `bootError` is set, and the UI shows
@@ -173,6 +182,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
   const baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
   const doFetch: FetchLike | undefined = options.fetch;
   const onTransport = options.onTransport;
+  const getAuthToken = options.getAuthToken;
   const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
 
   /**
@@ -203,6 +213,10 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     const url = `${baseUrl}${path}${buildQuery(opts.query)}`;
     const hasBody = opts.body !== undefined;
     const guard = armTimeout(timeoutMs);
+    // Read per request (see the option's docblock): the pass can change
+    // between calls, and a stale capture here would keep acting as a viewer
+    // who already signed out.
+    const authToken = getAuthToken?.() ?? null;
 
     try {
       let res: Response;
@@ -217,6 +231,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
           headers: {
             [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
             ...(hasBody ? { 'content-type': 'application/json' } : {}),
+            ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
           },
           ...(hasBody ? { body: JSON.stringify(opts.body) } : {}),
           signal: guard.signal,

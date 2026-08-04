@@ -211,9 +211,10 @@ export const OPERATIONS = [
   { name: 'identity.profile.update',                     method: 'POST',   path: '/v2/identity/profile',                                               kind: 'command', status: 'v1' },
 
   // Identity v2 Stage 1 (doc 4 §6): local accounts. The four operations the UI
-  // already names in MISSING_AUTH_OPS. `auth.signup` is node-admin gated —
-  // never open self-registration. `auth.login` exchanges a local credential
-  // for a `tm8s_…` bearer token; every other operation is unchanged.
+  // asked for as MISSING_AUTH_OPS — now wired by its gate as GATE_AUTH_OPS
+  // (tm8-ui src/auth). `auth.signup` is node-admin gated — never open
+  // self-registration. `auth.login` exchanges a local credential for a
+  // `tm8s_…` bearer token; every other operation is unchanged.
   { name: 'auth.signup',                                 method: 'POST',   path: '/v2/auth/signup',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },

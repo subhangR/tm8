@@ -111,6 +111,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       livenessOf={data.livenessOf}
       messages={selectedMessages}
+      connections={data.connectionsOf(selectedId)}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],

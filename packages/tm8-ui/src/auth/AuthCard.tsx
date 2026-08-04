@@ -401,34 +401,14 @@ export function AuthSpecimenNote({ children }: { children: ReactNode }) {
   );
 }
 
-/* ── the local-gate disclosure ─────────────────────────────────────────── */
-
-/**
- * THE LOCAL-ACCOUNT NOTE — the sentence that makes the gate honest.
- *
- * Required on every frame that performs a real credential act. The tm8 HTTP
- * surface exposes `identity.get` and nothing else; an account created here
- * lives in ONE browser's localStorage. A gate that let a viewer believe their
- * account existed on the server would be the same lie as a login form that
- * silently succeeds — quieter, and therefore worse.
- *
- * It names the missing operations rather than gesturing at them, because a
- * reader who knows WHAT is missing can tell when it arrives.
+/*
+ * The local-account note (`AuthLocalNote`) lived here until Identity v2
+ * Stage 1. It said the gate authenticated nobody to the server — true when
+ * written, a lie in the other direction once `session.ts` started performing
+ * auth.signup / auth.login / auth.logout for real. Deleted rather than
+ * reworded: the honest disclosure now lives in the frames' own gate copy
+ * (`specimen.ts` GATE COPY), which states what each verb actually does.
  */
-export function AuthLocalNote() {
-  return (
-    <div className="auth-localnote" data-testid="auth-local-note">
-      <span className="auth-localnote__glyph" aria-hidden>
-        ⌂
-      </span>
-      <span>
-        <b>Local account on this node.</b> It is stored in this browser only — this node exposes{' '}
-        <code>identity.get</code> and no auth operations. Server-side accounts arrive with{' '}
-        <code>auth.signup</code> / <code>auth.login</code> / <code>auth.logout</code>.
-      </span>
-    </div>
-  );
-}
 
 /** The honesty banner for a credential failure. `role="status"` so it is announced. */
 export function AuthFailureBanner({ children }: { children: ReactNode }) {

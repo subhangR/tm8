@@ -9,6 +9,7 @@ import { dispatchClipboardData } from './clipboardPaste.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
+import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
 import {
   clientFittedSessions,
@@ -392,7 +393,14 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(container);
 
-    ptyTransport.openSession(sessionId, serverBaseUrl);
+    // Browser WebSockets cannot set an Authorization header. Read the active
+    // server pass for every attach/reconnect so the PTY uses the same identity
+    // path as HTTP and never keeps a snapshotted previous principal.
+    ptyTransport.openSession(
+      sessionId,
+      serverBaseUrl,
+      () => readActivePass()?.token ?? null,
+    );
     scheduleResize();
 
     return () => {

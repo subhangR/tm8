@@ -6,8 +6,8 @@
  *   TM8_SESSION_ID     the work_session entity id this process IS
  *   TM8_MANIFEST_PATH  absolute path to the JSON manifest SpawnService wrote
  *   TM8_BASE_URL       origin of the tm8-server that spawned it
- *   TM8_AGENT_TOKEN    optional bearer for the agent auth-session (S8); absent
- *                      during G1A because the server binds loopback only (AM-4)
+ *   TM8_AGENT_TOKEN    optional, run-scoped bearer pinned to this agent persona
+ *                      and work session; never a copy of the human credential
  *
  * Nothing here reads the repo or the cwd: a spawned agent runs from the
  * PROJECT's working directory, not from the tm8 checkout.

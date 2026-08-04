@@ -224,7 +224,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       }
 
       if (method === 'PUT' && FILE_UPLOAD_SUPPORT_PATH.test(pathname) && opts.fileUploadRoute) {
-        const identity = await resolveIdentity(req.headers);
+        const identity = await resolveIdentity(req.headers, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
       }
 
@@ -239,7 +242,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
       const match = router.match(method, pathname);
       if (!match) throw fail('not_found', `no operation bound to ${method} ${pathname}`);
 
-      const identity = await resolveIdentity(req.headers);
+      const identity = await resolveIdentity(req.headers, {
+        remoteAddress: req.socket.remoteAddress,
+        disableAutoOwner: config.disableAutoOwner === true,
+      });
 
       const handler = registry.get(match.opName);
       if (!handler) throw notImplemented(match.opName);

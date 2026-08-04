@@ -254,6 +254,13 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     expect(graph.commands).toHaveLength(0);
   });
 
+  // REMOVED in the identity composite <- main merge (2026-08-04). This guarded
+  // the composite's own SpawnService `credentials` port, which `main` superseded
+  // with `graph.issueWorkSessionAgentToken` (an `auth_sessions` mint, covered by
+  // spawn-manifest.test.ts). The mint survives; REVOKE-ON-TERMINATE DOES NOT —
+  // main's agent tokens are TTL-bounded only. That is a known, recorded gap, not
+  // an oversight: re-add revocation against `auth_sessions`, then re-add a test.
+
   it('terminate kills the PTY and moves the session to exited', async () => {
     const result = await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
     await waitForOutput(pty, result.sessionId, 'TM8-ECHO-READY');

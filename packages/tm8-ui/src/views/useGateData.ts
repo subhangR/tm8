@@ -46,7 +46,7 @@ import {
   type RealControls,
 } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
-import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/project/domain-store';
+import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
 import {
   CACHED_LAUNCH_KINDS,
   nodeKeyOf,
@@ -290,6 +290,8 @@ export interface GateData {
   /** Re-read the counters now — after a local action that changed what is seen. */
   refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
+  /** Live edge projection for a hydrated entity; unlike detail.connections it advances with events. */
+  connectionsOf: (id: string) => import('@tm8/contract').Connections | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
   /**
@@ -338,6 +340,12 @@ export interface GateOptions {
   /** Relative same-origin base. Named Servers use the local node's relay. */
   serverBaseUrl?: string;
   /**
+   * The viewer's `tm8s_…` pass for the active server, read per request by the
+   * transport. Omitted ⇒ requests carry no Authorization header and a
+   * loopback node answers as the auto-owner (T-L7).
+   */
+  getAuthToken?: () => string | null;
+  /**
    * THE SEAM INJECTION PORT.
    *
    * Omitted — which is what every screen does — the hook constructs the seam
@@ -385,6 +393,7 @@ export function useGateData(options: GateOptions): GateData {
             : {}),
           // The local Server stays default-relative. A named Server uses the
           // same-origin relay above, so browser CORS never becomes transport.
+          ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
           origin: location.origin,
@@ -1195,6 +1204,13 @@ export function useGateData(options: GateOptions): GateData {
   }, [ready, spaceId, seam, pendingTick, absorb]);
 
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
+  const connectionsOf = useCallback(
+    (id: string) => selectConnectionsOf(id as EntityId)(domain.store.getState()),
+    // edgeProjection/details are subscribed snapshots: their identity changes
+    // re-create this callback and therefore re-render every consumer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [domain, edgeProjection, details],
+  );
 
   const reconcileCommand = useCallback(
     (result: CommandResult | AttentionRequestMutationResult) => {
@@ -1368,6 +1384,7 @@ export function useGateData(options: GateOptions): GateData {
       countsFor,
       refreshCounts,
       detailOf,
+      connectionsOf,
       activity,
       messagePulses,
       graph,
@@ -1383,7 +1400,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

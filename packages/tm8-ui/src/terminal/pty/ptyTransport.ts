@@ -51,6 +51,13 @@ type ReattachHandler = (id: string) => void;
 const _sockets = new Map<string, WebSocket>();
 /** Same-origin route prefix for the tm8 node that owns each session's PTY. */
 const _serverBaseUrls = new Map<string, string>();
+/**
+ * Per-session bearer reader. Browser WebSockets cannot set Authorization, so
+ * the server accepts the same per-server pass in the grant URL. Keep a reader,
+ * not a snapshotted token: a reconnect after an account transition must use
+ * the pass that is current then, never the principal that first opened it.
+ */
+const _authTokenReaders = new Map<string, () => string | null>();
 const _pendingSends = new Map<string, { frames: Array<string | Uint8Array>; bytes: number }>();
 /** Fail-closed after queue overflow until a socket successfully opens. */
 const _overflowLatched = new Set<string>();
@@ -190,7 +197,9 @@ function _scheduleReconnect(id: string): void {
 function _ptyUrl(id: string, offset: number): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const serverBaseUrl = _serverBaseUrls.get(id) ?? '';
-  return `${proto}//${window.location.host}${serverBaseUrl}/v2/ws?sessionId=${encodeURIComponent(id)}&offset=${offset}`;
+  const authToken = _authTokenReaders.get(id)?.() ?? null;
+  const authQuery = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
+  return `${proto}//${window.location.host}${serverBaseUrl}/v2/ws?sessionId=${encodeURIComponent(id)}&offset=${offset}${authQuery}`;
 }
 
 function _ensureSocket(id: string): WebSocket {
@@ -435,12 +444,18 @@ function _sendFrame(id: string, frame: string | Uint8Array): void {
 
 export const ptyTransport = {
   /** Attach to a session's live stream. Idempotent. */
-  openSession(id: string, serverBaseUrl = ''): void {
+  openSession(
+    id: string,
+    serverBaseUrl = '',
+    getAuthToken?: () => string | null,
+  ): void {
     _registerWakeListeners();
     // The selected server is represented by a same-origin route prefix. Keep
     // it with the session so reconnect, wake, suspend/resume, and full replay
     // all return to the node that actually owns the PTY.
     _serverBaseUrls.set(id, serverBaseUrl.replace(/\/$/, ''));
+    if (getAuthToken) _authTokenReaders.set(id, getAuthToken);
+    else _authTokenReaders.delete(id);
     _activeSessions.add(id);
     // A fresh attach is never born suspended (a prior use of this id may have
     // left the flag set), and starts its offset accounting at 0.
@@ -473,6 +488,7 @@ export const ptyTransport = {
     _pendingSends.delete(id);
     _overflowLatched.delete(id);
     _serverBaseUrls.delete(id);
+    _authTokenReaders.delete(id);
     const ws = _sockets.get(id);
     if (ws) {
       _sockets.delete(id);

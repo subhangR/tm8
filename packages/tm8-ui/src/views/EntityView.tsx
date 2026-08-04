@@ -325,6 +325,7 @@ export function EntityView(props: EntityViewProps) {
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       messages={messages}
+      connections={data.connectionsOf(selectedId)}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
          conflict card, and now the doc editor behind the reader archetype —
@@ -439,6 +440,7 @@ export function EntityView(props: EntityViewProps) {
                 onAttachmentUploaded={() => props.data.pull?.(aux.id)}
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
+                connections={data.connectionsOf(aux.id)}
                 commands={data.seam.commands}
                 onSaved={data.reconcileCommand}
                 // Drilling from the aux REPLACES the aux, it does not open a
@@ -461,6 +463,7 @@ export function EntityView(props: EntityViewProps) {
             ) : detail && aux.tab === 'connections' ? (
               <ConnectionsTab
                 detail={detail}
+                connections={data.connectionsOf(detail.id)}
                 onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
               />
             ) : (

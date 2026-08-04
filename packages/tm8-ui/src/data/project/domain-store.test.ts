@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DurableWorkspaceEvent } from '@tm8/contract';
 import {
   createDomainStore,
+  selectConnectionsOf,
   selectConnectionsStale,
   selectDeliveryOf,
   selectDetail,
@@ -82,6 +83,45 @@ describe('createDomainStore wiring', () => {
 
     store.getState().applyEvent(event('edge.upsert', { edge: edge('e2', 't1', 't3') }));
     expect(selectEdgesOf('t1')(store.getState()).map((item) => item.id)).toEqual(['e1', 'e2']);
+  });
+
+  it('projects an edge created after detail hydration into live Connections', () => {
+    const { store } = createDomainStore();
+    store.getState().ingestDetail(detail('task'));
+    expect(selectConnectionsOf('task')(store.getState())?.incoming).toEqual([]);
+
+    store.getState().applyEvent(event('edge.upsert', {
+      edge: edge('work', 'session', 'task', { type: 'working_on' }),
+    }));
+
+    const connections = selectConnectionsOf('task')(store.getState());
+    expect(connections?.incoming).toHaveLength(1);
+    expect(connections?.incoming[0]).toMatchObject({
+      type: 'working_on',
+      direction: 'incoming',
+      label: 'Working on',
+    });
+    expect(connections?.incoming[0].edges.map((item) => item.id)).toEqual(['work']);
+
+    store.getState().applyEvent(event('edge.deleted', {
+      edge: edge('work', 'session', 'task', { type: 'working_on' }),
+    }));
+    expect(selectConnectionsOf('task')(store.getState())?.incoming).toEqual([]);
+  });
+
+  it('normalizes the connection snapshot carried by an entity detail', () => {
+    const { store } = createDomainStore();
+    const linked = edge('existing', 'task', 'peer', { type: 'relates_to' });
+    store.getState().ingestDetail(detail('task', {
+      connections: {
+        outgoing: [{ type: 'relates_to', direction: 'outgoing', label: 'Relates to', edges: [linked] }],
+        incoming: [],
+        unresolvedHardDependencyCount: 0,
+      },
+    }));
+
+    expect(selectConnectionsOf('task')(store.getState())?.outgoing[0].edges.map((item) => item.id))
+      .toEqual(['existing']);
   });
 });
 

@@ -32,15 +32,17 @@ import type { RequestContext } from '../http/types.js';
 export interface CommandEnvelope {
   actorId?: string;
   clientMutationId?: string;
+  workSessionId?: string;
 }
 
 export function commandEnvelope(ctx: RequestContext): CommandEnvelope {
   const body = ctx.body;
   if (typeof body !== 'object' || body === null) return {};
-  const { actorId, clientMutationId } = body as CommandEnvelope;
+  const { actorId, clientMutationId, workSessionId } = body as CommandEnvelope;
   return {
     ...(typeof actorId === 'string' ? { actorId } : {}),
     ...(typeof clientMutationId === 'string' ? { clientMutationId } : {}),
+    ...(typeof workSessionId === 'string' ? { workSessionId } : {}),
   };
 }
 
@@ -67,6 +69,9 @@ export function claimsFor(
   ctx: RequestContext,
   envelope: CommandEnvelope = {},
 ): DbClaims {
+  if (ctx.identity?.kind === 'anonymous') {
+    throw new CollabError('unauthenticated', 'authentication is required');
+  }
   const bearer = ctx.identity?.kind === 'bearer' ? ctx.identity : undefined;
   if (bearer && !bearer.identityId) {
     throw new CollabError('unauthenticated', 'bearer identity is unresolved');

@@ -745,6 +745,7 @@ export function composeEnv(
     TM8_MODE: manifest.mode,
     TM8_AGENT_TOOL: manifest.launch.tool,
     TM8_TEAM_MEMBER_ID: manifest.agent.teamMemberId,
+    TM8_ACTOR_ID: manifest.agent.teamMemberId,
     TM8_TASK_IDS: manifest.tasks.map((t) => t.id).join(','),
   };
   if (journalPath) env.TM8_JOURNAL_PATH = journalPath;

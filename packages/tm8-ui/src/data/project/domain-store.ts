@@ -17,7 +17,9 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type {
   ActivityItem,
+  Connections,
   DurableWorkspaceEvent,
+  EdgeGroup,
   EdgeView,
   EntityDetail,
   EntityId,
@@ -351,6 +353,70 @@ export const selectMessages = (anchorId: EntityId) => (s: DomainStoreState): Mes
   s.messagesByAnchor[anchorId];
 export const selectEdgesOf = (id: EntityId) => (s: DomainStoreState): EdgeView[] =>
   (s.edgeIdsByEntity[id] ?? []).map((eid) => s.edges[eid]).filter((e): e is EdgeView => e != null);
+
+/** Same presentation vocabulary as the entity-detail read. A live edge event
+    has no group label of its own, so a type absent from the old snapshot needs
+    this mapping to render identically to a fresh read. */
+const LIVE_EDGE_LABELS: Readonly<Record<string, string>> = {
+  assigned_to: 'Assigned to',
+  attached_to: 'Attached to',
+  depends_on: 'Depends on',
+  completed_by: 'Completed by',
+  tracks: 'Tracks',
+  relates_to: 'Relates to',
+  contains: 'Contains',
+  working_on: 'Working on',
+  pulled: 'Pulled by',
+  equips: 'Equips',
+  member_of: 'Member of',
+  copy_of: 'Copy of',
+  approved_by: 'Approved by',
+  approval_requested_from: 'Approval requested from',
+  visible_to: 'Visible to',
+};
+
+/**
+ * The live connection view for one hydrated entity.
+ *
+ * `EntityDetail.connections` is a read-time snapshot. Its edges are ingested
+ * into the normalized edge family above, and this selector groups that family
+ * on every store update, so edge.upsert/edge.deleted events reach an already
+ * open Connections tab without another entity read.
+ */
+export const selectConnectionsOf = (id: EntityId) => (s: DomainStoreState): Connections | undefined => {
+  const detail = s.details[id];
+  if (!detail) return undefined;
+
+  const snapshotGroups = [
+    ...(detail.connections?.outgoing ?? []),
+    ...(detail.connections?.incoming ?? []),
+  ];
+  const labelOf = (type: string, direction: EdgeGroup['direction']): string => {
+    const snapshot = snapshotGroups.find((group) => group.type === type && group.direction === direction);
+    if (snapshot) return snapshot.label;
+    return LIVE_EDGE_LABELS[type] ?? (direction === 'outgoing' ? type : `${type} (incoming)`);
+  };
+
+  const grouped = new Map<string, EdgeGroup>();
+  for (const edge of selectEdgesOf(id)(s)) {
+    const direction: EdgeGroup['direction'] = edge.source.id === id ? 'outgoing' : 'incoming';
+    // Match the server: a self-edge is represented once, as outgoing.
+    if (direction === 'incoming' && edge.target.id !== id) continue;
+    const key = `${direction}:${edge.type}`;
+    const existing = grouped.get(key);
+    if (existing) existing.edges.push(edge);
+    else grouped.set(key, { type: edge.type, direction, label: labelOf(edge.type, direction), edges: [edge] });
+  }
+
+  const groups = [...grouped.values()];
+  return {
+    outgoing: groups.filter((group) => group.direction === 'outgoing'),
+    incoming: groups.filter((group) => group.direction === 'incoming'),
+    unresolvedHardDependencyCount: selectEdgesOf(id)(s).filter(
+      (edge) => edge.source.id === id && edge.type === 'depends_on' && edge.hard !== false && edge.resolved === false,
+    ).length,
+  };
+};
 export const selectActivityFeed = (s: DomainStoreState): ActivityItem[] => s.activityFeed;
 export const selectUnreadNotificationCount = (s: DomainStoreState): number =>
   s.notifications.filter((n) => n.readAt == null).length;

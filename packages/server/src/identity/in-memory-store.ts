@@ -211,8 +211,8 @@ export class InMemoryIdentityRepository implements IdentityRepository {
 
   async getActorScope(identityId: IdentityId): Promise<ActorScope> {
     const members = [...this.members.values()].filter((m) => m.identityId === identityId);
-    const owned = new Set(members.map((m) => m.id));
-    const teamMembers = [...this.teamMembers.values()].filter((tm) => owned.has(tm.ownerMemberId));
+    const spaces = new Set(members.map((m) => m.spaceId));
+    const teamMembers = [...this.teamMembers.values()].filter((tm) => spaces.has(tm.spaceId));
     return {
       members: members.map((m) => ({ ...m })),
       teamMembers: teamMembers.map((tm) => ({ ...tm })),
