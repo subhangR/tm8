@@ -12,6 +12,7 @@ export function registerW2ProjectsAssociationsHandlers(
   registry.registerAll({
     'projects.list': service.listProjects,
     'projects.create': async (ctx) => json(await service.createProject(ctx), { status: 201 }),
+    'projects.directories.list': service.listProjectDirectories,
     'projects.get': service.getProject,
     'projects.update': service.updateProject,
     'projects.link': service.linkProject,

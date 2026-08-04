@@ -726,7 +726,15 @@ export interface CommandResult {
 }
 
 /** Common envelope on every command (§4 preamble). */
-export interface CommandContext { actorId?: EntityId; clientMutationId?: string }
+export interface CommandContext {
+  actorId?: EntityId;
+  clientMutationId?: string;
+  /**
+   * Work session that originated this command. The database authorizes the
+   * claimed session against the resolved actor before recording provenance.
+   */
+  workSessionId?: EntityId;
+}
 
 /** A node-local, named route to another tm8 Server. Credentials are a later transport concern. */
 export interface ServerConnection {
@@ -1388,6 +1396,40 @@ export interface ProjectCreateInput extends CommandContext {
   /** Defaults to 'untrusted' — trust is an explicit grant. */
   trust?: ProjectTrustLevel;
   defaults?: ProjectDefaults;
+  /**
+   * Create `workingDir` when it is one missing child beneath an allowed,
+   * existing project-browse directory. False/absent never mutates the
+   * filesystem; it only records the supplied path, preserving the original
+   * projects.create contract for CLI and migration callers.
+   */
+  ensureWorkingDir?: boolean;
+}
+
+/** One selectable child in the node-local project directory browser. */
+export interface ProjectDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+/**
+ * GET /v2/project-directories — a bounded, root-confined view of directories
+ * on the tm8 node. Files are deliberately absent: this is a project-root
+ * picker, not a general filesystem API.
+ */
+export interface ProjectDirectoryListing {
+  roots: string[];
+  path: string;
+  parentPath: string | null;
+  separator: '/' | '\\';
+  directories: ProjectDirectoryEntry[];
+  truncated: boolean;
+}
+
+/** The wrapper returned by spaces.create after its default member/channel saga. */
+export interface CreateSpaceResult {
+  space: SpaceSummary;
+  memberId: EntityId;
+  defaultChannelId: EntityId;
 }
 
 /** PATCH /v2/projects/:projectId */
@@ -1926,6 +1968,8 @@ export interface EntityFeedQuery {
 export interface DeliverySummary {
   deliveryId: string;
   targetWorkSessionId: EntityId;
+  /** Readable canonical session summary for direct navigation from a feed. */
+  targetWorkSession?: EntitySummary | null;
   status: MessageDeliveryStatus;
   attemptNo: number;
   failureReason: string | null;
@@ -1944,7 +1988,9 @@ export interface FeedItemBase {
 }
 
 export type FeedItem =
-  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[] })
+  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[];
+      /** Work-session siblings in this message batch (channel tag/spawn targets). */
+      linkedWorkSessions?: EntitySummary[] })
   | (FeedItemBase & { itemKind: 'activity'; activity: ActivityItem });
 
 export interface EntityFeedPage {

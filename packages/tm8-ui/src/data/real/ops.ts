@@ -40,7 +40,10 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type CreateEdgeInput,
   type CreateEntityInput,
+  type CreateSpaceInput,
+  type CreateSpaceResult,
   type CreateTaskInput,
   type DurableWorkspaceEvent,
   type EdgeView,
@@ -73,6 +76,9 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectCreateInput,
+  type ProjectDirectoryListing,
+  type ProjectLinkInput,
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
@@ -137,9 +143,21 @@ export interface OpsOptions {
 
 let mutationSeq = 0;
 
+/**
+ * Sequence + timestamp + real entropy. The entropy is not optional: ids
+ * carrying only a counter and a clock collide ACROSS PRINCIPALS (two humans'
+ * first mutations in the same millisecond), and `require_replay_principal`
+ * refuses the later one as a replay. Proven the hard way by the bare `au-<n>`
+ * counter in `authoring/commands.ts` — see its docblock.
+ */
 function defaultMutationId(prefix: string): string {
   mutationSeq += 1;
-  return `${prefix}_${mutationSeq.toString(36)}_${Date.now().toString(36)}`;
+  const c = globalThis.crypto;
+  const entropy =
+    c && typeof c.randomUUID === 'function'
+      ? c.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}_${mutationSeq.toString(36)}_${entropy}`;
 }
 
 export type Ops = ReturnType<typeof createOps>;
@@ -201,6 +219,22 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     projects(spaceId: SpaceId): Promise<ProjectResource[]> {
       return http.call<ProjectResource[]>('projects.list', { query: { spaceId } });
+    },
+
+    projectDirectories(path?: string): Promise<ProjectDirectoryListing> {
+      return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { path } });
+    },
+
+    createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult> {
+      return http.call<CreateSpaceResult>('spaces.create', { body: input });
+    },
+
+    createProject(input: ProjectCreateInput): Promise<ProjectResource> {
+      return http.call<ProjectResource>('projects.create', { body: input });
+    },
+
+    async linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void> {
+      await http.call('projects.link', { params: { spaceId }, body: input });
     },
 
     entity(id: EntityId): Promise<EntityDetail> {
@@ -386,6 +420,21 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     work(id: EntityId, input: WorkInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
+    },
+
+    createEdge(input: CreateEdgeInput): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.create', { body: input });
+    },
+
+    /**
+     * Same DELETE-carries-a-body rule as `deleteEntity`: the server binds
+     * `RequiredCommandContextSchema` to `edges.delete` (input-schemas.ts:165)
+     * and refuses without a `clientMutationId`. An omitted context reaches the
+     * node as `{}` and earns an honest `invalid_input` rather than a
+     * synthesized id the caller could never reconcile.
+     */
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.delete', { params: { edgeId }, body: ctx ?? {} });
     },
 
     fileUploadInit(input: FileUploadInitInput): Promise<FileUploadGrant> {

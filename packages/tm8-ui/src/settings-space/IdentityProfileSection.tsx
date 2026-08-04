@@ -32,6 +32,8 @@ export type ProfileDraftInput = Omit<IdentityProfileUpdateInput, 'clientMutation
 
 export interface IdentityProfileSectionProps {
   identity: IdentityView | null;
+  /** Active space, used only to select the stable member actor id. */
+  spaceId: string;
   /** Adapter to `seam.commands.updateProfile`; the port mints the mutation id. */
   onSave: (input: ProfileDraftInput) => Promise<IdentityProfileView>;
   /** Notified with the written row so the host can refresh its identity read. */
@@ -64,7 +66,7 @@ type SaveState =
   | { phase: 'saved' }
   | { phase: 'refused'; detail: string };
 
-export function IdentityProfileSection({ identity, onSave, onSaved }: IdentityProfileSectionProps) {
+export function IdentityProfileSection({ identity, spaceId, onSave, onSaved }: IdentityProfileSectionProps) {
   const [displayName, setDisplayName] = useState('');
   const [avatar, setAvatar] = useState('');
   const [globalId, setGlobalId] = useState('');
@@ -97,6 +99,7 @@ export function IdentityProfileSection({ identity, onSave, onSaved }: IdentityPr
   }
 
   const previewName = displayName.trim() || identity.username;
+  const actorId = identity.memberships.find((membership) => membership.spaceId === spaceId)?.memberId ?? null;
 
   function fieldsToWrite(): ProfileDraftInput {
     const out: ProfileDraftInput = {};
@@ -144,7 +147,9 @@ export function IdentityProfileSection({ identity, onSave, onSaved }: IdentityPr
       <div className="set-section__scroll">
         <div className="set-stack">
           <div className="set-profile__preview" data-testid="profile-preview">
-            <Avatar provenance="human" label={previewName} size={32} src={avatar.trim() || null} />
+            {actorId ? (
+              <Avatar actorId={actorId} provenance="human" label={previewName} size={32} src={avatar.trim() || null} />
+            ) : null}
             <div className="set-profile__preview-text">
               <span className="set-profile__preview-name">{previewName}</span>
               <span className="set-profile__preview-sub">

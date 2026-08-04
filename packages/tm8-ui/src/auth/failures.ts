@@ -1,5 +1,5 @@
 /**
- * CREDENTIAL FAILURE COPY — every way the local gate can say no.
+ * CREDENTIAL FAILURE COPY — every way the gate can say no.
  *
  * One place, so the set is countable and so no failure mode can reach the
  * screen as a raw exception string. The voice is T1-4's: exact reason plus
@@ -8,10 +8,11 @@
  * TWO THINGS THIS COPY DELIBERATELY DOES NOT SAY, both asserted in
  * `gate.test.tsx`:
  *
- * 1. It never distinguishes "no such account" from "wrong password". Doing so
- *    tells anyone at this browser which handles exist, for free. The gate is
- *    not a security boundary and says so — but leaking for nothing would still
- *    be a defect, and one shared message costs nothing to keep.
+ * 1. It never distinguishes "no such account" from "wrong password". The
+ *    server already refuses both with one `unauthenticated` — same code, same
+ *    message, so response shape does not enumerate accounts — and copy that
+ *    re-split them here would leak client-side what the server paid to keep
+ *    merged.
  *
  * 2. It never mentions an attempt counter or a lockout. The oracle draws
  *    "4 attempts left, then a 5-minute hold on this handle" (L138) and NOTHING
@@ -27,7 +28,7 @@ export function failureCopy(failure: AuthFailure): { lead: string; body: string 
     case 'password-too-short':
       return {
         lead: 'Password too short',
-        body: ` — ${failure.min} characters minimum. Nothing was created.`,
+        body: ` — ${failure.min} characters minimum (the server refuses shorter outright). Nothing was created.`,
       };
     case 'name-required':
       return {
@@ -36,24 +37,29 @@ export function failureCopy(failure: AuthFailure): { lead: string; body: string 
       };
     case 'account-exists':
       return {
-        lead: 'This browser already has an account',
-        body: ` — @${failure.handle}. Sign in as them, or clear this browser’s tm8 storage to start over.`,
+        lead: 'That handle is taken on this server',
+        body: ` — @${failure.handle} already exists. Sign in as them, or pick another name.`,
       };
     case 'bad-credentials':
       // ONE message for both halves, on purpose. See the docblock.
       return {
         lead: 'Sign-in failed',
-        body: ' — that handle and password do not match the account stored in this browser. No attempt limit is enforced: this gate is local, not a security boundary.',
+        body: ' — the server refused that handle and password.',
       };
     case 'storage-blocked':
       return {
         lead: 'This browser is blocking storage',
-        body: ' — the account cannot be saved, so you were not signed in. A session that vanished on your next reload would be worse than this refusal.',
+        body: ' — the session pass cannot be saved, so you were not signed in. A session that vanished on your next reload would be worse than this refusal.',
       };
-    case 'crypto-unavailable':
+    case 'server-refused':
       return {
-        lead: 'No Web Crypto on this page',
-        body: ' — crypto.subtle is unavailable (usually a non-HTTPS, non-localhost origin), and the password will not be stored without being properly derived first.',
+        lead: 'The server refused',
+        body: ` — ${failure.message}`,
+      };
+    case 'server-unreachable':
+      return {
+        lead: 'The server did not answer',
+        body: ` — ${failure.message}. Nothing was created or signed in.`,
       };
   }
 }

@@ -470,6 +470,7 @@
   font-size: 11.5px;
   line-height: 1.45;
 }
+.hm-act__text .kit-avatar { vertical-align: middle; margin-right: 5px; }
 
 .hm-act__actor {
   font-weight: 600;

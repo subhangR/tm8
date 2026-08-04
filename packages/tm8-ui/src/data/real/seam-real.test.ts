@@ -218,6 +218,20 @@ describe('seam-real: wsUrl derivation refuses to guess', () => {
     expect(() => deriveWsUrl('')).toThrow(CollabError);
     expect(() => deriveWsUrl('/v2')).toThrow(/wsUrl is required/);
   });
+
+  it('puts the per-server pass on the browser socket grant URL', async () => {
+    const { seam, pool } = mk(() => ok({}), { getAuthToken: () => 'tm8s_session.secret/value' });
+    await seam.openSpace('sp-1');
+    expect(pool.urls).toEqual([
+      'ws://fake.invalid/v2/ws?token=tm8s_session.secret%2Fvalue',
+    ]);
+  });
+
+  it('keeps the loopback auto-owner socket unchanged when no pass exists', async () => {
+    const { seam, pool } = mk(() => ok({}), { getAuthToken: () => null });
+    await seam.openSpace('sp-1');
+    expect(pool.urls).toEqual(['ws://fake.invalid/v2/ws']);
+  });
 });
 
 describe('seam-real: prepare-not-wire is a type-level property', () => {
@@ -243,7 +257,13 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
   it('the seam surface matches the locked interface, method for method', () => {
     const { seam } = mk(() => ok({}));
     expect(Object.keys(seam.commands).sort()).toEqual([
-      'complete', 'createEntity', 'createTask', 'deleteEntity', 'editMessage', 'markRead',
+      // Amendment 5 (2026-08-04): the RELATIONSHIP write side. `assignees` is
+      // a projection of `assigned_to` edges, so every surface could show an
+      // assignment and none could make one — the seam had the reads and not
+      // the writes. Sorts around `createEntity` / `deleteEntity`, beside the
+      // entity verbs they mirror.
+      'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
+      'editMessage', 'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).

@@ -2,11 +2,12 @@
  * FLOW B · SIGN IN & SESSION (T3-1) — 1d login · 1e failed · 1f expired ·
  * 1g signed out.
  *
- * "The returning-member login and every session edge" (oracle L96). This is
- * the flow the coordinator's brief singles out: a login form that pretends to
- * authenticate is the worst lie this app could tell. So the fields are live
- * and typeable (they claim nothing), and every submit refuses out loud with
- * the seam fact behind it.
+ * "The returning-member login and every session edge" (oracle L96). Inside
+ * the gate 1d is REAL: submit performs auth.login against the active server
+ * and stores the tm8s_ pass. Outside it (the review board) the identical
+ * form refuses out loud — a login form that pretends to authenticate is the
+ * worst lie this app could tell, and the executor-through-context split is
+ * what makes the lie unbuildable.
  */
 import { useState, type ReactNode } from 'react';
 import {
@@ -19,7 +20,6 @@ import {
   AuthFailureBanner,
   AuthField,
   AuthFootnote,
-  AuthLocalNote,
   AuthRule,
   AuthServerTile,
   AuthSpecimenNote,
@@ -27,6 +27,7 @@ import {
   AuthTitle,
 } from './AuthCard';
 import { useAuthActions } from './gate-context';
+import { canUseLoopbackAutoOwner, readActiveServerId } from '../servers/server-key';
 import { failureCopy, signInFailureLead } from './failures';
 import { EXPIRED, LOGIN, LOGIN_FAILED, SERVER, SIGNED_OUT } from './specimen';
 import {
@@ -59,25 +60,33 @@ export function FrameLogin(_props: FrameProps) {
 
   const submit = () => void actions?.signIn(handle, password);
 
+  // The tile must name the server actually being signed into, not the
+  // oracle's specimen — the pass this mints is per server, and a viewer
+  // pointed at a named connection is authenticating THERE.
+  const serverId = actions ? readActiveServerId() : null;
+  const mayCreateAccount = Boolean(actions && serverId && canUseLoopbackAutoOwner(
+    serverId,
+    globalThis.location?.hostname ?? '',
+  ));
+
   return (
     <AuthStage meta={actions ? SERVER.localMeta : SERVER.secureMeta}>
       <AuthCard>
         <AuthServerTile
-          glyph={SERVER.glyph}
-          name={SERVER.name}
+          glyph={serverId ? serverId[0]!.toUpperCase() : SERVER.glyph}
+          name={serverId ?? SERVER.name}
           meta={actions ? SERVER.localEndpoint : SERVER.endpoint}
         />
         <AuthTitle>{LOGIN.title}</AuthTitle>
 
-        {actions ? <AuthLocalNote /> : null}
         {failure && mode === 'password' ? (
           <AuthFailureBanner>
             <b className="auth-alert__lead">{failureCopy(failure).lead}</b>
             {failure.kind === 'bad-credentials' ? (
               <>
-                {' — '}
+                {' — this server refused '}
                 {signInFailureLead(handle)}
-                {' and that password do not match the account stored in this browser. No attempt limit is enforced: this gate is local, not a security boundary.'}
+                {' with that password.'}
               </>
             ) : (
               failureCopy(failure).body
@@ -132,11 +141,12 @@ export function FrameLogin(_props: FrameProps) {
               >
                 {LOGIN.toToken}
               </button>
-              {/* THE SECOND PATH, user-ordered: after signing out you must be
-                  able to make a new account as well as return to an existing
-                  one. Only offered inside the gate, where it can actually
-                  happen. */}
-              {actions ? (
+              {/* THE SECOND PATH, user-ordered, is truthful only where an
+                  unauthenticated signup can actually run: the local loopback
+                  auto-owner path. Remote and relayed nodes require operator
+                  provisioning, so advertising this there leads to a refusal
+                  the viewer cannot resolve. */}
+              {mayCreateAccount ? (
                 <>
                   <span className="auth-switch__sep" aria-hidden>
                     ·
@@ -263,9 +273,9 @@ export function FrameSignedOut(props: FrameProps) {
         <AuthTitle size="sm">{SIGNED_OUT.title}</AuthTitle>
         <AuthBody size="sm">{actions ? SIGNED_OUT.gateBody : SIGNED_OUT.body}</AuthBody>
         {actions ? <AuthCaption>{SIGNED_OUT.gateNote}</AuthCaption> : null}
-        {/* Inside the gate this is real: it returns to the sign-in frame, which
-            can genuinely sign you back in against the local account. Outside
-            it there is no executor and it refuses, same component. */}
+        {/* Inside the gate this is real: it returns to the sign-in frame,
+            whose submit performs auth.login. Outside it there is no executor
+            and it refuses, same component. */}
         {actions ? (
           <AuthAction onClick={() => props.onFrameChange?.('1d')}>{SIGNED_OUT.action}</AuthAction>
         ) : (

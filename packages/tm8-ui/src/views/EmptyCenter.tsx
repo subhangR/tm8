@@ -16,6 +16,7 @@
  */
 import type { SessionLiveness } from '../data/seam';
 import type { SessionRow } from '../terminal';
+import { Avatar } from '../kit';
 
 export interface EmptyCenterProps {
   /** The seam's live set — the same array the bar counts. */
@@ -169,6 +170,15 @@ export function EmptyCenter(props: EmptyCenterProps) {
                               className={`shell-empty__dot shell-empty__dot--${presentation.tone}`}
                               aria-hidden="true"
                             />
+                            {row.actor ? (
+                              <Avatar
+                                actorId={row.actor.id}
+                                provenance={row.actor.isAgent ? 'agent' : 'human'}
+                                label={row.actor.displayName}
+                                size={20}
+                                src={row.actor.avatar ?? null}
+                              />
+                            ) : null}
                             <span className="shell-empty__name">{row.name}</span>
                             <span className={`shell-empty__word shell-empty__word--${presentation.tone}`}>
                               {presentation.word}

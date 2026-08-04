@@ -229,6 +229,7 @@
 }
 
 .chs-parent__glyph { color: var(--pn-ink-4); font-size: 10px; }
+.chs-parent__label { color: var(--pn-ink-4); flex: none; }
 .chs-parent__author { color: var(--pn-ink-2); font-weight: 600; flex: none; }
 
 .chs-parent__excerpt {
@@ -259,6 +260,31 @@
   flex-wrap: wrap;
   gap: 5px;
 }
+
+.chs-session-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  list-style: none;
+  margin: 1px 0 0;
+  padding: 0;
+}
+
+.chs-session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
+  padding: 2px 8px;
+  color: var(--pn-ink-2);
+  font: 10px var(--pn-mono);
+}
+
+button.chs-session-chip { cursor: pointer; }
+button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-brand); }
 
 .chs-references { margin-top: 2px; }
 .chs-mentions,
@@ -352,6 +378,17 @@
 }
 
 .chs-state__actor { color: var(--pn-ink-2); font-weight: 600; }
+.chs-inline-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.chs-artifact__provenance {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
 
 .chs-state__from,
 .chs-state__to {
@@ -753,6 +790,7 @@
   color: var(--pn-ink);
 }
 
+.chs-mention-picker__identity { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
 .chs-mention-picker button span:last-child { color: var(--pn-ink-4); font: 9px var(--pn-mono); }
 .chs-mention-picker__empty {
   margin: 0;

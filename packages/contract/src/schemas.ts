@@ -51,7 +51,8 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
-  ProjectCreateInput, ProjectDefaults, ProjectLinkInput, ProjectResource,
+  ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
+  ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
@@ -918,6 +919,7 @@ export const WorkspaceControlAckSchema: z.ZodType<WorkspaceControlAck> = z.objec
 const commandContextShape = {
   actorId: EntityIdSchema.optional(),
   clientMutationId: z.string().optional(),
+  workSessionId: EntityIdSchema.optional(),
 };
 
 export const CommandContextSchema: z.ZodType<CommandContext> =
@@ -1543,6 +1545,21 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   repoUrl: z.string().nullable().optional(),
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
+  ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+}).strict();
+
+export const ProjectDirectoryListingSchema: z.ZodType<ProjectDirectoryListing> = z.object({
+  roots: z.array(z.string().min(1)).min(1),
+  path: z.string().min(1),
+  parentPath: z.string().min(1).nullable(),
+  separator: z.enum(['/', '\\']),
+  directories: z.array(ProjectDirectoryEntrySchema),
+  truncated: z.boolean(),
 }).strict();
 
 export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({
@@ -1892,6 +1909,7 @@ export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
 export const DeliverySummarySchema: z.ZodType<DeliverySummary> = z.object({
   deliveryId: z.string().min(1),
   targetWorkSessionId: EntityIdSchema,
+  targetWorkSession: EntitySummarySchema.nullable().optional(),
   status: MessageDeliveryStatusSchema,
   attemptNo: z.number().int().positive(),
   failureReason: z.string().nullable(),
@@ -1915,6 +1933,7 @@ export const FeedItemSchema: z.ZodType<FeedItem> = z.lazy(() => z.discriminatedU
     itemKind: z.literal('message'),
     message: MessageViewSchema,
     delivery: z.array(DeliverySummarySchema),
+    linkedWorkSessions: z.array(EntitySummarySchema).optional(),
   }).strict(),
   z.object({
     ...feedItemBaseShape,

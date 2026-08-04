@@ -50,6 +50,7 @@ import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -255,7 +256,9 @@ export function EntityView(props: EntityViewProps) {
   const detail = selectedId ? data.detailOf(selectedId) : null;
   const messages = selectedId ? data.messagesOf(selectedId) : undefined;
   if (selectedId && (
-    !detail || messages === undefined || messages.length < detail.counters.messages
+    !detail
+    || messages === undefined
+    || representedThreadMessageCount(messages) < detail.counters.messages
   )) props.data.pull?.(selectedId);
   const selectedContent = detail?.content as unknown as {
     interactionProfile?: WorkSessionInteractionProfileProjection | null;
@@ -322,6 +325,7 @@ export function EntityView(props: EntityViewProps) {
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
       messages={messages}
+      connections={data.connectionsOf(selectedId)}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
          conflict card, and now the doc editor behind the reader archetype —
@@ -358,6 +362,7 @@ export function EntityView(props: EntityViewProps) {
         <EntityListPanel
           kind={kind}
           rowsFor={data.rowsFor(kind) as never}
+          members={data.members}
           ctx={ctx}
           createSlot={
             config.list.quickCreate ? (
@@ -377,6 +382,9 @@ export function EntityView(props: EntityViewProps) {
           onKindChange={props.onKindChange}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           /* The SAME sources the workspace passes. `onFullOptions` is
              deliberately absent: the five-section sheet is mounted by the
              workspace centre and does not exist on this screen, so the escape
@@ -435,6 +443,7 @@ export function EntityView(props: EntityViewProps) {
                 onAttachmentUploaded={() => props.data.pull?.(aux.id)}
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
+                connections={data.connectionsOf(aux.id)}
                 commands={data.seam.commands}
                 onSaved={data.reconcileCommand}
                 // Drilling from the aux REPLACES the aux, it does not open a
@@ -457,6 +466,7 @@ export function EntityView(props: EntityViewProps) {
             ) : detail && aux.tab === 'connections' ? (
               <ConnectionsTab
                 detail={detail}
+                connections={data.connectionsOf(detail.id)}
                 onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
               />
             ) : (

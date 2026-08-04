@@ -137,7 +137,7 @@ export interface MemberRecord {
   joinedAt: string;
 }
 
-/** An agent persona. Authorization resolves through `ownerMemberId` (T-L7). */
+/** An agent persona. `ownerMemberId` governs configuration, not shared launch authority. */
 export interface TeamMemberRecord {
   id: TeamMemberId;
   spaceId: SpaceId;
@@ -159,7 +159,7 @@ export interface ClaimSet {
   isNodeAdmin: boolean;
   /** Every space the identity is a member of. */
   memberIds: MemberId[];
-  /** Every team_member the identity owns. */
+  /** Every team_member in a space the identity has joined. */
   teamMemberIds: TeamMemberId[];
   /**
    * Who this request is *authored by*. `null` = the human acts as themselves.
@@ -169,10 +169,10 @@ export interface ClaimSet {
   /**
    * Effective author id: the acting team_member if present, else the primary
    * member. Agents act as themselves; authorization still resolves through the
-   * owner's `memberIds` (T-L7).
+   * launching identity's space membership.
    */
   actorId: MemberId | TeamMemberId;
-  /** Personas this identity may act as. Node-admin does not widen this. */
+  /** Shared personas in the identity's spaces. Node-admin does not widen this. */
   canActAs: TeamMemberId[];
 }
 

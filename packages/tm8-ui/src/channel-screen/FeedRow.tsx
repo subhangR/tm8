@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import type { EntityId, FeedItem, MessageView } from '@tm8/contract';
+import type { ActorSummary, EntityId, FeedItem, MessageView } from '@tm8/contract';
 import { Avatar, Pill } from '../kit';
 import { DisabledAction, DisabledIconControl, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import {
@@ -112,11 +112,12 @@ function FeedRow({
  * rows: the timestamp, so every row still answers "when" without a byline.
  */
 function Gutter({ item, clustered }: { item: FeedItem; clustered: boolean }) {
-  if (item.itemKind === 'message' && !clustered && !item.message.state.redactedAt) {
+  if (item.itemKind === 'message' && !clustered) {
     const author = item.message.state.author ?? item.message.createdBy;
     return (
       <div className="chs-gutter">
         <Avatar
+          actorId={author.id}
           provenance={author?.isAgent ? 'agent' : 'human'}
           label={author?.displayName ?? 'unknown'}
           size={32}
@@ -195,6 +196,7 @@ function MessageContent({
 
   const summary = deliverySummaryLine(delivery);
   const single = delivery.length === 1 ? delivery[0] : null;
+  const parentMessageId = message.parentId ?? message.state.rootMessageId;
 
   return (
     <>
@@ -221,10 +223,12 @@ function MessageContent({
 
       <ContextLine item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
 
-      {message.state.rootMessageId ? (
+      <LinkedSessions item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
+
+      {parentMessageId ? (
         <ParentPreview
-          id={message.state.rootMessageId}
-          parent={handlers.loadedMessages?.get(message.state.rootMessageId) ?? null}
+          id={parentMessageId}
+          parent={handlers.loadedMessages?.get(parentMessageId) ?? null}
           onOpenEntity={handlers.onOpenEntity}
           onFocusMessage={handlers.onFocusMessage}
         />
@@ -381,16 +385,12 @@ function ContextLine({
       {item.sourceWorkSessionId ? (
         <span className="chs-message-meta__part">
           <span>from session </span>
-          {onOpenEntity ? (
-            <button
-              type="button"
-              className="chs-linkbtn"
-              aria-label="Open source session"
-              onClick={() => onOpenEntity(item.sourceWorkSessionId!)}
-            >
-              {item.sourceWorkSessionId}
-            </button>
-          ) : <span>{item.sourceWorkSessionId}</span>}
+          <SessionChip
+            id={item.sourceWorkSessionId}
+            label={item.sourceWorkSessionId}
+            ariaLabel="Open source session"
+            onOpenEntity={onOpenEntity}
+          />
         </span>
       ) : null}
       {foreign ? (
@@ -410,6 +410,74 @@ function ContextLine({
       ) : null}
     </p>
   );
+}
+
+/**
+ * Channel @Tags create one message sibling per existing or newly spawned work
+ * session. Those durable siblings are the linkage; delivery is only a changing
+ * facet on top. Show every linked session even when delivery never started.
+ */
+function LinkedSessions({
+  item,
+  anchorId,
+  onOpenEntity,
+}: {
+  item: Extract<FeedItem, { itemKind: 'message' }>;
+  anchorId: EntityId;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
+  const sessions = new Map<EntityId, { id: EntityId; label: string }>();
+  for (const session of item.linkedWorkSessions ?? []) {
+    if (session.id !== anchorId) sessions.set(session.id, { id: session.id, label: session.title });
+  }
+  // Rolling-server fallback: delivery target ids still make the link usable
+  // when an older feed response has not supplied `linkedWorkSessions` yet.
+  for (const delivery of item.delivery) {
+    if (delivery.targetWorkSessionId === anchorId || sessions.has(delivery.targetWorkSessionId)) continue;
+    sessions.set(delivery.targetWorkSessionId, {
+      id: delivery.targetWorkSessionId,
+      label: delivery.targetWorkSession?.title || delivery.targetWorkSessionId,
+    });
+  }
+  if (sessions.size === 0) return null;
+  return (
+    <ul className="chs-session-links" aria-label="Linked work sessions" data-testid="chs-session-links">
+      {[...sessions.values()].map((session) => (
+        <li key={session.id}>
+          <SessionChip
+            id={session.id}
+            label={session.label}
+            ariaLabel={`Open linked session ${session.label}`}
+            onOpenEntity={onOpenEntity}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SessionChip({
+  id,
+  label,
+  ariaLabel,
+  onOpenEntity,
+}: {
+  id: EntityId;
+  label: string;
+  ariaLabel: string;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
+  const content = <><span aria-hidden>▣</span><span>{label}</span></>;
+  return onOpenEntity ? (
+    <button
+      type="button"
+      className="chs-session-chip"
+      aria-label={ariaLabel}
+      onClick={() => onOpenEntity(id)}
+    >
+      {content}
+    </button>
+  ) : <span className="chs-session-chip">{content}</span>;
 }
 
 /** The §6 badge: colour + WORD, never colour alone, and never its own row. */
@@ -557,7 +625,7 @@ function ParentPreview({
   onOpenEntity?: (id: EntityId) => void;
   onFocusMessage?: (id: EntityId) => void;
 }) {
-  const author = parent?.state.author?.displayName ?? parent?.createdBy?.displayName ?? null;
+  const author = parent?.state.author ?? parent?.createdBy ?? null;
   const preview = parent
     ? parent.state.redactedAt
       ? 'redacted message'
@@ -566,7 +634,8 @@ function ParentPreview({
   const inner = (
     <>
       <span aria-hidden className="chs-parent__glyph">↩</span>
-      {author ? <span className="chs-parent__author">{author}</span> : null}
+      <span className="chs-parent__label">in reply to</span>
+      {author ? <InlineActor actor={author} className="chs-parent__author" /> : null}
       <span className="chs-parent__excerpt">{preview}</span>
     </>
   );
@@ -622,9 +691,9 @@ function ActivityContent({
         <strong className="chs-artifact__title">{entity.title}</strong>
         {entity.excerpt ? <span className="chs-artifact__excerpt">{entity.excerpt}</span> : null}
         <span className="chs-artifact__provenance">
-          {`${presentation.verb} by ${item.actor?.displayName ?? 'unknown'}${
-            item.sourceWorkSessionId ? ` · session ${item.sourceWorkSessionId}` : ''
-          }`}
+          <span>{`${presentation.verb} by `}</span>
+          {item.actor ? <InlineActor actor={item.actor} /> : <span>unknown</span>}
+          {item.sourceWorkSessionId ? <span>{` · session ${item.sourceWorkSessionId}`}</span> : null}
         </span>
         {handlers.onOpenEntity ? (
           <button
@@ -644,7 +713,7 @@ function ActivityContent({
     return (
       <p className="chs-state" data-testid="chs-state">
         <span aria-hidden className="chs-state__dot" />
-        {item.actor ? <span className="chs-state__actor">{item.actor.displayName}</span> : null}
+        {item.actor ? <InlineActor actor={item.actor} className="chs-state__actor" /> : null}
         <span className="chs-state__verb">{presentation.label}</span>
         {presentation.from ? (
           <>
@@ -662,7 +731,7 @@ function ActivityContent({
       <p className="chs-state chs-state--event" data-testid="chs-event">
         <span aria-hidden className="chs-state__dot" />
         <span className="chs-state__verb">{presentation.label}</span>
-        {item.actor ? <span>{`by ${item.actor.displayName}`}</span> : null}
+        {item.actor ? <InlineActor actor={item.actor} prefix="by " /> : null}
       </p>
     );
   }
@@ -674,7 +743,7 @@ function ActivityContent({
       </span>
       <span className="chs-unknown__label">unknown activity</span>
       <span className="chs-unknown__variant">{activity.verb}</span>
-      {item.actor ? <span className="chs-unknown__actor">{item.actor.displayName}</span> : null}
+      {item.actor ? <InlineActor actor={item.actor} className="chs-unknown__actor" /> : null}
       <span className="chs-byline__gap" />
       <OpenDetails id={activity.entityId ?? item.anchor?.id ?? null} onOpenEntity={handlers.onOpenEntity} />
     </div>
@@ -722,7 +791,7 @@ function OpenDetails({ id, onOpenEntity }: { id: EntityId | null; onOpenEntity?:
 function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operation' }> }) {
   const [open, setOpen] = useState(false);
   const head = group.items[0];
-  const actor = head.actor?.displayName ?? 'someone';
+  const actor = head.actor;
   return (
     <li className="chs-row chs-row--activity">
       <article className="chs-row__grid">
@@ -740,7 +809,8 @@ function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operat
             <span aria-hidden className="chs-group__glyph">
               ⇄
             </span>
-            <span className="chs-group__text">{`${actor} changed ${group.items.length} records`}</span>
+            {actor ? <InlineActor actor={actor} /> : <span className="chs-group__text">someone</span>}
+            <span className="chs-group__text">{`changed ${group.items.length} records`}</span>
             <button
               type="button"
               className="chs-chip-btn"
@@ -763,5 +833,30 @@ function MutationGroupRow({ group }: { group: Extract<FeedGroup, { kind: 'operat
         </div>
       </article>
     </li>
+  );
+}
+
+/** One compact actor spelling for every activity/reply variant. */
+function InlineActor({
+  actor,
+  prefix = '',
+  className = '',
+}: {
+  actor: ActorSummary;
+  prefix?: string;
+  className?: string;
+}) {
+  return (
+    <span className={`chs-inline-actor ${className}`.trim()}>
+      {prefix ? <span>{prefix}</span> : null}
+      <Avatar
+        actorId={actor.id}
+        provenance={actor.isAgent ? 'agent' : 'human'}
+        label={actor.displayName}
+        size={15}
+        src={actor.avatar ?? null}
+      />
+      <span>{actor.displayName}</span>
+    </span>
   );
 }

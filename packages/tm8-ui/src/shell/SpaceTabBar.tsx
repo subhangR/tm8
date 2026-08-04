@@ -21,6 +21,8 @@ export interface SpaceTabBarProps {
   spaces: readonly SpaceSummary[];
   activeSpaceId: SpaceId | null;
   onSelectSpace(id: SpaceId): void;
+  /** Opens the node-local Space + project onboarding flow when available. */
+  onAddSpace?(): void;
   /** Account menu — theme's home per D1. */
   onOpenAccount?(): void;
   onOpenPalette?(): void;
@@ -41,8 +43,8 @@ export interface SpaceTabBarProps {
    */
   accountSlot?: ReactNode;
   /**
-   * Creating a space is not in the Phase-1 seam surface, so the affordance
-   * renders disabled-with-reason rather than vanishing (L6).
+   * Explains why onboarding is unavailable when the host has no project setup
+   * port. The affordance remains focusable instead of vanishing (L6).
    */
   addSpaceReason?: string;
 }
@@ -90,16 +92,16 @@ export function SpaceTabBar(props: SpaceTabBarProps) {
           );
         })}
 
-        {/* D28: aria-disabled and FOCUSABLE, never natively `disabled`. A
-            native disabled control drops out of the tab order, taking its
-            reason with it — unreachable for exactly the users L6 protects. */}
+        {/* When no onboarding port exists this keeps D28's focusable
+            disabled-with-reason posture. The real seam supplies a callback and
+            turns the same reserved affordance into the actual create flow. */}
         <button
           type="button"
           className="shell-tabbar__add"
-          aria-disabled="true"
-          onClick={(event) => event.preventDefault()}
+          aria-disabled={props.onAddSpace ? undefined : 'true'}
+          onClick={props.onAddSpace ?? ((event) => event.preventDefault())}
           aria-label="Add space"
-          title={props.addSpaceReason ?? ADD_SPACE_DISABLED_REASON}
+          title={props.onAddSpace ? 'Create a Space and add a local project' : props.addSpaceReason ?? ADD_SPACE_DISABLED_REASON}
         >
           +
         </button>

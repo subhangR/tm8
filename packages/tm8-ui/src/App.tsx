@@ -11,10 +11,11 @@ import { useServerRegistry } from './servers';
  * after — children are not rendered at all while signed out, so the app's
  * effects, reads and sockets never run for someone who is not in.
  *
- * WHAT THE GATE IS, because the distinction is load-bearing: this node exposes
- * `identity.get` and NO auth operation (no signup, login or logout over HTTP).
- * So the account is LOCAL to this browser and every frame that takes a
- * credential says so on screen. See `src/auth/HANDOVER-Auth.md` §GATE UPGRADE.
+ * WHAT THE GATE IS, because the distinction is load-bearing: server-backed
+ * (Identity v2 Stage 1). It performs `auth.signup` / `auth.login` /
+ * `auth.logout` against the ACTIVE server and verifies the stored `tm8s_…`
+ * pass with `auth.session.get` on reload. The pass is stored per server; the
+ * seam below attaches it to every request via `getAuthToken`.
  *
  * `resolveIdentity` is deliberately NOT passed here: the seam is constructed
  * inside `useGateData`, one layer down, and building a second one at this level

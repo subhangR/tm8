@@ -1,4 +1,6 @@
 import { AlwaysDark } from './AlwaysDark';
+import type { ActorSummary } from '@tm8/contract';
+import { Avatar } from '../kit';
 import { presentationStyle, type SessionPresentation } from './session-presentation';
 
 /**
@@ -28,6 +30,7 @@ export function TerminalChromeStrip({
   initial,
   statusDetail,
   showFocusControl = true,
+  actor,
 }: {
   /** Persona name — the agent, e.g. "forge". */
   persona: string;
@@ -54,6 +57,8 @@ export function TerminalChromeStrip({
   /** False when a parent drawer keeps the same exit/transcript control in
       its always-visible collapsed row. */
   showFocusControl?: boolean;
+  /** Stable display actor; omitted only by isolated review/test mounts. */
+  actor?: ActorSummary;
 }) {
   const style = presentationStyle(presentation);
   const ended = !style.isLive;
@@ -61,12 +66,17 @@ export function TerminalChromeStrip({
   return (
     <AlwaysDark>
       <div className="term-strip" data-testid="terminal-chrome-strip">
-        <span
-          className={ended ? 'term-strip__avatar term-strip__avatar--ended' : 'term-strip__avatar'}
-          aria-hidden
-        >
-          {(initial ?? persona.charAt(0)).toUpperCase()}
-        </span>
+        {actor ? (
+          <Avatar
+            actorId={actor.id}
+            provenance={actor.isAgent ? 'agent' : 'human'}
+            label={actor.displayName}
+            initials={initial}
+            size={22}
+            src={actor.avatar ?? null}
+            className={ended ? 'term-strip__avatar term-strip__avatar--ended' : 'term-strip__avatar'}
+          />
+        ) : null}
 
         <span
           className={ended ? 'term-strip__name term-strip__name--ended' : 'term-strip__name'}

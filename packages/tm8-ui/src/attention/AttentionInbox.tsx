@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { AttentionRequest, EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
 import { getKind } from '../domain/registry';
+import { Avatar } from '../kit';
 import { type AttentionEntityGroup, groupAttentionByEntity } from './attention-model';
 import './attention.css';
 
@@ -185,11 +186,22 @@ function AttentionRow(props: {
         aria-label={[
           title,
           `${group.totalPoints} points`,
+          `requested by ${group.latestRequester.displayName}`,
           combined ? `${group.pendingCount} requests combined` : '1 request',
           group.latestReason,
         ].join(', ')}
       >
         <span className="att-inbox__points" aria-hidden="true">{group.totalPoints}</span>
+        <span className="att-inbox__requester">
+          <Avatar
+            actorId={group.latestRequester.id}
+            provenance={group.latestRequester.isAgent ? 'agent' : 'human'}
+            label={group.latestRequester.displayName}
+            size={20}
+            src={group.latestRequester.avatar ?? null}
+          />
+          <span>{`by ${group.latestRequester.displayName}`}</span>
+        </span>
         <span className="att-inbox__body">
           <span className="att-inbox__title">
             {config ? <span className="att-inbox__glyph-sm" aria-hidden="true">{config.icon}</span> : null}

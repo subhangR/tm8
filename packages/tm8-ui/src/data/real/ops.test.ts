@@ -67,6 +67,48 @@ describe('ops: launch resources', () => {
     expect(f.last().method).toBe('GET');
     expect(f.last().url).toBe('/v2/spaces/space-1/settings');
   });
+
+  it('uses catalog bindings for node-local onboarding reads and commands', async () => {
+    const listing = {
+      roots: ['/srv/projects'],
+      path: '/srv/projects',
+      parentPath: null,
+      separator: '/' as const,
+      directories: [],
+      truncated: false,
+    };
+    const { ops, f } = harness(listing);
+
+    await expect(ops.projectDirectories('/srv/projects')).resolves.toEqual(listing);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/project-directories?path=%2Fsrv%2Fprojects');
+
+    await ops.createSpace({ name: 'Studio', clientMutationId: 'space-1' });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/spaces',
+      body: { name: 'Studio', clientMutationId: 'space-1' },
+    });
+
+    await ops.createProject({
+      name: 'Website',
+      workingDir: '/srv/projects/website',
+      ensureWorkingDir: true,
+      clientMutationId: 'project-1',
+    });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/projects',
+      body: expect.objectContaining({ ensureWorkingDir: true }),
+    });
+
+    await ops.linkProject('space-1', { projectId: 'project-1', clientMutationId: 'link-1' });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/spaces/space-1/projects',
+      body: { projectId: 'project-1', clientMutationId: 'link-1' },
+    });
+  });
 });
 
 describe('ops: canonical file upload lifecycle', () => {
@@ -216,6 +258,28 @@ describe('ops: command bodies the server actually requires', () => {
     const { ops, f } = harness({ patches: [] });
     await ops.deleteEntity('e-1');
     expect(f.last().body).toEqual({});
+  });
+
+  /**
+   * The relationship writes. `edges.create` is one POST to a collection and
+   * carries its endpoints in the BODY; `edges.delete` addresses the edge by
+   * its own id in the PATH. Pinned because they are the pair behind the task
+   * tile's Assigned control, and a URL that reads plausibly but is wrong fails
+   * as a 404 the UI would report as "could not assign".
+   */
+  it('createEdge POSTs the endpoints; deleteEdge addresses the edge by id', async () => {
+    const { ops, f } = harness({ patches: [] });
+    await ops.createEdge({ srcId: 'task-1', dstId: 'member-1', type: 'assigned_to' });
+    expect(f.last().method).toBe('POST');
+    expect(f.last().url).toBe('/v2/edges');
+    expect(f.last().body).toEqual({ srcId: 'task-1', dstId: 'member-1', type: 'assigned_to' });
+
+    await ops.deleteEdge('edge-1', { clientMutationId: 'cmid-e' });
+    expect(f.last().method).toBe('DELETE');
+    // `:edgeId`, not `:id` — the catalog names this one differently from the
+    // entity routes and an unbound placeholder would travel as a literal.
+    expect(f.last().url).toBe('/v2/edges/edge-1');
+    expect(f.last().body).toEqual({ clientMutationId: 'cmid-e' });
   });
 });
 

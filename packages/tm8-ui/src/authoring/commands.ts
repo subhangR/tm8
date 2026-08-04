@@ -60,15 +60,27 @@ let mutationSeq = 0;
  * the key the echo event carries back (the fixture seam stamps it onto
  * `entity.upsert`; the real seam does the same through the wire envelope).
  *
- * SESSION-SCOPED AND MONOTONIC, deliberately not a UUID. Uniqueness is only
- * required within one client's in-flight set — that is all echo reconciliation
- * consumes — and a counter is reproducible in tests, where `crypto.randomUUID`
- * and `Date.now` are not. This is a constraint, not a prediction: it has not
- * been measured against a real node's dedupe window.
+ * GLOBALLY UNIQUE, and it has to be — the bare `au-<n>` counter this was
+ * measured to fail as (Identity v2 Slice 1 browser acceptance, 2026-08-02):
+ * with real multi-principal auth, every human's FIRST create was `au-1`, and
+ * `require_replay_principal` correctly refused the second human with
+ * "clientMutationId belongs to another principal". The guard is right; the
+ * id must be unique across every principal that will ever talk to the node,
+ * not merely within one client's in-flight set. The monotonic prefix is kept
+ * for log legibility and test assertions (`startsWith('au-')`, distinctness).
  */
 export function nextMutationId(): string {
   mutationSeq += 1;
-  return `au-${mutationSeq}`;
+  return `au-${mutationSeq}-${randomIdSuffix()}`;
+}
+
+/** `crypto.randomUUID` where the context grants it; a time+entropy fallback
+ * where it does not (it is secure-context-gated, and a plain-HTTP LAN page
+ * would otherwise crash on its first create rather than degrade). */
+function randomIdSuffix(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 // ---------------------------------------------------------------------------

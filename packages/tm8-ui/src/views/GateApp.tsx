@@ -41,7 +41,7 @@ import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { useTheme } from '../theme/useTheme';
-import { AccountMenu, useAuthActions } from '../auth';
+import { AccountMenu, authTokenFor, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { HomeScreen } from '../home';
@@ -50,6 +50,7 @@ import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } fro
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { nodeKeyOf } from '../data/launch-cache';
+import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -100,6 +101,11 @@ export function GateApp(props: GateAppProps = {}) {
     leftKind: DEFAULT_LEFT_KIND,
     rightKind: DEFAULT_RIGHT_KIND,
     serverBaseUrl: activeServer.routeBaseUrl,
+    // The gate's per-server pass rides on every seam request. Read per call,
+    // so sign-in/out takes effect without rebuilding the seam; App keys this
+    // component on the server id, so a server switch remounts with the right
+    // store entry anyway.
+    getAuthToken: () => authTokenFor(activeServer.id),
   });
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',
@@ -123,36 +129,28 @@ export function GateApp(props: GateAppProps = {}) {
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [menuCollapsed, setMenuCollapsed] = useState(false);
   const [addServerOpen, setAddServerOpen] = useState(false);
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
     type: 'view',
     ref: 'workspace',
   });
+  const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
+    const setup = data.seam.projectSetup;
+    if (!setup) return null;
+    return {
+      ...setup,
+      createMemory: (input) => data.seam.commands.createEntity(input),
+    };
+  }, [data.seam]);
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
   const contentSurface = useNavStore((s) => s.contentSurface);
-  const [viewerMemberId, setViewerMemberId] = useState<string | null>(null);
-
-  // Surface preferences are member+session scoped. Identity is a read-only
-  // browser fact; it does not participate in provider/model launch selection.
-  useEffect(() => {
-    let active = true;
-    if (!data.spaceId) {
-      setViewerMemberId(null);
-      return () => { active = false; };
-    }
-    void data.seam.identity().then((identity) => {
-      if (!active) return;
-      setViewerMemberId(
-        identity.memberships.find((membership) => membership.spaceId === data.spaceId)?.memberId
-          ?? identity.identityId,
-      );
-    }).catch(() => {
-      if (active) setViewerMemberId(null);
-    });
-    return () => { active = false; };
-  }, [data.seam, data.spaceId]);
+  // Hydration resolves the active-space display actor through the same
+  // identity read that supplies the account face. Reuse its canonical member
+  // id here: a second resolver/read would let the two surfaces disagree.
+  const viewerMemberId = data.viewerActor?.id ?? null;
 
   // D44/D51 launch sheet. Transient client state — never the URL (§11), so a
   // shared link cannot open someone else's half-configured spawn surface.
@@ -381,6 +379,7 @@ export function GateApp(props: GateAppProps = {}) {
             setActiveTarget({ type: 'view', ref: 'workspace' });
             data.selectSpace(id);
           }}
+          onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenPrompts={() => setPromptsOpen(true)}
@@ -392,7 +391,9 @@ export function GateApp(props: GateAppProps = {}) {
           // AuthGate (every existing test) keeps the avatar fallback and its
           // behaviour is unchanged.
           accountSlot={
-            authAccount ? <AccountMenu theme={theme} onThemeChange={setTheme} /> : undefined
+            authAccount && data.viewerActor ? (
+              <AccountMenu actor={data.viewerActor} theme={theme} onThemeChange={setTheme} />
+            ) : undefined
           }
         />
 
@@ -614,7 +615,12 @@ export function GateApp(props: GateAppProps = {}) {
             data.bootError.startsWith('this node has no spaces') ? (
               <div className="shell-boot" role="alert">
                 <strong>No spaces on this node.</strong>
-                <div>{data.bootError}</div>
+                <div>Create a Space and connect the local folder where its project work should be saved.</div>
+                {projectOnboardingPort ? (
+                  <button type="button" className="gov-btn gov-btn--ink" onClick={() => setNewSpaceOpen(true)}>
+                    Create Space & add project
+                  </button>
+                ) : <div>{data.bootError}</div>}
               </div>
             ) : (
               <div className="shell-boot" role="alert">
@@ -653,6 +659,23 @@ export function GateApp(props: GateAppProps = {}) {
             await props.onAddServer(input);
           }}
         />
+        {projectOnboardingPort ? (
+          <NewSpaceProjectDialog
+            key={activeServer.id}
+            open={newSpaceOpen}
+            nodeLabel={activeServer.label}
+            port={projectOnboardingPort}
+            onDismiss={() => setNewSpaceOpen(false)}
+            onCreated={(space) => {
+              navStore.getState().applyNormalization({ stack: [], pinned: [] });
+              navStore.getState().setSession(null);
+              screenStackStore.getState().clearAll();
+              setActiveTarget({ type: 'view', ref: 'workspace' });
+              data.acceptSpace(space);
+              setNewSpaceOpen(false);
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

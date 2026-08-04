@@ -200,6 +200,7 @@ function SectionBody({
       return (
         <IdentityProfileSection
           identity={data.identity}
+          spaceId={data.space?.id ?? ''}
           onSave={(input) => port.updateProfile(input)}
           onSaved={onProfileSaved}
         />

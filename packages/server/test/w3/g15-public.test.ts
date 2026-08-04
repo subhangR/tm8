@@ -60,15 +60,15 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       operations: number;
       implemented: number;
     };
-    // 121 -> 125 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
-    // 125 -> 126 (2026-08-02): execution.launch.
-    expect(OPERATIONS).toHaveLength(126);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(125);
+    // 121 -> 127 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
+    // 127 -> 127 (2026-08-02): execution.launch.
+    expect(OPERATIONS).toHaveLength(127);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(126);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 125,
-      implemented: 123,
+      operations: 126,
+      implemented: 124,
     });
   });
 
@@ -106,7 +106,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // (voice.token.create joined `OPERATIONS`, the 110->111 family) -> 114
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
     // are mounted, so none answers 501).
-    expect(implemented).toHaveLength(123);
+    expect(implemented).toHaveLength(124);
   });
 
   /**

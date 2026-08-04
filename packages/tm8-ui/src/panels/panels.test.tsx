@@ -16,6 +16,8 @@ import {
   taskGuideLines,
   taskTombstone,
   taskUuidTitle,
+  ada,
+  noor,
 } from '../fixtures';
 import { EntityDetailPanel, EntityListPanel, SharedContextSection, ShareDropTarget } from './index';
 import { HANDLED_SOURCES } from './list/tile-badges';
@@ -524,6 +526,61 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(getByTestId('filter-trigger').textContent).toBe('filter ▾');
   });
 
+  it('people filtering is membership-conditional and uses createdByIds', () => {
+    const solo = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([taskUuidTitle, taskGuideLines])}
+        members={[ada]}
+        ctx={ctx}
+      />,
+    );
+    // Authorship in the result page is deliberately irrelevant: a one-member
+    // space keeps the exact two-chip row it had before this feature.
+    expect(solo.queryByTestId('people-filter-trigger')).toBeNull();
+    expect(solo.container.querySelectorAll('.lp__filters .lp__chip')).toHaveLength(2);
+    solo.unmount();
+
+    const seen: QueryFilter[] = [];
+    const capturing = (filter: QueryFilter) => {
+      seen.push(filter);
+      return [];
+    };
+    const multi = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={capturing}
+        members={[ada, noor]}
+        ctx={ctx}
+      />,
+    );
+    fireEvent.click(multi.getByTestId('people-filter-trigger'));
+    const menu = multi.getByTestId('people-filter-menu');
+    const options = within(menu).getAllByRole('menuitemcheckbox');
+    expect(options).toHaveLength(2);
+    expect(menu.querySelectorAll('.kit-avatar')).toHaveLength(2);
+    fireEvent.click(options[0]!);
+    expect(seen.some((filter) =>
+      Array.isArray(filter.createdByIds) && filter.createdByIds.includes(ada.id),
+    )).toBe(true);
+
+    // If the same mounted panel moves into a solo space, a formerly selected
+    // person cannot survive as an invisible filter.
+    seen.length = 0;
+    multi.rerender(
+      <EntityListPanel kind="task" rowsFor={capturing} members={[ada]} ctx={ctx} />,
+    );
+    expect(multi.queryByTestId('people-filter-trigger')).toBeNull();
+    expect(multi.container.querySelector('.lp__chip--person')).toBeNull();
+    // The first transition render necessarily observes the old state before
+    // the membership effect clears it. A subsequent render must carry none.
+    seen.length = 0;
+    multi.rerender(
+      <EntityListPanel kind="task" rowsFor={capturing} members={[ada]} ctx={ctx} />,
+    );
+    expect(seen.some((filter) => Array.isArray(filter.createdByIds))).toBe(false);
+  });
+
   it('the unbounded option set lives in the picker, which scrolls', () => {
     const { getByTestId, queryByTestId } = render(
       <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
@@ -642,9 +699,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     fireEvent.click(within(tile).getByRole('button', { name: /expand details/i }));
     const expanded = tile.querySelector('.pn-tt__meta')?.textContent ?? '';
+    /* The expanded priority is now a CONTROL, not a badge (2026-08-04) — it
+       is addressed by the registry field it writes rather than by a badge
+       class, so this holds whether it renders as the picker or as the honest
+       refusal, which is what it does here with no `onSetValue` wired. The
+       word is still the badge's word: same fact, one spelling. */
     expect(
-      tile.querySelector('.pn-tt__meta .pn-badge--priority')?.textContent,
-      'expanded priority chip',
+      tile.querySelector('.pn-tt__meta [data-source="priority"]')?.textContent,
+      'expanded priority control',
     ).toBe('URGENT');
     expect(expanded, 'expanded facts').toContain('4/6 criteria');
     expect(expanded).toContain('Ada +1');

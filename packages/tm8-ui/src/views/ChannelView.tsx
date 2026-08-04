@@ -15,6 +15,7 @@ import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
 import './channel-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { representedThreadMessageCount } from './message-thread';
 
 const FEED_KEY = 'feed';
 
@@ -93,7 +94,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
   if (selectedId && (
     !selectedDetail
     || selectedMessages === undefined
-    || selectedMessages.length < selectedDetail.counters.messages
+    || representedThreadMessageCount(selectedMessages) < selectedDetail.counters.messages
   )) data.pull?.(selectedId);
 
   const entityPanel = selectedId ? (
@@ -110,6 +111,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       livenessOf={data.livenessOf}
       messages={selectedMessages}
+      connections={data.connectionsOf(selectedId)}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `entity-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],

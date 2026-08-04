@@ -307,7 +307,10 @@ printf '%stm8 prod deploy%s  %s → %s\n' "$BOLD" "$OFF" "$SRC" "$LIVE"
 
 # --- 1. preflight ------------------------------------------------------------
 step "Preflight"
-[[ -x "$TM8_NODE_BIN" ]] || die "no node at $TM8_NODE_BIN (node-pty is built against this one)"
+[[ -n "$TM8_NODE_BIN" && -x "$TM8_NODE_BIN" ]] \
+  || die "no node 22 found (server+execution load node-pty, which is broken under bun).
+       env.sh probes ~/.local/bin/node, the node@22 keg, then PATH. Install one,
+       or point at it: TM8_NODE_BIN=/path/to/node $0"
 command -v bun   >/dev/null || die "bun not on PATH"
 command -v rsync >/dev/null || die "rsync not on PATH"
 
@@ -319,13 +322,36 @@ PSQL="${TM8_PSQL:-$(command -v psql || true)}"
   || die "cannot query $TM8_DATABASE_URL — is the 5442 sidecar up, and does role tm8 exist?"
 ok "postgres reachable: tm8_stable @ 5442"
 
+# pg_dump refuses to dump a server newer than itself, and step 5 runs AFTER the
+# build but BEFORE the migrate — late enough that a mismatch discovered there
+# has already cost time, early enough that we can just check it now. Take it
+# from the same bin dir as $PSQL so the pair cannot drift.
+PG_DUMP="$(dirname "$PSQL")/pg_dump"
+[[ -x "$PG_DUMP" ]] || die "no pg_dump beside $PSQL — set TM8_PSQL to a full Postgres 18 client path"
+dump_major="$("$PG_DUMP" --version | grep -oE '[0-9]+' | head -1)"
+srv_major="$("$PSQL" "$TM8_DATABASE_URL" -tAc 'show server_version' | grep -oE '^[0-9]+')"
+(( dump_major >= srv_major )) \
+  || die "pg_dump $dump_major cannot dump a server $srv_major ($PG_DUMP).
+       Homebrew keeps postgresql@18 keg-only; bare pg_dump is an older linked formula.
+       Fix: TM8_PSQL=/opt/homebrew/opt/postgresql@18/bin/psql $0"
+ok "pg_dump $dump_major vs server $srv_major"
+
 # bun's isolated linker needs a real node_modules per workspace package; we
 # hardlink them from here, so a missing one is a build failure two steps later.
 missing=()
 [[ -d "$SRC/node_modules" ]] || missing+=("<root>")
 for d in "$SRC"/packages/*/ "$SRC"/tools/*/; do
   [[ -f "$d/package.json" ]] || continue
-  [[ -d "$d/node_modules" ]] || missing+=("${d#$SRC/}")
+  [[ -d "$d/node_modules" ]] && continue
+  # A package that declares no deps (packages/pty-protocol) never gets a
+  # node_modules from bun, and step 3 skips it for the same reason. Counting it
+  # as missing re-ran `bun install` on EVERY deploy and trained the eye to
+  # ignore this warning — which is the one that catches a real partial install.
+  if "$TM8_NODE_BIN" -e '
+        const p = require(process.argv[1] + "/package.json");
+        process.exit(Object.keys({...p.dependencies, ...p.devDependencies}).length ? 1 : 0);
+      ' "$d"; then continue; fi
+  missing+=("${d#$SRC/}")
 done
 if (( ${#missing[@]} )); then
   warn "no node_modules in: ${missing[*]}"
@@ -414,7 +440,7 @@ step "Backing up tm8_stable"
 if (( DO_BACKUP )); then
   mkdir -p "$TM8_PROD_BACKUP_DIR"
   BACKUP="$TM8_PROD_BACKUP_DIR/tm8_stable-$(date -u '+%Y%m%dT%H%M%SZ').dump"
-  pg_dump -Fc -f "$BACKUP" "$TM8_DATABASE_URL" || die "pg_dump failed"
+  "$PG_DUMP" -Fc -f "$BACKUP" "$TM8_DATABASE_URL" || die "pg_dump failed"
   echo "$BACKUP" > "$TM8_PROD_BACKUP_DIR/LAST_PROD_BACKUP"
   ok "$(du -h "$BACKUP" | cut -f1) → $BACKUP"
   # keep the 10 most recent

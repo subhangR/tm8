@@ -232,6 +232,7 @@ export function TerminalBody({
         >
           <div className="pn-terminal-drawer__content">
             <TerminalChromeStrip
+              actor={row.actor}
               persona={row.name}
               provider={row.provider}
               presentation={presentation}

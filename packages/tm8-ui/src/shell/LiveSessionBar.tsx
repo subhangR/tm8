@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { SessionLiveness } from '../data/seam';
+import { Avatar } from '../kit';
 // Imported through the barrel, not by deep path: the barrel carries the
 // terminal stylesheet, so anything that renders this bar gets its styles.
 import {
@@ -85,6 +86,15 @@ export function LiveSessionBar({
 
         {focused && focusedPresentation ? (
           <>
+            {focused.actor ? (
+              <Avatar
+                actorId={focused.actor.id}
+                provenance={focused.actor.isAgent ? 'agent' : 'human'}
+                label={focused.actor.displayName}
+                size={20}
+                src={focused.actor.avatar ?? null}
+              />
+            ) : null}
             <button
               type="button"
               className={
@@ -132,6 +142,15 @@ export function LiveSessionBar({
             data-testid="live-bar-attention"
           >
             <span className="term-dot term-dot--attention term-dot--pulse" aria-hidden />
+            {attention.actor ? (
+              <Avatar
+                actorId={attention.actor.id}
+                provenance={attention.actor.isAgent ? 'agent' : 'human'}
+                label={attention.actor.displayName}
+                size={20}
+                src={attention.actor.avatar ?? null}
+              />
+            ) : null}
             {`${attention.name} needs you`}
           </button>
         ) : null}

@@ -46,9 +46,9 @@ import { BOOLEAN_OPTIONS, COMMAND_SCOPED_GLOBALS, GLOBAL_OPTIONS } from '../src/
 import { emitCommandHelp } from '../src/commands/help.js';
 import { createOutput } from '../src/output.js';
 
-// 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
-// 125 -> 126 (2026-08-02): execution.launch (public, with a command).
-const EXPECTED_ROWS = 126;
+// 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+// 126 -> 127 (2026-08-02): execution.launch (public, with a command).
+const EXPECTED_ROWS = 127;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -114,7 +114,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 126 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 127 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -156,14 +156,14 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
   it('122 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 122, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 123, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
 describe('the CLI command projection', () => {
   it('exactly two rows have no CLI command, and they are the asymmetric pair', () => {
     const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
-    expect(commandless.sort()).toEqual(['bridge.fetchBlob', 'execution.prompt']);
+    expect(commandless.sort()).toEqual(['bridge.fetchBlob', 'execution.prompt', 'projects.directories.list']);
   });
 
   it('ASYMMETRIC RESERVED HANDLING: search.query has a command, bridge.fetchBlob has none', () => {
@@ -182,7 +182,7 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    expect(counted).toBe(EXPECTED_ROWS - 2);
+    expect(counted).toBe(EXPECTED_ROWS - 3);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

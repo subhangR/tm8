@@ -2,8 +2,9 @@
  * FLOW A · FIRST RUN (T3-1) — 1a claim · 1b name the server · 1c first space.
  *
  * "Today tm8 silently auto-signs-in on localhost. The moment it leaves one
- * machine: first boot serves three steps" (oracle L29). None of the three has
- * an executor — see reasons.ts — so all three refuse their terminal act and
+ * machine: first boot serves three steps" (oracle L29). Step 1 is REAL inside
+ * the gate — auth.signup + auth.login against the active server. Steps 2 and
+ * 3 still have no executor (see reasons.ts) and refuse their terminal act;
  * the step navigation between them is real client nav.
  */
 import { useState } from 'react';
@@ -16,7 +17,6 @@ import {
   AuthFailureBanner,
   AuthField,
   AuthFootnote,
-  AuthLocalNote,
   AuthServerTile,
   AuthStage,
   AuthSteps,
@@ -32,9 +32,10 @@ import type { FrameProps } from './types';
 /**
  * 1a — Claim, step 1 · you. Oracle L33–L47.
  *
- * INSIDE THE GATE this is a REAL act: it creates the local account and signs
- * you in. Outside it (the review board) the identical component refuses,
- * because the executor arrives through context and nothing else changes.
+ * INSIDE THE GATE this is a REAL act: it creates the account ON THE SERVER
+ * (auth.signup) and signs you in (auth.login). Outside it (the review board)
+ * the identical component refuses, because the executor arrives through
+ * context and nothing else changes.
  *
  * WHY IT COMPLETES AT STEP 1 OF 3, and why the dots still say 1 of 3. The
  * oracle draws three first-run steps: you, the server, the first space. Steps
@@ -68,12 +69,13 @@ export function FrameClaim(props: FrameProps) {
           <span className="auth-spacer" />
           <AuthSteps of={3} at={1} />
         </div>
-        <AuthTitle>{another ? CLAIM.anotherTitle : CLAIM.title}</AuthTitle>
+        <AuthTitle>
+          {another ? CLAIM.anotherTitle : actions ? CLAIM.gateTitle : CLAIM.title}
+        </AuthTitle>
         <AuthBody>
           {!actions ? CLAIM.body : another ? CLAIM.anotherBody : CLAIM.gateBody}
         </AuthBody>
 
-        {actions ? <AuthLocalNote /> : null}
         {failure ? (
           <AuthFailureBanner>
             <b className="auth-alert__lead">{failureCopy(failure).lead}</b>
@@ -108,7 +110,7 @@ export function FrameClaim(props: FrameProps) {
               }
             />
             <AuthAction onClick={submit}>
-              {actions.busy ? CLAIM.actionBusy : another ? CLAIM.anotherAction : CLAIM.action}
+              {actions.busy ? CLAIM.actionBusy : another ? CLAIM.anotherAction : CLAIM.gateAction}
             </AuthAction>
           </>
         ) : (

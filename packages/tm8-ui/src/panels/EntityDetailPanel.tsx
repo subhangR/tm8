@@ -498,7 +498,7 @@ function PanelBody(
   if (detail.deletedAt) {
     return (
       <TombstoneBody
-        deletedBy={detail.createdBy.displayName}
+        deletedBy={detail.createdBy}
         canRestore={detail.capabilities.canDelete}
       />
     );

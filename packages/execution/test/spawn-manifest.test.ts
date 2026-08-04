@@ -531,7 +531,7 @@ describe('composeEnv', () => {
     baseUrl: 'http://127.0.0.1:4610',
   });
 
-  it('sets the three variables that are the whole boot contract', () => {
+  it('sets the session and exact persona variables in the boot contract', () => {
     const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {});
     expect(env.TM8_SESSION_ID).toBe('sess-1');
     expect(env.TM8_MANIFEST_PATH).toBe('/tmp/m.json');

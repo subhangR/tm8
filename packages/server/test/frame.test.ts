@@ -82,6 +82,13 @@ describe('config (S1 — loopback only)', () => {
     expect(loadConfig({ TM8_LAUNCH_BOOTSTRAP: '0' }).launchBootstrap).toBe(false);
   });
 
+  it('defaults auto-owner on and parses its deployment kill switch strictly', () => {
+    expect(loadConfig({}).disableAutoOwner).toBe(false);
+    expect(loadConfig({ TM8_DISABLE_AUTO_OWNER: '1' }).disableAutoOwner).toBe(true);
+    expect(loadConfig({ TM8_DISABLE_AUTO_OWNER: 'off' }).disableAutoOwner).toBe(false);
+    expect(() => loadConfig({ TM8_DISABLE_AUTO_OWNER: 'maybe' })).toThrow(ConfigError);
+  });
+
   it('REFUSES to start on a non-loopback bind (no token auth exists yet)', () => {
     expect(() => loadConfig({ TM8_BIND: '0.0.0.0' })).toThrow(ConfigError);
     expect(() => loadConfig({ TM8_BIND: '192.168.1.10' })).toThrow(/requires token auth/);

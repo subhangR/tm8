@@ -256,11 +256,52 @@ describe('the feed region', () => {
       messageItem({ itemId: 'f-reply' }, reply),
     ])} onOpenEntity={onOpenEntity} />);
     const preview = screen.getByTestId('chs-parent');
+    expect(preview.textContent).toContain('in reply to');
     expect(preview.textContent).toContain('alex');
     expect(preview.textContent).toContain('Parent context');
     fireEvent.click(within(preview).getByRole('button', { name: /focus parent message/i }));
     expect((document.activeElement as HTMLElement).dataset.feedMessageId).toBe('msg-parent');
     expect(onOpenEntity).not.toHaveBeenCalled();
+  });
+
+  it('uses the direct parent for a nested reply instead of collapsing it to the thread root', () => {
+    const root = msg({ id: 'msg-root' });
+    const parent = msg({
+      id: 'msg-parent',
+      parentId: 'msg-root',
+      state: { ...msg().state, rootMessageId: 'msg-root' },
+      content: { kind: 'message', body: 'Immediate parent', mentions: [], attachments: [] },
+    });
+    const nested = msg({
+      id: 'msg-nested',
+      parentId: 'msg-parent',
+      state: { ...msg().state, rootMessageId: 'msg-root' },
+      content: { kind: 'message', body: 'Nested reply', mentions: [], attachments: [] },
+    });
+    render(<ChannelScreen {...base} page={page([
+      messageItem({ itemId: 'f-root' }, root),
+      messageItem({ itemId: 'f-parent' }, parent),
+      messageItem({ itemId: 'f-nested' }, nested),
+    ])} />);
+    const nestedRow = document.querySelector('[data-feed-message-id="msg-nested"]')!;
+    expect(within(nestedRow as HTMLElement).getByTestId('chs-parent').textContent).toContain('Immediate parent');
+  });
+
+  it('shows a canonical, openable chip for a session linked or spawned from the channel', () => {
+    const onOpenEntity = vi.fn();
+    const item = messageItem({
+      linkedWorkSessions: [{
+        id: 'ws-forge',
+        kind: 'work_session',
+        title: 'Forge · channel run',
+      } as never],
+    });
+    render(<ChannelScreen {...base} page={page([item])} onOpenEntity={onOpenEntity} />);
+    const chip = screen.getByRole('button', { name: /open linked session forge · channel run/i });
+    expect(screen.getByTestId('chs-session-links')).toBeTruthy();
+    expect(chip.textContent).toContain('Forge · channel run');
+    fireEvent.click(chip);
+    expect(onOpenEntity).toHaveBeenCalledWith('ws-forge');
   });
 
   it('renders mentions and attachments as canonical entity controls', () => {

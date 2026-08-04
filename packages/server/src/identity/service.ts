@@ -123,7 +123,7 @@ export interface IdentityService {
   /** The claim set the db layer binds per transaction. */
   buildClaims(input: ResolveClaimsInput): Promise<ClaimSet>;
 
-  /** T-L7: personas whose owner member row belongs to this identity. */
+  /** Shared personas in spaces this identity has joined. */
   listCanActAs(identityId: IdentityId): Promise<TeamMemberId[]>;
   canActAs(identityId: IdentityId, teamMemberId: TeamMemberId): Promise<boolean>;
 }
@@ -245,7 +245,7 @@ export class IdentityServiceImpl implements IdentityService {
     const actingAs = input.actingAsTeamMemberId ?? null;
     if (input.kind === 'agent' && !actingAs) {
       // S8: an agent token that is not scoped to a persona would act with the
-      // owner's full authority — exactly the escalation T-L7/S13 forbid.
+      // launching human's authority rather than the teammate it is running.
       throw invalidInput('agent sessions must be scoped to a team_member');
     }
     if (actingAs) {
@@ -363,8 +363,8 @@ export class IdentityServiceImpl implements IdentityService {
     const actingAs = input.actingAsTeamMemberId ?? null;
 
     if (actingAs && !canActAs.includes(actingAs)) {
-      // Authorization resolves through the owner (T-L7): an agent may only act
-      // as a persona whose owner member row belongs to this identity.
+      // Authorization resolves through current space membership: teammate
+      // ownership governs configuration, not shared launch/use authority.
       throw forbidden('not permitted to act as this team_member', {
         teamMemberId: actingAs,
         identityId: account.identityId,
@@ -417,13 +417,12 @@ export class IdentityServiceImpl implements IdentityService {
 }
 
 /**
- * T-L7: the `can_act_as` set is exactly the personas owned by this identity's
- * member rows. Node-admin does NOT widen it — node-level roles (accounts,
- * invites, resource limits) and space-level roles are never mixed.
+ * Teammates are shared personas: membership in their space grants launch/use
+ * authority. ownerMemberId still governs persona configuration. Node-admin
+ * does NOT widen this — node-level and space-level roles remain separate.
  */
 function resolveCanActAs(scope: ActorScope): TeamMemberId[] {
-  const owned = new Set(scope.members.map((m) => m.id));
-  return scope.teamMembers.filter((tm) => owned.has(tm.ownerMemberId)).map((tm) => tm.id);
+  return scope.teamMembers.map((tm) => tm.id);
 }
 
 /**

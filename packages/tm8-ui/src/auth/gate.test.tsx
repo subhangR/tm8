@@ -9,13 +9,13 @@
  * circuit (the leg that only passes when its predecessor left the wrong state
  * behind is the one a per-leg suite is blind to).
  *
- * WHAT THIS GATE IS, and the reason the copy assertions are as load-bearing
- * as the behaviour ones: the HTTP surface carries `identity.get` and NOTHING
- * else — no signup, no login, no logout. So the account is LOCAL to this
- * browser, and a gate that let a user believe otherwise would be the same lie
- * as a login form that silently succeeds, just harder to spot. Every frame
- * that performs a real credential act must say so on screen; that is asserted
- * here, not left to review.
+ * WHAT THIS GATE IS (Identity v2 Stage 1): server-backed. Every suite below
+ * runs against a FAKE AUTH SERVER installed as `fetch` — an in-memory
+ * implementation of `auth.signup` / `auth.login` / `auth.logout` /
+ * `auth.session.get` with the contract's own shapes and refusal codes. The
+ * assertions therefore measure the wire the gate actually drives: an account
+ * created through the UI exists ON THE SERVER, the stored pass is a `tm8s_…`
+ * token the server minted, and a revoked pass ends the session on reload.
  */
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,12 +24,13 @@ import type { IdentityView } from '../data/seam';
 import {
   AccountMenu,
   AuthGate,
-  readLocalAccount,
-  readLocalAccounts,
-  readLocalSession,
+  readActiveAccount,
+  readKnownAccountsHere,
+  readStoredSession,
   signOut,
   useAuthSession,
 } from './index';
+import { defaultSignedOutFrame } from './AuthGate';
 
 function installStorage(): void {
   // The realSeamFlag.test.ts pattern — LOAD-BEARING under this runner, whose
@@ -51,17 +52,174 @@ function installStorage(): void {
   });
 }
 
+/* ── the fake auth server ──────────────────────────────────────────────── */
+
+interface FakeAccount {
+  username: string;
+  password: string;
+  displayName: string | null;
+  accountId: string;
+  identityId: string;
+}
+
+interface FakeAuthServer {
+  /** username → account. What `auth.signup` wrote. */
+  accounts: Map<string, FakeAccount>;
+  /** token → username. Live sessions; `auth.logout` deletes, reload verifies. */
+  sessions: Map<string, string>;
+  /** Every request the gate made, for negative assertions. */
+  requests: Array<{ method: string; path: string }>;
+}
+
+function accountView(a: FakeAccount) {
+  return {
+    accountId: a.accountId,
+    identityId: a.identityId,
+    username: a.username,
+    displayName: a.displayName,
+    isNodeAdmin: false,
+    isOwner: false,
+  };
+}
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function refusal(status: number, code: string, message: string): Response {
+  // The DEV-6 envelope, same shape the real node writes. ONE message for a
+  // wrong password and an unknown username — no account enumeration.
+  return json(status, { error: { code, message, requestId: 'req_fake' } });
+}
+
+/**
+ * Installs `fetch`. Implements exactly the four auth routes; anything else is
+ * a loud 500, because a gate that quietly called an unimplemented route would
+ * green a test that measured nothing.
+ */
+function installFakeAuthServer(): FakeAuthServer {
+  const server: FakeAuthServer = { accounts: new Map(), sessions: new Map(), requests: [] };
+  let minted = 0;
+
+  const impl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const path = url.split('?')[0]!;
+    server.requests.push({ method, path });
+    const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {};
+    const auth = (init?.headers as Record<string, string> | undefined)?.authorization ?? '';
+    const bearer = auth.replace(/^Bearer\s+/i, '');
+
+    if (method === 'POST' && path === '/v2/auth/signup') {
+      const username = String(body.username ?? '');
+      if (server.accounts.has(username)) {
+        return refusal(409, 'conflict', `an account named ${username} already exists`);
+      }
+      const account: FakeAccount = {
+        username,
+        password: String(body.password ?? ''),
+        displayName: typeof body.displayName === 'string' ? body.displayName : null,
+        accountId: `acct_${username}`,
+        identityId: `id_${username}`,
+      };
+      server.accounts.set(username, account);
+      return json(200, { data: { account: accountView(account) } });
+    }
+
+    if (method === 'POST' && path === '/v2/auth/login') {
+      const account = server.accounts.get(String(body.username ?? ''));
+      if (!account || account.password !== String(body.password ?? '')) {
+        return refusal(401, 'unauthenticated', 'invalid credentials');
+      }
+      minted += 1;
+      const sessionId = `sess_${minted}`;
+      const token = `tm8s_${sessionId}.secret${minted}`;
+      server.sessions.set(token, account.username);
+      return json(200, {
+        data: {
+          token,
+          account: accountView(account),
+          session: {
+            sessionId,
+            kind: 'browser',
+            actingAsTeamMemberId: null,
+            label: null,
+            expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          },
+        },
+      });
+    }
+
+    if (method === 'POST' && path === '/v2/auth/logout') {
+      if (server.sessions.has(bearer)) {
+        const sessionId = bearer.slice('tm8s_'.length).split('.')[0]!;
+        server.sessions.delete(bearer);
+        return json(200, { data: { sessionId, revoked: true } });
+      }
+      // A named session with no bearer: the loopback auto-owner path — the
+      // node owner may revoke any session (self-or-node-admin, in SQL).
+      if (typeof body.sessionId === 'string') {
+        for (const token of server.sessions.keys()) {
+          if (token.startsWith(`tm8s_${body.sessionId}.`)) {
+            server.sessions.delete(token);
+            return json(200, { data: { sessionId: body.sessionId, revoked: true } });
+          }
+        }
+      }
+      return refusal(401, 'unauthenticated', 'authentication is required');
+    }
+
+    if (method === 'GET' && path === '/v2/auth/session') {
+      const username = server.sessions.get(bearer);
+      const account = username ? server.accounts.get(username) : undefined;
+      if (!account) return refusal(401, 'unauthenticated', 'authentication is required');
+      const sessionId = bearer.slice('tm8s_'.length).split('.')[0]!;
+      return json(200, {
+        data: {
+          authKind: 'bearer',
+          account: accountView(account),
+          session: {
+            sessionId,
+            kind: 'browser',
+            actingAsTeamMemberId: null,
+            label: null,
+            expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
+          },
+        },
+      });
+    }
+
+    return refusal(500, 'internal_error', `fake auth server: unhandled ${method} ${path}`);
+  };
+
+  Object.defineProperty(globalThis, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: impl,
+  });
+  return server;
+}
+
 const APP = <div data-testid="the-app">THE APP</div>;
 
 /** The acceptance loop's own vocabulary, so a rename cannot silently pass. */
 const NAME = 'amber';
 const PASSWORD = 'correct-horse';
+const DISPLAY_ACTOR = {
+  id: 'm-amber',
+  kind: 'member' as const,
+  displayName: 'amber',
+  isAgent: false,
+};
 
 async function createAccountThroughTheUI(name = NAME, password = PASSWORD) {
   fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: name } });
   fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: password } });
-  // "Create owner account" on first run, "Create account" for a second one —
-  // the card stops claiming an unclaimed server the second time through.
+  // "Create account" — first run or another, the label promises no role
+  // auth.signup cannot grant.
   fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
   // Waits for the GATE to go, not for a particular child: the identity tests
   // pass their own consumer as `children`, and an earlier version of this
@@ -77,7 +235,12 @@ async function signInThroughTheUI(handle = NAME, password = PASSWORD) {
   fireEvent.click(screen.getByRole('button', { name: /^sign in$/i }));
 }
 
-beforeEach(installStorage);
+let server: FakeAuthServer;
+
+beforeEach(() => {
+  installStorage();
+  server = installFakeAuthServer();
+});
 afterEach(() => {
   cleanup();
   localStorage.clear();
@@ -90,12 +253,25 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
     expect(screen.getByTestId('auth-frame')).toBeTruthy();
   });
 
-  it('opens on the claim frame when no local account exists yet', () => {
+  it('opens on the claim frame when no account has signed in here yet', () => {
     render(<AuthGate>{APP}</AuthGate>);
     expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a');
   });
 
-  it('opens on the LOGIN frame when an account exists but no session does', async () => {
+  it('opens remote and relayed fresh browsers on sign-in, never on an unauthorized signup promise', () => {
+    expect(defaultSignedOutFrame(0, 'local', 'tm8-server.tail28ac62.ts.net')).toBe('1d');
+    expect(defaultSignedOutFrame(0, 'staging', 'localhost')).toBe('1d');
+    expect(defaultSignedOutFrame(0, 'local', '127.0.0.1')).toBe('1a');
+    expect(defaultSignedOutFrame(0, 'local', 'worktree.localhost')).toBe('1a');
+  });
+
+  it('does not offer create-another-account on a relayed server', () => {
+    localStorage.setItem('tm8-ui:active-server', 'staging');
+    render(<AuthGate initialFrame="1d">{APP}</AuthGate>);
+    expect(screen.queryByRole('button', { name: /create another account/i })).toBeNull();
+  });
+
+  it('opens on the LOGIN frame when an account is known but no session exists', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
     act(() => signOut());
@@ -121,36 +297,50 @@ describe('leg 1 — unauthenticated, the app is NOT on screen', () => {
 });
 
 describe('leg 2 — create an account, and the app renders', () => {
-  it('creates the local account and lets the children through', async () => {
+  it('creates the account ON THE SERVER and lets the children through', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
     expect(screen.getByTestId('the-app')).toBeTruthy();
     expect(screen.queryByTestId('auth-frame')).toBeNull();
+    // THE POINT OF THE UPGRADE: the server has the account and minted the
+    // session. A browser-local record would pass every DOM assertion above.
+    expect(server.accounts.has(NAME)).toBe(true);
+    expect(server.sessions.size).toBe(1);
   });
 
-  it('never stores the password — only a salted derivation of it', async () => {
+  it('stores the tm8s_ pass and NEVER the password', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
-    const raw = JSON.stringify(readLocalAccounts());
-    expect(raw).not.toContain(PASSWORD);
-    const account = readLocalAccount()!;
-    expect(account.salt.length).toBeGreaterThan(10);
-    expect(account.hash.length).toBeGreaterThan(20);
-    expect(account.iterations).toBeGreaterThanOrEqual(100_000);
+    const everything: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i)!;
+      everything.push(key, localStorage.getItem(key) ?? '');
+    }
+    expect(everything.join('\n')).not.toContain(PASSWORD);
+    const session = readStoredSession()!;
+    expect(session.handle).toBe(NAME);
+    expect(session.serverId).toBe('local');
+    // The pass is the server's own mint, stored under the TARGET ORIGIN (the
+    // lead's programme-wide credential-key ruling; 'local' → the page origin).
+    const stored = JSON.parse(localStorage.getItem('tm8ui.auth.passes.v1') ?? '{}');
+    const entry = stored[window.location.origin];
+    expect(String(entry?.token).startsWith('tm8s_')).toBe(true);
+    expect(server.sessions.has(entry.token)).toBe(true);
   });
 
-  it('refuses a password shorter than the 8 characters the card promises', async () => {
+  it('refuses a password shorter than the 8 characters the server enforces', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: 'short' } });
-    fireEvent.click(screen.getByRole('button', { name: /create owner account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/8/));
     expect(screen.queryByTestId('the-app')).toBeNull();
-    expect(readLocalAccounts()).toEqual([]);
+    // Refused client-side, matching the server's floor — nothing was sent.
+    expect(server.accounts.size).toBe(0);
   });
 });
 
-describe('leg 3 — reload keeps you in', () => {
+describe('leg 3 — reload keeps you in, because the server says the pass stands', () => {
   it('survives a full unmount/remount with the session intact', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
@@ -200,29 +390,42 @@ describe('leg 3 — reload keeps you in', () => {
     expect(screen.getByTestId('the-app')).toBeTruthy();
   });
 
-  it('does NOT keep you in when only the account survives and the session does not', async () => {
-    // The account and the session are separate records ON PURPOSE: sign-out
-    // must not delete the account, and a surviving account must not imply a
-    // surviving session. One record for both would make sign-out either
-    // destroy the account or not work.
+  it('ENDS the session on reload when the server has revoked the pass', async () => {
+    // The reload check is auth.session.get, not a localStorage read — this is
+    // the one behaviour the old gate could not have, and the reason the
+    // upgrade exists. Revoke server-side, reload, and the gate must close.
+    render(<AuthGate>{APP}</AuthGate>);
+    await createAccountThroughTheUI();
+    cleanup();
+    server.sessions.clear(); // revoked elsewhere — another device, an admin
+    render(<AuthGate>{APP}</AuthGate>);
+    await waitFor(() => expect(screen.queryByTestId('the-app')).toBeNull());
+    expect(screen.getByTestId('auth-frame')).toBeTruthy();
+  });
+
+  it('does NOT keep you in when only the known account survives, without a pass', async () => {
+    // The pass and the known-accounts list are separate records ON PURPOSE:
+    // sign-out must not forget the account, and a surviving account must not
+    // imply a surviving session.
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
     act(() => signOut());
-    // `readLocalAccount()` now means "the SIGNED-IN account", so after
-    // sign-out it is correctly null; the surviving record is in the list.
-    expect(readLocalAccounts()).toHaveLength(1);
-    expect(readLocalAccount()).toBeNull();
-    expect(readLocalSession()).toBeNull();
+    expect(readKnownAccountsHere()).toHaveLength(1);
+    expect(readActiveAccount()).toBeNull();
+    expect(readStoredSession()).toBeNull();
   });
 });
 
-describe('leg 4 — sign out returns to the gate', () => {
-  it('drops back to the flow and hides the app', async () => {
+describe('leg 4 — sign out returns to the gate, and revokes on the server', () => {
+  it('drops back to the flow, hides the app, and revokes the session', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
+    expect(server.sessions.size).toBe(1);
     act(() => signOut());
     await waitFor(() => expect(screen.queryByTestId('the-app')).toBeNull());
     expect(screen.getByTestId('auth-frame')).toBeTruthy();
+    // auth.logout reached the server — the pass is dead THERE, not just here.
+    await waitFor(() => expect(server.sessions.size).toBe(0));
   });
 
   it('signs out from the account menu, the surface the oracle puts it on', async () => {
@@ -235,7 +438,7 @@ describe('leg 4 — sign out returns to the gate', () => {
   });
 });
 
-describe('leg 5 — sign in verifies against the local account', () => {
+describe('leg 5 — sign in verifies against the SERVER', () => {
   beforeEach(async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
@@ -254,9 +457,8 @@ describe('leg 5 — sign in verifies against the local account', () => {
   });
 
   it('refuses an unknown handle WITHOUT confirming which half was wrong', async () => {
-    // Naming "no such account" tells an attacker which handles exist. The
-    // local gate is not a security boundary, but leaking it for free would
-    // still be a defect, and the fix costs one shared message.
+    // The server refuses both halves with one code and one message — no
+    // account enumeration — and the gate's copy must not re-split them.
     await signInThroughTheUI('nobody', PASSWORD);
     await waitFor(() => expect(screen.getByRole('status')).toBeTruthy());
     const text = screen.getByRole('status').textContent ?? '';
@@ -275,25 +477,31 @@ describe('leg 5 — sign in verifies against the local account', () => {
 });
 
 describe('THE HONESTY LAW, at the gate', () => {
-  it('discloses the local-account semantics on every frame that takes a credential', async () => {
-    // The upgrade's central constraint. An enabled credential verb is only
-    // honest next to a statement of what it actually does.
+  it('no frame claims the account is browser-local — that stopped being true', async () => {
+    // The old gate carried a "local account on this node" note on every
+    // credential frame. With auth.signup/auth.login wired, that sentence
+    // would be the same lie in the other direction, so it must be GONE.
     render(<AuthGate>{APP}</AuthGate>);
-    expect(screen.getByTestId('auth-local-note').textContent).toMatch(
-      /local account on this (node|browser)/i,
-    );
+    expect(screen.queryByTestId('auth-local-note')).toBeNull();
+    const frame = screen.getByTestId('auth-frame');
+    expect(frame.textContent).not.toMatch(/stored (in this browser|locally)/i);
+    expect(frame.textContent).not.toMatch(/not registered on the tm8 node/i);
+    // …and the copy states the real act instead.
+    expect(frame.textContent).toMatch(/on the tm8 node|on this server/i);
+  });
+
+  it('the sign-in frame names no local store either', async () => {
+    render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
     act(() => signOut());
     await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
-    expect(screen.getByTestId('auth-local-note').textContent).toMatch(/local/i);
+    expect(screen.queryByTestId('auth-local-note')).toBeNull();
+    expect(screen.getByTestId('auth-frame').textContent).not.toMatch(
+      /stored (in this browser|locally)/i,
+    );
   });
 
-  it('names the missing operations, so the gap is legible on screen', () => {
-    render(<AuthGate>{APP}</AuthGate>);
-    expect(screen.getByTestId('auth-local-note').textContent).toMatch(/auth ops|auth operations/i);
-  });
-
-  it('keeps the token path refused — there is no executor for it either way', async () => {
+  it('keeps the token path refused — no operation redeems a pasted token', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI();
     act(() => signOut());
@@ -346,13 +554,27 @@ describe('the server identity binds when the real seam is on', () => {
     expect(resolveIdentity).toHaveBeenCalled();
   });
 
+  it('exposes the auth.session.get identity when no resolver is supplied', async () => {
+    function Consumer() {
+      const s = useAuthSession();
+      return <div data-testid="who">{s.serverIdentity?.username ?? 'none'}</div>;
+    }
+    render(
+      <AuthGate>
+        <Consumer />
+      </AuthGate>,
+    );
+    await createAccountThroughTheUI();
+    await waitFor(() => expect(screen.getByTestId('who').textContent).toBe(NAME));
+  });
+
   it('does NOT resolve identity while signed out', () => {
     const resolveIdentity = vi.fn().mockResolvedValue(IDENTITY);
     render(<AuthGate resolveIdentity={resolveIdentity}>{APP}</AuthGate>);
     expect(resolveIdentity).not.toHaveBeenCalled();
   });
 
-  it('stays signed in when identity.get rejects — the gate is local, not server-backed', async () => {
+  it('stays signed in when identity.get rejects — reachability is not revocation', async () => {
     // The two facts are independent, and conflating them would log the viewer
     // out every time the node hiccups. The failure is surfaced, not swallowed.
     const resolveIdentity = vi.fn().mockRejectedValue(new Error('node down'));
@@ -401,7 +623,7 @@ describe('THE WHOLE LOOP, in one circuit', () => {
 });
 
 describe('blocked storage is refused out loud, never failed silently', () => {
-  it('says the account cannot persist rather than pretending it did', async () => {
+  it('says the pass cannot persist rather than pretending it did', async () => {
     Object.defineProperty(globalThis, 'localStorage', {
       configurable: true,
       value: {
@@ -416,13 +638,15 @@ describe('blocked storage is refused out loud, never failed silently', () => {
     render(<AuthGate>{APP}</AuthGate>);
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: NAME } });
     fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: PASSWORD } });
-    fireEvent.click(screen.getByRole('button', { name: /create owner account/i }));
+    fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
     await waitFor(() =>
       expect(screen.getByRole('status').textContent).toMatch(/storage|cannot be saved/i),
     );
     // And crucially: it did NOT let the viewer into an app it cannot keep
     // them in. A session that vanishes on reload is worse than no session.
     expect(screen.queryByTestId('the-app')).toBeNull();
+    // The orphaned server session is revoked rather than left standing.
+    await waitFor(() => expect(server.sessions.size).toBe(0));
   });
 });
 
@@ -433,11 +657,10 @@ describe('blocked storage is refused out loud, never failed silently', () => {
  * and logout, option which logs out, and i can create another account or login
  * with same account."
  *
- * The first version of this store held ONE account, so "create another" was
- * refused with `account-exists`. That was correct for a single-owner first run
- * and wrong for what the gate is actually used as. Accounts are now a list.
+ * Accounts now live on the server; the browser keeps only the pass and the
+ * list of handles that have signed in here.
  */
-describe('more than one local account', () => {
+describe('more than one account', () => {
   it('creates a second account without destroying the first', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI('amber', PASSWORD);
@@ -449,7 +672,8 @@ describe('more than one local account', () => {
     expect(screen.getByTestId('auth-frame').getAttribute('data-frame')).toBe('1a');
     await createAccountThroughTheUI('nadia', 'another-password');
 
-    expect(readLocalAccounts().map((a) => a.handle).sort()).toEqual(['amber', 'nadia']);
+    expect([...server.accounts.keys()].sort()).toEqual(['amber', 'nadia']);
+    expect(readKnownAccountsHere().map((a) => a.handle).sort()).toEqual(['amber', 'nadia']);
   });
 
   it('signs in as EITHER account with its own password', async () => {
@@ -464,7 +688,7 @@ describe('more than one local account', () => {
     // the first account, with its own password
     await signInThroughTheUI('amber', PASSWORD);
     await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
-    expect(readLocalSession()!.handle).toBe('amber');
+    expect(readStoredSession()!.handle).toBe('amber');
 
     act(() => signOut());
     await waitFor(() => expect(screen.getByTestId('auth-frame')).toBeTruthy());
@@ -476,19 +700,19 @@ describe('more than one local account', () => {
 
     await signInThroughTheUI('nadia', 'another-password');
     await waitFor(() => expect(screen.getByTestId('the-app')).toBeTruthy());
-    expect(readLocalSession()!.handle).toBe('nadia');
+    expect(readStoredSession()!.handle).toBe('nadia');
   });
 
-  it('refuses a handle that is already taken, and says which', async () => {
+  it('refuses a handle the server already has, and says which', async () => {
     render(<AuthGate>{APP}</AuthGate>);
     await createAccountThroughTheUI('amber', PASSWORD);
     act(() => signOut());
     fireEvent.click(screen.getByRole('button', { name: /create another account/i }));
     fireEvent.change(screen.getByLabelText('YOUR NAME'), { target: { value: 'amber' } });
-    fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: 'different' } });
-    fireEvent.click(screen.getByRole('button', { name: /create owner account|create account/i }));
+    fireEvent.change(screen.getByLabelText('PASSWORD'), { target: { value: 'different-enough' } });
+    fireEvent.click(screen.getByRole('button', { name: /create (owner )?account/i }));
     await waitFor(() => expect(screen.getByRole('status').textContent).toMatch(/@amber/));
-    expect(readLocalAccounts()).toHaveLength(1);
+    expect(server.accounts.size).toBe(1);
   });
 });
 
@@ -498,7 +722,7 @@ describe('the workspace account menu — name + logout, in the app', () => {
       const [theme, setTheme] = useState<'light' | 'dark'>('light');
       return (
         <div data-testid="the-app" data-theme={theme === 'dark' ? 'dark' : undefined}>
-          <AccountMenu theme={theme} onThemeChange={setTheme} />
+          <AccountMenu actor={DISPLAY_ACTOR} theme={theme} onThemeChange={setTheme} />
         </div>
       );
     }
@@ -515,7 +739,7 @@ describe('the workspace account menu — name + logout, in the app', () => {
     function AppWithMenu() {
       return (
         <div data-testid="the-app">
-          <AccountMenu />
+          <AccountMenu actor={DISPLAY_ACTOR} />
         </div>
       );
     }
@@ -545,19 +769,21 @@ describe('the workspace account menu — name + logout, in the app', () => {
     expect(screen.getByRole('button', { name: /create another account/i })).toBeTruthy();
   });
 
-  it('names the LOCAL account, never a server identity it does not have', async () => {
-    // The menu must not label a local handle as though the node vouched for
-    // it. Whatever it says about provenance has to be true.
+  it('names the SERVER account the node vouched for — never "local"', async () => {
+    // The node authenticated this account at auth.login; the menu may say so,
+    // and must no longer describe it as a local record.
     function AppWithMenu() {
       return (
         <div data-testid="the-app">
-          <AccountMenu />
+          <AccountMenu actor={DISPLAY_ACTOR} />
         </div>
       );
     }
     render(<AuthGate>{<AppWithMenu />}</AuthGate>);
     await createAccountThroughTheUI('amber', PASSWORD);
     fireEvent.click(screen.getByTestId('account-menu-trigger'));
-    expect(screen.getByTestId('auth-account-menu').textContent).toMatch(/local account/i);
+    const text = screen.getByTestId('auth-account-menu').textContent ?? '';
+    expect(text).toMatch(/server account|owner of this server/i);
+    expect(text).not.toMatch(/local account/i);
   });
 });

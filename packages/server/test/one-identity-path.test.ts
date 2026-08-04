@@ -29,6 +29,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { autoOwnerResolver } from '../src/http/security.js';
 
 const SRC = fileURLToPath(new URL('../src', import.meta.url));
 
@@ -44,6 +45,40 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('one identity path (R2 / claims contract)', () => {
+  describe('the guarded auto-owner arm', () => {
+    it('keeps the bare loopback single-machine path', async () => {
+      expect(await autoOwnerResolver({}, {
+        remoteAddress: '127.0.0.1',
+        disableAutoOwner: false,
+      })).toEqual({ kind: 'auto-owner' });
+    });
+
+    it('treats a loopback proxy hop as anonymous when any forwarding evidence exists', async () => {
+      for (const header of ['x-forwarded-for', 'X-Forwarded-Host', 'x-real-ip', 'Forwarded']) {
+        expect(await autoOwnerResolver({ [header]: '' }, {
+          remoteAddress: '::ffff:127.0.0.1',
+          disableAutoOwner: false,
+        })).toEqual({ kind: 'anonymous' });
+      }
+    });
+
+    it('the kill switch disables auto-owner even for a bare loopback peer', async () => {
+      expect(await autoOwnerResolver({}, {
+        remoteAddress: '::1',
+        disableAutoOwner: true,
+      })).toEqual({ kind: 'anonymous' });
+    });
+
+    it('unknown and non-loopback peers never auto-own', async () => {
+      for (const remoteAddress of [undefined, '10.0.0.8']) {
+        expect(await autoOwnerResolver({}, {
+          remoteAddress,
+          disableAutoOwner: false,
+        })).toEqual({ kind: 'anonymous' });
+      }
+    });
+  });
+
   it('claimsFor is DEFINED in exactly one file', () => {
     // Matches a definition — `function claimsFor`, `const claimsFor =` — but
     // deliberately NOT a call or an import, which every handler may do.

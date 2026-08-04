@@ -67,6 +67,12 @@ export interface ServerConfig {
    */
   readonly idempotencyEnabled?: boolean;
   /**
+   * Disables the loopback auto-owner arm (`TM8_DISABLE_AUTO_OWNER=1`).
+   * Bearer authentication remains available. This is a deployment kill
+   * switch, not an authorization signal supplied by an HTTP header.
+   */
+  readonly disableAutoOwner?: boolean;
+  /**
    * Upper bound on the Postgres pool (`TM8_DB_POOL_MAX`). Default 8.
    *
    * This number IS the node's read concurrency: the pool queues past it and
@@ -231,6 +237,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),
+    disableAutoOwner: envBoolean(env.TM8_DISABLE_AUTO_OWNER, 'TM8_DISABLE_AUTO_OWNER', false),
     dbPoolMax,
     ...(livekit ? { livekit } : {}),
   };

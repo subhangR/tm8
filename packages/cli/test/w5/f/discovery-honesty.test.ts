@@ -92,9 +92,9 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
   it('BLAST RADIUS, CONVERTED — the two populations are now distinguishable', () => {
     const fresh = new AvailabilityLedger();
     const rows = discovery(fresh);
-    // 121 -> 125 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
-    // 125 -> 126 (2026-08-02): execution.launch (public, with a command).
-    expect(rows).toHaveLength(126);
+    // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+    // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
+    expect(rows).toHaveLength(127);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -104,9 +104,9 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     expect(earned.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(earned.every((r) => r.availability === 'unavailable')).toBe(true);
     // And the rows nothing looked at all say so, uniformly.
-    // 123 -> 124 (2026-08-02): execution.launch is a v1 row, so the cold ledger
+    // 123 -> 125 (2026-08-02): execution.launch is a v1 row, so the cold ledger
     // declines it like every other — it joins the `none` population, not `earned`.
-    expect(unknownRows).toHaveLength(124);
+    expect(unknownRows).toHaveLength(125);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

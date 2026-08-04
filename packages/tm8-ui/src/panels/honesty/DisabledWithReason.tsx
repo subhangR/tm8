@@ -42,8 +42,13 @@ export function DisabledIconControl({
 }: {
   label: string;
   reason: UnavailableReason;
-  /** Decorative glyph; the accessible name comes from `label`. */
-  glyph?: string;
+  /**
+   * Decorative glyph; the accessible name comes from `label`. `ReactNode`, not
+   * `string`: a caller that draws its enabled control with an SVG must be able
+   * to refuse with the SAME mark, or the refusal renders a different icon than
+   * the verb it is refusing.
+   */
+  glyph?: ReactNode;
   /** Optional visible text beside the glyph. */
   children?: ReactNode;
 }) {
@@ -160,7 +165,7 @@ export const NOT_WIRED_REASON: UnavailableReason = {
  * boundary: NO capability source at all is a wiring gap (NOT_WIRED_REASON);
  * a source that returns `undefined` is a row that has not loaded yet (this).
  */
-export function CheckingPermission({ label, glyph }: { label: string; glyph?: string }) {
+export function CheckingPermission({ label, glyph }: { label: string; glyph?: ReactNode }) {
   return (
     <span
       className="hon-checking"

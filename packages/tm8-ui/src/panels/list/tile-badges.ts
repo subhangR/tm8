@@ -32,7 +32,7 @@ export type TileSlot =
   /** Line 2 left: mono facts, joined with a middot. */
   | { slot: 'meta'; text: string }
   /** Line 1: provenance avatar. */
-  | { slot: 'avatar'; label: string; provenance: 'human' | 'agent' };
+  | { slot: 'avatar'; actorId: string; label: string; provenance: 'human' | 'agent'; src?: string | null };
 
 const WORK_STATUS_TONE: Record<string, PillTone> = {
   open: 'idle',
@@ -142,21 +142,31 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     }
 
     // -- avatars: provenance on line 1 -------------------------------------
+    case 'entityActor': {
+      // Registry selects this only for actor entities. Provenance stays DATA:
+      // the member state carries `role`; the teammate state carries `owner`.
+      const isAgent = field(row, 'owner') !== undefined;
+      return { slot: 'avatar', actorId: row.id, label: row.title, provenance: isAgent ? 'agent' : 'human' };
+    }
+    case 'createdBy': {
+      const a = row.createdBy;
+      return { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar };
+    }
     case 'workingActors': {
       const a = row.badges.workingActors?.[0]?.actor;
-      return a ? { slot: 'avatar', label: a.displayName, provenance: a.isAgent ? 'agent' : 'human' } : null;
+      return a ? { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar } : null;
     }
     case 'liveWork': {
       const a = actor((field(row, 'liveWork') as Record<string, unknown> | null)?.actor);
-      return a ? { slot: 'avatar', label: a.displayName, provenance: a.isAgent ? 'agent' : 'human' } : null;
+      return a ? { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar } : null;
     }
     case 'owner': {
       const a = actor(field(row, 'owner'));
-      return a ? { slot: 'avatar', label: a.displayName, provenance: a.isAgent ? 'agent' : 'human' } : null;
+      return a ? { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar } : null;
     }
     case 'messageAuthor': {
       const a = actor(field(row, 'author'));
-      return a ? { slot: 'avatar', label: a.displayName, provenance: a.isAgent ? 'agent' : 'human' } : null;
+      return a ? { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar } : null;
     }
 
     // -- meta: mono facts on line 2, left ----------------------------------
@@ -270,7 +280,7 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
  */
 export const HANDLED_SOURCES: ReadonlySet<TileBadgeSource> = new Set<TileBadgeSource>([
   'workStatus', 'sessionStatus', 'prState', 'profileStatus',
-  'priority',
+  'priority', 'entityActor', 'createdBy',
   'workingActors', 'liveWork', 'owner', 'messageAuthor',
   'assignees', 'acceptance', 'dueDate', 'blocked', 'pulls', 'restricted',
   'messages', 'points', 'agentTool', 'model', 'shareMode',

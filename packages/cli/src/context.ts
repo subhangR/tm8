@@ -18,10 +18,13 @@
  *    difference between step 1 and step 3 is the difference between a
  *    deliberate target and a stale config file.
  *
- * Phase-1 identity is a database-resolved loopback auto-owner: there is no
- * bearer authentication. `TM8_AGENT_TOKEN` is carried when set because it is
- * the reserved seam for the Phase-2 remote transport, NOT because a token
- * means anything today.
+ * Bearer identity has exactly two sources, and this module owns only one:
+ * `TM8_AGENT_TOKEN`, the spawn-injected agent seam, is read here. A HUMAN's
+ * credential comes from the per-server store (`credentials.ts`) and is applied
+ * at dispatch (run.ts) against the FINAL target origin — after `--server`
+ * retargeting — which is why it cannot live in this four-step resolution.
+ * With neither, a loopback request resolves to the auto-owner exactly as
+ * Phase 1 always did (D1).
  */
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';

@@ -197,13 +197,14 @@ const ROWS: Record<OperationName, Row> = {
   },
   'auth.login': {
     cmd: ['auth', 'login'],
-    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>]',
-    sum: 'Exchange a username and password for a tm8s_… bearer token, printed exactly once',
+    syn: 'tm8 auth login <username> --password <password> [--kind browser|cli] [--label <label>] [--print-token]',
+    sum: 'Exchange a username and password for a tm8s_… bearer session with this Server',
     authz: 'server',
     input: 'bound',
-    tags: ['login', 'token', 'session', 'bearer', 'password'],
+    tags: ['login', 'token', 'session', 'bearer', 'password', 'credential'],
     notes: [
-      'export the printed token as TM8_AGENT_TOKEN to authenticate subsequent CLI calls',
+      'the credential is stored per Server origin — macOS keychain, else a 0600 file — and later commands against that Server authenticate automatically',
+      'with --print-token (or in an agent session) nothing is stored: export the printed token as TM8_AGENT_TOKEN',
       'the failure message never distinguishes an unknown username from a wrong password',
     ],
   },
@@ -214,6 +215,9 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'server',
     input: 'bound',
     tags: ['logout', 'revoke', 'session', 'token'],
+    notes: [
+      'revoking this shell\'s own session also removes the matching stored credential for this Server origin',
+    ],
   },
   'auth.session.get': {
     cmd: ['auth', 'session'],
@@ -660,7 +664,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'messages.post': {
     cmd: ['message', 'send'],
-    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
+    syn: 'tm8 message send --to <anchor-entity-id> [--to <anchor-entity-id>...] [--conversation <origin-anchor-id>] [--reply-to <parent-message-id>] [<body>|-] [--body <text-source>] [--mention <actor-id>...] [--attach <file-entity-id>...] [--wait stored|settled] [--mutation-id <message-batch-id>]',
     sum: 'Create one durable message per anchor and attempt delivery',
     authz: 'entity',
     input: 'bound',
@@ -674,13 +678,13 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'this is the ONLY public communication action for text; there is no prompt, report, or progress command',
       'a work session is addressed like any other anchor — the message is stored first and delivered second',
-      '`message reply <message-id>` projects through this same operation after Server-side anchor derivation',
+      'reply with the exact target from an incoming envelope: `--to <anchor-id> --reply-to <message-id>`',
       '`--wait settled` never changes persistence: exit 11 means stored-but-unsettled, not failed',
       'body is limited to 10,000 characters (messages.post input schema, schemas.ts:1292); split longer reports into numbered messages on the same anchor',
     ],
     examples: [
       "tm8 message send --to <anchor-entity-id> '<body>' --mutation-id <uuid>",
-      "tm8 message reply <message-id> '<body>' --mutation-id <uuid>",
+      "tm8 message send --to <anchor-entity-id> --reply-to <message-id> '<body>' --mutation-id <uuid>",
     ],
   },
   'messages.edit': {
@@ -801,6 +805,17 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Register a ProjectResource',
     authz: 'server',
     input: 'bound',
+  },
+  'projects.directories.list': {
+    cmd: null,
+    sum: 'Browse allowed node-local directories for Space project onboarding',
+    authz: 'server',
+    input: 'none',
+    tags: ['folder', 'directory', 'browse', 'workdir', 'local'],
+    reason: 'ui_onboarding_only',
+    notes: [
+      'the browser onboarding flow invokes this root-confined read; tm8 CLI exposes no general filesystem browser',
+    ],
   },
   'projects.get': {
     cmd: ['project', 'get'],
@@ -1540,7 +1555,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:954873433ecaf3e168d282a6120496c0155fb30b000268d9a6f1456ad98c0e30';
+  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
 
 export const GRAMMAR_VERSION = '2';
 

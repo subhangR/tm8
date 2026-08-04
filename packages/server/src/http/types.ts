@@ -114,8 +114,19 @@ export function raw(status: number, headers: Record<string, string>, body: Buffe
   return { kind: 'raw', status, headers, body };
 }
 
+/** Facts supplied by the transport, never by a caller-controlled header. */
+export interface IdentityResolutionContext {
+  /** The TCP peer reported by Node. Only an actual loopback peer may auto-own. */
+  readonly remoteAddress: string | undefined;
+  /** Operator kill switch. When true, even a bare loopback request is anonymous. */
+  readonly disableAutoOwner: boolean;
+}
+
 /**
  * Resolves the caller's identity. The skeleton ships `autoOwnerResolver`;
- * W2/identity (Lyra's block) supplies the real one.
+ * W2/identity adds the bearer arm to this same seam.
  */
-export type IdentityResolver = (headers: IncomingHttpHeaders) => RequestIdentity | Promise<RequestIdentity>;
+export type IdentityResolver = (
+  headers: IncomingHttpHeaders,
+  context: IdentityResolutionContext,
+) => RequestIdentity | Promise<RequestIdentity>;

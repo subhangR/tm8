@@ -20,6 +20,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type {
+  ActorSummary,
   AttentionRequestMutationResult,
   CollectionQuery,
   CommandResult,
@@ -45,7 +46,7 @@ import {
   type RealControls,
 } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
-import { createDomainStore, projectRows, type DomainStoreHandle } from '../data/project/domain-store';
+import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
 import {
   CACHED_LAUNCH_KINDS,
   nodeKeyOf,
@@ -63,6 +64,7 @@ import {
   type LaunchProject,
   type LaunchTeammate,
 } from '../domain/launch';
+import { representedThreadMessageCount } from './message-thread';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
@@ -262,6 +264,10 @@ export interface GateData {
   ready: boolean;
   spaceId: SpaceId;
   spaces: SpaceSummary[];
+  /** Real membership of the active space, never inferred from result authors. */
+  members: readonly ActorSummary[];
+  /** The active identity's member actor in this space, when one is bound. */
+  viewerActor: ActorSummary | null;
   menu: ResolvedMenu;
   connection: ConnectionState;
   /** Set when the first read failed — an unreachable node, honestly held. */
@@ -284,6 +290,8 @@ export interface GateData {
   /** Re-read the counters now — after a local action that changed what is seen. */
   refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
+  /** Live edge projection for a hydrated entity; unlike detail.connections it advances with events. */
+  connectionsOf: (id: string) => import('@tm8/contract').Connections | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
   activity: Readonly<Record<string, boolean>>;
   /**
@@ -306,6 +314,8 @@ export interface GateData {
   ensureKind: (kind: string) => void;
   /** Switch the active space and hydrate its own menu, channels, and data. */
   selectSpace: (spaceId: SpaceId) => void;
+  /** Add and immediately open a Space returned by the onboarding saga. */
+  acceptSpace: (space: SpaceSummary) => void;
   /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
@@ -329,6 +339,12 @@ export interface GateOptions {
   rightKind: string;
   /** Relative same-origin base. Named Servers use the local node's relay. */
   serverBaseUrl?: string;
+  /**
+   * The viewer's `tm8s_…` pass for the active server, read per request by the
+   * transport. Omitted ⇒ requests carry no Authorization header and a
+   * loopback node answers as the auto-owner (T-L7).
+   */
+  getAuthToken?: () => string | null;
   /**
    * THE SEAM INJECTION PORT.
    *
@@ -377,6 +393,7 @@ export function useGateData(options: GateOptions): GateData {
             : {}),
           // The local Server stays default-relative. A named Server uses the
           // same-origin relay above, so browser CORS never becomes transport.
+          ...(options.getAuthToken ? { getAuthToken: options.getAuthToken } : {}),
           fetch: (...args: Parameters<typeof fetch>) => fetch(...args),
           webSocketFactory: browserWebSocketFactory(WebSocket),
           origin: location.origin,
@@ -391,6 +408,8 @@ export function useGateData(options: GateOptions): GateData {
 
   const [ready, setReady] = useState(false);
   const [spaces, setSpaces] = useState<SpaceSummary[]>([]);
+  const [members, setMembers] = useState<readonly ActorSummary[]>([]);
+  const [viewerActor, setViewerActor] = useState<ActorSummary | null>(null);
   const [spaceId, setSpaceId] = useState<SpaceId>('' as SpaceId);
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
@@ -490,7 +509,7 @@ export function useGateData(options: GateOptions): GateData {
    */
   const hydrate = useCallback(
     async (space: SpaceId) => {
-      const [menuRaw, snapshot, projects, settings, , counts] = await Promise.all([
+      const [menuRaw, snapshot, projects, settings, identity, , counts] = await Promise.all([
         seam.menu(space).catch((error: unknown) => {
           setMenu(resolveMenu(undefined, error));
           return undefined;
@@ -501,6 +520,10 @@ export function useGateData(options: GateOptions): GateData {
         seam.liveness.refresh(space).catch(() => undefined),
         seam.projects(space),
         seam.spaceSettings(space),
+        // Display identity is an enhancement to boot, not an availability
+        // gate. Membership still drives the people filter when identity is
+        // unreadable; only the viewer-specific face stays absent.
+        seam.identity().catch(() => null),
         loadGraph(space),
         // SOFT-FAILS to `undefined`, like `menu` above and unlike the reads
         // that gate boot. The rail's numbers are an enhancement: a node that
@@ -520,6 +543,12 @@ export function useGateData(options: GateOptions): GateData {
         setExecutionCapacity(snapshot.capacity);
       }
       setLinkedProjects(projects);
+      // Rolling/fixture seams from before membership projection may omit the
+      // array. Treat that as unread membership, never as a fabricated actor.
+      const memberActors = (settings.members ?? []).map((member) => member.actor);
+      const viewerMemberId = identity?.memberships.find((membership) => membership.spaceId === space)?.memberId;
+      setMembers(memberActors);
+      setViewerActor(memberActors.find((member) => member.id === viewerMemberId) ?? null);
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
 
@@ -691,6 +720,8 @@ export function useGateData(options: GateOptions): GateData {
     setReady(false);
     setBootError(null);
     setRows({});
+    setMembers([]);
+    setViewerActor(null);
     setMenu(resolveMenu(null));
     setLiveIds([]);
     // Back to "unknown", not to `{}`: the previous space's numbers must not
@@ -757,6 +788,14 @@ export function useGateData(options: GateOptions): GateData {
     if (next === spaceId || !spaces.some((space) => space.id === next)) return;
     setSpaceId(next);
   }, [spaceId, spaces]);
+
+  const acceptSpace = useCallback((space: SpaceSummary) => {
+    setSpaces((current) => current.some((candidate) => candidate.id === space.id)
+      ? current.map((candidate) => candidate.id === space.id ? space : candidate)
+      : [...current, space]);
+    setBootError(null);
+    setSpaceId(space.id);
+  }, []);
 
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
@@ -1165,6 +1204,13 @@ export function useGateData(options: GateOptions): GateData {
   }, [ready, spaceId, seam, pendingTick, absorb]);
 
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
+  const connectionsOf = useCallback(
+    (id: string) => selectConnectionsOf(id as EntityId)(domain.store.getState()),
+    // edgeProjection/details are subscribed snapshots: their identity changes
+    // re-create this callback and therefore re-render every consumer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [domain, edgeProjection, details],
+  );
 
   const reconcileCommand = useCallback(
     (result: CommandResult | AttentionRequestMutationResult) => {
@@ -1189,7 +1235,8 @@ export function useGateData(options: GateOptions): GateData {
         ?? state.details[id as EntityId]?.counters.messages
         ?? cachedMessages?.length
         ?? -1;
-      const messagesStale = cachedMessages === undefined || cachedMessages.length < messageCount;
+      const messagesStale = cachedMessages === undefined
+        || representedThreadMessageCount(cachedMessages) < messageCount;
       const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
       if (!needsDetail && !needsMessages) return;
       // Each half carries its OWN budget. Detail and thread already hydrate
@@ -1326,6 +1373,8 @@ export function useGateData(options: GateOptions): GateData {
       ready,
       spaceId,
       spaces,
+      members,
+      viewerActor,
       menu,
       connection,
       bootError,
@@ -1335,12 +1384,14 @@ export function useGateData(options: GateOptions): GateData {
       countsFor,
       refreshCounts,
       detailOf,
+      connectionsOf,
       activity,
       messagePulses,
       graph,
       launch,
       ensureKind,
       selectSpace,
+      acceptSpace,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
@@ -1349,7 +1400,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;
