@@ -573,6 +573,17 @@ function PanelBody(
             ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
             : undefined
         }
+        criteriaDraft={save.edits.acceptanceCriteria}
+        onCriteriaChange={
+          save.unavailable
+            ? undefined
+            : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
+        }
+        criteriaUnavailableReason={
+          save.unavailable
+            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
+            : undefined
+        }
       />
     );
   }

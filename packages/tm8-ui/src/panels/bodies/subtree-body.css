@@ -144,6 +144,44 @@
   cursor: default;
 }
 
+/* --- ACCEPTANCE rows ------------------------------------------------------
+   Geometry is the SUBTREE row's (L69 `gap:7px;padding:5px 0;font-size:12px`,
+   separated on the soft hairline), because they are the same thing visually:
+   repeated sibling lines inside one region. A label, not a button — the whole
+   line is the checkbox's hit area and the row opens nothing. */
+.cv2-root .sb-criterion {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--pn-x-hairline-soft);
+  font-size: 12px;
+}
+.cv2-root .sb-criterion:last-of-type {
+  border-bottom: 0;
+}
+.cv2-root .sb-criterion__box {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: var(--pn-brand);
+  cursor: pointer;
+}
+.cv2-root .sb-criterion__box:disabled {
+  cursor: default;
+}
+.cv2-root .sb-criterion__text {
+  min-width: 0;
+  color: var(--pn-ink);
+  overflow-wrap: anywhere;
+}
+/* Done reads exactly as a done child row does (L69). */
+.cv2-root .sb-criterion__text--done {
+  color: var(--pn-ink-3);
+  text-decoration: line-through;
+}
+
 /* --- SUBTREE rows (L68–L70) ---------------------------------------------- */
 .cv2-root .sb-rows {
   display: flex;
