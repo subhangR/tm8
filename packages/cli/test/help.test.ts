@@ -108,7 +108,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     }).map((o) => o.name);
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-    expect(wanted).toHaveLength(124);
+    expect(wanted).toHaveLength(126); // +2 public UI-only project folder file ops.
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -118,7 +118,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(127);
+    expect(swept).toBe(129);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -205,7 +205,7 @@ describe('exact operation lookup — TOTAL over all 127 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(127);
+    expect(seen.size).toBe(129);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 

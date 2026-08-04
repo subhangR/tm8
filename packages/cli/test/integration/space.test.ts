@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+    expect(health.operations).toBe(128); // 126 -> 128 (2026-08-04): the two connected project folder file reads.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });
