@@ -32,6 +32,7 @@ export { NodeRoom, useNodeFacts, connectionRow, type NodeRoomProps, type Provide
 
 /* ── the attachment strip: files on ONE entity, inside its panel body ───── */
 export { AttachmentStrip, canThumbnail, type AttachmentStripProps } from './AttachmentStrip';
+export { ProjectFolderPicker, type ProjectFolderPickerProps } from './ProjectFolderPicker';
 export {
   createFileUploadTask,
   safeUploadReason,
@@ -47,6 +48,8 @@ export {
   attachmentsFor,
   attachmentsPortFromSeam,
   type AttachmentsPort,
+  type ProjectFolderPort,
+  type ProjectFolderAttachInput,
   filesPortFromSeam,
   nodePortFromSeam,
   staticNodePort,
