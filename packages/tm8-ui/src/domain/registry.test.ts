@@ -340,6 +340,12 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
       'inlineEdit',
       'rowActions',
       'stateControl',
+      /* Opened 2026-08-04 with the expanded-row controls. A state is written
+         by a command verb, a value by a version-guarded content patch and an
+         assignment by an edge — three different writes, so they are three
+         fields rather than one overloaded `controls`. */
+      'valueControls',
+      'assignControl',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {

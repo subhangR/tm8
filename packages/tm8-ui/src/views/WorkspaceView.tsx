@@ -392,6 +392,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -478,6 +481,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           launch={launchPort}

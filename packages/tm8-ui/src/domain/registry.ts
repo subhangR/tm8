@@ -22,6 +22,7 @@
 import type { CoreEntityKind, EntityKind } from '@tm8/contract';
 import type {
   ActionRef,
+  AssignControl,
   CollectionMode,
   FilterSpec,
   KindConfig,
@@ -32,6 +33,7 @@ import type {
   QueryFilter,
   SortSpec,
   StateControl,
+  ValueControl,
 } from './types';
 import { CUSTOM_KIND_FALLBACK } from './types';
 import type { SessionLiveness } from '../data/seam';
@@ -91,6 +93,55 @@ const statusFilter: FilterSpec = {
  * first. `cancelled` does NOT — the work verb writes it directly, and it also
  * DELETES the actor's `working_on` edge, exactly as `open` does.
  */
+/**
+ * The task priority picker.
+ *
+ * TONES MATCH `tile-badges.ts:PRIORITY_TONE` VALUE FOR VALUE. The collapsed
+ * row's tag and this picker paint the same fact, and D67's "the picker and the
+ * badge cannot disagree" rule applies here for the same reason it applies to
+ * state — it is just enforced by matching data rather than by sharing a
+ * `statusPill` spec, because priority has no pill spec to share.
+ *
+ * The vocabulary is `PatchTaskInput['priority']` exactly. It is written through
+ * the ordinary content patch, so it is VERSION-GUARDED: a stale row earns a
+ * 409 the user is told about, rather than a last-write-wins overwrite.
+ */
+const TASK_PRIORITY_CONTROL: ValueControl = {
+  source: 'priority',
+  label: 'Priority',
+  emptyLabel: 'no priority',
+  /* Ascending, and UPPER-CASE to the letter of `tile-badges.ts`, which renders
+     the same fact as `v.toUpperCase()`. The tones already match value for
+     value; matching the WORD too is the other half of "the picker and the
+     badge cannot disagree" — a control reading `urgent` beside a badge reading
+     `URGENT` is two spellings of one fact, and the tile draws both. */
+  options: [
+    { id: 'low', label: 'LOW', tone: 'idle' },
+    { id: 'medium', label: 'MEDIUM', tone: 'idle' },
+    { id: 'high', label: 'HIGH', tone: 'block' },
+    { id: 'urgent', label: 'URGENT', tone: 'block' },
+  ],
+};
+
+/**
+ * Assignment is an EDGE, and this is the only place that says which one.
+ *
+ * `assigned_to` is registered in the database with its legal endpoint kinds,
+ * and `internal.validate_edge` enforces them — so declaring the type here and
+ * letting the node refuse an illegal pairing is one rule in one place, rather
+ * than a client-side copy free to drift from the registry that decides.
+ */
+const TASK_ASSIGN_CONTROL: AssignControl = {
+  source: 'assignees',
+  label: 'Assigned',
+  emptyLabel: 'Unassigned',
+  edgeType: 'assigned_to',
+  /* Both, because a task is assignable to a person OR to an agent, and the
+     tile has always drawn the two in one row of avatars. The node validates
+     the pairing regardless; this decides only who the menu offers. */
+  actorKinds: ['member', 'team_member'],
+};
+
 const TASK_STATE_CONTROL: StateControl = {
   source: 'workStatus',
   label: 'State',
@@ -348,6 +399,8 @@ const ROWS: readonly KindConfig[] = [
       sort: [BY_ACTIVITY, BY_PRIORITY, BY_DUE, BY_POSITION, BY_CREATED],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
+      valueControls: [TASK_PRIORITY_CONTROL],
+      assignControl: TASK_ASSIGN_CONTROL,
       // D44: every task ROW gets Run, not just the panel primary. It resolves
       // to the same ActionRef the panel and palette use, and its `flow:'launch'`
       // marker means the row opens the launch config rather than bare-spawning.

@@ -63,6 +63,7 @@ import type {
   CommandContext,
   CommandResult,
   CompleteTaskInput,
+  CreateEdgeInput,
   CreateEntityInput,
   CreateSpaceInput,
   CreateSpaceResult,
@@ -357,6 +358,28 @@ export interface Seam {
     restoreEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;
     complete(id: EntityId, input: CompleteTaskInput): Promise<CommandResult>;
     work(id: EntityId, input: WorkInput): Promise<CommandResult>;
+    /**
+     * The write side of the relationship graph (`edges.create` / `edges.delete`).
+     *
+     * THE READS ALWAYS HAD A WRITE PATH ON THE NODE AND THIS SEAM DID NOT
+     * EXPOSE IT. `EntitySummary.state.assignees` is projected from `assigned_to`
+     * edges (server `entity-read.ts:551`) and `connections()` has rendered
+     * edges since the beginning, so every surface could SHOW an assignment and
+     * none could make one. That is why the task tile's "Assigned" chip was
+     * static: not a forgotten onClick, a missing seam operation.
+     *
+     * GENERIC ON PURPOSE — this is `edges.create`, not `assign`. The catalog
+     * row is generic, the database validates the endpoint kinds per edge type
+     * (`internal.validate_edge`), and naming one edge type here would put a
+     * kind-specific verb in the layer whose whole job is to be kind-blind.
+     * `useRowLifecycle` is where "assign" means `assigned_to`.
+     *
+     * `write_edge` UPSERTS on (src, dst, type), so create is idempotent on the
+     * edge identity; delete is addressed by the edge's own id, which callers
+     * read from `connections()`.
+     */
+    createEdge(input: CreateEdgeInput): Promise<CommandResult>;
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;

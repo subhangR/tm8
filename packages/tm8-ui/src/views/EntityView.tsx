@@ -382,6 +382,9 @@ export function EntityView(props: EntityViewProps) {
           onKindChange={props.onKindChange}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           /* The SAME sources the workspace passes. `onFullOptions` is
              deliberately absent: the five-section sheet is mounted by the
              workspace centre and does not exist on this screen, so the escape

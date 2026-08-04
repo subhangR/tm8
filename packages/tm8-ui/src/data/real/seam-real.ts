@@ -308,6 +308,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       restoreEntity: (id, ctx) => ops.restoreEntity(id, ctx),
       complete: (id, input) => ops.complete(id, input),
       work: (id, input) => ops.work(id, input),
+      createEdge: (input) => ops.createEdge(input),
+      deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
       postMessage: (input) => ops.postMessage(input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),

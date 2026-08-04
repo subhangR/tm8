@@ -447,6 +447,73 @@ export interface ListConfig {
    * fabrication L6 forbids.
    */
   stateControl?: StateControl;
+  /**
+   * OTHER settable enum fields the expanded row offers — priority, today.
+   *
+   * SEPARATE FROM `stateControl` because the two are written differently and
+   * the difference is not cosmetic: a state goes through a COMMAND VERB
+   * (`entities.commands.work` / `complete`, unversioned, with side effects on
+   * the actor's `working_on` edge), while these go through the kind's ordinary
+   * content PATCH and are therefore version-guarded. Folding them into one
+   * control would force one dispatch rule onto two operations with different
+   * guarantees, and the 409 path would have nowhere to live.
+   *
+   * A plural list rather than a `priorityControl` field, because nothing here
+   * is about priority: it is "an enum member of `EntityState` this kind lets a
+   * user set", and the second one must not need a new prop.
+   */
+  valueControls?: readonly ValueControl[];
+  /**
+   * The expanded row's ASSIGNEE picker. Absent ⇒ this kind is not assignable.
+   *
+   * Assignment is neither a state nor a content field: `state.assignees` is a
+   * PROJECTION of `assigned_to` edges (server `entity-read.ts:551`), so it is
+   * written by creating and deleting edges, not by patching the entity. Its
+   * own declaration, for the same reason `valueControls` is not `stateControl`.
+   */
+  assignControl?: AssignControl;
+}
+
+/** One value in a `ValueControl`'s vocabulary. */
+export interface ValueOption {
+  id: string;
+  label: string;
+  tone: PillTone;
+}
+
+export interface ValueControl {
+  /**
+   * Which `EntityState` member carries the current value — read structurally,
+   * and written back under the SAME name in the kind's content patch. One
+   * name, so the control cannot read one field and write another.
+   */
+  source: string;
+  label: string;
+  /** Shown when the field is unset. Not an option: null is not a value. */
+  emptyLabel: string;
+  /**
+   * The settable vocabulary in reading order. Unlike `StateControl` these
+   * carry their own label and tone, because no `statusPill` spec exists for
+   * them — there is no second source here to disagree with.
+   */
+  options: readonly ValueOption[];
+}
+
+export interface AssignControl {
+  /** The `EntityState` member carrying the current `ActorSummary[]`. */
+  source: string;
+  label: string;
+  /** Shown when nobody is assigned. */
+  emptyLabel: string;
+  /** The edge type an assignment IS. The panel never spells this itself. */
+  edgeType: string;
+  /**
+   * Which kinds may appear in the menu. DATA, because the HOST has to hydrate
+   * them and the host is not allowed a kind literal either: the roster is the
+   * union of this list across every kind that declares an assign control, so a
+   * kind that becomes assignable arrives by registry entry alone.
+   */
+  actorKinds: readonly string[];
 }
 
 /**

@@ -40,6 +40,7 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type CreateEdgeInput,
   type CreateEntityInput,
   type CreateSpaceInput,
   type CreateSpaceResult,
@@ -419,6 +420,21 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     work(id: EntityId, input: WorkInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
+    },
+
+    createEdge(input: CreateEdgeInput): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.create', { body: input });
+    },
+
+    /**
+     * Same DELETE-carries-a-body rule as `deleteEntity`: the server binds
+     * `RequiredCommandContextSchema` to `edges.delete` (input-schemas.ts:165)
+     * and refuses without a `clientMutationId`. An omitted context reaches the
+     * node as `{}` and earns an honest `invalid_input` rather than a
+     * synthesized id the caller could never reconcile.
+     */
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.delete', { params: { edgeId }, body: ctx ?? {} });
     },
 
     fileUploadInit(input: FileUploadInitInput): Promise<FileUploadGrant> {

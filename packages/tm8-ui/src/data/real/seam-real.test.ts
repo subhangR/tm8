@@ -257,7 +257,13 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
   it('the seam surface matches the locked interface, method for method', () => {
     const { seam } = mk(() => ok({}));
     expect(Object.keys(seam.commands).sort()).toEqual([
-      'complete', 'createEntity', 'createTask', 'deleteEntity', 'editMessage', 'markRead',
+      // Amendment 5 (2026-08-04): the RELATIONSHIP write side. `assignees` is
+      // a projection of `assigned_to` edges, so every surface could show an
+      // assignment and none could make one — the seam had the reads and not
+      // the writes. Sorts around `createEntity` / `deleteEntity`, beside the
+      // entity verbs they mirror.
+      'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
+      'editMessage', 'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).

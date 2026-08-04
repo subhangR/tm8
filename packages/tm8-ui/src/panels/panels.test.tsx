@@ -699,9 +699,14 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
 
     fireEvent.click(within(tile).getByRole('button', { name: /expand details/i }));
     const expanded = tile.querySelector('.pn-tt__meta')?.textContent ?? '';
+    /* The expanded priority is now a CONTROL, not a badge (2026-08-04) — it
+       is addressed by the registry field it writes rather than by a badge
+       class, so this holds whether it renders as the picker or as the honest
+       refusal, which is what it does here with no `onSetValue` wired. The
+       word is still the badge's word: same fact, one spelling. */
     expect(
-      tile.querySelector('.pn-tt__meta .pn-badge--priority')?.textContent,
-      'expanded priority chip',
+      tile.querySelector('.pn-tt__meta [data-source="priority"]')?.textContent,
+      'expanded priority control',
     ).toBe('URGENT');
     expect(expanded, 'expanded facts').toContain('4/6 criteria');
     expect(expanded).toContain('Ada +1');
