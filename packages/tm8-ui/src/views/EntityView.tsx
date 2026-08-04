@@ -50,6 +50,7 @@ import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
   data: GateData & { pull?: (id: string) => void };
@@ -255,7 +256,9 @@ export function EntityView(props: EntityViewProps) {
   const detail = selectedId ? data.detailOf(selectedId) : null;
   const messages = selectedId ? data.messagesOf(selectedId) : undefined;
   if (selectedId && (
-    !detail || messages === undefined || messages.length < detail.counters.messages
+    !detail
+    || messages === undefined
+    || representedThreadMessageCount(messages) < detail.counters.messages
   )) props.data.pull?.(selectedId);
   const selectedContent = detail?.content as unknown as {
     interactionProfile?: WorkSessionInteractionProfileProjection | null;

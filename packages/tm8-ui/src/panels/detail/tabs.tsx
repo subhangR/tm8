@@ -38,6 +38,7 @@ export function DiscussionTab({
       nothing — inviting an action it could not perform). R5 #9, structural. */
   onPost?: (body: string) => Promise<void> | void;
 }) {
+  const branches = discussionBranches(messages);
   return (
     <div className="pn-body" id="tabpanel-discussion" role="tabpanel" aria-labelledby="tab-discussion">
       {messages.length === 0 ? (
@@ -47,13 +48,14 @@ export function DiscussionTab({
         />
       ) : (
         <ul className="pn-thread">
-          {messages.map((m) => (
-            <MessageRow
-              key={m.id}
-              message={m}
+          {branches.map(({ root, replies, replyToId }) => (
+            <MessageBranch
+              key={root.id}
+              root={root}
+              replies={replies}
+              replyToId={replyToId}
+              authoredFrom={authoredFrom}
               provenanceHollowReason={provenanceHollowReason}
-              hasProvenanceSlot={m.id in (authoredFrom ?? {})}
-              provenance={authoredFrom?.[m.id] ?? null}
             />
           ))}
         </ul>
@@ -63,13 +65,107 @@ export function DiscussionTab({
   );
 }
 
+interface DiscussionBranchModel {
+  root: MessageView;
+  replies: MessageView[];
+  /** Present only for a reply whose root was outside this bounded page. */
+  replyToId: string | null;
+}
+
+function discussionBranches(messages: readonly MessageView[]): DiscussionBranchModel[] {
+  const roots = messages.filter((message) => !message.state.rootMessageId);
+  const repliesByRoot = new Map<string, Map<string, MessageView>>();
+
+  for (const root of roots) {
+    const branch = new Map<string, MessageView>();
+    for (const reply of root.replies?.items ?? []) branch.set(reply.id, reply);
+    repliesByRoot.set(root.id, branch);
+  }
+  const orphanReplies: MessageView[] = [];
+  for (const message of messages) {
+    const rootId = message.state.rootMessageId;
+    if (!rootId) continue;
+    const branch = repliesByRoot.get(rootId);
+    if (branch) branch.set(message.id, message);
+    else orphanReplies.push(message);
+  }
+
+  const ordered: DiscussionBranchModel[] = roots.map((root) => ({
+    root,
+    replies: [...(repliesByRoot.get(root.id)?.values() ?? [])]
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)),
+    replyToId: null,
+  }));
+  for (const reply of orphanReplies) {
+    ordered.push({
+      root: reply,
+      replies: [],
+      replyToId: reply.parentId ?? reply.state.rootMessageId,
+    });
+  }
+  return ordered;
+}
+
+function MessageBranch({
+  root,
+  replies,
+  replyToId,
+  authoredFrom,
+  provenanceHollowReason,
+}: {
+  root: MessageView;
+  replies: readonly MessageView[];
+  replyToId: string | null;
+  authoredFrom?: Readonly<Record<string, string | null>>;
+  provenanceHollowReason: string;
+}) {
+  const hiddenReplyCount = Math.max(0, root.replyCount - replies.length);
+  const branchMessages = new Map([root, ...replies].map((message) => [message.id, message]));
+  return (
+    <li className="pn-thread__branch">
+      <MessageRow
+        message={root}
+        replyTo={replyToId ? { id: replyToId, message: null } : null}
+        provenanceHollowReason={provenanceHollowReason}
+        hasProvenanceSlot={root.id in (authoredFrom ?? {})}
+        provenance={authoredFrom?.[root.id] ?? null}
+      />
+      {replies.length > 0 ? (
+        <ul className="pn-thread__replies" aria-label={`Replies to ${root.state.author.displayName}`}>
+          {replies.map((reply) => {
+            const parentId = reply.parentId ?? reply.state.rootMessageId ?? root.id;
+            return (
+              <li key={reply.id}>
+                <MessageRow
+                  message={reply}
+                  replyTo={{ id: parentId, message: branchMessages.get(parentId) ?? null }}
+                  provenanceHollowReason={provenanceHollowReason}
+                  hasProvenanceSlot={reply.id in (authoredFrom ?? {})}
+                  provenance={authoredFrom?.[reply.id] ?? null}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {hiddenReplyCount > 0 ? (
+        <p className="pn-thread__more" aria-label={`${hiddenReplyCount} replies not in this preview`}>
+          {`${hiddenReplyCount} more ${hiddenReplyCount === 1 ? 'reply' : 'replies'}`}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
 function MessageRow({
   message,
+  replyTo,
   provenanceHollowReason,
   hasProvenanceSlot,
   provenance,
 }: {
   message: MessageView;
+  replyTo: { id: string; message: MessageView | null } | null;
   provenanceHollowReason: string;
   hasProvenanceSlot: boolean;
   provenance: string | null;
@@ -79,7 +175,7 @@ function MessageRow({
   const author = message.state.author ?? message.createdBy;
   const isAgent = author.isAgent;
   return (
-    <li className="pn-msg">
+    <article className={`pn-msg${replyTo ? ' pn-msg--reply' : ''}`} data-message-id={message.id}>
       <Avatar
         actorId={author.id}
         provenance={isAgent ? 'agent' : 'human'}
@@ -88,6 +184,7 @@ function MessageRow({
         src={author.avatar ?? null}
       />
       <div className="pn-msg__col">
+        {replyTo ? <DiscussionReplyContext target={replyTo} /> : null}
         <div className="pn-msg__byline">
           <span className="pn-msg__name">{author.displayName}</span>
           {/* Provenance is never carried by avatar shape alone — the word is
@@ -99,7 +196,26 @@ function MessageRow({
         </div>
         <p className="pn-msg__body">{message.content.body}</p>
       </div>
-    </li>
+    </article>
+  );
+}
+
+function DiscussionReplyContext({
+  target,
+}: {
+  target: { id: string; message: MessageView | null };
+}) {
+  const author = target.message?.state.author.displayName ?? null;
+  const excerpt = target.message?.state.redactedAt
+    ? 'redacted message'
+    : target.message?.content.body ?? target.id;
+  return (
+    <p className="pn-msg__reply-context" data-testid="pn-msg-reply-context">
+      <span aria-hidden>↩</span>
+      <span>in reply to</span>
+      {author ? <strong>{author}</strong> : null}
+      <span className="pn-msg__reply-excerpt">{excerpt}</span>
+    </p>
   );
 }
 

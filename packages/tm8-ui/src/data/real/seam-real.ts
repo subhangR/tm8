@@ -54,6 +54,7 @@ import {
   type Page,
   type ProjectResource,
   type SessionJournalPage,
+  type SessionLaunchRecord,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -251,6 +252,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     graph: (input: GraphQuery): Promise<GraphResult> => ops.graph(input),
     entityKinds: (spaceId: SpaceId): Promise<EntityKindDef[]> => ops.entityKinds(spaceId),
     projects: (spaceId: SpaceId): Promise<ProjectResource[]> => ops.projects(spaceId),
+    projectSetup: {
+      directories: (path) => ops.projectDirectories(path),
+      createSpace: (input) => ops.createSpace(input),
+      createProject: (input) => ops.createProject(input),
+      linkProject: (spaceId, input) => ops.linkProject(spaceId, input),
+    },
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
     children: (id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> => ops.children(id, opts),
     connections: (id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),
@@ -260,6 +267,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       ops.handoffs(workSessionId, opts),
     journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
       ops.journal(workSessionId, opts),
+    launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),

@@ -196,6 +196,7 @@ function MessageContent({
 
   const summary = deliverySummaryLine(delivery);
   const single = delivery.length === 1 ? delivery[0] : null;
+  const parentMessageId = message.parentId ?? message.state.rootMessageId;
 
   return (
     <>
@@ -222,10 +223,12 @@ function MessageContent({
 
       <ContextLine item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
 
-      {message.state.rootMessageId ? (
+      <LinkedSessions item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
+
+      {parentMessageId ? (
         <ParentPreview
-          id={message.state.rootMessageId}
-          parent={handlers.loadedMessages?.get(message.state.rootMessageId) ?? null}
+          id={parentMessageId}
+          parent={handlers.loadedMessages?.get(parentMessageId) ?? null}
           onOpenEntity={handlers.onOpenEntity}
           onFocusMessage={handlers.onFocusMessage}
         />
@@ -382,16 +385,12 @@ function ContextLine({
       {item.sourceWorkSessionId ? (
         <span className="chs-message-meta__part">
           <span>from session </span>
-          {onOpenEntity ? (
-            <button
-              type="button"
-              className="chs-linkbtn"
-              aria-label="Open source session"
-              onClick={() => onOpenEntity(item.sourceWorkSessionId!)}
-            >
-              {item.sourceWorkSessionId}
-            </button>
-          ) : <span>{item.sourceWorkSessionId}</span>}
+          <SessionChip
+            id={item.sourceWorkSessionId}
+            label={item.sourceWorkSessionId}
+            ariaLabel="Open source session"
+            onOpenEntity={onOpenEntity}
+          />
         </span>
       ) : null}
       {foreign ? (
@@ -411,6 +410,74 @@ function ContextLine({
       ) : null}
     </p>
   );
+}
+
+/**
+ * Channel @Tags create one message sibling per existing or newly spawned work
+ * session. Those durable siblings are the linkage; delivery is only a changing
+ * facet on top. Show every linked session even when delivery never started.
+ */
+function LinkedSessions({
+  item,
+  anchorId,
+  onOpenEntity,
+}: {
+  item: Extract<FeedItem, { itemKind: 'message' }>;
+  anchorId: EntityId;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
+  const sessions = new Map<EntityId, { id: EntityId; label: string }>();
+  for (const session of item.linkedWorkSessions ?? []) {
+    if (session.id !== anchorId) sessions.set(session.id, { id: session.id, label: session.title });
+  }
+  // Rolling-server fallback: delivery target ids still make the link usable
+  // when an older feed response has not supplied `linkedWorkSessions` yet.
+  for (const delivery of item.delivery) {
+    if (delivery.targetWorkSessionId === anchorId || sessions.has(delivery.targetWorkSessionId)) continue;
+    sessions.set(delivery.targetWorkSessionId, {
+      id: delivery.targetWorkSessionId,
+      label: delivery.targetWorkSession?.title || delivery.targetWorkSessionId,
+    });
+  }
+  if (sessions.size === 0) return null;
+  return (
+    <ul className="chs-session-links" aria-label="Linked work sessions" data-testid="chs-session-links">
+      {[...sessions.values()].map((session) => (
+        <li key={session.id}>
+          <SessionChip
+            id={session.id}
+            label={session.label}
+            ariaLabel={`Open linked session ${session.label}`}
+            onOpenEntity={onOpenEntity}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SessionChip({
+  id,
+  label,
+  ariaLabel,
+  onOpenEntity,
+}: {
+  id: EntityId;
+  label: string;
+  ariaLabel: string;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
+  const content = <><span aria-hidden>▣</span><span>{label}</span></>;
+  return onOpenEntity ? (
+    <button
+      type="button"
+      className="chs-session-chip"
+      aria-label={ariaLabel}
+      onClick={() => onOpenEntity(id)}
+    >
+      {content}
+    </button>
+  ) : <span className="chs-session-chip">{content}</span>;
 }
 
 /** The §6 badge: colour + WORD, never colour alone, and never its own row. */
@@ -567,6 +634,7 @@ function ParentPreview({
   const inner = (
     <>
       <span aria-hidden className="chs-parent__glyph">↩</span>
+      <span className="chs-parent__label">in reply to</span>
       {author ? <InlineActor actor={author} className="chs-parent__author" /> : null}
       <span className="chs-parent__excerpt">{preview}</span>
     </>

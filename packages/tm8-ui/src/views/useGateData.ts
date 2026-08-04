@@ -64,6 +64,7 @@ import {
   type LaunchProject,
   type LaunchTeammate,
 } from '../domain/launch';
+import { representedThreadMessageCount } from './message-thread';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
@@ -311,6 +312,8 @@ export interface GateData {
   ensureKind: (kind: string) => void;
   /** Switch the active space and hydrate its own menu, channels, and data. */
   selectSpace: (spaceId: SpaceId) => void;
+  /** Add and immediately open a Space returned by the onboarding saga. */
+  acceptSpace: (space: SpaceSummary) => void;
   /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
@@ -777,6 +780,14 @@ export function useGateData(options: GateOptions): GateData {
     setSpaceId(next);
   }, [spaceId, spaces]);
 
+  const acceptSpace = useCallback((space: SpaceSummary) => {
+    setSpaces((current) => current.some((candidate) => candidate.id === space.id)
+      ? current.map((candidate) => candidate.id === space.id ? space : candidate)
+      : [...current, space]);
+    setBootError(null);
+    setSpaceId(space.id);
+  }, []);
+
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
   useEffect(() => seam.onConnection(setConnection), [seam]);
@@ -1208,7 +1219,8 @@ export function useGateData(options: GateOptions): GateData {
         ?? state.details[id as EntityId]?.counters.messages
         ?? cachedMessages?.length
         ?? -1;
-      const messagesStale = cachedMessages === undefined || cachedMessages.length < messageCount;
+      const messagesStale = cachedMessages === undefined
+        || representedThreadMessageCount(cachedMessages) < messageCount;
       const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
       if (!needsDetail && !needsMessages) return;
       // Each half carries its OWN budget. Detail and thread already hydrate
@@ -1362,6 +1374,7 @@ export function useGateData(options: GateOptions): GateData {
       launch,
       ensureKind,
       selectSpace,
+      acceptSpace,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
@@ -1370,7 +1383,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

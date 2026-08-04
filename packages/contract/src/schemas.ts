@@ -51,7 +51,8 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
-  ProjectCreateInput, ProjectDefaults, ProjectLinkInput, ProjectResource,
+  ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
+  ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
@@ -63,6 +64,7 @@ import type {
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
+  SessionLaunchRecord,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
@@ -1542,6 +1544,21 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   repoUrl: z.string().nullable().optional(),
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
+  ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+}).strict();
+
+export const ProjectDirectoryListingSchema: z.ZodType<ProjectDirectoryListing> = z.object({
+  roots: z.array(z.string().min(1)).min(1),
+  path: z.string().min(1),
+  parentPath: z.string().min(1).nullable(),
+  separator: z.enum(['/', '\\']),
+  directories: z.array(ProjectDirectoryEntrySchema),
+  truncated: z.boolean(),
 }).strict();
 
 export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({
@@ -1707,6 +1724,7 @@ export const SessionJournalCallSchema: z.ZodType<SessionJournalCall> = z.object(
 export const SessionJournalRecordSchema: z.ZodType<SessionJournalRecord> = z.object({
   v: z.literal(1),
   seq: z.number().int().nonnegative(),
+  class: z.enum(['agent', 'harness', 'human']).optional(),
   sessionId: EntityIdSchema,
   spaceId: EntityIdSchema.nullable(),
   teamMemberId: EntityIdSchema.nullable(),
@@ -1749,6 +1767,26 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
   }).strict(),
   records: z.array(SessionJournalRecordSchema),
   hasMore: z.boolean(),
+}).strict();
+
+/**
+ * `manifest` is `z.record(z.unknown())` and NOT a modelled object: the stored
+ * document was written by whatever build spawned the session, and validating
+ * its interior would make this read fail closed on exactly the sessions a
+ * debug surface most needs to explain. The envelope around it is strict.
+ */
+export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum(['no_manifest_row']).nullable(),
+  manifest: z.record(z.unknown()).nullable(),
+  envVarNames: z.array(z.string()),
+  prompts: z.object({
+    system: z.string().nullable(),
+    task: z.string().nullable(),
+    unavailableReason: z.enum(['not_recorded']).nullable(),
+  }).strict(),
+  recordedAt: z.string().nullable(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -1870,6 +1908,7 @@ export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
 export const DeliverySummarySchema: z.ZodType<DeliverySummary> = z.object({
   deliveryId: z.string().min(1),
   targetWorkSessionId: EntityIdSchema,
+  targetWorkSession: EntitySummarySchema.nullable().optional(),
   status: MessageDeliveryStatusSchema,
   attemptNo: z.number().int().positive(),
   failureReason: z.string().nullable(),
@@ -1893,6 +1932,7 @@ export const FeedItemSchema: z.ZodType<FeedItem> = z.lazy(() => z.discriminatedU
     itemKind: z.literal('message'),
     message: MessageViewSchema,
     delivery: z.array(DeliverySummarySchema),
+    linkedWorkSessions: z.array(EntitySummarySchema).optional(),
   }).strict(),
   z.object({
     ...feedItemBaseShape,

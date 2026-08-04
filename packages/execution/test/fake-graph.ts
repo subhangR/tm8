@@ -28,6 +28,8 @@ export interface FakeGraphOptions {
   workingDir: string;
   /** Omit the project to exercise the projectless scratch-session path. */
   withProject?: boolean;
+  /** Stable id for filesystem-boundary tests. Defaults to a fresh UUID. */
+  sessionId?: string;
   model?: string | null;
   permissionMode?: string | null;
 }
@@ -36,7 +38,12 @@ export class FakeGraph implements GraphPort {
   readonly created: CreateWorkSessionInput[] = [];
   readonly transitions: TransitionInput[] = [];
   readonly commands: RecordCommandInput[] = [];
-  readonly manifests: Array<{ sessionId: string; manifest: Tm8Manifest; envVarNames: string[] }> = [];
+  readonly manifests: Array<{
+    sessionId: string;
+    manifest: Tm8Manifest;
+    envVarNames: string[];
+    prompts: { system: string; task: string };
+  }> = [];
   readonly profilePins: Array<{ sessionId: string; profile: ResolvedInteractionProfileContext }> = [];
   readonly issuedAgentTokens: Array<{ sessionId: string; teamMemberId: string }> = [];
   readonly authSeen: GraphAuth[] = [];
@@ -107,7 +114,7 @@ export class FakeGraph implements GraphPort {
       };
     }
     this.created.push(input);
-    const sessionId = randomUUID();
+    const sessionId = this.options.sessionId ?? randomUUID();
     return { sessionId, commandResult: { entityId: sessionId, patches: [sessionId] }, replayed: false };
   }
 
@@ -162,9 +169,10 @@ export class FakeGraph implements GraphPort {
     sessionId: string,
     manifest: Tm8Manifest,
     envVarNames: string[],
+    prompts: { system: string; task: string },
   ): Promise<void> {
     this.authSeen.push(auth);
-    this.manifests.push({ sessionId, manifest, envVarNames });
+    this.manifests.push({ sessionId, manifest, envVarNames, prompts });
   }
 
   async transition(auth: GraphAuth, input: TransitionInput): Promise<void> {

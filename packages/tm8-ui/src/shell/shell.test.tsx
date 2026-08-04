@@ -405,6 +405,14 @@ describe('SpaceTabBar (T0-1, D1)', () => {
     control.focus(); // reachable
     expect(document.activeElement).toBe(control);
   });
+
+  it('opens Space and local-project onboarding when the real seam wires it', () => {
+    const onAddSpace = vi.fn();
+    const control = renderBar({ onAddSpace }).getByLabelText('Add space');
+    expect(control.getAttribute('aria-disabled')).toBeNull();
+    fireEvent.click(control);
+    expect(onAddSpace).toHaveBeenCalledOnce();
+  });
 });
 
 describe('PanelStack — render order and the Esc law (§5.2/§5.3)', () => {

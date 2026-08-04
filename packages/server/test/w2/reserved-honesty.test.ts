@@ -114,26 +114,27 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 125 = 123 v1 + 2 reserved, 124 HTTP + 1 WS boundary', () => {
+  it('keeps the exact 127 = 125 v1 + 2 reserved, 126 HTTP + 1 WS boundary', () => {
     // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
     // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
     // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
     // 120 -> 121 (2026-08-01): identity.profile.update (Identity v2 Stage 0),
     // one POST command.
-    // 121 -> 125 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
-    expect(OPERATIONS).toHaveLength(125);
-    expect(V1_OPERATIONS).toHaveLength(123);
+    // 121 -> 126 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
+    // 126 -> 127 (2026-08-02): execution.launch, one GET read.
+    expect(OPERATIONS).toHaveLength(127);
+    expect(V1_OPERATIONS).toHaveLength(125);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(124);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(126);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(122);
+    )).toHaveLength(123);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

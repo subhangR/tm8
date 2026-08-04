@@ -18,6 +18,7 @@ import type { RequestContext } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, optionalUuid, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
+import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
 
 export interface ProjectRow {
   id: string;
@@ -307,6 +308,14 @@ function updatePatch(input: ProjectUpdateInput): Record<string, unknown> {
 export class W2ProjectsAssociationsService {
   constructor(private readonly deps: FacadeDeps) {}
 
+  readonly listProjectDirectories = async (ctx: RequestContext) => {
+    const owner = await this.deps.owner();
+    if (claimsFor(owner, ctx).nodeAdmin !== true) {
+      throw new CollabError('forbidden', 'node-admin access is required to browse project directories');
+    }
+    return listProjectDirectories(ctx.query.get('path') ?? undefined);
+  };
+
   readonly listProjects = async (ctx: RequestContext): Promise<ProjectResource[]> => {
     const owner = await this.deps.owner();
     const spaceId = optionalUuid(ctx.query.get('spaceId'), 'spaceId');
@@ -343,12 +352,19 @@ export class W2ProjectsAssociationsService {
     const owner = await this.deps.owner();
     const input = ctx.body as ProjectCreateInput;
     const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+    if (input.ensureWorkingDir && claims.nodeAdmin !== true) {
+      throw new CollabError('forbidden', 'node-admin access is required to create a project directory');
+    }
+    const workingDir = input.ensureWorkingDir
+      ? await ensureProjectWorkingDirectory(input.workingDir)
+      : input.workingDir;
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
-      claimsFor(owner, ctx, envelope),
+      claims,
       'create_project',
       [
         input.name,
-        input.workingDir,
+        workingDir,
         input.repoUrl ?? null,
         input.trust ?? 'untrusted',
         JSON.stringify(input.defaults ?? {}),

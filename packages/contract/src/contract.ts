@@ -1388,6 +1388,40 @@ export interface ProjectCreateInput extends CommandContext {
   /** Defaults to 'untrusted' — trust is an explicit grant. */
   trust?: ProjectTrustLevel;
   defaults?: ProjectDefaults;
+  /**
+   * Create `workingDir` when it is one missing child beneath an allowed,
+   * existing project-browse directory. False/absent never mutates the
+   * filesystem; it only records the supplied path, preserving the original
+   * projects.create contract for CLI and migration callers.
+   */
+  ensureWorkingDir?: boolean;
+}
+
+/** One selectable child in the node-local project directory browser. */
+export interface ProjectDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+/**
+ * GET /v2/project-directories — a bounded, root-confined view of directories
+ * on the tm8 node. Files are deliberately absent: this is a project-root
+ * picker, not a general filesystem API.
+ */
+export interface ProjectDirectoryListing {
+  roots: string[];
+  path: string;
+  parentPath: string | null;
+  separator: '/' | '\\';
+  directories: ProjectDirectoryEntry[];
+  truncated: boolean;
+}
+
+/** The wrapper returned by spaces.create after its default member/channel saga. */
+export interface CreateSpaceResult {
+  space: SpaceSummary;
+  memberId: EntityId;
+  defaultChannelId: EntityId;
 }
 
 /** PATCH /v2/projects/:projectId */
@@ -1605,6 +1639,15 @@ export interface SessionJournalRecord {
   v: 1;
   /** Per-process counter. Pair with `startedAt` to order across processes. */
   seq: number;
+  /**
+   * Who this invocation was, decided AT WRITE TIME: a spawned agent, a test
+   * harness, or a human. OPTIONAL because records predating the field exist
+   * and must stay valid — readers fall back to heuristics for those. Without
+   * this split the corpus is unreadable: 2,737 of 3,018 measured records were
+   * the CLI integration suite inheriting `TM8_JOURNAL_PATH` from a parent
+   * agent, inverting the headline failure rate.
+   */
+  class?: 'agent' | 'harness' | 'human';
   sessionId: EntityId;
   spaceId: EntityId | null;
   teamMemberId: EntityId | null;
@@ -1680,6 +1723,69 @@ export interface SessionJournalPage {
   /** Oldest-first within the window. */
   records: SessionJournalRecord[];
   hasMore: boolean;
+}
+
+/**
+ * How ONE session was configured at the instant it was launched — the other
+ * half of the debug surface, alongside `SessionJournalPage`.
+ *
+ * The journal answers "what did this agent DO"; this answers "what was this
+ * agent TOLD". Both are needed to explain a session's behaviour, and until
+ * this existed the second question had no answer anywhere outside the node's
+ * own filesystem.
+ *
+ * EVERY FIELD IS A STORED FACT, never a re-derivation. In particular the two
+ * prompts are the bytes that went onto the child's argv, read back out of
+ * `session_manifests`, and NOT the output of running the composer again — a
+ * recomposed prompt describes the build doing the reading, not the launch
+ * being inspected, and the two diverge silently.
+ */
+export interface SessionLaunchRecord {
+  sessionId: EntityId;
+  /**
+   * false when the session has no manifest row at all: a spawn that failed
+   * before recording one, or a session whose row was never written. Renders as
+   * an explained empty, never as a blank configuration.
+   */
+  available: boolean;
+  /** Present only when `available` is false. Machine-readable reason. */
+  unavailableReason: 'no_manifest_row' | null;
+  /**
+   * The composed spawn manifest EXACTLY as stored: persona, resolved launch
+   * posture, command-network policy, workdir/project + trust, the pinned
+   * interaction profile, and the task list.
+   *
+   * DELIBERATELY UNTYPED. This is a JSON document written by whatever build
+   * spawned the session, and a strict schema here would refuse to show a
+   * manifest an older or newer build wrote — on the one surface whose entire
+   * job is to show what is actually there. Readers pick out the keys they know
+   * and render the rest verbatim.
+   */
+  manifest: Record<string, unknown> | null;
+  /**
+   * Environment variable NAMES handed to the agent process. Values are
+   * structurally absent (S15) — they are injected from the node's OS
+   * environment at spawn and never travel back into Postgres — so a reader
+   * must present these as names, never as configuration that can be inspected.
+   */
+  envVarNames: string[];
+  /**
+   * The two prompts, on the two channels they actually travel on: `system`
+   * configures the agent (`--append-system-prompt` / `developer_instructions`)
+   * and `task` is its first user turn (the CLI positional).
+   */
+  prompts: {
+    system: string | null;
+    task: string | null;
+    /**
+     * Why both are null. `not_recorded` means this session was launched before
+     * prompts were persisted, and the text is unrecoverable — it existed only
+     * in the spawn process's memory and on the child's argv.
+     */
+    unavailableReason: 'not_recorded' | null;
+  };
+  /** When the manifest row was written — i.e. when the session was launched. */
+  recordedAt: string | null;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------
@@ -1854,6 +1960,8 @@ export interface EntityFeedQuery {
 export interface DeliverySummary {
   deliveryId: string;
   targetWorkSessionId: EntityId;
+  /** Readable canonical session summary for direct navigation from a feed. */
+  targetWorkSession?: EntitySummary | null;
   status: MessageDeliveryStatus;
   attemptNo: number;
   failureReason: string | null;
@@ -1872,7 +1980,9 @@ export interface FeedItemBase {
 }
 
 export type FeedItem =
-  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[] })
+  | (FeedItemBase & { itemKind: 'message'; message: MessageView; delivery: DeliverySummary[];
+      /** Work-session siblings in this message batch (channel tag/spawn targets). */
+      linkedWorkSessions?: EntitySummary[] })
   | (FeedItemBase & { itemKind: 'activity'; activity: ActivityItem });
 
 export interface EntityFeedPage {

@@ -17,13 +17,22 @@
  * prompt. Every entry point below is therefore wrapped in a swallow, and the
  * tee in `wrapStreams` forwards BEFORE it counts.
  *
+ * THE ONE SANCTIONED EXCEPTION (F8, "visible spend"): after the record is
+ * durably appended, an AGENT-class invocation prints a single spend line to
+ * STDERR — `[journal: ~Nk est chars-over-4 this session; M% on re-fetches]` —
+ * so the agent sees its cost while it can still be changed. Stderr only,
+ * never stdout; printed only after the append succeeded; swallowed on any
+ * failure; and never for `harness` records, whose fixtures must stay
+ * byte-deterministic.
+ *
  * THE GATE: no `TM8_JOURNAL_PATH` means no journal, and `createJournal` hands
  * back an inert sink. A human running `tm8` at their own terminal creates
  * nothing, writes nothing, and pays nothing.
  */
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { SessionJournalCall, SessionJournalRecord } from '@tm8/contract';
+import { formatSpend, parseJournalText, resolveJournalClass, sessionSpend } from './journal-stats.js';
 import type { OutputStreams } from './output.js';
 
 /**
@@ -167,9 +176,14 @@ class FileJournal implements Journal {
       const agentChars = argv.join(' ').length + this.stdinChars;
       const cliChars = this.stdoutChars + this.stderrChars;
 
+      // Decided at WRITE time, when the calls (and their target ports) are
+      // known — the split that keeps the corpus readable. See journal-stats.ts.
+      const journalClass = resolveJournalClass(this.env, this.calls, safeCwd());
+
       const record: SessionJournalRecord = {
         v: 1,
         seq: 0,
+        class: journalClass,
         sessionId: this.sessionId,
         spaceId: this.env.TM8_SPACE_ID ?? null,
         teamMemberId: this.env.TM8_TEAM_MEMBER_ID ?? null,
@@ -199,9 +213,31 @@ class FileJournal implements Journal {
       // and no lock file is needed. This is why records are bounded.
       mkdirSync(dirname(this.path), { recursive: true });
       appendFileSync(this.path, `${JSON.stringify(record)}\n`, 'utf8');
+      if (journalClass === 'agent') this.emitSpendLine();
     } catch {
       // A full disk, a read-only path, a serialisation failure: none of them
       // are the caller's problem and none of them may alter the exit code.
+    }
+  }
+
+  /**
+   * The F8 spend line — the only bytes journaling ever adds to what a caller
+   * sees, and stderr-only. Totals are read back from the file just appended
+   * to, so the number is THIS SESSION's running spend across sibling
+   * invocations, not this process's. Direct to `process.stderr`, deliberately
+   * bypassing the wrapped streams: the line must not count itself into the
+   * record it reports on.
+   */
+  private emitSpendLine(): void {
+    try {
+      const { records } = parseJournalText(readFileSync(this.path, 'utf8'));
+      const mine = records.filter((r) => r.sessionId === this.sessionId);
+      const { estTokens, refetchPct } = sessionSpend(mine);
+      process.stderr.write(
+        `[journal: ${formatSpend(estTokens)} est chars-over-4 this session; ${refetchPct}% on re-fetches]\n`,
+      );
+    } catch {
+      // The spend line is advice. Failing to print it must cost nothing.
     }
   }
 }

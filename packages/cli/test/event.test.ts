@@ -428,7 +428,7 @@ describe('per-operation availability (M-3) is derived, never assumed', () => {
     expect(resolveAvailability('events.poll', 'v1')).toEqual({
       availability: 'unknown',
       availabilityReason: null,
-      availabilitySource: 'contract',
+      availabilitySource: 'none',
     });
   });
 
@@ -944,6 +944,207 @@ describe('tm8 event watch — the loop, over an injected socket', () => {
       s.serverClose(1000, 'bye');
     });
     expect(good.code).toBe(0);
+  });
+});
+
+// ── --until-match: waiting is one call (F7) ────────────────────────────────
+
+/**
+ * Drive an `--until-match` wait over the injected socket, with an injected
+ * poller for the socket-down fallback. `pollIntervalMs: 5` so a fallback test
+ * takes milliseconds; the deadline arithmetic is the same either way.
+ */
+async function waitOver(
+  socket: FakeSocket,
+  argv: readonly string[],
+  opts: {
+    timeoutMs: number;
+    poll?: (since: string) => Promise<{ items?: unknown; nextCursor?: unknown }>;
+    drive?: (s: FakeSocket) => void;
+  },
+): Promise<Ran & { polls: string[] }> {
+  const { runWatch, watchRequestFrom } = await import('../src/commands/event.js');
+  let stdout = '';
+  let stderr = '';
+  const streams = {
+    stdout: (c: string | Uint8Array) => {
+      stdout += typeof c === 'string' ? c : Buffer.from(c).toString('utf8');
+    },
+    stderr: (c: string) => {
+      stderr += c;
+    },
+  };
+  const polls: string[] = [];
+  const inv = parseInvocation(argv);
+  const out = createOutput({ format: inv.globals.format, quiet: inv.globals.quiet, streams });
+  const ctx = resolveContext({
+    globals: inv.globals,
+    session: sessionContextFromEnv(),
+    config: loadLocalConfig(),
+  });
+  const running = runWatch({
+    request: watchRequestFrom({ options: inv.options, ctx }),
+    socket,
+    out,
+    timeoutMs: opts.timeoutMs,
+    untilMatch: true,
+    poll:
+      opts.poll === undefined
+        ? undefined
+        : async (since: string) => {
+            polls.push(since);
+            return await opts.poll!(since);
+          },
+    pollIntervalMs: 5,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  opts.drive?.(socket);
+  return { code: await running, stdout, stderr, polls };
+}
+
+describe('tm8 event watch --until-match — waiting is one call (F7)', () => {
+  it('settles on the FIRST matching event: prints exactly it, exits 0', async () => {
+    const socket = new FakeSocket();
+    const r = await waitOver(
+      socket,
+      ['event', 'watch', '--space', SPACE, '--type', 'entity.deleted', '--format', 'jsonl'],
+      {
+        timeoutMs: 5_000,
+        drive: (s) => {
+          s.deliver(WIRE_EVENT); // entity.upsert — no match, must NOT settle
+          s.deliver({ ...WIRE_EVENT, seq: 10, type: 'entity.deleted' });
+          s.deliver({ ...WIRE_EVENT, seq: 11, type: 'entity.deleted' }); // after settle
+        },
+      },
+    );
+    expect(r.code).toBe(0);
+    const lines = r.stdout.trim().split('\n').filter((l) => l !== '');
+    expect(lines).toHaveLength(1);
+    expect((JSON.parse(lines[0]!) as { seq: number }).seq).toBe(10);
+    expect(socket.closedByClient).toBe(true); // the wait released its socket
+  });
+
+  it('exits 13 — a distinct sentence — when --timeout expires unmatched', async () => {
+    const socket = new FakeSocket();
+    const r = await waitOver(socket, ['event', 'watch', '--space', SPACE], {
+      timeoutMs: 30,
+      drive: (s) => {
+        s.deliver(REAL_ACK); // wait — no: an ack would settle 4. Use nothing.
+      },
+    });
+    expect(r.code).toBe(4); // the ack settled it first: control stays honest
+    const quiet = new FakeSocket();
+    const r2 = await waitOver(quiet, ['event', 'watch', '--space', SPACE], { timeoutMs: 30 });
+    expect(r2.code).toBe(13);
+  });
+
+  it('SOCKET LOST -> events.poll fallback -> match exits 14, resumed from the last seen seq', async () => {
+    const socket = new FakeSocket();
+    const r = await waitOver(
+      socket,
+      ['event', 'watch', '--space', SPACE, '--type', 'entity.deleted', '--format', 'jsonl'],
+      {
+        timeoutMs: 5_000,
+        poll: async () => ({
+          items: [{ ...WIRE_EVENT, seq: 12, type: 'entity.deleted' }],
+          nextCursor: '12',
+        }),
+        drive: (s) => {
+          s.deliver(WIRE_EVENT); // non-matching, but seq 9 becomes the resume point
+          s.serverClose(1006, 'abnormal');
+        },
+      },
+    );
+    expect(r.code).toBe(14);
+    expect(r.polls[0]).toBe('9'); // resumed from what the stream showed, not from 0
+    expect((JSON.parse(r.stdout.trim()) as { seq: number }).seq).toBe(12);
+    expect(r.stderr).toMatch(/socket was lost/);
+  });
+
+  it('the fallback REFUSES to run with no resume point — exit 7, never a match from history', async () => {
+    const socket = new FakeSocket();
+    const r = await waitOver(socket, ['event', 'watch', '--space', SPACE], {
+      timeoutMs: 5_000,
+      poll: async () => ({ items: [WIRE_EVENT], nextCursor: '9' }),
+      drive: (s) => s.serverClose(1006, 'abnormal'),
+    });
+    expect(r.code).toBe(7);
+    expect(r.polls).toHaveLength(0); // it never polled — a poll from 0 could match the past
+    expect(r.stdout).toBe(''); // and nothing from history was presented as an arrival
+    expect(r.stderr).toMatch(/--after/);
+  });
+
+  it('--after seeds the resume point, so a socket lost at once still degrades', async () => {
+    const socket = new FakeSocket();
+    const r = await waitOver(socket, ['event', 'watch', '--space', SPACE, '--after', '7', '--format', 'jsonl'], {
+      timeoutMs: 5_000,
+      poll: async () => ({ items: [WIRE_EVENT], nextCursor: '9' }),
+      drive: (s) => s.serverClose(1006, 'abnormal'),
+    });
+    expect(r.code).toBe(14);
+    expect(r.polls[0]).toBe('7');
+  });
+
+  it('quiet polls advance the cursor and end in 13; a node that never answers ends in 7', async () => {
+    const answered = await waitOver(new FakeSocket(), ['event', 'watch', '--space', SPACE, '--after', '7'], {
+      timeoutMs: 40,
+      poll: async () => ({ items: [], nextCursor: '20' }),
+      drive: (s) => s.serverClose(1006),
+    });
+    expect(answered.code).toBe(13); // polls answered: "it has not happened" is a real answer
+    expect(answered.polls.length).toBeGreaterThan(1);
+    expect(answered.polls[1]).toBe('20'); // the cursor moved even though nothing matched
+
+    const dead = await waitOver(new FakeSocket(), ['event', 'watch', '--space', SPACE, '--after', '7'], {
+      timeoutMs: 40,
+      poll: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+      drive: (s) => s.serverClose(1006),
+    });
+    expect(dead.code).toBe(7); // every poll failed: nothing was learned, and 13 would claim it was
+  });
+
+  it('a socket that never OPENS is the same repair path as one that dropped', async () => {
+    class DeadSocket extends FakeSocket {
+      override async open(): Promise<void> {
+        throw new CliError('no socket', 7);
+      }
+    }
+    const r = await waitOver(new DeadSocket(), ['event', 'watch', '--space', SPACE, '--after', '7', '--format', 'jsonl'], {
+      timeoutMs: 5_000,
+      poll: async () => ({ items: [WIRE_EVENT], nextCursor: '9' }),
+    });
+    expect(r.code).toBe(14);
+  });
+
+  it('USAGE: --until-match without --timeout, or above the 300s cap, is refused locally', async () => {
+    const [, watch] = await eventCommands();
+    const drive = async (argv: readonly string[]): Promise<number> => {
+      const inv = parseInvocation(argv);
+      const ctx = resolveContext({
+        globals: inv.globals,
+        session: sessionContextFromEnv(),
+        config: loadLocalConfig(),
+      });
+      const out = createOutput({ format: inv.globals.format, streams: { stdout: () => {}, stderr: () => {} } });
+      try {
+        return await watch!.run({
+          path: ['event', 'watch'],
+          args: [],
+          options: inv.options,
+          passthrough: [],
+          ctx,
+          out,
+        });
+      } catch (err) {
+        return exitCodeFor(err);
+      }
+    };
+    expect(await drive(['event', 'watch', '--space', SPACE, '--until-match'])).toBe(EXIT_USAGE);
+    expect(
+      await drive(['event', 'watch', '--space', SPACE, '--until-match', '--timeout', '301']),
+    ).toBe(EXIT_USAGE);
   });
 });
 

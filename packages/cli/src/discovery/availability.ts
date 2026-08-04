@@ -36,6 +36,11 @@
  *                     set. The seam exists; nothing implements it. It is
  *                     consulted last and today always answers "nothing".
  *
+ * AND ONE NON-SOURCE: `none`. When every source above declines, the verdict is
+ * `unknown` and its `availabilitySource` is `none` — "nothing looked". It is a
+ * member of the vocabulary precisely so the default never has to borrow the
+ * name of a source that declined to answer.
+ *
  * THE IMPLEMENTATION EPOCH IS NOT THE CAPABILITY EPOCH. `/health` answers
  * `{operations, implemented}` — how many routes are mounted and how many
  * handlers are registered on this node. That is a CACHE-INVALIDATION EPOCH
@@ -60,7 +65,7 @@ export const AVAILABILITY_REASONS = [
 ] as const;
 export type AvailabilityReason = (typeof AVAILABILITY_REASONS)[number] | null;
 
-export const AVAILABILITY_SOURCES = ['contract', 'observed', 'advertised'] as const;
+export const AVAILABILITY_SOURCES = ['contract', 'observed', 'advertised', 'none'] as const;
 export type AvailabilitySource = (typeof AVAILABILITY_SOURCES)[number];
 
 export interface AvailabilityVerdict {
@@ -263,5 +268,7 @@ export function resolveAvailability(
     };
   }
 
-  return { availability: 'unknown', availabilityReason: null, availabilitySource: 'contract' };
+  // Every source declined. `none` is the only label a verdict nothing produced
+  // may honestly carry — in particular NOT `contract`, which just returned null.
+  return { availability: 'unknown', availabilityReason: null, availabilitySource: 'none' };
 }
