@@ -60,6 +60,29 @@ function hashJson(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
 }
 
+/**
+ * One caller id, one id per ledger stage — DEV-9's rule is that a
+ * clientMutationId belongs to exactly ONE operation, and this attach spans two
+ * of them (`files.uploadInit` and `files.uploadComplete`). Passing the caller's
+ * id to both is refused by the ledger with `invariant_violation`, which is the
+ * correct answer: they are different commands and must be separately
+ * replayable.
+ *
+ * The derivation is deterministic, so a retry of the same caller id replays
+ * both stages rather than opening a second slot. It is byte-identical to the
+ * CLI's `deriveMutationId` (packages/cli/src/mutation.ts), which composes the
+ * same three-stage upload — copied rather than imported because `contract` is
+ * the only permitted cross-package dependency.
+ */
+function deriveMutationId(rootId: string, stage: string): string {
+  const digest = createHash('sha256').update(`tm8/mutation/${rootId}/${stage}`).digest();
+  const bytes = new Uint8Array(digest.subarray(0, 16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x80; // version 8 — custom/derived
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80; // variant 10
+  const h = Buffer.from(bytes).toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 /** Mirrors the files lane: the identity that opens a slot must also settle it. */
 function requireAuthenticatedIdentity(ctx: RequestContext, ownerIdentityId: string): string {
   if (ctx.identity.kind === 'anonymous') {
@@ -153,7 +176,7 @@ export class W2ProjectFilesService {
       expiresAt.toISOString(),
       null,
       this.maxSizeBytes,
-      input.clientMutationId,
+      deriveMutationId(input.clientMutationId, 'files.uploadInit'),
       requestHash,
     ]);
 
@@ -168,7 +191,7 @@ export class W2ProjectFilesService {
         settledUploadId,
         file.sizeBytes,
         file.checksumSha256,
-        input.clientMutationId,
+        deriveMutationId(input.clientMutationId, 'files.uploadComplete'),
         input.targets ?? [],
       ]);
       if (result.outcome !== 'completed') return { result };
@@ -200,7 +223,12 @@ export class W2ProjectFilesService {
       'w2_authorize_file_upload',
       [uploadId, grant, leaseId],
     );
-    if (authorized.outcome === 'staged') return;
+    // `staged` means a previous attempt already wrote these bytes. `completed`
+    // means the whole attach already succeeded — the caller is retrying a
+    // mutation id that has run to the end, and the right answer is to fall
+    // through to `w2_complete_file_upload`, whose own ledger replay returns the
+    // original result. Refusing here would turn every honest retry into a 400.
+    if (authorized.outcome === 'staged' || authorized.outcome === 'completed') return;
     if (authorized.outcome === 'expired') {
       await this.options.blobStore.remove(authorized.storagePath, authorized.spaceId).catch(() => undefined);
       throw new CollabError('invalid_input', 'upload slot has expired');
