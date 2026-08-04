@@ -11,6 +11,11 @@ import './panels.css';
 
 export { EntityListPanel, type EntityListPanelProps, type LaunchSources } from './EntityListPanel';
 export {
+  EntityControlStrip,
+  type ControlHost,
+  type ControlSubject,
+} from './controls/EntityControls';
+export {
   EntityDetailPanel,
   type DetailReasons,
   type EntityDetailPanelProps,

@@ -147,8 +147,33 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
 
   const cells: { key: string; label: string; value: ReactNode }[] = [];
 
+  /**
+   * Fields the CONTROL STRIP now owns, and which this grid must therefore not
+   * draw a second time.
+   *
+   * This is the D67 amendment's rule applied to the panel. The tile used to
+   * carry static status / priority / assignee chips ABOVE a working control
+   * strip, and the reported bug was "the buttons are broken" when in truth the
+   * things that looked like buttons were `<span>`s and the real control was
+   * elsewhere. The panel had the identical shape: a read-only `PRIORITY: HIGH`
+   * tag and an avatar row in this grid. Now that the strip is mounted above,
+   * repeating them here would rebuild that exact confusion.
+   *
+   * Derived from the SAME registry declarations the strip reads, so the grid
+   * cannot fall out of step with it — a kind with no `assignControl` keeps its
+   * read-only assignee row, because for that kind the row is the only truth
+   * available and suppressing it would hide a fact rather than de-duplicate
+   * one.
+   */
+  const controlled = new Set<string>(
+    [
+      ...(config.list.valueControls ?? []).map((c) => c.source),
+      ...(config.list.assignControl ? [config.list.assignControl.source] : []),
+    ],
+  );
+
   const assignees = Array.isArray(state.assignees) ? (state.assignees as EntitySummary['createdBy'][]) : [];
-  if (assignees.length > 0) {
+  if (assignees.length > 0 && !controlled.has('assignees')) {
     cells.push({
       key: 'assignees',
       label: assignees.length > 1 ? 'Assignees' : 'Assignee',
@@ -167,7 +192,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     });
   }
 
-  if (typeof state.priority === 'string' && state.priority.length > 0) {
+  if (typeof state.priority === 'string' && state.priority.length > 0 && !controlled.has('priority')) {
     cells.push({
       key: 'priority',
       label: 'Priority',
