@@ -3,6 +3,16 @@ import { startW3PublicServer, successData } from "../public-harness.js";
 import { observeG03DatabaseOutcome } from "../agentic-observer.js";
 
 describe("W3.G03 clean-room public protocol retest", () => {
+  // TIMEOUT, not a knob: this case builds its own world inside the test body.
+  // `startW3PublicServer` creates a scratch database, applies every migration,
+  // and bootstraps a real production server — measured at ~4.5s on this box
+  // BEFORE the first assertion runs. Vitest's default `testTimeout` is 5000ms
+  // and this package ships no vitest config, so the default applies: the case
+  // had under 500ms for its actual work and died on the clock, not on a
+  // failed expectation. The siblings that stay green (g03-agentic, g06, g07,
+  // g15) do the same startup in `beforeAll`, which is governed by the separate
+  // 10s `hookTimeout` — that is the only reason they never hit this. Raising
+  // the budget changes no assertion; every check below still has to pass.
   it("creates, replays, deletes, and normalizes a public dependency workflow", async () => {
     expect(process.env.TM8_W3_API_BEARER_TOKEN).toBeUndefined();
     const harness = await startW3PublicServer("agentic_g03_retest");
@@ -117,5 +127,5 @@ describe("W3.G03 clean-room public protocol retest", () => {
     } finally {
       await harness.close();
     }
-  });
+  }, 120_000);
 });

@@ -52,6 +52,82 @@ const run = promisify(execFile);
 export const REPO_ROOT = new URL('../../../../', import.meta.url).pathname.replace(/\/$/, '');
 
 /**
+ * The ONLY `TM8_*` variables this harness may inherit from the ambient shell.
+ *
+ * Every one of these names a piece of TEST INFRASTRUCTURE — where Postgres is
+ * and who to connect as. None of them names a Space, an actor, a session or a
+ * credential. That split is the whole rule: infrastructure is a deployment
+ * fact the harness must not invent, whereas identity is a fact the harness must
+ * MANUFACTURE per run, because the run owns its own scratch database.
+ */
+const AMBIENT_INFRASTRUCTURE = new Set([
+  'TM8_W4_ADMIN_DATABASE_URL',
+  'TM8_MIGRATION_DATABASE_URL',
+  'TM8_DATABASE_URL',
+  'TM8_DELIVERY_DATABASE_URL',
+  'TM8_PG_PORT',
+  'TM8_PG_USER',
+]);
+
+/**
+ * DELETE the ambient tm8 SESSION environment from this process, before a single
+ * test runs. Returns the names removed, for the diagnostic below.
+ *
+ * WHY THIS EXISTS — one ambient variable turned 124 tests red.
+ *
+ * These suites are frequently run BY A tm8 AGENT, from inside a live tm8
+ * session. The PTY host injects that session's context into the agent's
+ * environment: `TM8_AGENT_TOKEN`, `TM8_SESSION_ID`, `TM8_SPACE_ID`,
+ * `TM8_BASE_URL`, `TM8_PROJECT_ID`, `TM8_JOURNAL_PATH` and friends. Every one
+ * of those is a fact about a DIFFERENT, LONG-LIVED node and a DIFFERENT
+ * database — and the CLI reads exactly those names (see `sessionContextFromEnv`
+ * in `src/context.ts`, step 2 of context resolution).
+ *
+ * So `cli()`'s `{...process.env}` handed the agent's own bearer token to a
+ * freshly-migrated scratch Server that has never heard of it, and the Server
+ * did the correct thing: `401 unauthenticated: invalid token`, exit 3. The
+ * first write in a suite died, every later assertion inherited an empty id, and
+ * the cascade surfaced as exit 2 "requires <entity-id>" and
+ * `Cannot read properties of undefined` — symptoms that point nowhere near the
+ * cause. `harness.smoke.test.ts` stayed green throughout, because `help`,
+ * `whoami` and `search` are the only three CLI calls it makes and none of them
+ * authenticates.
+ *
+ * WHY DENY-BY-DEFAULT RATHER THAN A DENYLIST. A denylist would have to be
+ * extended every time the session host learns to inject one more variable, and
+ * the failure mode of forgetting is this bug again — silent, delayed, and
+ * indistinguishable from a product defect. The allowlist above is short,
+ * closed, and about infrastructure only.
+ *
+ * WHY `process.env` AND NOT JUST THE CHILD'S ENV. Two vectors, one root:
+ * `cli()` spawns the built binary with a copy of `process.env`, AND several
+ * suites drive the shipped funnel IN-PROCESS, where `sessionContextFromEnv()`
+ * reads this process's own `process.env` directly. Scrubbing at module load
+ * closes both at once, and does it before any `beforeAll` or module-scope read
+ * in an importing suite can observe the polluted values.
+ */
+export function isolateAmbientEnv(env: NodeJS.ProcessEnv = process.env): string[] {
+  const removed: string[] = [];
+  for (const name of Object.keys(env)) {
+    if (!name.startsWith('TM8_')) continue;
+    if (AMBIENT_INFRASTRUCTURE.has(name)) continue;
+    removed.push(name);
+    delete env[name];
+  }
+  return removed.sort();
+}
+
+const ISOLATED = isolateAmbientEnv();
+if (ISOLATED.length > 0) {
+  // Announced, never silent: a suite that quietly discards its caller's
+  // environment is worse than one that inherits it, because nobody can tell
+  // which run they are reading.
+  process.stderr.write(
+    `[harness] scrubbed ambient tm8 session env before any test ran: ${ISOLATED.join(', ')}\n`,
+  );
+}
+
+/**
  * Admin connection used only to CREATE and DROP the scratch database.
  *
  * Defaults to the DEV SIDECAR on 5442 as role `tm8`, matching `db/migrate.mjs`'s
