@@ -155,7 +155,7 @@ class FakeDb implements Db {
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn) => {
     throw new Error(`unexpected rpc: ${fn}`);
   };
-  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql, params) => {
+  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) => {
     if (sql.includes('profile_display_name')) {
       return [{
         id: IDS.author,
@@ -170,23 +170,7 @@ class FakeDb implements Db {
         profile_avatar: null,
       }] as R[];
     }
-    if (sql.includes('left join public.messages msg')) {
-      const requested = Array.isArray(params[0]) ? params[0] as string[] : [];
-      if (requested.includes(IDS.anchor)) {
-        return [messageRow({
-          id: IDS.anchor,
-          kind: 'channel',
-          channel_name: 'Identity channel',
-          anchor_id: null,
-          author_id: null,
-          message_batch_id: null,
-          message_body: null,
-          message_mentions: null,
-          message_attachments: null,
-        })] as R[];
-      }
-      return [messageRow()] as R[];
-    }
+    if (sql.includes('left join public.messages msg')) return [messageRow()] as R[];
     return [];
   };
 
@@ -229,6 +213,7 @@ function request(
     params?: Record<string, string>;
     body?: unknown;
     query?: URLSearchParams;
+    identity?: RequestContext['identity'];
   } = {},
 ): RequestContext {
   const op = getOperation(opName);
@@ -239,7 +224,7 @@ function request(
     query: options.query ?? new URLSearchParams(),
     body: options.body,
     requestId: `request-${opName}`,
-    identity: { kind: 'auto-owner', identityId: OWNER.identityId },
+    identity: options.identity ?? { kind: 'auto-owner', identityId: OWNER.identityId },
     headers: {},
     method: op.method,
     path: op.path,
@@ -288,28 +273,42 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
     const db = new FakeDb();
     const order: string[] = [];
     db.rpcImpl = async <T>(name, args) => {
-      expect(name).toBe('w2_post_message_batch');
-      order.push(`rpc:${db.inTx}`);
-      expect(args).toEqual([
-        [IDS.anchor],
-        'stored body',
-        null,
-        [IDS.mention],
-        [IDS.file],
-        IDS.sourceSession,
-        IDS.author,
-        'batch-1',
-      ]);
-      return {
+      order.push(`${name}:${db.inTx}`);
+      if (name === 'w2_post_message_batch') {
+        expect(args).toEqual([
+          [IDS.anchor],
+          'stored body',
+          null,
+          [IDS.mention],
+          [IDS.file],
+          IDS.sourceSession,
+          IDS.author,
+          'batch-1',
+        ]);
+        return {
+          messageBatchId: 'batch-1',
+          messageIds: [IDS.message],
+        } as T;
+      }
+      expect(name).toBe('w2_record_session_message_routes');
+      expect(args).toEqual([[IDS.message], null]);
+      return [{
+        targetMessageId: IDS.message,
+        targetWorkSessionId: IDS.targetSession,
         messageBatchId: 'batch-1',
-        messageIds: [IDS.message],
-        deliveryIntents: [{
-          messageId: IDS.message,
-          targetWorkSessionId: IDS.targetSession,
-          content: 'stored body',
-          mode: 'send',
-        }],
-      } as T;
+        senderActorId: IDS.author,
+        senderActorKind: 'member',
+        sourceAnchorId: IDS.anchor,
+        sourceAnchorKind: 'channel',
+        sourceMessageId: IDS.message,
+        threadParentMessageId: null,
+        threadRootMessageId: IDS.message,
+        body: 'stored body',
+        addressingKind: 'channel_mention',
+        contextAnchors: [],
+        rollingControlMaxBytes: 16_384,
+        sessionInputAllowed: true,
+      }] as T;
     };
     const registry = new HandlerRegistry();
     registerW2MessagesHandoffsHandlers(registry, deps(db), {
@@ -321,23 +320,15 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
             requestId: 'request-messages.post',
             messageId: IDS.message,
             targetWorkSessionId: IDS.targetSession,
-            incomingMessage: {
-              messageId: IDS.message,
-              author: { actorId: IDS.author, displayName: 'Message Author', isAgent: false },
-              anchor: { id: IDS.anchor, kind: 'channel', title: 'Identity channel', spaceId: IDS.space },
-              rootMessageId: null,
-              parentMessageId: null,
-              sourceSessionId: IDS.sourceSession,
-              body: 'stored body',
-            },
           });
+          expect(intent.content).toContain('type="tm8.session-input"');
           return {
             deliveryId: IDS.delivery,
             messageId: IDS.message,
             targetWorkSessionId: IDS.targetSession,
             reservationVersion: 3,
             expiresAt: '2026-07-26T12:15:00.000Z',
-            content: 'stored body',
+            content: String(intent.content),
             mode: 'send',
           };
         },
@@ -351,6 +342,8 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
               messageId: IDS.message,
               principal: { reserved: IDS.delivery },
             });
+            expect(attempt.content).toContain(`delivery_attempt_id="${IDS.delivery}"`);
+            expect(attempt.content).toContain('kind="channel_mention"');
             return { outcome: 'delivered' };
           },
         },
@@ -374,7 +367,12 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
 
     expect(MessageBatchResultSchema.safeParse(result).success).toBe(true);
     expect(result).toMatchObject({ messageBatchId: 'batch-1', messages: [{ id: IDS.message }] });
-    expect(order).toEqual(['rpc:true', 'reserve:false', 'dispatch:false']);
+    expect(order).toEqual([
+      'w2_post_message_batch:true',
+      'w2_record_session_message_routes:true',
+      'reserve:false',
+      'dispatch:false',
+    ]);
   });
 
   it('maps frozen PostgreSQL detail strings to the contract details.reason field', async () => {
@@ -397,6 +395,70 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
       code: 'invariant_violation',
       details: { reason: 'message_batch_identity_mismatch' },
     });
+  });
+
+  it('derives reply anchor and parent only from the authenticated session route', async () => {
+    const db = new FakeDb();
+    db.rpcImpl = async <T>(name, args) => {
+      if (name === 'w2_resolve_session_message_reply') {
+        expect(args).toEqual([IDS.delivery, IDS.sourceSession]);
+        return {
+          anchorId: IDS.anchor,
+          parentMessageId: IDS.message,
+          addressingKind: 'channel_mention',
+        } as T;
+      }
+      if (name === 'w2_post_message_batch') {
+        expect(args).toEqual([
+          [IDS.anchor], 'routed answer', IDS.message, [], [],
+          IDS.sourceSession, null, 'reply-batch-1',
+        ]);
+        return { messageBatchId: 'reply-batch-1', messageIds: [IDS.message] } as T;
+      }
+      expect(name).toBe('w2_record_session_message_routes');
+      expect(args).toEqual([[IDS.message], IDS.anchor]);
+      return [] as T;
+    };
+    const registry = new HandlerRegistry();
+    registerW2MessagesHandoffsHandlers(registry, deps(db), {
+      resolveAuthoredFromWorkSessionId: async (ctx) => ctx.identity.workSessionId ?? null,
+    });
+
+    const result = await handler(registry, 'messages.post')(request('messages.post', {
+      identity: {
+        kind: 'bearer', identityId: OWNER.identityId, actorId: IDS.author,
+        workSessionId: IDS.sourceSession,
+      },
+      body: {
+        clientMutationId: 'reply-batch-1',
+        anchorIds: [],
+        replyToMessageId: IDS.delivery,
+        body: 'routed answer',
+      },
+    }));
+    expect(result).toMatchObject({ messageBatchId: 'reply-batch-1' });
+  });
+
+  it('does not let a persona-bound bearer override its own message author', async () => {
+    const db = new FakeDb();
+    const registry = new HandlerRegistry();
+    registerW2MessagesHandoffsHandlers(registry, deps(db), {
+      resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+    });
+
+    await expect(handler(registry, 'messages.post')(request('messages.post', {
+      identity: {
+        kind: 'bearer', identityId: OWNER.identityId,
+        actorId: IDS.author, workSessionId: IDS.sourceSession,
+      },
+      body: {
+        clientMutationId: 'wrong-author',
+        anchorIds: [IDS.anchor],
+        actorId: IDS.mention,
+        body: 'try to speak as somebody else',
+      },
+    }))).rejects.toMatchObject({ code: 'forbidden' });
+    expect(db.calls).toHaveLength(0);
   });
 
   it('re-derives patch mentions by id and uses versioned tombstone/attachment commands', async () => {

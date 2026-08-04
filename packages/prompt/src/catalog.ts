@@ -19,7 +19,7 @@
  *
  * HONESTY ABOUT REACH. `status` records whether a prompt reaches a real agent
  * today. Several do not: the v2 harness path is fully built and unwired, so its
- * kernel and all ten trusted-control blocks are dead code at runtime. A catalog
+ * kernel and its trusted-control blocks are dead code at runtime. A catalog
  * that showed them beside the live v1 frame with no distinction would tell the
  * reader something false.
  */
@@ -31,7 +31,6 @@ import {
   workerBootstrapControl,
   taskAssignmentInjection,
   incomingMessageInjection,
-  replyExpectationControl,
   entityHandoffInjection,
   commandHelpControl,
   permissionRefusalControl,
@@ -158,7 +157,9 @@ const MODE_SUMMARIES: Record<AgentMode, string> = {
 
 const V2_UNWIRED =
   'The v2 harness path is built and tested but nothing constructs the manifest key that selects it — ' +
-  'composeManifest still emits manifestVersion "1", so the live spawn path takes the v1 frame below.';
+  'composeManifest still emits manifestVersion "1", so the live spawn path takes the v1 frame below; ' +
+  'and nothing sets manifest.bootstrap either, so a wirer must clear both gates — version selection ' +
+  'in composeManifest and a bootstrap block on the manifest.';
 
 const NO_CALLER =
   'Implemented and covered by tests, but no production code calls it yet. It reaches no agent today.';
@@ -297,6 +298,8 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
       taskId: '{taskId}',
       taskVersion: '{taskVersion}',
       senderActorId: '{senderActorId}',
+      senderActorKind: '{senderActorKind}',
+      senderAttribution: 'verified',
       sourceSessionId: '{sourceSessionId}',
       destinationSessionId: '{destinationSessionId}',
       body: '{the task title and body, excerpted by the caller}',
@@ -310,31 +313,27 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
     summary:
       'A live delivery notification. States that the durable write already succeeded, so the agent does not treat it as a second message.',
     text: incomingMessageInjection({
+      kind: 'channel_mention',
       messageId: '{messageId}',
+      messageBatchId: '{messageBatchId}',
       deliveryAttemptId: '{deliveryAttemptId}',
-      author: {
-        actorId: '{actorId}', kind: 'team_member', displayName: '{displayName}',
-        avatar: '{avatar}', role: '{role}', ownerMemberId: '{ownerMemberId}', isAgent: true,
-      },
-      anchor: {
-        id: '{anchorId}', kind: '{anchorKind}', title: '{anchorTitle}',
-        spaceId: '{spaceId}', projectId: '{projectId}',
-      },
-      rootMessageId: '{rootMessageId}',
-      parentMessageId: '{parentMessageId}',
+      deliveryAttemptNo: 1,
+      senderActorId: '{senderActorId}',
+      senderActorKind: '{senderActorKind}',
+      senderAttribution: 'verified',
       sourceSessionId: '{sourceSessionId}',
+      destinationSessionId: '{destinationSessionId}',
+      sourceAnchorId: '{anchorId}',
+      sourceAnchorKind: 'channel',
+      sourceMessageId: '{sourceMessageId}',
+      contextAnchors: [{ id: '{contextAnchorId}', kind: '{contextAnchorKind}' }],
+      threadParentMessageId: '{parentMessageId}',
+      threadRootMessageId: '{rootMessageId}',
       body: '{the message body, excerpted by the caller}',
       truncated: false,
       fetchRef: '{fetchRef}',
     }),
     budget: 'incomingMessageInjection',
-  },
-  {
-    id: 'control.reply-expectation',
-    title: '§14.5 Reply expectation',
-    summary:
-      'Names the four fields a reply must carry — outcome, verification, blockers, referenced entities.',
-    text: replyExpectationControl({ anchorId: '{anchorId}', messageId: '{messageId}' }),
   },
   {
     id: 'control.entity-handoff',
@@ -508,7 +507,10 @@ const FRAME_ENTRIES: readonly PromptEntry[] = [
     categoryId: 'frame',
     title: 'Coordination note',
     summary: 'Tells a spawned agent that a coordinator is blocked on a durable reply, not on its exit.',
-    status: 'live',
+    status: 'unwired',
+    statusNote:
+      'The composer renders this only when the manifest names a coordinator, and composeManifest ' +
+      'hardcodes coordinator: null — so it has never rendered for any real agent.',
     rendering: 'verbatim',
     source: 'packages/prompt/src/index.ts',
     injectedWhen: 'Inside <coordination>, only when the manifest names a coordinator.',

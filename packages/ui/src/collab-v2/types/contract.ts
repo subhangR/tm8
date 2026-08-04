@@ -1,5 +1,5 @@
 /**
- * Collab V2 UI data contract — transcribed from docs/COLLAB_V2_UI_DATA_CONTRACT.md.
+ * Collab V2 UI data contract — transcribed from docs/history/collab-v2/UI-DATA-CONTRACT.md.
  *
  * §2 "Shared TypeScript DTOs", §2.1 collection/graph DTOs, §3 thread/activity/
  * presence reads, §4 command contract, §5 realtime events are copied verbatim.

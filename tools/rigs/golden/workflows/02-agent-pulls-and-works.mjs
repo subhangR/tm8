@@ -1,7 +1,7 @@
 /**
  * GOLDEN WORKFLOW 2 — Agent pulls & works.
  *
- * Source: docs/collab-v2-ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §2
+ * Source: docs/history/collab-v2/ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §2
  *   "pull → working → progress in thread → human correction mid-flight →
  *    agent ack"
  *

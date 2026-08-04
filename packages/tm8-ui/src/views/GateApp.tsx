@@ -49,6 +49,8 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { nodeKeyOf } from '../data/launch-cache';
+import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -57,7 +59,25 @@ import { SettingsShell, settingsPortFromSeam } from '../settings-space';
  * fe-coordinator for routing rather than moved across a lane boundary here.
  */
 const DEFAULT_LEFT_KIND = 'task';
+/**
+ * SESSIONS STAY HERE (user report 2026-08-01, third pass).
+ *
+ * This briefly defaulted to `channel`, to fix channels being invisible on
+ * arrival after they left the rail. That traded one missing collection for
+ * another: the workspace has TWO docks and three collections that want to be
+ * on screen, so pointing a dock at channels took sessions off the screen, and
+ * the next report was "I don't see sessions". The dock is not the place to
+ * solve channel visibility — reverted rather than left to rotate the problem.
+ */
 const DEFAULT_RIGHT_KIND = 'work_session';
+/**
+ * The green ● in the rail counts running PTYs, which is a SESSION fact and
+ * nothing else. It used to be spelled `ref === DEFAULT_RIGHT_KIND`, which was
+ * only ever true by coincidence — the moment the right dock defaulted to
+ * another kind, that kind would have inherited a live count it has no meaning
+ * for. Named for what it is instead.
+ */
+const LIVE_COUNT_KIND = 'work_session';
 
 export interface GateAppProps {
   activeServer?: UiServer;
@@ -109,11 +129,20 @@ export function GateApp(props: GateAppProps = {}) {
   const { theme, setTheme, toggle: toggleTheme } = useTheme();
   const [menuCollapsed, setMenuCollapsed] = useState(false);
   const [addServerOpen, setAddServerOpen] = useState(false);
+  const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
     type: 'view',
     ref: 'workspace',
   });
+  const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
+    const setup = data.seam.projectSetup;
+    if (!setup) return null;
+    return {
+      ...setup,
+      createMemory: (input) => data.seam.commands.createEntity(input),
+    };
+  }, [data.seam]);
 
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
@@ -238,7 +267,7 @@ export function GateApp(props: GateAppProps = {}) {
     // count of PTYs actually running, from the liveness snapshot. It is not a
     // count of rows, and no other kind has an equivalent, so no other kind
     // gets one.
-    const live = ref === DEFAULT_RIGHT_KIND ? data.liveIds.length : undefined;
+    const live = ref === LIVE_COUNT_KIND ? data.liveIds.length : undefined;
     // The rail's own numbers, from `spaces.counts`. Absent (a node that cannot
     // serve them, or a not-yet-completed first read) means NO number — never a
     // fabricated zero, which would assert the space is empty.
@@ -367,6 +396,7 @@ export function GateApp(props: GateAppProps = {}) {
             setActiveTarget({ type: 'view', ref: 'workspace' });
             data.selectSpace(id);
           }}
+          onAddSpace={projectOnboardingPort ? () => setNewSpaceOpen(true) : undefined}
           accountInitial="A"
           onOpenPalette={() => setPaletteOpen(true)}
           onOpenPrompts={() => setPromptsOpen(true)}
@@ -495,7 +525,7 @@ export function GateApp(props: GateAppProps = {}) {
                the whole module sat built and unmounted in settings-space/.
                Sections another module owns (projects/kinds) keep their honest
                not-mounted state inside the shell itself. */
-            <SettingsShell port={settingsPort} />
+            <SettingsShell port={settingsPort} nodeKey={nodeKeyOf(activeServer.routeBaseUrl)} />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (
@@ -600,7 +630,12 @@ export function GateApp(props: GateAppProps = {}) {
             data.bootError.startsWith('this node has no spaces') ? (
               <div className="shell-boot" role="alert">
                 <strong>No spaces on this node.</strong>
-                <div>{data.bootError}</div>
+                <div>Create a Space and connect the local folder where its project work should be saved.</div>
+                {projectOnboardingPort ? (
+                  <button type="button" className="gov-btn gov-btn--ink" onClick={() => setNewSpaceOpen(true)}>
+                    Create Space & add project
+                  </button>
+                ) : <div>{data.bootError}</div>}
               </div>
             ) : (
               <div className="shell-boot" role="alert">
@@ -639,6 +674,23 @@ export function GateApp(props: GateAppProps = {}) {
             await props.onAddServer(input);
           }}
         />
+        {projectOnboardingPort ? (
+          <NewSpaceProjectDialog
+            key={activeServer.id}
+            open={newSpaceOpen}
+            nodeLabel={activeServer.label}
+            port={projectOnboardingPort}
+            onDismiss={() => setNewSpaceOpen(false)}
+            onCreated={(space) => {
+              navStore.getState().applyNormalization({ stack: [], pinned: [] });
+              navStore.getState().setSession(null);
+              screenStackStore.getState().clearAll();
+              setActiveTarget({ type: 'view', ref: 'workspace' });
+              data.acceptSpace(space);
+              setNewSpaceOpen(false);
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

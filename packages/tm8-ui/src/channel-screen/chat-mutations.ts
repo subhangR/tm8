@@ -239,7 +239,7 @@ function optimisticItem(entry: ChatEntry, journal: ChatMutationJournalEntry): Fe
     kind: 'message',
     title: command.body.slice(0, 80),
     spaceId: journal.spaceId,
-    parentId: entry.key.sessionId,
+    parentId: command.parentMessageId ?? null,
     createdAt: journal.createdAt,
     updatedAt: journal.createdAt,
     deletedAt: null,

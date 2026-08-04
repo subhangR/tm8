@@ -51,7 +51,8 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
-  ProjectCreateInput, ProjectDefaults, ProjectLinkInput, ProjectResource,
+  ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
+  ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
   RetireInteractionProfileInput, SavedView, SavedViewInput, SendHandoffInput,
@@ -63,6 +64,7 @@ import type {
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
+  SessionLaunchRecord,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
@@ -610,7 +612,7 @@ function collectionQueryShape() {
     filters: CollectionFiltersSchema.optional(),
     layout: z.enum(['list', 'board', 'tree', 'feed', 'gallery', 'graph']).optional(),
     groupBy: GroupBySchema.optional(),
-    sort: z.enum(['activityAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']).optional(),
+    sort: z.enum(['activityAt_desc', 'updatedAt_desc', 'createdAt_desc', 'position', 'dueDate', 'priority']).optional(),
     cursor: CursorSchema.optional(),
     limit: z.number().int().positive().optional(),
   };
@@ -1290,6 +1292,8 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   clientMutationId: z.string().min(1),
   anchorIds: uniqueArray(EntityIdSchema, 1, 16).optional(),
   anchorId: EntityIdSchema.optional(),
+  conversationAnchorId: EntityIdSchema.nullable().optional(),
+  replyToMessageId: EntityIdSchema.optional(),
   body: z.string().min(1).max(10_000),
   parentMessageId: EntityIdSchema.nullable().optional(),
   mentionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
@@ -1298,7 +1302,17 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
   PostMessageWireInputSchema.superRefine((value, context) => {
-    if ((value.anchorIds === undefined) === (value.anchorId === undefined)) {
+    const hasReplyTarget = value.replyToMessageId !== undefined;
+    const hasAnchorIds = value.anchorIds !== undefined;
+    const hasLegacyAnchor = value.anchorId !== undefined;
+    if (hasReplyTarget) {
+      if (hasAnchorIds || hasLegacyAnchor) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'replyToMessageId cannot be combined with anchorIds or deprecated anchorId' });
+      }
+      if (value.parentMessageId != null || value.conversationAnchorId != null) {
+        context.addIssue({ code: z.ZodIssueCode.custom, message: 'a routed reply derives its conversation anchor and parent on the Server' });
+      }
+    } else if (hasAnchorIds === hasLegacyAnchor) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'provide exactly one of anchorIds or deprecated anchorId' });
     }
     const anchorCount = value.anchorIds?.length ?? (value.anchorId ? 1 : 0);
@@ -1309,6 +1323,13 @@ export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, P
     if (value.parentMessageId != null && anchorCount !== 1) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'a reply must resolve to exactly one anchor' });
     }
+    if (
+      value.conversationAnchorId != null &&
+      ![...(value.anchorIds ?? []), ...(value.anchorId ? [value.anchorId] : [])]
+        .includes(value.conversationAnchorId)
+    ) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'conversationAnchorId must be one of the message anchors' });
+    }
     const { anchorId, ...rest } = value;
     const canonical = { ...rest, anchorIds: value.anchorIds ?? (anchorId ? [anchorId] : []) };
     if (Buffer.byteLength(JSON.stringify(canonical), 'utf8') > 256 * 1024) {
@@ -1316,7 +1337,7 @@ export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, P
     }
   }).transform(({ anchorId, ...value }): PostMessageInput => ({
     ...value,
-    anchorIds: value.anchorIds ?? [anchorId!],
+    anchorIds: value.anchorIds ?? (anchorId ? [anchorId] : []),
   }));
 
 export const PatchMessageInputSchema: z.ZodType<PatchMessageInput> = z.object({
@@ -1422,8 +1443,10 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'settings']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
+// `channel` un-excluded 2026-08-01, same lockstep — it became a collection
+// kind with a real `k/channels` list, so the rail can name it. See the type.
 export const MenuKindRefSchema = z.union([
-  CoreEntityKindSchema.exclude(['channel', 'message']),
+  CoreEntityKindSchema.exclude(['message']),
   CustomEntityKindSchema,
 ]);
 
@@ -1522,6 +1545,21 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   repoUrl: z.string().nullable().optional(),
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
+  ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+}).strict();
+
+export const ProjectDirectoryListingSchema: z.ZodType<ProjectDirectoryListing> = z.object({
+  roots: z.array(z.string().min(1)).min(1),
+  path: z.string().min(1),
+  parentPath: z.string().min(1).nullable(),
+  separator: z.enum(['/', '\\']),
+  directories: z.array(ProjectDirectoryEntrySchema),
+  truncated: z.boolean(),
 }).strict();
 
 export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({
@@ -1687,6 +1725,7 @@ export const SessionJournalCallSchema: z.ZodType<SessionJournalCall> = z.object(
 export const SessionJournalRecordSchema: z.ZodType<SessionJournalRecord> = z.object({
   v: z.literal(1),
   seq: z.number().int().nonnegative(),
+  class: z.enum(['agent', 'harness', 'human']).optional(),
   sessionId: EntityIdSchema,
   spaceId: EntityIdSchema.nullable(),
   teamMemberId: EntityIdSchema.nullable(),
@@ -1729,6 +1768,26 @@ export const SessionJournalPageSchema: z.ZodType<SessionJournalPage> = z.object(
   }).strict(),
   records: z.array(SessionJournalRecordSchema),
   hasMore: z.boolean(),
+}).strict();
+
+/**
+ * `manifest` is `z.record(z.unknown())` and NOT a modelled object: the stored
+ * document was written by whatever build spawned the session, and validating
+ * its interior would make this read fail closed on exactly the sessions a
+ * debug surface most needs to explain. The envelope around it is strict.
+ */
+export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum(['no_manifest_row']).nullable(),
+  manifest: z.record(z.unknown()).nullable(),
+  envVarNames: z.array(z.string()),
+  prompts: z.object({
+    system: z.string().nullable(),
+    task: z.string().nullable(),
+    unavailableReason: z.enum(['not_recorded']).nullable(),
+  }).strict(),
+  recordedAt: z.string().nullable(),
 }).strict();
 
 // ---------------------------------------------------------------------------
@@ -1850,6 +1909,7 @@ export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
 export const DeliverySummarySchema: z.ZodType<DeliverySummary> = z.object({
   deliveryId: z.string().min(1),
   targetWorkSessionId: EntityIdSchema,
+  targetWorkSession: EntitySummarySchema.nullable().optional(),
   status: MessageDeliveryStatusSchema,
   attemptNo: z.number().int().positive(),
   failureReason: z.string().nullable(),
@@ -1873,6 +1933,7 @@ export const FeedItemSchema: z.ZodType<FeedItem> = z.lazy(() => z.discriminatedU
     itemKind: z.literal('message'),
     message: MessageViewSchema,
     delivery: z.array(DeliverySummarySchema),
+    linkedWorkSessions: z.array(EntitySummarySchema).optional(),
   }).strict(),
   z.object({
     ...feedItemBaseShape,

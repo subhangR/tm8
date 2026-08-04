@@ -27,14 +27,15 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 5;
+export const SHIPPED_DEFAULT_MENU_REVISION = 6;
 
 /**
  * WLT §2, encoded literally:
  *
  *   Home        → Dashboard
  *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
- *                 Tasks · Sessions · Docs · Teammates · Memories · Artifacts
+ *                 Tasks · Sessions · Docs · Channels · Teammates · Memories ·
+ *                 Artifacts
  *   Tracking    → Projects · Pull requests · Worktrees
  *   Collab      → Members
  *   Voice       → live per-space voice_channel rows injected beneath this label
@@ -77,10 +78,23 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
             { type: 'kind', ref: 'task' },
             { type: 'kind', ref: 'work_session' },
             { type: 'kind', ref: 'doc' },
+            // Revision 6 (2026-08-01, user ruling): Channels takes its place in
+            // the collection list, one row like Docs.
+            //
+            // This is NOT the Channels SECTION revision 5 removed. That was a
+            // group whose rows were the space's live #channel entities — a
+            // second, divergent home for the kind. This is the same single row
+            // every other collection kind has, opening the same list, and it
+            // exists because `channel` became a collection kind and was then
+            // the ONLY one the rail never named. The workspace has two docks
+            // and three collections that want to be on screen; pointing a dock
+            // at channels just took sessions off it, so visibility belongs
+            // here, where it costs no dock at all.
+            { type: 'kind', ref: 'channel' },
             { type: 'kind', ref: 'team_member' },
             // Revision 4 (2026-07-31): Memories and Artifacts — both shipped
             // features whose lists were unreachable from the rail. Caret
-            // children cap is 8; this brings the count to 6.
+            // children cap is 8; revision 6 brings the count to 7.
             { type: 'kind', ref: 'memory' },
             { type: 'kind', ref: 'artifact' },
           ],

@@ -18,7 +18,7 @@
 // would put the raw prompt text in the output whether or not the agent ever ran,
 // which is exactly why the assertion is on the PREFIX and not on the text alone.
 
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -108,8 +108,14 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
 
     // Secret redaction: names only ever leave this process, never values.
     expect(result.envVarNames).toContain('TM8_MANIFEST_PATH');
+    expect(result.envVarNames).toContain('TM8_AGENT_TOKEN');
     expect(graph.manifests[0]?.envVarNames).toContain('TM8_SESSION_ID');
+    expect(graph.issuedAgentTokens).toEqual([{
+      sessionId: result.sessionId,
+      teamMemberId: MEMBER_ID,
+    }]);
     expect(JSON.stringify(graph.manifests[0])).not.toContain('sk-ant');
+    expect(JSON.stringify(graph.manifests[0])).not.toContain('fixture-agent-secret');
 
     // The agent proves it parsed the manifest at the path we put in its env.
     const output = await waitForOutput(pty, result.sessionId, 'TM8-ECHO-READY');
@@ -122,6 +128,80 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     expect(output).toContain('TM8-ECHO-BASE-URL http://127.0.0.1:4614');
 
     expect(graph.statusesFor(result.sessionId)).toEqual(['running']);
+  }, 30000);
+
+  it('makes session data private and repairs roots left by older versions', async () => {
+    const sessionId = '66666666-6666-4666-8666-666666666666';
+    const manifests = join(dataDir, 'manifests');
+    const journals = join(dataDir, 'journals');
+    const scratch = join(dataDir, 'scratch');
+    const oldScratch = join(scratch, 'old-session');
+
+    await Promise.all([
+      mkdir(manifests, { recursive: true, mode: 0o755 }),
+      mkdir(journals, { recursive: true, mode: 0o755 }),
+      mkdir(oldScratch, { recursive: true, mode: 0o755 }),
+    ]);
+    await Promise.all([
+      chmod(manifests, 0o755),
+      chmod(journals, 0o755),
+      chmod(scratch, 0o755),
+      chmod(oldScratch, 0o755),
+    ]);
+
+    const oldManifest = join(manifests, 'old.json');
+    const oldTemp = join(manifests, 'orphan.json.tmp');
+    const oldJournal = join(journals, 'old.jsonl');
+    await Promise.all([
+      writeFile(oldManifest, '{}\n', { mode: 0o644 }),
+      writeFile(oldTemp, '{}\n', { mode: 0o644 }),
+      writeFile(oldJournal, '{}\n', { mode: 0o644 }),
+    ]);
+    await Promise.all([
+      chmod(oldManifest, 0o644),
+      chmod(oldTemp, 0o644),
+      chmod(oldJournal, 0o644),
+    ]);
+
+    // A stale fixed-name temp symlink must be unlinked, never followed. The
+    // victim models any file outside the manifest root that the service user
+    // can write; its bytes must survive the spawn unchanged.
+    const victim = join(dataDir, 'victim.txt');
+    await writeFile(victim, 'do not touch\n', { mode: 0o644 });
+    await symlink(victim, join(manifests, `${sessionId}.json.tmp`));
+
+    graph = new FakeGraph({ workingDir: projectDir, withProject: false, sessionId });
+    service = new SpawnService({
+      graph,
+      pty,
+      baseUrl: 'http://127.0.0.1:4614',
+      dataDir,
+      nodeId: 'test-node',
+      env: { ...process.env, TM8_AGENT_CMD: 'echo-agent' },
+    });
+
+    const result = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      taskIds: [TASK_ID],
+    });
+    await waitForOutput(pty, result.sessionId, 'TM8-ECHO-READY');
+
+    const permissions = async (path: string): Promise<number> => (await stat(path)).mode & 0o777;
+    await expect(Promise.all([
+      permissions(manifests),
+      permissions(journals),
+      permissions(scratch),
+      permissions(oldScratch),
+      permissions(result.cwd),
+    ])).resolves.toEqual([0o700, 0o700, 0o700, 0o700, 0o700]);
+    await expect(Promise.all([
+      permissions(oldManifest),
+      permissions(oldTemp),
+      permissions(oldJournal),
+      permissions(result.manifestPath),
+    ])).resolves.toEqual([0o600, 0o600, 0o600, 0o600]);
+    await expect(readFile(victim, 'utf8')).resolves.toBe('do not touch\n');
   }, 30000);
 
   it('execution.prompt reaches the PTY — asserted on the bytes the agent echoed', async () => {
@@ -174,44 +254,12 @@ describe('SpawnService — the G1A loop over a real PTY', () => {
     expect(graph.commands).toHaveLength(0);
   });
 
-  it('mints a persona-pinned run credential and revokes it on terminate', async () => {
-    const events: string[] = [];
-    service = new SpawnService({
-      graph,
-      pty,
-      baseUrl: 'http://127.0.0.1:4614',
-      dataDir,
-      nodeId: 'test-node',
-      env: { ...process.env, TM8_AGENT_CMD: 'echo-agent' },
-      credentials: {
-        mint: async (auth, input) => {
-          expect(auth).toBe(AUTH);
-          events.push(`mint:${input.workSessionId}:${input.teamMemberId}`);
-          return { token: 'tm8s_agent-run-secret', authSessionId: 'auth-session-1' };
-        },
-        revoke: async (auth, workSessionId) => {
-          expect(auth).toBe(AUTH);
-          events.push(`revoke:${workSessionId}`);
-        },
-      },
-    });
-
-    const result = await service.spawn(AUTH, {
-      spaceId: SPACE_ID,
-      teamMemberId: MEMBER_ID,
-      projectId: '44444444-4444-4444-8444-444444444444',
-    });
-    expect(events).toEqual([`mint:${result.sessionId}:${MEMBER_ID}`]);
-    expect(result.envVarNames).toContain('TM8_AGENT_TOKEN');
-    expect(result.envVarNames).toContain('TM8_ACTOR_ID');
-    expect(JSON.stringify(result.manifest)).not.toContain('tm8s_agent-run-secret');
-
-    await service.terminate(AUTH, result.sessionId);
-    expect(events).toEqual([
-      `mint:${result.sessionId}:${MEMBER_ID}`,
-      `revoke:${result.sessionId}`,
-    ]);
-  });
+  // REMOVED in the identity composite <- main merge (2026-08-04). This guarded
+  // the composite's own SpawnService `credentials` port, which `main` superseded
+  // with `graph.issueWorkSessionAgentToken` (an `auth_sessions` mint, covered by
+  // spawn-manifest.test.ts). The mint survives; REVOKE-ON-TERMINATE DOES NOT —
+  // main's agent tokens are TTL-bounded only. That is a known, recorded gap, not
+  // an oversight: re-add revocation against `auth_sessions`, then re-add a test.
 
   it('terminate kills the PTY and moves the session to exited', async () => {
     const result = await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });

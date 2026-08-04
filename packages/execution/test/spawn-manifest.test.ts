@@ -8,8 +8,11 @@ import { describe, expect, it } from 'vitest';
 import {
   agentToolForModel,
   buildAgentCommand,
+  buildCodexArgs,
+  CODEX_LOOPBACK_CONFIG_OVERRIDES,
   composeEnv,
   composeManifest,
+  resolveCommandNetworkPolicy,
   resolveLaunchConfig,
   resolveWorkdir,
   withAgentPrompt,
@@ -316,9 +319,16 @@ describe('buildAgentCommand', () => {
     const accept = buildAgentCommand({ ...codexLaunch, permissionMode: 'acceptEdits' }, {});
     expect(accept).toContain('--ask-for-approval never');
     expect(accept).toContain('--sandbox workspace-write');
+    for (const override of CODEX_LOOPBACK_CONFIG_OVERRIDES) {
+      expect(accept).toContain(`-c '${override}'`);
+    }
 
     const readOnly = buildAgentCommand({ ...codexLaunch, permissionMode: 'readOnly' }, {});
-    expect(readOnly).toContain('--sandbox read-only');
+    // Codex's legacy read-only sandbox cannot enable command networking. tm8
+    // plan authorization is prompt-enforced while the runtime stays on
+    // workspace-write so the graph remains reachable.
+    expect(readOnly).toContain('--sandbox workspace-write');
+    expect(readOnly).toContain('sandbox_workspace_write.network_access=true');
 
     // `auto` is Claude's word and Codex has no equivalent. It must NOT become
     // `on-request`, which asks — and nobody is here to answer. tm8's default
@@ -333,6 +343,68 @@ describe('buildAgentCommand', () => {
     // Server-hosted PTY rendered into a browser xterm: Codex must stay inline,
     // or a reconnecting client replays a redrawn alternate screen as garbage.
     expect(accept).toContain('--no-alt-screen');
+  });
+
+  it('builds the exact Codex argv for every posture before shell joining', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5.6-sol' };
+    expect(CODEX_LOOPBACK_CONFIG_OVERRIDES).toEqual([
+      'sandbox_workspace_write.network_access=true',
+      'features.network_proxy.enabled=true',
+      'features.network_proxy.domains={"127.0.0.1"="allow", "localhost"="allow"}',
+      'features.network_proxy.allow_local_binding=false',
+    ]);
+    const loopback = CODEX_LOOPBACK_CONFIG_OVERRIDES.flatMap((value) => ['-c', value]);
+    const expected = (approval: 'never' | 'untrusted') => [
+      '--model',
+      'gpt-5.6-sol',
+      '--ask-for-approval',
+      approval,
+      '--sandbox',
+      'workspace-write',
+      ...loopback,
+      '--no-alt-screen',
+    ];
+
+    expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'auto' })).toEqual(
+      expected('never'),
+    );
+    expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'acceptEdits' })).toEqual(
+      expected('never'),
+    );
+    expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'interactive' })).toEqual(
+      expected('untrusted'),
+    );
+    expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'readOnly' })).toEqual(
+      expected('untrusted'),
+    );
+    expect(buildCodexArgs({ ...codexLaunch, permissionMode: 'bypassPermissions' })).toEqual([
+      '--model',
+      'gpt-5.6-sol',
+      '--dangerously-bypass-approvals-and-sandbox',
+      '--no-alt-screen',
+    ]);
+  });
+
+  it('resolves command networking independently from filesystem and approval posture', () => {
+    const codexLaunch = { ...launch, agentTool: 'codex', model: 'gpt-5.6-sol' };
+    for (const permissionMode of ['auto', 'acceptEdits', 'interactive', 'readOnly'] as const) {
+      expect(resolveCommandNetworkPolicy({ ...codexLaunch, permissionMode }, {})).toEqual({
+        mode: 'loopback-proxy',
+        commandNetworkAccess: true,
+        proxyEnabled: true,
+        allowedHosts: ['127.0.0.1', 'localhost'],
+        portScoped: false,
+      });
+    }
+    expect(
+      resolveCommandNetworkPolicy(
+        { ...codexLaunch, permissionMode: 'bypassPermissions' },
+        {},
+      ),
+    ).toMatchObject({ mode: 'full-access', proxyEnabled: false });
+    expect(
+      resolveCommandNetworkPolicy(codexLaunch, { TM8_AGENT_CMD: 'company-codex-wrapper' }),
+    ).toMatchObject({ mode: 'operator-defined', commandNetworkAccess: null });
   });
 
   it('rejects unsupported tools instead of silently launching Claude', () => {
@@ -464,21 +536,31 @@ describe('composeEnv', () => {
     expect(env.TM8_SESSION_ID).toBe('sess-1');
     expect(env.TM8_MANIFEST_PATH).toBe('/tmp/m.json');
     expect(env.TM8_BASE_URL).toBe('http://127.0.0.1:4610');
-    expect(env.TM8_TEAM_MEMBER_ID).toBe('tm-1');
-    expect(env.TM8_ACTOR_ID).toBe('tm-1');
+    expect(env).not.toHaveProperty('NODE_USE_ENV_PROXY');
   });
 
-  it('injects a run-scoped agent bearer separately from the manifest', () => {
-    const env = composeEnv(
-      manifest,
-      '/tmp/m.json',
-      'http://127.0.0.1:4610',
-      {},
-      '/data/journals/sess-1.jsonl',
-      'tm8s_run-secret',
+  it('enables Node proxy support only for a sandboxed Codex loopback launch', () => {
+    const codexLaunch = {
+      mode: 'worker' as const,
+      model: 'gpt-5.6-sol',
+      agentTool: 'codex',
+      permissionMode: 'acceptEdits' as const,
+      accessMode: 'acceptEdits' as const,
+      reasoningEffort: null,
+    };
+    const codexManifest = composeManifest({
+      sessionId: 'sess-proxy-env',
+      request: base,
+      context: context(),
+      launch: codexLaunch,
+      commandNetwork: resolveCommandNetworkPolicy(codexLaunch, {}),
+      workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+      command: buildAgentCommand(codexLaunch, {}),
+      baseUrl: 'http://127.0.0.1:4610',
+    });
+    expect(composeEnv(codexManifest, '/tmp/m.json', 'http://x', {}).NODE_USE_ENV_PROXY).toBe(
+      '1',
     );
-    expect(env.TM8_AGENT_TOKEN).toBe('tm8s_run-secret');
-    expect(JSON.stringify(manifest)).not.toContain('tm8s_run-secret');
   });
 
   it('injects TM8_JOURNAL_PATH when a journal path is given', () => {
@@ -491,6 +573,23 @@ describe('composeEnv', () => {
     // exactly right for a human running `tm8` at their own terminal.
     const env = composeEnv(manifest, '/tmp/m.json', 'http://127.0.0.1:4610', {});
     expect('TM8_JOURNAL_PATH' in env).toBe(false);
+  });
+
+  it('uses only the explicitly minted session credential and never inherits one', () => {
+    const inherited = composeEnv(manifest, '/tmp/m.json', 'http://x', {
+      TM8_AGENT_TOKEN: 'operator-token-must-not-cross',
+    });
+    expect(inherited).not.toHaveProperty('TM8_AGENT_TOKEN');
+
+    const minted = composeEnv(
+      manifest,
+      '/tmp/m.json',
+      'http://x',
+      { TM8_AGENT_TOKEN: 'operator-token-must-not-cross' },
+      undefined,
+      'tm8s_auth-session.session-secret',
+    );
+    expect(minted.TM8_AGENT_TOKEN).toBe('tm8s_auth-session.session-secret');
   });
 
   it('forwards provider credentials that the server itself holds', () => {
@@ -522,6 +621,36 @@ describe('composeEnv', () => {
 });
 
 describe('composeManifest', () => {
+  it('persists the effective Codex command-network policy separately from posture', () => {
+    const codexLaunch = {
+      mode: 'worker' as const,
+      model: 'gpt-5.6-sol',
+      agentTool: 'codex',
+      permissionMode: 'acceptEdits' as const,
+      accessMode: 'acceptEdits' as const,
+      reasoningEffort: null,
+    };
+    const manifest = composeManifest({
+      sessionId: 'sess-network',
+      request: base,
+      context: context(),
+      launch: codexLaunch,
+      commandNetwork: resolveCommandNetworkPolicy(codexLaunch, {}),
+      workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+      command: buildAgentCommand(codexLaunch, {}),
+      baseUrl: 'http://127.0.0.1:7778',
+    });
+
+    expect(manifest.launch.commandNetwork).toEqual({
+      mode: 'loopback-proxy',
+      commandNetworkAccess: true,
+      proxyEnabled: true,
+      allowedHosts: ['127.0.0.1', 'localhost'],
+      portScoped: false,
+    });
+    expect(JSON.stringify(manifest)).not.toContain('TM8_AGENT_TOKEN');
+  });
+
   it('carries the persona, the resolved posture and the server-computed cwd', () => {
     const manifest = composeManifest({
       sessionId: 'sess-2',
@@ -542,6 +671,13 @@ describe('composeManifest', () => {
     expect(manifest.manifestVersion).toBe('1');
     expect(manifest.mode).toBe('coordinated-worker');
     expect(manifest.launch.permissionMode).toBe('bypassPermissions');
+    expect(manifest.launch.commandNetwork).toEqual({
+      mode: 'provider-default',
+      commandNetworkAccess: null,
+      proxyEnabled: false,
+      allowedHosts: [],
+      portScoped: false,
+    });
     expect(manifest.session.workingDirectory).toBe('/tmp/tm8-fixture');
     // `agent` is the PERSONA (Phoenix's CLI reader owns this shape); `launch`
     // is how the session was started. The two must never swap names again.
@@ -564,6 +700,7 @@ describe('composeManifest', () => {
     withTask.tasks = [
       {
         id: 't1',
+        version: 1,
         title: 'wire the prompt seam',
         description: '',
         priority: 'high',

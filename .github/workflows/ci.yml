@@ -50,10 +50,14 @@ jobs:
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
 
-      # --fast skips the migration apply (the `migrations` job owns it) but still
-      # does install, every scoped tsc -b, and every package's vitest suite.
+      # --no-migrations skips the migration apply (the `migrations` job owns it)
+      # but still does install, every scoped tsc -b, and every package's vitest
+      # suite. Do NOT use --fast here: it ALSO skips install, and a fresh runner
+      # has no node_modules, so every later stage dies as `vitest: command not
+      # found` / `Cannot find module '@tm8/contract'` — which is exactly how this
+      # job failed on every commit until 2026-08-02.
       - name: Gate
-        run: bash tools/ci/check.sh --fast
+        run: bash tools/ci/check.sh --no-migrations
         env:
           CI: "1"
 

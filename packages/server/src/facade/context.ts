@@ -59,10 +59,10 @@ export function commandEnvelope(ctx: RequestContext): CommandEnvelope {
  * as where the two would first differ. A bearer identity that somehow lacks
  * an id is refused rather than silently escalated to the owner.
  *
- * The actor precedence mirrors `internal.resolve_actor`'s coalesce: an
- * explicit envelope `actorId` wins; else an agent session's persona binding;
- * else unset so Postgres resolves the right member per space (file header).
- * Either way it is a REQUEST — `can_act_as` authorises it in SQL.
+ * A persona-bound bearer owns its actor choice. Letting a request-body actor
+ * override that binding would turn a session token into a general impersonation
+ * credential before SQL gets a chance to check provenance. Human/CLI bearers
+ * without a persona binding may still request an actor and SQL authorises it.
  */
 export function claimsFor(
   owner: LoopbackOwner,
@@ -76,7 +76,10 @@ export function claimsFor(
   if (bearer && !bearer.identityId) {
     throw new CollabError('unauthenticated', 'bearer identity is unresolved');
   }
-  const actorId = envelope.actorId ?? bearer?.actorId;
+  if (bearer?.actorId && envelope.actorId && envelope.actorId !== bearer.actorId) {
+    throw new CollabError('forbidden', 'a session-bound credential cannot override its actor');
+  }
+  const actorId = bearer?.actorId ?? envelope.actorId;
   return {
     identityId: bearer ? bearer.identityId! : owner.identityId,
     // See the file header: unset unless explicitly requested.

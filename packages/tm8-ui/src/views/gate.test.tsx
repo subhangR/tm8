@@ -21,6 +21,13 @@ import { navStore, resetNav } from '../stores/navStore';
 
 const renderGate = () => {
   resetNav();
+  // Side-panel kind selection is PERSISTED — useSidePanelKinds writes it to
+  // localStorage per (viewer, space). jsdom keeps one localStorage for the whole
+  // file, so the channels case (which switches the left panel to `channel`)
+  // leaks that choice into every case after it, and the panel-move case then
+  // asserts on a task panel that is no longer mounted. Resetting nav alone does
+  // not undo it: the selection lives in storage, not in navStore.
+  window.localStorage.clear();
   return render(<GateApp />);
 };
 

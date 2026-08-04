@@ -17,7 +17,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   const h = await server.health();
   expect(h.ok).toBe(true);
   expect(h.server).toBe('tm8-server');
-  expect(h.operations).toBe(124); // 120 -> 124 (2026-08-02): auth.* Identity v2 Stage 1 added four HTTP routes.
+  expect(h.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });
@@ -65,7 +65,7 @@ it('observes availability THREE-STATE and never over-claims', async () => {
   //   2. PRECEDENCE (observed -> 'unavailable' on a v1 row): unit coverage ONLY,
   //      in discovery-availability.test.ts, which drives the ledger directly.
   // The archived witness — captured before G10 landed, and now unreproducible by
-  // anyone — is preserved verbatim in TM8-W4-CLI-IMPLEMENTATION-EVIDENCE.md §11.4.
+  // anyone — is preserved verbatim in W4-CLI-IMPLEMENTATION-EVIDENCE.md §11.4.
   //
   // `presence.get` composing is asserted POSITIVELY so this transition is a fact
   // in the suite rather than a deletion in a diff.

@@ -47,7 +47,10 @@ describe('frozen exit-code table §7.6', () => {
   });
 
   it('is exactly the frozen table — no 1, no 12, nothing invented', () => {
-    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 130]);
+    // 13 and 14 joined 2026-08-02 for `event watch --until-match` (F7), by the
+    // same scoped-extension route 11 took for `--wait settled`. 12 stays
+    // skipped: Node itself can exit 12, so this table cannot own it.
+    expect([...EXIT_CODES]).toEqual([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 130]);
     expect(EXIT_MEANING[3]).toBe('unauthenticated');
     expect(EXIT_MEANING[4]).toBe('forbidden');
     expect(EXIT_MEANING[8]).toBe('not implemented');
@@ -60,6 +63,13 @@ describe('frozen exit-code table §7.6', () => {
     const eleven = Object.values(EXIT_BY_COMMAND_ERROR).filter((c) => c === 11);
     expect(eleven).toHaveLength(0);
     expect(EXIT_MEANING[11]).toMatch(/deliveries are incomplete or non-delivered/);
+  });
+
+  it('13 and 14 are reserved for `event watch --until-match` and no server error maps to them', () => {
+    const reserved = Object.values(EXIT_BY_COMMAND_ERROR).filter((c) => c === 13 || c === 14);
+    expect(reserved).toHaveLength(0);
+    expect(EXIT_MEANING[13]).toMatch(/no matching event arrived/);
+    expect(EXIT_MEANING[14]).toMatch(/events\.poll fallback/);
   });
 });
 

@@ -155,7 +155,7 @@ describe('W5.F PIN 3 (M2, CONVERTED) — the shard triple is a coherent single v
     // 18 input combinations collapse to a small set. If this is 1 the
     // enumeration is broken and the M2 assertion below would pass vacuously.
     expect(triples.size).toBeGreaterThan(1);
-    expect(triples).toContain('unknown|null|contract');
+    expect(triples).toContain('unknown|null|none');
     expect(triples).toContain('unavailable|reserved|contract');
     expect(triples).toContain('available|observed_ok|observed');
     // The one that matters: a `not_implemented_on_node` verdict NEVER carries
@@ -180,7 +180,9 @@ describe('W5.F PIN 3 (M2, CONVERTED) — the shard triple is a coherent single v
 
     // If this fails, every assertion in the next test is about a world I did
     // not intend, and its result means nothing either way.
-    expect(head.availabilitySource, 'HEAD must be unobserved for M2').toBe('contract');
+    // `none` since Change 4 (2026-08-02): an unobserved row no longer borrows
+    // `contract`'s name, so the precondition now reads literally as intended.
+    expect(head.availabilitySource, 'HEAD must be unobserved for M2').toBe('none');
     expect(head.availability).toBe('unknown');
     expect(weakest.availabilitySource, 'the WEAKEST row must be observed').toBe('observed');
     expect(weakest.availability).toBe('unavailable');
@@ -251,7 +253,7 @@ describe('W5.F PIN 3 (M2, CONVERTED) — the shard triple is a coherent single v
 
     // In M2's world the two rollups DISAGREE — a pin there can see the defect.
     expect(inM2.broken).not.toBe(inM2.correct);
-    expect(inM2.broken).toBe('contract');
+    expect(inM2.broken).toBe('none');
     expect(inM2.correct).toBe('observed');
 
     // In M3's world they AGREE — a pin there is blind to it, no matter how

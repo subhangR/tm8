@@ -1,5 +1,5 @@
 import type { EntitySummary } from '@tm8/contract';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { copyToClipboard } from '../../terminal/domUtils';
 
 /**
@@ -27,6 +27,7 @@ export function MaestroSessionTile({
   onToggleChildren,
   onSelect,
   onClose,
+  detail,
 }: {
   id: string;
   title: string;
@@ -47,6 +48,8 @@ export function MaestroSessionTile({
   onToggleChildren?: () => void;
   onSelect: () => void;
   onClose?: () => void;
+  /** D67 — the shared state/archive strip, rendered inside this tile's expand. */
+  detail?: ReactNode;
 }) {
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -158,6 +161,13 @@ export function MaestroSessionTile({
           })}
         </div>
       ) : null}
+
+      {/* D67 — the state + archive strip, on the SAME disclosure as the task
+          lines. Gated on `detailsExpanded` alone, NOT on `tasks.length`: a
+          session with no linked task still has an archive control, and hanging
+          it off the task list would make it vanish for exactly the rows a user
+          is most likely to be tidying up. */}
+      {detailsExpanded ? detail : null}
     </div>
   );
 }

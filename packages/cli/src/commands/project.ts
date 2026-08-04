@@ -206,6 +206,7 @@ async function projectCreate(cmd: CommandContext): Promise<ExitCode> {
     workingDir,
     clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
   };
+  if (cmd.options.bool('ensure-working-dir')) body.ensureWorkingDir = true;
   const repoUrl = clearable(cmd.options.value('repo-url'));
   const trust = closedChoice(cmd.options.value('trust'), TRUST_LEVELS, 'trust');
   const defaults = defaultsOf(cmd);

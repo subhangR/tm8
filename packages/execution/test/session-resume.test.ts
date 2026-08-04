@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildAgentCommand,
+  CODEX_LOOPBACK_CONFIG_OVERRIDES,
   withAgentResume,
   type ResolvedLaunchConfig,
 } from '../src/spawn/manifest.js';
@@ -66,6 +67,13 @@ describe('withAgentResume', () => {
     const cmd = withAgentResume(base, '<sys/>', CODEX_LAUNCH, 'rollout-9', ENV);
     expect(cmd.startsWith('codex resume ')).toBe(true);
     expect(cmd).toContain('developer_instructions');
+    for (const override of CODEX_LOOPBACK_CONFIG_OVERRIDES) {
+      expect(cmd).toContain(`-c '${override}'`);
+      expect(cmd.split(override)).toHaveLength(2);
+    }
+    expect(cmd).toContain('--ask-for-approval never');
+    expect(cmd).toContain('--sandbox workspace-write');
+    expect(cmd).toContain('--no-alt-screen');
     expect(cmd.endsWith("'rollout-9'")).toBe(true);
     expect(cmd).not.toContain('--last');
   });

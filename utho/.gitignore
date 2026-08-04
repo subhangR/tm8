@@ -1,0 +1,10 @@
+# Secrets — never commit.
+CREDENTIALS.md
+*.token
+*.pw
+
+# Database dumps and config archives. These carry full prod/staging data and
+# role password hashes (globals-*.sql) — never commit.
+backups/
+*.dump
+globals-*.sql

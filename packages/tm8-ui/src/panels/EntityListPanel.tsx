@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import type { EntityCapabilities, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type {
@@ -13,17 +13,20 @@ import type {
   ProfileResolution,
   QueryFilter,
   SortKey,
+  StateControl,
+  StatusPillSpec,
   TeammateLaunchState,
   CollectionMode,
 } from '../domain';
 import { ALL_MODES, collectionKinds, getKind, resolveAction } from '../domain';
-import { Avatar } from '../kit';
+import { Avatar, type PillTone } from '../kit';
 import {
   CheckingPermission,
   DisabledAction,
   DisabledIconControl,
   NOT_WIRED_REASON,
   toReason,
+  type UnavailableReason,
 } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
@@ -119,6 +122,33 @@ export interface EntityListPanelProps {
    * closed everywhere else.
    */
   launch?: LaunchSources;
+
+  /**
+   * D67 — commit a state chosen in an expanded row's dropdown.
+   *
+   * SEPARATE FROM `onAction` because a state write carries a VALUE, and
+   * `onAction(ref, entityId)` has nowhere to put one. The verb still comes
+   * from registry data (`stateControl.command`, or the option's own `via`), so
+   * the host decides which seam call each verb means and this panel keeps
+   * knowing neither the kind nor the command — the same split `onTerminate`
+   * already uses for the one session verb with its own host handler.
+   *
+   * Absent ⇒ the dropdown renders DISABLED WITH REASON, never enabled-inert.
+   */
+  onSetState?: (entityId: string, next: string, via: ActionRef) => void;
+
+  /**
+   * D67 — commit the expanded row's archive / restore.
+   *
+   * ITS OWN PROP, NOT `onAction`, AND THAT IS LOAD-BEARING. `onAction` is the
+   * GENERAL dispatcher: supplying it turns on every verb the registry lists,
+   * including `quickLaunch` in the panel header. Routing archive through it
+   * lit the Sessions panel's "Launch session ▸" — a control this executor does
+   * not own and would have silently ignored, i.e. enabled and inert, the exact
+   * failure `gate.test.tsx` guards. A verb with a dedicated host handler takes
+   * a dedicated prop, exactly as `onTerminate` already does.
+   */
+  onArchive?: (ref: ActionRef, entityId: string) => void;
 }
 
 /** Everything the inline launch config needs, supplied by the shell. */
@@ -1149,6 +1179,192 @@ function resolvePulses(
   return { segments, endpoints };
 }
 
+/**
+ * D67 — THE EXPANDED ROW'S STATE + ARCHIVE STRIP, shared by every list style.
+ *
+ * USER RULING 2026-08-02: "in every entity list style, each entity should have
+ * an option to change its state as a dropdown when the entity is expanded on
+ * the entity list itself... there is also an archived state, and the archived
+ * state UI state works on top of the archived state."
+ *
+ * ONE COMPONENT, THREE ANATOMIES. The control-card, the session tree and the
+ * standard tile all mount THIS — so a task, a session and a doc get the same
+ * strip from the same code, and adding a fourth anatomy cannot forget it.
+ *
+ * WHY ARCHIVE SITS BESIDE THE DROPDOWN RATHER THAN INSIDE IT. They are two
+ * different layers, and the ruling names both: the dropdown writes the kind's
+ * OWN state (a task's `workStatus`), while archive writes the TOMBSTONE
+ * (`entities.deleted_at`) that every kind shares and that the Archived
+ * lifecycle tier queries as `deleted: 'only'`. Folding "Archived" into the
+ * state list would claim it is a work status — it is not, a task keeps its
+ * `workStatus` across an archive/restore round-trip (verified on this node),
+ * and only 5 of 19 kinds have a state list to fold it into at all.
+ *
+ * ARCHIVE FLIPS TO RESTORE ON `deletedAt`, which is a STRUCTURAL read of the
+ * envelope, not a kind branch: every kind carries it.
+ */
+function RowDetail({
+  row,
+  props,
+  config,
+}: {
+  row: EntitySummary;
+  props: EntityListPanelProps;
+  config: KindConfig;
+}) {
+  const control = config.list.stateControl;
+  const archived = row.deletedAt != null;
+
+  return (
+    <div className="lp__rowdetail" onClick={(e) => e.stopPropagation()}>
+      <div className="lp__rowdetail-line">
+        <span className="lp__rowdetail-label">{control?.label ?? 'State'}</span>
+        <RowStateControl row={row} props={props} control={control} pill={config.panel.statusPill} />
+      </div>
+      <div className="lp__rowdetail-line">
+        <span className="lp__rowdetail-label">Archive</span>
+        {/* The tombstone verb. `restore` when this row is already archived —
+            the Archived tier is where a user meets these rows, and a tier that
+            could only put things IN would be a one-way door. */}
+        <RowAction
+          ref_={archived ? 'restore' : 'archive'}
+          row={row}
+          props={props}
+          onRun={props.onArchive}
+          variant="wide"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The state dropdown, or the honest reason there is not one.
+ *
+ * FOUR DISTINCT REFUSALS, kept apart because collapsing them is how a UI
+ * starts lying about which thing is missing:
+ *
+ *   no `stateControl`  — this KIND has no state to set (14 of 19 core kinds).
+ *   `readOnlyReason`   — it HAS a state, but the node observes it (sessions).
+ *   capabilities absent — not refused, still LOADING (the CheckingPermission
+ *                        vocabulary, never the disabled one).
+ *   no `onSetState`    — the host did not wire the write; disabled-with-reason
+ *                        rather than a select that silently drops the change.
+ */
+function RowStateControl({
+  row,
+  props,
+  control,
+  pill,
+}: {
+  row: EntitySummary;
+  props: EntityListPanelProps;
+  control: StateControl | undefined;
+  /** The kind's existing value→word / value→tone map. The ONLY source for both. */
+  pill: StatusPillSpec | undefined;
+}) {
+  const selectId = useId();
+  const wordFor = (value: string): string =>
+    pill?.labels?.[value] ?? value.replace(/_/g, ' ');
+  const toneFor = (value: string): PillTone => pill?.tones?.[value] ?? 'idle';
+
+  if (!control) {
+    return (
+      <DisabledAction
+        label="Change state"
+        reason={{
+          cause: `${getKind(props.kind).label} has no state to set on this node`,
+          remedy: 'the contract records no status field for this kind, so nothing could be written',
+        }}
+      >
+        <span className="lp__statesel lp__statesel--absent">no state</span>
+      </DisabledAction>
+    );
+  }
+
+  // Structural read of the state envelope: the registry names the FIELD, so no
+  // kind is named here and a new stateful kind needs no edit to this file.
+  const state = row.state as unknown as Record<string, unknown>;
+  const raw = state[control.source];
+  const current = typeof raw === 'string' ? raw : '';
+  const currentPill = (
+    <span className={`lp__statesel kit-pill--${toneFor(current)}`}>
+      {current === '' ? 'unknown' : wordFor(current)}
+    </span>
+  );
+
+  if (control.readOnlyReason) {
+    return (
+      <DisabledAction label="Change state" reason={toReason(control.readOnlyReason)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
+    return <CheckingPermission label="Change state" />;
+  }
+
+  const availability = resolveAction(control.command).availability({
+    ...props.ctx,
+    entityId: row.id,
+    kind: row.kind,
+    capabilities: props.capabilitiesOf?.(row.id) ?? null,
+    liveness: props.livenessOf?.(row.id),
+  });
+
+  if (availability.kind === 'disabled') {
+    return (
+      <DisabledAction label="Change state" reason={toReason(availability.reason)}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  if (!props.onSetState) {
+    return (
+      <DisabledAction label="Change state" reason={NOT_WIRED_REASON}>
+        {currentPill}
+      </DisabledAction>
+    );
+  }
+
+  return (
+    // The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
+    // The select cannot draw its own, because the pill tone class it carries
+    // sets the `background` shorthand and would reset any background-image.
+    <span className="lp__statewrap">
+    <select
+      id={selectId}
+      className={`lp__statesel lp__statesel--live kit-pill--${toneFor(current)}`}
+      aria-label={`Change state for ${row.title}`}
+      data-testid="row-state-select"
+      value={current}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (next === current) return;
+        const chosen = control.options.find((o) => o.id === next);
+        // The option's own `via` wins: `done` must reach the completion verb,
+        // which carries the acceptance-criteria gate the work verb refuses.
+        props.onSetState?.(row.id, next, chosen?.via ?? control.command);
+      }}
+    >
+      {/* A value the registry does not list still shows, rather than the select
+          silently snapping to its first option and MISREPORTING the record. */}
+      {!control.options.some((o) => o.id === current) && current !== '' ? (
+        <option value={current}>{wordFor(current)}</option>
+      ) : null}
+      {control.options.map((o) => (
+        <option key={o.id} value={o.id}>
+          {wordFor(o.id)}
+        </option>
+      ))}
+    </select>
+    </span>
+  );
+}
+
 function Tile({
   row,
   depth = 0,
@@ -1252,6 +1468,7 @@ function Tile({
         onToggleChildren={onToggleChildren}
         onSelect={() => props.onSelect?.(row.id)}
         onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
+        detail={<RowDetail row={row} props={props} config={config} />}
       />
     );
   }
@@ -1372,6 +1589,10 @@ function Tile({
           ))}
           <span className="pn-tt__time">{relativeTileTime(row.updatedAt)}</span>
         </div>
+
+        {/* D67 — the state + archive strip. Last inside the expand, under the
+            facts, because it WRITES and everything above it reads. */}
+        <RowDetail row={row} props={props} config={config} />
       </MaestroTaskTile>
     );
   }
@@ -1496,10 +1717,33 @@ function Tile({
                 onFlow={setFlowRef}
               />
             ))}
+            {/* D67 — the details disclosure, on EVERY standard tile.
+                DELIBERATELY NOT the leading `lp__disclosure`: that chevron
+                means "show this row's CHILDREN" on tree kinds, and giving one
+                control two meanings would make a doc's expand ambiguous. This
+                one trails the row, matching the control-card's `pn-tt__ind`. */}
+            <button
+              type="button"
+              className={
+                detailsExpanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'
+              }
+              title="Details"
+              aria-label={`${detailsExpanded ? 'Collapse' : 'Expand'} details for ${row.title}`}
+              aria-expanded={detailsExpanded}
+              data-testid="row-details-toggle"
+              onClick={(event) => {
+                event.stopPropagation();
+                setDetailsExpanded((open) => !open);
+              }}
+            >
+              <span aria-hidden><TileChevron /></span>
+            </button>
           </span>
 
         </div>
       </div>
+
+      {detailsExpanded ? <RowDetail row={row} props={props} config={config} /> : null}
 
       {/* The config is an attached card section, not a popover: the subject
           remains obvious while teammate/model choices are changed. */}
@@ -1595,14 +1839,29 @@ function RowAction({
   props,
   openFlow,
   onFlow,
+  onRun,
+  variant = 'icon',
 }: {
   ref_: ActionRef;
   row: EntitySummary;
   props: EntityListPanelProps;
   openFlow?: ActionRef | null;
   onFlow?: (ref: ActionRef | null) => void;
+  /**
+   * The handler for THIS verb, when the host wired one separately from the
+   * general `onAction`. Keeps one gating path (capabilities → checking →
+   * disabled → enabled) for every row verb rather than a second copy beside it.
+   */
+  onRun?: (ref: ActionRef, entityId: string) => void;
+  /**
+   * `wide` carries the LABEL beside the glyph. The hover-revealed row cluster
+   * is a fixed-width icon strip; inside an expanded detail strip there is room
+   * for the word, and an archive control is not one to leave as a bare glyph.
+   */
+  variant?: 'icon' | 'wide';
 }) {
   const def = resolveAction(ref_);
+  const wide = variant === 'wide';
   const ctx: ActionContext = {
     ...props.ctx,
     entityId: row.id,
@@ -1619,8 +1878,32 @@ function RowAction({
    */
   const opensFlow = def.flow === 'launch' && onFlow != null;
 
-  if (!props.onAction && !opensFlow) {
-    return <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON} />;
+  /**
+   * A `wide` control refuses in the WIDE vocabulary too.
+   *
+   * The icon refusal is a bare glyph with a hover tooltip, which is right for
+   * a 22px cluster button and wrong here: verified in Chrome, the disabled
+   * Archive rendered as an unlabelled square directly beneath a STATE row that
+   * printed its reason as visible text. Same strip, same refusal, two
+   * different honesty vocabularies — and the quieter one was the destructive
+   * verb. `DisabledAction` carries the word and the reason, matching the row
+   * above it.
+   */
+  const refuse = (reason: UnavailableReason) =>
+    wide ? (
+      <DisabledAction label={def.label} reason={reason}>
+        <span className="lp__rowaction lp__rowaction--wide lp__rowaction--off">
+          <span aria-hidden>{def.icon}</span>
+          <span className="lp__rowaction-label">{def.label}</span>
+        </span>
+      </DisabledAction>
+    ) : (
+      <DisabledIconControl label={def.label} glyph={def.icon} reason={reason} />
+    );
+
+  const run = onRun ?? props.onAction;
+  if (!run && !opensFlow) {
+    return refuse(NOT_WIRED_REASON);
   }
 
   /**
@@ -1637,19 +1920,19 @@ function RowAction({
   const availability = def.availability(ctx);
 
   if (availability.kind === 'disabled') {
-    return (
-      <DisabledIconControl
-        label={`${def.label} — unavailable`}
-        glyph={def.icon}
-        reason={toReason(availability.reason)}
-      />
-    );
+    return refuse(toReason(availability.reason));
   }
   const expanded = openFlow === ref_;
   return (
     <button
       type="button"
-      className={expanded ? 'lp__rowaction lp__rowaction--on' : 'lp__rowaction'}
+      className={[
+        'lp__rowaction',
+        wide ? 'lp__rowaction--wide' : '',
+        expanded ? 'lp__rowaction--on' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       title={def.label}
       aria-label={def.label}
       aria-expanded={opensFlow ? expanded : undefined}
@@ -1659,10 +1942,11 @@ function RowAction({
           onFlow?.(expanded ? null : ref_);
           return;
         }
-        props.onAction?.(ref_, row.id);
+        run?.(ref_, row.id);
       }}
     >
-      {def.icon}
+      <span aria-hidden>{def.icon}</span>
+      {wide ? <span className="lp__rowaction-label">{def.label}</span> : null}
     </button>
   );
 }

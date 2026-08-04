@@ -1,5 +1,5 @@
 /**
- * `tm8 message …` — the seven message rows this slot owns.
+ * `tm8 message …` — the message command surface.
  *
  * These are UNIT tests: they drive the real kernel (parse → context → dispatch
  * → output → exit funnel) against a STUB HTTP server, so every assertion here
@@ -200,13 +200,14 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('the module registers exactly its own rows', () => {
-  it('registers the seven message paths this slot owns', () => {
+  it('registers the message paths this module owns', () => {
     expect(MESSAGE_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
       'message attachment add',
       'message attachment remove',
       'message delete',
       'message delivery',
       'message list',
+      'message reply',
       'message send',
       'message update',
     ]);
@@ -400,9 +401,18 @@ describe('message send', () => {
   it('collapses duplicate anchors preserving first-occurrence order', async () => {
     reply = () => envelope(batch([MESSAGE]));
     await dispatch([
-      'message', 'send', '--to', ANCHOR_2, '--to', ANCHOR, '--to', ANCHOR_2, 'hi', '--mutation-id', 'm',
+      'message', 'send', '--to', ANCHOR_2, '--to', ANCHOR, '--to', ANCHOR_2,
+      '--conversation', ANCHOR, 'hi', '--mutation-id', 'm',
     ]);
     expect((seen[0]?.body as { anchorIds: string[] }).anchorIds).toEqual([ANCHOR_2, ANCHOR]);
+    expect((seen[0]?.body as { conversationAnchorId: string }).conversationAnchorId).toBe(ANCHOR);
+  });
+
+  it('requires an explicit conversation origin for multi-anchor sends', async () => {
+    const r = await dispatch(['message', 'send', '--to', ANCHOR, '--to', ANCHOR_2, 'hi']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toMatch(/--conversation/);
+    expect(seen).toHaveLength(0);
   });
 
   /**
@@ -573,6 +583,32 @@ describe('message send', () => {
         : envelope({ message: { id: MESSAGE }, deliveries: [] });
     const r = await dispatch(['message', 'send', '--to', ANCHOR, 'hi', '--wait', 'settled', '--timeout', '2']);
     expect(r.code).toBe(0);
+  });
+});
+
+describe('message reply', () => {
+  it('sends only the context message id and lets the Server derive anchor and parent', async () => {
+    reply = () => envelope({ messageBatchId: 'reply-1', messages: [{ id: MESSAGE }] });
+    const r = await dispatch([
+      'message', 'reply', MESSAGE, 'answer', '--mention', ANCHOR_2,
+      '--attach', FILE, '--mutation-id', 'reply-1', '--format', 'json',
+    ]);
+    expect(r.code).toBe(0);
+    expect(seen[0]?.path).toBe(bindPath('messages.post', {}));
+    expect(seen[0]?.body).toEqual({
+      replyToMessageId: MESSAGE,
+      body: 'answer',
+      mentionIds: [ANCHOR_2],
+      attachmentIds: [FILE],
+      clientMutationId: 'reply-1',
+    });
+  });
+
+  it('refuses caller-supplied routing because reply routing is server-owned', async () => {
+    const r = await dispatch(['message', 'reply', MESSAGE, 'answer', '--to', ANCHOR]);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toMatch(/derives its anchor and thread/);
+    expect(seen).toHaveLength(0);
   });
 });
 

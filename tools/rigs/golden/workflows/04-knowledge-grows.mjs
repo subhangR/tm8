@@ -1,7 +1,7 @@
 /**
  * GOLDEN WORKFLOW 4 — Knowledge grows.
  *
- * Source: docs/collab-v2-ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §4
+ * Source: docs/history/collab-v2/ui-plan/01-IMPLEMENTATION-PLAN.md Layer 8 §4
  *   "promote thread message → doc child of spec, linked forever"
  *
  * "Linked forever" is the whole test. Promotion is trivial to fake — copy the

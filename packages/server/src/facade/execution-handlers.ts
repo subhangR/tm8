@@ -53,6 +53,7 @@ import type {
   ExecutionTerminateInput,
   SessionJournalPage,
   SessionJournalRecord,
+  SessionLaunchRecord,
 } from '@tm8/contract';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
@@ -73,6 +74,8 @@ import {
   recordInteractionProfilePin as persistInteractionProfilePin,
   resolveInteractionProfileForLaunch,
 } from '../profiles/w2-profile-resolver.js';
+import { formatToken, generateSecret, hashToken } from '../identity/crypto.js';
+import { SESSION_TTL_MS } from '../identity/pg-auth.js';
 
 // Claims come from ./context.ts, deliberately NOT from a local helper.
 //
@@ -114,6 +117,7 @@ interface TeamMemberRow {
 
 interface TaskRow {
   entity_id: string;
+  version: number;
   title: string;
   description: string;
   priority: string;
@@ -193,7 +197,7 @@ export class DbGraphPort implements GraphPort {
         taskIds.length === 0
           ? []
           : await q.query<TaskRow>(
-              `select t.entity_id, t.title, t.description, t.priority, t.work_status,
+              `select t.entity_id, e.version, t.title, t.description, t.priority, t.work_status,
                       t.acceptance_criteria
                  from public.tasks t
                  join public.entities e on e.id = t.entity_id
@@ -225,6 +229,7 @@ export class DbGraphPort implements GraphPort {
           .filter((t): t is TaskRow => t !== undefined)
           .map((t) => ({
             id: t.entity_id,
+            version: t.version,
             title: t.title,
             description: t.description,
             priority: t.priority,
@@ -316,16 +321,37 @@ export class DbGraphPort implements GraphPort {
     };
   }
 
+  async issueWorkSessionAgentToken(
+    auth: GraphAuth,
+    sessionId: string,
+    teamMemberId: string,
+  ): Promise<string> {
+    const secret = generateSecret();
+    const expiresAt = new Date(Date.now() + SESSION_TTL_MS.agent).toISOString();
+    const row = await this.db.rpc<{ id?: string }>(
+      this.claims(auth),
+      'public.issue_work_session_agent_session',
+      [sessionId, teamMemberId, hashToken(secret), expiresAt, `work-session:${sessionId}`],
+    );
+    if (typeof row?.id !== 'string') {
+      throw fail('upstream_unavailable', 'work-session token mint returned no auth session id');
+    }
+    return formatToken(row.id, secret);
+  }
+
   async recordManifest(
     auth: GraphAuth,
     sessionId: string,
     manifest: Tm8Manifest,
     envVarNames: string[],
+    prompts: { system: string; task: string },
   ): Promise<void> {
     await this.db.rpc(this.claims(auth), 'public.record_session_manifest', [
       sessionId,
       JSON.stringify(manifest),
       envVarNames,
+      prompts.system,
+      prompts.task,
     ]);
   }
 
@@ -1151,6 +1177,88 @@ function registerHandlers(
     }
 
     return json(await readSessionJournal(dataDir, sessionId, limit, before));
+  });
+  /**
+   * execution.launch — the session's stored spawn configuration.
+   *
+   * NO ENTITY PRE-CHECK, unlike `execution.journal` above, and that is not an
+   * oversight. The journal handler has to resolve the entity first because its
+   * payload comes from the FILESYSTEM, where RLS cannot reach; here the payload
+   * IS a row, and `session_manifests_select` already requires
+   * `entity_readable(work_session_id)`. A second read would only re-answer the
+   * question the policy is about to answer anyway, and would introduce a
+   * difference between "no such session" and "no manifest for it" that this
+   * surface must not expose: a session the caller cannot read must look exactly
+   * like a session that has no manifest.
+   *
+   * The prompts are returned VERBATIM and are NOT recomposed when absent. A
+   * pre-073 session has no recorded prompt and says so; the alternative —
+   * running `composePrompt` over the stored manifest — would render today's
+   * build's output as though it were the text that agent received.
+   */
+  registry.register('execution.launch', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const sessionId = requireUuidParam(ctx, 'workSessionId');
+
+    const rows = await db.query<{
+      manifest: unknown;
+      env_var_names: string[] | null;
+      system_prompt: string | null;
+      task_prompt: string | null;
+      created_at: Date | string;
+    }>(
+      claims,
+      `select sm.manifest, sm.env_var_names, sm.system_prompt, sm.task_prompt, sm.created_at
+         from public.session_manifests sm
+        where sm.work_session_id = $1`,
+      [sessionId],
+    );
+
+    const row = rows[0];
+    if (!row) {
+      const empty: SessionLaunchRecord = {
+        sessionId,
+        available: false,
+        unavailableReason: 'no_manifest_row',
+        manifest: null,
+        envVarNames: [],
+        prompts: { system: null, task: null, unavailableReason: 'not_recorded' },
+        recordedAt: null,
+      };
+      return json(empty);
+    }
+
+    // `manifest` is jsonb and arrives parsed. It is passed through UNVALIDATED
+    // on purpose (see SessionLaunchRecord) — but it must still be an object,
+    // because the DB CHECK guarantees that and a reader is entitled to rely on
+    // it rather than defending against a bare scalar.
+    const manifest =
+      typeof row.manifest === 'object' && row.manifest !== null && !Array.isArray(row.manifest)
+        ? (row.manifest as Record<string, unknown>)
+        : null;
+
+    const result: SessionLaunchRecord = {
+      sessionId,
+      available: true,
+      unavailableReason: null,
+      manifest,
+      envVarNames: row.env_var_names ?? [],
+      prompts: {
+        system: row.system_prompt,
+        task: row.task_prompt,
+        // One reason for both, because they are recorded together: either this
+        // launch was captured or it predates capture. A launch that genuinely
+        // sent no system prompt still has a recorded (empty-trimmed → null)
+        // value, which is indistinguishable here — and is the reason the UI
+        // labels this "not recorded" rather than "no prompt was sent".
+        unavailableReason:
+          row.system_prompt === null && row.task_prompt === null ? 'not_recorded' : null,
+      },
+      recordedAt:
+        row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+    };
+    return json(result);
   });
   registry.register('execution.spawn', async (ctx) => {
     const input = ctx.body as ExecutionSpawnInput;

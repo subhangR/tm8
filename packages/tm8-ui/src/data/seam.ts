@@ -64,6 +64,8 @@ import type {
   CommandResult,
   CompleteTaskInput,
   CreateEntityInput,
+  CreateSpaceInput,
+  CreateSpaceResult,
   CreateTaskInput,
   Cursor,
   DurableWorkspaceEvent,
@@ -98,10 +100,14 @@ import type {
   PatchMessageInput,
   PatchTaskInput,
   PostMessageInput,
+  ProjectCreateInput,
+  ProjectDirectoryListing,
+  ProjectLinkInput,
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
   SessionJournalPage,
+  SessionLaunchRecord,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -246,6 +252,17 @@ export interface Seam {
   entityKinds(spaceId: SpaceId): Promise<EntityKindDef[]>;
   /** Linked project resources, including trust and graph-owned cwd. */
   projects(spaceId: SpaceId): Promise<ProjectResource[]>;
+  /**
+   * Node-local onboarding is optional because fixture seams have no filesystem.
+   * The real seam exposes the complete contract-backed saga surface; its
+   * absence keeps the Add Space control disabled-with-reason.
+   */
+  projectSetup?: {
+    directories(path?: string): Promise<ProjectDirectoryListing>;
+    createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
+    createProject(input: ProjectCreateInput): Promise<ProjectResource>;
+    linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+  };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
   /** Connections tab. */
@@ -264,6 +281,22 @@ export interface Seam {
    * older records; `limit` defaults to 100 server-side.
    */
   journal(workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage>;
+  /**
+   * What the session was TOLD at spawn — the other half of the DEBUG surface.
+   *
+   * The journal answers "what did this agent DO"; this answers "what was this
+   * agent GIVEN": the composed manifest (teammate, model, provider, workdir,
+   * tasks, profile pin), the environment variable NAMES, and the two prompt
+   * channels as the bytes actually sent. One-shot, not polled: unlike the
+   * journal it cannot grow, so re-reading it every few seconds would ship a
+   * whole manifest to learn nothing.
+   *
+   * `available:false` and `prompts.unavailableReason:'not_recorded'` are two
+   * DIFFERENT explained empties — no manifest row at all versus a manifest
+   * recorded before the prompts were captured — and the surface must keep them
+   * apart. Environment VALUES are structurally absent, never merely hidden.
+   */
+  launch(workSessionId: EntityId): Promise<SessionLaunchRecord>;
   /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter

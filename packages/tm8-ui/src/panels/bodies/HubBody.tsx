@@ -86,7 +86,7 @@ export function HubBody({
 
   return (
     <div
-      className="pn-body hub-body"
+      className={hasFeed ? 'pn-body hub-body hub-body--with-feed' : 'pn-body hub-body'}
       id="tabpanel-content"
       role="tabpanel"
       aria-labelledby="tab-content"

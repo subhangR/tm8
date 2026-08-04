@@ -41,6 +41,8 @@ import {
   type CommandResult,
   type CompleteTaskInput,
   type CreateEntityInput,
+  type CreateSpaceInput,
+  type CreateSpaceResult,
   type CreateTaskInput,
   type DurableWorkspaceEvent,
   type EdgeView,
@@ -73,10 +75,14 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectCreateInput,
+  type ProjectDirectoryListing,
+  type ProjectLinkInput,
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
   type SessionJournalPage,
+  type SessionLaunchRecord,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -214,6 +220,22 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<ProjectResource[]>('projects.list', { query: { spaceId } });
     },
 
+    projectDirectories(path?: string): Promise<ProjectDirectoryListing> {
+      return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { path } });
+    },
+
+    createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult> {
+      return http.call<CreateSpaceResult>('spaces.create', { body: input });
+    },
+
+    createProject(input: ProjectCreateInput): Promise<ProjectResource> {
+      return http.call<ProjectResource>('projects.create', { body: input });
+    },
+
+    async linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void> {
+      await http.call('projects.link', { params: { spaceId }, body: input });
+    },
+
     entity(id: EntityId): Promise<EntityDetail> {
       return http.call<EntityDetail>('entities.get', { params: { id } });
     },
@@ -245,6 +267,10 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { workSessionId },
         query: { limit: opts?.limit, before: opts?.before },
       });
+    },
+    launch(workSessionId: EntityId): Promise<SessionLaunchRecord> {
+      // No query at all: the launch record is a whole document, not a window.
+      return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
     },
 
     inbox(opts?: PageOpts): Promise<Page<NotificationItem>> {

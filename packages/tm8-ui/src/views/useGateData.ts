@@ -46,6 +46,12 @@ import {
 } from '../data';
 import { isRealSeamEnabled } from './realSeamFlag';
 import { createDomainStore, projectRows, selectConnectionsOf, type DomainStoreHandle } from '../data/project/domain-store';
+import {
+  CACHED_LAUNCH_KINDS,
+  nodeKeyOf,
+  readLaunchCache,
+  writeLaunchCache,
+} from '../data/launch-cache';
 import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
@@ -57,6 +63,7 @@ import {
   type LaunchProject,
   type LaunchTeammate,
 } from '../domain/launch';
+import { representedThreadMessageCount } from './message-thread';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
@@ -239,6 +246,19 @@ async function mapLimit<T, R>(
 /** Boot's request-concurrency bound for per-item reads. See `mapLimit`. */
 const BOOT_READ_CONCURRENCY = 2;
 
+/**
+ * Kinds that are OPTION SETS rather than paged lists — the teammate picker and
+ * the interaction-profile picker have to offer every row that exists, so their
+ * boot read asks for the whole set instead of taking the server default.
+ */
+const LAUNCH_SOURCE_KINDS = new Set(['team_member', 'interaction_profile']);
+
+/** The server's own `MAX_LIMIT`. Asking for more is an invalid_input refusal. */
+const MAX_COLLECTION_LIMIT = 200;
+
+/** Trailing debounce for persisting the launch cache. See its effect. */
+const LAUNCH_CACHE_DEBOUNCE_MS = 1000;
+
 export interface GateData {
   ready: boolean;
   spaceId: SpaceId;
@@ -289,6 +309,8 @@ export interface GateData {
   ensureKind: (kind: string) => void;
   /** Switch the active space and hydrate its own menu, channels, and data. */
   selectSpace: (spaceId: SpaceId) => void;
+  /** Add and immediately open a Space returned by the onboarding saga. */
+  acceptSpace: (space: SpaceSummary) => void;
   /**
    * D44: launch runs through the active seam's command path. Command patches
    * reconcile immediately and the durable event stream remains authoritative.
@@ -513,8 +535,8 @@ export function useGateData(options: GateOptions): GateData {
       setSpaceDefaultProfileId(settings.defaultInteractionProfileId);
       if (counts) setKindCounts(counts);
 
-      const load = async (kind: string) => {
-        const query = { spaceId: space, kinds: [kind] } as unknown as CollectionQuery;
+      const load = async (kind: string, limit?: number) => {
+        const query = { spaceId: space, kinds: [kind], ...(limit ? { limit } : {}) } as unknown as CollectionQuery;
         const result = await seam.query(query);
         // Same key shape rowsFor reads: an unfiltered read is the '*' key.
         absorb(`${kind}::*`, result.page.items);
@@ -530,7 +552,14 @@ export function useGateData(options: GateOptions): GateData {
         [...new Set([options.leftKind, options.rightKind, 'team_member', 'interaction_profile'])],
         BOOT_READ_CONCURRENCY,
         async (kind) => {
-          const items = await load(kind);
+          // LAUNCH SOURCES ASK FOR THE WHOLE SET, EXPLICITLY. An unbounded
+          // collections.query takes the server's DEFAULT_LIMIT of 50, and these
+          // two kinds are not a list the viewer pages through — they are the
+          // COMPLETE option set behind the teammate and profile pickers. Past
+          // 50 teammates the 51st simply stops being offerable, with no error
+          // and no reason shown: the picker looks complete and is not. Panel
+          // kinds keep the default, because those ARE paged lists.
+          const items = await load(kind, LAUNCH_SOURCE_KINDS.has(kind) ? MAX_COLLECTION_LIMIT : undefined);
           return { kind, items };
         },
       );
@@ -546,6 +575,37 @@ export function useGateData(options: GateOptions): GateData {
         const detail = await seam.entity(profile.id).catch(() => undefined);
         if (detail) domain.store.getState().ingestDetail(detail);
       });
+      /* THE AUTHORITATIVE SET REPLACES THE SEED — including the rows it does
+         NOT contain.
+
+         `ingestSummaries` MERGES, so a teammate deleted while this browser was
+         closed would be seeded from cache, survive hydrate untouched, and stay
+         in the picker for the whole session. Nothing else would ever remove it:
+         the server cannot send an `entity.deleted` event for something that was
+         deleted before this client connected.
+
+         So the seeded ids hydrate did not return are tombstoned explicitly. The
+         launch memo already drops `deletedAt !== null`, so this is the same
+         mechanism a live deletion uses rather than a second code path. */
+      const launchRows = loaded
+        .filter((entry) => CACHED_LAUNCH_KINDS.has(entry.kind))
+        .flatMap((entry) => entry.items);
+      const returned = new Set(launchRows.map((row) => row.id));
+      const orphaned = (seededIds.current.get(space) ?? []).filter((id) => !returned.has(id));
+      if (orphaned.length > 0) {
+        const store = domain.store.getState();
+        const stale = orphaned
+          .map((id) => store.entities[id as EntityId])
+          .filter((row): row is EntitySummary => row !== undefined && row.deletedAt === null)
+          .map((row) => ({ ...row, deletedAt: new Date().toISOString() }));
+        if (stale.length > 0) store.ingestSummaries(stale);
+      }
+      seededIds.current.delete(space);
+
+      // Persisted from the READ, not the store: the cache must only ever hold
+      // rows the server actually returned.
+      writeLaunchCache(nodeKeyOf(options.serverBaseUrl), space, launchRows);
+
       const teammateRows = loaded
         .filter((entry) => entry.kind === 'team_member')
         .flatMap((entry) => entry.items);
@@ -559,8 +619,14 @@ export function useGateData(options: GateOptions): GateData {
       });
       setTeammateProfileDefaults(Object.fromEntries(defaults));
     },
-    [seam, options.leftKind, options.rightKind, absorb, loadGraph, domain],
+    [seam, options.leftKind, options.rightKind, options.serverBaseUrl, absorb, loadGraph, domain],
   );
+
+  /**
+   * Ids seeded from the browser cache, per space, awaiting hydrate's verdict.
+   * A ref because it is bookkeeping BETWEEN two effects, never rendered.
+   */
+  const seededIds = useRef(new Map<string, string[]>());
 
   const [bootError, setBootError] = useState<string | null>(null);
 
@@ -646,6 +712,26 @@ export function useGateData(options: GateOptions): GateData {
     setLinkedProjects([]);
     setTeammateProfileDefaults({});
 
+    // SEED THE OPTION SETS BEFORE THE FIRST READ IS EVEN SENT.
+    //
+    // Deliberately here, in the space-open effect, and not once at mount: the
+    // cache is per space, so switching spaces has to re-seed from the NEW
+    // space's set rather than leave the previous space's teammates on offer.
+    //
+    // This only writes `entities`. It writes no `rows` entry, so it cannot put
+    // a row in any LIST — the seed reaches exactly the consumers that scan the
+    // store for an option set, which is the launch pickers. `hydrate` below
+    // replaces all of it with the server's answer moments later; until then a
+    // populated picker beats an empty one, and a stale option refuses at spawn
+    // with the node's own reason rather than silently doing the wrong thing.
+    const seeded = readLaunchCache(nodeKeyOf(options.serverBaseUrl), spaceId);
+    if (seeded) {
+      // Remembered so hydrate can tombstone whichever of them the server no
+      // longer returns. Without this the seed would be unretractable.
+      seededIds.current.set(spaceId, seeded.map((row) => row.id));
+      domain.store.getState().ingestSummaries(seeded);
+    }
+
     // Same retry law as the spaces read above, including the overload-aware
     // backoff — hydration is the HEAVY read set (a dozen-plus requests), so a
     // fast retry of it against a 503ing node is the storm's worst case:
@@ -683,6 +769,14 @@ export function useGateData(options: GateOptions): GateData {
     if (next === spaceId || !spaces.some((space) => space.id === next)) return;
     setSpaceId(next);
   }, [spaceId, spaces]);
+
+  const acceptSpace = useCallback((space: SpaceSummary) => {
+    setSpaces((current) => current.some((candidate) => candidate.id === space.id)
+      ? current.map((candidate) => candidate.id === space.id ? space : candidate)
+      : [...current, space]);
+    setBootError(null);
+    setSpaceId(space.id);
+  }, []);
 
   // Connection honesty, rendered once in the shell and selected everywhere
   // (§10.2.4). `polling` is a degraded-but-advancing state, not an outage.
@@ -746,6 +840,44 @@ export function useGateData(options: GateOptions): GateData {
       unsubscribe();
     };
   }, [seam, spaceId]);
+
+  /**
+   * KEEP THE CACHE CURRENT FROM THE DURABLE STREAM.
+   *
+   * Boot writes the authoritative set; this keeps it true for the rest of the
+   * session, so a teammate created, renamed, re-modelled or deleted while the
+   * tab is open is already correct in the picker on the NEXT load rather than
+   * only after that load's read returns.
+   *
+   * Safe to dump from the store precisely BECAUSE hydrate tombstones orphaned
+   * seeds above: every live launch-kind row in the store is one the server
+   * either just returned or just sent an event for. Without that pruning this
+   * would re-persist stale rows forever.
+   *
+   * Debounced and trailing, for the same reason the counters read is: a spawn
+   * or a bulk import is a BURST, and one JSON serialisation of the whole option
+   * set per event would be a self-inflicted main-thread cost for a value only
+   * read at the next boot.
+   */
+  useEffect(() => {
+    if (!ready || !spaceId) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const persist = () => {
+      timer = undefined;
+      const rows = Object.values(domain.store.getState().entities).filter(
+        (row) => row.spaceId === spaceId && row.deletedAt === null && CACHED_LAUNCH_KINDS.has(row.state.kind),
+      );
+      writeLaunchCache(nodeKeyOf(options.serverBaseUrl), spaceId, rows);
+    };
+    const unsubscribe = domain.store.subscribe(() => {
+      if (timer) return;
+      timer = setTimeout(persist, LAUNCH_CACHE_DEBOUNCE_MS);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [ready, spaceId, domain, options.serverBaseUrl]);
 
   // Catch-up integrity lost ⇒ re-run hydration. Idempotent by construction.
   useEffect(
@@ -1084,7 +1216,8 @@ export function useGateData(options: GateOptions): GateData {
         ?? state.details[id as EntityId]?.counters.messages
         ?? cachedMessages?.length
         ?? -1;
-      const messagesStale = cachedMessages === undefined || cachedMessages.length < messageCount;
+      const messagesStale = cachedMessages === undefined
+        || representedThreadMessageCount(cachedMessages) < messageCount;
       const needsMessages = messagesStale && pulledMessages.current.get(id) !== messageCount;
       if (!needsDetail && !needsMessages) return;
       // Each half carries its OWN budget. Detail and thread already hydrate
@@ -1237,6 +1370,7 @@ export function useGateData(options: GateOptions): GateData {
       launch,
       ensureKind,
       selectSpace,
+      acceptSpace,
       spawn,
       postMessage: postAndRefresh,
       messagesOf: (id: string) => messagesByAnchor[id as EntityId],
@@ -1245,7 +1379,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

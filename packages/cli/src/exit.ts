@@ -43,6 +43,17 @@ export const EXIT_PAYLOAD_TOO_LARGE = 9;
 export const EXIT_PROTOCOL = 10;
 /** 11 — `--wait settled` only: stored, but a requested delivery is incomplete/non-delivered. */
 export const EXIT_UNSETTLED = 11;
+/** 13 — `event watch --until-match` only: `--timeout` expired before a matching event arrived. */
+export const EXIT_WAIT_TIMEOUT = 13;
+/**
+ * 14 — `event watch --until-match` only: a matching event WAS found, but via
+ * the `events.poll` fallback after the socket was lost. The match is real and
+ * printed; the distinct code exists so a script can notice its live
+ * subscription did not survive without parsing stderr. (12 is skipped: Node
+ * itself exits 12 on a bad debug argument, and a code the runtime can emit on
+ * its own is not a code this table can own.)
+ */
+export const EXIT_MATCHED_VIA_POLL = 14;
 /** 130 — interrupted (SIGINT). */
 export const EXIT_INTERRUPTED = 130;
 
@@ -63,6 +74,8 @@ export const EXIT_MEANING = {
   9: 'payload too large',
   10: 'other Server/protocol failure',
   11: 'stored, but one or more requested work-session deliveries are incomplete or non-delivered (--wait settled only)',
+  13: 'no matching event arrived before --timeout expired (event watch --until-match only)',
+  14: 'matched, but via the events.poll fallback after the event socket was lost (event watch --until-match only)',
   130: 'interrupted',
 } as const;
 

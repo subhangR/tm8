@@ -37,7 +37,7 @@ export interface RequestIdentity {
   accountId?: string;
   /** Verified `auth_sessions` row id when `kind === 'bearer'`. */
   sessionId?: string;
-  /** Work session pinned to an agent bearer; absent for human sessions. */
+  /** Exact work session bound to an agent bearer credential. */
   workSessionId?: string;
 }
 

@@ -1,5 +1,5 @@
 /**
- * The ten exact trusted-control templates, §§14.1-14.10.
+ * The trusted-control templates used by the harness.
  *
  * These are the harness's ONLY channel for saying something authoritative to a
  * running agent. Every block here is tm8-authored and size-checked; every byte
@@ -23,9 +23,7 @@ import { escapeAttr, untrustedData } from './escape.js';
 export const TRUSTED_CONTROL_TYPES = [
   'tm8.worker-bootstrap',
   'tm8.coordinator-bootstrap',
-  'tm8.task-assignment',
-  'tm8.incoming-message',
-  'tm8.reply-expectation',
+  'tm8.session-input',
   'tm8.entity-handoff',
   'tm8.command-help',
   'tm8.permission-refusal',
@@ -113,10 +111,12 @@ export function coordinatorBootstrapControl(f: BootstrapControlFacts): string {
 // -- §14.3 task assignment ----------------------------------------------------
 
 export interface TaskAssignmentFacts {
-  messageId: string;
+  messageId?: string | null;
   taskId: string;
   taskVersion: number | string;
-  senderActorId: string;
+  senderActorId?: string | null;
+  senderActorKind?: string | null;
+  senderAttribution?: 'verified' | 'recorded_only';
   sourceSessionId?: string | null;
   destinationSessionId: string;
   /** Title and body, already excerpted by the caller if it was long. */
@@ -127,11 +127,15 @@ export interface TaskAssignmentFacts {
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
   const control = [
-    `<trusted_control type="tm8.task-assignment" version="1" message_id="${attr(f.messageId)}" anchor_id="${attr(f.taskId)}">`,
-    `  <from actor_id="${attr(f.senderActorId)}" session_id="${attr(f.sourceSessionId)}" />`,
+    `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
+    `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
+    `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="none" />`,
+    '  <context />',
+    '  <thread parent_message_id="none" root_message_id="none" />',
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
-    `  <reply_expected required="true" anchor_id="${attr(f.taskId)}" />`,
+    `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(f.taskId)}" parent_message_id="none" />`,
+    '  <delivery transport="spawn_initial_turn" stored="true" attempt="1" status_source="work_session" />',
     '</trusted_control>',
   ].join('\n');
   const data = untrustedData({
@@ -145,46 +149,53 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
 
 // -- §14.4 incoming message ---------------------------------------------------
 
-export interface IncomingMessageAuthorFacts {
-  actorId: string;
-  kind: 'member' | 'team_member';
-  displayName: string;
-  avatar?: string | null;
-  role?: string | null;
-  ownerMemberId?: string | null;
-  isAgent: boolean;
-}
+export type SessionInputMessageKind = 'channel_mention' | 'direct_message' | 'anchored_message';
 
-export interface IncomingMessageAnchorFacts {
+export interface SessionInputContextAnchor {
   id: string;
   kind: string;
-  title?: string | null;
-  spaceId: string;
-  projectId?: string | null;
 }
 
 export interface IncomingMessageFacts {
+  kind: SessionInputMessageKind;
   messageId: string;
+  messageBatchId: string;
   deliveryAttemptId: string;
-  author: IncomingMessageAuthorFacts;
-  anchor: IncomingMessageAnchorFacts;
-  rootMessageId?: string | null;
-  parentMessageId?: string | null;
+  deliveryAttemptNo: number;
+  senderActorId: string;
+  senderActorKind: string;
+  senderAttribution: 'verified' | 'recorded_only';
   sourceSessionId?: string | null;
+  destinationSessionId: string;
+  sourceAnchorId: string;
+  sourceAnchorKind: string;
+  sourceMessageId: string;
+  contextAnchors?: readonly SessionInputContextAnchor[];
+  threadParentMessageId?: string | null;
+  threadRootMessageId?: string | null;
   body: string;
   truncated?: boolean;
   fetchRef?: string | null;
 }
 
 export function incomingMessageInjection(f: IncomingMessageFacts): string {
+  const context = f.contextAnchors?.length
+    ? [
+        '  <context>',
+        ...f.contextAnchors.map((anchor) =>
+          `    <anchor id="${attr(anchor.id)}" kind="${attr(anchor.kind)}" relation="also_anchored" />`),
+        '  </context>',
+      ]
+    : ['  <context />'];
   const control = [
-    `<trusted_control type="tm8.incoming-message" version="2" message_id="${attr(f.messageId)}" delivery_attempt_id="${attr(f.deliveryAttemptId)}">`,
-    `  <author actor_id="${attr(f.author.actorId)}" kind="${attr(f.author.kind)}" display_name="${attr(f.author.displayName)}" avatar="${attr(f.author.avatar)}" role="${attr(f.author.role)}" owner_member_id="${attr(f.author.ownerMemberId)}" is_agent="${String(f.author.isAgent)}" />`,
-    `  <anchor id="${attr(f.anchor.id)}" kind="${attr(f.anchor.kind)}" title="${attr(f.anchor.title)}" space_id="${attr(f.anchor.spaceId)}" project_id="${attr(f.anchor.projectId)}" />`,
-    `  <thread root_message_id="${attr(f.rootMessageId)}" parent_message_id="${attr(f.parentMessageId)}" />`,
-    `  <source work_session_id="${attr(f.sourceSessionId)}" />`,
-    `  <reply command_ref="tm8://help/message/send" anchor_id="${attr(f.anchor.id)}" parent_message_id="${attr(f.messageId)}" />`,
-    '  <delivery>Durable graph write already succeeded. This injection is a live notification and must not be interpreted as a second message.</delivery>',
+    `<trusted_control type="tm8.session-input" version="1" kind="${f.kind}" message_id="${attr(f.messageId)}" message_batch_id="${attr(f.messageBatchId)}" delivery_attempt_id="${attr(f.deliveryAttemptId)}">`,
+    `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution}" />`,
+    `  <to session_id="${attr(f.destinationSessionId)}" />`,
+    `  <source anchor_id="${attr(f.sourceAnchorId)}" anchor_kind="${attr(f.sourceAnchorKind)}" message_id="${attr(f.sourceMessageId)}" />`,
+    ...context,
+    `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,
+    `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.sourceAnchorId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
+    `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
     '</trusted_control>',
   ].join('\n');
   const data = untrustedData({
@@ -194,24 +205,6 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     ...(f.fetchRef === undefined ? {} : { fetchRef: f.fetchRef }),
   });
   return assertWithinBudget('incomingMessageInjection', `${control}\n${data}`);
-}
-
-// -- §14.5 reply expectation --------------------------------------------------
-
-export interface ReplyExpectationFacts {
-  anchorId: string;
-  messageId: string;
-}
-
-export function replyExpectationControl(f: ReplyExpectationFacts): string {
-  return [
-    '<trusted_control type="tm8.reply-expectation" version="1">',
-    `  <anchor id="${attr(f.anchorId)}" />`,
-    `  <parent_message id="${attr(f.messageId)}" />`,
-    '  <required_fields>outcome, verification, blockers, referenced entities or artifacts</required_fields>',
-    '  <routing>Send one durable reply on this anchor. The server resolves the live source session or teammate-inbox fallback.</routing>',
-    '</trusted_control>',
-  ].join('\n');
 }
 
 // -- §14.6 entity handoff -----------------------------------------------------
