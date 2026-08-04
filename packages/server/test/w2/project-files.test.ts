@@ -308,10 +308,20 @@ describe('W2 connected project folder facade', () => {
       expect(init[4]).toBe('text/markdown');
       expect(init[5]).toBe(bytes.length);
       expect(init[6]).toBe(digest);
-      expect(init[12]).toBe('attach-1');
+      // NOT the caller's id. DEV-9 binds one clientMutationId to one operation,
+      // and this attach spans two (`files.uploadInit`, `files.uploadComplete`),
+      // so each stage carries its own derived id — the same derivation the CLI's
+      // three-stage `file upload` composition uses. Passing the caller's id to
+      // both is what a real database refuses with `invariant_violation`.
+      expect(init[12]).not.toBe('attach-1');
+      expect(init[12]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(db.argsFor('w2_complete_file_upload')[3]).not.toBe(init[12]);
 
       // The frozen target set travels on complete, exactly as a browser upload's does.
       expect(db.argsFor('w2_complete_file_upload')[4]).toEqual([IDS.target]);
+      // Deterministic: the same caller id derives the same stage ids, so a
+      // retry replays the ledger instead of opening a second slot.
+      expect(init[12]).toBe(db.calls.find((c) => c.fn === 'w2_init_file_upload')!.args[12]);
       expect(await store.read(db.storagePath, IDS.space)).toEqual(bytes);
     } finally {
       delete process.env.TM8_PROJECT_ROOTS;
