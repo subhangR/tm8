@@ -634,7 +634,11 @@ describe.sequential('W2.I02 real production public surface', () => {
 
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+    // 30_000 was not enough. Teardown drops a scratch database and removes a
+    // data dir; that was measured at 14.4s in isolation and scales with
+    // concurrent DB churn, so under a full-suite run this hook — not the test —
+    // was the thing that timed out. Matched to the beforeAll that built it.
+  }, 120_000);
 
   it('reports the exact 99-handler production composition and preserves 501/404 honesty', async () => {
     const healthResponse = await fetch(`${harness.baseUrl}/health`);

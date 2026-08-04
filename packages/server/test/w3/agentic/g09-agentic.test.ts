@@ -9,11 +9,19 @@ type Action = { id: string; operation: string; exposure: string };
 describe('W3.G09 agentic saved-view and action discovery', () => {
   let harness: W3Harness | undefined;
 
+  // Teardown drops the scratch database and removes the data dir. Under a
+  // loaded box that has run past Vitest's default 10s `hookTimeout`, so it is
+  // pinned explicitly rather than left to the default.
   afterEach(async () => {
     await harness?.close();
     harness = undefined;
-  });
+  }, 60_000);
 
+  // See the note on g03-agentic-retest: `startW3PublicServer` runs inside the
+  // test body and costs ~4.5s (scratch database + all migrations + a real
+  // server bootstrap) against Vitest's default 5000ms `testTimeout`, which is
+  // what this package gets since it ships no vitest config. Raising the budget
+  // changes no assertion.
   it('preserves the task while saved views replay, update, delete, and action discovery remain public', async () => {
     harness = await startW3PublicServer('agentic_g09');
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -130,5 +138,5 @@ describe('W3.G09 agentic saved-view and action discovery', () => {
       { clientMutationId: updateMutationId, operation: 'savedViews.update' },
       { clientMutationId: deleteMutationId, operation: 'savedViews.delete' },
     ]));
-  });
+  }, 120_000);
 });

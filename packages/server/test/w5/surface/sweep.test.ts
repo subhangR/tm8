@@ -408,7 +408,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 72 -> 73 on 2026-08-05: 077 (anchor-watcher notification fan-out). This
     // lane authored it as 076 in parallel with the reply-delivery lane; both
     // claimed the same free number, so it renumbered to 077 on landing.
-    expect(server.appliedMigrations.length).toBe(73);
+    // 73 -> 75 on 2026-08-07, rebasing this lane onto main. Both of this lane's
+    // migrations renumbered on landing, for the same reason 077 above did: it
+    // authored 076 (`derived_from` props_schema, the one edge type 064 left
+    // unvalidated on insert) and 077 (the core-default draft repair) against a
+    // main that had neither, and main has since taken both numbers. They land
+    // as 078 and 079. The repair moving LAST is not a compromise — it re-asserts
+    // `internal.w2g12_core_draft()` after every other definition in the chain.
+    expect(server.appliedMigrations.length).toBe(75);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
