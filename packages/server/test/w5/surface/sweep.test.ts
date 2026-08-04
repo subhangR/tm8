@@ -404,7 +404,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 66 -> 71 on 2026-08-04: the identity composite (072 agent session
     // credentials, 073 shared teammate authority) merged with main's 071,
     // 072 session io routes and 073 session launch prompts.
-    expect(server.appliedMigrations.length).toBe(71);
+    // 71 -> 73 on 2026-08-04. Two moves, and the first was not mine: the pin
+    // still read 71 while the chain already applied 72, the same after-the-fact
+    // drift the comments above keep recording. 73 adds 076, backfilling the
+    // props_schema that 064 never gave `derived_from` — the one edge type whose
+    // props went unvalidated on insert.
+    expect(server.appliedMigrations.length).toBe(73);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
