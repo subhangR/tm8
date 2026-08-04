@@ -52,6 +52,7 @@ import type {
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
+  ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing,
   ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
@@ -1568,6 +1569,37 @@ export const ProjectDirectoryListingSchema: z.ZodType<ProjectDirectoryListing> =
   separator: z.enum(['/', '\\']),
   directories: z.array(ProjectDirectoryEntrySchema),
   truncated: z.boolean(),
+}).strict();
+
+export const ProjectFileEntrySchema: z.ZodType<ProjectFileEntry> = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  modifiedAt: IsoTimestamp,
+  mime: z.string().min(1),
+  attachable: z.boolean(),
+}).strict();
+
+export const ProjectFileListingSchema: z.ZodType<ProjectFileListing> = z.object({
+  projectId: z.string().min(1),
+  workingDir: z.string().min(1),
+  path: z.string().min(1),
+  parentPath: z.string().min(1).nullable(),
+  separator: z.enum(['/', '\\']),
+  directories: z.array(ProjectDirectoryEntrySchema),
+  files: z.array(ProjectFileEntrySchema),
+  truncated: z.boolean(),
+  maxSizeBytes: z.number().int().positive(),
+}).strict();
+
+export const ProjectFileAttachInputSchema: z.ZodType<ProjectFileAttachInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpaceIdSchema,
+  path: z.string().min(1),
+  name: z.string().min(1).optional(),
+  mime: z.string().min(1).optional(),
+  targets: uniqueArray(EntityIdSchema, 0, 16).optional(),
 }).strict();
 
 export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({

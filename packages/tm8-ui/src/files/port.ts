@@ -28,7 +28,14 @@
  * called — the brief's four-links lesson: declaration → data → implementation
  * → CALL can each be green while the feature is dead.
  */
-import type { EntityId, MessageView, SpaceId } from '@tm8/contract';
+import type {
+  EntityId,
+  MessageView,
+  ProjectFileListing,
+  ProjectId,
+  ProjectResource,
+  SpaceId,
+} from '@tm8/contract';
 import type { ConnectionState, LivenessSnapshot, Seam, Unsubscribe } from '../data/seam';
 import { allKinds } from '../domain';
 import { attachedFiles, enrich, rowFromAttachment, rowFromEntity, type FileRow } from './model';
@@ -153,9 +160,38 @@ export interface AttachmentsPort {
    * refetches the anchor from there.
    */
   detach(edgeId: string): Promise<void>;
+  /**
+   * Seam Amendment 6. Absent when the seam cannot read a filesystem — a fixture
+   * seam, or a node with no file storage configured — and the strip then draws
+   * no folder affordance at all rather than one that answers 501.
+   */
+  projectFolder?: ProjectFolderPort;
+}
+
+/**
+ * Browsing an already-connected project folder and attaching out of it.
+ *
+ * `projects` is here and `filesOn` is not, for the same reason as in
+ * `FilesPort`: the panel already holds the anchor's attachments, but nothing in
+ * the panel knows which projects this Space has connected, and the browser
+ * cannot open without that list.
+ */
+export interface ProjectFolderPort {
+  projects(): Promise<ProjectResource[]>;
+  list(projectId: ProjectId, path?: string): Promise<ProjectFileListing>;
+  /** Resolves when the `file` entity exists and its `attached_to` edge is written. */
+  attach(input: ProjectFolderAttachInput): Promise<void>;
+}
+
+export interface ProjectFolderAttachInput {
+  projectId: ProjectId;
+  /** Absolute node path, as returned by `list` — never assembled in the browser. */
+  path: string;
+  anchorId: EntityId;
 }
 
 export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): AttachmentsPort {
+  const projectFiles = seam.projectFiles;
   return {
     downloadHref: (fileEntityId) => seam.files.downloadHref(fileEntityId as EntityId),
     startUpload: (file, anchorId) =>
@@ -168,6 +204,22 @@ export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): 
     detach: async (edgeId) => {
       await seam.commands.deleteEdge(edgeId, { clientMutationId: `detach:${edgeId}:${Date.now()}` });
     },
+    ...(projectFiles
+      ? {
+          projectFolder: {
+            projects: () => seam.projects(spaceId as SpaceId),
+            list: (projectId, path) => projectFiles.list(projectId, path),
+            attach: async ({ projectId, path, anchorId }) => {
+              await projectFiles.attach(projectId, {
+                clientMutationId: newMutationId(),
+                spaceId: spaceId as SpaceId,
+                path,
+                targets: [anchorId],
+              });
+            },
+          },
+        }
+      : {}),
   };
 }
 
@@ -187,6 +239,20 @@ export function attachmentsFor(
   spaceId: SpaceId | string,
 ): AttachmentsPort | undefined {
   return seam ? attachmentsPortFromSeam(seam, spaceId) : undefined;
+}
+
+/**
+ * One id per attempt, deliberately NOT derived from the path.
+ *
+ * A stable per-path id would make a second attach of the same file replay the
+ * first command rather than record a second attachment, and the server's ledger
+ * refuses a replayed id whose request hash differs — so re-attaching a file
+ * that changed on disk would fail instead of attaching the new bytes. A retry
+ * of a FAILED attach is a new attempt here, and the server's frozen target set
+ * is what keeps a duplicated edge from forming.
+ */
+function newMutationId(): string {
+  return globalThis.crypto.randomUUID();
 }
 
 // ---------------------------------------------------------------------------

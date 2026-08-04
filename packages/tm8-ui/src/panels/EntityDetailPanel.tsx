@@ -711,6 +711,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 files={attachedFiles(detail)}
                 downloadHref={props.attachments?.downloadHref}
                 startUpload={props.attachments?.startUpload}
+                projectFolder={props.attachments?.projectFolder}
                 onUploaded={props.onAttachmentUploaded}
                 onDetach={props.attachments?.detach}
                 /* A detach and an upload change the SAME thing — the anchor's
