@@ -44,6 +44,7 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { attachmentsFor } from '../files/port';
 import { representedThreadMessageCount } from './message-thread';
 
 /** The session collection is selected by capability, never by panel position
@@ -205,6 +206,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const leftCompact = layout.left <= 220;
   const rightCompact = layout.right <= 240;
 
+  /* ATTACHMENTS — one port for every panel this view mounts, memoized on the
+     seam and space so `renderPanel` does not hand the strip a fresh
+     `startUpload` identity on each layout measurement. */
+  const attachments = useMemo(
+    () => attachmentsFor(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
+
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
@@ -242,6 +251,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           }
           liveness={data.livenessOf(id)}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+          attachments={attachments}
+          onAttachmentUploaded={() => props.data.pull?.(id)}
           livenessOf={data.livenessOf}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}
@@ -298,7 +309,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded

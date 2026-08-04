@@ -439,6 +439,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 downloadHref={props.attachments?.downloadHref}
                 startUpload={props.attachments?.startUpload}
                 onUploaded={props.onAttachmentUploaded}
+                onDetach={props.attachments?.detach}
+                /* A detach and an upload change the SAME thing — the anchor's
+                   `attached_to` edges — so they share one refetch, and a host
+                   cannot wire adding without also wiring removing. */
+                onDetached={props.onAttachmentUploaded}
               />
             ) : null}
           </AuthoringHost>
@@ -474,6 +479,7 @@ function PanelBody(
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
   const config = getKind(detail.kind);
+  const startUpload = props.attachments?.startUpload;
 
   if (tab === 'discussion') {
     return (
@@ -591,6 +597,18 @@ function PanelBody(
         commands={props.commands ?? null}
         onSaved={props.onSaved}
         onReloadDetail={props.onReloadDetail}
+        /* THE SAME RESOLVER THE STRIP USES, and deliberately the same one: a
+           file the strip can download is a file the document can show inline.
+           Absent host port ⇒ absent here ⇒ `Markdown` states each internal
+           image rather than guessing a transport path. */
+        fileHref={props.attachments?.downloadHref}
+        /* The anchor is bound HERE so `doc-edit/` never learns which entity it
+           is uploading against — and it is the document's own id, so an
+           inserted image is also a listed attachment on the same record. */
+        attach={
+          startUpload ? (file: File) => startUpload(file, detail.id) : undefined
+        }
+        onAttached={props.onAttachmentUploaded}
       />
     );
   }
@@ -661,6 +679,7 @@ function PanelBody(
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
       commands={props.commands}
+      downloadHref={props.attachments?.downloadHref}
     />
   );
 }

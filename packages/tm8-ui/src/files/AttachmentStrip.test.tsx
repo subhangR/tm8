@@ -28,6 +28,10 @@ function row(over: Partial<FileRow> & Pick<FileRow, 'fileEntityId' | 'name' | 'm
     attributedTo: { displayName: 'ada', isAgent: false },
     attributedAt: '2026-08-01T00:00:00.000Z',
     sourceMissing: false,
+    // Null by default on purpose: most rows in this suite are testing the READ
+    // half, and a row that was not reached through an edge must not sprout a
+    // Remove button. The detach suite opts in explicitly.
+    edgeId: null,
     ...over,
   };
 }
@@ -161,5 +165,118 @@ describe('uploading through the REAL seam lifecycle', () => {
     const port = attachmentsPortFromSeam(seam, spaces[0]!.id);
     // `/download`, NOT `/content` — the latter 404s (catalog.ts:118).
     expect(port.downloadHref('file-42')).toBe('/v2/files/file-42/download');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DETACH — the door that only opened one way until now
+// ---------------------------------------------------------------------------
+
+describe('removing an attachment cuts the LINK, not the file', () => {
+  it('offers Remove only for a row that was reached through an edge', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        onDetach={async () => {}}
+        files={[
+          row({ fileEntityId: 'f-linked', name: 'linked.txt', mime: 'text/plain', edgeId: 'edge-1' }),
+          // Reached from a message or the gallery: there IS no link to cut, so
+          // offering to cut one would be a button with nothing behind it.
+          row({ fileEntityId: 'f-loose', name: 'loose.txt', mime: 'text/plain' }),
+        ]}
+      />,
+    );
+    expect(screen.getAllByTestId('attachment-detach')).toHaveLength(1);
+  });
+
+  it('draws NO Remove at all when the host wired no detach', () => {
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        files={[row({ fileEntityId: 'f1', name: 'a.txt', mime: 'text/plain', edgeId: 'edge-1' })]}
+      />,
+    );
+    // Same law as the dropzone: a Remove that cannot remove is worse than no
+    // Remove, because the user believes the file went away.
+    expect(screen.queryByTestId('attachment-detach')).toBeNull();
+  });
+
+  it('passes the EDGE id — not the file id — and tells the host to refetch', async () => {
+    const onDetach = vi.fn().mockResolvedValue(undefined);
+    const onDetached = vi.fn();
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        onDetach={onDetach}
+        onDetached={onDetached}
+        files={[row({ fileEntityId: 'f-9', name: 'a.txt', mime: 'text/plain', edgeId: 'edge-9' })]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attachment-detach'));
+    // The file id would delete SOME OTHER edge, or nothing, and read as a dead
+    // button either way.
+    expect(onDetach).toHaveBeenCalledWith('edge-9');
+    await waitFor(() => expect(onDetached).toHaveBeenCalledTimes(1));
+  });
+
+  it('states a refusal on the row instead of leaving a dead button', async () => {
+    const onDetach = vi.fn().mockRejectedValue(Object.assign(new Error('no'), { code: 'forbidden' }));
+    render(
+      <AttachmentStrip
+        anchorId={'e1' as never}
+        downloadHref={href}
+        onDetach={onDetach}
+        files={[row({ fileEntityId: 'f-9', name: 'a.txt', mime: 'text/plain', edgeId: 'edge-9' })]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('attachment-detach'));
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('do not have permission');
+    // The row stays: nothing was removed, so nothing may disappear.
+    expect(screen.getByText('a.txt')).toBeTruthy();
+  });
+
+  it('deletes the edge from BOTH endpoints through the REAL seam', async () => {
+    const seam = createFixtureSeam();
+    const spaces = await seam.spaces();
+    const spaceId = spaces[0]!.id;
+    const port = attachmentsPortFromSeam(seam, spaceId);
+
+    // Any real fixture edge will do: what is under test is that a detach
+    // removes the link from the peer's panel too. A one-sided delete leaves
+    // the file still listed on the other entity — a split brain a real DELETE
+    // cannot produce, so the fixture must not produce one either.
+    const items = (await seam.query({ spaceId })).page.items;
+    let subject: { id: string; edgeId: string; peerId: string } | null = null;
+    for (const item of items) {
+      const detail = await seam.entity(item.id);
+      const group = [...detail.connections.outgoing, ...detail.connections.incoming]
+        .find((g) => g.edges.length > 0);
+      const edge = group?.edges[0];
+      if (!edge) continue;
+      const peerId = edge.source.id === item.id ? edge.target.id : edge.source.id;
+      subject = { id: item.id, edgeId: edge.id, peerId };
+      break;
+    }
+    if (subject === null) throw new Error('fixture has no edges — this test would prove nothing');
+
+    await port.detach(subject.edgeId);
+
+    for (const id of [subject.id, subject.peerId]) {
+      const after = await seam.entity(id as never);
+      const ids = [...after.connections.outgoing, ...after.connections.incoming]
+        .flatMap((g) => g.edges.map((e) => e.id));
+      expect(ids).not.toContain(subject.edgeId);
+    }
+  });
+
+  it('refuses an edge that is not there rather than reporting a phantom success', async () => {
+    const seam = createFixtureSeam();
+    const spaces = await seam.spaces();
+    const port = attachmentsPortFromSeam(seam, spaces[0]!.id);
+    await expect(port.detach('edge-that-never-was')).rejects.toBeTruthy();
   });
 });

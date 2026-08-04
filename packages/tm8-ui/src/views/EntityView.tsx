@@ -40,7 +40,7 @@ import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
-import { attachmentsPortFromSeam } from '../files/port';
+import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -146,7 +146,7 @@ export function EntityView(props: EntityViewProps) {
    * keystroke elsewhere in the view.
    */
   const attachments = useMemo(
-    () => attachmentsPortFromSeam(data.seam, data.spaceId),
+    () => attachmentsFor(data.seam, data.spaceId),
     [data.seam, data.spaceId],
   );
   const config = getKind(kind);

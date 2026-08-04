@@ -50,6 +50,18 @@ export interface AttachmentStripProps {
   startUpload?: (file: File, anchorId: EntityId) => FileUploadTask;
   /** An upload finished. The host refetches the anchor so the new edge shows. */
   onUploaded?: () => void;
+  /**
+   * Cuts one `attached_to` edge. Absent ⇒ no remove control is drawn, on the
+   * same reasoning as `startUpload`: a Remove that cannot remove is worse than
+   * no Remove, because the user believes the file went away.
+   *
+   * A row whose `edgeId` is null gets no control either, whatever this prop
+   * says — that row was not reached through a link, so there is nothing here
+   * to cut (see `FileRow.edgeId`).
+   */
+  onDetach?: (edgeId: string) => Promise<void>;
+  /** A detach landed. Same contract as `onUploaded`: the host refetches. */
+  onDetached?: () => void;
   label?: string;
 }
 
@@ -65,6 +77,27 @@ interface PendingUpload {
  * the mime is an image at all, and it is not the one image type the server
  * refuses to serve inline. See the header.
  */
+/**
+ * A CLOSED vocabulary for a failed detach, mapped from the contract's refusal
+ * codes — the same law `safeUploadReason` follows next door, for the same
+ * reason: server prose can carry a transport path or an id the viewer is not
+ * entitled to read, and "error" tells the user nothing they can act on.
+ */
+const SAFE_DETACH_ERRORS: Readonly<Record<string, string>> = {
+  forbidden: 'You do not have permission to remove this attachment.',
+  unauthenticated: 'Sign in again before removing attachments.',
+  not_found: 'That attachment is already gone. Reload to see the current list.',
+  conflict: 'This attachment changed while you were looking at it. Reload and try again.',
+};
+
+function reasonOf(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null && typeof (error as { code?: unknown }).code === 'string'
+      ? (error as { code: string }).code
+      : null;
+  return (code ? SAFE_DETACH_ERRORS[code] : undefined) ?? 'Could not remove this attachment. Try again.';
+}
+
 export function canThumbnail(mime: string): boolean {
   if (previewKindOf(mime) !== 'image') return false;
   return !/^image\/svg(\+xml)?$/i.test(mime.trim().toLowerCase());
@@ -76,11 +109,41 @@ export function AttachmentStrip({
   downloadHref,
   startUpload,
   onUploaded,
+  onDetach,
+  onDetached,
   label = 'ATTACHMENTS',
 }: AttachmentStripProps) {
   const [pending, setPending] = useState<readonly PendingUpload[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [detaching, setDetaching] = useState<readonly string[]>([]);
+  const [detachError, setDetachError] = useState<{ edgeId: string; why: string } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * NO CONFIRMATION DIALOG, deliberately: this removes a LINK, and the file
+   * itself survives in the space's files with its bytes intact, so the act is
+   * reversible by re-attaching rather than destructive. What is NOT optional is
+   * saying so when it fails — a row that silently stays put after Remove reads
+   * as a broken button.
+   */
+  const detach = useCallback(
+    (edgeId: string) => {
+      if (!onDetach) return;
+      setDetachError(null);
+      setDetaching((current) => [...current, edgeId]);
+      void onDetach(edgeId).then(
+        () => {
+          setDetaching((current) => current.filter((id) => id !== edgeId));
+          onDetached?.();
+        },
+        (error: unknown) => {
+          setDetaching((current) => current.filter((id) => id !== edgeId));
+          setDetachError({ edgeId, why: reasonOf(error) });
+        },
+      );
+    },
+    [onDetach, onDetached],
+  );
 
   const begin = useCallback(
     (picked: readonly File[]) => {
@@ -145,7 +208,16 @@ export function AttachmentStrip({
       {files.length > 0 ? (
         <div className="fn-strip__items">
           {files.map((file) => (
-            <AttachmentItem key={file.fileEntityId} file={file} downloadHref={downloadHref} />
+            <AttachmentItem
+              key={file.fileEntityId}
+              file={file}
+              downloadHref={downloadHref}
+              /* Bound HERE, so the row never has to re-derive whether it is
+                 detachable — no edge, no callback, no control. */
+              onDetach={onDetach && file.edgeId ? () => detach(file.edgeId as string) : undefined}
+              detaching={file.edgeId !== null && detaching.includes(file.edgeId)}
+              detachWhy={detachError !== null && detachError.edgeId === file.edgeId ? detachError.why : null}
+            />
           ))}
         </div>
       ) : null}
@@ -192,7 +264,19 @@ export function AttachmentStrip({
   );
 }
 
-function AttachmentItem({ file, downloadHref }: { file: FileRow; downloadHref?: DownloadHref }) {
+function AttachmentItem({
+  file,
+  downloadHref,
+  onDetach,
+  detaching,
+  detachWhy,
+}: {
+  file: FileRow;
+  downloadHref?: DownloadHref;
+  onDetach?: () => void;
+  detaching: boolean;
+  detachWhy: string | null;
+}) {
   const href = downloadHref ? downloadHref(file.fileEntityId) : null;
   const size = formatSizeChip(file.sizeBytes);
   const thumb = href !== null && canThumbnail(file.mime);
@@ -240,6 +324,25 @@ function AttachmentItem({ file, downloadHref }: { file: FileRow; downloadHref?: 
           </span>
         </>
       )}
+
+      {onDetach ? (
+        <button
+          type="button"
+          className="fn-strip__detach"
+          data-testid="attachment-detach"
+          disabled={detaching}
+          title={`Remove ${file.name} from this entity — the file itself is kept`}
+          onClick={onDetach}
+        >
+          {detaching ? '…' : '×'}
+        </button>
+      ) : null}
+
+      {detachWhy ? (
+        <span className="fn-strip__detach-why" role="alert">
+          {detachWhy}
+        </span>
+      ) : null}
     </div>
   );
 }

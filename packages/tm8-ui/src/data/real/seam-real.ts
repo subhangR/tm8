@@ -292,6 +292,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       moveEntity: (id, input) => ops.moveEntity(id, input),
       deleteEntity: (id, ctx) => ops.deleteEntity(id, ctx),
       restoreEntity: (id, ctx) => ops.restoreEntity(id, ctx),
+      deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
       complete: (id, input) => ops.complete(id, input),
       work: (id, input) => ops.work(id, input),
       postMessage: (input) => ops.postMessage(input),

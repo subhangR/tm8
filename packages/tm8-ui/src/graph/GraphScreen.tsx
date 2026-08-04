@@ -25,6 +25,7 @@ import type { ActionContext } from '../domain/types';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { attachmentsFor } from '../files/port';
 
 export interface GraphScreenData {
   spaceId: string;
@@ -62,6 +63,14 @@ export function GraphScreen(props: GraphScreenProps) {
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
 
+  /* ATTACHMENTS. `data.seam` is optional on this port, so the helper answers
+     `undefined` for a host without one and the strip stays read-only rather
+     than drawing a dropzone that could not upload. */
+  const attachments = useMemo(
+    () => attachmentsFor(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
+
   // Esc walks DOWN one level per press (EntityView's ladder, same reasons):
   // only when the event reaches the document unclaimed — a focused canvas
   // pans with arrows but never claims Esc.
@@ -97,6 +106,8 @@ export function GraphScreen(props: GraphScreenProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      attachments={attachments}
+      onAttachmentUploaded={() => data.pull?.(selectedId)}
       messages={messages}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,

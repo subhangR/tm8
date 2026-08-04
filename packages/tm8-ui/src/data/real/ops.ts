@@ -401,6 +401,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<CommandResult>('entities.restore', { params: { id }, body: ctx ?? {} });
     },
 
+    /** Detach. Same required-context reasoning as `deleteEntity` above. */
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.delete', { params: { edgeId }, body: ctx ?? {} });
+    },
+
     complete(id: EntityId, input: CompleteTaskInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.commands.complete', { params: { id }, body: input });
     },

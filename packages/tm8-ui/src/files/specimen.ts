@@ -48,6 +48,7 @@ export const SPECIMEN_CHIP_FILES: readonly FileRow[] = [
     attributedTo: ADA,
     attributedAt: '2m',
     sourceMissing: false,
+    edgeId: null,
   },
   {
     fileEntityId: 'spec-file-png',
@@ -57,6 +58,7 @@ export const SPECIMEN_CHIP_FILES: readonly FileRow[] = [
     attributedTo: ADA,
     attributedAt: '2m',
     sourceMissing: false,
+    edgeId: null,
   },
 ];
 
@@ -85,6 +87,7 @@ export const SPECIMEN_ATTACHED: readonly FileRow[] = [
     attributedTo: FORGE,
     attributedAt: '2m',
     sourceMissing: true,
+    edgeId: null,
   },
   {
     fileEntityId: 'spec-file-mov',
@@ -94,6 +97,7 @@ export const SPECIMEN_ATTACHED: readonly FileRow[] = [
     attributedTo: FORGE,
     attributedAt: '14m',
     sourceMissing: false,
+    edgeId: null,
   },
 ];
 

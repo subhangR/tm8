@@ -1297,6 +1297,38 @@ export function createFixtureSeam(): FixtureSeam {
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, ctx);
         return commandResult(s);
       },
+      /**
+       * Detach. Fixture edges are stored per-endpoint inside `extras`, so the
+       * SAME edge id appears twice — once outgoing on the source, once
+       * incoming on the target. Removing one copy would leave the peer's panel
+       * still listing the attachment, which is precisely the split-brain a
+       * real DELETE cannot produce; both copies go, and a group emptied by the
+       * removal goes with them so `attached_to · 0` is never rendered.
+       */
+      async deleteEdge(edgeId, ctx) {
+        let removed: EdgeView | null = null;
+        const touched: EntitySummary[] = [];
+        for (const [id, e] of extras) {
+          let hit = false;
+          for (const side of ['outgoing', 'incoming'] as const) {
+            for (const group of e.connections[side]) {
+              const found = group.edges.find((edge) => edge.id === edgeId);
+              if (!found) continue;
+              removed ??= found;
+              group.edges = group.edges.filter((edge) => edge.id !== edgeId);
+              hit = true;
+            }
+            e.connections[side] = e.connections[side].filter((group) => group.edges.length > 0);
+          }
+          if (hit) touched.push(requireSummary(id));
+        }
+        if (removed === null) throw new CollabError('not_found', `edge ${edgeId} not found`);
+        for (const s of touched) {
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, ctx);
+        }
+        return { patches: touched.map((s) => clone(s)) };
+      },
       async complete(id, input: CompleteTaskInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
