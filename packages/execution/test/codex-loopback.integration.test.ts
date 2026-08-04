@@ -48,6 +48,16 @@ function close(server: Server): Promise<void> {
   });
 }
 
+/** The first shell that actually exists here; the command itself is POSIX sh. */
+function loginShell(): string {
+  const candidates = [process.env.SHELL, '/bin/bash', '/bin/sh'].filter(
+    (candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0,
+  );
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) throw new Error(`no usable shell found; tried ${candidates.join(', ')}`);
+  return found;
+}
+
 function execText(binary: string, args: readonly string[], env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(binary, [...args], { env, timeout: 10_000 }, (error, stdout, stderr) => {
@@ -243,7 +253,11 @@ process.stdout.write(JSON.stringify({
     ];
 
     for (const invocation of invocations) {
-      const output = await execText('/bin/zsh', ['-c', invocation.command], env);
+      // The command is POSIX sh, and the shell that runs it is not part of what
+      // this test measures. '/bin/zsh' was hardcoded here — a macOS default that
+      // does not exist on a Linux node, where this failed with a bare
+      // `spawn /bin/zsh ENOENT` long before reaching a single assertion.
+      const output = await execText(loginShell(), ['-c', invocation.command], env);
       const result = JSON.parse(output) as {
         phase: string;
         loopback: string;
