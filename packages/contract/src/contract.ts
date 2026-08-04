@@ -1425,6 +1425,59 @@ export interface ProjectDirectoryListing {
   truncated: boolean;
 }
 
+/** One readable regular file inside a connected project's working directory. */
+export interface ProjectFileEntry {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  /** Extension-derived; `application/octet-stream` when nothing is recognised. */
+  mime: string;
+  /** False when the file exceeds the deployment's per-blob ceiling. */
+  attachable: boolean;
+}
+
+/**
+ * GET /v2/projects/:projectId/files — a bounded view of ONE directory inside a
+ * connected project's working directory. Unlike `projects.directories.list`
+ * this is confined to a single project rather than to `TM8_PROJECT_ROOTS` at
+ * large, and it does list files, because attaching one is the point.
+ */
+export interface ProjectFileListing {
+  projectId: string;
+  workingDir: string;
+  path: string;
+  /** Null at the working directory itself — the browser cannot walk above it. */
+  parentPath: string | null;
+  separator: '/' | '\\';
+  directories: ProjectDirectoryEntry[];
+  files: ProjectFileEntry[];
+  truncated: boolean;
+  /** The effective per-blob ceiling, so a picker can explain a refusal. */
+  maxSizeBytes: number;
+}
+
+/**
+ * POST /v2/projects/:projectId/files/attach — read one node-local file out of
+ * a connected project folder and record it as a `file` entity, optionally
+ * attached to targets. The bytes never travel through the browser: a browser
+ * file input cannot name an absolute path, so a connected folder can only be
+ * read by the node that holds it. The result is the same `CommandResult` as
+ * `files.uploadComplete`, because this drives that same upload ledger.
+ */
+export interface ProjectFileAttachInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  /** Absolute path of a regular file inside the project's working directory. */
+  path: string;
+  /** Overrides the on-disk basename as the file entity's name. */
+  name?: string;
+  /** Overrides the extension-derived MIME type. */
+  mime?: string;
+  /** Finalized `file -> attached_to -> target` edges, as in files.uploadComplete. */
+  targets?: EntityId[];
+}
+
 /** The wrapper returned by spaces.create after its default member/channel saga. */
 export interface CreateSpaceResult {
   space: SpaceSummary;

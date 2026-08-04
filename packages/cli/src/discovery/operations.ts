@@ -848,6 +848,30 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
   },
+  'projects.files.list': {
+    cmd: null,
+    sum: 'Browse files and folders inside one connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'folder', 'browse', 'local', 'attach'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'confined to the project working directory AND to TM8_PROJECT_ROOTS; symlink rows are omitted rather than followed',
+      'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
+  'projects.files.attach': {
+    cmd: null,
+    sum: 'Attach one file read from a connected project folder, without a browser byte transfer',
+    authz: 'project',
+    input: 'bound',
+    tags: ['file', 'attach', 'local', 'folder'],
+    reason: 'use_file_upload',
+    notes: [
+      'the browser cannot name an absolute node path, so a connected folder is readable only by the node holding it',
+      '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
+    ],
+  },
 
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
