@@ -32,7 +32,7 @@ describe.sequential('W3 production-Server public harness', () => {
       server: 'tm8-server',
       // The pin was ALREADY red at 124 when this lane arrived (the four auth.*
       // rows landed without moving it); 125 adds `execution.launch`.
-      operations: 125,
+      operations: 128,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -45,7 +45,7 @@ describe.sequential('W3 production-Server public harness', () => {
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
     // Already red at 122 when this lane arrived (auth.*); 123 adds execution.launch.
-    expect(body.implemented).toBe(123);
+    expect(body.implemented).toBe(126);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

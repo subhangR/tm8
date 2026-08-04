@@ -30,7 +30,7 @@ import {
 // already gone stale on the tree (several amendments landed without moving
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-02 alongside execution.launch — the catalog is now 126 rows.
-const CATALOG_DIGEST = 'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+const CATALOG_DIGEST = 'sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -99,7 +99,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // execution.journal, identity.profile.update.
     // 121 -> 125 (2026-08-02): auth.signup/login/logout/session.get.
     // 125 -> 126 (2026-08-02): execution.launch.
-    expect(root.catalog.total).toBe(126);
+    expect(root.catalog.total).toBe(129);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
