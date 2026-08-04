@@ -25,6 +25,14 @@ export interface MaestroTaskTileProps {
     streaming: boolean;
   };
   assignees: readonly ActorSummary[];
+  /**
+   * Provenance, shown only when nobody is assigned. Almost every task in a
+   * real space is unassigned, so an assignee-only avatar slot renders a list
+   * with no faces at all — while `createdBy` is never null. The fallback is
+   * labelled "created by" rather than reusing the assignee wording, because
+   * showing a creator as an assignee would be a lie.
+   */
+  creator: ActorSummary | null;
   actions: ReactNode;
   detailsExpanded: boolean;
   flowOpen: boolean;
@@ -53,6 +61,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     onSelect,
     status,
     assignees,
+    creator,
     actions,
     detailsExpanded,
     flowOpen,
@@ -131,8 +140,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
             <span
               className="pn-av-group"
               role="img"
-              aria-label={assignees.map((actor) => actor.displayName).join(', ')}
-              title={assignees.map((actor) => actor.displayName).join(', ')}
+              aria-label={`Assigned to ${assignees.map((actor) => actor.displayName).join(', ')}`}
+              title={`Assigned to ${assignees.map((actor) => actor.displayName).join(', ')}`}
             >
               {assignees.slice(0, 3).map((actor) => (
                 <Avatar
@@ -140,12 +149,30 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
                   actorId={actor.id}
                   provenance={actor.isAgent ? 'agent' : 'human'}
                   label={actor.displayName}
+                  src={actor.avatar}
                   /* 15, not 20 — nothing in this row may exceed the 17px that
                      sets a session row's height, or the row grows past the
                      shared floor for the one reason CSS alone cannot fix. */
                   size={15}
                 />
               ))}
+            </span>
+          </div>
+        ) : creator ? (
+          <div className="pn-tt__inline">
+            <span
+              className="pn-av-group pn-av-group--creator"
+              role="img"
+              aria-label={`Created by ${creator.displayName}, unassigned`}
+              title={`Created by ${creator.displayName} · unassigned`}
+            >
+              <Avatar
+                actorId={creator.id}
+                provenance={creator.isAgent ? 'agent' : 'human'}
+                label={creator.displayName}
+                src={creator.avatar}
+                size={15}
+              />
             </span>
           </div>
         ) : null}
