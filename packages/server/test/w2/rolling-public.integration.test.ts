@@ -236,6 +236,10 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
 
 const ONBOARDING_NET_NEW_OPERATIONS = [
   'projects.directories.list',
+  // 2026-08-04: reading and attaching files out of the folder the row above
+  // connects. Both mount only where the node has file storage.
+  'projects.files.list',
+  'projects.files.attach',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -365,7 +369,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 107 -> 108 on 2026-08-01: `spaces.counts` joined the facade tranche.
     // 108 -> 109: `identity.profile.update` (Identity v2 Stage 0).
     // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
-    expect(registry.size).toBe(114);
+    expect(registry.size).toBe(116);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -518,7 +522,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 65 -> 66: identity.profile.update (Identity v2 Stage 0).
     // 66 -> 69 (2026-08-02): auth.signup/login/logout (Identity v2 Stage 1);
     // auth.session.get is a GET and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(69);
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(70);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -657,10 +661,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     // a red pin) and `identity.profile.update` (which reconciled it).
     // 120/118 -> 126/122 (2026-08-02): the four auth.* rows, all implemented.
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 126, implemented: 124 });
+    expect(health).toMatchObject({ ok: true, operations: 128, implemented: 126 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(harness.production.server.registry.size).toBe(124);
+    expect(harness.production.server.registry.size).toBe(126);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -675,7 +679,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(registered.size + residual.length).toBe(124);
+    expect(registered.size + residual.length).toBe(126);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 
