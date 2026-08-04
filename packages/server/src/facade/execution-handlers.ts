@@ -67,7 +67,6 @@ import { json } from '../http/types.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from './context.js';
 import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
-import { issueAgentSession, revokeAgentSession } from '../identity/pg-auth.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
 import {
@@ -709,14 +708,6 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
-    credentials: {
-      mint: async (auth, input) => {
-        const issued = await issueAgentSession(deps.db, auth as DbClaims, input);
-        return { token: issued.token, authSessionId: issued.sessionId };
-      },
-      revoke: (auth, workSessionId) =>
-        revokeAgentSession(deps.db, auth as DbClaims, workSessionId),
-    },
   });
 
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
@@ -788,14 +779,6 @@ export function registerExecutionHandlers(
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
-    credentials: {
-      mint: async (auth, input) => {
-        const issued = await issueAgentSession(deps.db, auth as DbClaims, input);
-        return { token: issued.token, authSessionId: issued.sessionId };
-      },
-      revoke: (auth, workSessionId) =>
-        revokeAgentSession(deps.db, auth as DbClaims, workSessionId),
-    },
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
   registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
