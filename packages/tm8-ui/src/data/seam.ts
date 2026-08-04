@@ -38,6 +38,14 @@
  * authorization input — nothing in the UI may gate on it. Filed by the
  * identity-display lane for dual re-consensus recording.
  *
+ * Amendment 5 (2026-08-04, connected project folders): a new optional
+ * `projectFiles` group — `list` and `attach`, the contract's
+ * `projects.files.list` / `projects.files.attach`. Optional for the same reason
+ * `projectSetup` is: a fixture seam has no filesystem. It does NOT replace
+ * `files`; the two describe different byte sources, a browser upload and a
+ * node-local read, and only the node can perform the second because a browser
+ * file input never learns an absolute path. Additive, zero caller churn.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -102,6 +110,9 @@ import type {
   PostMessageInput,
   ProjectCreateInput,
   ProjectDirectoryListing,
+  ProjectFileAttachInput,
+  ProjectFileListing,
+  ProjectId,
   ProjectLinkInput,
   ProjectResource,
   ReactionInput,
@@ -261,6 +272,18 @@ export interface Seam {
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult>;
     createProject(input: ProjectCreateInput): Promise<ProjectResource>;
     linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
+  };
+  /**
+   * Reading an ALREADY-CONNECTED project folder, for the same reason
+   * `projectSetup` is optional: a fixture seam has no filesystem to read. The
+   * attach here is node-side by necessity — a browser file input never learns
+   * an absolute path, so bytes inside a connected folder can only be read by
+   * the node holding it. `seam.files` remains the browser-upload path and the
+   * two are not alternatives to each other.
+   */
+  projectFiles?: {
+    list(projectId: ProjectId, path?: string): Promise<ProjectFileListing>;
+    attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
   };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;

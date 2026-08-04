@@ -62,6 +62,7 @@ import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
 } from './handlers/w2/messages-handoffs.js';
+import { registerW2ProjectFilesHandlers } from './handlers/w2/project-files.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
@@ -134,6 +135,7 @@ export function registerFacadeHandlers(
   // than the environment: one place decides what this node is pointed at.
   registerVoiceHandlers(registry, facade, deps.config.livekit);
   if (deps.files) registerW2FileHandlers(registry, facade, deps.files);
+  if (deps.files) registerW2ProjectFilesHandlers(registry, facade, deps.files);
   if (deps.files) registerW2ArtifactHandlers(registry, facade, { blobStore: deps.files.blobStore });
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);

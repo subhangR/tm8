@@ -97,10 +97,10 @@ describe('W5.F PIN 1 — availabilitySource names a source that did not answer',
     expect([...AVAILABILITY_SOURCES]).toEqual(['contract', 'observed', 'advertised']);
   }, 15_000);
 
-  it('BLAST RADIUS — 124 of 126 rows carry the unearned label on a cold ledger', () => {
+  it('BLAST RADIUS — 126 of 128 rows carry the unearned label on a cold ledger', () => {
     const fresh = new AvailabilityLedger();
     const rows = discovery(fresh);
-    expect(rows).toHaveLength(126); // +1 node-local project directory browser.
+    expect(rows).toHaveLength(128); // +2 connected project folder file reads.
 
     const earned = rows.filter(
       (r) => r.availabilitySource === 'contract' && r.availability === 'unavailable',
@@ -111,7 +111,7 @@ describe('W5.F PIN 1 — availabilitySource names a source that did not answer',
 
     // EXACT SETS, not counts (§3c — a count cannot detect a substitution).
     expect(earned.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
-    expect(unearned).toHaveLength(124);
+    expect(unearned).toHaveLength(126);
     // The two populations are INDISTINGUISHABLE by the source field alone:
     // both read `contract`, and nothing else in the row separates them.
     expect(earned.every((r) => r.availabilitySource === 'contract')).toBe(true);

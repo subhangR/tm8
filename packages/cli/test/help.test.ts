@@ -103,7 +103,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       const e = discoveryFor(o.name).exposure;
       return e === 'public' || e === 'composite';
     }).map((o) => o.name);
-    expect(wanted).toHaveLength(123); // +1 public UI-only project directory read.
+    expect(wanted).toHaveLength(125); // +2 public UI-only project folder file ops.
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
@@ -113,7 +113,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(126);
+    expect(swept).toBe(128);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -200,7 +200,7 @@ describe('exact operation lookup — TOTAL over all 126 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(126);
+    expect(seen.size).toBe(128);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 

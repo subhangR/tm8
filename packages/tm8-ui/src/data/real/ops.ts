@@ -77,6 +77,9 @@ import {
   type PostMessageInput,
   type ProjectCreateInput,
   type ProjectDirectoryListing,
+  type ProjectFileAttachInput,
+  type ProjectFileListing,
+  type ProjectId,
   type ProjectLinkInput,
   type ProjectResource,
   type ReactionInput,
@@ -209,6 +212,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     projectDirectories(path?: string): Promise<ProjectDirectoryListing> {
       return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { path } });
+    },
+
+    projectFiles(projectId: ProjectId, path?: string): Promise<ProjectFileListing> {
+      return http.call<ProjectFileListing>('projects.files.list', { params: { projectId }, query: { path } });
+    },
+
+    attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
+      return http.call<CommandResult>('projects.files.attach', { params: { projectId }, body: input });
     },
 
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult> {

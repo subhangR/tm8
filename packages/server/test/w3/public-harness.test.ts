@@ -30,7 +30,9 @@ describe.sequential('W3 production-Server public harness', () => {
     expect(body).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 120,
+      // Re-derived 2026-08-04 (was 120, stale across five amendments) with
+      // projects.files.list / projects.files.attach.
+      operations: 127,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -42,7 +44,9 @@ describe.sequential('W3 production-Server public harness', () => {
     // number about a configuration production does not use.
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
-    expect(body.implemented).toBe(118);
+    // 118 -> 125 (2026-08-04): re-derived with the same five stale amendments
+    // as the operations pin above, plus the two projects.files.* handlers.
+    expect(body.implemented).toBe(125);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

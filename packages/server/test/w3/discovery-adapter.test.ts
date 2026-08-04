@@ -15,16 +15,17 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {121/119/120/118} (2026-08-01: execution.resume, spaces.counts,
         // execution.journal, identity.profile.update).
         // -> {126/124/125/123} (2026-08-02: local project directory browsing).
-        total: 126,
-        v1: 124,
+        // -> {128/126/127/125} (2026-08-04: connected project folder file ops).
+        total: 128,
+        v1: 126,
         reserved: 2,
-        http: 125,
+        http: 127,
         ws: 1,
-        registerableV1Http: 123,
+        registerableV1Http: 125,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
-        { noun: 'project', operationCount: 8 },
+        { noun: 'project', operationCount: 10 },
         { noun: 'space', operationCount: 23 },
       ]),
     });

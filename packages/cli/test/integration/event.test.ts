@@ -151,7 +151,7 @@ describe('the node, measured rather than reported', () => {
     expect(health.ok).toBe(true);
     // 121 catalog rows = 120 HTTP + the single WS row, which is served by the
     // upgrade path and is not a mounted HTTP route.
-    expect(health.operations).toBe(125); // +1 node-local project directory read.
+    expect(health.operations).toBe(127); // +2 connected project folder file reads.
     // `implemented` is `registry.size` — REGISTERED handlers, not behaviourally
     // implemented ones. No expected number is asserted here on purpose: it moves
     // as composition tranches land, and pinning it would turn another wave's

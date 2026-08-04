@@ -258,6 +258,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const save = useTaskSave({
     detail: detail ?? null,
     commands: props.commands ?? null,
+    editCommand: editableConfig?.authoring?.editCommand ?? 'entity',
     onSaved: (result) => props.onSaved?.(result),
     onReload: (current) => props.onReloadDetail?.(current),
     editRefusal: editableConfig?.panel.capabilityReasons?.canEdit,
@@ -438,6 +439,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 files={attachedFiles(detail)}
                 downloadHref={props.attachments?.downloadHref}
                 startUpload={props.attachments?.startUpload}
+                projectFolder={props.attachments?.projectFolder}
                 onUploaded={props.onAttachmentUploaded}
               />
             ) : null}

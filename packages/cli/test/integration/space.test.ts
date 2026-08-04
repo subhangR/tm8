@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(125); // +1 node-local project directory read.
+    expect(health.operations).toBe(127); // +2 connected project folder file reads.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

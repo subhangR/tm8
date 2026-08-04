@@ -61,13 +61,14 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       implemented: number;
     };
     // 125 -> 126 (2026-08-02): node-local project directory browsing.
-    expect(OPERATIONS).toHaveLength(126);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(125);
+    // 126 -> 128 (2026-08-04): connected project folder file read and attach.
+    expect(OPERATIONS).toHaveLength(128);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(127);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 125,
-      implemented: 123,
+      operations: 127,
+      implemented: 125,
     });
   });
 
@@ -105,7 +106,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // (voice.token.create joined `OPERATIONS`, the 110->111 family) -> 114
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
     // are mounted, so none answers 501).
-    expect(implemented).toHaveLength(123);
+    expect(implemented).toHaveLength(125);
   });
 
   /**

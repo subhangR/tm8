@@ -48,14 +48,17 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 126-row target, including node-local project directory browsing, without changing reserved honesty', () => {
+  it('reconciles the additive 128-row target, including node-local project folder reads, without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
     // 121 -> 125 (2026-08-02): auth.signup/login/logout (POST commands) +
     // auth.session.get (GET read) — Identity v2 Stage 1 local accounts.
-    expect(OPERATIONS).toHaveLength(126);
-    expect(V1_OPERATIONS).toHaveLength(124);
+    // 126 -> 128 (2026-08-04): projects.files.list (GET read) +
+    // projects.files.attach (POST command) — reading and attaching files out
+    // of an already-connected project folder.
+    expect(OPERATIONS).toHaveLength(128);
+    expect(V1_OPERATIONS).toHaveLength(126);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -71,12 +74,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 46, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 47, POST: 55, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 49, command: 76, stream: 1 });
+    }).toEqual({ read: 50, command: 77, stream: 1 });
   });
 });
 
