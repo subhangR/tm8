@@ -355,6 +355,22 @@ export interface Seam {
     moveEntity(id: EntityId, input: MoveEntityInput): Promise<CommandResult>;
     deleteEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;
     restoreEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;
+    /**
+     * Amendment 5 (2026-08-04, attachments): DETACH.
+     *
+     * Attaching a file writes ONE `attached_to` edge and nothing else, so
+     * un-attaching is the deletion of that edge — not of the file, which may
+     * be attached elsewhere and whose bytes are not this surface's to destroy.
+     * The catalog has carried `edges.delete` (DELETE /v2/edges/:edgeId) since
+     * v1; the seam simply never named it, which is why the attachment strip
+     * shipped as a one-way door.
+     *
+     * `ctx` is optional in the type and REQUIRED by the server
+     * (`RequiredCommandContextSchema`), exactly as `deleteEntity` is: an
+     * omitted context earns an honest `invalid_input` rather than a
+     * synthesized id the caller could not reconcile.
+     */
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     complete(id: EntityId, input: CompleteTaskInput): Promise<CommandResult>;
     work(id: EntityId, input: WorkInput): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;

@@ -257,7 +257,12 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
   it('the seam surface matches the locked interface, method for method', () => {
     const { seam } = mk(() => ok({}));
     expect(Object.keys(seam.commands).sort()).toEqual([
-      'complete', 'createEntity', 'createTask', 'deleteEntity', 'editMessage', 'markRead',
+      'complete', 'createEntity', 'createTask',
+      // Amendment 5 (2026-08-04, attachments): deleteEdge — DETACH. Sorts
+      // BEFORE deleteEntity ('Ed' < 'En'), and the two are not the same act:
+      // this deletes the `attached_to` link, never the file behind it.
+      'deleteEdge',
+      'deleteEntity', 'editMessage', 'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).
@@ -291,6 +296,23 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       'delivery', 'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }
+  });
+
+  /**
+   * Amendment 5 — DETACH ON THE WIRE. The method and the path are the whole
+   * risk here: `edges.delete` is DELETE /v2/edges/:edgeId, and a detach that
+   * POSTed, or that put the FILE's id in the path, would be green on every
+   * spy-based test and would remove the wrong thing (or nothing) in
+   * production. The body carries the mutation id because the server binds
+   * `RequiredCommandContextSchema` and refuses without it.
+   */
+  it('detach speaks DELETE /v2/edges/:edgeId and carries the mutation id', async () => {
+    const { seam, f } = mk(() => ok({ patches: [] }));
+    await seam.commands.deleteEdge('edge-7', { clientMutationId: 'cmid-detach' });
+    const call = f.calls[f.calls.length - 1]!;
+    expect(call.method).toBe('DELETE');
+    expect(call.url).toBe('/v2/edges/edge-7');
+    expect(call.body).toEqual({ clientMutationId: 'cmid-detach' });
   });
 
   it('dispose tears down both managers', async () => {

@@ -1222,3 +1222,131 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
     }
   });
 });
+
+/**
+ * AN ATTACHED IMAGE IS ONLY HALF THE FEATURE. The strip proves a file is on the
+ * record; putting one INSIDE the prose is the other half, and it was dead in a
+ * quiet way — `Markdown`'s `img` override has always resolved `tm8://file/<id>`
+ * through an injected `fileHref`, and NOTHING passed one. So every internal
+ * image in every doc rendered as the chip that says "this build has no resolver
+ * for tm8 file references", which reads as a missing feature rather than a
+ * missing prop.
+ *
+ * The resolver is the SAME `downloadHref` the strip already receives, which is
+ * the assertion below: not "an image appeared" but "it points at the bytes the
+ * download link points at". One resolver, or the two surfaces drift.
+ */
+describe('EntityDetailPanel — internal images resolve through the host port', () => {
+  const readerKind = allKinds().find((k) => k.panel.archetype === 'reader')!;
+  const docDetail = Object.values(fixtureDetails).find(
+    (d) => d.kind === readerKind.kind && d.deletedAt == null,
+  )!;
+
+  function withBody(detail: EntityDetail, body: string): EntityDetail {
+    return { ...detail, content: { ...detail.content, body } as EntityDetail['content'] };
+  }
+
+  const BODY = '# Diagram\n\n![the shape](tm8://file/file-in-body-1)\n';
+
+  it('renders the image against the resolver the strip uses', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={withBody(docDetail, BODY)}
+        reasons={REASONS}
+        ctx={ctx}
+        attachments={{
+          downloadHref: (id) => `/v2/files/${id}/download`,
+          startUpload: () => { throw new Error('unused'); },
+        }}
+      />,
+    );
+    const img = within(getByTestId('entity-detail-panel')).getByTestId('markdown-image');
+    expect(img.getAttribute('src')).toBe('/v2/files/file-in-body-1/download');
+  });
+
+  it('still states itself when the host has no port — never a guessed URL', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel detail={withBody(docDetail, BODY)} reasons={REASONS} ctx={ctx} />,
+    );
+    const panel = getByTestId('entity-detail-panel');
+    expect(within(panel).queryByTestId('markdown-image')).toBeNull();
+    expect(within(panel).getByTestId('markdown-image-unresolved')).toBeTruthy();
+    expect(queryByTestId('markdown-image-link')).toBeNull();
+  });
+
+  it('never fetches a remote image, resolver or not (the tracking-beacon rule)', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={withBody(docDetail, '![pixel](https://elsewhere.example/p.gif)')}
+        reasons={REASONS}
+        ctx={ctx}
+        attachments={{
+          downloadHref: (id) => `/v2/files/${id}/download`,
+          startUpload: () => { throw new Error('unused'); },
+        }}
+      />,
+    );
+    const panel = getByTestId('entity-detail-panel');
+    expect(within(panel).queryByTestId('markdown-image')).toBeNull();
+    expect(within(panel).getByTestId('markdown-image-link')).toBeTruthy();
+  });
+});
+
+/**
+ * THE FILE PANEL'S OWN PREVIEW. `file-preview` drew an empty box captioned
+ * "image preview · image/png" — a label naming the exact thing it was not
+ * doing — because the block had no way to reach the bytes. It takes the host's
+ * resolver now, and it is gated by the same `canThumbnail` the strip uses so
+ * the SVG-not-inline rule has one home rather than two.
+ */
+describe('file-preview renders the real image', () => {
+  const fileKind = allKinds().find((k) =>
+    (k.panel.blocks ?? []).some((b) => b.block === 'file-preview'),
+  )!;
+  const base = Object.values(fixtureDetails).find(
+    (d) => d.kind === fileKind.kind && d.deletedAt == null,
+  )!;
+
+  const withMime = (mime: string): EntityDetail => ({
+    ...base,
+    state: { ...base.state, mimeType: mime } as EntityDetail['state'],
+  });
+  const port = {
+    downloadHref: (id: string) => `/v2/files/${id}/download`,
+    startUpload: () => { throw new Error('unused'); },
+  };
+
+  it('draws an <img> at the resolved URL for a previewable image', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={withMime('image/png')} reasons={REASONS} ctx={ctx} attachments={port} />,
+    );
+    const img = within(getByTestId('block-file-preview')).getByTestId('file-preview-image');
+    expect(img.getAttribute('src')).toBe(`/v2/files/${base.id}/download`);
+  });
+
+  it('refuses SVG inline and SAYS SO — the server will not serve it inline either', () => {
+    const { getByTestId } = render(
+      <EntityDetailPanel detail={withMime('image/svg+xml')} reasons={REASONS} ctx={ctx} attachments={port} />,
+    );
+    const block = getByTestId('block-file-preview');
+    expect(within(block).queryByTestId('file-preview-image')).toBeNull();
+    expect(block.textContent).toContain('script-bearing document');
+  });
+
+  it('with no resolver says the bytes are unreachable, not that the type has no preview', () => {
+    // The fixture carries `content.downloadUrl`, which a real detail does not;
+    // dropping it is what makes this the no-way-to-fetch case rather than the
+    // fixture's own fallback quietly answering.
+    const unreachable = withMime('image/png');
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={{ ...unreachable, content: { ...unreachable.content, downloadUrl: undefined } as EntityDetail['content'] }}
+        reasons={REASONS}
+        ctx={ctx}
+      />,
+    );
+    const block = getByTestId('block-file-preview');
+    expect(within(block).queryByTestId('file-preview-image')).toBeNull();
+    expect(block.textContent).toContain('no download URL');
+  });
+});

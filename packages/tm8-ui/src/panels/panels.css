@@ -892,6 +892,16 @@
   background: var(--pn-hover);
 }
 .cv2-root .pn-preview__box--none { border-style: dashed; }
+/* The real image, in the placeholder's place: same border and ground so the
+   region keeps its shape, but the height is the picture's own — capped. */
+.cv2-root .pn-preview__img {
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  background: var(--pn-hover);
+}
 .cv2-root .pn-preview__label { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-3); }
 .cv2-root .pn-lifecycle,
 .cv2-root .pn-notice {

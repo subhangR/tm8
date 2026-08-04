@@ -15,6 +15,7 @@ import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
 import './channel-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { attachmentsFor } from '../files/port';
 import { representedThreadMessageCount } from './message-thread';
 
 const FEED_KEY = 'feed';
@@ -56,6 +57,13 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
     [channelId],
   );
   const [detailMode, setDetailMode] = useState<DetailMode>('aside');
+
+  /* ATTACHMENTS — the entity opened beside a channel feed is a full entity, so
+     it gets the same uploader the Tasks view gives it. */
+  const attachments = useMemo(
+    () => attachmentsFor(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
 
   const detail = data.detailOf(channelId);
   const content = channelContent(detail);
@@ -109,6 +117,8 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      attachments={attachments}
+      onAttachmentUploaded={() => data.pull?.(selectedId)}
       livenessOf={data.livenessOf}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}

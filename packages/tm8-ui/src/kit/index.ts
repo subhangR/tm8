@@ -6,5 +6,5 @@ export { Kbd } from './Kbd';
 export { Avatar, type AvatarProvenance, type AvatarSize } from './Avatar';
 export { VRule, HRule } from './Hairline';
 export { BootLoader } from './BootLoader';
-export { Markdown, headingsIn, type MarkdownProps } from './Markdown';
+export { Markdown, headingsIn, type MarkdownFileHref, type MarkdownProps } from './Markdown';
 export { Mermaid, type MermaidProps } from './Mermaid';

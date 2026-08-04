@@ -135,16 +135,24 @@ export function filesPortFromSeam(seam: Seam, spaceId: SpaceId): FilesPort {
 // ---------------------------------------------------------------------------
 
 /**
- * Two verbs and nothing else, because the strip does two things: resolve bytes
- * for a file it already knows about, and start an upload against an anchor.
- * The already-attached ROWS are not here — they come off the anchor's own
- * `EntityDetail.connections` via `attachedFiles()`, which the panel already
- * holds, so putting a read here would add a round-trip for data in hand.
+ * Three verbs and nothing else, because the strip does three things: resolve
+ * bytes for a file it already knows about, start an upload against an anchor,
+ * and cut a link it has already drawn. The already-attached ROWS are not here
+ * — they come off the anchor's own `EntityDetail.connections` via
+ * `attachedFiles()`, which the panel already holds, so putting a read here
+ * would add a round-trip for data in hand.
  */
 export interface AttachmentsPort {
   /** Seam Amendment 3. Never null in this port: the seam always answers. */
   downloadHref(fileEntityId: string): string;
   startUpload(file: File, anchorId: EntityId): FileUploadTask;
+  /**
+   * Seam Amendment 5. Deletes the `attached_to` EDGE, never the file: the same
+   * bytes may hang off three other entities, and "remove from this task" must
+   * not mean "destroy for everyone". Resolves when the link is gone; the host
+   * refetches the anchor from there.
+   */
+  detach(edgeId: string): Promise<void>;
 }
 
 export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): AttachmentsPort {
@@ -152,7 +160,33 @@ export function attachmentsPortFromSeam(seam: Seam, spaceId: SpaceId | string): 
     downloadHref: (fileEntityId) => seam.files.downloadHref(fileEntityId as EntityId),
     startUpload: (file, anchorId) =>
       createFileUploadTask({ files: seam.files, file, spaceId, anchorId }),
+    /**
+     * The mutation id is minted HERE because the server requires one and the
+     * strip has no journal to reconcile against — the same choice the row
+     * lifecycle makes for delete/restore.
+     */
+    detach: async (edgeId) => {
+      await seam.commands.deleteEdge(edgeId, { clientMutationId: `detach:${edgeId}:${Date.now()}` });
+    },
   };
+}
+
+/**
+ * THE ONE CALL EVERY PANEL HOST MAKES — the `debugSurfaceFor` shape, for the
+ * same reason it exists there.
+ *
+ * A host's seam is sometimes optional (`GraphScreen` takes one), and every host
+ * that had to write its own `seam ? … : undefined` is a host that could write
+ * it differently. Absent seam ⇒ absent port ⇒ the strip renders read-only and
+ * draws no dropzone, which is the honest render for a screen that genuinely
+ * cannot upload. `panel-host-wiring.test.ts` requires this function by name at
+ * every mount site.
+ */
+export function attachmentsFor(
+  seam: Seam | undefined,
+  spaceId: SpaceId | string,
+): AttachmentsPort | undefined {
+  return seam ? attachmentsPortFromSeam(seam, spaceId) : undefined;
 }
 
 // ---------------------------------------------------------------------------
