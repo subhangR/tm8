@@ -44,7 +44,7 @@ import { useCallback, useMemo } from 'react';
 import type { ActorSummary, CommandResult, EntityId } from '@tm8/contract';
 import { nextMutationId } from '../authoring';
 import { allKinds } from '../domain';
-import type { ActionRef } from '../domain';
+import type { ActionRef, SetStateOutcome } from '../domain';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 
@@ -83,8 +83,21 @@ function isActorKind(kind: string): kind is ActorSummary['kind'] {
 const MAX_EDGE_PAGE = 200;
 
 export interface RowLifecycle {
-  /** Bound to `EntityListPanel.onSetState`. */
-  setState: (entityId: string, next: string, via: ActionRef) => void;
+  /**
+   * Bound to `EntityListPanel.onSetState`.
+   *
+   * RETURNS the outcome, because the board renders refusals INLINE at the
+   * refusing column (doc 06 §1.5 — no toasts on the board) and so needs to
+   * know. `opts.notify: false` suppresses the notice for exactly that caller;
+   * the dropdown path passes nothing and keeps its notice. One executor, two
+   * refusal surfaces, zero double-reporting.
+   */
+  setState: (
+    entityId: string,
+    next: string,
+    via: ActionRef,
+    opts?: { notify?: boolean },
+  ) => Promise<SetStateOutcome>;
   /**
    * Bound to `EntityListPanel.onArchive` — NOT to the general `onAction`.
    *
@@ -140,15 +153,23 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
   );
 
   const settle = useCallback(
-    (id: string, title: string, run: Promise<CommandResult>) => {
-      run.then(reconcileCommand).catch((error: unknown) => report(id, title, error));
-    },
+    (id: string, title: string, run: Promise<CommandResult>, notify = true): Promise<SetStateOutcome> =>
+      run
+        .then((result): SetStateOutcome => {
+          reconcileCommand(result);
+          return { ok: true };
+        })
+        .catch((error: unknown): SetStateOutcome => {
+          if (notify) report(id, title, error);
+          return { ok: false, reason: String((error as { message?: string })?.message ?? error) };
+        }),
     [reconcileCommand, report],
   );
 
   const setState = useCallback(
-    (entityId: string, next: string, via: ActionRef) => {
+    (entityId: string, next: string, via: ActionRef, opts?: { notify?: boolean }): Promise<SetStateOutcome> => {
       const id = entityId as EntityId;
+      const notify = opts?.notify ?? true;
 
       if (via === 'complete') {
         /**
@@ -162,16 +183,20 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
          */
         const version = data.detailOf(entityId)?.version;
         if (version === undefined) {
-          onNotice({
-            id: `complete-unhydrated:${entityId}`,
-            tone: 'error',
-            title: 'Cannot complete this task yet',
-            body: 'Its current version is not loaded, and completing without one could overwrite a change you have not seen. Open the task, then complete it.',
-            ttlMs: 6_000,
-          });
-          return;
+          const reason =
+            'Its current version is not loaded, and completing without one could overwrite a change you have not seen. Open the task, then complete it.';
+          if (notify) {
+            onNotice({
+              id: `complete-unhydrated:${entityId}`,
+              tone: 'error',
+              title: 'Cannot complete this task yet',
+              body: reason,
+              ttlMs: 6_000,
+            });
+          }
+          return Promise.resolve({ ok: false, reason });
         }
-        settle(
+        return settle(
           entityId,
           'Task could not be completed',
           seam.commands.complete(id, {
@@ -181,16 +206,17 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
             // nobody, rather than crediting whoever happens to be calling.
             completerIds: viewerMemberId ? [viewerMemberId as EntityId] : [],
           }),
+          notify,
         );
-        return;
       }
 
-      settle(
+      return settle(
         entityId,
         'State could not be changed',
         // `next` is a registry-declared id for this kind's own state field;
         // the seam types it as WorkStatus, which is what that vocabulary is.
         seam.commands.work(id, { status: next as never }),
+        notify,
       );
     },
     [data, onNotice, seam, settle, viewerMemberId],
@@ -200,10 +226,10 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
     (ref: ActionRef, entityId: string) => {
       const id = entityId as EntityId;
       if (ref === 'archive') {
-        settle(entityId, 'Could not archive', seam.commands.deleteEntity(id, commandContext()));
+        void settle(entityId, 'Could not archive', seam.commands.deleteEntity(id, commandContext()));
         return;
       }
-      settle(entityId, 'Could not restore', seam.commands.restoreEntity(id, commandContext()));
+      void settle(entityId, 'Could not restore', seam.commands.restoreEntity(id, commandContext()));
     },
     [seam, settle],
   );

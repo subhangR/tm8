@@ -876,9 +876,10 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     const sw = getByTestId('view-switcher');
     const controls = sw.querySelectorAll('button, [role="button"]');
     expect(controls).toHaveLength(4);
-    // Exactly one is live in A1: list. The rest are visible and labelled.
-    expect(sw.querySelectorAll('.lp__view')).toHaveLength(1);
-    expect(sw.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(3);
+    // A2: list AND board are live for task (the registry declares `board`);
+    // tree and graph stay visible-and-disabled with their reasons.
+    expect(sw.querySelectorAll('.lp__view')).toHaveLength(2);
+    expect(sw.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(2);
   });
 
   it('R7: graph is never HIDDEN — visible, labelled, unclickable', () => {

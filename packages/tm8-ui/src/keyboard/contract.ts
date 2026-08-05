@@ -54,6 +54,10 @@ export type KeyCommand =
   | 'list.primary'
   | 'list.create'
   | 'list.search'
+  | 'board.colPrev'
+  | 'board.colNext'
+  | 'board.movePrev'
+  | 'board.moveNext'
   | 'panel.pop'
   | 'panel.pin'
   | 'modal.close'
@@ -218,6 +222,18 @@ export const BINDINGS: readonly Binding[] = [
    * a chord the browser owns (R8-3).
    */
   { id: 'list.search', layer: 'focus', keys: 'f', label: 'Search this list', command: 'list.search', guaranteed: true, match: { type: 'plain', key: 'f' } },
+
+  // -- Board (§8.1) — drag is never the only path -----------------------------
+  // Column focus moves on plain ←/→ (aliases h/l); `list.next`/`list.prev`
+  // keep working WITHIN the focused column. Card MOVES are Mod chords and
+  // dispatch the SAME `set-state` routing as a drop — one command path for
+  // pointer and keyboard, including `via:'complete'` into the Done sink.
+  { id: 'board.colPrev.arrow', layer: 'focus', keys: '←', label: 'Previous column', command: 'board.colPrev', guaranteed: true, match: { type: 'plain', key: 'ArrowLeft' } },
+  { id: 'board.colNext.arrow', layer: 'focus', keys: '→', label: 'Next column', command: 'board.colNext', guaranteed: true, match: { type: 'plain', key: 'ArrowRight' } },
+  { id: 'board.colPrev.h', layer: 'focus', keys: 'h', label: 'Previous column', command: 'board.colPrev', guaranteed: true, match: { type: 'plain', key: 'h' } },
+  { id: 'board.colNext.l', layer: 'focus', keys: 'l', label: 'Next column', command: 'board.colNext', guaranteed: true, match: { type: 'plain', key: 'l' } },
+  { id: 'board.movePrev', layer: 'focus', keys: 'Mod+←', label: 'Move card left', command: 'board.movePrev', guaranteed: false, match: { type: 'mod', key: 'ArrowLeft' } },
+  { id: 'board.moveNext', layer: 'focus', keys: 'Mod+→', label: 'Move card right', command: 'board.moveNext', guaranteed: false, match: { type: 'mod', key: 'ArrowRight' } },
 
   // -- Panels ---------------------------------------------------------------
   { id: 'panel.pop', layer: 'focus', keys: 'Esc', label: 'Close panel', command: 'panel.pop', guaranteed: true, match: { type: 'plain', key: 'Escape' } },

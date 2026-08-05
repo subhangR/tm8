@@ -2485,3 +2485,123 @@
   width: 10px;
   color: var(--pn-brand);
 }
+
+/* -- Board (A2, doc 06 §1) — geometry only; card anatomy stays the tile's -- */
+.cv2-root .lp__board {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  outline: none;
+}
+.cv2-root .lp__board--off,
+.cv2-root .lp__board--error {
+  padding: 24px 12px;
+  align-items: flex-start;
+}
+.cv2-root .lp__board-banner {
+  flex: none;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--pn-ink-soft, var(--pn-ink));
+  background: var(--pn-wait-soft);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .lp__board-cols {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+}
+.cv2-root .lp__board-col {
+  flex: 0 0 236px;
+  min-width: 236px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  background: var(--pn-panel, transparent);
+}
+.cv2-root .lp__board-col--focused { border-color: var(--pn-brand); }
+.cv2-root .lp__board-col--sink { border-style: dashed; }
+.cv2-root .lp__board-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .lp__board-pill { font-size: 10px; }
+.cv2-root .lp__board-count {
+  font-size: 10px;
+  color: var(--pn-ink-soft, var(--pn-ink));
+  white-space: nowrap;
+}
+.cv2-root .lp__board-refusal {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: var(--pn-block);
+  background: var(--pn-block-soft);
+  border-bottom: 1px solid var(--pn-line);
+}
+.cv2-root .lp__board-add { flex: none; padding: 6px 8px 0; }
+.cv2-root .lp__board-cards {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .lp__board-card { border-radius: 4px; }
+.cv2-root .lp__board-card--dragging { opacity: 0.4; }
+.cv2-root .lp__board-card--pending { opacity: 0.6; pointer-events: none; }
+.cv2-root .lp__board-card--focused { outline: 1px solid var(--pn-brand); outline-offset: 1px; }
+.cv2-root .lp__board-empty {
+  margin: 8px 4px;
+  font-size: 11px;
+  color: var(--pn-ink-soft, var(--pn-ink));
+  font-style: italic;
+}
+.cv2-root .lp__board-skeleton {
+  height: 52px;
+  border-radius: 4px;
+  background: var(--pn-hover);
+  animation: lp-board-shimmer 1.2s ease-in-out infinite alternate;
+}
+@keyframes lp-board-shimmer {
+  from { opacity: 0.45; }
+  to { opacity: 0.9; }
+}
+.cv2-root .lp__board-done-link {
+  flex: none;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-top: 1px solid var(--pn-line);
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--pn-brand);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .lp__board-reason { font-size: 12px; color: var(--pn-block); margin: 0 0 8px; }
+.cv2-root .lp__board-retry {
+  border: 1px solid var(--pn-line);
+  background: none;
+  font: inherit;
+  font-size: 11px;
+  color: var(--pn-ink);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}

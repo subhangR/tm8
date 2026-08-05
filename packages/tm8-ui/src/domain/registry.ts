@@ -401,6 +401,10 @@ const ROWS: readonly KindConfig[] = [
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
       assignControl: TASK_ASSIGN_CONTROL,
+      // A2: the board groups by the same field the state picker writes. The
+      // server computes the groups (collections.ts groupItems); the client
+      // never groups (L3).
+      board: { groupBy: 'workStatus' },
       // D44: every task ROW gets Run, not just the panel primary. It resolves
       // to the same ActionRef the panel and palette use, and its `flow:'launch'`
       // marker means the row opens the launch config rather than bare-spawning.
@@ -438,7 +442,12 @@ const ROWS: readonly KindConfig[] = [
     slug: 'sessions',
     strategy: 'collection',
     defaultMode: 'list',
-    hiddenModes: ['gallery'],
+    // 'board' joined the moment board mode rendered (doc 06 §1.6): server
+    // grouping guards on `state.kind === 'task'` (collections.ts groupItems),
+    // so a sessions board would render one dishonest "open" column. It comes
+    // back when `groupBy:'sessionStatus'` lands, as a drag-disabled board —
+    // session status is observed, never chosen.
+    hiddenModes: ['board', 'gallery'],
     chip: {
       glyph: '▸',
       tintBy: 'sessionStatus',

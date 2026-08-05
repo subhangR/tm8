@@ -299,6 +299,13 @@ export type ActionRef =
 export type ActionAvailability = { kind: 'available' } | { kind: 'disabled'; reason: string };
 
 /**
+ * Outcome of a state write, for surfaces that must render the refusal INLINE
+ * where the act happened (board §1.5: column-header reason, no toasts). The
+ * dropdown path keeps its notice; the board asks for the outcome instead.
+ */
+export type SetStateOutcome = { ok: true } | { ok: false; reason: string };
+
+/**
  * Everything an action needs to decide availability and to run, with NO seam
  * import: the shell injects `dispatch`, so `domain/` stays free of `data/`
  * beyond the `SessionLiveness` verdict type.
@@ -472,6 +479,17 @@ export interface ListConfig {
    * own declaration, for the same reason `valueControls` is not `stateControl`.
    */
   assignControl?: AssignControl;
+  /**
+   * Board mode (A2, doc 06 §1). Presence IS the declaration — a kind without
+   * this field keeps its switcher position honestly disabled.
+   *
+   * Deliberately ONLY the grouping axis. Column vocabulary and ORDER come from
+   * `stateControl.options`; header words and tones from `panel.statusPill` —
+   * the same single sources the state picker and the collapsed row's pill
+   * already read, so the picker, the pill and the column cannot drift. A label
+   * or tone field here would be the second copy that disagrees first.
+   */
+  board?: { groupBy: GroupByKey };
 }
 
 /** One value in a `ValueControl`'s vocabulary. */

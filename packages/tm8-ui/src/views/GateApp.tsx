@@ -482,6 +482,15 @@ export function GateApp(props: GateAppProps = {}) {
               reasons={reasons}
               onNotice={notices.push}
               onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
+              /* §1.1 — the shell HOLDS the layout mode, so the switcher's
+                 choice survives re-renders of this ternary and a kind switch
+                 resets it honestly (a new target has no mode yet). */
+              {...(activeTarget.mode !== undefined ? { mode: activeTarget.mode } : {})}
+              onMode={(m) =>
+                setActiveTarget((current) =>
+                  current?.type === 'kind' ? { ...current, mode: m } : current,
+                )
+              }
               /* The same verb the workspace's tiles commit. Passing it is what
                  makes the tile's `Launch ▸` a live control here instead of a
                  disabled-with-reason one; the sources behind it come from
