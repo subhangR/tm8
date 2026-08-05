@@ -500,6 +500,8 @@ export interface EntityRelations {
   pulls: Map<string, Array<{ actorId: string; props: Record<string, unknown>; at: string }>>;
   /** `working_on` edges pointing AT the entity. */
   workingOn: Map<string, Array<{ actorId: string; props: Record<string, unknown>; at: string }>>;
+  /** Latest `completed_by` target per entity — the house-pattern ending. */
+  completedBy: Map<string, { actorId: string; at: string }>;
   /** `contains` count, per collection. */
   itemCounts: Map<string, number>;
   /** Raw mark-edge material for `badges.staleness` — derived in badgesOf, never stored. */
@@ -533,6 +535,7 @@ const EMPTY_RELATIONS: EntityRelations = {
   blockedBy: new Map(),
   pulls: new Map(),
   workingOn: new Map(),
+  completedBy: new Map(),
   itemCounts: new Map(),
   marks: new Map(),
 };
@@ -558,6 +561,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     blockedBy: new Map(),
     pulls: new Map(),
     workingOn: new Map(),
+    completedBy: new Map(),
     itemCounts: new Map(),
     marks: new Map(),
   };
@@ -572,7 +576,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   }>(
     `select id, src_id, dst_id, type, props, created_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
          or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on', 'supersedes', 'disputes', 'verifies'))`,
     [unique],
   );
@@ -625,6 +629,17 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
       case 'assigned_to':
         if (wanted.has(edge.src_id)) push(relations.assignees, edge.src_id, edge.dst_id);
         break;
+      case 'completed_by': {
+        // Latest wins: completion writes one edge per completer, and the
+        // badge is a single header line, not a roster.
+        if (!wanted.has(edge.src_id)) break;
+        const at = iso(edge.created_at);
+        const prior = relations.completedBy.get(edge.src_id);
+        if (!prior || at > prior.at) {
+          relations.completedBy.set(edge.src_id, { actorId: edge.dst_id, at });
+        }
+        break;
+      }
       case 'contains':
         if (wanted.has(edge.src_id)) {
           relations.itemCounts.set(edge.src_id, (relations.itemCounts.get(edge.src_id) ?? 0) + 1);
@@ -1149,6 +1164,11 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
     }
   }
 
+  const completion = ctx.relations.completedBy.get(row.id);
+  if (completion) {
+    badges.completedBy = { actor: actorOf(ctx.actors, completion.actorId), at: completion.at };
+  }
+
   if (row.visibility === 'restricted') badges.restricted = true;
 
   const staleness = stalenessOf(row, ctx.relations.marks.get(row.id));
@@ -1461,6 +1481,7 @@ export async function assembleSummaries(
   for (const list of relations.assignees.values()) actorIds.push(...list);
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));
+  for (const completion of relations.completedBy.values()) actorIds.push(completion.actorId);
 
   const actors = await loadActors(q, actorIds);
 

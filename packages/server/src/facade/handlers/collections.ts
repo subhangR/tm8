@@ -323,6 +323,26 @@ function buildWhere(query: CollectionQuery, p: Params): string[] {
     where.push(UNBLOCKED_PREDICATE);
   }
 
+  if (f.workedByActorId) {
+    // "Worked by {person}" with the SECOND HOP (doc 06 §3.2): a plain edge
+    // filter on `working_on` matches only person-sourced edges (~15% of live
+    // data) and silently misses the rest. The honest form matches an edge
+    // whose source IS the actor, or is a work_session the actor
+    // `participates_in` — the same hop `loadActors` resolves attribution by.
+    const actor = p.add(assertUuid(f.workedByActorId, 'filters.workedByActorId'));
+    where.push(`exists (
+      select 1 from public.edges w
+       where w.dst_id = e.id and w.type = 'working_on'
+         and (w.src_id = ${actor}
+           or exists (
+                select 1 from public.edges pe
+                 where pe.type = 'participates_in'
+                   and pe.dst_id = w.src_id
+                   and pe.src_id = ${actor}
+              ))
+    )`);
+  }
+
   if (f.inFlightForActorId) {
     // "In flight for me" = pulled or being worked on by an actor in my scope,
     // and not finished. Actor scope is the member row plus the personas it
@@ -466,6 +486,11 @@ export async function queryCollection(
   const fingerprint = cursorFingerprint(query, sortName, cursorScope);
   const p = new Params();
   const where = buildWhere(query, p);
+  // The cursor clause below narrows to "after this row" — a PAGE fact. Group
+  // totals are a QUERY fact, so they are computed against the where/params as
+  // they stand here, before the cursor narrows them.
+  const baseWhere = [...where];
+  const baseParamCount = p.values.length;
 
   if (query.cursor) {
     const { k } = decodeCursor(query.cursor);
@@ -513,9 +538,76 @@ export async function queryCollection(
 
   // The query as resolved, so re-running it is reproducible.
   const resolved: CollectionQuery = { ...query, sort: sortName, limit };
-  return query.groupBy
-    ? { query: resolved, page, groups: groupItems(items, query.groupBy) }
-    : { query: resolved, page };
+  if (!query.groupBy) return { query: resolved, page };
+
+  // The groups stay page-scoped (per-group paging is not built), but each
+  // carries its TRUE size under the query's filters — the number that lets a
+  // board header say "12" instead of hedging "{n} shown" (doc 06 §1.4).
+  const groups = groupItems(items, query.groupBy);
+  const totals = await groupTotals(q, query.groupBy, baseWhere, p.values.slice(0, baseParamCount));
+  for (const group of groups) {
+    const total = totals.get(group.key);
+    if (total !== undefined) {
+      group.total = total;
+      totals.delete(group.key);
+    }
+  }
+  // A group with rows but none ON THIS PAGE still exists — append it empty
+  // with its count, so a column can honestly read "0 shown of 12". Assignee
+  // keys are actor ids whose display names only page items carry, so those
+  // stay attached-only rather than appended with an id for a label.
+  if (query.groupBy !== 'assignee') {
+    for (const [key, total] of totals) {
+      if (total === 0) continue;
+      groups.push({
+        key,
+        label:
+          query.groupBy === 'workStatus'
+            ? (WORK_STATUS_LABELS[key] ?? key)
+            : key === ''
+              ? 'Unset'
+              : key,
+        items: [],
+        total,
+      });
+    }
+  }
+  return { query: resolved, page, groups };
+}
+
+/**
+ * True group sizes for a grouped query, from ONE aggregate over the same
+ * WHERE the page used (cursor clause excluded — totals are query-scoped).
+ * Key expressions mirror `groupItems` exactly: a non-task row lands where the
+ * in-page grouping would put it, so the count and the bucket cannot disagree.
+ */
+async function groupTotals(
+  q: Querier,
+  groupBy: NonNullable<CollectionQuery['groupBy']>,
+  where: readonly string[],
+  params: readonly unknown[],
+): Promise<Map<string, number>> {
+  const values = [...params];
+  let keyExpr: string;
+  let extraJoin = '';
+  if (groupBy === 'workStatus') {
+    keyExpr = `coalesce(t.work_status, 'open')`;
+  } else if (groupBy === 'assignee') {
+    keyExpr = `coalesce(ag.dst_id::text, '')`;
+    extraJoin = `left join public.edges ag on ag.src_id = e.id and ag.type = 'assigned_to'`;
+  } else {
+    values.push(groupBy.slice('axis:'.length));
+    keyExpr = `coalesce(t.axes ->> $${values.length}, '')`;
+  }
+  const rows = await q.query<{ key: string; total: number }>(
+    `select ${keyExpr} as key, count(distinct e.id)::int as total
+     ${ENTITY_FROM}
+     ${extraJoin}
+      where ${where.join('\n        and ')}
+      group by 1`,
+    values,
+  );
+  return new Map(rows.map((r) => [r.key, Number(r.total)]));
 }
 
 export function collectionsQuery(deps: FacadeDeps): OperationHandler {
