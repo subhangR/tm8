@@ -459,12 +459,30 @@ begin
   if project.id is null then
     raise exception 'Project not found' using errcode = 'P0002';
   end if;
-  -- Not-found and not-yours are the same answer on purpose for a PRIVATE
-  -- project: a distinguishable 42501 would confirm the row exists to someone
-  -- who is not allowed to know that.
-  if project.owner_account_id is null or project.owner_account_id <> caller_account then
+  --
+  -- WHO MAY EDIT. The owner always may. A node admin may edit a SHARED project,
+  -- which is exactly what `update_project_w2` allowed before this migration —
+  -- omitting it would have quietly removed the ability to administer any
+  -- ownerless project that predates 078, and every backfilled row is one.
+  --
+  -- A node admin may NOT edit a private one. They can already see its registry
+  -- row (they hold the filesystem those paths name, so hiding it would be
+  -- pretence), but `shareMode` is in this patch grammar, so an edit right here
+  -- would be the power to publish somebody else's private project — the exact
+  -- thing the share mode exists to prevent. Seeing a row and being able to
+  -- change who else sees it are different powers.
+  if not (
+    (project.owner_account_id is not null and project.owner_account_id = caller_account)
+    or (caller_is_node_admin and project.share_mode = 'space')
+  ) then
     if project.share_mode = 'private' then
-      raise exception 'Project not found' using errcode = 'P0002';
+      -- Not-found and not-yours are the same answer on purpose here: a
+      -- distinguishable 42501 would confirm the row exists to someone who is
+      -- not allowed to know that. A node admin reaching this line is refused
+      -- with the honest 42501 below instead, since they may already see it.
+      if not caller_is_node_admin then
+        raise exception 'Project not found' using errcode = 'P0002';
+      end if;
     end if;
     raise exception 'not the owner of this Project'
       using errcode = '42501', detail = 'project_owner_required';

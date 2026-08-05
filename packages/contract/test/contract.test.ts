@@ -316,11 +316,17 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
   it('project resources + inputs validate (AM-2 §1)', () => {
     const project = {
       id: 'proj_1', name: 'tm8', repoUrl: null, workingDir: '/Users/x/tm8',
-      trust: 'trusted', defaults: { model: 'claude-opus-4-8' },
+      trust: 'trusted', shareMode: 'space', ownerAccountId: null,
+      defaults: { model: 'claude-opus-4-8' },
       createdAt: '2026-07-25T12:00:00.000Z', updatedAt: '2026-07-25T12:00:00.000Z',
     };
     expect(ProjectResourceSchema.safeParse(project).success).toBe(true);
     expect(ProjectResourceSchema.safeParse({ ...project, trust: 'sorta' }).success).toBe(false);
+    // shareMode is a closed set, and a private project is a real answer here.
+    expect(ProjectResourceSchema.safeParse({
+      ...project, shareMode: 'private', ownerAccountId: 'acct_1',
+    }).success).toBe(true);
+    expect(ProjectResourceSchema.safeParse({ ...project, shareMode: 'unlisted' }).success).toBe(false);
     expect(ProjectCreateInputSchema.safeParse({ name: 'tm8', workingDir: '/Users/x/tm8' }).success).toBe(true);
     expect(ProjectCreateInputSchema.safeParse({
       name: 'tm8', workingDir: '/Users/x/tm8', ensureWorkingDir: true,
