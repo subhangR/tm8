@@ -281,6 +281,94 @@ test('a message author must be a member or persona of the message\'s own space',
   );
 });
 
+// 077: a top-level message on a work anchor must reach the anchor's watchers.
+// Before 077 an agent's `message send --to <task-id>` final report produced
+// deliveries: [] AND zero notifications — the only three w2_notify_actor call
+// sites are mention / delivery-failure / reply, and a top-level unmentioned
+// message hits none of them.
+test('a message on a work anchor notifies the anchor creator and its assignees', () => {
+  const anchor = json(`select public.create_task(${uuid(w.spaceA)}, 'watcher anchor')`, {
+    claims: w.claimsA,
+  }).entity.id;
+  ok(
+    `select public.write_edge(${uuid(anchor)}, ${uuid(w.personaA)}, 'assigned_to', '{}'::jsonb,
+       null, ${literal(cmid('watch-assign'))})`,
+    { claims: w.claimsA },
+  );
+
+  const post = (actor, body, mentions = `'{}'::uuid[]`) =>
+    json(
+      `select public.w2_post_message_batch(array[${uuid(anchor)}], ${literal(body)}, null,
+         ${mentions}, '{}'::uuid[], null, ${uuid(actor)}, ${literal(cmid('watch-post'))})`,
+      { claims: w.claimsA },
+    ).messageIds[0];
+
+  const notifications = (messageId) =>
+    rows(
+      `select kind, recipient_member_id, recipient_team_member_id, actor_id,
+              payload ->> 'watchReason' as watch_reason
+         from public.notifications
+        where payload ->> 'messageId' = ${literal(messageId)}
+        order by kind, recipient_member_id, recipient_team_member_id`,
+      owner,
+    );
+
+  // The agent reports on its own assignment anchor. The human who opened the
+  // task is the one who must hear it.
+  const fromAgent = notifications(post(w.personaA, 'agent final report'));
+  assert.deepEqual(
+    fromAgent.map((n) => [n.kind, n.recipient_member_id, n.recipient_team_member_id, n.watch_reason]),
+    [['anchor_message', w.memberA, null, 'anchor_creator']],
+    'the task creator must get exactly one anchor_message row, and the agent author none',
+  );
+  assert.equal(fromAgent[0].actor_id, w.personaA, 'the notification actor is the message author');
+
+  // The human answers. The assignee persona hears it; the author does not hear
+  // themselves even though they also created the anchor.
+  const fromHuman = notifications(post(w.memberA, 'human follow-up'));
+  assert.deepEqual(
+    fromHuman.map((n) => [n.kind, n.recipient_member_id, n.recipient_team_member_id, n.watch_reason]),
+    [['anchor_message', w.memberA, w.personaA, 'anchor_assignee']],
+    'the assignee persona gets a teammate row routed through its owning member, and nobody else',
+  );
+
+  // A named recipient is the mention trigger's business; this trigger must not
+  // double up on the same message. The second assignee is load-bearing: without
+  // an UNMENTIONED watcher left over, "suppressed the mentioned one" and "the
+  // trigger raised and swallowed it" produce identical output.
+  const persona2 = json(`select public.create_team_member(${uuid(w.spaceA)}, 'Second-bot')`, {
+    claims: w.claimsA,
+  }).entity.id;
+  ok(
+    `select public.write_edge(${uuid(anchor)}, ${uuid(persona2)}, 'assigned_to', '{}'::jsonb,
+       null, ${literal(cmid('watch-assign2'))})`,
+    { claims: w.claimsA },
+  );
+  const mentioned = notifications(post(w.personaA, 'agent names the human', `array[${uuid(w.memberA)}]`));
+  assert.deepEqual(
+    mentioned.map((n) => [n.kind, n.recipient_member_id, n.recipient_team_member_id]),
+    [
+      ['anchor_message', w.memberA, persona2],
+      ['mention', w.memberA, null],
+    ],
+    'the mentioned watcher is notified once (by the mention fan-out) while the ' +
+      'unmentioned assignee still gets its anchor_message row',
+  );
+
+  // A channel anchor is deliberately out of scope: channels have read_marks.
+  assert.deepEqual(
+    notifications(
+      json(
+        `select public.w2_post_message_batch(array[${uuid(w.channelA)}], 'channel chatter', null,
+           '{}'::uuid[], '{}'::uuid[], null, ${uuid(w.personaA)}, ${literal(cmid('watch-chan'))})`,
+        { claims: w.claimsA },
+      ).messageIds[0],
+    ),
+    [],
+    'a channel anchor must not fan out to its creator on every line',
+  );
+});
+
 // -----------------------------------------------------------------------------
 // Execution
 // -----------------------------------------------------------------------------
