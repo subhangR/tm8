@@ -168,8 +168,15 @@
   accent-color: var(--pn-brand);
   cursor: pointer;
 }
-.cv2-root .sb-criterion__box:disabled {
-  cursor: default;
+/* The REFUSED box is the honesty tooltip form, never a natively disabled input
+   (a disabled control leaves the tab order and takes its reason with it). It
+   keeps the checkbox's column so the rows still line up: same 12px mark, and
+   no padding stealing the row's 7px gap. */
+.cv2-root .sb-criterion .hon-disabled--tooltip {
+  flex: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
 }
 .cv2-root .sb-criterion__text {
   min-width: 0;
