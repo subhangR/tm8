@@ -56,7 +56,7 @@ class FakeDb implements Db {
   readonly calls: Array<{ fn: string; args: readonly unknown[] }> = [];
   /** Every workspace-scoped path resolves the caller's account first. */
   queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) =>
-    (/from public\.accounts/.test(sql) ? [{ id: WORKSPACE_ACCOUNT }] : []) as never;
+    (/workspace_account_id/.test(sql) ? [{ id: WORKSPACE_ACCOUNT }] : []) as never;
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn, args) => {
     this.calls.push({ fn, args });
     if (fn === 'correct_project_association') {
@@ -184,7 +184,7 @@ describe('W2.G06 projects and association correction facade', () => {
     try {
       const db = new FakeDb();
       db.queryImpl = (async (sql: string) =>
-        (/from public\.accounts/.test(sql) ? [{ id: WORKSPACE_ACCOUNT }] : [])) as never;
+        (/workspace_account_id/.test(sql) ? [{ id: WORKSPACE_ACCOUNT }] : [])) as never;
       const registry = registered(db);
       const identity = {
         kind: 'bearer' as const,
