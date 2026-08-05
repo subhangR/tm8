@@ -15,7 +15,7 @@
  * is data vs. rail behavior.
  */
 import type { MenuConfig, MenuViewRef } from '@tm8/contract';
-import { SHIPPED_DEFAULT_MENU, unrenderableKindRefs } from '../domain';
+import { SHIPPED_DEFAULT_MENU, VIEW_ART, unrenderableKindRefs, type KindArt } from '../domain';
 
 // ---------------------------------------------------------------------------
 // Fail-closed resolution
@@ -181,12 +181,21 @@ function describeError(error: unknown): string {
  * wins — see the DECISIONS entry; the divergence is listed for the R5 pixel
  * reviewer rather than silently reconciled.
  */
-export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: string }> = {
-  dashboard: { label: 'Dashboard', icon: '⌂' },
-  feed: { label: 'Feed', icon: '≋' },
-  inbox: { label: 'Inbox', icon: '◹' },
-  workspace: { label: 'Workspace', icon: '⌗' },
-  graph: { label: 'Graph', icon: '◉' },
-  channels: { label: 'Channels', icon: '#' },
-  settings: { label: 'Settings', icon: '⛭' },
+/**
+ * `icon` is the TEXT fallback; `art` is what the rail draws.
+ *
+ * Two of these text glyphs were outright collisions with KIND glyphs —
+ * `graph: ◉` was the commit mark and `channels: #` the channel mark — so a
+ * collapsed rail could show the same character for a view and for an entity
+ * kind. `art` comes from the same table the kinds draw from, which is what
+ * keeps one column in one idiom.
+ */
+export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: string; art: KindArt }> = {
+  dashboard: { label: 'Dashboard', icon: '⌂', art: VIEW_ART.dashboard },
+  feed: { label: 'Feed', icon: '≋', art: VIEW_ART.feed },
+  inbox: { label: 'Inbox', icon: '◹', art: VIEW_ART.inbox },
+  workspace: { label: 'Workspace', icon: '⌗', art: VIEW_ART.workspace },
+  graph: { label: 'Graph', icon: '◉', art: VIEW_ART.graph },
+  channels: { label: 'Channels', icon: '#', art: VIEW_ART.channels },
+  settings: { label: 'Settings', icon: '⛭', art: VIEW_ART.settings },
 };

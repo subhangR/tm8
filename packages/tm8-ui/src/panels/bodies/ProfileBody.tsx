@@ -1,6 +1,6 @@
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Avatar, Chip, Eyebrow } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts`, deliberately: the barrel also
@@ -125,7 +125,7 @@ export function ProfileBody({ detail, blocks, livenessOf, now, onOpenEntity }: P
         aria-labelledby="tab-content"
       >
         <EmptyBody
-          glyph={getKind(detail.kind).chip.glyph}
+          glyph={<KindIcon kind={detail.kind} />}
           sentence="This profile renders universal fields only — its registry row declares no blocks. Nothing is invented."
         />
       </div>
@@ -415,7 +415,7 @@ function ItemsBlock({
         return (
           <Chip
             key={item.id}
-            glyph={getKind(item.kind).chip.glyph}
+            glyph={<KindIcon kind={item.kind} />}
             onClick={() => onOpenEntity?.(item.id)}
           >
             {status ? `${item.title} · ${status.replace(/_/g, ' ')}` : item.title}
@@ -479,7 +479,7 @@ function LiveWorkBlock({
         title={task.title}
       >
         <span aria-hidden className="pn-profile__row-glyph">
-          {getKind(task.kind).chip.glyph}
+          <KindIcon kind={task.kind} />
         </span>
         {task.title}
       </button>
@@ -557,7 +557,7 @@ function OrgTreeBlock({
       {rows.map(({ node, depth, role, self }) => {
         const glyph = (
           <span aria-hidden className="pn-profile__row-glyph">
-            {getKind(node.kind).chip.glyph}
+            <KindIcon kind={node.kind} />
           </span>
         );
         const label = (
@@ -665,7 +665,7 @@ function SessionRowsBlock({
             onClick={() => onOpenEntity?.(peer.id)}
           >
             <span aria-hidden className="pn-profile__row-glyph">
-              {getKind(peer.kind).chip.glyph}
+              <KindIcon kind={peer.kind} />
             </span>
             <span className="pn-profile__row-name">{row.name}</span>
             <span aria-hidden className="pn-profile__sep">

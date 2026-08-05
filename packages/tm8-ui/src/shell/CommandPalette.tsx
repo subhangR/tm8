@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EntitySummary } from '@tm8/contract';
 import type { ActionContext, ActionRef } from '../domain';
-import { deferredActions, getKind, resolveAction } from '../domain';
+import { KindIcon, deferredActions, getKind, resolveAction } from '../domain';
 import './palette.css';
 
 /**
@@ -32,7 +32,7 @@ import './palette.css';
 export interface PaletteView {
   id: string;
   label: string;
-  glyph?: string;
+  glyph?: ReactNode;
   /** Absent ⇒ the view is implemented and openable. */
   disabledReason?: string;
 }
@@ -55,9 +55,9 @@ export interface CommandPaletteProps {
 }
 
 type Row =
-  | { kind: 'entity'; id: string; label: string; glyph: string; meta?: string; disabled?: never }
-  | { kind: 'view'; id: string; label: string; glyph: string; meta?: string; disabled?: string }
-  | { kind: 'action'; id: ActionRef; label: string; glyph: string; meta?: string; disabled?: string };
+  | { kind: 'entity'; id: string; label: string; glyph: ReactNode; meta?: string; disabled?: never }
+  | { kind: 'view'; id: string; label: string; glyph: ReactNode; meta?: string; disabled?: string }
+  | { kind: 'action'; id: ActionRef; label: string; glyph: ReactNode; meta?: string; disabled?: string };
 
 const GROUPS: readonly { key: string; label: string }[] = [
   { key: 'entity', label: 'ENTITIES' },
@@ -286,7 +286,7 @@ function buildRows(
       kind: 'entity',
       id: entity.id,
       label: entity.title,
-      glyph: getKind(entity.kind).chip.glyph,
+      glyph: <KindIcon kind={entity.kind} />,
       meta: getKind(entity.kind).label,
     });
   }

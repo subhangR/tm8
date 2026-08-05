@@ -22,6 +22,7 @@ import type {
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
+import type { KindArt } from './kind-art';
 
 // ---------------------------------------------------------------------------
 // Contract-derived vocabulary (cite the member, never an invented type)
@@ -44,9 +45,14 @@ export type GroupByKey = NonNullable<CollectionQuery['groupBy']>;
 export type Hash = string;
 
 /**
- * A glyph reference. The canvases draw icons as text glyphs (the menu rail's
- * collapsed 48px state, the Z1 kind chip) and the kit renders them
- * `aria-hidden` beside a real label — so the reference IS the glyph.
+ * A glyph reference — a literal text character.
+ *
+ * This WAS how kinds were marked everywhere. It is now the fallback half of a
+ * pair: `KindConfig.iconArt` carries the drawn mark the UI renders, and this
+ * carries the character a string-only surface can still print. Actions
+ * (`ActionDef.icon`) remain text-only — a verb's mark sits inside a 22px
+ * control next to its own word, which is a different problem from telling
+ * twenty KINDS apart at a glance.
  */
 export type IconRef = string;
 
@@ -687,8 +693,24 @@ export interface KindConfig {
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
   labelPlural: string;
-  /** Required by the collapsed 48px menu rail state (02-LAYOUT §1). */
+  /**
+   * The TEXT fallback mark. Still required — it is what a plain-string surface
+   * (a `title=` tooltip, a palette row, a console dump) can show — but it is
+   * no longer what the UI DRAWS. `iconArt` is.
+   */
   icon: IconRef;
+  /**
+   * The DRAWN mark: SVG path data on a 16×16 grid (`domain/kind-art.ts`),
+   * rendered by `KindIcon`.
+   *
+   * This is a data field for the reason the module header gives — per-kind
+   * divergence lives in registry DATA (L2), and an icon is the purest case of
+   * it. It is REQUIRED rather than optional so that adding a kind cannot
+   * silently ship the ◇ fallback: totality is asserted in `registry.test.ts`,
+   * along with uniqueness, which is the actual defect this field was added to
+   * end — thirteen of the twenty text glyphs were the same small lozenge.
+   */
+  iconArt: KindArt;
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

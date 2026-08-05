@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { EntityDetail, EntitySummary, ProjectResource } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionDef } from '../../domain';
-import { allActions, getKind } from '../../domain';
+import { KindIcon, allActions, getKind } from '../../domain';
 import { Eyebrow, Pill } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts` — the ProfileBody precedent,
@@ -163,7 +163,7 @@ export function GovernedBody({
         aria-labelledby="tab-content"
       >
         <EmptyBody
-          glyph={getKind(detail.kind).chip.glyph}
+          glyph={<KindIcon kind={detail.kind} />}
           sentence="This entity renders universal fields only — its registry row declares no blocks. Nothing is invented."
         />
       </div>
@@ -612,7 +612,7 @@ function SessionRow({
         aria-hidden
       />
       <span aria-hidden className="gb-sessions__glyph">
-        {getKind(session.kind).chip.glyph}
+        <KindIcon kind={session.kind} />
       </span>
       <span className="gb-sessions__name">{row.name}</span>
       <span aria-hidden className="gb-sessions__sep">

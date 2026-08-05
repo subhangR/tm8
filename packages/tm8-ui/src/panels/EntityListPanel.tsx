@@ -30,7 +30,7 @@ import type {
   ValueControl,
   CollectionMode,
 } from '../domain';
-import { ALL_MODES, REASONS, collectionKinds, getKind, resolveAction } from '../domain';
+import { ALL_MODES, KindIcon, REASONS, collectionKinds, getKind, resolveAction } from '../domain';
 import { Avatar, type PillTone } from '../kit';
 import {
   CheckingPermission,
@@ -580,7 +580,7 @@ function KindSelector({
     <div className="lp__selector" ref={ref}>
       <button type="button" className="lp__kind" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className="lp__kind-glyph" aria-hidden>
-          {config.chip.glyph}
+          <KindIcon kind={config.kind} />
         </span>
         {config.labelPlural}
         <span className="lp__caret" aria-hidden>
@@ -615,7 +615,7 @@ function KindSelector({
                   onKindChange?.(k.kind);
                 }}
               >
-                <span aria-hidden>{k.chip.glyph}</span>
+                <KindIcon kind={k.kind} />
                 {k.labelPlural}
               </button>
             </li>
@@ -1571,12 +1571,12 @@ function Band({
          */
         query && query.trim().length > 0 ? (
           <EmptyBody
-            glyph={config.chip.glyph}
+            glyph={<KindIcon kind={config.kind} size={22} />}
             sentence={`No ${config.labelPlural.toLowerCase()} match “${query.trim()}”. Clear the search to see them all.`}
           />
         ) : (
           <EmptyBody
-            glyph={config.chip.glyph}
+            glyph={<KindIcon kind={config.kind} size={22} />}
             sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
           />
         )
@@ -2110,7 +2110,7 @@ function Tile({
                   .join(' ')}
               />
             ) : (
-              <span className="lp__kindmark">{config.chip.glyph}</span>
+              <span className="lp__kindmark"><KindIcon kind={config.kind} /></span>
             )}
           </span>
 

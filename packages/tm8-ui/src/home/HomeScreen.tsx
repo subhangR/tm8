@@ -34,6 +34,7 @@ import { useMemo, type ReactNode } from 'react';
 import type { EntityId } from '@tm8/contract';
 import { DisabledAction, DisabledIconControl, type UnavailableReason } from '../panels';
 import { Avatar, Eyebrow, Kbd } from '../kit';
+import { KindIcon } from '../domain';
 import { useMeasuredWidth } from '../shell';
 import { homeActivityLoadEarlierReason } from '../fixtures';
 import { assignableKinds, composeMyWork, type HomeRow, type HomeSection } from './home-model';
@@ -309,9 +310,9 @@ export function HomeScreen(props: HomeScreenProps) {
                         {row.objectTitle ? (
                           <>
                             {' '}
-                            {row.objectGlyph ? (
+                            {row.objectKind ? (
                               <span aria-hidden className="hm-act__glyph">
-                                {row.objectGlyph}
+                                <KindIcon kind={row.objectKind} size={13} />
                               </span>
                             ) : null}{' '}
                             <span className="hm-act__object">{row.objectTitle}</span>
@@ -399,7 +400,7 @@ function Row({ row, onOpen }: { row: HomeRow; onOpen(id: EntityId): void }) {
     >
       <span aria-hidden className="hm-row__dot" data-dot={row.dot ?? 'none'} data-tone={row.tone} />
       <span aria-hidden className="hm-row__glyph">
-        {row.glyph}
+        {row.kind ? <KindIcon kind={row.kind} /> : null}
       </span>
       {row.actor ? (
         <Avatar

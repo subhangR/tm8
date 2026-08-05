@@ -21,6 +21,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { AttentionRequest, EntityId, SpaceId } from '@tm8/contract';
 import type { Seam } from '../data/seam';
+import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
 import { Avatar } from '../kit';
 import { type AttentionEntityGroup, groupAttentionByEntity } from './attention-model';
@@ -204,7 +205,11 @@ function AttentionRow(props: {
         </span>
         <span className="att-inbox__body">
           <span className="att-inbox__title">
-            {config ? <span className="att-inbox__glyph-sm" aria-hidden="true">{config.icon}</span> : null}
+            {config ? (
+              <span className="att-inbox__glyph-sm" aria-hidden="true">
+                <KindIcon kind={config.kind} />
+              </span>
+            ) : null}
             <span className={name ? 'att-inbox__name' : 'att-inbox__name att-inbox__name--raw'}>
               {title}
             </span>
