@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -20,6 +20,9 @@ import {
   listProjectDirectories,
 } from '../../src/facade/services/w2/project-directories.js';
 import type { OperationHandler, RequestContext } from '../../src/http/types.js';
+
+/** The workspace directory is named for the account id. */
+const WORKSPACE_ACCOUNT = '00000000-0000-7000-8000-0000000006a1';
 
 const IDS = {
   space: '00000000-0000-7000-8000-000000000601',
@@ -51,7 +54,9 @@ const PROJECT_ROW = {
 
 class FakeDb implements Db {
   readonly calls: Array<{ fn: string; args: readonly unknown[] }> = [];
-  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async () => [];
+  /** Every workspace-scoped path resolves the caller's account first. */
+  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) =>
+    (/from public\.accounts/.test(sql) ? [{ id: WORKSPACE_ACCOUNT }] : []) as never;
   rpcImpl: <T>(fn: string, args: readonly unknown[]) => Promise<T> = async (fn, args) => {
     this.calls.push({ fn, args });
     if (fn === 'correct_project_association') {
@@ -168,28 +173,54 @@ describe('W2.G06 projects and association correction facade', () => {
     }
   });
 
-  it('requires node-admin claims before browsing or creating local directories', async () => {
-    const registry = registered(new FakeDb());
-    const identity = {
-      kind: 'bearer' as const,
-      identityId: 'ordinary-user',
-      token: 'test-token',
-      nodeAdmin: false,
-    };
-    await expect(handler(registry, 'projects.directories.list')(
-      request('projects.directories.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(handler(registry, 'projects.create')(
-      request('projects.create', {
-        identity,
-        body: {
-          name: 'refused',
-          workingDir: '/tmp/refused-project',
-          ensureWorkingDir: true,
-          clientMutationId: 'refused-create',
-        },
-      }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+  it('gives an ordinary member their own workspace, and refuses paths outside it', async () => {
+    // REPLACED a node-admin gate, deliberately. That gate was unreachable: the
+    // only node-admin account on a deployed node is the passwordless loopback
+    // owner, so no browser session could satisfy it and "connect a local
+    // folder" refused every human from the day it shipped. The replacement is
+    // confinement — you get one directory, and only yours.
+    const base = await mkdtemp(join(tmpdir(), 'tm8-workspace-'));
+    process.env.TM8_USER_WORKSPACE_ROOT = base;
+    try {
+      const db = new FakeDb();
+      db.queryImpl = (async (sql: string) =>
+        (/from public\.accounts/.test(sql) ? [{ id: WORKSPACE_ACCOUNT }] : [])) as never;
+      const registry = registered(db);
+      const identity = {
+        kind: 'bearer' as const,
+        identityId: 'ordinary-user',
+        token: 'test-token',
+        nodeAdmin: false,
+      };
+
+      const listing = await handler(registry, 'projects.directories.list')(
+        request('projects.directories.list', { identity }),
+      ) as { path: string; roots: string[] };
+      // Created on demand by the first browse — there is no provisioning step
+      // to forget, and the path is the account id, never the username, which
+      // can change.
+      expect(listing.path).toBe(join(await realpath(base), WORKSPACE_ACCOUNT));
+      expect(listing.roots).toEqual([listing.path]);
+
+      await expect(handler(registry, 'projects.directories.list')(
+        request('projects.directories.list', { identity, query: `path=${base}` }),
+      )).rejects.toMatchObject({ code: 'forbidden' });
+
+      await expect(handler(registry, 'projects.create')(
+        request('projects.create', {
+          identity,
+          body: {
+            name: 'refused',
+            workingDir: '/tmp/refused-project',
+            ensureWorkingDir: true,
+            clientMutationId: 'refused-create',
+          },
+        }),
+      )).rejects.toMatchObject({ code: 'forbidden' });
+    } finally {
+      delete process.env.TM8_USER_WORKSPACE_ROOT;
+      await rm(base, { recursive: true, force: true });
+    }
   });
 
   it('returns complete ProjectResource shapes and narrows list by a validated active Space link', async () => {

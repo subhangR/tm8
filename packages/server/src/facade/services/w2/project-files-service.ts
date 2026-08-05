@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 
 import {
   CollabError,
@@ -14,6 +15,7 @@ import { claimsFor, commandEnvelope, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { toCommandResult, type RpcCommandResult } from '../../handlers/entities.js';
 import { listProjectFiles, projectFileStream, resolveProjectFile } from './project-files.js';
+import { requireInScope, workspaceScopeFor, type WorkspaceScope } from './workspace-scope.js';
 
 /** Matches files.uploadInit — the slot this service opens is the same slot. */
 const UPLOAD_TTL_MS = 15 * 60 * 1_000;
@@ -125,11 +127,12 @@ export class W2ProjectFilesService {
 
   readonly listFiles: OperationHandler = async (ctx) => {
     const projectId = requireUuidParam(ctx, 'projectId');
-    const { workingDir } = await this.project(ctx, projectId);
+    const { workingDir, scope } = await this.project(ctx, projectId);
     const listing = await listProjectFiles(
       workingDir,
       ctx.query.get('path') ?? undefined,
       this.maxSizeBytes,
+      scope.roots,
     );
     return { projectId, ...listing } satisfies ProjectFileListing;
   };
@@ -137,8 +140,8 @@ export class W2ProjectFilesService {
   readonly attachFile: OperationHandler = async (ctx) => {
     const projectId = requireUuidParam(ctx, 'projectId');
     const input = ctx.body as ProjectFileAttachInput;
-    const { workingDir, claims, viewerIdentityId } = await this.project(ctx, projectId);
-    const file = await resolveProjectFile(workingDir, input.path, this.maxSizeBytes);
+    const { workingDir, claims, viewerIdentityId, scope } = await this.project(ctx, projectId);
+    const file = await resolveProjectFile(workingDir, input.path, this.maxSizeBytes, scope.roots);
 
     const envelope = commandEnvelope(ctx);
     const name = input.name ?? file.name;
@@ -273,6 +276,7 @@ export class W2ProjectFilesService {
     workingDir: string;
     claims: DbClaims;
     viewerIdentityId: string;
+    scope: WorkspaceScope;
   }> {
     const owner = await this.deps.owner();
     const viewerIdentityId = requireAuthenticatedIdentity(ctx, owner.identityId);
@@ -282,9 +286,11 @@ export class W2ProjectFilesService {
       identityId: viewerIdentityId,
       nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
     };
-    if (claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to read project files');
-    }
+    // Confinement, not privilege — see workspace-scope.ts. The project's own
+    // working directory must sit inside the caller's scope, which is what stops
+    // one member reading files out of another member's private project even
+    // when both are members of the same Space.
+    const scope = await workspaceScopeFor(this.deps.db, claims);
     const rows = await this.deps.db.query<WorkingDirRow>(
       claims,
       `select working_dir from public.projects where id = $1`,
@@ -292,6 +298,7 @@ export class W2ProjectFilesService {
     );
     const row = rows[0];
     if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
-    return { workingDir: row.working_dir, claims, viewerIdentityId };
+    requireInScope(scope, resolve(row.working_dir));
+    return { workingDir: row.working_dir, claims, viewerIdentityId, scope };
   }
 }
