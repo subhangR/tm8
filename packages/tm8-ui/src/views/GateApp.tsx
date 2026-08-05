@@ -38,11 +38,12 @@ import {
   homeActivityLoadEarlierReason,
   presenceHollowReason,
 } from '../fixtures';
+import type { Seam } from '../data/seam';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
 import { useTheme } from '../theme/useTheme';
-import { AccountMenu, authTokenFor, useAuthActions } from '../auth';
+import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { HomeScreen } from '../home';
@@ -85,6 +86,8 @@ export interface GateAppProps {
   servers?: readonly UiServer[];
   onSelectServer?(id: string): void;
   onAddServer?(input: AddServerInput): Promise<unknown>;
+  /** Test injection port, forwarded to `useGateData` — see `GateOptions.seam`. */
+  seam?: Seam;
 }
 
 export function GateApp(props: GateAppProps = {}) {
@@ -107,6 +110,7 @@ export function GateApp(props: GateAppProps = {}) {
     // component on the server id, so a server switch remounts with the right
     // store entry anyway.
     getAuthToken: () => authTokenFor(activeServer.id),
+    ...(props.seam ? { seam: props.seam } : {}),
   });
   const kinds = useSidePanelKinds({
     viewerId: 'viewer',
@@ -122,6 +126,17 @@ export function GateApp(props: GateAppProps = {}) {
     data.ensureKind(kinds.leftKind);
     data.ensureKind(kinds.rightKind);
   }, [data, kinds.leftKind, kinds.rightKind]);
+
+  // A pass minted from the in-workspace sign-in must be keyed by this server's
+  // ORIGIN, not the `name:<id>` fallback. Normally the registry caches the
+  // origin while listing connections, but that read can itself be the thing
+  // that failed — so the mapping is written here, from the server row in hand,
+  // before the frame can mint anything.
+  useEffect(() => {
+    if (data.authRequired && activeServer.id !== LOCAL_SERVER.id) {
+      noteServerOrigin(activeServer.id, activeServer.baseUrl);
+    }
+  }, [data.authRequired, activeServer.id, activeServer.baseUrl]);
   const notices = useNotices();
 
   // The terminal lives many levels down and fires notices from xterm event
@@ -609,6 +624,24 @@ export function GateApp(props: GateAppProps = {}) {
                   ttlMs: 6000,
                 })
               }
+            />
+          ) : data.authRequired ? (
+            /* The active server answered the boot read with "authentication
+               is required". That is not an unreachable node and not an empty
+               workspace — it is a sign-in, so the gate's own login frame
+               renders HERE, scoped to this server (the auth verbs resolve the
+               active server per call). The real sign-in writes the pass and
+               notifies; the parked boot read resumes off that, so no onDone
+               wiring is needed. `rootScope="inherit"` because this already
+               sits inside the shell's `.cv2-root` — see AuthFlow. */
+            <AuthFlow
+              frame={undefined}
+              initialFrame="1d"
+              rootScope="inherit"
+              onDone={() => {
+                // Unreachable outside the dev bypass: the verbs sign in by
+                // writing the session, and boot resumes off the store.
+              }}
             />
           ) : data.bootError ? (
             /* GAP-1 (data-wiring handover): with the real seam now the
