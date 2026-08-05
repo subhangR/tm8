@@ -314,27 +314,42 @@ describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
     expect(panel(doc, host({ kind: 'doc' })).queryByTestId('panel-controls')).toBeNull();
   });
 
-  it('leaves the terminal archetype where it was, ABOVE the tabs', () => {
+  it('puts the TERMINAL archetype in the same band, in the same layout', () => {
     /**
-     * NOT an exception carved for a kind — a structural consequence. A
-     * terminal panel owns its full height below the tabs (user ruling
-     * 2026-07-31, "terminal all the way, till the component bottom"), so
-     * there is no band under the tabs for a row to sit in.
+     * USER RULING 2026-08-05 (second), verbatim: "why is the session still
+     * showing that big row with state and status and all, the task detail
+     * panel already implements that, in a clean way. fix the session entity
+     * detail panel."
+     *
+     * The first pass exempted the terminal archetype and left it stacked ABOVE
+     * the tabs, on the reasoning that a terminal owns its full height below
+     * them. That cost the session MORE height, not less: both of its controls
+     * are refusals (state is observed, archive is usually not permitted), and
+     * `lines` prints a refusal as a full sentence under its control while
+     * `chips` puts the same sentence in a tooltip.
      */
     const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
     if (!session) throw new Error('the fixtures must carry a work_session');
 
-    const { container, getByTestId, queryByTestId } = panel(session, host({ kind: 'work_session' }));
-    expect(queryByTestId('panel-controls')).toBeNull();
+    const { getByTestId } = panel(session, host({ kind: 'work_session' }));
 
-    const tabs = getByTestId('panel-toolbar');
-    // Queried by class, not by `row-state-select`: a session's state control
-    // is `readOnlyReason` — observed, not chosen — so it renders as a refusal
-    // and there is no `<select>` to find.
-    const strip = container.querySelector('.lp__rowdetail');
-    expect(strip).not.toBeNull();
-    // DOCUMENT_POSITION_PRECEDING === 2.
-    expect(tabs.compareDocumentPosition(strip!) & 2).toBe(2);
+    const band = getByTestId('panel-controls');
+    expect(band.firstElementChild?.className).toContain('lp__rowdetail--chips');
+    // Node.DOCUMENT_POSITION_FOLLOWING === 4.
+    expect(getByTestId('panel-toolbar').compareDocumentPosition(band) & 4).toBe(4);
+  });
+
+  it('leaves a session no stacked strip anywhere in the panel', () => {
+    // The regression guard for the mount that was deleted rather than moved:
+    // an `isTerminal ? strip : null` above the tabs would satisfy the test
+    // above (the band would also render) while still drawing the big row.
+    const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
+    if (!session) throw new Error('the fixtures must carry a work_session');
+
+    const { container } = panel(session, host({ kind: 'work_session' }));
+    const strips = container.querySelectorAll('.lp__rowdetail');
+    expect(strips).toHaveLength(1);
+    expect(strips[0]!.className).toContain('lp__rowdetail--chips');
   });
 });
 
