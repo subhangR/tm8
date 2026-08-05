@@ -34,17 +34,24 @@ const OWNER = {
 
 const MAX_SIZE = 1_024 * 1_024;
 
+/** The workspace directory is named for the account, so the tests need one. */
+const ACCOUNT_ID = '00000000-0000-7000-8000-0000000007a1';
+
 /** Every scratch tree is created under one temp root that doubles as the browse root. */
 let scratch: string;
 let workingDir: string;
 
 beforeEach(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'tm8-project-files-'));
-  workingDir = join(scratch, 'project');
-  await mkdir(workingDir);
+  // The service confines every path to the CALLER'S workspace, so the project
+  // has to live inside it — which is exactly the arrangement the product makes.
+  process.env.TM8_USER_WORKSPACE_ROOT = scratch;
+  workingDir = join(scratch, ACCOUNT_ID, 'project');
+  await mkdir(workingDir, { recursive: true });
 });
 
 afterEach(async () => {
+  delete process.env.TM8_USER_WORKSPACE_ROOT;
   await rm(scratch, { recursive: true, force: true });
 });
 
@@ -80,8 +87,11 @@ class FakeDb implements Db {
     throw new Error(`unexpected rpc ${fn}`);
   };
 
-  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) =>
-    (/from public\.projects/.test(sql) ? [{ working_dir: workingDir }] : []) as never;
+  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) => {
+    if (/from public\.accounts/.test(sql)) return [{ id: ACCOUNT_ID }] as never;
+    if (/from public\.projects/.test(sql)) return [{ working_dir: workingDir }] as never;
+    return [] as never;
+  };
 
   tx<T>(_claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
     return fn({
@@ -243,7 +253,11 @@ describe('W2 connected project folder facade', () => {
     expect(registry.implemented()).toEqual(['projects.files.attach', 'projects.files.list']);
   });
 
-  it('requires node-admin claims to read or attach node-local files', async () => {
+  it('serves an ordinary member their OWN workspace rather than refusing them', async () => {
+    // This replaced a node-admin gate. That gate was unreachable in practice —
+    // the only node-admin account on a deployed node is the passwordless
+    // loopback owner — so it refused every human and the feature was dead.
+    await writeFile(join(workingDir, 'notes.md'), 'hello');
     const { registry } = await registered(new FakeDb());
     const identity = {
       kind: 'bearer' as const,
@@ -251,20 +265,29 @@ describe('W2 connected project folder facade', () => {
       token: 'test-token',
       nodeAdmin: false,
     };
-    await expect(handler(registry, 'projects.files.list')(
+    const listing = await handler(registry, 'projects.files.list')(
       request('projects.files.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(handler(registry, 'projects.files.attach')(
-      request('projects.files.attach', {
-        identity,
-        body: { clientMutationId: 'm-1', spaceId: IDS.space, path: join(workingDir, 'notes.md') },
-      }),
+    ) as { files: Array<{ name: string }> };
+    expect(listing.files.map((row) => row.name)).toEqual(['notes.md']);
+  });
+
+  it('refuses a project whose directory lies outside the caller\'s workspace', async () => {
+    const outsider = join(scratch, 'someone-else', 'project');
+    await mkdir(outsider, { recursive: true });
+    const db = new FakeDb();
+    db.queryImpl = (async (sql: string) => {
+      if (/from public\.accounts/.test(sql)) return [{ id: ACCOUNT_ID }];
+      if (/from public\.projects/.test(sql)) return [{ working_dir: outsider }];
+      return [];
+    }) as never;
+    const { registry } = await registered(db);
+    await expect(handler(registry, 'projects.files.list')(
+      request('projects.files.list'),
     )).rejects.toMatchObject({ code: 'forbidden' });
   });
 
   it('answers the listing for the project the path parameter names', async () => {
     await writeFile(join(workingDir, 'notes.md'), 'hello');
-    process.env.TM8_PROJECT_ROOTS = scratch;
     try {
       const { registry } = await registered(new FakeDb());
       const listing = await handler(registry, 'projects.files.list')(request('projects.files.list')) as
@@ -273,14 +296,13 @@ describe('W2 connected project folder facade', () => {
       expect(listing.workingDir).toBe(workingDir);
       expect(listing.files.map((entry) => entry.name)).toEqual(['notes.md']);
     } finally {
-      delete process.env.TM8_PROJECT_ROOTS;
+      // workspace root is cleared in afterEach
     }
   });
 
   it('drives the upload ledger end to end and leaves the bytes readable in the blob store', async () => {
     const bytes = Buffer.from('# release notes\n');
     await writeFile(join(workingDir, 'notes.md'), bytes);
-    process.env.TM8_PROJECT_ROOTS = scratch;
     try {
       const db = new FakeDb();
       const { registry, store } = await registered(db);
@@ -324,13 +346,12 @@ describe('W2 connected project folder facade', () => {
       expect(init[12]).toBe(db.calls.find((c) => c.fn === 'w2_init_file_upload')!.args[12]);
       expect(await store.read(db.storagePath, IDS.space)).toEqual(bytes);
     } finally {
-      delete process.env.TM8_PROJECT_ROOTS;
+      // workspace root is cleared in afterEach
     }
   });
 
   it('honours an overriding name and MIME type without re-reading a different file', async () => {
     await writeFile(join(workingDir, 'notes.md'), 'body');
-    process.env.TM8_PROJECT_ROOTS = scratch;
     try {
       const db = new FakeDb();
       const { registry } = await registered(db);
@@ -347,13 +368,12 @@ describe('W2 connected project folder facade', () => {
       expect(init[3]).toBe('Release notes.md');
       expect(init[4]).toBe('text/plain');
     } finally {
-      delete process.env.TM8_PROJECT_ROOTS;
+      // workspace root is cleared in afterEach
     }
   });
 
   it('skips the write when a previous attempt already staged the bytes', async () => {
     await writeFile(join(workingDir, 'notes.md'), 'retry me');
-    process.env.TM8_PROJECT_ROOTS = scratch;
     try {
       const db = new FakeDb();
       db.outcomes.w2_authorize_file_upload = {
@@ -371,13 +391,12 @@ describe('W2 connected project folder facade', () => {
         'w2_complete_file_upload',
       ]);
     } finally {
-      delete process.env.TM8_PROJECT_ROOTS;
+      // workspace root is cleared in afterEach
     }
   });
 
   it('refuses to attach a file the project does not contain, before opening any upload slot', async () => {
     await writeFile(join(scratch, 'outside.txt'), 'not in the project');
-    process.env.TM8_PROJECT_ROOTS = scratch;
     try {
       const db = new FakeDb();
       const { registry } = await registered(db);
@@ -386,7 +405,7 @@ describe('W2 connected project folder facade', () => {
       }))).rejects.toMatchObject({ code: 'forbidden' });
       expect(db.calls).toEqual([]);
     } finally {
-      delete process.env.TM8_PROJECT_ROOTS;
+      // workspace root is cleared in afterEach
     }
   });
 });

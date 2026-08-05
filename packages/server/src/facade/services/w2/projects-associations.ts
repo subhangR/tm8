@@ -13,12 +13,15 @@ import {
   type ProjectUpdateInput,
 } from '@tm8/contract';
 
+import { resolve } from 'node:path';
+
 import type { Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, optionalUuid, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
 import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+import { requireInScope, workspaceScopeFor } from './workspace-scope.js';
 
 export interface ProjectRow {
   id: string;
@@ -308,12 +311,22 @@ function updatePatch(input: ProjectUpdateInput): Record<string, unknown> {
 export class W2ProjectsAssociationsService {
   constructor(private readonly deps: FacadeDeps) {}
 
+  /**
+   * Browse the caller's OWN workspace, and — for a node admin only — the wider
+   * `TM8_PROJECT_ROOTS` view they always had.
+   *
+   * This used to demand node-admin outright, which made it unreachable: the
+   * only node-admin account on a deployed node is the passwordless loopback
+   * `owner`, so no browser session could ever satisfy it. See
+   * `workspace-scope.ts` for the confinement model that replaced it, including
+   * what it does NOT protect against.
+   */
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
-    if (claimsFor(owner, ctx).nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to browse project directories');
-    }
-    return listProjectDirectories(ctx.query.get('path') ?? undefined);
+    const scope = await workspaceScopeFor(this.deps.db, claimsFor(owner, ctx));
+    const requested = ctx.query.get('path') ?? undefined;
+    if (requested) requireInScope(scope, resolve(requested));
+    return listProjectDirectories(requested ?? scope.home, scope.roots);
   };
 
   readonly listProjects = async (ctx: RequestContext): Promise<ProjectResource[]> => {
@@ -353,11 +366,20 @@ export class W2ProjectsAssociationsService {
     const input = ctx.body as ProjectCreateInput;
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    if (input.ensureWorkingDir && claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to create a project directory');
-    }
+    // Creating a project is no longer node-admin-only: a member connecting
+    // their own folder is the ordinary case this flow exists for, and
+    // confinement is a tighter answer than a privilege check.
+    //
+    // A NODE ADMIN IS DELIBERATELY NOT CONFINED HERE. Registering an arbitrary
+    // absolute path is existing behaviour that CLI and bootstrap callers rely
+    // on — /opt/tm8/staging is itself registered that way — and narrowing it
+    // would be a silent breaking change wearing a security badge. What is new
+    // is that an ordinary member may now create one AT ALL, and they get only
+    // their own workspace.
+    const scope = await workspaceScopeFor(this.deps.db, claims);
+    if (!scope.nodeAdmin) requireInScope(scope, resolve(input.workingDir));
     const workingDir = input.ensureWorkingDir
-      ? await ensureProjectWorkingDirectory(input.workingDir)
+      ? await ensureProjectWorkingDirectory(input.workingDir, scope.roots)
       : input.workingDir;
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
       claims,
