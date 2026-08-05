@@ -88,7 +88,7 @@ class FakeDb implements Db {
   };
 
   queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) => {
-    if (/from public\.accounts/.test(sql)) return [{ id: ACCOUNT_ID }] as never;
+    if (/workspace_account_id/.test(sql)) return [{ id: ACCOUNT_ID }] as never;
     if (/from public\.projects/.test(sql)) return [{ working_dir: workingDir }] as never;
     return [] as never;
   };
@@ -276,7 +276,7 @@ describe('W2 connected project folder facade', () => {
     await mkdir(outsider, { recursive: true });
     const db = new FakeDb();
     db.queryImpl = (async (sql: string) => {
-      if (/from public\.accounts/.test(sql)) return [{ id: ACCOUNT_ID }];
+      if (/workspace_account_id/.test(sql)) return [{ id: ACCOUNT_ID }];
       if (/from public\.projects/.test(sql)) return [{ working_dir: outsider }];
       return [];
     }) as never;
