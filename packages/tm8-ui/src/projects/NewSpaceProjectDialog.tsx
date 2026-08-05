@@ -30,6 +30,8 @@ export interface ProjectOnboardingInput {
   workingDir: string;
   ensureWorkingDir: boolean;
   trusted: boolean;
+  /** Private keeps the folder, repo and sessions visible to you alone. */
+  keepPrivate: boolean;
 }
 
 export interface OnboardingMutationIds {
@@ -94,6 +96,7 @@ export async function onboardSpaceProject(
     workingDir: input.workingDir,
     ensureWorkingDir: input.ensureWorkingDir,
     trust: input.trusted ? 'trusted' : 'untrusted',
+    shareMode: input.keepPrivate ? 'private' : 'space',
     clientMutationId: ids.project,
   }));
   await stage('link', onStage, () => port.linkProject(createdSpace.space.id, {
@@ -137,6 +140,9 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
   const [workingDir, setWorkingDir] = useState('');
   const [ensureWorkingDir, setEnsureWorkingDir] = useState(false);
   const [trusted, setTrusted] = useState(false);
+  // Private by default: publishing someone's working directory because they
+  // did not notice a checkbox is not a mistake they can take back.
+  const [keepPrivate, setKeepPrivate] = useState(true);
   const [browserOpen, setBrowserOpen] = useState(false);
   const [listing, setListing] = useState<ProjectDirectoryListing | null>(null);
   const [browserBusy, setBrowserBusy] = useState(false);
@@ -207,6 +213,7 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
         workingDir,
         ensureWorkingDir,
         trusted,
+        keepPrivate,
       }, stableIds, setCurrentStage);
       ids.current = null;
       setCurrentStage(null);
@@ -307,6 +314,17 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
               </div>
               {ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
             </div>
+            <label className="project-onboard__trust">
+              <input type="checkbox" checked={keepPrivate} onChange={(event) => setKeepPrivate(event.target.checked)} disabled={busy || lockedForRetry} />
+              <span>
+                <strong>Keep this project private to me</strong>
+                <small>
+                  On by default. Other people in the Space cannot see this project, its folder, or the
+                  sessions you run in it — Space admins included. Turn it off to share it with everyone
+                  in the Space.
+                </small>
+              </span>
+            </label>
             <label className="project-onboard__trust">
               <input type="checkbox" checked={trusted} onChange={(event) => setTrusted(event.target.checked)} disabled={busy || lockedForRetry} />
               <span>

@@ -115,6 +115,8 @@ const FIXTURE_PROJECTS: readonly ProjectResource[] = [
     repoUrl: 'https://github.com/subhang/tm8',
     workingDir: '/fixture/tm8-ui',
     trust: 'trusted',
+    shareMode: 'space',
+    ownerAccountId: null,
     defaults: {},
     activeLinkCount: 1,
     createdAt: FIXTURE_NOW,
