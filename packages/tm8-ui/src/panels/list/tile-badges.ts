@@ -1,5 +1,6 @@
 import type { ActorSummary, EntitySummary } from '@tm8/contract';
 import type { TileBadgeSource } from '../../domain';
+import { actorPresentation } from '../../domain';
 import type { PillTone } from '../../kit';
 
 /**
@@ -33,6 +34,33 @@ export type TileSlot =
   | { slot: 'meta'; text: string }
   /** Line 1: provenance avatar. */
   | { slot: 'avatar'; actorId: string; label: string; provenance: 'human' | 'agent'; src?: string | null };
+
+/**
+ * A working/live actor slot, from the payload's own provenance. A RUN-shaped
+ * actor (honest `work_session` kind — a session with no resolvable persona)
+ * is NEVER an avatar: it renders as a session tag (▸ + title), because a
+ * process drawn with a face is the lie the widened contract exists to end.
+ * A persona resolved THROUGH a session still gets its avatar; `via` is a
+ * detail-surface fact, not a tile one.
+ */
+function actorSlot(a: {
+  id: string;
+  kind: string;
+  displayName: string;
+  isAgent: boolean;
+  avatar?: string | null;
+}): TileSlot {
+  if (actorPresentation(a as never) === 'run') {
+    return { slot: 'tag', label: `▸ ${a.displayName}`, tone: 'idle' };
+  }
+  return {
+    slot: 'avatar',
+    actorId: a.id,
+    label: a.displayName,
+    provenance: a.isAgent ? 'agent' : 'human',
+    src: a.avatar,
+  };
+}
 
 const WORK_STATUS_TONE: Record<string, PillTone> = {
   open: 'idle',
@@ -154,11 +182,11 @@ export function renderBadge(source: TileBadgeSource, row: EntitySummary): TileSl
     }
     case 'workingActors': {
       const a = row.badges.workingActors?.[0]?.actor;
-      return a ? { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar } : null;
+      return a ? actorSlot(a) : null;
     }
     case 'liveWork': {
       const a = actor((field(row, 'liveWork') as Record<string, unknown> | null)?.actor);
-      return a ? { slot: 'avatar', actorId: a.id, label: a.displayName, provenance: a.isAgent ? 'agent' : 'human', src: a.avatar } : null;
+      return a ? actorSlot(a) : null;
     }
     case 'owner': {
       const a = actor(field(row, 'owner'));

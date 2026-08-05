@@ -161,6 +161,12 @@ export interface EntityBadges {
   blocked?: { unresolvedHardDependencyCount: number; waitingOn: EntitySummary[] };
   pulls?: PullState[];
   workingActors?: LiveWork[];
+  /**
+   * Additive: the latest `completed_by` edge, readable at last — the house
+   * pattern (written by the completion command, and it IS an ending). Detail
+   * header line "Completed by {actor} {date}" and the Z2 card field.
+   */
+  completedBy?: { actor: ActorSummary; at: string };
   restricted?: boolean;
   /**
    * Derived at read time from mark edges and versions; never stored.
@@ -342,7 +348,15 @@ export interface EntityConnectionsQuery {
 export type EntityConnectionsPage = Page<EdgeView>;
 
 export interface EntityCapabilities { canEdit: boolean; canDelete: boolean; canAddChild: boolean; canLink: boolean;
-  canPull: boolean; canReact: boolean; canGrantPoints: boolean; canComplete: boolean }
+  canPull: boolean; canReact: boolean; canGrantPoints: boolean; canComplete: boolean;
+  /**
+   * Additive: the state ids the viewer may move this entity to, when a
+   * transition matrix EXISTS for its type. ABSENT means "no matrix — fall
+   * back to the registry vocabulary"; PRESENT is authoritative narrowing
+   * (doc 06 §1.5). Today no server matrix exists, so no server populates it;
+   * the field lands with the contract so both old and new servers are legal.
+   */
+  allowedTransitions?: string[] }
 
 export interface Page<T> { items: T[]; nextCursor: Cursor | null; total?: number }
 
@@ -362,6 +376,15 @@ export interface CollectionQuery {
     workStatus?: WorkStatus[]; axes?: Record<string, string[]>; assigneeIds?: EntityId[];
     edge?: { type: string; direction: 'incoming'|'outgoing'; entityId: EntityId };
     readyToPull?: boolean; inReviewForActorId?: EntityId; mentionedActorId?: EntityId;
+    /**
+     * Additive (board/people wave): entities this actor WORKED, resolved
+     * through the second hop — a `working_on` edge whose source is the actor
+     * itself OR a work_session the actor `participates_in`. A plain
+     * `filters.edge` on `working_on` matches only person-sourced edges (15%
+     * of the live data) and silently misses the rest; this is the honest
+     * form, so the "Worked by" filter may ship (doc 06 §3.2's gate).
+     */
+    workedByActorId?: EntityId;
     /**
      * Facade-defined server-preset expansions BEYOND the doc'd filter list
      * (flagged upstream): they make the `getHome` preset queries reproducible
@@ -390,7 +413,16 @@ export interface CollectionQuery {
 }
 
 export interface CollectionResult { query: CollectionQuery; page: Page<EntitySummary>; groups?: CollectionGroup[] }
-export interface CollectionGroup { key: string; label: string; items: EntitySummary[]; nextCursor?: Cursor }
+export interface CollectionGroup {
+  key: string; label: string; items: EntitySummary[]; nextCursor?: Cursor;
+  /**
+   * Additive: the group's TRUE size under the query's filters, independent of
+   * the page window. Fills the board's column headers with real counts and
+   * retires the "{n} shown" hedge; groups themselves stay page-scoped until
+   * per-group cursors exist.
+   */
+  total?: number;
+}
 export interface GraphQuery extends CollectionQuery { focusId?: EntityId; hops?: number; edgeTypes?: string[]; mode?: 'free'|'dependency' }
 export interface GraphResult { nodes: EntitySummary[]; edges: EdgeView[]; clusters: { parentId: EntityId; childIds: EntityId[] }[];
   layout?: Record<EntityId, { x: number; y: number }> }

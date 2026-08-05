@@ -4,6 +4,8 @@ export { Chip } from './Chip';
 export { IconBtn } from './IconBtn';
 export { Kbd } from './Kbd';
 export { Avatar, type AvatarProvenance, type AvatarSize } from './Avatar';
+export { ActorRef } from './ActorRef';
+export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';
 export { BootLoader } from './BootLoader';
 export { Markdown, headingsIn, type MarkdownFileHref, type MarkdownProps } from './Markdown';

@@ -69,6 +69,8 @@ export {
 
 export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 
+export { actorPresentation, type ActorPresentation } from './actors';
+
 export {
   AGENT_TOOLS,
   LAUNCH_MODES,
