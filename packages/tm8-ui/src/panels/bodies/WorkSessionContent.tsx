@@ -1,9 +1,25 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import type { ContentSurface } from '../../routes';
 
 const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
+/**
+ * SPLIT is viewer-local layout, deliberately NOT a fourth `ContentSurface`.
+ *
+ * `ContentSurface` is a contract type (`@tm8/contract`), projected and stored
+ * server-side as `initialContentSurface`. A layout preference is not a surface:
+ * nothing on the server needs to know two panes are visible at once, and
+ * widening a stored contract enum to carry a CSS arrangement would make every
+ * consumer of that enum handle a value that means nothing to it. So Split rides
+ * its own local key and the route keeps naming the surface that owns focus.
+ */
+const SPLIT_PREFIX = 'tm8:work-session-split:v1';
+const RATIO_PREFIX = 'tm8:work-session-split-ratio:v1';
+/** Neither pane may be driven below this share of the width. */
+const MIN_RATIO = 0.2;
+const MAX_RATIO = 0.8;
+const DEFAULT_RATIO = 0.5;
 
 const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
   terminal: 'Terminal',
@@ -86,6 +102,77 @@ export function WorkSessionContent({
   const tabRefs = useRef<Partial<Record<ContentSurface, HTMLButtonElement | null>>>({});
   const id = useId();
 
+  const splitKey = `${SPLIT_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
+  const ratioKey = `${RATIO_PREFIX}:${viewerMemberId ?? 'anonymous'}`;
+  const [splitRequested, setSplitRequested] = useState(() => readFlag(splitKey));
+  const [ratio, setRatio] = useState(() => readRatio(ratioKey));
+  const splitRef = useRef<HTMLDivElement | null>(null);
+
+  // Split needs BOTH panes, so it is only ever honoured while Chat exists and
+  // Debug — which owns the whole canvas and unmounts when deselected — is not
+  // the selected surface. Everywhere else this stays a plain tab switch.
+  const splitting = splitRequested && chatAvailable && surface !== 'debug';
+
+  // Entering Split mounts Chat for the same reason selecting it does: the pane
+  // is about to be visible, and `chatMounted` is what keeps it alive after.
+  useEffect(() => {
+    if (splitting) setChatMounted(true);
+  }, [splitting]);
+
+  const toggleSplit = useCallback(() => {
+    setSplitRequested((on) => {
+      const next = !on;
+      writeLocal(splitKey, next ? 'on' : 'off');
+      return next;
+    });
+  }, [splitKey]);
+
+  // Pointer-driven resize. The ratio is committed to storage on release rather
+  // than on every move: a drag is one decision, not sixty writes.
+  const onDividerPointerDown = useCallback(
+    (event: { clientX: number; currentTarget: Element; pointerId: number }) => {
+      const host = splitRef.current;
+      if (!host) return;
+      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+      const move = (moveEvent: PointerEvent) => {
+        const box = host.getBoundingClientRect();
+        if (box.width <= 0) return;
+        setRatio(clampRatio((moveEvent.clientX - box.left) / box.width));
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        setRatio((committed) => {
+          writeLocal(ratioKey, String(committed));
+          return committed;
+        });
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    },
+    [ratioKey],
+  );
+
+  // The divider is a real separator: arrow keys move it, Home/End slam it to
+  // the clamps, so a split is reachable without a pointer.
+  const onDividerKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 0.1 : 0.02;
+      let next: number | null = null;
+      if (event.key === 'ArrowLeft') next = ratio - step;
+      else if (event.key === 'ArrowRight') next = ratio + step;
+      else if (event.key === 'Home') next = MIN_RATIO;
+      else if (event.key === 'End') next = MAX_RATIO;
+      else if (event.key === 'Enter') next = DEFAULT_RATIO;
+      if (next === null) return;
+      event.preventDefault();
+      const clamped = clampRatio(next);
+      setRatio(clamped);
+      writeLocal(ratioKey, String(clamped));
+    },
+    [ratio, ratioKey],
+  );
+
   // External route hydration remains authoritative. A missing route value is
   // not treated as a change after mount, otherwise every local tab click would
   // immediately snap back to the pinned default before the router can mirror.
@@ -152,13 +239,36 @@ export function WorkSessionContent({
   // single-surface session would render its one pane with no dead switch.
   const showSwitch = surfaces.length > 1;
 
+  /*
+   * BOTH is a toggle, not a tab, and it is a sibling of the tablist rather than
+   * a member of it: a `role="tab"` inside a tablist promises "selecting me
+   * deselects the others", which is the opposite of what this control does. It
+   * is only offered when there are two panes to show at once.
+   */
+  const splitToggleEl = chatAvailable ? (
+    <button
+      type="button"
+      className="pn-surface-switch__tab pn-surface-switch__tab--split"
+      data-testid="work-session-split-toggle"
+      aria-pressed={splitting}
+      disabled={surface === 'debug'}
+      title={
+        surface === 'debug'
+          ? 'Debug uses the whole canvas — leave Debug to show Terminal and Chat together'
+          : 'Show Terminal and Chat side by side'
+      }
+      onClick={toggleSplit}
+    >
+      Both
+    </button>
+  ) : null;
+
   const switchEl = showSwitch ? (
     <div
       className={switchSlot ? 'pn-surface-switch pn-surface-switch--bar' : 'pn-surface-switch'}
-      role="tablist"
-      aria-label="Work session surface"
       data-testid="work-session-surface-switch"
     >
+      <div className="pn-surface-switch__tabs" role="tablist" aria-label="Work session surface">
       {surfaces.map((s) => (
         <button
           key={s}
@@ -179,6 +289,8 @@ export function WorkSessionContent({
           {SURFACE_LABEL[s]}
         </button>
       ))}
+      </div>
+      {splitToggleEl}
     </div>
   ) : null;
 
@@ -202,30 +314,60 @@ export function WorkSessionContent({
         </p>
       ) : null}
 
+      {/*
+       * The panes wrapper is rendered UNCONDITIONALLY, in split and single
+       * alike. Wrapping only while split would change the element's position in
+       * the tree on every toggle, and React would tear down and rebuild the
+       * terminal beneath it — losing the xterm instance and its PTY transport,
+       * which is the one thing this component exists to preserve. Layout is a
+       * CSS concern here, so only the attribute changes.
+       */}
       <div
-        id={panelId('terminal')}
-        role="tabpanel"
-        aria-labelledby={tabId('terminal')}
-        aria-hidden={surface !== 'terminal'}
-        className="pn-work-session-content__surface"
-        data-active={surface === 'terminal' ? 'true' : 'false'}
-        data-testid="work-session-terminal-surface"
+        className="pn-work-session-content__panes"
+        data-layout={splitting ? 'split' : 'single'}
+        style={splitting ? ({ ['--pn-split-ratio']: String(ratio) } as CSSProperties) : undefined}
+        ref={splitRef}
       >
-        {terminal}
-      </div>
-      {chatAvailable ? (
         <div
-          id={panelId('chat')}
+          id={panelId('terminal')}
           role="tabpanel"
-          aria-labelledby={tabId('chat')}
-          aria-hidden={surface !== 'chat'}
+          aria-labelledby={tabId('terminal')}
+          aria-hidden={!(surface === 'terminal' || splitting)}
           className="pn-work-session-content__surface"
-          data-active={surface === 'chat' ? 'true' : 'false'}
-          data-testid="work-session-chat-surface"
+          data-active={surface === 'terminal' || splitting ? 'true' : 'false'}
+          data-testid="work-session-terminal-surface"
         >
-          {chatMounted ? chat : null}
+          {terminal}
         </div>
-      ) : null}
+        {splitting ? (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize Terminal and Chat"
+            aria-valuenow={Math.round(ratio * 100)}
+            aria-valuemin={Math.round(MIN_RATIO * 100)}
+            aria-valuemax={Math.round(MAX_RATIO * 100)}
+            tabIndex={0}
+            className="pn-work-session-content__divider"
+            data-testid="work-session-split-divider"
+            onPointerDown={onDividerPointerDown}
+            onKeyDown={onDividerKeyDown}
+          />
+        ) : null}
+        {chatAvailable ? (
+          <div
+            id={panelId('chat')}
+            role="tabpanel"
+            aria-labelledby={tabId('chat')}
+            aria-hidden={!(surface === 'chat' || splitting)}
+            className="pn-work-session-content__surface"
+            data-active={surface === 'chat' || splitting ? 'true' : 'false'}
+            data-testid="work-session-chat-surface"
+          >
+            {chatMounted ? chat : null}
+          </div>
+        ) : null}
+      </div>
       <div
         id={panelId('debug')}
         role="tabpanel"
@@ -283,10 +425,38 @@ function readPreference(key: string): ContentSurface | null {
 }
 
 function writePreference(key: string, surface: ContentSurface): void {
+  writeLocal(key, surface);
+}
+
+/** Same storage discipline as `writePreference`, for the non-surface keys. */
+function writeLocal(key: string, value: string): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(key, surface);
+    window.localStorage.setItem(key, value);
   } catch {
     // Private/restricted storage must not make a local presentation toggle fail.
   }
+}
+
+function readFlag(key: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(key) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+function readRatio(key: string): number {
+  if (typeof window === 'undefined') return DEFAULT_RATIO;
+  try {
+    const raw = Number(window.localStorage.getItem(key));
+    return Number.isFinite(raw) && raw > 0 ? clampRatio(raw) : DEFAULT_RATIO;
+  } catch {
+    return DEFAULT_RATIO;
+  }
+}
+
+function clampRatio(value: number): number {
+  return Math.min(MAX_RATIO, Math.max(MIN_RATIO, value));
 }

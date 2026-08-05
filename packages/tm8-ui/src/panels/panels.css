@@ -119,6 +119,95 @@
   flex-direction: column;
 }
 .cv2-root .pn-work-session-content__surface[data-active='false'] { display: none; }
+/* SPLIT VIEW — Terminal and Chat side by side.
+
+   The panes wrapper exists in BOTH layouts so the React tree never changes
+   shape on toggle (see WorkSessionContent). In `single` it is a plain column
+   that hands its whole box to whichever pane is active, which is exactly what
+   the panes had before this wrapper existed — so single-pane rendering is
+   unchanged, and the terminal keeps the geometry it has always had. */
+.cv2-root .pn-work-session-content__panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cv2-root .pn-work-session-content__panes[data-layout='split'] {
+  flex-direction: row;
+  align-items: stretch;
+}
+/* Only the split layout constrains a pane's width. `--pn-split-ratio` is the
+   terminal's share; chat takes the rest. `min-width: 0` on both is what lets an
+   xterm canvas shrink instead of forcing the row wider than the panel. */
+.cv2-root .pn-work-session-content__panes[data-layout='split'] > .pn-work-session-content__surface {
+  min-width: 0;
+}
+.cv2-root .pn-work-session-content__panes[data-layout='split'] > [data-testid='work-session-terminal-surface'] {
+  flex: 0 0 calc(var(--pn-split-ratio, 0.5) * 100%);
+}
+.cv2-root .pn-work-session-content__panes[data-layout='split'] > [data-testid='work-session-chat-surface'] {
+  flex: 1 1 0;
+}
+.cv2-root .pn-work-session-content__divider {
+  flex: none;
+  width: 9px;
+  margin: 0 -1px;
+  cursor: col-resize;
+  background: transparent;
+  border: 0;
+  position: relative;
+  touch-action: none;
+}
+/* The hairline is drawn by a child pseudo-element so the grab target stays 9px
+   wide while the line itself reads as 1px, matching every other panel rule. */
+.cv2-root .pn-work-session-content__divider::before {
+  content: '';
+  position: absolute;
+  inset: 0 4px;
+  background: var(--pn-line);
+}
+.cv2-root .pn-work-session-content__divider:hover::before,
+.cv2-root .pn-work-session-content__divider:focus-visible::before {
+  background: var(--pn-brand);
+  inset: 0 3px;
+}
+.cv2-root .pn-work-session-content__divider:focus-visible {
+  outline: 3px solid var(--pn-brand);
+  outline-offset: -3px;
+}
+/* Narrow panels cannot carry two usable columns, so the split lies down rather
+   than squeezing both panes below readable width. */
+@media (max-width: 900px) {
+  .cv2-root .pn-work-session-content__panes[data-layout='split'] {
+    flex-direction: column;
+  }
+  .cv2-root .pn-work-session-content__panes[data-layout='split'] > [data-testid='work-session-terminal-surface'] {
+    flex: 1 1 0;
+  }
+  .cv2-root .pn-work-session-content__divider {
+    width: auto;
+    height: 9px;
+    margin: -1px 0;
+    cursor: row-resize;
+  }
+  .cv2-root .pn-work-session-content__divider::before { inset: 4px 0; }
+}
+.cv2-root .pn-surface-switch__tabs { display: flex; align-items: center; gap: inherit; }
+/* BOTH sits apart from the tablist behind a hairline — it is a different kind
+   of control and should not read as a fourth tab. */
+.cv2-root .pn-surface-switch__tab--split {
+  margin-left: 5px;
+  padding-left: 10px;
+  border-left: 1px solid var(--pn-line);
+  border-radius: 0 5px 5px 0;
+}
+.cv2-root .pn-surface-switch__tab--split[aria-pressed='true'] {
+  color: var(--pn-ink);
+  border-color: var(--pn-line-2);
+  background: var(--pn-card);
+}
+.cv2-root .pn-surface-switch__tab--split:disabled { opacity: 0.4; cursor: not-allowed; }
 .cv2-root .pn-surface-host-missing,
 .cv2-root .chs-host-error {
   margin: 12px;
