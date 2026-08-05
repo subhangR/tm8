@@ -394,7 +394,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 66 -> 71 on 2026-08-04: the identity composite (072 agent session
     // credentials, 073 shared teammate authority) merged with main's 071,
     // 072 session io routes and 073 session launch prompts.
-    expect(server.appliedMigrations.length).toBe(71);
+    // 71 -> 72 on 2026-08-05: 076 (reply delivery targets).
+    expect(server.appliedMigrations.length).toBe(72);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
