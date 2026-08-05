@@ -63,6 +63,7 @@ import type {
   CommandContext,
   CommandResult,
   CompleteTaskInput,
+  CreateEdgeInput,
   CreateEntityInput,
   CreateSpaceInput,
   CreateSpaceResult,
@@ -183,6 +184,25 @@ export interface PageOpts {
   limit?: number;
 }
 
+/**
+ * `entities.connections` paging PLUS the two filters that route has always
+ * accepted (`?type=`/`?types=`, `?direction=`).
+ *
+ * THE FILTERS ARE NOT A CONVENIENCE. The server pages this read at
+ * `DEFAULT_LIMIT = 50` across EVERY edge type on the node. A caller hunting
+ * one `assigned_to` edge on an entity with more edges than that gets a page
+ * that does not contain it and cannot tell "not present" from "not on this
+ * page" — so it reports the edge as gone, which is a false statement to a
+ * user. Naming the type is what makes the page mean what the caller reads it
+ * to mean.
+ */
+export interface ConnectionOpts extends PageOpts {
+  /** Edge types to include. Empty/absent ⇒ every type, which is the trap above. */
+  types?: readonly string[];
+  /** Relative to the anchor entity. Server default is `both`. */
+  direction?: 'incoming' | 'outgoing' | 'both';
+}
+
 export interface FeedOpts extends PageOpts {
   scope?: FeedScope;
   order?: 'newest' | 'oldest';
@@ -265,8 +285,8 @@ export interface Seam {
   };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
-  /** Connections tab. */
-  connections(id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>>;
+  /** Connections tab, and the edge-id lookup behind any edge REMOVAL. */
+  connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>>;
   /** Activity tab. */
   activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>>;
   /** Discussion tab. */
@@ -357,6 +377,28 @@ export interface Seam {
     restoreEntity(id: EntityId, ctx?: CommandContext): Promise<CommandResult>;
     complete(id: EntityId, input: CompleteTaskInput): Promise<CommandResult>;
     work(id: EntityId, input: WorkInput): Promise<CommandResult>;
+    /**
+     * The write side of the relationship graph (`edges.create` / `edges.delete`).
+     *
+     * THE READS ALWAYS HAD A WRITE PATH ON THE NODE AND THIS SEAM DID NOT
+     * EXPOSE IT. `EntitySummary.state.assignees` is projected from `assigned_to`
+     * edges (server `entity-read.ts:551`) and `connections()` has rendered
+     * edges since the beginning, so every surface could SHOW an assignment and
+     * none could make one. That is why the task tile's "Assigned" chip was
+     * static: not a forgotten onClick, a missing seam operation.
+     *
+     * GENERIC ON PURPOSE — this is `edges.create`, not `assign`. The catalog
+     * row is generic, the database validates the endpoint kinds per edge type
+     * (`internal.validate_edge`), and naming one edge type here would put a
+     * kind-specific verb in the layer whose whole job is to be kind-blind.
+     * `useRowLifecycle` is where "assign" means `assigned_to`.
+     *
+     * `write_edge` UPSERTS on (src, dst, type), so create is idempotent on the
+     * edge identity; delete is addressed by the edge's own id, which callers
+     * read from `connections()`.
+     */
+    createEdge(input: CreateEdgeInput): Promise<CommandResult>;
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;
     postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult>;
     editMessage(id: EntityId, input: PatchMessageInput): Promise<CommandResult>;
     react(id: EntityId, input: ReactionInput): Promise<CommandResult>;

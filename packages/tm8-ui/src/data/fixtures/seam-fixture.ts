@@ -36,6 +36,7 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type CreateEdgeInput,
   type CreateEntityInput,
   type CreateTaskInput,
   type CustomEntityState,
@@ -598,6 +599,29 @@ export function createFixtureSeam(): FixtureSeam {
     return clone({ entity: detailOf(s.id), patches: [s], ...over });
   }
 
+  /**
+   * `state.assignees` is a PROJECTION of the `assigned_to` edges, not a field
+   * a client writes (server `entity-read.ts:551`). The fixture recomputes it
+   * from the same source so an assignment made here is visible through exactly
+   * the read the UI already uses, rather than through a second parallel store
+   * that could disagree with the edges.
+   */
+  function projectAssignees(s: EntitySummary): void {
+    if (s.state.kind !== 'task') return;
+    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
+    s.state.assignees = (group?.edges ?? []).flatMap((edge) => {
+      const target = summaries.get(edge.target.id);
+      if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
+      return [{
+        id: target.id,
+        kind: target.kind,
+        displayName: target.title,
+        avatar: null,
+        isAgent: target.kind === 'team_member',
+      } satisfies ActorSummary];
+    });
+  }
+
   function defaultStateFor(input: CreateEntityInput): EntityState {
     const c = (input.content ?? {}) as Record<string, unknown>;
     const kind = input.kind;
@@ -894,7 +918,18 @@ export function createFixtureSeam(): FixtureSeam {
     async connections(id, opts): Promise<Page<EdgeView>> {
       requireSummary(id);
       const c = extrasOf(id).connections;
-      const edges = [...c.outgoing, ...c.incoming].flatMap((g) => g.edges);
+      // `ConnectionOpts`'s filters are honoured HERE too, not only on the
+      // wire. A fixture that ignored `types` would let a caller's filter go
+      // unexercised and still pass — which is exactly how the unfiltered read
+      // stayed invisible until it mattered.
+      const groups = [
+        ...(opts?.direction === 'incoming' ? [] : c.outgoing),
+        ...(opts?.direction === 'outgoing' ? [] : c.incoming),
+      ];
+      const types = opts?.types;
+      const edges = groups
+        .filter((g) => types === undefined || types.length === 0 || types.includes(g.type))
+        .flatMap((g) => g.edges);
       return clone(pageOf(edges, opts));
     },
     async activity(id, opts): Promise<Page<ActivityItem>> {
@@ -1314,6 +1349,52 @@ export function createFixtureSeam(): FixtureSeam {
         touch(s);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      /**
+       * Mirrors `write_edge`: an UPSERT on (src, dst, type), and it re-projects
+       * `state.assignees` the way the node's read path does — the fixture would
+       * otherwise create an edge that no surface could see, which is precisely
+       * the half-built seam this operation exists to close.
+       */
+      async createEdge(input: CreateEdgeInput) {
+        const src = requireSummary(input.srcId);
+        const dst = requireSummary(input.dstId);
+        const c = extrasOf(src.id).connections;
+        let group = c.outgoing.find((g) => g.type === input.type);
+        if (!group) {
+          group = { type: input.type, direction: 'outgoing', label: input.type, edges: [] };
+          c.outgoing.push(group);
+        }
+        const existing = group.edges.find((e) => e.target.id === dst.id);
+        if (existing) {
+          existing.props = input.props ?? {};
+          existing.updatedAt = tick();
+        } else {
+          const at = tick();
+          group.edges.push({
+            id: nextId('edge'), type: input.type, source: clone(src), target: clone(dst),
+            props: input.props ?? {}, createdBy: viewerActor, createdAt: at, updatedAt: at,
+          });
+        }
+        projectAssignees(src);
+        touch(src);
+        emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, input);
+        return commandResult(src);
+      },
+      async deleteEdge(edgeId, ctx) {
+        for (const [ownerId, e] of extras) {
+          for (const group of e.connections.outgoing) {
+            const at = group.edges.findIndex((edge) => edge.id === edgeId);
+            if (at < 0) continue;
+            group.edges.splice(at, 1);
+            const src = requireSummary(ownerId);
+            projectAssignees(src);
+            touch(src);
+            emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, ctx);
+            return commandResult(src);
+          }
+        }
+        throw new CollabError('not_found', `edge ${edgeId} not found`);
       },
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
         if (input.anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');
