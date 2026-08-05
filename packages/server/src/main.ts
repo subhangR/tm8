@@ -33,10 +33,16 @@ import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
+import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
 import { resolveBearerIdentity } from './identity/pg-auth.js';
-import { loadConfig, resolveServerDataDir, type ServerConfig } from './http/config.js';
+import {
+  loadConfig,
+  resolveClipboardDir,
+  resolveServerDataDir,
+  type ServerConfig,
+} from './http/config.js';
 import { createArtifactPreviewServer } from './http/artifact-preview.js';
 import { createFacadeServer, type FacadeServer, type UpgradeTarget } from './http/server.js';
 import type { IdentityResolver, RequestIdentity } from './http/types.js';
@@ -44,6 +50,7 @@ import { autoOwnerResolver } from './http/security.js';
 import { createStaticHandler } from './http/static.js';
 import { createRemoteServerProxy } from './http/remote-proxy.js';
 import { createW2FileUploadRoute } from './http/w2-file-upload.js';
+import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
 import { createPtyWsServer, isPtyUpgrade, type PtyAttachAuthorizer } from './pty/index.js';
@@ -117,6 +124,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const fileMaxSizeBytes = config.fileMaxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
   const owner = db ? createLoopbackOwnerResolver(db) : undefined;
   const blobStore = db ? createW2BlobStore({ dataDir, maxSizeBytes: fileMaxSizeBytes }) : undefined;
+  // Node-local by construction: the directory hangs off THIS node's dataDir, so
+  // a path minted here is only ever handed to a PTY this node owns.
+  const clipboardStore = db
+    ? createClipboardStore({
+        clipboardDir: config.clipboardDir ?? resolveClipboardDir(process.env, dataDir),
+        ...(config.clipboardMaxBytes !== undefined ? { maxBytes: config.clipboardMaxBytes } : {}),
+        ...(config.clipboardRetentionDays !== undefined
+          ? { retentionDays: config.clipboardRetentionDays }
+          : {}),
+      })
+    : undefined;
 
   /**
    * ONE identity path for every transport. A valid tm8 session is resolved
@@ -407,6 +425,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ? createW2FileUploadRoute({ deps: { db, config, owner: owner! }, blobStore })
     : undefined;
 
+  const clipboardUpload = db && clipboardStore
+    ? createClipboardUploadRoute({ deps: { db, config, owner: owner! }, store: clipboardStore })
+    : undefined;
+
   const remoteServerProxy = db && owner
     ? createRemoteServerProxy(async (name) => {
         const nodeOwner = await owner();
@@ -473,12 +495,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     ...(db ? { healthProbe: async () => { await db.query({ nodeAdmin: false }, 'select 1'); } } : {}),
     ...(identityResolver ? { identityResolver } : {}),
     ...(rawUpload ? { fileUploadRoute: rawUpload } : {}),
+    ...(clipboardUpload ? { clipboardUploadRoute: clipboardUpload } : {}),
     ...(voiceWebhook ? { voiceWebhookRoute: voiceWebhook } : {}),
     ...(remoteServerProxy ? { remoteServerProxy } : {}),
     ...(config.uiDir ? { staticHandler: createStaticHandler(config.uiDir) } : {}),
   });
 
   const { url } = await server.listen();
+
+  // Retention, on boot and never on the request path: an expired date-bucket is
+  // a directory removal, so this is cheap, and doing it here means a node that
+  // is up keeps its handoff directory bounded without a scheduler.
+  if (clipboardStore) {
+    void clipboardStore
+      .sweepExpired()
+      .then((removed) => {
+        if (removed > 0) console.log(`clipboard: swept ${removed} expired date bucket(s)`);
+      })
+      .catch((error: unknown) => {
+        console.warn(`clipboard: retention sweep failed: ${String(error)}`);
+      });
+  }
 
   /**
    * The SECOND listener (design §9.2/§9.3): untrusted bundle content, on its

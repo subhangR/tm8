@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css';
 import { isTerminalBlurChord } from '../keyboard/contract';
 import { dataTransferHasFiles } from './clipboardImages.js';
 import { dispatchClipboardData } from './clipboardPaste.js';
+import { uploadClipboardImage } from './clipboardUpload.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
@@ -31,8 +32,9 @@ import {
 } from './terminalTheme.js';
 import { TerminalHost } from './TerminalHost';
 
-const IMAGE_PASTE_UNSUPPORTED =
-  'Pasting images into the terminal is not implemented yet — paste text, or type the path.';
+function describeUploadFailure(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 type RenderDimension = { width: number; height: number };
 type RenderDimensionsFallback = {
@@ -341,11 +343,44 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (!readOnlyRef.current) ptyTransport.write(sessionId, data);
     });
 
+    /**
+     * Pasted images become PATHS in the prompt, never bytes.
+     *
+     * A trailing space and NEVER a carriage return: the agent must see the
+     * path as one more word the human is still composing, so they can add
+     * "what is wrong with this?" after it. Injecting a CR here would submit a
+     * bare path as the entire message.
+     *
+     * Uploads run in parallel but inject in paste order — the array preserves
+     * it — because two screenshots pasted together are usually "before" and
+     * "after", and network timing must not reorder them.
+     */
+    const injectImages = async (files: readonly File[]) => {
+      const results = await Promise.allSettled(
+        files.map((file) => uploadClipboardImage(file, sessionId)),
+      );
+      if (readOnlyRef.current) return;
+
+      const paths = results.flatMap((r) => (r.status === 'fulfilled' ? [r.value.path] : []));
+      if (paths.length > 0) ptyTransport.write(sessionId, `${paths.join(' ')} `);
+
+      const failures = results.filter((r) => r.status === 'rejected');
+      if (failures.length > 0) {
+        const reason = describeUploadFailure((failures[0] as PromiseRejectedResult).reason);
+        notifyUser(
+          failures.length === 1
+            ? `An image could not be pasted — ${reason}`
+            : `${failures.length} images could not be pasted — ${reason}`,
+          'warn',
+        );
+      }
+    };
+
     const handlePaste = (event: ClipboardEvent) => {
       if (readOnlyRef.current) return;
       const result = dispatchClipboardData(event.clipboardData, {
         onText: (text) => term.paste(text),
-        onImages: () => notifyUser(IMAGE_PASTE_UNSUPPORTED, 'warn'),
+        onImages: (files) => void injectImages(files),
       });
       if (result.handled) {
         event.preventDefault();
@@ -359,7 +394,7 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       if (readOnlyRef.current) return;
       const result = dispatchClipboardData(event.dataTransfer, {
         onText: (text) => term.paste(text),
-        onImages: () => notifyUser(IMAGE_PASTE_UNSUPPORTED, 'warn'),
+        onImages: (files) => void injectImages(files),
       });
       if (result.handled) {
         event.preventDefault();

@@ -1,19 +1,60 @@
 /**
  * Terminal-side user notices.
  *
- * packages/ui's equivalent routes through a toast store; tm8-ui has no toast
- * system — its notice vocabulary is `shell/notices.ts`, a ONE-card queue
- * driven by shell-level state that this lane does not own (D7's dev-flag
- * scope keeps the P2 transplant out of shell/). Rather than reach into
- * another lane's module or fabricate a toast system, this logs to the
- * console. The two call sites that use it (clipboard-copy failure,
- * unavailable image paste) are both non-fatal and already degrade
- * gracefully without a visible notice — this is a diagnostic aid, not a
- * dropped requirement.
+ * These fire from inside xterm event handlers — a paste, a copy, a failed
+ * upload — which sit far below any React tree that owns notice state. Prop
+ * drilling `notices.push` from `GateApp` down through the terminal would make
+ * every intermediate component carry a concern it has nothing to do with, so
+ * the shell REGISTERS its push function here once and this module keeps it in
+ * a module-level slot.
+ *
+ * The console fallback stays, and is the behavior whenever nobody has
+ * registered — headless tests, the terminal harnesses, and any embedding that
+ * has no shell. That is why registration is optional rather than required:
+ * a terminal must render and work with no notice host at all.
+ *
+ * Ids are STABLE PER CLASS, matching the shell's never-stacks rule: pasting
+ * four images and failing four times shows one card, not four.
  */
+import { NOTICE_TTL_MS, type Notice, type NoticeTone } from '../shell/notices';
+
 export type TerminalNoticeKind = 'info' | 'success' | 'warn';
+
+export type NoticeSink = (notice: Notice) => void;
+
+const TONE_BY_KIND: Record<TerminalNoticeKind, NoticeTone> = {
+  info: 'info',
+  success: 'info',
+  warn: 'warn',
+};
+
+const TITLE_BY_KIND: Record<TerminalNoticeKind, string> = {
+  info: 'Terminal',
+  success: 'Done',
+  warn: 'Terminal',
+};
+
+let sink: NoticeSink | null = null;
+
+/**
+ * Point terminal notices at the shell's notice queue. Returns the un-register
+ * function so a remounting shell cannot leave a stale closure holding the slot.
+ */
+export function registerNoticeSink(next: NoticeSink): () => void {
+  sink = next;
+  return () => {
+    if (sink === next) sink = null;
+  };
+}
 
 export function notifyUser(message: string, kind: TerminalNoticeKind): void {
   const log = kind === 'warn' ? console.warn : console.info;
   log(`[terminal] ${message}`);
+  sink?.({
+    id: `terminal-${kind}`,
+    tone: TONE_BY_KIND[kind],
+    title: TITLE_BY_KIND[kind],
+    body: message,
+    ttlMs: NOTICE_TTL_MS,
+  });
 }

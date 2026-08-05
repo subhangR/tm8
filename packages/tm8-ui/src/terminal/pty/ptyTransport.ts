@@ -515,6 +515,21 @@ export const ptyTransport = {
     _sendFrame(id, new TextEncoder().encode(data));
   },
 
+  /**
+   * The node that owns this session's PTY, and the pass to reach it with.
+   *
+   * Anything that has to make an HTTP call ON BEHALF of a live session — the
+   * clipboard image handoff is the first — must reach the SAME node, because a
+   * path minted on one node means nothing to a PTY running on another. That
+   * binding already exists here; exposing it is what keeps a second, drifting
+   * copy of it from being invented at the call site.
+   */
+  endpointFor(id: string): { baseUrl: string; authToken: string | null } | null {
+    const baseUrl = _serverBaseUrls.get(id);
+    if (baseUrl === undefined) return null;
+    return { baseUrl, authToken: _authTokenReaders.get(id)?.() ?? null };
+  },
+
   /** Tell the server the grid size (a JSON text control frame). */
   resize(id: string, cols: number, rows: number): void {
     _sendFrame(id, JSON.stringify({ type: 'resize', cols, rows }));

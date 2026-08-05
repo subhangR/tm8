@@ -32,7 +32,13 @@ export interface ParsedBody {
  */
 const OVERFLOW_DRAIN_FACTOR = 4;
 
-export async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<ParsedBody> {
+/**
+ * Buffer a request body under a hard cap, with the polite-413 drain above.
+ *
+ * Separate from `readJsonBody` because the raw-byte support routes (clipboard
+ * image paste) need exactly this streaming cap and none of the JSON parsing.
+ */
+export async function readRawBody(req: IncomingMessage, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let total = 0;
   let overflowed = false;
@@ -60,7 +66,11 @@ export async function readJsonBody(req: IncomingMessage, maxBytes: number): Prom
     });
   }
 
-  const raw = Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
+}
+
+export async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<ParsedBody> {
+  const raw = (await readRawBody(req, maxBytes)).toString('utf8');
   if (raw.length === 0) return { raw, value: undefined };
 
   try {

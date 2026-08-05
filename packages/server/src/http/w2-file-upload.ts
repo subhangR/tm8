@@ -7,6 +7,7 @@ import type { DbClaims } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { W2BlobStore } from '../files/w2-blob-store.js';
 import { sendWireError } from './errors.js';
+import { supportClaims } from './support-claims.js';
 import type { RequestIdentity } from './types.js';
 
 const RAW_UPLOAD_PATH = /^\/v2\/files\/uploads\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/content$/;
@@ -51,24 +52,6 @@ function bearerToken(req: IncomingMessage): string {
   return header.replace(/^Bearer\s+/i, '');
 }
 
-async function rawClaims(
-  deps: FacadeDeps,
-  identity: RequestIdentity,
-  requestId: string,
-): Promise<DbClaims> {
-  if (identity.kind === 'anonymous') {
-    throw new CollabError('unauthenticated', 'authentication is required');
-  }
-  const owner = await deps.owner();
-  const identityId = identity.kind === 'auto-owner' ? owner.identityId : identity.identityId;
-  if (!identityId) throw new CollabError('unauthenticated', 'bearer identity is unresolved');
-  return {
-    identityId,
-    nodeAdmin: identityId === owner.identityId ? owner.isNodeAdmin : false,
-    requestId,
-  };
-}
-
 /**
  * The one raw-byte PUT seam integration mounts outside the semantic router.
  *
@@ -90,7 +73,7 @@ export function createW2FileUploadRoute(options: W2FileUploadRouteOptions): W2Fi
     let claims: DbClaims | undefined;
 
     try {
-      claims = await rawClaims(options.deps, context.identity, context.requestId);
+      claims = await supportClaims(options.deps, context.identity, context.requestId);
       const token = bearerToken(req);
       tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
       leaseId = randomUUID();
