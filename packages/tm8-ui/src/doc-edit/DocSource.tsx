@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
 import { safeUploadReason, type FileUploadTask } from '../files/upload';
 import { blockLabel, blocksIn, isDiagram, type DocBlock } from './blocks';
@@ -69,8 +69,21 @@ export function DocSource({
            browsers navigate away from the app entirely, taking the draft with
            them. With an uploader wired, the drop becomes the insert; without
            one the default is still refused, because losing the draft is the
-           worse outcome either way. */
-        onDragOver={insert.canInsert ? (e) => e.preventDefault() : undefined}
+           worse outcome either way.
+
+           CANCELLED FOR FILES WHETHER OR NOT WE CAN UPLOAD THEM, and that is
+           the load-bearing part: per the HTML drag-and-drop spec a `drop` is
+           NOT dispatched at all unless the preceding `dragover` was cancelled.
+           Gating this on `canInsert` therefore did not make the no-uploader
+           case read-only — it made the guard below UNREACHABLE and handed the
+           drop back to the browser, which navigates away with the draft. The
+           refusal has to happen here or it does not happen.
+
+           Narrowed to `Files` so dragging SELECTED TEXT inside the textarea —
+           an ordinary editor gesture, and not a navigation — still works. */
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('Files')) e.preventDefault();
+        }}
         onDrop={(e) => {
           if (e.dataTransfer.files.length === 0) return;
           e.preventDefault();
@@ -110,10 +123,24 @@ interface FileInsert {
 }
 
 /**
- * ONE UPLOAD AT A TIME IS NOT ENFORCED, but the caret is read ONCE, before the
- * first upload starts, and each landed file advances it. Re-reading the live
- * selection per completion would scatter N images wherever the writer's cursor
- * happened to be N seconds later, in whatever order the network answered.
+ * ONE UPLOAD AT A TIME IS NOT ENFORCED. Two things are read at two different
+ * moments, and WHICH moment is the whole correctness argument here:
+ *
+ *  - THE BODY is read AT RESOLUTION, through `save.liveBody()`. An upload takes
+ *    seconds and the writer keeps typing through them. Capturing the draft at
+ *    click time and splicing into that snapshot replaces the draft wholesale
+ *    with a copy that predates every one of those keystrokes — they are gone,
+ *    silently, with no conflict and no error. `liveBody()` reads the draft REF,
+ *    so it is also correct when two uploads resolve in the same tick, before
+ *    React has flushed the first one's state.
+ *
+ *  - THE CARET is read ONCE, before the first upload starts, and each landed
+ *    file advances it. Re-reading the live selection per completion would
+ *    scatter N images wherever the writer's cursor happened to be N seconds
+ *    later, in whatever order the network answered. `spliceInto` clamps it to
+ *    the body it is given, so a caret that the writer's own edits have pushed
+ *    past the end degrades to an append — the insertion POINT may drift, which
+ *    is a cosmetic wrong; the text is never lost, which would not be.
  */
 function useFileInsert({
   save,
@@ -130,36 +157,52 @@ function useFileInsert({
   const [error, setError] = useState<string | null>(null);
   const canInsert = attach !== undefined && save.unavailable === null;
 
+  /* The handle is re-created every render; a promise callback holds the one
+     from the render it was created in. This ref is what makes "read at
+     resolution" actually read the CURRENT handle rather than a stale one. */
+  const handle = useRef(save);
+  handle.current = save;
+
+  /* insert.ts returns the caret precisely so the caller can apply it — "a caret
+     left at its old offset after text was inserted before it is a cursor that
+     has silently moved in the document". Applied from an effect because the
+     textarea still holds the PREVIOUS value at the moment `edit()` is called;
+     the DOM has the new text only after React has re-rendered. */
+  const pendingCaret = useRef<number | null>(null);
+  useEffect(() => {
+    const at = pendingCaret.current;
+    if (at === null) return;
+    pendingCaret.current = null;
+    area.current?.setSelectionRange(at, at);
+  }, [save.body, area]);
+
   const begin = (files: readonly File[]) => {
     if (!attach || files.length === 0 || save.unavailable !== null) return;
     setError(null);
     const el = area.current;
-    /* The draft is read from the handle, never from the element: while clean
-       the textarea shows the SERVED body, and splicing into a stale copy would
-       drop every edit made since the last save. */
-    let body = save.body;
-    let caret = el ? el.selectionStart : body.length;
-    let end = el ? el.selectionEnd : body.length;
+    let caret = el ? el.selectionStart : save.body.length;
+    let end = el ? el.selectionEnd : save.body.length;
 
     for (const file of files) {
       setBusy((current) => [...current, file.name]);
       void attach(file).result.then(
         (uploaded) => {
+          const current = handle.current;
           const next = spliceInto(
-            body,
+            current.liveBody(),
             caret,
             end,
             fileReference(uploaded.name, uploaded.fileEntityId, uploaded.mime),
           );
-          body = next.body;
           caret = next.caret;
           end = next.caret;
-          save.edit({ body });
-          setBusy((current) => current.filter((n) => n !== file.name));
+          pendingCaret.current = next.caret;
+          current.edit({ body: next.body });
+          setBusy((busyNow) => busyNow.filter((n) => n !== file.name));
           onAttached?.();
         },
         (cause: unknown) => {
-          setBusy((current) => current.filter((n) => n !== file.name));
+          setBusy((busyNow) => busyNow.filter((n) => n !== file.name));
           const why = safeUploadReason(cause);
           if (why !== 'Upload cancelled.') setError(`${file.name} — ${why}`);
         },

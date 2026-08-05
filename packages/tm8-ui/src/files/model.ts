@@ -266,6 +266,21 @@ export function enrich(rows: readonly FileRow[], entities: readonly EntitySummar
  */
 export const ATTACHED_TO = 'attached_to';
 
+/**
+ * READS THE DETAIL'S OWN SNAPSHOT, and deliberately NOT the store's live
+ * `selectConnectionsOf` projection — which is the obvious-looking fix and is
+ * wrong. That projection is built from the normalized edge family, and
+ * `ingestDetail`/`ingestEdges` only ever UPSERT into it: nothing removes an
+ * edge that a later read no longer reports. So the live view can gain a
+ * detached file's edge and never lose it, and a removed attachment would stay
+ * on screen forever. Removal only reaches it through an explicit
+ * `edge.deleted` event, which a local detach cannot be relied on to produce.
+ *
+ * `detail.connections` is a snapshot, so it is only as fresh as the last read —
+ * which is exactly why an attachment change must be followed by a real refetch
+ * of the anchor (`useGateData`'s `refetchDetail`). Snapshot plus invalidation
+ * is correct in BOTH directions; the live projection is correct in only one.
+ */
 export function attachedFiles(detail: EntityDetail): FileRow[] {
   const groups = [...detail.connections.incoming, ...detail.connections.outgoing];
   const rows: FileRow[] = [];

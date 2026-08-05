@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import type {
   ActorSummary,
@@ -171,6 +171,51 @@ describe('the doc editor inserts an uploaded file at the caret', () => {
     await waitFor(() => expect(area.value).toContain('tm8://file/file-abc'));
     expect(area.value.startsWith('typed since load')).toBe(true);
     expect(area.value).not.toContain('served');
+  });
+
+  /**
+   * THE KEYSTROKES TYPED DURING THE UPLOAD.
+   *
+   * The test above proves an edit made BEFORE the file is picked survives. This
+   * one covers the window that actually costs work: the seconds between picking
+   * the file and the bytes landing, during which the writer keeps typing.
+   *
+   * The defect: the draft was captured ONCE, at click time (`let body =
+   * save.body`), and the resolve handler spliced into that snapshot and called
+   * `save.edit({ body })` — replacing the draft WHOLESALE with a copy that
+   * predated every keystroke since. Silent, total, and with no conflict to
+   * notice. The docblock above it claimed the exact opposite guarantee.
+   */
+  it('keeps text typed WHILE the upload was in flight', async () => {
+    let land: (file: UploadedFile) => void = () => {};
+    const attach = (): FileUploadTask => ({
+      result: new Promise<UploadedFile>((resolve) => { land = resolve; }),
+      cancel: () => {},
+    });
+    const { getByTestId } = render(<Harness body="start" attach={attach} />);
+    const area = getByTestId('doc-source') as HTMLTextAreaElement;
+
+    // Pick the file FIRST — this is what captured the draft in the old code.
+    area.setSelectionRange(5, 5);
+    fireEvent.change(getByTestId('doc-insert-input'), { target: { files: [png()] } });
+
+    // ...then keep writing, as anyone would during a multi-second upload.
+    fireEvent.change(area, { target: { value: 'start and more typing' } });
+    expect(area.value).toBe('start and more typing');
+
+    await act(async () => {
+      land({
+        fileEntityId: 'file-late' as UploadedFile['fileEntityId'],
+        name: 'shot.png', mime: 'image/png', sizeBytes: 1, maxSizeBytes: 10_000,
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(area.value).toContain('tm8://file/file-late'));
+    expect(
+      area.value,
+      'every keystroke typed during the upload must survive the insert',
+    ).toContain('and more typing');
   });
 
   it('walks the caret across a multi-file insert instead of stacking them all at one offset', async () => {

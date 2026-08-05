@@ -118,7 +118,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       attachments={attachments}
-      onAttachmentUploaded={() => data.pull?.(selectedId)}
+      onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       livenessOf={data.livenessOf}
       messages={selectedMessages}
       connections={data.connectionsOf(selectedId)}

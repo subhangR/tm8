@@ -59,6 +59,19 @@ export interface DocSaveHandle {
   state: DocSavePhase;
   /** What the editor renders: the draft while dirty, the served body otherwise. */
   body: string;
+  /**
+   * The same value as `body`, read at CALL time rather than at render time.
+   *
+   * `body` is derived from React state, so a closure created when a handler ran
+   * holds whatever the draft was THEN. An async caller — one that started an
+   * upload and comes back seconds later — must not splice into that: every
+   * keystroke typed in between lives in `draft.current`, which state has not
+   * necessarily flushed. This reads the ref, so it is also correct for two
+   * callbacks resolving in the same tick.
+   *
+   * Render code has no use for this and must keep using `body`.
+   */
+  liveBody(): string;
   dirty: boolean;
   /** The version the staged edits were made against; null when clean. */
   baseVersion: number | null;
@@ -138,6 +151,11 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
 
   const served = detail ? docBodyOf(detail) : '';
   const body = edits.body !== undefined ? edits.body : served;
+
+  const liveBody = useCallback(
+    () => (draft.current.body !== undefined ? draft.current.body : detail ? docBodyOf(detail) : ''),
+    [detail],
+  );
 
   const settle = useCallback(() => {
     draft.current = {};
@@ -240,6 +258,7 @@ export function useDocSave(options: DocSaveOptions): DocSaveHandle {
   return {
     state,
     body,
+    liveBody,
     dirty: Object.keys(edits).length > 0,
     baseVersion,
     nextVersion,

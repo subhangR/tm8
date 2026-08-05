@@ -116,7 +116,11 @@ export function AttachmentStrip({
   const [pending, setPending] = useState<readonly PendingUpload[]>([]);
   const [dragging, setDragging] = useState(false);
   const [detaching, setDetaching] = useState<readonly string[]>([]);
-  const [detachError, setDetachError] = useState<{ edgeId: string; why: string } | null>(null);
+  /* PER EDGE, not one slot. Two rows can fail independently — a `forbidden` on
+     one and a `not_found` on another — and a single slot meant the second
+     failure erased the first row's explanation, leaving a row that had visibly
+     failed and no longer said why. */
+  const [detachErrors, setDetachErrors] = useState<Readonly<Record<string, string>>>({});
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   /**
@@ -129,7 +133,14 @@ export function AttachmentStrip({
   const detach = useCallback(
     (edgeId: string) => {
       if (!onDetach) return;
-      setDetachError(null);
+      // Only THIS row's previous explanation is cleared — a retry here says
+      // nothing about the row that failed next to it.
+      setDetachErrors((current) => {
+        if (current[edgeId] === undefined) return current;
+        const next = { ...current };
+        delete next[edgeId];
+        return next;
+      });
       setDetaching((current) => [...current, edgeId]);
       void onDetach(edgeId).then(
         () => {
@@ -138,7 +149,7 @@ export function AttachmentStrip({
         },
         (error: unknown) => {
           setDetaching((current) => current.filter((id) => id !== edgeId));
-          setDetachError({ edgeId, why: reasonOf(error) });
+          setDetachErrors((current) => ({ ...current, [edgeId]: reasonOf(error) }));
         },
       );
     },
@@ -216,7 +227,7 @@ export function AttachmentStrip({
                  detachable — no edge, no callback, no control. */
               onDetach={onDetach && file.edgeId ? () => detach(file.edgeId as string) : undefined}
               detaching={file.edgeId !== null && detaching.includes(file.edgeId)}
-              detachWhy={detachError !== null && detachError.edgeId === file.edgeId ? detachError.why : null}
+              detachWhy={file.edgeId !== null ? detachErrors[file.edgeId] ?? null : null}
             />
           ))}
         </div>

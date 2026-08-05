@@ -115,9 +115,30 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  /*
+   * WHAT THIS PAIR OF ASSERTIONS CAN AND CANNOT PROVE, stated because the
+   * earlier single assertion here was believed to prove more than it did.
+   *
+   * It required the STRING `onAttachmentUploaded` to appear in the mount block
+   * and nothing else. It therefore stayed green for the entire life of a
+   * defect in which all four hosts passed `() => data.pull?.(id)` — a call that
+   * cannot refresh an open panel, because `pull` early-returns whenever the
+   * detail is already cached and an open panel's always is. The prop was spelt
+   * correctly and did nothing, which is precisely the state a wiring guard is
+   * supposed to make impossible.
+   *
+   * A scan cannot execute a callback, so the second assertion below names the
+   * verb instead: the refetch must be the INVALIDATING one, and `pull` is
+   * explicitly refused in this position. What a scan is still uniquely good at
+   * is catching a host nobody has written yet, which is why it stays.
+   *
+   * THE EFFECT ITSELF is proved by execution, in `attachment-refresh.test.tsx`:
+   * a real `useGateData` over a fake seam, an upload landing, and the strip
+   * gaining a row it did not have.
+   */
   it('refetches the anchor once an upload lands', () => {
     // The new `attached_to` edge arrives on the entity's own detail, so a host
-    // that uploads without pulling shows the strip's spinner clearing and no
+    // that uploads without refetching shows the strip's spinner clearing and no
     // new row — which reads exactly like a failed upload.
     for (const { file, block } of mounts) {
       if (!block.includes('attachments=')) continue;
@@ -126,6 +147,26 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
         `${file} uploads without refetching, so a landed attachment would not appear until ` +
           'the panel is reopened',
       ).toBe(true);
+    }
+  });
+
+  it('refetches with the INVALIDATING verb — `pull` cannot refresh an open panel', () => {
+    for (const { file, block } of mounts) {
+      if (!block.includes('attachments=')) continue;
+      const wiring = block
+        .split('\n')
+        .filter((line) => line.includes('onAttachmentUploaded'))
+        .join('\n');
+      expect(
+        wiring.includes('refetchDetail'),
+        `${file} wires onAttachmentUploaded to something other than refetchDetail(). The ` +
+          'anchor must be RE-READ; a cache-fill call is a no-op on a panel that is already open',
+      ).toBe(true);
+      expect(
+        /\bpull\b/.test(wiring),
+        `${file} wires onAttachmentUploaded to pull(). pull() early-returns when the detail is ` +
+          'already cached — which an open panel\'s always is — so the strip would never update',
+      ).toBe(false);
     }
   });
 });

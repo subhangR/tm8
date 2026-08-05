@@ -252,7 +252,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           liveness={data.livenessOf(id)}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
           attachments={attachments}
-          onAttachmentUploaded={() => props.data.pull?.(id)}
+          onAttachmentUploaded={() => props.data.refetchDetail(id)}
           livenessOf={data.livenessOf}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}

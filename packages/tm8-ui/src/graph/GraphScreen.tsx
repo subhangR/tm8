@@ -37,7 +37,13 @@ export interface GraphScreenData {
    *  rather than a broken table. */
   seam?: Seam;
   activity: Readonly<Record<string, boolean>>;
+  /** Cache FILL for an aside whose detail is missing. Never a refresh — see
+   *  `refetchDetail`, and `useGateData`'s docblock on the difference. */
   pull?(id: string): void;
+  /** Invalidating re-read, for a local write that lands on the detail itself
+   *  (an `attached_to` edge). REQUIRED: a host without it draws an attachment
+   *  control that changes nothing on screen. */
+  refetchDetail(id: string): void;
 }
 
 export interface GraphScreenProps {
@@ -107,7 +113,7 @@ export function GraphScreen(props: GraphScreenProps) {
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
       attachments={attachments}
-      onAttachmentUploaded={() => data.pull?.(selectedId)}
+      onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       messages={messages}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,

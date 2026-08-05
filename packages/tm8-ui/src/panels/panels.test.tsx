@@ -1180,6 +1180,10 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
         attachments={{
           downloadHref: (id) => `/v2/files/${id}/download`,
           startUpload: () => { throw new Error('unused'); },
+          // Present because the port requires it, and THROWING is the point:
+          // these tests assert rendering, so a detach reaching the seam here
+          // would be a test wiring a mutation it never meant to make.
+          detach: () => { throw new Error('unused'); },
         }}
       />,
     );
@@ -1257,6 +1261,10 @@ describe('EntityDetailPanel — internal images resolve through the host port', 
         attachments={{
           downloadHref: (id) => `/v2/files/${id}/download`,
           startUpload: () => { throw new Error('unused'); },
+          // Present because the port requires it, and THROWING is the point:
+          // these tests assert rendering, so a detach reaching the seam here
+          // would be a test wiring a mutation it never meant to make.
+          detach: () => { throw new Error('unused'); },
         }}
       />,
     );
@@ -1283,6 +1291,10 @@ describe('EntityDetailPanel — internal images resolve through the host port', 
         attachments={{
           downloadHref: (id) => `/v2/files/${id}/download`,
           startUpload: () => { throw new Error('unused'); },
+          // Present because the port requires it, and THROWING is the point:
+          // these tests assert rendering, so a detach reaching the seam here
+          // would be a test wiring a mutation it never meant to make.
+          detach: () => { throw new Error('unused'); },
         }}
       />,
     );
@@ -1314,6 +1326,7 @@ describe('file-preview renders the real image', () => {
   const port = {
     downloadHref: (id: string) => `/v2/files/${id}/download`,
     startUpload: () => { throw new Error('unused'); },
+    detach: () => { throw new Error('unused'); },
   };
 
   it('draws an <img> at the resolved URL for a previewable image', () => {

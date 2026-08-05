@@ -288,7 +288,7 @@ export function EntityView(props: EntityViewProps) {
       liveness={data.livenessOf(selectedId)}
       livenessOf={data.livenessOf}
       attachments={attachments}
-      onAttachmentUploaded={() => props.data.pull?.(selectedId)}
+      onAttachmentUploaded={() => props.data.refetchDetail(selectedId)}
       viewerMemberId={props.viewerMemberId}
       contentSurface={contentSurfaces[selectedId] ?? null}
       onContentSurfaceChange={(surface) => {
@@ -437,7 +437,7 @@ export function EntityView(props: EntityViewProps) {
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
                 livenessOf={data.livenessOf}
                 attachments={attachments}
-                onAttachmentUploaded={() => props.data.pull?.(aux.id)}
+                onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 connections={data.connectionsOf(aux.id)}
