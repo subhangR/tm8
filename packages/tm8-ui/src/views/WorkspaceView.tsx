@@ -107,6 +107,24 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     onNotice: props.onNotice,
   });
 
+  /**
+   * The panel control strip's host, minus `kind` — the workspace is not scoped
+   * to one, so each panel supplies its own entity's kind at the call site.
+   * Everything else is the same executor the two side lists already use.
+   */
+  const controlHostBase = useMemo(
+    () => ({
+      livenessOf: data.livenessOf,
+      capabilitiesOf: (id: string) => data.detailOf(id)?.capabilities,
+      onSetState: rowLifecycle.setState,
+      onArchive: rowLifecycle.archive,
+      onSetValue: rowLifecycle.setValue,
+      onAssign: rowLifecycle.assign,
+      assignableActors: rowLifecycle.assignable,
+    }),
+    [data, rowLifecycle],
+  );
+
   const layout = useMemo(
     () =>
       solveWorkspace({
@@ -232,6 +250,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           host={host}
           reasons={reasons}
           ctx={{ ...ctx, entityId: id }}
+          controls={{ ...controlHostBase, kind: detail?.kind ?? '', ctx: { ...ctx, entityId: id } }}
+          onRestore={() => rowLifecycle.archive('restore', id)}
           pinned={nav.pinned.includes(id)}
           // A1c's contract: the refusal string renders as the disabled pin
           // control in T1-4's two-line form (my D14). `undefined` ⇒ pin is live.

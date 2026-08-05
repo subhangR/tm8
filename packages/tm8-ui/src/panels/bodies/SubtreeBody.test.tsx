@@ -121,12 +121,39 @@ describe('the composed metadata grid', () => {
     expect(grid.textContent).toContain(parent.title);
   });
 
-  it('renders assignees, priority and the id', () => {
+  it('renders the id and the scalars the strip does not own', () => {
     const { getByTestId } = renderBody();
     const grid = getByTestId('subtree-grid');
-    expect(grid.textContent).toContain(`@${ada.displayName}`);
-    expect(grid.textContent).toMatch(/URGENT/);
     expect(grid.textContent).toContain(taskUuidTitle.id);
+    // `dueDate` has no registry control, so the grid is still its only home.
+    expect(grid.textContent).toMatch(/Due/);
+  });
+
+  /**
+   * The grid must NOT restate a field the control strip now owns.
+   *
+   * This is the D67 amendment's rule, applied to the panel. The task tile once
+   * carried static priority/assignee chips ABOVE a working control strip, and
+   * the bug users reported was "the buttons are broken" — the things that
+   * looked like controls were `<span>`s while the real control sat elsewhere.
+   * The panel had the same shape: a read-only `URGENT` tag and an avatar row
+   * here, with no way to change either. Now that `EntityControlStrip` is
+   * mounted above this body, drawing them here again would rebuild exactly
+   * that confusion, so suppression is asserted rather than assumed.
+   *
+   * Keyed on the REGISTRY declaring a control (task declares `valueControls`
+   * for priority and an `assignControl`), never on the kind — a kind with no
+   * assign control keeps its read-only assignee row, because there the row is
+   * the only truth available.
+   */
+  it('does NOT restate priority or assignees — the control strip owns both', () => {
+    const config = getKind('task');
+    expect(config.list.valueControls?.some((c) => c.source === 'priority')).toBe(true);
+    expect(config.list.assignControl?.source).toBe('assignees');
+
+    const grid = renderBody().getByTestId('subtree-grid');
+    expect(grid.textContent).not.toContain(`@${ada.displayName}`);
+    expect(grid.textContent).not.toMatch(/URGENT/);
   });
 
   it('renders the points estimate, which lives in CONTENT rather than state', () => {

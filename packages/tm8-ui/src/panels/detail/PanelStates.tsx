@@ -1,5 +1,6 @@
 import type { ActorSummary } from '@tm8/contract';
 import { Avatar, IconBtn } from '../../kit';
+import { DisabledAction, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 
 /**
  * PANEL STATES — part of the anatomy, not per-archetype decoration (T0-4
@@ -134,11 +135,20 @@ export function TombstoneBody({
   deletedAgo,
   canRestore,
   onRestore,
+  restoreUnavailableReason,
 }: {
   deletedBy?: ActorSummary;
   deletedAgo?: string;
   canRestore?: boolean;
   onRestore?: () => void;
+  /**
+   * Why Restore cannot run, when the viewer is PERMITTED to restore but the
+   * surface wired no handler. Without this the button rendered enabled and
+   * did nothing — it was drawn from the day this component was written and no
+   * host ever passed `onRestore`, so an archived entity had a Restore button
+   * that was pure decoration. L6: dead controls stay visible and say why.
+   */
+  restoreUnavailableReason?: string;
 }) {
   return (
     <div className="pn-state" data-testid="panel-tombstone">
@@ -165,10 +175,22 @@ export function TombstoneBody({
         Tombstones keep their place in threads, rails and feeds — references to this entity stay
         resolvable, labeled, and honest.
       </span>
-      {canRestore ? (
-        <button type="button" className="pn-btn pn-btn--primary" onClick={onRestore}>
+      {canRestore && onRestore ? (
+        <button
+          type="button"
+          className="pn-btn pn-btn--primary"
+          data-testid="tombstone-restore"
+          onClick={onRestore}
+        >
           Restore ▸
         </button>
+      ) : null}
+      {canRestore && !onRestore ? (
+        <DisabledAction label="Restore" reason={toReason(restoreUnavailableReason ?? NOT_WIRED_REASON.cause)}>
+          <span className="pn-btn pn-btn--primary pn-btn--off" data-testid="tombstone-restore">
+            Restore ▸
+          </span>
+        </DisabledAction>
       ) : null}
     </div>
   );
