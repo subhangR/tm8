@@ -67,6 +67,9 @@ export {
   slugOfKind,
 } from './registry';
 
+export { KIND_ART, VIEW_ART, type KindArt } from './kind-art';
+export { KindIcon } from './KindIcon';
+
 export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 
 export { actorPresentation, type ActorPresentation } from './actors';

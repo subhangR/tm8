@@ -1,6 +1,6 @@
 import type { EntityDetail, EntitySummary, MessageView } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Avatar, Chip, Eyebrow } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
@@ -167,7 +167,7 @@ function PinnedChip({
   item: EntitySummary;
   onOpenEntity?: (id: string) => void;
 }) {
-  const glyph = getKind(item.kind).chip.glyph;
+  const glyph = <KindIcon kind={item.kind} />;
   if (!onOpenEntity) {
     return (
       <DisabledIconControl label={item.title} glyph={glyph} reason={NOT_WIRED_REASON}>

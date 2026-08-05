@@ -21,6 +21,7 @@
  */
 import { useMemo, useState } from 'react';
 import type { EntitySummary } from '@tm8/contract';
+import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
 import type { QueryFilter } from '../domain/types';
 import type { SessionLiveness } from '../data/seam';
@@ -209,7 +210,7 @@ export function EntityTree(props: EntityTreeProps) {
     <div className="evt-root" data-testid="entity-tree" data-kind={kind}>
       <div className="evt-head">
         <span className="evt-head__glyph" aria-hidden>
-          {config.chip.glyph}
+          <KindIcon kind={config.kind} />
         </span>
         <span className="evt-head__label">{config.labelPlural}</span>
         <span className="evt-head__count">{rows.length}</span>

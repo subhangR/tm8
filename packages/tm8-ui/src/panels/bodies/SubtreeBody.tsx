@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Avatar, Chip, Eyebrow } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
@@ -262,7 +262,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
       label: getKind(parent.kind).label,
       value: (
         <button type="button" className="sb-grid__link" onClick={() => onOpenEntity?.(parent.id)}>
-          <span aria-hidden>{getKind(parent.kind).chip.glyph}</span> {parent.title}
+          <span aria-hidden><KindIcon kind={parent.kind} /></span> {parent.title}
         </button>
       ),
     });
@@ -667,7 +667,7 @@ function LinkedSection({
       ) : (
         <div className="pn-chiprow">
           {linked.map((peer) => (
-            <Chip key={peer.id} glyph={getKind(peer.kind).chip.glyph} onClick={() => onOpenEntity?.(peer.id)}>
+            <Chip key={peer.id} glyph={<KindIcon kind={peer.kind} />} onClick={() => onOpenEntity?.(peer.id)}>
               {peer.title}
             </Chip>
           ))}

@@ -6,7 +6,7 @@ import type {
   EntitySummary,
 } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { getKind } from '../../domain';
+import { KindIcon, getKind } from '../../domain';
 import { Chip, Eyebrow } from '../../kit';
 import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
@@ -62,7 +62,7 @@ export function GenericBody({
     return (
       <div className="pn-body">
         <EmptyBody
-          glyph={getKind(detail.kind).chip.glyph}
+          glyph={<KindIcon kind={detail.kind} />}
           sentence="This kind renders universal fields only — title, kind and scalar content. Nothing is invented."
         />
       </div>
@@ -407,7 +407,7 @@ function ItemsBlock({
   return (
     <div className="pn-chiprow">
       {items.map((item) => (
-        <Chip key={item.id} glyph={getKind(item.kind).chip.glyph} onClick={() => onOpenEntity?.(item.id)}>
+        <Chip key={item.id} glyph={<KindIcon kind={item.kind} />} onClick={() => onOpenEntity?.(item.id)}>
           {item.title}
         </Chip>
       ))}

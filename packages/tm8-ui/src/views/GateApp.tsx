@@ -27,11 +27,11 @@ import { navStore, useNavStore } from '../stores/navStore';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
 import { PromptsOverlay } from '../prompts';
 import { createKeyboardController, type KeyboardController } from '../keyboard';
-import { allKinds } from '../domain';
+import { allKinds, KindIcon, VIEW_ART } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
 import type { DetailReasons } from '../panels';
-import { BootLoader } from '../kit';
+import { BootLoader, VectorIcon } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
 import {
   authoredFromHollowReason,
@@ -263,7 +263,7 @@ export function GateApp(props: GateAppProps = {}) {
     const counts = data.countsFor(ref);
     return {
       label: row.labelPlural,
-      icon: row.icon as unknown as string,
+      icon: <KindIcon kind={ref} />,
       live,
       ...(counts ? { badge: counts.total, unseen: counts.unseen } : {}),
     };
@@ -294,13 +294,13 @@ export function GateApp(props: GateAppProps = {}) {
         kind: entity.kind,
         parentId: entity.parentId,
         label: entity.title,
-        icon: voiceKind.icon as unknown as string,
+        icon: <KindIcon kind={entity.kind} />,
         // `live` renders the green ● n treatment. An EMPTY room gets no badge:
         // "● 0" would present nobody-is-here as a presence signal.
         ...(state.participantCount ? { live: state.participantCount } : {}),
       };
     }),
-  }), [voiceEntities, voiceKind.icon]);
+  }), [voiceEntities]);
 
   // The settings screen's one seam adapter (settings-space/port.ts). Memoized
   // on the same (seam, space) pair the shell booted with; null until a space
@@ -345,12 +345,12 @@ export function GateApp(props: GateAppProps = {}) {
 
   const paletteViews = useMemo<PaletteView[]>(
     () => [
-      { id: 'view:workspace', label: 'Workspace', glyph: '#' },
-      { id: 'view:graph', label: 'Graph', glyph: '◉' },
-      { id: 'view:channels', label: 'Channels', glyph: '#' },
+      { id: 'view:workspace', label: 'Workspace', glyph: <VectorIcon paths={VIEW_ART.workspace} /> },
+      { id: 'view:graph', label: 'Graph', glyph: <VectorIcon paths={VIEW_ART.graph} /> },
+      { id: 'view:channels', label: 'Channels', glyph: <VectorIcon paths={VIEW_ART.channels} /> },
       ...allKinds()
         .filter((row) => !row.kind.startsWith('c:'))
-        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: row.chip.glyph })),
+        .map((row) => ({ id: `kind:${row.kind}`, label: row.labelPlural, glyph: <KindIcon kind={row.kind} /> })),
     ],
     [],
   );

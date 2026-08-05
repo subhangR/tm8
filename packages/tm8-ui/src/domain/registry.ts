@@ -15,9 +15,12 @@
  * of `hiddenModes` for any kind: R7 requires it visible-and-disabled in the
  * switcher, which is a different state from hidden-by-config.
  *
- * Chip glyphs are text placeholders in the canvases' own idiom; replacing them
- * with the canvas-extracted set at reference capture is a DATA edit here and
- * touches no component.
+ * Chip glyphs were text placeholders in the canvases' own idiom, and this
+ * header always said replacing them would be a DATA edit here that touched no
+ * component. That edit landed: every row now carries `iconArt` — a drawn mark
+ * on a 16×16 grid (`kind-art.ts`), rendered by `KindIcon`. The text `icon`
+ * stays as the fallback a string-only surface can print. No component changed
+ * shape to receive it, exactly as promised.
  */
 import type { CoreEntityKind, EntityKind } from '@tm8/contract';
 import type {
@@ -36,6 +39,7 @@ import type {
   ValueControl,
 } from './types';
 import { CUSTOM_KIND_FALLBACK } from './types';
+import { KIND_ART } from './kind-art';
 import type { SessionLiveness } from '../data/seam';
 
 /** WLT §2.1 reserved words — never a kind slug. */
@@ -348,6 +352,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Task',
     labelPlural: 'Tasks',
     icon: '◻',
+    iconArt: KIND_ART.task,
     slug: 'tasks',
     strategy: 'collection',
     defaultMode: 'list',
@@ -439,6 +444,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Session',
     labelPlural: 'Sessions',
     icon: '▸',
+    iconArt: KIND_ART.work_session,
     slug: 'sessions',
     strategy: 'collection',
     defaultMode: 'list',
@@ -507,6 +513,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Doc',
     labelPlural: 'Docs',
     icon: '▤',
+    iconArt: KIND_ART.doc,
     slug: 'docs',
     strategy: 'collection',
     defaultMode: 'list',
@@ -545,6 +552,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Channel',
     labelPlural: 'Channels',
     icon: '#',
+    iconArt: KIND_ART.channel,
     slug: 'channels',
     strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
@@ -581,6 +589,7 @@ const ROWS: readonly KindConfig[] = [
     // header): a speaker glyph from the pictograph block tofus in the system
     // font, so the audio note stands in until the canvas-extracted set lands.
     icon: '♪',
+    iconArt: KIND_ART.voice_channel,
     slug: null,
     strategy: 'special',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/voice/${id}`,
@@ -605,6 +614,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Message',
     labelPlural: 'Messages',
     icon: '✉',
+    iconArt: KIND_ART.message,
     slug: null,
     strategy: 'anchored',
     // Canonical route = the containing channel + ?msg=. Parent missing ⇒
@@ -627,6 +637,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Member',
     labelPlural: 'Members',
     icon: '◍',
+    iconArt: KIND_ART.member,
     slug: 'members',
     strategy: 'collection',
     defaultMode: 'list',
@@ -669,6 +680,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Teammate',
     labelPlural: 'Teammates',
     icon: '◆',
+    iconArt: KIND_ART.team_member,
     slug: 'teammates',
     strategy: 'collection',
     defaultMode: 'list',
@@ -719,6 +731,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Pull request',
     labelPlural: 'Pull requests',
     icon: '⑂',
+    iconArt: KIND_ART.pull_request,
     slug: 'pulls',
     strategy: 'collection',
     defaultMode: 'list',
@@ -752,6 +765,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Commit',
     labelPlural: 'Commits',
     icon: '◉',
+    iconArt: KIND_ART.commit,
     slug: 'commits',
     strategy: 'collection',
     defaultMode: 'feed',
@@ -778,6 +792,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'File',
     labelPlural: 'Files',
     icon: '▣',
+    iconArt: KIND_ART.file,
     slug: 'files',
     strategy: 'collection',
     defaultMode: 'gallery',
@@ -805,6 +820,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Spell',
     labelPlural: 'Spells',
     icon: '✧',
+    iconArt: KIND_ART.spell,
     slug: 'spells',
     strategy: 'collection',
     defaultMode: 'list',
@@ -831,6 +847,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Skill',
     labelPlural: 'Skills',
     icon: '✦',
+    iconArt: KIND_ART.skill,
     slug: 'skills',
     strategy: 'collection',
     defaultMode: 'list',
@@ -857,6 +874,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Collection',
     labelPlural: 'Collections',
     icon: '▦',
+    iconArt: KIND_ART.collection,
     slug: 'collections',
     strategy: 'collection',
     defaultMode: 'list',
@@ -884,6 +902,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Project',
     labelPlural: 'Projects',
     icon: '⬢',
+    iconArt: KIND_ART.project,
     slug: 'projects',
     strategy: 'collection',
     defaultMode: 'list',
@@ -922,6 +941,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Interaction profile',
     labelPlural: 'Interaction profiles',
     icon: '⌬',
+    iconArt: KIND_ART.interaction_profile,
     slug: 'interaction-profiles',
     strategy: 'collection',
     defaultMode: 'list',
@@ -970,6 +990,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Memory',
     labelPlural: 'Memories',
     icon: '◈',
+    iconArt: KIND_ART.memory,
     slug: 'memories',
     strategy: 'collection',
     defaultMode: 'list',
@@ -996,6 +1017,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Artifact',
     labelPlural: 'Artifacts',
     icon: '❖',
+    iconArt: KIND_ART.artifact,
     slug: 'artifacts',
     strategy: 'collection',
     defaultMode: 'list',
@@ -1026,6 +1048,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Worktree',
     labelPlural: 'Worktrees',
     icon: '⎇',
+    iconArt: KIND_ART.worktree,
     slug: 'worktrees',
     strategy: 'collection',
     defaultMode: 'list',
@@ -1059,6 +1082,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Item',
     labelPlural: 'Items',
     icon: '◇',
+    iconArt: KIND_ART.custom,
     // Slug is computed per custom kind (`c:{name}` → `c-{name}`); the fallback
     // row itself has none.
     slug: null,

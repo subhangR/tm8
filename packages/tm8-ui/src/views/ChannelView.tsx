@@ -9,7 +9,7 @@ import type {
 import { LazyChannelScreen } from '../channel-screen/LazyChannelScreen';
 import { useChannelFeed } from '../channel-screen/useChannelFeed';
 import { channelFeedPortFromGateData } from './channel-feed-port';
-import { getKind } from '../domain';
+import { KindIcon, getKind } from '../domain';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
@@ -167,7 +167,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
               <div className="chv-shelf__items">
                 {content.pinned.map((item) => (
                   <button key={item.id} type="button" className="chv-chip" onClick={() => setSelectedId(item.id)}>
-                    <span aria-hidden>{getKind(item.kind).chip.glyph}</span>
+                    <span aria-hidden><KindIcon kind={item.kind} /></span>
                     {item.title}
                   </button>
                 ))}
@@ -294,7 +294,7 @@ function ChannelCollectionPane({
       {result.page.items.map((item) => (
         <li key={item.id}>
           <button type="button" onClick={() => onOpen(item.id)}>
-            <span className="chv-collection__glyph" aria-hidden>{getKind(item.kind).chip.glyph}</span>
+            <span className="chv-collection__glyph" aria-hidden><KindIcon kind={item.kind} /></span>
             <span className="chv-collection__title">{item.title}</span>
             <span className="chv-collection__kind">{getKind(item.kind).label}</span>
           </button>
