@@ -21,6 +21,7 @@ import {
   type MenuTarget,
 } from '../shell';
 import type { NavPort } from '../shell/nav-port';
+import { registerNoticeSink } from '../terminal/notifications';
 import { screenStackStore } from '../stores/screenStackStore';
 import { navStore, useNavStore } from '../stores/navStore';
 import { CommandPalette, type PaletteView } from '../shell/CommandPalette';
@@ -122,6 +123,11 @@ export function GateApp(props: GateAppProps = {}) {
     data.ensureKind(kinds.rightKind);
   }, [data, kinds.leftKind, kinds.rightKind]);
   const notices = useNotices();
+
+  // The terminal lives many levels down and fires notices from xterm event
+  // handlers, so it reaches the queue through a registered sink rather than a
+  // prop drilled through everything in between (terminal/notifications.ts).
+  useEffect(() => registerNoticeSink(notices.push), [notices.push]);
 
   // Theme: PERSISTED, with a prefers-color-scheme default (LLD §11). It was an
   // unpersisted useState seeded to light, so every reload discarded the

@@ -3,6 +3,7 @@ import type { EntityId, MessageView } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
 import { Avatar } from '../kit';
 import { DisabledAction, DisabledIconControl } from '../panels/honesty/DisabledWithReason';
+import { extractImageFiles } from '../terminal/clipboardImages';
 import type { ChannelPostInput } from './feed-model';
 import type { ComposerMentionOption } from './channel-tags';
 import {
@@ -652,6 +653,17 @@ export function Composer({
             : undefined}
           value={text}
           disabled={busy}
+          /* A pasted image becomes a STAGED ATTACHMENT, not an injected path
+             like the terminal does: a channel message is read on other
+             machines, where a node-local path resolves to nothing. Text paste
+             is untouched — only image bytes are intercepted. */
+          onPaste={(e) => {
+            if (!onStartAttachmentUpload) return;
+            const images = extractImageFiles(e.clipboardData, { renameAll: true });
+            if (images.length === 0) return;
+            e.preventDefault();
+            addFiles(images);
+          }}
           onChange={(e) => {
             const next = e.target.value;
             const caret = e.target.selectionStart ?? next.length;

@@ -17,6 +17,11 @@ import { isAbsolute, join, resolve } from 'node:path';
 
 import { FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 
+import {
+  CLIPBOARD_MAX_BYTES_DEFAULT,
+  CLIPBOARD_RETENTION_DAYS_DEFAULT,
+} from '../files/clipboard-store.js';
+
 export interface ServerConfig {
   /** Bind address. Loopback only — see S1 above. */
   readonly host: string;
@@ -47,6 +52,21 @@ export interface ServerConfig {
    * and the blob store. `loadConfig` always supplies a positive safe integer.
    */
   readonly fileMaxSizeBytes?: number;
+  /**
+   * Where pasted clipboard images land so an agent can read them by path
+   * (`TM8_CLIPBOARD_DIR`, default `<dataDir>/clipboard`).
+   *
+   * It is a CONVENTION, not an implementation detail: the same value is
+   * exported to every spawned agent as `TM8_CLIPBOARD_DIR`, so an agent can
+   * resolve where a pasted image lives without anything being hardcoded, and
+   * it differs per node, which is what keeps a prod path from being handed to
+   * a staging session.
+   */
+  readonly clipboardDir?: string;
+  /** Per-image ceiling for a clipboard paste (`TM8_CLIPBOARD_MAX_BYTES`). */
+  readonly clipboardMaxBytes?: number;
+  /** Days a clipboard date-bucket survives (`TM8_CLIPBOARD_RETENTION_DAYS`, 0 = keep). */
+  readonly clipboardRetentionDays?: number;
   /** Seed/repair launchable personas and the current project at boot. */
   readonly launchBootstrap?: boolean;
   /** Absolute current project registered by launch bootstrap. */
@@ -177,6 +197,44 @@ export function resolveServerDataDir(env: NodeJS.ProcessEnv = process.env): stri
   return dataDir;
 }
 
+/**
+ * The clipboard handoff root — `<dataDir>/clipboard` unless overridden.
+ *
+ * Derived from `dataDir` on purpose. Two nodes on one box (prod and staging)
+ * already have different data directories, so their clipboard paths cannot
+ * collide, and a path minted by one node is visibly not the other's.
+ */
+export function resolveClipboardDir(env: NodeJS.ProcessEnv, dataDir: string): string {
+  const configured = env.TM8_CLIPBOARD_DIR?.trim();
+  const dir = configured ? resolve(expandHome(configured)) : join(dataDir, 'clipboard');
+  if (!isAbsolute(dir)) {
+    throw new ConfigError(
+      `TM8_CLIPBOARD_DIR must resolve to an absolute path, got ${JSON.stringify(configured)}`,
+    );
+  }
+  return dir;
+}
+
+function envPositiveInt(raw: string | undefined, name: string, fallback: number): number {
+  const trimmed = raw?.trim();
+  if (!trimmed) return fallback;
+  const value = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new ConfigError(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+
+function envNonNegativeInt(raw: string | undefined, name: string, fallback: number): number {
+  const trimmed = raw?.trim();
+  if (!trimmed) return fallback;
+  const value = Number.parseInt(trimmed, 10);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new ConfigError(`${name} must be a non-negative integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const host = env.TM8_BIND?.trim() || '127.0.0.1';
   const port = Number.parseInt(env.TM8_PORT?.trim() || '4610', 10);
@@ -224,6 +282,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
 
   const preview = resolvePreview(env, host, port, extraAllowedHostnames);
 
+  const dataDir = resolveServerDataDir(env);
+  const clipboardDir = resolveClipboardDir(env, dataDir);
+  const clipboardMaxBytes = envPositiveInt(
+    env.TM8_CLIPBOARD_MAX_BYTES,
+    'TM8_CLIPBOARD_MAX_BYTES',
+    CLIPBOARD_MAX_BYTES_DEFAULT,
+  );
+  const clipboardRetentionDays = envNonNegativeInt(
+    env.TM8_CLIPBOARD_RETENTION_DAYS,
+    'TM8_CLIPBOARD_RETENTION_DAYS',
+    CLIPBOARD_RETENTION_DAYS_DEFAULT,
+  );
+
   return {
     host,
     port,
@@ -232,8 +303,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     uiDir: env.TM8_UI_DIR?.trim() || undefined,
     maxBodyBytes,
     databaseUrl: env.TM8_DATABASE_URL?.trim() || undefined,
-    dataDir: resolveServerDataDir(env),
+    dataDir,
     fileMaxSizeBytes,
+    clipboardDir,
+    clipboardMaxBytes,
+    clipboardRetentionDays,
     launchBootstrap: env.TM8_LAUNCH_BOOTSTRAP?.trim() !== '0',
     launchProjectDir: resolve(expandHome(env.TM8_PROJECT_DIR?.trim() || process.cwd())),
     idempotencyEnabled: envBoolean(env.TM8_IDEMPOTENCY_ENABLED, 'TM8_IDEMPOTENCY_ENABLED', true),

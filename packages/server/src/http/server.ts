@@ -48,6 +48,7 @@ import {
 import type { StaticHandler } from './static.js';
 import type { RemoteServerProxy } from './remote-proxy.js';
 import type { W2FileUploadRoute } from './w2-file-upload.js';
+import { CLIPBOARD_UPLOAD_PATH, type ClipboardUploadRoute } from './clipboard-upload.js';
 import { VOICE_WEBHOOK_PATH, type VoiceWebhookRoute } from './voice-webhook.js';
 import {
   isHandlerResult,
@@ -75,8 +76,14 @@ export interface FacadeServerOptions {
   readonly identityResolver?: IdentityResolver;
   readonly upgrades?: UpgradeTarget;
   readonly staticHandler?: StaticHandler;
-  /** The sole non-catalog support transport: FileUploadGrant raw-byte PUT. */
+  /** Non-catalog support transport: FileUploadGrant raw-byte PUT. */
   readonly fileUploadRoute?: W2FileUploadRoute;
+  /**
+   * Non-catalog support transport: clipboard image paste, raw bytes POST.
+   * Dispatched before `readJsonBody` for the same reason as the upload PUT —
+   * an image is not JSON and must never reach the JSON reader.
+   */
+  readonly clipboardUploadRoute?: ClipboardUploadRoute;
   /**
    * The LiveKit webhook callback. Like the upload route it is dispatched
    * before `readJsonBody`, because LiveKit signs the RAW body and a
@@ -229,6 +236,14 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           disableAutoOwner: config.disableAutoOwner === true,
         });
         if (await opts.fileUploadRoute(req, res, { requestId, identity })) return;
+      }
+
+      if (method === 'POST' && pathname === CLIPBOARD_UPLOAD_PATH && opts.clipboardUploadRoute) {
+        const identity = await resolveIdentity(req.headers, {
+          remoteAddress: req.socket.remoteAddress,
+          disableAutoOwner: config.disableAutoOwner === true,
+        });
+        if (await opts.clipboardUploadRoute(req, res, { requestId, identity })) return;
       }
 
       // No identity resolution: the SFU is not a tm8 identity, and the route
