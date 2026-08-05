@@ -1592,6 +1592,7 @@ function Tile({
           streaming,
         }}
         assignees={controlFacts.assignees}
+        creator={controlFacts.creator}
         actions={(list.rowActions ?? []).map((ref) => (
           <RowAction
             key={ref}
@@ -1873,6 +1874,8 @@ function Tile({
 interface ControlCardFacts {
   assignees: EntitySummary['createdBy'][];
   assigneeLabel: string;
+  /** Never null in practice — every row carries a creator. */
+  creator: EntitySummary['createdBy'] | null;
   meta: string[];
 }
 
@@ -1910,7 +1913,7 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
   const pulls = row.badges.pulls?.length ?? 0;
   if (pulls > 0) meta.push(`${pulls} pulled`);
 
-  return { assignees, assigneeLabel, meta };
+  return { assignees, assigneeLabel, creator: row.createdBy ?? null, meta };
 }
 
 function relativeTileTime(iso: string): string {

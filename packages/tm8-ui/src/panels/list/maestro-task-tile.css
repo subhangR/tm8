@@ -279,6 +279,10 @@
 }
 .cv2-root .pn-tt .pn-av-group .kit-avatar { box-shadow: 0 0 0 2px var(--pn-card); }
 .cv2-root .pn-tt .pn-av-group .kit-avatar + .kit-avatar { margin-left: -7px; }
+/* Provenance reads quieter than assignment: a creator face must not be
+   mistaken for an owner of the work. Opacity only — no size change, because
+   the 15px canvas is what holds the row to the shared height floor. */
+.cv2-root .pn-tt .pn-av-group--creator .kit-avatar { opacity: 0.55; }
 
 /* HOVER REVEALS, IT DOES NOT RESIZE — `pn-st__actions`, rule for rule. The
    cluster floats over the row's right edge on its own hover-coloured backing

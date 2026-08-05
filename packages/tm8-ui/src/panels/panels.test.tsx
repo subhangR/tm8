@@ -711,6 +711,43 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     ).toBe('true');
   });
 
+  /**
+   * The defect this pins: the row's avatar slot read `state.assignees` and
+   * nothing else, and on a real space 48 of 50 tasks are unassigned — so the
+   * list rendered with no faces at all. Every task fixture here was assigned,
+   * which is precisely why no test saw it. `createdBy` is never null, so the
+   * unassigned row falls back to provenance and says so.
+   */
+  it('an unassigned task row shows the creator as provenance, labelled as such', () => {
+    const unassigned: EntitySummary = {
+      ...taskGuideLines,
+      id: 'task-unassigned',
+      title: 'Nobody has pulled this yet',
+      createdBy: noor,
+      state: { ...taskGuideLines.state, assignees: [] } as EntitySummary['state'],
+    };
+    const { getAllByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([unassigned])} ctx={ctx} />,
+    );
+    const tile = getAllByTestId('list-tile')[0]!;
+    const group = tile.querySelector('.pn-av-group');
+    expect(group, 'unassigned rows still render a face').not.toBeNull();
+    expect(group!.classList.contains('pn-av-group--creator')).toBe(true);
+    expect(group!.getAttribute('aria-label')).toBe('Created by Noor, unassigned');
+    // Provenance is ONE face, never a stack — a creator is not a roster.
+    expect(group!.querySelectorAll('.kit-avatar').length).toBe(1);
+    expect(group!.querySelector('.kit-avatar')?.getAttribute('data-actor-id')).toBe(noor.id);
+  });
+
+  it('an assigned task row shows the assignees, not the creator', () => {
+    const { getAllByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle])} ctx={ctx} />,
+    );
+    const group = getAllByTestId('list-tile')[0]!.querySelector('.pn-av-group')!;
+    expect(group.classList.contains('pn-av-group--creator')).toBe(false);
+    expect(group.getAttribute('aria-label')).toBe('Assigned to Ada, forge');
+  });
+
   it('renders a task hierarchy as attached cards and expands/collapses children inline', () => {
     const parent: EntitySummary = {
       ...taskGuideLines,
