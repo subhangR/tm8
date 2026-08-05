@@ -1040,6 +1040,47 @@ const ROWS: Record<OperationName, Row> = {
       'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
+  'sessionPrompts.open': {
+    // No CLI invocation, and not merely "not built yet". The only legitimate
+    // caller is the provider hook running INSIDE the session that is blocked --
+    // the agent asking is the agent waiting on the answer. A caller-facing form
+    // would let one actor manufacture a question that another actor answers with
+    // no agent on the other end: an approval UI for a decision that grants
+    // nothing, which is worse than having none.
+    cmd: null,
+    sum: 'INTERNAL: a blocked agent opens a permission gate and waits for the answer',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['permission', 'hook', 'gate', 'blocked', 'internal'],
+    reason: 'internal_hook_bridge',
+    notes: [
+      'never answers by itself: on timeout or an unreachable node it yields NO decision, so the agent falls back to its own prompt',
+    ],
+  },
+  'sessionPrompts.answer': {
+    // Answering is a chat-surface act by design. A terminal user does not need
+    // this -- their agent's own prompt is already in front of them -- and the
+    // whole point of the feature is to reach the person who is NOT at a terminal.
+    cmd: null,
+    sum: 'Answer a question a blocked agent is waiting on (chat surface)',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['permission', 'approve', 'deny', 'answer'],
+    reason: 'ui_chat_surface',
+    notes: [
+      'refuses to re-decide an already-decided prompt: a late click must not overturn a denial the agent has already acted on',
+    ],
+  },
+  'sessionPrompts.list': {
+    cmd: null,
+    sum: 'The questions a session has asked, pending first (chat surface)',
+    authz: 'entity',
+    input: 'none',
+    tags: ['permission', 'pending', 'questions'],
+    reason: 'ui_chat_surface',
+  },
   'execution.prompt': {
     cmd: null,
     sum: 'INTERNAL: the audited Server-side delivery of an already-stored message into a live session',
@@ -1499,6 +1540,9 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   events: 'event',
   presence: 'presence',
   execution: 'session',
+  // Same noun as `execution`: a permission gate is part of a session's life,
+  // not a new thing to learn. `tm8 help session` must surface both families.
+  sessionPrompts: 'session',
   entityKinds: 'kind',
   handoffs: 'handoff',
   interactionProfiles: 'interaction-profile',
@@ -1555,7 +1599,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:2104f173a6d4e7f540ad8ba73e7addb3626d8b027a29a498c54d2d92d3904063';
 
 export const GRAMMAR_VERSION = '2';
 

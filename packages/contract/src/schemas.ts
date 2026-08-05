@@ -65,6 +65,7 @@ import type {
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
+  SessionPromptAnswerInput, SessionPromptOpenInput,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
@@ -1622,6 +1623,31 @@ export const FileUploadCompleteInputSchema: z.ZodType<FileUploadCompleteInput> =
 export const FileUploadAbortInputSchema = CommandContextSchema;
 
 // ---------------------------------------------------------------------------
+// sessionPrompts.* inputs — a blocked agent's question, answerable from chat.
+// ---------------------------------------------------------------------------
+
+/** `.passthrough()` and NOT `.strict()`, deliberately: `toolInput` is whatever
+ *  the provider's hook emitted. Chat renders what the agent actually asked for,
+ *  and stripping unknown keys here would silently drop the very detail a user
+ *  needs to decide -- for any provider whose payload shape we guessed wrong. */
+export const SessionPromptOpenInputSchema: z.ZodType<SessionPromptOpenInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  toolUseId: z.string().min(1),
+  toolName: z.string().min(1),
+  toolInput: z.record(z.unknown()).optional(),
+  agentTool: z.string().nullable().optional(),
+  agentPid: z.number().int().positive().nullable().optional(),
+}) as z.ZodType<SessionPromptOpenInput>;
+
+/** No 'defer', no 'allow always'. See the contract type for why. */
+export const SessionPromptAnswerInputSchema: z.ZodType<SessionPromptAnswerInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  decision: z.enum(['allowed', 'denied']),
+  reason: z.string().max(2000).optional(),
+}) as z.ZodType<SessionPromptAnswerInput>;
+
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
 

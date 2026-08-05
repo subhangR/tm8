@@ -41,6 +41,8 @@ import {
   EntityKindUpdateInputSchema,
   ExecutionPromptInputSchema,
   ExecutionResumeInputSchema,
+  SessionPromptOpenInputSchema,
+  SessionPromptAnswerInputSchema,
   ExecutionSpawnInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
@@ -215,6 +217,10 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.terminate': ExecutionTerminateInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,
   'execution.resume': ExecutionResumeInputSchema,
+
+  // session prompts — a blocked agent's question (076)
+  'sessionPrompts.open': SessionPromptOpenInputSchema,
+  'sessionPrompts.answer': SessionPromptAnswerInputSchema,
 
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,

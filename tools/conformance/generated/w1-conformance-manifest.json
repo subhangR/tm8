@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114",
+  "catalogDigest": "sha256:2104f173a6d4e7f540ad8ba73e7addb3626d8b027a29a498c54d2d92d3904063",
   "catalog": {
-    "total": 127,
-    "v1": 125,
+    "total": 130,
+    "v1": 128,
     "reserved": 2,
-    "http": 126,
+    "http": 129,
     "ws": 1,
-    "registerableV1Http": 124,
+    "registerableV1Http": 127,
     "methods": {
-      "GET": 47,
-      "POST": 54,
+      "GET": 48,
+      "POST": 56,
       "PATCH": 10,
       "DELETE": 8,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 50,
-      "command": 76,
+      "read": 51,
+      "command": 78,
       "stream": 1
     },
-    "uniqueNames": 127,
-    "uniqueBindings": 127
+    "uniqueNames": 130,
+    "uniqueBindings": 130
   },
   "reservedOperations": [
     "search.query",
@@ -817,6 +817,27 @@
         "source": "server-router"
       },
       {
+        "operation": "sessionPrompts.open",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/prompt-gate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "sessionPrompts.answer",
+        "method": "POST",
+        "path": "/v2/session-prompts/:promptId/answer",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "sessionPrompts.list",
+        "method": "GET",
+        "path": "/v2/entities/:id/session-prompts",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.journal",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/journal",
@@ -1293,7 +1314,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 96
+    "unimplementedV1Http": 99
   },
   "schemas": {
     "additive": {
@@ -2918,6 +2939,57 @@
         "intentTags": [
           "execution",
           "resume"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "sessionPrompts.open",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/sessionPrompts.open",
+        "intentTags": [
+          "session",
+          "prompts",
+          "open"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "sessionPrompts.answer",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/sessionPrompts.answer",
+        "intentTags": [
+          "session",
+          "prompts",
+          "answer"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "sessionPrompts.list",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/sessionPrompts.list",
+        "intentTags": [
+          "session",
+          "prompts",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

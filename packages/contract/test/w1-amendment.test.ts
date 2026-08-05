@@ -48,7 +48,7 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 127-row target (110 W1 + voice.token.create + 6 artifacts + execution.resume + spaces.counts + execution.journal + identity.profile.update + 4 auth + execution.launch + projects.directories.list) without changing reserved honesty', () => {
+  it('reconciles the additive 130-row target (110 W1 + voice.token.create + 6 artifacts + execution.resume + spaces.counts + execution.journal + identity.profile.update + 4 auth + execution.launch + projects.directories.list + 3 sessionPrompts) without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
@@ -58,8 +58,14 @@ describe('W1 adopted catalog target', () => {
     // TOLD at spawn: its manifest, its env var NAMES and its two prompts.
     // 126 -> 127 (2026-08-02): projects.directories.list (GET read) — the
     // root-confined node-local folder browser for Space project onboarding.
-    expect(OPERATIONS).toHaveLength(127);
-    expect(V1_OPERATIONS).toHaveLength(125);
+    // 127 -> 130 (2026-08-05): sessionPrompts.open/answer/list — a blocked
+    // agent's question becomes a durable object that chat can render and
+    // answer. `open` is internal (only the hook inside a live session may ask);
+    // `answer` and `list` are public, because answering IS the feature and a
+    // reconnecting browser must be able to see a pending question without
+    // waiting for a live event to be replayed.
+    expect(OPERATIONS).toHaveLength(130);
+    expect(V1_OPERATIONS).toHaveLength(128);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -75,12 +81,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 47, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 48, POST: 56, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 50, command: 76, stream: 1 });
+    }).toEqual({ read: 51, command: 78, stream: 1 });
   });
 });
 

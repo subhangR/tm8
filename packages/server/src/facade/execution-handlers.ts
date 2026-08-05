@@ -30,6 +30,7 @@ import {
   type GraphPort,
   type LoadSpawnContextInput,
   type Logger,
+  type PtyActivity,
   type PtyExitInfo,
   type PtySessionStatus,
   type RecordCommandInput,
@@ -54,6 +55,9 @@ import type {
   SessionJournalPage,
   SessionJournalRecord,
   SessionLaunchRecord,
+  SessionPromptAnswerInput,
+  SessionPromptOpenInput,
+  SessionPromptView,
 } from '@tm8/contract';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
@@ -699,6 +703,12 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) =>
       spawnService.handlePtyExit(sessionId, status, exitInfo),
     onPromptSettled: promptSettlement.resolve,
+    // Same lazy-closure reason as onSessionStatus above: the activity sink also
+    // needs the SpawnService that holds the spawner's claims, and for the same
+    // identity reason — an idle transition is written by the same RPC, through
+    // the same require_identity path, as an exit transition.
+    onActivityChange: (sessionId: string, activity: PtyActivity) =>
+      spawnService.handlePtyActivity(sessionId, activity),
   });
 
   spawnService = new SpawnService({
@@ -760,6 +770,50 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
  * `ExecutionRuntime`'s shape stays uniform; a caller of THIS function must not
  * wire it into `createW2ExecutionDelivery`.
  */
+/** The `public.session_prompts` row shape, as the driver returns it. */
+interface SessionPromptRow {
+  id: string;
+  work_session_id: string;
+  tool_use_id: string;
+  tool_name: string;
+  tool_input: unknown;
+  agent_tool: string | null;
+  status: string;
+  decided_by: string | null;
+  decided_at: string | Date | null;
+  decision_reason: string | null;
+  created_at: string | Date;
+  expires_at: string | Date;
+}
+
+const iso = (value: string | Date | null): string | null =>
+  value === null ? null : value instanceof Date ? value.toISOString() : value;
+
+/**
+ * Row -> contract view.
+ *
+ * `decidedBy` is left null rather than hydrated into an ActorSummary here: this
+ * module has no actor projector, and inventing a half-populated actor would put
+ * a name in the UI that the read path never verified. The chat surface resolves
+ * the actor from the id it already has for every other author.
+ */
+function toSessionPromptView(row: SessionPromptRow): SessionPromptView {
+  return {
+    promptId: row.id,
+    workSessionId: row.work_session_id,
+    toolUseId: row.tool_use_id,
+    toolName: row.tool_name,
+    toolInput: (row.tool_input ?? {}) as Record<string, unknown>,
+    agentTool: row.agent_tool,
+    status: row.status as SessionPromptView['status'],
+    decidedBy: null,
+    decidedAt: iso(row.decided_at),
+    decisionReason: row.decision_reason,
+    createdAt: iso(row.created_at) as string,
+    expiresAt: iso(row.expires_at) as string,
+  };
+}
+
 export function registerExecutionHandlers(
   registry: HandlerRegistry,
   deps: {
@@ -1308,6 +1362,145 @@ function registerHandlers(
    * thing no request body can be.
    */
   registry.register('execution.prompt', async () => refusePublicExecutionPrompt());
+
+  // -------------------------------------------------------------------------
+  // sessionPrompts.* — a blocked agent's question, answerable from chat.
+  //
+  // Phase 1 can only say a session went quiet. These three make the question
+  // itself durable, so chat can show WHAT is being asked and record an answer
+  // that names who gave it. The provider hook is what blocks the agent; these
+  // handlers only own the question's lifecycle.
+  // -------------------------------------------------------------------------
+
+  /**
+   * sessionPrompts.open — INTERNAL. Only the session that is BLOCKED may open
+   * its own gate.
+   *
+   * The credential check below is the whole authorization story and it is
+   * deliberately narrower than "may this caller touch this session". A bearer
+   * bound to session A must not open a prompt on session B: that would let one
+   * actor manufacture a question a different actor then answers, with no agent
+   * waiting on the other end — an approval UI for a decision that grants
+   * nothing, which is worse than having no approval UI at all.
+   *
+   * Idempotent on (session, tool_use_id) while pending, because a hook that
+   * fires twice for one tool call — a retry, a reconnect — must resolve to ONE
+   * question and one decision rather than two racing to answer the same block.
+   */
+  registry.register('sessionPrompts.open', async (ctx) => {
+    const input = ctx.body as SessionPromptOpenInput;
+    const sessionId = requireUuidParam(ctx, 'id');
+    const bearer = ctx.identity?.kind === 'bearer' ? ctx.identity : undefined;
+    if (!bearer?.workSessionId) {
+      throw new CollabError('forbidden', 'only a session-bound credential may open a permission gate');
+    }
+    if (bearer.workSessionId !== sessionId) {
+      // Same message for "not yours" as for "no such session": a caller must not
+      // learn which other sessions exist by probing this endpoint.
+      throw new CollabError('forbidden', 'a session may only open a permission gate on itself');
+    }
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+
+    const rows = await db.query<SessionPromptRow>(
+      claims,
+      `insert into public.session_prompts
+         (work_session_id, tool_use_id, tool_name, tool_input, agent_tool, agent_pid)
+       values ($1, $2, $3, $4::jsonb, $5, $6)
+       on conflict (work_session_id, tool_use_id) where status = 'pending'
+         do update set tool_name = excluded.tool_name
+       returning *`,
+      [
+        sessionId,
+        input.toolUseId,
+        input.toolName,
+        JSON.stringify(input.toolInput ?? {}),
+        input.agentTool ?? null,
+        input.agentPid ?? null,
+      ],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('upstream_unavailable', 'session_prompts insert returned no row');
+    return json(toSessionPromptView(row));
+  });
+
+  /**
+   * sessionPrompts.answer — the decision, and the only write that grants
+   * anything.
+   *
+   * `decided_by` is resolved SERVER-side from the caller's own membership and
+   * never taken from the request: an allow that names an author the caller
+   * chose is not an audit trail. The guarded RPC refuses to re-decide, so a
+   * late click cannot overturn a denial the agent has already acted on.
+   */
+  registry.register('sessionPrompts.answer', async (ctx) => {
+    const input = ctx.body as SessionPromptAnswerInput;
+    const promptId = requireUuidParam(ctx, 'promptId');
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+
+    // Resolve the prompt's session and space under the caller's claims. That
+    // read IS the authorization gate, exactly as execution.journal treats a
+    // session id: RLS answers membership, and an unreadable prompt is
+    // indistinguishable from a missing one.
+    const located = await db.query<{ space_id: string }>(
+      claims,
+      `select e.space_id
+         from public.session_prompts p
+         join public.entities e on e.id = p.work_session_id
+        where p.id = $1 and e.deleted_at is null`,
+      [promptId],
+    );
+    const spaceId = located[0]?.space_id;
+    if (!spaceId) throw new CollabError('not_found', `no such prompt: ${promptId}`);
+
+    const answered = await rethrowing(() =>
+      db.query<SessionPromptRow>(
+        claims,
+        `select * from public.session_prompt_answer(
+           $1, $2, internal.current_member_id($3::uuid), $4)`,
+        [promptId, input.decision, spaceId, input.reason ?? null],
+      ),
+    );
+    const row = answered[0];
+    if (!row) throw new CollabError('upstream_unavailable', 'session_prompt_answer returned no row');
+    return json(toSessionPromptView(row));
+  });
+
+  /**
+   * sessionPrompts.list — what this session has asked.
+   *
+   * Sweeps expiry on the way past rather than relying on a scheduler. A
+   * question whose window has closed must never be answerable, and the cheapest
+   * way to guarantee that is to close it on every read that could surface it.
+   */
+  registry.register('sessionPrompts.list', async (ctx) => {
+    const sessionId = requireUuidParam(ctx, 'id');
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+
+    const sessions = await db.query<{ id: string }>(
+      claims,
+      `select e.id from public.entities e
+        where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
+      [sessionId],
+    );
+    if (!sessions[0]) throw new CollabError('not_found', `no such work session: ${sessionId}`);
+
+    await db.query(claims, 'select public.session_prompts_expire_due()');
+    const rows = await db.query<SessionPromptRow>(
+      claims,
+      `select * from public.session_prompts
+        where work_session_id = $1
+        order by (status = 'pending') desc, created_at desc
+        limit 100`,
+      [sessionId],
+    );
+    return json({ items: rows.map(toSessionPromptView) });
+  });
+
 
   /**
    * execution.resume — maestro-style same-session resume. All the semantics

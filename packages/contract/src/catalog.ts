@@ -145,6 +145,20 @@ export const OPERATIONS = [
   { name: 'execution.terminate',      method: 'POST',  path: '/v2/entities/:id/commands/terminate',         kind: 'command', status: 'v1' },
   { name: 'execution.streams.attach', method: 'POST',  path: '/v2/entities/:id/commands/streams-attach',    kind: 'command', status: 'v1' },
   { name: 'execution.resume',         method: 'POST',  path: '/v2/entities/:id/commands/resume',            kind: 'command', status: 'v1' },
+
+  // session-prompts.* — a blocked agent's question, answerable from chat.
+  //
+  // `open` is INTERNAL and session-scoped by construction: only the provider
+  // hook running inside a live session may ask it, because the whole point is
+  // that the asking agent is the one blocked on the answer. It is NOT a
+  // browser-callable operation and no flag exposes one.
+  //
+  // `answer` and `list` ARE public: answering is the entire feature, and the
+  // browser must be able to see a pending question after a reconnect without
+  // waiting for a live event to be re-sent.
+  { name: 'sessionPrompts.open',      method: 'POST',  path: '/v2/entities/:id/commands/prompt-gate',       kind: 'command', status: 'v1' },
+  { name: 'sessionPrompts.answer',    method: 'POST',  path: '/v2/session-prompts/:promptId/answer',        kind: 'command', status: 'v1' },
+  { name: 'sessionPrompts.list',      method: 'GET',   path: '/v2/entities/:id/session-prompts',            kind: 'read',    status: 'v1' },
   // The session's CLI command journal. The bytes live on the node's disk at
   // `<dataDir>/journals/<sessionId>.jsonl`, written by the teammate's own `tm8`
   // invocations — NOT in the database. This op is the ONLY way they reach a

@@ -212,6 +212,8 @@ function nounForOperation(operation: OperationName): string {
     case 'events': return 'event';
     case 'presence': return 'presence';
     case 'execution': return 'session';
+    // Same noun as execution: a permission gate is part of a session's life.
+    case 'sessionPrompts': return 'session';
     case 'entityKinds': return 'kind';
     case 'handoffs': return 'handoff';
     case 'interactionProfiles': return 'interaction-profile';
@@ -311,15 +313,15 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
 
   // A21 (execution.liveness) is the +1 on the catalog, GET, read, router and
   // execution-handler axes — the first IMPLEMENTED additive operation.
-  assertEqual(names.length, 127, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 125, 'v1 total');
+  assertEqual(names.length, 130, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 128, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 47, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 50, command: 76, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 126, 'server router HTTP total');
+  assertEqual(methods, { GET: 48, POST: 56, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 51, command: 78, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 129, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the
