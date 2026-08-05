@@ -187,3 +187,54 @@ returns integer language sql security definer set search_path = public, pg_temp 
      returning 1
   ) select count(*)::integer from expired;
 $$;
+
+-- =============================================================================
+-- Reaching the browser live.
+--
+-- Chat cannot poll for this. A person watching the chat surface must see the
+-- question appear while the agent is still blocked on it -- a prompt that shows
+-- up after a poll interval is a prompt the agent waited out for no reason.
+--
+-- A DEDICATED capture function rather than a branch inside
+-- `internal.capture_workspace_event`: that function is shared by entities,
+-- edges, messages, counters, activity and notifications, and several later
+-- migrations have already replaced it wholesale. Adding a branch there means
+-- every future replacement must remember to carry this one, and the failure
+-- mode of forgetting is silent -- prompts simply stop reaching chat. A separate
+-- trigger cannot be dropped by accident.
+-- =============================================================================
+create or replace function internal.capture_session_prompt_event() returns trigger
+language plpgsql set search_path = public, internal, pg_temp as $$
+declare
+  v_space uuid;
+  v_event text;
+begin
+  -- The space comes from the session's own entity row; a prompt is never
+  -- addressable outside the space that owns the session that raised it.
+  select space_id into v_space from public.entities where id = new.work_session_id;
+  if v_space is null then return new; end if;
+
+  if tg_op = 'INSERT' then
+    v_event := 'session.prompt.opened';
+  elsif new.status is distinct from old.status then
+    v_event := case new.status
+      when 'expired' then 'session.prompt.expired'
+      else 'session.prompt.answered'
+    end;
+  else
+    -- Nothing a client can act on changed. A prompt row is touched for
+    -- bookkeeping more often than it is decided, and re-emitting on every touch
+    -- would put noise on a socket whose whole value is that it carries only
+    -- things a person must respond to.
+    return new;
+  end if;
+
+  insert into public.workspace_events(space_id, seq, event_type, payload, client_mutation_id)
+  values (v_space, internal.next_event_seq(v_space), v_event, to_jsonb(new), internal.claim_cmid());
+  return new;
+end $$;
+
+drop trigger if exists session_prompts_capture_event on public.session_prompts;
+create trigger session_prompts_capture_event
+  after insert or update on public.session_prompts
+  for each row execute function internal.capture_session_prompt_event();
