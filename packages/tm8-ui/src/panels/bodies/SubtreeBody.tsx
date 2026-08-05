@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
-import type { EntityDetail, EntitySummary } from '@tm8/contract';
+import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
 import { getKind } from '../../domain';
@@ -11,10 +11,12 @@ import './subtree-body.css';
 /**
  * THE SUBTREE ARCHETYPE BODY — T0-4 frame 2, the `task` region.
  *
- * Anatomy, in the order D48.1 rules (grid → description → SUBTREE → RUNS →
- * LINKED). T0-4's own anatomy frame puts the description ABOVE the grid and
- * its 12-kinds card puts it below; the two disagree inside one canvas, so the
- * ledger's order wins rather than a coin toss.
+ * Anatomy, in the order D48.1 rules (grid → description → ACCEPTANCE →
+ * SUBTREE → RUNS → LINKED). T0-4's own anatomy frame puts the description
+ * ABOVE the grid and its 12-kinds card puts it below; the two disagree inside
+ * one canvas, so the ledger's order wins rather than a coin toss. ACCEPTANCE
+ * sits with the description because both are the task's OWN definition; the
+ * three regions after it are its relations.
  *
  * IT IS AN ARCHETYPE, NOT A KIND. Nothing here knows what a task is. Every
  * per-kind decision is answered by the REGISTRY ROW of the entity in hand:
@@ -33,10 +35,14 @@ import './subtree-body.css';
  * GenericBody idiom — structural questions about the shape in hand, never
  * "is this a task?" — and they are what keeps §15.2's guard green.
  *
+ * ACCEPTANCE was the A2 deferral (D30, D48.2) and is now drawn: the criteria
+ * ride in `content.acceptanceCriteria`, which the detail read has always
+ * hydrated, so the panel was showing a task with none of the conditions that
+ * decide whether it is finished. It is still a STRUCTURAL read — a content
+ * shape that carries no criteria member gets no region, which is how the
+ * archetype stays free of "is this a task?".
+ *
  * WHAT IT DOES NOT DRAW, and why that is a ruling rather than an omission:
- *   · ACCEPTANCE · n/m — T0-4-only depth, deferred to A2 by D30 and boundary-
- *     measured by D48.2. Ruled-not-missed; a registry `notice` block is where
- *     the panel says so out loud.
  *   · A `＋ add child…` that silently does nothing — R7: it renders disabled
  *     with its reason until a dispatch is wired.
  */
@@ -68,6 +74,16 @@ export interface SubtreeBodyProps {
   /** Present only when this task can actually be patched. */
   onDescriptionChange?: (description: string) => void;
   descriptionUnavailableReason?: string;
+  /** Staged criteria; undefined means use the persisted ones. */
+  criteriaDraft?: readonly AcceptanceCriterion[];
+  /**
+   * Handed the WHOLE next array, never one criterion. `acceptanceCriteria` is
+   * patched as a unit, so a caller given a single flip would have to rebuild
+   * the array from a copy of the list — and a rebuild from a stale copy is how
+   * one tick silently drops another writer's.
+   */
+  onCriteriaChange?: (next: AcceptanceCriterion[]) => void;
+  criteriaUnavailableReason?: string;
 }
 
 export function SubtreeBody({
@@ -79,6 +95,9 @@ export function SubtreeBody({
   descriptionDraft,
   onDescriptionChange,
   descriptionUnavailableReason,
+  criteriaDraft,
+  onCriteriaChange,
+  criteriaUnavailableReason,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
@@ -100,6 +119,12 @@ export function SubtreeBody({
         draft={descriptionDraft}
         onChange={onDescriptionChange}
         unavailableReason={descriptionUnavailableReason}
+      />
+      <AcceptanceSection
+        detail={detail}
+        draft={criteriaDraft}
+        onChange={onCriteriaChange}
+        unavailableReason={criteriaUnavailableReason}
       />
       <SubtreeSection
         detail={detail}
@@ -134,13 +159,15 @@ export function SubtreeBody({
  *   · `kind` is the discriminator, not content;
  *   · the pill source is already in the header — one fact, one rendering, or
  *     the two drift the first time either is edited;
- *   · `acceptance` is A2 (D30, D48.2);
+ *   · `acceptance` is the n/m SUMMARY of the criteria the ACCEPTANCE region
+ *     draws in full — counting them twice is the same drift;
  *   · the rest have composed cells below.
  */
 const COMPOSED_KEYS = new Set(['kind', 'acceptance', 'assignees', 'priority', 'dueDate', 'axes']);
 
 function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity?: (id: string) => void }) {
   const state = detail.state as unknown as Record<string, unknown>;
+  const content = detail.content as unknown as Record<string, unknown>;
   const config = getKind(detail.kind);
   const pillKey = statusFieldOf(config);
   const parent = detail.hierarchy.parent;
@@ -175,6 +202,17 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
       // full: an abbreviation is a WORD, and D22 puts words in the registry —
       // inventing one in a render path is how two surfaces come to disagree.
       value: <span className="sb-tag">{state.priority.toUpperCase()}</span>,
+    });
+  }
+
+  // The estimate lives in CONTENT, not state — the same member-name read the
+  // description does one region below, and the reason the grid was silent
+  // about a field the create and patch inputs have always carried.
+  if (typeof content.pointsEstimate === 'number') {
+    cells.push({
+      key: 'pointsEstimate',
+      label: 'Points',
+      value: <span className="sb-grid__strong">{content.pointsEstimate}</span>,
     });
   }
 
@@ -276,6 +314,77 @@ function DescriptionEditor({
         onChange={(event) => onChange?.(event.target.value)}
       />
     </label>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ACCEPTANCE — the conditions that decide whether the work is finished
+// ---------------------------------------------------------------------------
+
+function AcceptanceSection({
+  detail,
+  draft,
+  onChange,
+  unavailableReason,
+}: {
+  detail: EntityDetail;
+  draft?: readonly AcceptanceCriterion[];
+  onChange?: (next: AcceptanceCriterion[]) => void;
+  unavailableReason?: string;
+}) {
+  const content = detail.content as unknown as Record<string, unknown>;
+  const persisted = content.acceptanceCriteria;
+  /*
+   * ABSENT MEMBER ⇒ NO REGION, and that is the archetype law rather than a
+   * tidy-up: a content shape with no criteria member has no acceptance to be
+   * silent about, so drawing an empty one would invent a concept for kinds
+   * that do not have it. An EMPTY ARRAY is a different fact — the task has
+   * none yet — and gets the region with its own quiet line.
+   */
+  if (!Array.isArray(persisted)) return null;
+  const criteria = (draft ?? persisted) as readonly AcceptanceCriterion[];
+  const completed = criteria.filter((c) => c.done).length;
+
+  return (
+    <section className="sb-section" data-testid="acceptance-section">
+      <Eyebrow faint>
+        ACCEPTANCE · {completed}/{criteria.length}
+      </Eyebrow>
+      {criteria.length === 0 ? (
+        <p className="pn-section__empty">No acceptance criteria on this yet.</p>
+      ) : (
+        <div className="sb-rows">
+          {criteria.map((criterion, index) => (
+            <label
+              className="sb-criterion"
+              key={criterion.id || `criterion-${index}`}
+              data-testid="acceptance-row"
+              data-done={criterion.done ? 'true' : 'false'}
+            >
+              <input
+                type="checkbox"
+                className="sb-criterion__box"
+                checked={criterion.done}
+                disabled={!onChange}
+                title={unavailableReason}
+                onChange={(event) =>
+                  onChange?.(
+                    criteria.map((c, i) => (i === index ? { ...c, done: event.target.checked } : c)),
+                  )
+                }
+              />
+              <span
+                className={
+                  criterion.done ? 'sb-criterion__text sb-criterion__text--done' : 'sb-criterion__text'
+                }
+              >
+                {criterion.text}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

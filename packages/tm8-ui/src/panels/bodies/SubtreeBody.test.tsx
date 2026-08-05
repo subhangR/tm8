@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, within } from '@testing-library/react';
-import type { EntityDetail, EntitySummary } from '@tm8/contract';
+import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { allKinds, getKind } from '../../domain';
 import {
@@ -77,6 +77,20 @@ function withDescription(description: string): EntityDetail {
   };
 }
 
+function criteriaOf(detail: EntityDetail): AcceptanceCriterion[] {
+  if (detail.content.kind !== 'task') throw new Error('this fixture must carry task content');
+  return detail.content.acceptanceCriteria;
+}
+
+function withCriteria(acceptanceCriteria: AcceptanceCriterion[]): EntityDetail {
+  const base = taskDetail();
+  if (base.content.kind !== 'task') throw new Error('this fixture must carry task content');
+  return {
+    ...base,
+    content: { ...base.content, acceptanceCriteria },
+  };
+}
+
 const staleVerdict = (id: string): SessionLiveness | undefined =>
   id === sessionStale.id ? 'stale' : undefined;
 
@@ -102,6 +116,12 @@ describe('the composed metadata grid', () => {
     expect(grid.textContent).toContain(`@${ada.displayName}`);
     expect(grid.textContent).toMatch(/URGENT/);
     expect(grid.textContent).toContain(taskUuidTitle.id);
+  });
+
+  it('renders the points estimate, which lives in CONTENT rather than state', () => {
+    // The grid read only `state` and so was silent about a field the create
+    // and patch inputs have always carried. The fixture estimates 8.
+    expect(renderBody().getByTestId('subtree-grid').textContent).toMatch(/Points\s*8/);
   });
 
   it('does NOT repeat the status the header pill already carries', () => {
@@ -160,12 +180,62 @@ describe('DESCRIPTION — always present and growing in document flow', () => {
   });
 });
 
-describe('acceptance criteria stay A2 — ruled, not missed (D30, D48.2)', () => {
-  it('draws no ACCEPTANCE region and no criterion text', () => {
-    const { queryByTestId, container } = renderBody();
-    expect(queryByTestId('acceptance-section')).toBeNull();
-    expect(container.textContent).not.toMatch(/ACCEPTANCE/i);
-    expect(container.textContent).not.toContain('Crash reproduced under fixture data');
+describe('ACCEPTANCE — the conditions that decide whether the work is done', () => {
+  it('lists every criterion and counts the completed ones', () => {
+    const { getByTestId } = renderBody();
+    const section = getByTestId('acceptance-section');
+    // The fixture carries four criteria, two of them done.
+    expect(section.textContent).toMatch(/ACCEPTANCE · 2\/4/);
+    expect(section.textContent).toContain('Crash reproduced under fixture data');
+    expect(section.textContent).toContain('Reviewed by a human');
+    expect(within(section).getAllByTestId('acceptance-row')).toHaveLength(4);
+  });
+
+  it('marks a done criterion done and an open one open', () => {
+    const rows = within(renderBody().getByTestId('acceptance-section')).getAllByTestId('acceptance-row');
+    expect(rows[0]?.getAttribute('data-done')).toBe('true');
+    expect(rows[2]?.getAttribute('data-done')).toBe('false');
+  });
+
+  it('hands back the WHOLE array on a tick, with only that criterion flipped', () => {
+    // A caller given one flip would rebuild the array from a copy, and a
+    // rebuild from a stale copy is how one tick silently drops another's.
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    const boxes = within(getByTestId('acceptance-section')).getAllByRole('checkbox');
+    fireEvent.click(boxes[2]!);
+
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    expect(next).toHaveLength(4);
+    expect(next.map((c) => c.done)).toEqual([true, true, true, false]);
+    expect(next[2]?.text).toBe('Fix behind a test');
+  });
+
+  it('renders the staged draft, not the persisted criteria, while one is open', () => {
+    const persisted = criteriaOf(taskDetail());
+    const draft = persisted.map((c) => ({ ...c, done: true }));
+    const section = renderBody({ criteriaDraft: draft }).getByTestId('acceptance-section');
+    expect(section.textContent).toMatch(/ACCEPTANCE · 4\/4/);
+  });
+
+  it('disables every box with its reason when the entity cannot be saved (R7)', () => {
+    const { getByTestId } = renderBody({ criteriaUnavailableReason: 'You cannot edit this — the server refuses edits here' });
+    const boxes = within(getByTestId('acceptance-section')).getAllByRole('checkbox') as HTMLInputElement[];
+    expect(boxes.every((b) => b.disabled)).toBe(true);
+    expect(boxes[0]?.title).toMatch(/cannot edit this/i);
+  });
+
+  it('states an empty criteria list rather than drawing an empty region', () => {
+    const { getByTestId } = renderBody({ detail: withCriteria([]) });
+    expect(getByTestId('acceptance-section').textContent).toMatch(/no acceptance criteria/i);
+  });
+
+  it('draws NO region for a content shape that carries no criteria member', () => {
+    // The archetype law: a structural read, never "is this a task?". A doc
+    // detail through this body must not grow an acceptance concept.
+    const doc = fixtureDetails[docLayoutSpec.id];
+    if (!doc) throw new Error('fixtures must supply a doc detail');
+    expect(renderBody({ detail: doc }).queryByTestId('acceptance-section')).toBeNull();
   });
 });
 
@@ -299,9 +369,11 @@ describe('the registry seam this body reads through', () => {
 
   it('renders a notice block verbatim', () => {
     const { getByTestId } = renderBody({
-      blocks: [{ block: 'notice', params: { text: 'Acceptance criteria land in A2 (D30).' } }],
+      blocks: [{ block: 'notice', params: { text: 'This kind is governed by the space policy.' } }],
     });
-    expect(getByTestId('subtree-notices').textContent).toContain('Acceptance criteria land in A2 (D30).');
+    expect(getByTestId('subtree-notices').textContent).toContain(
+      'This kind is governed by the space policy.',
+    );
   });
 });
 
