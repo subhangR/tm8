@@ -376,6 +376,49 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
   const isTerminal = config.panel.archetype === 'terminal';
   const alwaysDark = isTerminal;
 
+  /**
+   * THE CONTROL STRIP — ONE ROW, UNDER THE TABS.
+   *
+   * USER RULING 2026-08-05, on the task panel, verbatim: "the top part is
+   * showing the drop downs in vertical, they should be in a single row … below
+   * the tabs (task, discussion, connections, activity) a row with these drop
+   * downs."
+   *
+   * Two things were wrong and they are separate:
+   *
+   *  1. THE LAYOUT. The panel mounted the strip in its DEFAULT `lines`
+   *     variant — `.lp__rowdetail` is `flex-direction: column`, one labelled
+   *     line per control — so four controls became four stacked rows filling
+   *     the top of the panel. `chips` is the layout the same strip already
+   *     uses in the control-card, where the control IS the chip: one row,
+   *     labels as accessible names, archive pushed to the far end.
+   *
+   *  2. THE PLACE. It sat between the title and the tabs. Below the tabs it
+   *     reads as what it is — the axes of the thing the tabs are about — and
+   *     it is still reachable from every tab, which is why it is rendered
+   *     here rather than gated on the Content tab.
+   *
+   * THE TERMINAL ARCHETYPE KEEPS THE OLD POSITION, and that is structural,
+   * not an exception carved for a kind: a terminal panel owns its full height
+   * below the tabs (user ruling 2026-07-31, "terminal all the way, till the
+   * component bottom"), so there is no band under the tabs to put a row in.
+   *
+   * NOT ON A TOMBSTONE. A deleted entity cannot be edited (the server refuses,
+   * and `useTaskSave` already says "restore it before editing"), and its ONE
+   * live verb is restore — which `TombstoneBody` owns below. Rendering the
+   * strip here too would put two restore controls in one panel, which is the
+   * duplication D67 removed from the tile.
+   */
+  const strip =
+    controlsFor(config) && !isTombstone ? (
+      <EntityControlStrip
+        row={subjectOf(detail)}
+        props={props.controls ?? { kind: detail.kind, ctx: props.ctx }}
+        config={config}
+        variant={isTerminal ? 'lines' : 'chips'}
+      />
+    ) : null;
+
   return (
     <section
       /*
@@ -419,22 +462,8 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         onCommitTitle={(title) => void save.commitNow({ title })}
       />
 
-      {/* THE CONTROL STRIP — under the title, above the tabs, so the three
-          writes sit with the identity of the thing they change and are
-          reachable from every tab rather than only from Content.
-
-          NOT ON A TOMBSTONE. A deleted entity cannot be edited (the server
-          refuses, and `useTaskSave` already says "restore it before editing"),
-          and its ONE live verb is restore — which `TombstoneBody` owns below.
-          Rendering the strip here too would put two restore controls in one
-          panel, which is the duplication D67 removed from the tile. */}
-      {controlsFor(config) && !detail.deletedAt ? (
-        <EntityControlStrip
-          row={subjectOf(detail)}
-          props={props.controls ?? { kind: detail.kind, ctx: props.ctx }}
-          config={config}
-        />
-      ) : null}
+      {/* The terminal archetype's only possible position; see `strip` above. */}
+      {isTerminal ? strip : null}
 
       {stalePin ? (
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
@@ -478,6 +507,15 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         }
         onSelect={selectTab}
       />
+
+      {/* The band is gated on the strip, not just on the archetype: a kind with
+          no controls (a doc declares none) would otherwise draw an empty
+          padded row with a hairline under the tabs. */}
+      {strip && !isTerminal ? (
+        <div className="pn-controls" data-testid="panel-controls">
+          {strip}
+        </div>
+      ) : null}
 
       {/* The error boundary wraps the BODY only: header, tabs and footer stay
           live so close, expand and Esc keep working through a failed render.

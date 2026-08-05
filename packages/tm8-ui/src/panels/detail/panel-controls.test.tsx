@@ -268,6 +268,76 @@ describe('the way back — done and archived both reopen', () => {
   });
 });
 
+describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
+  /**
+   * USER RULING 2026-08-05, verbatim: "the top part is showing the drop downs
+   * in vertical, they should be in a single row … below the tabs (task,
+   * discussion, connections, activity) a row with these drop downs."
+   *
+   * The panel used to mount the strip in its default `lines` variant, which is
+   * `flex-direction: column` — four controls, four stacked rows — between the
+   * title and the tabs. Both facts are pinned here because both were the
+   * defect, and neither is visible to any test that only asks whether the
+   * controls exist: the seven cases above all passed while it was wrong.
+   *
+   * NOTE ON WHAT THIS FILE CANNOT SEE: jsdom has no layout engine, so "one
+   * row" is asserted as the CLASS that selects the row layout, not as measured
+   * geometry. The pixel check was done in Chrome.
+   */
+  it('takes the chip layout, not the stacked one', () => {
+    const { getByTestId } = panel(TASK, host());
+    const strip = getByTestId('panel-controls').firstElementChild;
+    expect(strip?.className).toContain('lp__rowdetail--chips');
+  });
+
+  it('is mounted AFTER the tab strip in document order', () => {
+    const { getByTestId } = panel(TASK, host());
+    const tabs = getByTestId('panel-toolbar');
+    const strip = getByTestId('panel-controls');
+
+    // Node.DOCUMENT_POSITION_FOLLOWING === 4.
+    expect(tabs.compareDocumentPosition(strip) & 4).toBe(4);
+  });
+
+  it('is reachable from every tab, not only from Content', () => {
+    const { getByTestId, getByRole } = panel(TASK, host());
+    fireEvent.click(getByRole('tab', { name: /Connections/ }));
+    expect(getByTestId('panel-controls')).toBeTruthy();
+  });
+
+  it('draws no band for a kind that declares no controls', () => {
+    // A doc has neither state, value nor assign control; an unconditional band
+    // would draw an empty padded row with a hairline under the tabs.
+    const doc = Object.values(fixtureDetails).find((d) => d.kind === 'doc');
+    if (!doc) throw new Error('the fixtures must carry a doc to exercise this');
+
+    expect(panel(doc, host({ kind: 'doc' })).queryByTestId('panel-controls')).toBeNull();
+  });
+
+  it('leaves the terminal archetype where it was, ABOVE the tabs', () => {
+    /**
+     * NOT an exception carved for a kind — a structural consequence. A
+     * terminal panel owns its full height below the tabs (user ruling
+     * 2026-07-31, "terminal all the way, till the component bottom"), so
+     * there is no band under the tabs for a row to sit in.
+     */
+    const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
+    if (!session) throw new Error('the fixtures must carry a work_session');
+
+    const { container, getByTestId, queryByTestId } = panel(session, host({ kind: 'work_session' }));
+    expect(queryByTestId('panel-controls')).toBeNull();
+
+    const tabs = getByTestId('panel-toolbar');
+    // Queried by class, not by `row-state-select`: a session's state control
+    // is `readOnlyReason` — observed, not chosen — so it renders as a refusal
+    // and there is no `<select>` to find.
+    const strip = container.querySelector('.lp__rowdetail');
+    expect(strip).not.toBeNull();
+    // DOCUMENT_POSITION_PRECEDING === 2.
+    expect(tabs.compareDocumentPosition(strip!) & 2).toBe(2);
+  });
+});
+
 describe('the strip does not duplicate what it replaced', () => {
   /**
    * ONE CONTROL PER STATE. The strip's archive verb belongs to a live entity

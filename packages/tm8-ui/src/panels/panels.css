@@ -2389,6 +2389,61 @@
 .cv2-root .lp__rowaction svg { display: block; }
 .cv2-root .lp__rowdetail--chips .lp__rowaction:hover { color: var(--pn-block); }
 
+/* THE PANEL'S CHIP BAND — the strip's own row under the tab strip.
+   `lp__rowdetail--chips` deliberately drops the padding and the hairline it
+   carries in the tile, because there it is a continuation of a card that drew
+   both. Under the tabs it is a band in its own right, so the band supplies
+   them; the strip inside keeps its chip layout unchanged. */
+.cv2-root .pn-controls {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--pn-line);
+  background: color-mix(in srgb, var(--pn-surface) 72%, var(--pn-card));
+}
+
+/* A REFUSED CHIP MUST NOT COST THE ROW ITS SECOND DIMENSION.
+   `DisabledAction` draws its reason as an inline caption UNDER the control —
+   right in the stacked `lines` strip, fatal in the chip row, where one refused
+   control turns a single row into two and pushes the body down. So in the chip
+   row the caption takes the TOOLTIP presentation this same vocabulary already
+   uses for its icon controls.
+
+   Hidden with opacity/visibility, never `display: none`: the caption is the
+   control's `aria-describedby` target, and dropping it from the accessibility
+   tree would take the reason with it — which is the whole point of L6. */
+.cv2-root .lp__rowdetail--chips .hon-disabled-group {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+}
+.cv2-root .lp__rowdetail--chips .hon-caption {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 70;
+  width: max-content;
+  max-width: 260px;
+  padding: 6px 10px;
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-ink);
+  color: var(--pn-paper);
+  box-shadow: 0 12px 34px rgba(40, 34, 24, 0.3);
+  text-align: left;
+  opacity: 0;
+  visibility: hidden;
+}
+.cv2-root[data-theme='dark'] .lp__rowdetail--chips .hon-caption,
+[data-theme='dark'] .cv2-root .lp__rowdetail--chips .hon-caption {
+  background: var(--pn-x-term-bg);
+  color: var(--pn-ink);
+  border: 1px solid var(--pn-line-2);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.6);
+}
+.cv2-root .lp__rowdetail--chips .hon-disabled-group:hover > .hon-caption,
+.cv2-root .lp__rowdetail--chips .hon-disabled:focus-visible + .hon-caption {
+  opacity: 1;
+  visibility: visible;
+}
+
 /* ONE HEIGHT BAND FOR THE FOUR CHIPS. They arrive from three vocabularies that
    each sized themselves: the assignee face is a `pn-badge`, which the metarow
    pins to 24px, while `lp__statesel` and `lp__rowaction` size from their own
