@@ -627,6 +627,44 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     }
   }
 
+  // The tense rule (doc 06 §2.3): `workingActors` means "working NOW", but
+  // `working_on` cannot express an ending — its propsSchema has no `endedAt`,
+  // so edges accumulate forever. Liveness is therefore DERIVED, never stored:
+  // a session-sourced edge counts only while its work_session is in a live
+  // status. `work_sessions.status` is trustworthy for this — it has an
+  // enforced single writer (001:727-746). Person-sourced edges pass through
+  // (a person has no status row); a source row this querier cannot see proves
+  // nothing, so it does not get the badge. The terminal-task half of the rule
+  // lives in badgesOf, where the row is at hand.
+  if (relations.workingOn.size > 0) {
+    const sourceIds = [
+      ...new Set([...relations.workingOn.values()].flat().map((w) => w.actorId)),
+    ];
+    const sourceRows = await q.query<{ id: string; kind: string; status: string | null }>(
+      `select e.id, e.kind, ws.status
+         from public.entities e
+         left join public.work_sessions ws on ws.entity_id = e.id
+        where e.id = any($1::uuid[])
+          and e.deleted_at is null`,
+      [sourceIds],
+    );
+    const liveSource = new Map(
+      sourceRows.map((r) => [
+        r.id,
+        r.kind !== 'work_session' ||
+          r.status === 'spawning' ||
+          r.status === 'running' ||
+          r.status === 'idle',
+      ]),
+    );
+    for (const [id, list] of relations.workingOn) {
+      const live = list.filter((w) => liveSource.get(w.actorId) === true);
+      if (live.length === list.length) continue;
+      if (live.length === 0) relations.workingOn.delete(id);
+      else relations.workingOn.set(id, live);
+    }
+  }
+
   // The two staleness lookups mirror the conditional dependency-target fetch
   // below: batched over the distinct targets, run only when the page produced
   // any mark at all, so a page with no memories pays nothing.
@@ -1061,7 +1099,11 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
   }
 
   const working = ctx.relations.workingOn.get(row.id) ?? [];
-  if (working.length > 0 && ctx.related) {
+  // The other half of the §2.3 tense rule: a terminal task is not being
+  // worked on, whatever its edges say. Past tense ("Worked on by") is a
+  // detail-panel aggregation, never a tile badge.
+  const terminal = row.kind === 'task' && (row.work_status === 'done' || row.work_status === 'cancelled');
+  if (working.length > 0 && !terminal && ctx.related) {
     const self = ctx.related.get(row.id);
     if (self) {
       badges.workingActors = working.map(
