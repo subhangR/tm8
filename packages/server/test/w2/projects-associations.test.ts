@@ -45,6 +45,8 @@ const PROJECT_ROW = {
   repo_url: 'https://example.test/tm8.git',
   working_dir: '/tmp/tm8',
   trust: 'trusted',
+  share_mode: 'space',
+  owner_account_id: null,
   defaults: { model: 'gpt-5.6' },
   link_frozen: false,
   active_link_count: 2,
@@ -255,7 +257,7 @@ describe('W2.G06 projects and association correction facade', () => {
     );
     expect(ProjectResourceSchema.safeParse(result).success).toBe(true);
     expect(db.calls).toContainEqual({
-      fn: 'update_project_w2',
+      fn: 'update_owned_project',
       args: [IDS.project, JSON.stringify({ repoUrl: null }), 'g06-update'],
     });
   });
@@ -282,7 +284,7 @@ describe('W2.G06 projects and association correction facade', () => {
       }),
     );
     expect(db.calls.map(({ fn }) => fn)).toEqual([
-      'create_project',
+      'create_owned_project',
       'link_project_w2',
       'unlink_project_w2',
     ]);

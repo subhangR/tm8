@@ -66,21 +66,12 @@
 -- =============================================================================
 set role tm8_graph_owner;
 
--- The caller's own account, resolved from the identity bound to THIS
--- transaction. SECURITY DEFINER because `public.accounts` is not readable by
--- `tm8_app`, and because a policy that depended on a claim the client controls
--- would not be a policy at all. `stable`, so the planner may call it once per
--- statement rather than once per row.
-create or replace function internal.current_account_id() returns uuid
-language sql stable security definer set search_path = public, internal, pg_temp as $$
-  select a.id
-    from public.accounts a
-   where a.identity_id = internal.identity_id()
-     and a.status = 'active'
-$$;
-
-revoke all on function internal.current_account_id() from public;
-grant execute on function internal.current_account_id() to tm8_app;
+-- `internal.current_account_id()` — the caller's own account, resolved from the
+-- identity bound to the transaction — is DEFINED IN 078 and only depended on
+-- here. It was briefly defined in both files with identical bodies, which meant
+-- apply order decided which one survived and an edit to either could be undone
+-- by the other without anything going red. One function, one definition; 078
+-- sorts first, so this file may assume it exists.
 
 create table public.account_git_credentials (
   id               uuid primary key default internal.new_id(),

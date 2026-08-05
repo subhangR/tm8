@@ -47,6 +47,7 @@ import {
   FileUploadAbortInputSchema,
   FileUploadCompleteInputSchema,
   FileUploadInitInputSchema,
+  GitCredentialSetInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
   IdentityProfileUpdateInputSchema,
@@ -107,6 +108,19 @@ const UndoCommandInputSchema = z.object({
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 
+/**
+ * `gitCredentials.delete` carries no payload: the provider is fixed and the
+ * subject is always the caller, so there is nothing a body could say. Bound
+ * anyway — an unbound command is an unvalidated one — and bound as OPTIONAL
+ * because a DELETE legitimately arrives with no body at all, while a node
+ * running with idempotency disabled has `normalizeCommandInputForIdempotencyMode`
+ * inject a `clientMutationId` into every command body on its way past. Strict,
+ * so anything else is a typo the caller hears about.
+ */
+const GitCredentialDeleteInputSchema = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict().optional();
+
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
@@ -117,6 +131,15 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
   'auth.logout': AuthLogoutInputSchema,
+
+  // gitCredentials (079). `set` is the only one with a body, and its binding
+  // is a security control, not hygiene: the token it carries becomes an
+  // environment variable in a spawned PTY, so the character class in
+  // `GitCredentialSetInputSchema` is what keeps a newline out of a child's
+  // environment. `delete` takes no body at all — the provider is fixed and the
+  // subject is always the caller.
+  'gitCredentials.set': GitCredentialSetInputSchema,
+  'gitCredentials.delete': GitCredentialDeleteInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,

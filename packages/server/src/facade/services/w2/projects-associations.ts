@@ -29,6 +29,8 @@ export interface ProjectRow {
   repo_url: string | null;
   working_dir: string;
   trust: string;
+  share_mode: string;
+  owner_account_id: string | null;
   defaults: Record<string, unknown> | null;
   link_frozen: boolean;
   active_link_count: number;
@@ -110,7 +112,7 @@ interface CorrectionEdgeRow {
 }
 
 const PROJECT_SELECT = `
-  select id, name, repo_url, working_dir, trust, defaults,
+  select id, name, repo_url, working_dir, trust, share_mode, owner_account_id, defaults,
          link_frozen, active_link_count, created_at, updated_at
     from public.projects`;
 
@@ -121,6 +123,8 @@ export function toProjectResource(row: ProjectRow): ProjectResource {
     repoUrl: row.repo_url,
     workingDir: row.working_dir,
     trust: row.trust as ProjectResource['trust'],
+    shareMode: row.share_mode as ProjectResource['shareMode'],
+    ownerAccountId: row.owner_account_id,
     defaults: (row.defaults ?? {}) as ProjectResource['defaults'],
     linkFrozen: row.link_frozen,
     activeLinkCount: Number(row.active_link_count),
@@ -304,6 +308,7 @@ function updatePatch(input: ProjectUpdateInput): Record<string, unknown> {
   if (input.workingDir !== undefined) patch.workingDir = input.workingDir;
   if (input.repoUrl !== undefined) patch.repoUrl = input.repoUrl;
   if (input.trust !== undefined) patch.trust = input.trust;
+  if (input.shareMode !== undefined) patch.shareMode = input.shareMode;
   if (input.defaults !== undefined) patch.defaults = input.defaults;
   return patch;
 }
@@ -381,15 +386,29 @@ export class W2ProjectsAssociationsService {
     const workingDir = input.ensureWorkingDir
       ? await ensureProjectWorkingDirectory(input.workingDir, scope.roots)
       : input.workingDir;
+    // `create_owned_project`, not `create_project`: the older RPC is
+    // node-admin-only, which is what made this flow unusable for the people it
+    // exists for. The newer one authorizes BOTH — a node admin keeps the
+    // unrestricted path, a member may create only a private project in their
+    // own name — so there is no branch here and no way for the two paths to
+    // drift apart.
+    //
+    // A member's project defaults to PRIVATE. Defaulting a personal workspace
+    // to Space-visible would publish someone's working directory the first
+    // time they forgot to say otherwise, and that is not a mistake they can
+    // take back once other people have seen it.
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
       claims,
-      'create_project',
+      'create_owned_project',
       [
         input.name,
         workingDir,
         input.repoUrl ?? null,
         input.trust ?? 'untrusted',
         JSON.stringify(input.defaults ?? {}),
+        input.shareMode ?? (scope.nodeAdmin ? 'space' : 'private'),
+        null,
+        input.spaceId ?? null,
         envelope.clientMutationId ?? null,
       ],
     );
@@ -404,7 +423,7 @@ export class W2ProjectsAssociationsService {
     try {
       const raw = await this.deps.db.rpc<ProjectMutationResult>(
         claimsFor(owner, ctx, envelope),
-        'update_project_w2',
+        'update_owned_project',
         [projectId, JSON.stringify(updatePatch(input)), envelope.clientMutationId ?? null],
       );
       return toProjectResource(raw.project);
