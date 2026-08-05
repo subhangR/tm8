@@ -22,6 +22,17 @@ Cross-read for the LINKED chip bytes: L605-L607 and L648-L652 (same chip markup 
 DIVERGENCES - RULED (each cites its authority)
 R1. REGION ORDER = grid -> description -> SUBTREE -> RUNS -> LINKED, per D48.1's enumeration. The oracle disagrees with ITSELF: the anatomy frame draws the description ABOVE the grid (L59), the 12-kinds task card draws it BELOW (L163 then L168). The ledger order wins rather than a coin toss. SubtreeBody.tsx:14-17.
 R2. ACCEPTANCE region EXCLUDED (oracle L170-L177). D30 + D48.2 - T0-4-only depth, A2. Not silently absent: this body renders `notice` blocks, and I am proposing the registry text below so the panel says it out loud.
+
+    R2 IS REVERSED, 2026-08-05, by D73 (PR #16). Left above verbatim rather than
+    edited, because the reason it fell is the reason it should stay readable. The
+    ACCEPTANCE region IS drawn. The clause "not silently absent" rested on the
+    `notice` block PROPOSED at item 1 of "D-ENTRY / REGISTRY TEXT I AM PROPOSING"
+    below - and that proposal was never taken up. `src/domain/registry.ts`'s task
+    row declares no `panel.blocks` at all, so the `notices` filter in this body has
+    always been empty and the panel never said anything out loud. The deferral was
+    invisible, not disclosed, for as long as it stood. D73 carries the full ruling
+    and the three consequences that came with it (the collection/`overwrite()`
+    hazard, the corrected concurrency rationale, and the `doneBy`/`doneAt` owner).
 R3. Run-row trailing word is the REGISTRY's liveTreatment label ("running", "stale"), not the oracle's literal "live" (L75, L180). domain/types.ts LiveTreatment.label states it verbatim: "`live` is the live-session BAR's count word, never a row's" (D22). SubtreeBody.tsx:376-382.
 R4. Run-row dot is SOLID; the oracle draws animation:pnPulse 1.6s (L75). LiveTreatment.dot is 'solid' and pulse belongs to the sec-9.2 activity signal gated on a live verdict (F1, D6). This body is handed no activity source, so an animated dot would present a second fact nobody measured. SubtreeBody.tsx:358-366 + subtree-body.css run-dot block.
 R5. RUNS eyebrow reads "RUNS - N - LIVENESS UNVERIFIED" when no verdicts were supplied, never "0 LIVE". Brief 2.7 + the hollow-value law: 0 claims a measurement nobody took. With verdicts it reads "RUNS - N - k LIVE" exactly as the oracle (L74). SubtreeBody.tsx:325-337.

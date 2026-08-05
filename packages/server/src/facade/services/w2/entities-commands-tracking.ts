@@ -855,19 +855,44 @@ async function kindFor(q: Querier, id: string): Promise<string> {
   return rows[0].kind;
 }
 
-function acceptanceCriteria(content: Record<string, unknown>): unknown[] {
+/**
+ * NORMALISE THE CRITERIA, AND OWN THE `done` PROVENANCE.
+ *
+ * `doneBy`/`doneAt` used to pass through VERBATIM in both directions, which is
+ * wrong at both edges and stayed invisible for as long as nothing wrote the
+ * field: the tm8-ui task panel's acceptance region is its first writer.
+ *
+ *   · TICKED and unstamped ⇒ STAMP IT HERE. The client cannot honestly: it
+ *     does not know the acting principal (delegation makes "the signed-in
+ *     member" the wrong answer) and its clock is not one anyone should record.
+ *     Both are right here — the request envelope and this node's clock.
+ *   · UN-TICKED ⇒ DROP THE STAMP. Preserving it produced `{done:false,
+ *     doneBy:'…', doneAt:'…'}` — a record saying "not done, completed by forge
+ *     at 09:14" and daring the reader to pick a half to believe.
+ *
+ * An EXISTING stamp on a still-done criterion is PRESERVED, never refreshed:
+ * it records when the condition was met, not when the row was last patched.
+ */
+function acceptanceCriteria(
+  content: Record<string, unknown>,
+  actorId: string | null,
+): unknown[] {
   const criteria = content.acceptanceCriteria;
   if (!Array.isArray(criteria)) return [];
+  const now = new Date().toISOString();
   return criteria.map((criterion, index) => {
     const value = typeof criterion === 'object' && criterion !== null
       ? criterion as Record<string, unknown>
       : {};
+    const done = value.done === true;
+    const doneBy = typeof value.doneBy === 'string' ? value.doneBy : actorId;
+    const doneAt = typeof value.doneAt === 'string' ? value.doneAt : now;
     return {
       id: typeof value.id === 'string' ? value.id : `ac_${index + 1}`,
       text: typeof value.text === 'string' ? value.text : '',
-      done: value.done === true,
-      ...(typeof value.doneBy === 'string' ? { doneBy: value.doneBy } : {}),
-      ...(typeof value.doneAt === 'string' ? { doneAt: value.doneAt } : {}),
+      done,
+      ...(done && doneBy ? { doneBy } : {}),
+      ...(done ? { doneAt } : {}),
     };
   });
 }
@@ -974,7 +999,8 @@ export class W2EntitiesCommandsTrackingService {
         case 'task':
           raw = await q.rpc('create_task', [input.spaceId, input.title, envelope.actorId ?? null,
             content.description ?? '', content.axes ?? {}, input.parentId ?? null, input.position ?? null,
-            content.priority ?? 'medium', JSON.stringify(acceptanceCriteria(content)),
+            content.priority ?? 'medium',
+            JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
             content.pointsEstimate ?? null, content.dueDate ?? null, input.attachTo?.entityId ?? null,
             input.attachTo?.edgeType ?? 'attached_to', envelope.clientMutationId ?? null]);
           break;
@@ -1075,7 +1101,9 @@ export class W2EntitiesCommandsTrackingService {
             raw = await q.rpc('update_task_content', [id, input.expectedVersion, envelope.actorId ?? null,
               input.title ?? null, content.description ?? null, content.axes ?? null,
               content.workStatus ?? null, content.priority ?? null,
-              content.acceptanceCriteria === undefined ? null : JSON.stringify(acceptanceCriteria(content)),
+              content.acceptanceCriteria === undefined
+                ? null
+                : JSON.stringify(acceptanceCriteria(content, envelope.actorId ?? null)),
               content.pointsEstimate ?? null, content.dueDate ?? null, content.dueDate === null,
               envelope.clientMutationId ?? null]);
             break;

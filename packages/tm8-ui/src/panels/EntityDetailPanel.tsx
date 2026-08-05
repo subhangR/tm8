@@ -262,6 +262,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     onReload: (current) => props.onReloadDetail?.(current),
     editRefusal: editableConfig?.panel.capabilityReasons?.canEdit,
   });
+  /** The refusal as ONE sentence. Three copies of this expression drifted the
+      moment any one of them was reworded, so there is one. */
+  const saveRefusal = refusalSentence(save);
 
   /**
    * PERMISSION-LOST SHORT-CIRCUITS EVERYTHING, and it must come first.
@@ -346,11 +349,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
         titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
-        titleLockReason={
-          config.list.inlineEdit?.title && save.unavailable
-            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
-            : undefined
-        }
+        titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         onCommitTitle={(title) => void save.commitNow({ title })}
       />
@@ -463,6 +462,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
 }
 
+/**
+ * The save refusal rendered as ONE sentence, in the cause—remedy voice every
+ * `toReason()` consumer splits back apart. It reads the same in the title
+ * lock, the description editor and the acceptance boxes because there is one
+ * expression rather than three copies of it.
+ */
+function refusalSentence(save: TaskSaveHandle): string | undefined {
+  return save.unavailable
+    ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
+    : undefined;
+}
+
 function PanelBody(
   props: EntityDetailPanelProps & {
     detail: EntityDetail;
@@ -474,6 +485,7 @@ function PanelBody(
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
   const config = getKind(detail.kind);
+  const saveRefusal = refusalSentence(save);
 
   if (tab === 'discussion') {
     return (
@@ -568,22 +580,14 @@ function PanelBody(
         onDescriptionChange={
           save.unavailable ? undefined : (description) => save.edit({ description })
         }
-        descriptionUnavailableReason={
-          save.unavailable
-            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
-            : undefined
-        }
+        descriptionUnavailableReason={saveRefusal}
         criteriaDraft={save.edits.acceptanceCriteria}
         onCriteriaChange={
           save.unavailable
             ? undefined
             : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
         }
-        criteriaUnavailableReason={
-          save.unavailable
-            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
-            : undefined
-        }
+        criteriaUnavailableReason={saveRefusal}
       />
     );
   }

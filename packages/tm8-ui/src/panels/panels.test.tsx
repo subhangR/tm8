@@ -703,7 +703,9 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       tile.querySelector('.pn-tt__meta .pn-badge--priority')?.textContent,
       'expanded priority chip',
     ).toBe('URGENT');
-    expect(expanded, 'expanded facts').toContain('4/6 criteria');
+    // 2/4, and it must AGREE with the detail panel's ACCEPTANCE region for the
+    // same task — the fixture used to say 6 total against a detail carrying 4.
+    expect(expanded, 'expanded facts').toContain('2/4 criteria');
     expect(expanded).toContain('Ada +1');
     expect(expanded).toContain('3 pulled');
     expect(

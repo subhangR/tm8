@@ -66,6 +66,11 @@ export interface TaskSaveHandle {
   baseVersion: number | null;
   /** Non-null ⇒ every save affordance renders disabled-with-reason (R7/L6). */
   unavailable: UnavailableReason | null;
+  /**
+   * Non-null ⇒ `overwrite()` refuses and the conflict card renders the move
+   * disabled-with-reason. Null outside a conflict.
+   */
+  overwriteUnavailable: UnavailableReason | null;
   /** Stage an edit. Captures `baseVersion` on the first one. */
   edit(patch: TaskEdits): void;
   /** Stage and flush in one gesture — the oracle's "enter commits". */
@@ -106,6 +111,40 @@ const NO_EXECUTOR: UnavailableReason = {
 const NO_DETAIL: UnavailableReason = {
   cause: 'Nothing to save yet',
   remedy: 'the entity has not finished loading',
+};
+
+/** The pre-existing arm, unchanged in wording: no version, nothing to replace. */
+const NO_WINNING_VERSION: UnavailableReason = {
+  cause: 'Can’t overwrite — the current version is unknown',
+  remedy: 'the refusal carried no version; reload to see what is saved',
+};
+
+/**
+ * THE COLLECTION ARM — a sharp edge that only became REACHABLE when
+ * `acceptanceCriteria` became the first COLLECTION routed through this hook.
+ *
+ * `overwrite()` re-flushes the SAME draft at the WINNER's version. For a
+ * scalar that is exactly what "keep mine" means: my title replaces theirs, one
+ * field, one loser, and the user chose it with both versions named in front of
+ * them. For a whole-array field it means something the label does not say. If
+ * the other writer APPENDED a fifth criterion, my draft — four entries, built
+ * before theirs existed — replaces the list wholesale and their criterion is
+ * GONE. The user was offered "keep mine" and got "delete theirs", which is the
+ * silent lost update this entire file exists to prevent, arriving through the
+ * one button that is allowed to overwrite.
+ *
+ * A merge would answer it and this flow does not merge ("no merge in v1 —
+ * honestly", `SaveControls`). Re-reading before re-flushing would answer it
+ * and would be the re-read this hook's central rule forbids. So the honest
+ * disposition is the third one: REFUSE, name the hazard, and leave `reload —
+ * take the saved version` as the move that does not destroy anything. The
+ * draft survives a reload-less refusal exactly as it survives every other, so
+ * nothing the user typed is lost by being told no.
+ */
+const COLLECTION_OVERWRITE: UnavailableReason = {
+  cause: 'Can’t overwrite — this edit replaces a whole list',
+  remedy:
+    'the saved version may have entries yours would delete; reload and re-apply your changes',
 };
 
 export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
@@ -219,6 +258,23 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
     if (current) onReload?.(current);
   }, [onReload, settle, state]);
 
+  /**
+   * WHY OVERWRITE CAN BE REFUSED — two causes, both honesty guards, and both
+   * rendered as the disabled move rather than a button that fails.
+   *
+   * Derived from `draft.current` rather than the `edits` state so it cannot
+   * lag a `commitNow` staged in the same tick — the same reason `flush` reads
+   * the ref.
+   */
+  const overwriteUnavailable =
+    state.phase !== 'conflict'
+      ? null
+      : state.failure.currentVersion === null
+        ? NO_WINNING_VERSION
+        : Object.values(draft.current).some(Array.isArray)
+          ? COLLECTION_OVERWRITE
+          : null;
+
   const overwrite = useCallback(async () => {
     if (state.phase !== 'conflict') return;
     const version = state.failure.currentVersion;
@@ -230,6 +286,9 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
      * disabled-with-reason in that case rather than being offered and failing.
      */
     if (version === null) return;
+    // And the collection guard, for the reason COLLECTION_OVERWRITE states:
+    // "keep mine" on a whole-array field deletes what the winner appended.
+    if (Object.values(draft.current).some(Array.isArray)) return;
     await flush(version);
   }, [flush, state]);
 
@@ -239,6 +298,7 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
     dirty: Object.keys(edits).length > 0,
     baseVersion,
     unavailable,
+    overwriteUnavailable,
     edit,
     commitNow,
     save,

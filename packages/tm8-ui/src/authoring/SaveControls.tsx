@@ -124,16 +124,20 @@ export function AuthoringHost({
  * and at a re-read version it is the silent overwrite this whole flow exists
  * to prevent. It is therefore not offered.
  *
- * OVERWRITE DISABLES WHEN THE NODE DID NOT SAY WHICH VERSION WON. Offering a
- * button that cannot know what it would replace is a guess wearing a verb; it
- * renders disabled-with-reason so the user learns the move exists and why it
- * is not available right now (L6, D28).
+ * OVERWRITE DISABLES WHEN IT CANNOT KNOW WHAT IT WOULD REPLACE — the node did
+ * not say which version won, or the draft rewrites a whole COLLECTION and
+ * "keep mine" would silently delete what the winner appended. Both causes are
+ * `save.overwriteUnavailable`, decided by the hook that owns the draft rather
+ * than re-derived here; offering a button that cannot know what it replaces is
+ * a guess wearing a verb, so it renders disabled-with-reason and the user
+ * learns the move exists and why it is not available right now (L6, D28).
  */
 function ConflictCard({ save }: { save: TaskSaveHandle }) {
   if (save.state.phase !== 'conflict') return null;
   const { failure } = save.state;
   const mine = save.baseVersion;
   const theirs = failure.currentVersion;
+  const refused = save.overwriteUnavailable;
 
   const versions =
     theirs === null
@@ -150,19 +154,13 @@ function ConflictCard({ save }: { save: TaskSaveHandle }) {
       note="no merge in v1 — honestly"
       moves={[
         { label: 'reload — take the saved version', onSelect: save.reload },
-        ...(theirs === null
+        ...(refused
           ? []
           : [{ label: 'overwrite — keep mine', onSelect: () => void save.overwrite() }]),
       ]}
     >
-      {theirs === null ? (
-        <DisabledAction
-          label="overwrite — keep mine"
-          reason={{
-            cause: 'Can’t overwrite — the current version is unknown',
-            remedy: 'the refusal carried no version; reload to see what is saved',
-          }}
-        >
+      {refused ? (
+        <DisabledAction label="overwrite — keep mine" reason={refused}>
           overwrite — keep mine
         </DisabledAction>
       ) : null}
