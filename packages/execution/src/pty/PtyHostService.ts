@@ -3,6 +3,7 @@ import type { IPty } from 'node-pty';
 import { randomUUID } from 'node:crypto';
 import { OutputBuffer, type ReplaySlice } from './OutputBuffer.js';
 import { TerminalStateMirror } from './TerminalStateMirror.js';
+import { hasLiveDescendant } from './process-tree.js';
 import type {
   AttachResult,
   FrameSink,
@@ -1422,6 +1423,18 @@ export class PtyHostService {
       this.emitActivity(sessionId, 'busy');
     }
     this.clearIdleTimer(entry);
+    this.scheduleIdleCheck(sessionId, entry);
+  }
+
+  /**
+   * Arm the silence timer that may declare this PTY idle.
+   *
+   * Split out of {@link markBusy} because the check can now decline to fire and
+   * re-arm itself: silence is necessary evidence of a blocked agent but not
+   * sufficient, so a silent PTY that still has work running below it must be
+   * re-examined later rather than reported.
+   */
+  private scheduleIdleCheck(sessionId: string, entry: PtyEntry): void {
     entry.idleTimer = setTimeout(() => {
       entry.idleTimer = null;
       // Re-check identity and liveness at fire time: the timer outlives the turn
@@ -1431,6 +1444,16 @@ export class PtyHostService {
       // A PTY that has never produced a byte is not idle, it is unproven.
       if (!entry.everSpoke) return;
       if (entry.activity === 'idle') return;
+      // Silence is not enough. An agent running a tool is just as quiet as an
+      // agent waiting for you -- measured at 33.0s and 41.3s of mid-turn silence
+      // against real agents -- and reporting the first as "needs you" trains the
+      // user to ignore the signal. A live descendant means work is in progress,
+      // so say nothing and look again after another silent interval.
+      if (this.hasWorkBelow(entry)) {
+        this.scheduleIdleCheck(sessionId, entry);
+        (entry.idleTimer as { unref?: () => void } | null)?.unref?.();
+        return;
+      }
       entry.activity = 'idle';
       this.emitActivity(sessionId, 'idle');
     }, this.idleAfterMs);
@@ -1438,6 +1461,26 @@ export class PtyHostService {
     // running, an idle declaration nobody is waiting for is not worth a live
     // handle.
     (entry.idleTimer as { unref?: () => void }).unref?.();
+  }
+
+  /**
+   * Does this PTY have a live process below the agent?
+   *
+   * True means "working, do not report idle". False means "nothing running".
+   * An UNKNOWABLE answer (no readable /proc) is deliberately treated as false —
+   * i.e. fall back to the silence-only behaviour this gate refines, rather than
+   * suppressing the signal everywhere the refinement cannot be computed. Losing
+   * the whole feature on a platform is a worse failure than the false positive
+   * it was added to remove.
+   */
+  private hasWorkBelow(entry: PtyEntry): boolean {
+    const pid = entry.proc.pid;
+    if (typeof pid !== 'number' || pid <= 0) return false;
+    try {
+      return hasLiveDescendant(pid) === true;
+    } catch {
+      return false;
+    }
   }
 
   /**
