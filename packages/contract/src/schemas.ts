@@ -126,12 +126,13 @@ export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
 
 export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   id: EntityIdSchema,
-  kind: z.enum(['member', 'team_member']),
+  kind: z.enum(['member', 'team_member', 'work_session']),
   displayName: z.string(),
   avatar: z.string().nullable().optional(),
   role: z.string().nullable().optional(),
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
+  via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
 }).strict();
 
 export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({

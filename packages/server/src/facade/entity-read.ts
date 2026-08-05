@@ -346,6 +346,7 @@ interface ActorRow {
   team_member_owner_id: string | null;
   profile_display_name: string | null;
   profile_avatar: string | null;
+  session_title: string | null;
 }
 
 /**
@@ -354,6 +355,17 @@ interface ActorRow {
  * `isAgent` is `kind === 'team_member'` and nothing else — it is the flag the
  * UI uses to tell a human from a persona, so it must not be inferred from a
  * name or a model field that happens to be set.
+ *
+ * THE SECOND HOP (doc 06 §2.1-2.2). Most `working_on` edges are sourced from
+ * a work_session, and this resolver used to collapse those ids to
+ * `{kind:'member', displayName:'Member'}` — a false human, minted here, that
+ * no renderer downstream could detect. A session id now resolves through
+ * `participates_in` to its PERSONA: the summary is the persona's (kind
+ * `team_member`, isAgent true), with `via.sessionId` naming the run it acted
+ * through. A session with no persona — a human at a terminal; live data, not
+ * an edge case — is typed as what it is: `kind:'work_session'`, displayName =
+ * the session title. The literal-'Member' fallback dies here, where it was
+ * born: THE ENFORCEMENT POINT IS THE RESOLVER, NOT THE COMPONENT.
  */
 export async function loadActors(
   q: Querier,
@@ -368,16 +380,78 @@ export async function loadActors(
             mem.display_name as member_display_name, mem.role as member_role,
             tm.name as team_member_name, tm.avatar as team_member_avatar,
             tm.owner_member_id as team_member_owner_id,
-            up.display_name as profile_display_name, up.avatar as profile_avatar
+            up.display_name as profile_display_name, up.avatar as profile_avatar,
+            ws.title as session_title
        from public.entities e
        left join public.members mem on mem.entity_id = e.id
        left join public.team_members tm on tm.entity_id = e.id
        left join public.user_profiles up on up.identity_id = mem.identity_id
+       left join public.work_sessions ws on ws.entity_id = e.id
       where e.id = any($1::uuid[])`,
     [unique],
   );
 
+  // One batched hop, paid only when the page references sessions at all.
+  // Several personas can share a session over its life; the most recent
+  // `participates_in` edge wins — attribution follows who is acting now.
+  const sessionIds = rows.filter((r) => r.kind === 'work_session').map((r) => r.id);
+  const personaOf = new Map<
+    string,
+    { persona_id: string; name: string | null; avatar: string | null; owner_member_id: string | null }
+  >();
+  if (sessionIds.length > 0) {
+    const personaRows = await q.query<{
+      session_id: string;
+      persona_id: string;
+      name: string | null;
+      avatar: string | null;
+      owner_member_id: string | null;
+    }>(
+      `select distinct on (pe.dst_id)
+              pe.dst_id as session_id, pe.src_id as persona_id,
+              tm.name, tm.avatar, tm.owner_member_id
+         from public.edges pe
+         join public.team_members tm on tm.entity_id = pe.src_id
+        where pe.type = 'participates_in' and pe.dst_id = any($1::uuid[])
+        order by pe.dst_id, pe.created_at desc`,
+      [sessionIds],
+    );
+    for (const p of personaRows) personaOf.set(p.session_id, p);
+  }
+
   for (const row of rows) {
+    if (row.kind === 'work_session') {
+      const persona = personaOf.get(row.id);
+      // The MAP KEY stays the referencing id (the edge names the session);
+      // the summary's OWN id is the persona's, so colour/identity aggregate
+      // per person across every run they act through.
+      out.set(
+        row.id,
+        persona
+          ? {
+              id: persona.persona_id,
+              kind: 'team_member',
+              displayName: persona.name ?? 'Agent',
+              avatar: persona.avatar,
+              role: null,
+              ...(persona.owner_member_id ? { ownerMemberId: persona.owner_member_id } : {}),
+              isAgent: true,
+              via: { sessionId: row.id },
+            }
+          : {
+              id: row.id,
+              kind: 'work_session',
+              displayName: row.session_title || 'Session',
+              avatar: null,
+              role: null,
+              // Not a persona: a run with no participating team_member is a
+              // human at a terminal. The kind carries the provenance; lying
+              // `isAgent: true` here would dress a person as an agent.
+              isAgent: false,
+            },
+      );
+      continue;
+    }
     const isAgent = row.kind === 'team_member';
     out.set(row.id, {
       id: row.id,
