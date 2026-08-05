@@ -69,10 +69,20 @@ const out = (): string => stdout.join('');
 const err = (): string => stderr.join('');
 
 describe('the registry is composed from per-noun modules, and agrees with the projection', () => {
+  /**
+   * LOCAL-ONLY commands. These are exempt because they are not Server
+   * capabilities and therefore have no catalog row to be documented by:
+   * `help`/`completion` render the projection rather than appearing in it,
+   * `worker init` is the harness bootstrap, and `doctor` diagnoses the local
+   * environment. Adding a name here is the ENTIRE cost of a local-only
+   * command — the catalog, its frozen counts and its digest stay untouched.
+   */
+  const LOCAL_ONLY = new Set(['help', 'completion', 'worker', 'doctor']);
+
   it('every REGISTERED command path is documented in the help projection', () => {
     expect(COMMANDS.length).toBeGreaterThan(0);
     for (const c of COMMANDS) {
-      if (c.path[0] === 'help' || c.path[0] === 'completion' || c.path[0] === 'worker') continue;
+      if (LOCAL_ONLY.has(c.path[0] as string)) continue;
       expect(
         isCommandPath(c.path),
         `\`${c.path.join(' ')}\` is wired but absent from the help projection`,
