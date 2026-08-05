@@ -472,6 +472,8 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
      clientMutationId?: string }
  | { type: 'work_session.profile_pinned'|'work_session.profile_repinned';
      pin: InteractionProfilePinView; clientMutationId?: string }
+ | { type: 'session.prompt.opened'|'session.prompt.answered'|'session.prompt.expired';
+     prompt: SessionPromptView; clientMutationId?: string }
  | { type: 'presence.changed'; entityId: EntityId; presence: PresenceSnapshot }
  | { type: 'typing.changed'; anchorId: EntityId; typingActorIds: EntityId[] }
  | { type: 'voice.participants.changed'; voiceChannelId: EntityId; spaceId: SpaceId;
@@ -1884,6 +1886,62 @@ export interface MessageDeliveryQuery {
 export type MessageDeliveryStatus =
   | 'pending' | 'dispatching' | 'delivered' | 'failed_retryable'
   | 'failed_permanent' | 'unknown' | 'expired' | 'cancelled';
+
+/**
+ * A question a blocked agent is waiting on.
+ *
+ * This is the object Phase 1 deliberately refused to invent. The block detector
+ * knows only that bytes stopped; it cannot tell a permission prompt from a
+ * silent `npm install`, and it says so rather than guessing. THIS type is what a
+ * provider hook produces when the agent itself states what it wants -- so the
+ * copy can finally name the question instead of describing the silence.
+ *
+ * `toolInput` is provider-shaped and intentionally unparsed: chat renders what
+ * the agent actually asked for, and a schema guessed at this layer would drop
+ * fields for any provider whose payload we modelled wrong.
+ */
+export type SessionPromptStatus = 'pending' | 'allowed' | 'denied' | 'expired';
+
+export interface SessionPromptView {
+  promptId: string;
+  workSessionId: EntityId;
+  /** The provider's own id for this tool call -- the idempotency key. */
+  toolUseId: string;
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  /** Which agent asked. Set when the asker is a NESTED agent (a coordinator's
+   *  child), so chat can attribute the question to the agent that raised it
+   *  rather than to the session as a whole. */
+  agentTool: string | null;
+  status: SessionPromptStatus;
+  decidedBy: ActorSummary | null;
+  decidedAt: string | null;
+  decisionReason: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** INTERNAL. The provider hook opening a gate; see catalog `sessionPrompts.open`. */
+export interface SessionPromptOpenInput extends CommandContext {
+  clientMutationId: string;
+  toolUseId: string;
+  toolName: string;
+  toolInput?: Record<string, unknown>;
+  agentTool?: string | null;
+  agentPid?: number | null;
+}
+
+/**
+ * Answering. There is no "defer" and no "allow always" here on purpose: the
+ * first would leave an agent blocked with nobody owning the block, and the
+ * second is a standing grant, which is a different feature with a different
+ * audit story.
+ */
+export interface SessionPromptAnswerInput extends CommandContext {
+  clientMutationId: string;
+  decision: 'allowed' | 'denied';
+  reason?: string;
+}
 
 export interface MessageDeliveryRecord {
   deliveryId: string;
