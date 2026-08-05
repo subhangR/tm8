@@ -2,18 +2,18 @@
 .cv2-root .ws-composer { display: flex; flex: 0 0 auto; flex-direction: column; color: var(--pn-term-ink); }
 .cv2-root .pn-term-input.ws-composer__inputrow {
   flex: 0 0 auto;
-  border-top: 1px solid #2c2922;
+  /* --term-strip-line / --pn-term-* inherit from .ws-center (center-pane.css),
+     so the composer seam always matches the strip above it, both themes. */
+  border-top: 1px solid var(--term-strip-line);
   padding: 11px 16px;
   display: flex;
   align-items: center;
   gap: 9px;
-  color: #7d7768;
+  color: var(--pn-term-dim);
   background: var(--pn-term-bg);
   font-family: var(--pn-mono);
   font-size: 12px;
 }
-.cv2-root[data-theme='dark'] .pn-term-input.ws-composer__inputrow,
-[data-theme='dark'] .cv2-root .pn-term-input.ws-composer__inputrow { border-top-color: #221e15; }
 .cv2-root .pn-term-input .pn-tslash { color: var(--pn-term-acc); font-size: 18px; line-height: 1; }
 .cv2-root .ws-composer__box {
   flex: 1 1 auto;
@@ -34,27 +34,43 @@
 .cv2-root .ws-composer__button {
   min-height: 26px;
   padding: 0 8px;
-  border-radius: 6px;
-  border: 1px solid var(--term-strip-line, #2c2922);
+  border-radius: var(--pn-r-xs);
+  border: 1px solid var(--term-strip-line);
   background: transparent;
   color: var(--pn-term-dim);
   font: 10px/1 var(--pn-mono);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard),
+              background var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-root .ws-composer__button:hover:not(:disabled) {
-  color: var(--pn-term-acc);
-  background: rgba(217, 154, 78, 0.1);
-  border-color: rgba(217, 154, 78, 0.32);
+  color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.32);
 }
+.cv2-root .ws-composer__button:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-root .ws-composer__box:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; border-radius: var(--pn-r-xs); }
 .cv2-root .ws-composer__button:disabled { cursor: not-allowed; opacity: 0.5; }
-.cv2-root .ws-composer__send { color: var(--pn-term-acc); border-color: rgba(217, 154, 78, 0.38); }
+/* Send is the primary action of the pane: brand gradient + hover glow. */
+.cv2-root .ws-composer__send {
+  color: #fff;
+  border-color: transparent;
+  background: var(--grad-brand);
+}
+.cv2-root .ws-composer__send:hover:not(:disabled) {
+  color: #fff;
+  background: var(--grad-brand);
+  border-color: transparent;
+  box-shadow: var(--glow-brand-sm);
+}
 .cv2-root .ws-composer__error {
   margin: 0;
   padding: 6px 10px;
-  border-top: 1px solid rgba(187, 77, 61, 0.4);
-  background: rgba(187, 77, 61, 0.12);
-  color: #da7d6a;
+  border-top: 1px solid var(--pn-block);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
   font: 10px/1.4 var(--pn-mono);
   white-space: pre-wrap;
 }
@@ -64,7 +80,7 @@
   padding: 0 10px;
   overflow-y: auto;
   list-style: none;
-  border-top: 1px solid #2c2922;
+  border-top: 1px solid var(--term-strip-line);
   background: var(--pn-term-bg);
 }
 .cv2-root .ws-composer__sent {
@@ -78,8 +94,8 @@
 .cv2-root .ws-composer__at { flex: 0 0 auto; color: var(--pn-term-dim); }
 .cv2-root .ws-composer__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv2-root .ws-composer__sent[data-outcome='undelivered'] .ws-composer__text { color: var(--pn-term-dim); text-decoration: line-through; }
-.cv2-root .ws-composer__failed { flex: 0 0 auto; color: #da7d6a; font-weight: 600; }
-.cv2-root .ws-composer__partial { flex: 0 0 auto; color: #d9aa49; }
+.cv2-root .ws-composer__failed { flex: 0 0 auto; color: var(--pn-block); font-weight: 600; }
+.cv2-root .ws-composer__partial { flex: 0 0 auto; color: var(--pn-wait); }
 
 @media (max-width: 768px) {
   .cv2-root .pn-term-input.ws-composer__inputrow { padding: 8px 10px; }

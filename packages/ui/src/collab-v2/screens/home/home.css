@@ -1,5 +1,6 @@
-/* Home (My Work) + the shared screen-row chrome. Tokens only (--pn-*). */
+/* Home (My Work) + the shared screen-row chrome — Aurora Glass. Tokens only. */
 
+/* Big screen container: transparent so the aurora canvas shows through. */
 .cv2-home {
   height: 100%;
   overflow: auto;
@@ -7,6 +8,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-5);
+  background: transparent;
 }
 
 .cv2-home__header { display: flex; flex-direction: column; gap: var(--pn-space-1); }
@@ -16,7 +18,11 @@
   font-size: var(--pn-fs-h1);
   line-height: var(--pn-lh-tight);
   letter-spacing: var(--pn-track-tight);
-  font-weight: 500;
+  font-weight: 600;
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .cv2-home__blurb { margin: 0; color: var(--pn-ink-3); font-size: var(--pn-fs-sm); max-width: 62ch; }
 
@@ -33,12 +39,20 @@
   .cv2-home__grid { grid-template-columns: 1fr; }
 }
 
+/* Columns + activity feed become frosted glass panels. */
 .cv2-home__col,
 .cv2-home__feed {
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
   min-width: 0;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
+  padding: var(--pn-space-4);
 }
 
 .cv2-home__colhead {
@@ -52,7 +66,10 @@
   margin-left: auto;
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
-  color: var(--pn-ink-3);
+  color: var(--pn-brand);
+  background: var(--pn-brand-soft);
+  border-radius: var(--pn-r-pill);
+  padding: 1px 8px;
 }
 .cv2-home__hint { margin: 0; color: var(--pn-ink-3); font-size: var(--pn-fs-micro); }
 
@@ -62,22 +79,52 @@
   display: flex; align-items: center; gap: var(--pn-space-2);
   color: var(--pn-block);
   font-size: var(--pn-fs-sm);
+  background: var(--pn-block-soft);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  padding: var(--pn-space-2) var(--pn-space-3);
 }
-.cv2-home__retry,
-.cv2-home__pull {
+
+/* Secondary glass button: retry. */
+.cv2-home__retry {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   letter-spacing: var(--pn-track-label);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
-  background: var(--pn-card);
-  color: var(--pn-brand);
+  background: var(--pn-surface);
+  color: var(--pn-ink-2);
   padding: 3px 10px;
   cursor: pointer;
   transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-home__pull:hover:not(:disabled) { background: var(--pn-brand-soft); }
-.cv2-home__pull:disabled { color: var(--pn-ink-4); cursor: default; }
+.cv2-home__retry:hover { background: var(--pn-hover); color: var(--pn-brand); }
+.cv2-home__retry:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+
+/* Primary action: PULL gets the brand gradient + glow. */
+.cv2-home__pull {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  border: none;
+  border-radius: var(--pn-r-pill);
+  background: var(--grad-brand);
+  color: #fff;
+  padding: 4px 12px;
+  cursor: pointer;
+  box-shadow: var(--pn-sh-sm);
+  transition:
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-fast) var(--pn-ease-spring),
+    opacity var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-home__pull:hover:not(:disabled) {
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.cv2-home__pull:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-home__pull:disabled { opacity: 0.55; cursor: default; box-shadow: none; transform: none; }
 
 /* --- activity column ---------------------------------------------------------- */
 .cv2-home__acts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -90,8 +137,9 @@
   font-size: var(--pn-fs-sm);
   min-width: 0;
 }
+.cv2-home__act:last-child { border-bottom: none; }
 .cv2-home__actbody { flex: 1; min-width: 0; }
-.cv2-home__actwho { font-weight: 600; }
+.cv2-home__actwho { font-weight: 600; color: var(--pn-ink); }
 .cv2-home__actverb { color: var(--pn-ink-2); }
 .cv2-home__actdot { color: var(--pn-ink-4); }
 .cv2-home__acttime {
@@ -107,10 +155,27 @@
   align-items: flex-start;
   gap: var(--pn-space-2);
   min-width: 0;
+  border-radius: var(--pn-r-md);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-screenrow[data-selected='true'] { outline: 2px solid var(--pn-brand); outline-offset: 3px; border-radius: var(--pn-r-md); }
-.cv2-screenrow__check { margin-top: var(--pn-space-3); accent-color: var(--pn-brand); }
-.cv2-screenrow__cell { flex: 1; min-width: 0; cursor: pointer; }
+/* Selected rows glow softly (glow + outline, dense rows stay blur-free). */
+.cv2-screenrow[data-selected='true'] {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 3px;
+  border-radius: var(--pn-r-md);
+  background: var(--pn-active);
+  box-shadow: var(--glow-brand-sm);
+}
+.cv2-screenrow__check { margin-top: var(--pn-space-3); accent-color: var(--pn-brand); cursor: pointer; }
+.cv2-screenrow__check:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-screenrow__cell {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  border-radius: var(--pn-r-md);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-screenrow__cell:hover { background: var(--pn-hover); }
 .cv2-screenrow__cell:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; border-radius: var(--pn-r-md); }
 .cv2-screenrow__side {
   display: flex;
@@ -125,4 +190,13 @@
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--pn-ink-4);
+}
+
+/* Motion respect */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-home__pull,
+  .cv2-screenrow,
+  .cv2-screenrow__cell,
+  .cv2-home__retry { transition: none; }
+  .cv2-home__pull:hover:not(:disabled) { transform: none; }
 }

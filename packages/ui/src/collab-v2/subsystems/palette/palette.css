@@ -1,4 +1,6 @@
-/* CommandPalette — a paper card floating over a dimmed workspace. */
+/* CommandPalette — Aurora Glass: a frosted card floating over a dimmed,
+   softly blurred workspace. Dense result rows stay blur-free (cheap paint);
+   the glass lives on the card itself. Tokens only. */
 
 .cv2-palette__scrim {
   position: fixed;
@@ -8,19 +10,22 @@
   justify-content: center;
   align-items: flex-start;
   padding-top: 12vh;
-  background: rgba(35, 32, 27, 0.32);
-  backdrop-filter: blur(2px);
+  background: var(--pn-scrim, rgba(8, 8, 15, 0.42));
+  backdrop-filter: blur(var(--glass-blur-soft, 4px));
+  -webkit-backdrop-filter: blur(var(--glass-blur-soft, 4px));
 }
 
 .cv2-palette {
-  width: min(680px, calc(100vw - 32px));
+  width: min(680px, calc(100vw - var(--pn-space-8)));
   max-height: 72vh;
   display: flex;
   flex-direction: column;
-  background: var(--pn-surface);
-  border: 1px solid var(--pn-line);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: var(--pn-sh-pop), var(--glass-highlight);
   overflow: hidden;
   font-family: var(--pn-ui);
   color: var(--pn-ink);
@@ -29,11 +34,31 @@
 /* --- head ------------------------------------------------------------------ */
 
 .cv2-palette__head {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: var(--pn-space-2);
+  padding: var(--pn-space-3) var(--pn-space-4);
   border-bottom: 1px solid var(--pn-line);
+}
+
+/* Visible focus for the (outline-less) input: a gradient seam under the head
+   that lights up while the field owns focus. */
+.cv2-palette__head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--grad-brand);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-palette__head:focus-within::after {
+  opacity: 1;
+  box-shadow: var(--glow-brand-sm);
 }
 
 .cv2-palette__ctx { display: inline-flex; flex: 0 0 auto; max-width: 40%; }
@@ -47,6 +72,7 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-title);
   color: var(--pn-ink);
+  caret-color: var(--pn-brand);
 }
 .cv2-palette__input::placeholder { color: var(--pn-ink-4); }
 
@@ -55,21 +81,26 @@
 .cv2-palette__step {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 7px 14px;
-  background: var(--pn-brand-soft);
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-4);
+  background: var(--grad-brand-soft);
   border-bottom: 1px solid var(--pn-line);
   font-size: var(--pn-fs-label);
   color: var(--pn-ink-2);
 }
-.cv2-palette__stepback { color: var(--pn-ink-3); display: inline-flex; align-items: center; gap: 4px; }
+.cv2-palette__stepback {
+  color: var(--pn-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+}
 
 /* --- kind filters ---------------------------------------------------------- */
 
 .cv2-palette__filters {
   display: flex;
-  gap: 4px;
-  padding: 8px 14px;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2) var(--pn-space-4);
   overflow-x: auto;
   border-bottom: 1px solid var(--pn-line);
   scrollbar-width: thin;
@@ -77,32 +108,43 @@
 
 .cv2-palette__filter {
   flex: 0 0 auto;
-  border: 1px solid var(--pn-line);
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
-  background: var(--pn-card);
+  background: var(--pn-surface);
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-micro);
-  padding: 3px 9px;
+  padding: 3px 10px;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+    color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-palette__filter:hover { background: var(--pn-hover); }
-.cv2-palette__filter:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
-.cv2-palette__filter[data-active] {
-  background: var(--pn-brand-soft);
-  border-color: var(--pn-brand);
+.cv2-palette__filter:hover {
+  background: var(--pn-hover);
   color: var(--pn-ink);
 }
+.cv2-palette__filter:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+.cv2-palette__filter[data-active] {
+  background: var(--grad-brand-soft);
+  border-color: var(--pn-brand);
+  color: var(--pn-ink);
+  box-shadow: var(--glow-brand-sm);
+}
 
-/* --- results --------------------------------------------------------------- */
+/* --- results (dense: no blur, no springs) ---------------------------------- */
 
 .cv2-palette__list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 0 10px;
+  padding: var(--pn-space-2) 0 var(--pn-space-3);
 }
 
 .cv2-palette__sectionhead {
@@ -111,22 +153,37 @@
   text-transform: uppercase;
   letter-spacing: var(--pn-track-mega);
   color: var(--pn-ink-3);
-  padding: 10px 14px 4px;
+  padding: var(--pn-space-3) var(--pn-space-4) var(--pn-space-1);
 }
 
 .cv2-palette__row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  gap: var(--pn-space-2);
+  padding: 6px var(--pn-space-4);
   cursor: pointer;
   font-size: var(--pn-fs-body);
   color: var(--pn-ink);
-  border-left: 2px solid transparent;
 }
-.cv2-palette__row[data-selected] {
-  background: var(--pn-hover);
-  border-left-color: var(--pn-brand);
+/* Gradient selection marker (active-nav recipe), kept off dense unselected rows. */
+.cv2-palette__row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--pn-space-1);
+  bottom: var(--pn-space-1);
+  width: 3px;
+  border-radius: var(--pn-r-pill);
+  background: var(--grad-brand);
+  opacity: 0;
+  pointer-events: none;
+}
+.cv2-palette__row:hover { background: var(--pn-hover); }
+.cv2-palette__row[data-selected] { background: var(--pn-active); }
+.cv2-palette__row[data-selected]::before {
+  opacity: 1;
+  box-shadow: var(--glow-brand-sm);
 }
 
 .cv2-palette__glyph {
@@ -135,6 +192,7 @@
   color: var(--pn-ink-3);
   flex: 0 0 auto;
 }
+.cv2-palette__row[data-selected] .cv2-palette__glyph { color: var(--pn-brand); }
 
 .cv2-palette__label {
   flex: 1 1 auto;
@@ -153,13 +211,13 @@
 
 .cv2-palette__empty,
 .cv2-palette__slot {
-  padding: 10px 14px;
+  padding: var(--pn-space-3) var(--pn-space-4);
   font-size: var(--pn-fs-sm);
   color: var(--pn-ink-3);
 }
 .cv2-palette__slot {
   border-top: 1px dashed var(--pn-line);
-  margin-top: 6px;
+  margin-top: var(--pn-space-2);
   font-style: italic;
 }
 
@@ -169,17 +227,19 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 8px 14px;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-2) var(--pn-space-4);
   border-top: 1px solid var(--pn-line);
-  background: var(--pn-paper);
+  background: var(--pn-surface);
   font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
+/* Status is color + word: the message text always accompanies the tint. */
 .cv2-palette__notice--error { color: var(--pn-block); }
 .cv2-palette__notice--success { color: var(--pn-run); }
-.cv2-palette__foothint { display: inline-flex; align-items: center; gap: 4px; }
+.cv2-palette__foothint { display: inline-flex; align-items: center; gap: var(--pn-space-1); }
 
 @media (prefers-reduced-motion: reduce) {
-  .cv2-palette__filter { transition: none; }
+  .cv2-palette__filter,
+  .cv2-palette__head::after { transition: none; }
 }

@@ -70,6 +70,8 @@ function SessionNode({ node, depth, links, active, onOpen, lifecycle }: {
             disabled={visibleChildren.length === 0}
             onClick={(event) => { event.stopPropagation(); setCollapsed((value) => !value); }}
             title={visibleChildren.length ? (collapsed ? `Expand ${visibleChildren.length} sub-sessions` : 'Collapse sub-sessions') : 'No projected sub-sessions'}
+            aria-label={visibleChildren.length ? (collapsed ? `Expand ${visibleChildren.length} sub-sessions` : 'Collapse sub-sessions') : 'No sub-sessions'}
+            aria-expanded={visibleChildren.length ? !collapsed : undefined}
           >
             <PanelIcon name="chevronR" />
           </button>
@@ -80,6 +82,7 @@ function SessionNode({ node, depth, links, active, onOpen, lifecycle }: {
             className={`pn-st__radio${done && lifecycle === 'done' ? ' pn-st__radio--on' : ''}`}
             onClick={(event) => event.stopPropagation()}
             aria-pressed={done && lifecycle === 'done'}
+            aria-label="Mark session done"
             {...disabledBecause('workSession.markDone', 'Marking a work session done is not implemented on this node')}
           >
             {done && lifecycle === 'done' && <PanelIcon name="check" size={10} sw={2.2} />}

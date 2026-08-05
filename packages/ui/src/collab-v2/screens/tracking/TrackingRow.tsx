@@ -51,7 +51,9 @@ export function TrackingRow({
         tabIndex={0}
         className="cv2-track__card"
         onClick={() => onOpenEntity(entity.id)}
-        onKeyDown={(e) => { if (e.key === 'Enter') onOpenEntity(entity.id); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenEntity(entity.id); }
+        }}
       >
         <EntityCard entity={live} keyEdges={tasks} />
       </div>

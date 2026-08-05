@@ -12,8 +12,11 @@
   align-items: center;
   padding: 12px 0 10px;
   gap: 4px;
-  background: var(--pn-paper);
-  border-right: 1px solid var(--pn-line);
+  /* Aurora Glass structural rail: translucent + strong blur, seam border only. */
+  background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  border-right: 1px solid var(--glass-border);
 }
 
 .cv2-root .pn-rail-mark { color: var(--pn-brand); margin-bottom: 10px; }
@@ -32,7 +35,8 @@
 }
 
 .cv2-root .pn-rail-btn:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
-.cv2-root .pn-rail-btn--active { background: var(--pn-active); color: var(--pn-ink); }
+.cv2-root .pn-rail-btn--active { background: var(--grad-brand-soft); color: var(--pn-brand-2); }
+/* Active nav marker: gradient bar + soft glow (spec §3). */
 .cv2-root .pn-rail-btn--active::before {
   content: '';
   position: absolute;
@@ -41,10 +45,12 @@
   bottom: 10px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: var(--pn-brand);
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand-sm);
 }
 .cv2-root .pn-rail-btn svg { width: 19px; height: 19px; }
-.cv2-root .pn-rail-btn:disabled { cursor: not-allowed; }
+.cv2-root .pn-rail-btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.cv2-root .pn-rail-btn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 
 .cv2-root .pn-rail-badge {
   position: absolute;

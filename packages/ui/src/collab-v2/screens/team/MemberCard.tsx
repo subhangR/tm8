@@ -29,8 +29,11 @@ export function MemberCard({ member, rows, facade, onOpenProfile }: MemberCardPr
         tabIndex={0}
         className="cv2-team__cardhead"
         title={`Open ${member.title}'s profile`}
+        aria-label={`Open ${member.title}'s profile`}
         onClick={() => onOpenProfile(member.id)}
-        onKeyDown={(e) => { if (e.key === 'Enter') onOpenProfile(member.id); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenProfile(member.id); }
+        }}
       >
         <DropSurface target={targetRef(member, 'actor')}>
           <EntityCard entity={member} />

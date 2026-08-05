@@ -17,19 +17,13 @@
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
+  /* Aurora Glass: the task column is a structural rail — translucent surface
+     over the aurora canvas, strong blur (spec §3, rails/headers). */
   background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
   color: var(--pn-ink);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    "Apple Color Emoji",
-    "Segoe UI Emoji";
+  font-family: var(--pn-ui);
   font-size: 16px;
   line-height: normal;
   -webkit-font-smoothing: antialiased;
@@ -111,7 +105,7 @@
   padding: 1.5px 5px;
   white-space: nowrap;
 }
-.ws-task-panel .pn-tag--high { color: var(--pn-block); border-color: rgba(187,77,61,0.32); }
+.ws-task-panel .pn-tag--high { color: var(--pn-block); border-color: var(--pn-block-soft); background: var(--pn-block-soft); }
 .ws-task-panel .pn-tag--med { color: var(--pn-ink-2); }
 .ws-task-panel .pn-tag--low { color: var(--pn-ink-3); }
 
@@ -129,11 +123,22 @@
   background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
-  transition: background 140ms, border-color 140ms;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+              transform var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .ws-task-panel .pn-btn:hover { background: var(--pn-hover); border-color: var(--pn-ink-4); }
-.ws-task-panel .pn-btn--primary { background: var(--pn-ink); color: var(--pn-paper); border-color: var(--pn-ink); }
-.ws-task-panel .pn-btn--primary:hover { background: var(--pn-brand); color: #20160a; border-color: var(--pn-brand); }
+/* Primary action: the brand gradient with a glow on hover (spec §3). */
+.ws-task-panel .pn-btn--primary { background: var(--grad-brand); color: #fff; border-color: transparent; }
+.ws-task-panel .pn-btn--primary:hover {
+  background: var(--grad-brand);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.ws-task-panel .pn-btn--primary:disabled { opacity: 0.5; box-shadow: none; transform: none; }
 
 .ws-task-panel .pn-kbd {
   font-family: var(--pn-mono);
@@ -219,7 +224,8 @@
   flex-shrink: 0;
 }
 .ws-task-panel .pn-subtab:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
-.ws-task-panel .pn-subtab--active { background: var(--pn-active); color: var(--pn-ink); }
+/* Selected chip: soft brand gradient + brand text (spec §3, active chips). */
+.ws-task-panel .pn-subtab--active { background: var(--grad-brand-soft); color: var(--pn-brand-2); }
 .ws-task-panel .pn-subtab svg { width: 14px; height: 14px; }
 .ws-task-panel .pn-subtab:disabled { opacity: 0.5; }
 
@@ -299,9 +305,9 @@
 }
 .ws-task-panel .pn-filter:hover { color: var(--pn-ink-2); }
 .ws-task-panel .pn-filter--active {
-  color: var(--pn-ink);
+  color: var(--pn-brand-2);
   background: var(--pn-card);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.10);
+  box-shadow: var(--pn-sh-sm);
 }
 .ws-task-panel .pn-filter svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .ws-task-panel .pn-sort { position: relative; margin-left: auto; }
@@ -316,10 +322,13 @@
   min-width: 178px;
   max-height: 270px;
   overflow: auto;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line-2);
+  /* Popover = glass panel (spec §3): frosted card, blur, highlight seam. */
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: var(--pn-sh-pop), var(--glass-highlight);
   padding: 5px;
   display: flex;
   flex-direction: column;
@@ -363,8 +372,10 @@
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--terminal-border);
-  background: rgba(var(--theme-primary-rgb), 0.02);
+  /* Was var(--terminal-border)/var(--theme-primary-rgb) — maestro-only names
+     with NO definition in tokens.css, so the border never painted. Real tokens. */
+  border-bottom: 1px solid var(--pn-line);
+  background: rgba(var(--pn-brand-rgb), 0.02);
   gap: 10px;
   position: relative;
   z-index: 2;
@@ -372,7 +383,7 @@
   container-type: inline-size;
   container-name: execbar;
 }
-.ws-task-panel .executionBar--inactive { justify-content: flex-start; gap: 8px; background: rgba(var(--theme-primary-rgb), 0.03); }
+.ws-task-panel .executionBar--inactive { justify-content: flex-start; gap: 8px; background: rgba(var(--pn-brand-rgb), 0.03); }
 
 /* redesign-buttons.css — declarations unchanged. */
 .ws-task-panel .pn-run2 {
@@ -397,11 +408,11 @@
 .ws-task-panel .pn-run2--run .pn-run2__chip { background: var(--pn-run-soft); color: var(--pn-run); }
 .ws-task-panel .pn-run2--run .pn-run2__chip svg { transition: transform 200ms cubic-bezier(0.2,0.8,0.2,1); }
 .ws-task-panel .pn-run2--run:not(:disabled):hover { border-color: var(--pn-run); }
-.ws-task-panel .pn-run2--run:not(:disabled):hover .pn-run2__chip { background: var(--pn-run); color: #fff; box-shadow: 0 2px 8px rgba(62,142,90,0.36); }
+.ws-task-panel .pn-run2--run:not(:disabled):hover .pn-run2__chip { background: var(--pn-run); color: #fff; box-shadow: 0 2px 8px var(--pn-run-soft); }
 .ws-task-panel .pn-run2--run:not(:disabled):hover .pn-run2__chip svg { transform: translateX(2px); }
 .ws-task-panel .pn-run2--coord .pn-run2__chip { background: var(--pn-brand-soft); color: var(--pn-brand); }
 .ws-task-panel .pn-run2--coord:not(:disabled):hover { border-color: var(--pn-brand); }
-.ws-task-panel .pn-run2--coord:not(:disabled):hover .pn-run2__chip { background: var(--pn-brand); color: #fff; box-shadow: 0 2px 8px rgba(178,106,43,0.36); }
+.ws-task-panel .pn-run2--coord:not(:disabled):hover .pn-run2__chip { background: var(--grad-brand); color: #fff; box-shadow: var(--glow-brand-sm); }
 .ws-task-panel .pn-spawn__node { transition: transform 240ms cubic-bezier(0.2,0.9,0.2,1), opacity 200ms; transform-origin: 4px 8px; }
 .ws-task-panel .pn-run2--coord:not(:disabled):hover .pn-spawn__n1 { transform: translateY(-3.4px); }
 .ws-task-panel .pn-run2--coord:not(:disabled):hover .pn-spawn__n3 { transform: translateY(3.4px); }
@@ -436,7 +447,12 @@
 .ws-task-panel .pn-mini { display: inline-flex; align-items: center; gap: 3px; font-family: var(--pn-mono); font-size: 10.5px; color: var(--pn-ink-3); flex: 0 0 auto; }
 .ws-task-panel .pn-tt { display: flex; flex-direction: column; border-bottom: 1px solid var(--pn-line); transition: background 120ms; }
 .ws-task-panel .pn-tt:hover { background: var(--pn-hover); }
-.ws-task-panel .pn-tt--active { background: var(--pn-active); }
+/* Selected row: brand-tinted wash + a gradient edge marker with a soft glow
+   (spec §3, active nav marker) — drawn with box-shadow so the DOM stays frozen. */
+.ws-task-panel .pn-tt--active {
+  background: var(--pn-active);
+  box-shadow: inset 2px 0 0 var(--pn-brand);
+}
 .ws-task-panel .pn-tt--completed .pn-tt__title { color: var(--pn-ink-4); text-decoration: line-through; }
 .ws-task-panel .pn-tt__main {
   display: flex;
@@ -503,7 +519,7 @@
   color: var(--pn-ink-2); background: transparent; border: 1px solid var(--pn-line-2);
   transition: all 140ms; padding: 0;
 }
-.ws-task-panel .pn-tt__run:hover { background: var(--pn-ink); border-color: var(--pn-ink); color: var(--pn-paper); }
+.ws-task-panel .pn-tt__run:hover:not(:disabled) { background: var(--grad-brand); border-color: transparent; color: #fff; box-shadow: var(--glow-brand-sm); }
 .ws-task-panel .pn-tt__run svg { width: 12px; height: 12px; }
 .ws-task-panel .pn-tt__run:disabled { opacity: 0.45; }
 .ws-task-panel .pn-tt__grip { font-family: var(--pn-mono); font-size: 9px; letter-spacing: -3px; padding-right: 3px; }
@@ -512,3 +528,10 @@
 .ws-task-panel .pn-finished-controls { display: none; }
 
 .ws-task-panel :focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-task-panel .pn-btn--primary:hover,
+  .ws-task-panel .pn-run2:hover { transform: none; }
+  .ws-task-panel .pn-spawn__node,
+  .ws-task-panel .pn-spawn__line { transition: none; }
+}

@@ -1,4 +1,6 @@
-/* Space Settings (L5) — profile · members · invites · task axes. */
+/* Space Settings (L5) — profile · members · invites · task axes.
+   Aurora Glass: transparent screen canvas, frosted glass section panels,
+   gradient primary actions, cheap (unblurred) dense rows. */
 
 .cv2-root .cv2-set {
   display: flex;
@@ -7,15 +9,24 @@
   min-width: 0;
   height: 100%;
   overflow: auto;
-  padding: var(--pn-space-5);
-  background: var(--pn-paper);
+  padding: var(--pn-space-6);
+  /* Big screen container stays transparent so the aurora canvas shows through. */
+  background: transparent;
 }
 
+/* Each section is a frosted glass panel. */
 .cv2-root .cv2-set__section {
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-3);
   min-width: 0;
+  padding: var(--pn-space-5);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
 }
 
 .cv2-root .cv2-set__sectionhead {
@@ -25,18 +36,23 @@
   gap: var(--pn-space-3);
 }
 
+/* Space name = the one gradient heading this view gets. */
 .cv2-root .cv2-set__h1 {
   font-family: var(--pn-serif);
-  font-weight: 500;
+  font-weight: 600;
   font-size: var(--pn-fs-h1);
   line-height: var(--pn-lh-tight);
-  color: var(--pn-ink);
+  letter-spacing: var(--pn-track-tight);
   margin: 0;
   width: 100%;
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .cv2-root .cv2-set__h2 {
-  font-family: var(--pn-ui);
+  font-family: var(--pn-serif);
   font-weight: 600;
   font-size: var(--pn-fs-h3);
   letter-spacing: var(--pn-track-tight);
@@ -62,19 +78,27 @@
 .cv2-root .cv2-set__rows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--pn-space-2);
 }
 
+/* Dense rows: light glass tint, NO backdrop blur (keep list paint cheap). */
 .cv2-root .cv2-set__row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) var(--pn-space-3);
-  background: var(--pn-card);
+  background: var(--pn-surface);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-md);
   min-width: 0;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .cv2-set__row:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-line-2);
 }
 
 .cv2-root .cv2-set__rowname {
@@ -92,6 +116,7 @@
 
 .cv2-root .cv2-set__rowspace { flex: 1 1 auto; }
 
+/* Copy-invite-code button: text control with visible hover/focus affordance. */
 .cv2-root .cv2-set__copy {
   appearance: none;
   background: none;
@@ -99,6 +124,19 @@
   padding: 0;
   cursor: pointer;
   font: inherit;
+  border-radius: var(--pn-r-xs);
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-root .cv2-set__copy:hover {
+  color: var(--pn-brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cv2-root .cv2-set__copy:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
 }
 
 .cv2-root .cv2-set__form {
@@ -112,19 +150,72 @@
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-sm);
   color: var(--pn-ink);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-sm);
   padding: 7px 10px;
   min-width: 0;
   flex: 0 1 200px;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
+.cv2-root .cv2-set__input::placeholder { color: var(--pn-ink-4); }
+.cv2-root .cv2-set__input:hover { border-color: rgba(var(--pn-brand-rgb), 0.35); }
+
 .cv2-root .cv2-set__input--wide { flex: 1 1 280px; }
-.cv2-root .cv2-set__input:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+.cv2-root .cv2-set__input:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+  border-color: var(--pn-brand);
+  box-shadow: var(--glow-brand-sm);
+}
+
+/* Primary actions in this screen ("+ Add axis", "Save") → brand gradient +
+   glow (scoped here so the shared .cv2-actionbtn base in entity.css stays
+   untouched). */
+.cv2-root .cv2-set .cv2-actionbtn {
+  background: var(--grad-brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+              transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.cv2-root .cv2-set .cv2-actionbtn:hover {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+
+.cv2-root .cv2-set .cv2-actionbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.cv2-root .cv2-set .cv2-actionbtn:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+  transform: none;
+  cursor: not-allowed;
+}
 
 .cv2-root .cv2-set__error {
   margin: 0;
   font-size: var(--pn-fs-sm);
   color: var(--cv2-status-blocked);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .cv2-set__row,
+  .cv2-root .cv2-set__copy,
+  .cv2-root .cv2-set__input,
+  .cv2-root .cv2-set .cv2-actionbtn,
+  .cv2-root .cv2-set .cv2-actionbtn:hover {
+    transition: none;
+    transform: none;
+  }
 }

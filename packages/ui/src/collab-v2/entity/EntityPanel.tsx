@@ -278,10 +278,20 @@ export function EntityPanel({
               className="cv2-panel__title"
               data-editable={entry.patchTitle ? true : undefined}
               title={entry.patchTitle ? 'Click to rename' : undefined}
+              tabIndex={entry.patchTitle ? 0 : undefined}
+              aria-label={entry.patchTitle ? `Rename: ${live.title}` : undefined}
               onClick={() => {
                 if (!entry.patchTitle) return;
                 setTitleDraft(live.title);
                 setEditingTitle(true);
+              }}
+              onKeyDown={(e) => {
+                if (!entry.patchTitle) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setTitleDraft(live.title);
+                  setEditingTitle(true);
+                }
               }}
             >
               {live.title}

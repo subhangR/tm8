@@ -5,13 +5,22 @@
 .cv2-root .ws-center *::after { box-sizing: border-box; }
 
 .cv2-root .ws-center {
-  --pn-term-bg: #1c1a16;
-  --pn-term-ink: #cfc9bb;
-  --pn-term-acc: #d99a4e;
-  --pn-term-dim: #8a8474;
-  /* SessionTerminal.tsx in Maestro: the canvas sits one shade inside the
-     #1c1a16 chrome gutter even in light mode. */
-  --maestro-terminal-canvas: #1b1812;
+  /*
+   * AURORA GLASS TERMINAL CHROME. The terminal is always a dark surface — an
+   * xterm canvas over a light frosted panel is unreadable — so these are LOCAL
+   * custom properties, not raw paint scattered below. Each resolves through a
+   * REQUESTED shared token (--pn-term-*, listed in the redesign report) with
+   * the Aurora deep-indigo value as the standing fallback, per the spec's
+   * var(--pn-x, #fallback) allowance. Accents/status below use real tokens.
+   */
+  --pn-term-bg: var(--pn-term-surface, #131126);
+  --pn-term-ink: var(--pn-term-ink-token, #C9CBE8);
+  --pn-term-acc: var(--pn-brand);
+  --pn-term-dim: var(--pn-term-dim-token, #7B7EA3);
+  --term-strip-line: var(--pn-term-line, rgba(255,255,255,0.08));
+  /* SessionTerminal.tsx reads this: the canvas sits one shade inside the
+     chrome gutter even in light mode. */
+  --maestro-terminal-canvas: var(--pn-term-canvas, #100E20);
   position: relative;
   flex: 1 1 0;
   min-height: 0;
@@ -23,8 +32,8 @@
 }
 .cv2-root[data-theme='dark'] .ws-center,
 [data-theme='dark'] .cv2-root .ws-center {
-  --pn-term-bg: #100e0a;
-  --maestro-terminal-canvas: #100e0a;
+  --pn-term-bg: var(--pn-term-surface-dark, #0C0A18);
+  --maestro-terminal-canvas: var(--pn-term-canvas-dark, #0C0A18);
 }
 
 .cv2-root .terminalPane {
@@ -78,10 +87,8 @@
   display: flex;
   flex-direction: column;
   pointer-events: auto;
-  --term-strip-line: #2c2922;
+  /* --term-strip-line inherits from .ws-center so the composer shares it. */
 }
-.cv2-root[data-theme='dark'] .termStrip,
-[data-theme='dark'] .cv2-root .termStrip { --term-strip-line: #221e15; }
 .cv2-root .termStripBar {
   display: flex;
   flex-direction: row;
@@ -90,10 +97,10 @@
   width: 100%;
   min-width: 0;
   padding: 6px 10px;
-  background: var(--pn-term-bg, #1b1812);
+  background: var(--pn-term-bg);
   border-bottom: 1px solid var(--term-strip-line);
   font-family: var(--pn-mono, 'JetBrains Mono', ui-monospace, monospace);
-  color: #a9a294;
+  color: var(--pn-term-dim);
   flex-shrink: 0;
   overflow: hidden;
 }
@@ -126,19 +133,19 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #5aa777;
+  background: var(--pn-run);
   flex-shrink: 0;
-  box-shadow: 0 0 5px rgba(90, 167, 119, 0.7);
+  box-shadow: 0 0 6px var(--pn-run);
   animation: termStripPulse 1.5s ease-in-out infinite;
 }
 .cv2-root .termStripLiveTag {
   font-size: 8px;
   font-weight: 700;
   padding: 1px 5px;
-  border-radius: 3px;
-  background: rgba(90, 167, 119, 0.14);
-  color: #7bb98e;
-  border: 1px solid rgba(90, 167, 119, 0.35);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-run-soft);
+  color: var(--pn-run);
+  border: 1px solid var(--pn-run);
   letter-spacing: 0.08em;
 }
 @keyframes termStripPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -172,8 +179,8 @@
   padding: 2px 5px;
   border-radius: var(--pn-r-pill);
   color: var(--pn-term-acc);
-  background: rgba(217, 154, 78, 0.1);
-  border: 1px solid rgba(217, 154, 78, 0.38);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.38);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -196,11 +203,24 @@
 }
 .cv2-root .termStripActionBtn:hover:not(:disabled) {
   color: var(--pn-term-acc);
-  background: rgba(217, 154, 78, 0.1);
-  border-color: rgba(217, 154, 78, 0.32);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.32);
 }
+/* Selected centre tab (terminal/thread) glows so the active pane is stated. */
+.cv2-root .termStripActionBtn[aria-selected='true'] {
+  color: var(--pn-term-acc);
+  background: var(--pn-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.32);
+  box-shadow: var(--glow-brand-sm);
+}
+.cv2-root .termStripActionBtn:focus-visible,
+.cv2-root .termStripToggle:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-root .termStripActionBtn:disabled { cursor: not-allowed; }
 .cv2-root .termStripActionBtn:active:not(:disabled) { transform: scale(0.94); }
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .termStripActionBtn:active:not(:disabled) { transform: none; }
+  .cv2-root .termStripLiveDot { animation: none; }
+}
 .cv2-root .termStripActionGlyph { font-size: 14px; line-height: 1; }
 .cv2-root .terminalGlyph { font-family: var(--pn-mono); font-size: 10px; font-weight: 700; }
 
@@ -223,10 +243,10 @@
   pointer-events: none;
   white-space: nowrap;
 }
-.cv2-root .modeChip--worker { color: var(--pn-term-dim); background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08); }
-.cv2-root .modeChip--coordinator { color: #f59e0b; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); }
+.cv2-root .modeChip--worker { color: var(--pn-term-dim); background: var(--pn-idle-soft); border: 1px solid var(--term-strip-line); }
+.cv2-root .modeChip--coordinator { color: var(--pn-wait); background: var(--pn-wait-soft); border: 1px solid var(--pn-wait); }
 .cv2-root .coordinator-glow {
-  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.35), inset 0 0 12px rgba(245, 158, 11, 0.18);
+  box-shadow: inset 0 0 0 1px var(--pn-wait), inset 0 0 12px var(--pn-wait-soft);
 }
 
 .cv2-root .ws-center__thread { background: var(--pn-surface); color: var(--pn-ink); overflow: hidden; padding: var(--pn-space-2); z-index: 10; }
@@ -258,10 +278,10 @@
   z-index: 40;
   margin: 0;
   padding: 6px 8px;
-  border: 1px solid rgba(187, 77, 61, 0.5);
-  border-radius: 4px;
-  background: rgba(187, 77, 61, 0.12);
-  color: #da7d6a;
+  border: 1px solid var(--pn-block);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-block-soft);
+  color: var(--pn-block);
   font: 10px/1.4 var(--pn-mono);
   white-space: pre-wrap;
 }

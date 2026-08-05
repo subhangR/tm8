@@ -14,7 +14,10 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* Aurora Glass structural rail: translucent + strong blur (spec §3). */
   background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
   color: var(--pn-ink);
   font-family: var(--pn-ui);
   font-size: 13.5px;
@@ -49,9 +52,11 @@
 }
 .ws-res .pn-tab:hover { color: var(--pn-ink-2); }
 .ws-res .pn-tab--active { color: var(--pn-ink); font-weight: 600; }
+/* Active tab marker: gradient underline + soft glow (spec §3, active nav). */
 .ws-res .pn-tab--active::after {
   content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px;
-  height: 2px; background: var(--pn-ink); border-radius: 2px;
+  height: 2px; background: var(--grad-brand); border-radius: 2px;
+  box-shadow: var(--glow-brand-sm);
 }
 .ws-res .pn-tab .pn-tab-n { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-4); }
 .ws-res .pn-head-spacer { flex: 1; min-width: 0; }
@@ -85,10 +90,10 @@
 }
 .ws-res .sidebarHeaderActions { display: flex; align-items: center; gap: 6px; }
 
-/* history badge — styles-icon-rail.css geometry + live reference theme */
+/* history badge — styles-icon-rail.css geometry, painted with status tokens */
 .ws-res .iconRailBadge {
   position: absolute; top: -8px; right: -8px; min-width: 25px; height: 16px; padding: 0 4px;
-  border-radius: 8px; background: #7dd3fc; color: #000;
+  border-radius: var(--pn-r-pill); background: var(--pn-info); color: var(--pn-paper);
   font-family: var(--pn-ui); font-size: 9px; font-weight: 700; line-height: 16px; text-align: center;
 }
 
@@ -111,10 +116,13 @@
 .ws-res .pn-qchip:disabled,
 .ws-res .pn-ib:disabled { opacity: 1; }
 .ws-quick-mark { font-size: 20px; line-height: 1; }
-.ws-quick-mark[data-tool="claude"] { color: #A984FF; }
-.ws-quick-mark[data-tool="codex"] { color: #00A67E; }
-.ws-quick-mark[data-tool="hermes"] { color: #F59E0B; }
-.ws-quick-mark[data-tool="gemini"] { color: #38BDF8; }
+/* Third-party agent identity colors — vendor marks, not palette choices. Each
+   resolves through a REQUESTED shared token (--pn-agent-*) with the vendor hue
+   as fallback, so foundation can centralize them without a change here. */
+.ws-quick-mark[data-tool="claude"] { color: var(--pn-agent-claude, #A984FF); }
+.ws-quick-mark[data-tool="codex"] { color: var(--pn-agent-codex, #00A67E); }
+.ws-quick-mark[data-tool="hermes"] { color: var(--pn-agent-hermes, #F59E0B); }
+.ws-quick-mark[data-tool="gemini"] { color: var(--pn-agent-gemini, #38BDF8); }
 
 /* Terminals / Agents / Docs / Drawings — redesign-tokens.css */
 .ws-res .pn-filters {
@@ -134,8 +142,8 @@
 }
 .ws-res .pn-filter:hover { color: var(--pn-ink-2); }
 .ws-res .pn-filter--active {
-  color: var(--pn-ink); background: var(--pn-card);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.10);
+  color: var(--pn-brand-2); background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm);
 }
 .ws-res .pn-filter svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .ws-res .pn-filter .pn-tab-n {
@@ -158,7 +166,8 @@
   white-space: nowrap; flex-shrink: 0;
 }
 .ws-res .pn-subtab:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink-2); }
-.ws-res .pn-subtab--active { background: var(--pn-active); color: var(--pn-ink); }
+/* Selected chip: soft brand gradient + brand text (spec §3, active chips). */
+.ws-res .pn-subtab--active { background: var(--grad-brand-soft); color: var(--pn-brand-2); }
 .ws-res .pn-subtab:disabled { opacity: 1; color: var(--pn-ink-4); }
 .ws-res .pn-tab-n { font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-4); }
 .ws-res__lifecycle > .pn-chip { margin-left: auto; }
@@ -194,7 +203,7 @@
 /* session tile — redesign-tiles.css */
 .ws-res .pn-st { display: flex; flex-direction: column; border-bottom: 1px solid var(--pn-line); transition: background 120ms; }
 .ws-res .pn-st:hover { background: var(--pn-hover); }
-.ws-res .pn-st--selected { background: var(--pn-active); }
+.ws-res .pn-st--selected { background: var(--pn-active); box-shadow: inset 2px 0 0 var(--pn-brand); }
 .ws-res .pn-st--archived { opacity: 0.62; }
 .ws-res .pn-st__main { display: flex; align-items: center; gap: 9px; padding: 10px 12px 10px 10px; min-width: 0; }
 .ws-res .pn-st__arrow { position: relative; width: 18px; height: 18px; flex: 0 0 auto; display: grid; place-items: center; color: var(--pn-ink-4); background: none; border: none; border-radius: 4px; padding: 0; }
@@ -237,10 +246,10 @@
 }
 .ws-res .pn-agent img { width: 16px; height: 16px; object-fit: contain; }
 .ws-res .ws-agent-mark { font-size: 17px; line-height: 1; color: var(--pn-ink-3); }
-.ws-res .pn-agent[data-agent-kind="claude"] .ws-agent-mark { color: #E77955; }
-.ws-res .pn-agent[data-agent-kind="codex"] .ws-agent-mark { color: #00A67E; }
-.ws-res .pn-agent[data-agent-kind="gemini"] .ws-agent-mark { color: #4285F4; }
-.ws-res .pn-agent[data-agent-kind="hermes"] .ws-agent-mark { color: #F59E0B; }
+.ws-res .pn-agent[data-agent-kind="claude"] .ws-agent-mark { color: var(--pn-agent-claude, #E77955); }
+.ws-res .pn-agent[data-agent-kind="codex"] .ws-agent-mark { color: var(--pn-agent-codex, #00A67E); }
+.ws-res .pn-agent[data-agent-kind="gemini"] .ws-agent-mark { color: var(--pn-agent-gemini, #4285F4); }
+.ws-res .pn-agent[data-agent-kind="hermes"] .ws-agent-mark { color: var(--pn-agent-hermes, #F59E0B); }
 .ws-res .pn-stat { display: inline-grid; place-items: center; flex: 0 0 auto; color: var(--pn-idle); }
 .ws-res .pn-stat--running,
 .ws-res .pn-stat--working,
@@ -252,7 +261,9 @@
 /* nesting guides + real task groups — redesign-tiles.css */
 .ws-res .pn-kids { margin-left: 19px; border-left: 1px solid var(--pn-line); position: relative; }
 .ws-res .pn-kids--st { margin-left: 19px; border-left: 1px solid var(--pn-line); }
-.ws-res .pn-team { margin: 8px 12px; border: 1px solid var(--pn-line); border-radius: var(--pn-r-md); overflow: hidden; background: var(--pn-card); }
+/* Task group = glass card, but WITHOUT blur — it sits inside a dense list and
+   the panel behind it already blurs (spec §1: keep dense lists cheap to paint). */
+.ws-res .pn-team { margin: 8px 12px; border: 1px solid var(--glass-border); border-radius: var(--pn-r-md); overflow: hidden; background: var(--pn-card); box-shadow: var(--pn-sh-sm), var(--glass-highlight); }
 .ws-res .pn-team__head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--pn-line); background: var(--pn-surface); }
 .ws-res .pn-team__dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--pn-idle); }
 .ws-res .pn-team__dot--live { background: var(--pn-run); }
@@ -311,3 +322,10 @@
 .ws-res__saved,
 .ws-res__note { color: var(--pn-ink-3); font-size: 11px; }
 .ws-res__over { color: var(--pn-block); font-family: var(--pn-mono); font-size: 11px; }
+
+/* Every interactive element in the panel shows keyboard focus (spec §3/§4). */
+.ws-res :focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-res .pn-dot--live::after { animation: none; }
+}

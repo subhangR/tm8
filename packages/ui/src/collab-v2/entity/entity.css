@@ -1,6 +1,8 @@
 /* Entity component system (L1) — chips, cards, panels, full views, tombstones,
-   skeletons. Styled entirely from tokens.css (--pn-* / --cv2-*), scoped under
-   .cv2-root by the tokens file's conventions. */
+   skeletons. AURORA GLASS restyle: styled entirely from tokens.css
+   (--pn-* / --cv2-* / --grad-* / --glass-*), scoped under .cv2-root by the
+   tokens file's conventions. Glass on structural surfaces (panel, menu);
+   dense tiles (chips, cards) stay cheap to paint — no per-tile blur. */
 
 /* --- Z1 · chip ------------------------------------------------------------- */
 .cv2-chip {
@@ -18,10 +20,15 @@
   cursor: pointer;
   user-select: none;
   transition: background var(--pn-dur-fast) var(--pn-ease-standard),
-    border-color var(--pn-dur-fast) var(--pn-ease-standard);
+    border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-chip:hover { background: var(--pn-hover); border-color: var(--pn-line-2); }
-.cv2-chip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.cv2-chip:hover {
+  background: var(--pn-hover);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  box-shadow: 0 0 0 1px rgba(var(--pn-brand-rgb), 0.14);
+}
+.cv2-chip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-chip[draggable="true"] { cursor: grab; }
 .cv2-chip[draggable="true"]:active { cursor: grabbing; }
 
@@ -32,7 +39,7 @@
   font-size: 12px;
   color: var(--pn-ink-2);
 }
-.cv2-chip--ref:hover { border-color: var(--pn-line); }
+.cv2-chip--ref:hover { border-color: rgba(var(--pn-brand-rgb), 0.30); box-shadow: none; }
 
 .cv2-chip__glyph { flex: none; font-size: 12px; line-height: 1; }
 .cv2-chip__label {
@@ -61,21 +68,26 @@
   color: var(--pn-ink-3);
   cursor: default;
 }
+.cv2-chip--tombstone:hover { background: var(--pn-surface); border-color: var(--pn-line-2); box-shadow: none; }
 .cv2-chip--tombstone s { text-decoration-color: var(--pn-ink-4); }
 
 /* --- Z2 · card -------------------------------------------------------------- */
+/* Dense-grid tile: translucent card surface + glass highlight, but NO
+   backdrop blur — cards render by the dozen in collection views. */
 .cv2-card {
   background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-md);
   padding: 11px 13px;
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
   font-family: var(--pn-ui);
   min-width: 220px;
   max-width: 340px;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-card--popover { border: none; box-shadow: none; padding: 2px; min-width: 240px; }
-.cv2-card--tombstone { border-style: dashed; background: var(--pn-surface); color: var(--pn-ink-3); }
+.cv2-card--popover { border: none; box-shadow: none; background: transparent; padding: 2px; min-width: 240px; }
+.cv2-card--tombstone { border-style: dashed; background: var(--pn-surface); color: var(--pn-ink-3); box-shadow: none; }
 
 .cv2-card__head {
   display: flex;
@@ -145,21 +157,24 @@
   font-size: 9px;
   font-weight: 600;
   padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--pn-active);
-  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
+  background: var(--pn-brand-soft);
+  border: 1px solid rgba(var(--pn-brand-rgb), 0.30);
   color: var(--pn-ink-2);
 }
 
 /* --- Z3 · panel -------------------------------------------------------------- */
+/* Structural surface → full glass recipe. */
 .cv2-panel {
   display: flex;
   flex-direction: column;
   width: clamp(420px, 100%, 560px);
-  background: var(--pn-surface);
-  border: 1px solid var(--pn-line);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-lg);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
   overflow: hidden;
   font-family: var(--pn-ui);
 }
@@ -189,6 +204,10 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  /* the frame already blurs; don't double-blur nested glass */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: transparent;
 }
 
 .cv2-panel__header { padding: 10px 14px; border-bottom: 1px solid var(--pn-line); }
@@ -213,9 +232,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-radius: var(--pn-r-xs);
 }
 .cv2-panel__title[data-editable] { cursor: text; }
 .cv2-panel__title[data-editable]:hover { text-decoration: underline dotted var(--pn-ink-4); }
+.cv2-panel__title[data-editable]:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-panel__titleinput {
   flex: 1;
   font: inherit;
@@ -226,7 +247,9 @@
   border: 1px solid var(--pn-brand);
   border-radius: var(--pn-r-sm);
   padding: 2px 6px;
+  box-shadow: var(--glow-brand-sm);
 }
+.cv2-panel__titleinput:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-panel__status {
   font-family: var(--pn-ui);
   font-size: 11px;
@@ -236,9 +259,15 @@
   border-radius: var(--pn-r-sm);
   padding: 2px 4px;
   max-width: 92px;
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+    background var(--pn-dur-fast) var(--pn-ease-standard);
 }
+.cv2-panel__status:hover { background: var(--pn-hover); border-color: rgba(var(--pn-brand-rgb), 0.35); }
+.cv2-panel__status:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-panel__overflow { position: relative; margin-left: auto; }
 
+/* popover surface → strong glass + pop shadow */
 .cv2-menu {
   position: absolute;
   right: 0;
@@ -247,10 +276,12 @@
   min-width: 150px;
   display: flex;
   flex-direction: column;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-md);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: var(--pn-sh-pop), var(--glass-highlight);
   padding: 4px;
 }
 .cv2-menu button {
@@ -263,10 +294,13 @@
   border-radius: var(--pn-r-sm);
   padding: 6px 9px;
   cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-menu button:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.cv2-menu button:disabled { color: var(--pn-ink-4); cursor: default; }
+.cv2-menu button:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
+.cv2-menu button:disabled { color: var(--pn-ink-4); cursor: default; background: transparent; }
 .cv2-menu__danger { color: var(--cv2-status-blocked) !important; }
+.cv2-menu__danger:hover { background: var(--cv2-status-blocked-soft) !important; }
 
 .cv2-panel__actions {
   display: flex;
@@ -283,19 +317,34 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--pn-ink-2);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
   padding: 3px 11px;
   cursor: pointer;
-  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 .cv2-actionbtn:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.cv2-actionbtn--primary { color: var(--pn-brand); border-color: rgba(var(--pn-brand-rgb), 0.35); background: var(--pn-brand-soft); }
-.cv2-actionbtn--primary:hover { background: var(--pn-brand-soft); filter: brightness(0.97); }
+.cv2-actionbtn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+/* primary action = brand gradient + glow on hover (spec §3) */
+.cv2-actionbtn--primary {
+  color: #fff;
+  border: none;
+  background: var(--grad-brand);
+  box-shadow: var(--pn-sh-sm);
+}
+.cv2-actionbtn--primary:hover {
+  color: #fff;
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand);
+  transform: translateY(-1px);
+}
 
 .cv2-panel__tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid var(--pn-line); }
 .cv2-panel__tab {
+  position: relative;
   font-family: var(--pn-ui);
   font-size: 12px;
   color: var(--pn-ink-2);
@@ -304,12 +353,25 @@
   border-bottom: 2px solid transparent;
   padding: 8px 10px;
   cursor: pointer;
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-panel__tab:hover { color: var(--pn-ink); }
+.cv2-panel__tab:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-panel__tab:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; }
 .cv2-panel__tab[data-active] {
   color: var(--pn-ink);
   font-weight: 600;
-  border-bottom-color: var(--pn-brand);
+}
+/* active tab marker: gradient bar + soft glow (spec §3 nav marker) */
+.cv2-panel__tab[data-active]::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -2px;
+  height: 2px;
+  border-radius: var(--pn-r-pill);
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand-sm);
 }
 
 .cv2-panel__body {
@@ -344,7 +406,7 @@
 .cv2-codeblock {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-mono);
-  background: var(--pn-card);
+  background: var(--pn-surface);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-sm);
   padding: 10px 12px;
@@ -358,8 +420,8 @@
 .cv2-msgbody__embed { margin: 6px 0; }
 .cv2-doc-prose { font-size: 13.5px; line-height: 1.6; color: var(--pn-ink-2); }
 .cv2-doc-prose h1, .cv2-doc-prose h2, .cv2-doc-prose h3 { font-family: var(--pn-serif); color: var(--pn-ink); margin: 14px 0 6px; }
-.cv2-doc-prose code { font-family: var(--pn-mono); font-size: 12px; background: var(--pn-active); border-radius: 4px; padding: 0 4px; }
-.cv2-doc-prose pre { background: var(--pn-card); border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); padding: 10px; overflow-x: auto; }
+.cv2-doc-prose code { font-family: var(--pn-mono); font-size: 12px; background: var(--pn-active); border-radius: var(--pn-r-xs); padding: 0 4px; }
+.cv2-doc-prose pre { background: var(--pn-surface); border: 1px solid var(--pn-line); border-radius: var(--pn-r-sm); padding: 10px; overflow-x: auto; }
 .cv2-doc-prose table { border-collapse: collapse; }
 .cv2-doc-prose th, .cv2-doc-prose td { border: 1px solid var(--pn-line); padding: 4px 8px; font-size: 12.5px; }
 
@@ -371,6 +433,7 @@
 .cv2-slot {
   border: 1.5px dashed var(--pn-line-2);
   border-radius: var(--pn-r-md);
+  background: var(--pn-hover);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -383,7 +446,9 @@
 .cv2-activity__time { margin-left: auto; font-family: var(--pn-mono); font-size: 10px; color: var(--pn-ink-3); }
 
 /* --- Z4 · full view ----------------------------------------------------------- */
-.cv2-full { display: flex; flex-direction: column; gap: 18px; font-family: var(--pn-ui); }
+/* Big screen container: stays transparent so the aurora canvas shows through
+   (spec §3 "big screen containers"). */
+.cv2-full { display: flex; flex-direction: column; gap: 18px; font-family: var(--pn-ui); background: transparent; }
 .cv2-full__header { display: flex; flex-direction: column; gap: 6px; }
 .cv2-full__titlerow { display: flex; align-items: center; gap: 12px; }
 .cv2-full__glyph { font-size: 20px; }
@@ -392,6 +457,7 @@
   font-weight: 500;
   font-size: var(--pn-fs-h1);
   line-height: var(--pn-lh-tight);
+  letter-spacing: var(--pn-track-tight);
   color: var(--pn-ink);
   margin: 0;
   flex: 1;
@@ -412,14 +478,18 @@
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 10px;
 }
-.cv2-cardgrid__cell { cursor: pointer; }
+.cv2-cardgrid__cell { cursor: pointer; border-radius: var(--pn-r-md); }
+.cv2-cardgrid__cell:hover > .cv2-card {
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  box-shadow: var(--glow-brand-sm), var(--glass-highlight);
+}
 .cv2-cardgrid__cell:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; border-radius: var(--pn-r-md); }
 
 /* --- skeletons ------------------------------------------------------------------ */
 .cv2-skel {
   display: inline-block;
   height: 10px;
-  border-radius: 5px;
+  border-radius: var(--pn-r-xs);
   background: linear-gradient(90deg, var(--pn-active) 25%, var(--pn-hover) 50%, var(--pn-active) 75%);
   background-size: 200% 100%;
   animation: cv2-shimmer 1.4s ease infinite;
@@ -432,4 +502,17 @@
 @keyframes cv2-shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+/* --- reduced motion (spec §3) ------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-chip,
+  .cv2-card,
+  .cv2-actionbtn,
+  .cv2-panel__tab,
+  .cv2-panel__status,
+  .cv2-menu button { transition: none; }
+  .cv2-actionbtn--primary:hover { transform: none; }
+  .cv2-skel { animation: none; }
+  .cv2-chip__pulse { animation: none; }
 }

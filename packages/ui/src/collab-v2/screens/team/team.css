@@ -1,7 +1,8 @@
 /**
- * Team screen — member cards and nested agent org-trees. The people
- * themselves are EntityCards (styled in entity.css); this file styles the
- * card frame, the agent section and the indentation ticks.
+ * Team screen — member cards and nested agent org-trees, Aurora Glass skin.
+ * The people themselves are EntityCards (styled in entity.css); this file
+ * styles the card frame, the agent section and the indentation ticks.
+ * Token-only: --pn-* / --grad-* / --glass-* / --cv2-*.
  */
 
 .cv2-root .cv2-team {
@@ -10,7 +11,8 @@
   min-height: 0;
   height: 100%;
   overflow-y: auto;
-  background: var(--pn-paper);
+  /* Big screen container: transparent so the aurora canvas shows through. */
+  background: transparent;
 }
 
 .cv2-root .cv2-team__head {
@@ -20,7 +22,12 @@
   padding: var(--pn-space-3) var(--pn-space-5);
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
   flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 .cv2-root .cv2-team__glyph { font-size: var(--pn-fs-title); }
 
@@ -32,27 +39,33 @@
   align-items: start;
 }
 
-/* --- member card ----------------------------------------------------------- */
+/* --- member card (glass panel) --------------------------------------------- */
 .cv2-root .cv2-team__card {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg, 14px);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg, 18px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
   overflow: hidden;
-  transition: border-color var(--pn-dur-fast) var(--pn-ease-out),
-              box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+  transition: border-color var(--pn-dur-base) var(--pn-ease-out),
+              box-shadow var(--pn-dur-base) var(--pn-ease-out),
+              transform var(--pn-dur-base) var(--pn-ease-out);
 }
 .cv2-root .cv2-team__card:hover {
   border-color: var(--pn-line-2);
-  box-shadow: var(--pn-sh-md);
+  box-shadow: var(--pn-sh-md), var(--glow-brand-sm), var(--glass-highlight);
+  transform: translateY(-1px);
 }
 .cv2-root .cv2-team__cardhead {
   cursor: pointer;
   padding: var(--pn-space-3);
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-out);
 }
+.cv2-root .cv2-team__cardhead:hover { background: var(--pn-hover); }
 .cv2-root .cv2-team__cardhead:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: -2px;
@@ -72,6 +85,27 @@
 }
 .cv2-root .cv2-team__agentspace { flex: 1; }
 
+/* Spawn = the card's primary action → brand gradient + glow (scoped here so
+   the shared .cv2-actionbtn base in entity.css stays untouched). */
+.cv2-root .cv2-team__agenthead .cv2-actionbtn {
+  background: var(--grad-brand);
+  color: #fff;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+              transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .cv2-team__agenthead .cv2-actionbtn:hover {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.cv2-root .cv2-team__agenthead .cv2-actionbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
 .cv2-root .cv2-team__org {
   display: flex;
   flex-direction: column;
@@ -88,7 +122,7 @@
   width: 10px;
   border-left: 1px solid var(--pn-line-2);
   border-bottom: 1px solid var(--pn-line-2);
-  border-bottom-left-radius: 6px;
+  border-bottom-left-radius: var(--pn-r-xs);
   margin: 0 0 18px 0;
 }
 .cv2-root .cv2-team__orgcell {
@@ -98,8 +132,10 @@
   flex-direction: column;
   gap: var(--pn-space-1);
   cursor: pointer;
-  border-radius: var(--pn-r-md, 10px);
+  border-radius: var(--pn-r-md, 12px);
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-out);
 }
+.cv2-root .cv2-team__orgcell:hover { background: var(--pn-hover); }
 .cv2-root .cv2-team__orgcell:focus-visible {
   outline: 2px solid var(--pn-brand);
   outline-offset: 2px;
@@ -112,6 +148,7 @@
   min-height: 0;
   height: 100%;
   overflow-y: auto;
+  background: transparent;
 }
 .cv2-root .cv2-profile__below {
   display: grid;
@@ -125,4 +162,15 @@
   flex-direction: column;
   gap: var(--pn-space-2);
   min-width: 0;
+}
+
+/* --- motion ---------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .cv2-team__card,
+  .cv2-root .cv2-team__card:hover,
+  .cv2-root .cv2-team__agenthead .cv2-actionbtn,
+  .cv2-root .cv2-team__agenthead .cv2-actionbtn:hover {
+    transition: none;
+    transform: none;
+  }
 }
