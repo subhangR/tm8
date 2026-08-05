@@ -166,9 +166,15 @@ export interface EntityListPanelProps {
    * handle here that `onSetState` never sees. Passing `source` rather than a
    * field name keeps this panel free of the field it is editing.
    *
+   * `label` rides beside `source` because they are two faces of one registry
+   * control: `source` is the WIRE field the host patches, `label` is its USER
+   * copy, and the host's failure notice is read by a person ("Priority could
+   * not be changed", not "priority could not be changed"). Sending both from
+   * the one `ValueControl` is what stops them disagreeing.
+   *
    * Absent ⇒ the picker renders DISABLED WITH REASON, never enabled-inert.
    */
-  onSetValue?: (entityId: string, source: string, next: string) => void;
+  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
 
   /**
    * Add or remove ONE assignment on an expanded row.
@@ -1507,7 +1513,7 @@ function RowValueControl({
         onChange={(e) => {
           const next = e.target.value;
           if (next === current) return;
-          props.onSetValue?.(row.id, control.source, next);
+          props.onSetValue?.(row.id, control.source, next, control.label);
         }}
       >
         {/* An UNSET field is a real state and gets a real option, so the select
@@ -2215,7 +2221,6 @@ function Tile({
 
 interface ControlCardFacts {
   assignees: EntitySummary['createdBy'][];
-  assigneeLabel: string;
   meta: string[];
 }
 
@@ -2235,13 +2240,6 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
       typeof (value as { id?: unknown }).id === 'string' &&
       typeof (value as { displayName?: unknown }).displayName === 'string',
   );
-  const assigneeLabel =
-    assignees.length === 0
-      ? 'Unassigned'
-      : assignees.length === 1
-        ? assignees[0].displayName
-        : `${assignees[0].displayName} +${assignees.length - 1}`;
-
   const meta: string[] = [];
   const acceptance = state.acceptance as { completed?: unknown; total?: unknown } | undefined;
   if (typeof acceptance?.total === 'number' && acceptance.total > 0) {
@@ -2253,7 +2251,7 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
   const pulls = row.badges.pulls?.length ?? 0;
   if (pulls > 0) meta.push(`${pulls} pulled`);
 
-  return { assignees, assigneeLabel, meta };
+  return { assignees, meta };
 }
 
 function relativeTileTime(iso: string): string {

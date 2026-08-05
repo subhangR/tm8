@@ -918,7 +918,18 @@ export function createFixtureSeam(): FixtureSeam {
     async connections(id, opts): Promise<Page<EdgeView>> {
       requireSummary(id);
       const c = extrasOf(id).connections;
-      const edges = [...c.outgoing, ...c.incoming].flatMap((g) => g.edges);
+      // `ConnectionOpts`'s filters are honoured HERE too, not only on the
+      // wire. A fixture that ignored `types` would let a caller's filter go
+      // unexercised and still pass — which is exactly how the unfiltered read
+      // stayed invisible until it mattered.
+      const groups = [
+        ...(opts?.direction === 'incoming' ? [] : c.outgoing),
+        ...(opts?.direction === 'outgoing' ? [] : c.incoming),
+      ];
+      const types = opts?.types;
+      const edges = groups
+        .filter((g) => types === undefined || types.length === 0 || types.includes(g.type))
+        .flatMap((g) => g.edges);
       return clone(pageOf(edges, opts));
     },
     async activity(id, opts): Promise<Page<ActivityItem>> {

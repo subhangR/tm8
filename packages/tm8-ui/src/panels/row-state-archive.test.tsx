@@ -350,10 +350,16 @@ describe('the priority chip writes priority', () => {
     fireEvent.change(select, { target: { value: 'high' } });
 
     expect(onSetValue).toHaveBeenCalledTimes(1);
-    // The SOURCE travels with the write. The host patches `content[source]`,
-    // so a control that read `priority` and reported something else would
-    // silently write the wrong field.
-    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual(['priority', 'high']);
+    /* The SOURCE travels with the write. The host patches `content[source]`,
+       so a control that read `priority` and reported something else would
+       silently write the wrong field.
+
+       The LABEL travels beside it because a failure notice is user copy, and
+       the source is not: titling one with `source` produced "priority could
+       not be changed", lowercase mid-sentence. Both come off the same registry
+       control, so they cannot drift apart. */
+    const control = getKind('task').list.valueControls![0]!;
+    expect(onSetValue.mock.calls[0]!.slice(1)).toEqual(['priority', 'high', control.label]);
   });
 
   it('offers exactly the registry vocabulary, in registry order', () => {
@@ -396,6 +402,29 @@ describe('the priority chip writes priority', () => {
     const strip = expandFirstRow();
     expect(within(strip).queryByTestId('row-value-select')).toBeNull();
     expect(within(strip).getAllByTestId('disabled-with-reason').length).toBeGreaterThan(0);
+  });
+
+  /**
+   * THE FOURTH ARM, and the one that separates "not yet known" from "no".
+   *
+   * Undefined capabilities mean the detail has not hydrated, not that the
+   * viewer was refused — and the difference is load-bearing here, because the
+   * host's `setValue` reads its `expectedVersion` from that same cached detail
+   * (`useRowLifecycle.ts`). A control that fell through to `DisabledAction`
+   * would tell a user with full rights they may not edit; one that fell
+   * through to the LIVE select would dispatch a write with no version behind
+   * it. Checking is the only honest reading of an absent answer.
+   */
+  it('reads unloaded capabilities as CHECKING, not as refused and not as live', () => {
+    mount('task', { onSetValue: vi.fn(), capabilitiesOf: () => undefined });
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-value-select')).toBeNull();
+    const checking = within(strip).getAllByTestId('checking-permission');
+    expect(checking.length).toBeGreaterThan(0);
+    // Named for THIS control, so the two chips' checking states stay tellable
+    // apart in a strip that draws both.
+    const label = getKind('task').list.valueControls![0]!.label.toLowerCase();
+    expect(checking.some((el) => el.getAttribute('aria-label')?.includes(`Change ${label}`))).toBe(true);
   });
 });
 
@@ -460,6 +489,36 @@ describe('the assigned chip writes an EDGE, one actor at a time', () => {
     const strip = expandFirstRow();
     expect(within(strip).queryByTestId('row-assign-trigger')).toBeNull();
     expect(strip.textContent).toMatch(/link/i);
+  });
+
+  /**
+   * NOT-WIRED IS ITS OWN REFUSAL, and a roster does not substitute for a host.
+   * Injecting `assignableActors` without `onAssign` is the shape a half-wired
+   * call site actually has, and a menu drawn over it would open, toggle, and
+   * write nothing — which is precisely the defect this whole strip exists to
+   * repair. The refusal has to come BEFORE the roster is consulted.
+   */
+  it('refuses as not-wired when no host is listening, even with a full roster', () => {
+    mount('task', { assignableActors: [ADA, BEE] });
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-assign-trigger')).toBeNull();
+    expect(within(strip).getAllByTestId('disabled-with-reason').length).toBeGreaterThan(0);
+    // Not the roster's refusal: nothing is missing from the roster here.
+    expect(strip.textContent).not.toMatch(/has not loaded/i);
+  });
+
+  /**
+   * The same fourth arm as the value control's, for the same reason: an absent
+   * capability answer is "still loading", and reporting it as `cannotLink`
+   * would tell a user who may assign that they may not.
+   */
+  it('reads unloaded capabilities as CHECKING, not as the link refusal', () => {
+    withRoster({ capabilitiesOf: () => undefined });
+    const strip = expandFirstRow();
+    expect(within(strip).queryByTestId('row-assign-trigger')).toBeNull();
+    const checking = within(strip).getAllByTestId('checking-permission');
+    expect(checking.some((el) => el.getAttribute('aria-label')?.includes('Change assignment'))).toBe(true);
+    expect(strip.textContent).not.toMatch(/link/i);
   });
 
   it('shows who is assigned even while refusing to change it', () => {

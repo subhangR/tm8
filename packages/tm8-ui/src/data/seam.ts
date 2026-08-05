@@ -184,6 +184,25 @@ export interface PageOpts {
   limit?: number;
 }
 
+/**
+ * `entities.connections` paging PLUS the two filters that route has always
+ * accepted (`?type=`/`?types=`, `?direction=`).
+ *
+ * THE FILTERS ARE NOT A CONVENIENCE. The server pages this read at
+ * `DEFAULT_LIMIT = 50` across EVERY edge type on the node. A caller hunting
+ * one `assigned_to` edge on an entity with more edges than that gets a page
+ * that does not contain it and cannot tell "not present" from "not on this
+ * page" — so it reports the edge as gone, which is a false statement to a
+ * user. Naming the type is what makes the page mean what the caller reads it
+ * to mean.
+ */
+export interface ConnectionOpts extends PageOpts {
+  /** Edge types to include. Empty/absent ⇒ every type, which is the trap above. */
+  types?: readonly string[];
+  /** Relative to the anchor entity. Server default is `both`. */
+  direction?: 'incoming' | 'outgoing' | 'both';
+}
+
 export interface FeedOpts extends PageOpts {
   scope?: FeedScope;
   order?: 'newest' | 'oldest';
@@ -266,8 +285,8 @@ export interface Seam {
   };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;
-  /** Connections tab. */
-  connections(id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>>;
+  /** Connections tab, and the edge-id lookup behind any edge REMOVAL. */
+  connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>>;
   /** Activity tab. */
   activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>>;
   /** Discussion tab. */
