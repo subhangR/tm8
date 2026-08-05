@@ -330,8 +330,37 @@ const MODE_PROFILES: Record<AgentMode, string> = {
   'coordinated-coordinator': 'tm8-coordinated-coordinator',
 };
 
+/**
+ * NARRATION — the clause every mode gets, appended once here rather than
+ * copied into four strings that would drift.
+ *
+ * WHY IT IS NEEDED. tm8 captures provider output `explicit-only` (R3): nothing
+ * an agent prints to its PTY ever reaches the Chat surface, and nothing ever
+ * will by that route. Chat therefore contains exactly what an agent chose to
+ * post and nothing else. The mode instructions above ask for "a milestone, a
+ * result or a blocker" — all end-of-work events — so an agent that follows
+ * them perfectly still leaves Chat empty for the whole time it is working.
+ * Someone watching Chat sees silence while the terminal scrolls, and concludes
+ * the session is broken. It is not: nobody asked it to speak.
+ *
+ * WHAT THIS ASKS FOR, precisely. Short plain-language notes at the points a
+ * reader's model of the work would otherwise go stale — not a transcript.
+ * Narrating every tool call would rebuild the log dump that the Chat surface
+ * exists to avoid, so the instruction names the moments and caps the length
+ * rather than saying "post often".
+ */
+const NARRATION_INSTRUCTION =
+  ' Narrate your work as you go, in the anchor\'s own thread. Nothing you print to ' +
+  'the terminal reaches anyone reading Chat — that surface shows only what you ' +
+  'deliberately post — so a reader watching Chat sees nothing at all until you ' +
+  'finish. Post one or two plain sentences when you start a distinct piece of ' +
+  'work, when you learn something that changes your plan, and when you finish; ' +
+  'say what you are doing and why in ordinary language, not a command log. Do ' +
+  'not narrate individual tool calls: the goal is that someone who reads only ' +
+  'Chat can follow what is happening and why, without ever opening the terminal.';
+
 export function instructionFor(mode: AgentMode): string {
-  return MODE_INSTRUCTIONS[mode] ?? WORKER_IDENTITY_INSTRUCTION;
+  return (MODE_INSTRUCTIONS[mode] ?? WORKER_IDENTITY_INSTRUCTION) + NARRATION_INSTRUCTION;
 }
 
 export function profileFor(mode: AgentMode): string {

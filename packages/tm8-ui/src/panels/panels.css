@@ -2102,6 +2102,15 @@
   flex: 1 1 112px;
   min-width: 0;
 }
+/* The Mode field spans the row: its hint is a sentence, not a token, and
+   half-width would wrap it into an unreadable column. */
+.cv2-root .lq__field--wide { flex: 1 1 100%; }
+.cv2-root .lq__hint {
+  margin-top: 3px;
+  color: var(--pn-ink-3);
+  font-size: 10px;
+  line-height: 1.35;
+}
 .cv2-root .lq__label {
   font-family: var(--pn-mono);
   font-size: 9.5px;

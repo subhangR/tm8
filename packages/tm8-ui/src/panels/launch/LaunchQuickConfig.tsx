@@ -13,10 +13,12 @@ import {
   describeProfile,
   describeTeammateLoad,
   EDGES_NOT_HYDRATED_REASON,
+  LAUNCH_MODES,
   modelsFor,
   newLaunchMutationId,
   type LaunchCapacity,
   type LaunchConfig,
+  type LaunchMode,
   type LaunchProjectOption,
   type ProfileResolution,
   type TeammateLaunchState,
@@ -36,7 +38,7 @@ import { useDismissable } from '../useDismissable';
  * consequential irreversible act (R7 defers undo entirely), so the config you
  * are about to use is visible at the moment you commit it.
  *
- * WHAT THIS SHOWS AND WHAT IT DOES NOT: teammate, model, and the resolved
+ * WHAT THIS SHOWS AND WHAT IT DOES NOT: teammate, model, MODE, and the resolved
  * profile LINE with its provenance — an inherited default must never read as
  * a choice someone made. Everything deeper (profile options with status
  * honesty, M:N projects, refusal cards) lives in the sheet, and the escape
@@ -228,6 +230,38 @@ export function LaunchQuickConfig({
               </option>
             ))}
           </select>
+        </label>
+      </div>
+
+      {/* MODE — how the session works, beside what it runs on.
+          `LaunchConfig.mode` has always existed and always reached spawn, but
+          this surface rendered no control for it, so every launch from a row
+          silently took the `worker` default: picking a Coordinator persona
+          still spawned something that could not coordinate, and nothing on
+          screen said so. The vocabulary is `LAUNCH_MODES` — the same list the
+          full sheet offers, not a second copy that could drift from it.
+
+          The description is rendered rather than hidden in a title attribute
+          because "coordinated-worker" names a spawn topology, not a job, and
+          the difference between the four is the whole decision being made. */}
+      <div className="lq__row">
+        <label className="lq__field lq__field--wide">
+          <span className="lq__label">Mode</span>
+          <select
+            className="lq__select"
+            value={config.mode}
+            data-testid="launch-mode"
+            onChange={(e) => setConfig((c) => ({ ...c, mode: e.target.value as LaunchMode }))}
+          >
+            {LAUNCH_MODES.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <span className="lq__hint" data-testid="launch-mode-hint">
+            {LAUNCH_MODES.find((m) => m.id === config.mode)?.description}
+          </span>
         </label>
       </div>
 
