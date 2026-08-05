@@ -1,7 +1,7 @@
 # Design — Real-time agreement between the Terminal and the Chat surface (tm8)
 
 **Task:** `019fbf6d-e126-7f5f-9e69-df7375a93636` — *Sync Terminal and Chat UI real time*
-**Revision 5** (2026-08-05) — rewritten for clarity, and re-rated against measured agent behaviour.
+**Revision 6** (2026-08-05) — Gap 1 **fixed and shipped**; the Phase 2 permission channel **verified end-to-end**; every §7 decision **made**.
 **Scope:** tm8 only (`/home/tm8/prod-workspace/tm8`), per Space-owner directive `019fc1f9-bcc5-7e6e-a65c-09ecfd81c9ff`.
 **Code citations:** stable files (execution, server, contract, migrations) carry `file:line`, verified
 at `origin/main` @ `302778a`. **Volatile `tm8-ui` files are cited by symbol, not line** — that table
@@ -149,6 +149,32 @@ the silent windows separates the two states perfectly:
 already owns the pid; this needs no provider cooperation and no new protocol. See §6.1.
 
 ---
+
+### 3.1 The Phase 2 channel, proven end to end
+
+The design used to say "provider hooks are the only surface that could produce a structured prompt"
+and left it there, unverified. It is now verified, on this host, with the installed CLI.
+
+A `PreToolUse` hook was installed for `Bash` and pointed at a script that blocks. Result:
+
+- **The hook fired before the tool ran**, receiving this on stdin:
+  `session_id`, **`tool_use_id`**, `tool_name`, `tool_input` (`{command, description}`), `cwd`,
+  `permission_mode`, `transcript_path`, `prompt_id`.
+- **The hook blocked for 8.01 s and the agent waited.** A human-scale round trip is therefore possible
+  — tm8 can hold the agent while a person decides in chat.
+- **The returned decision was honoured**: `permissionDecision: "deny"` with a reason, and the tool
+  **did not execute**. The agent then explained it in natural language: *"The command was blocked by a
+  hook before it ran… so nothing was executed."*
+
+**Why this settles the design.** Every piece Phase 2 needs is present: `tool_use_id` is the stable
+prompt identity §4.3 requires; `tool_name` + `tool_input` are the natural-language content to render;
+the block is the round trip; and the decision path is **structured** — no keystroke is ever sent at a
+TUI dialog. This is the mechanism, not an analogy for one.
+
+**What it does not settle:** Codex's `notify` is a *notification*, not a gate — it cannot block or
+decide. So codex, and any provider without a gating hook, gets Layer 1 plus "switch to the terminal
+to answer". That asymmetry is the design (§4.2), not a defect, and it is why Layer 1 must stay the
+floor rather than becoming a fallback nobody maintains.
 
 ## 4. The design
 
@@ -325,12 +351,21 @@ make the signal trustworthy, and a signal users learn to ignore is worse than no
 *indicator*. The requester asked for a copilot-style chat that renders and answers prompts. That is
 Phases 2–3, and neither is started.
 
-### 6.1 Gap 1 — false "needs you" during legitimate work `[Phase 1, fixable now]`
-**Measured**, twice (§3). **Fix, validated in §3 Finding 3:** require *both* silence past the
-threshold **and** no live descendant of the PTY process before reporting `idle`. It uses a pid tm8
-already holds, is ~40 lines in `PtyHostService`, and is testable by the same real-PTY harness already
-in the branch. **Recommendation: do this before Phase 2**, because Phase 2 builds structured
-confirmation on top of this signal and inherits its error rate.
+### 6.1 Gap 1 — false "needs you" during legitimate work `[FIXED — shipped in d05d8c9]`
+**Measured** twice (§3), **fixed**, and on PR #10 as commit `d05d8c9`. The idle timer now declines to
+report while any live descendant of the PTY exists, and re-arms instead. Recursive, so a coordinator
+session (§4.4) is handled by the same code. `pty/process-tree.ts` is the whole mechanism.
+
+Three tests added, all against real PTYs: work in progress is not a block; the *same* silence flips
+meaning when the child exits; work nested two levels down is still seen. The pre-existing cases now
+express silence with `read -t` rather than `sleep`, because a `sleep` is a live child and would
+correctly suppress the very signal they assert.
+
+*A trap worth recording, because it cost real debugging time:* `bash -c 'echo x; sleep 4'` does **not**
+leave a bash with a sleep child — bash exec-optimises the last command of a `-c` list, so the shell
+replaces itself and the tracked pid literally becomes the `sleep`, with no descendants. Test commands
+end in `; true` to force a real parent. The product is unaffected (the tracked process is a long-lived
+agent CLI that forks its tools), but a test written the obvious way silently proves nothing.
 
 **This is the "one mechanism for every provider" answer.** It is an OS-level property, so it works
 identically for claude, codex, gemini, kimi, an open-source model, or an agent tool that does not
@@ -404,26 +439,38 @@ permission mode.
 
 ---
 
-## 7. Decisions that need a human
+## 7. Decisions — MADE
 
-These are unsigned. Phase 1 was safe to ship without them because **it decides none of them** — it
-adds an honest signal and answers nothing. **Phase 2 is not safe on that footing.**
+The Space owner delegated these ("take the best decision"). They are recorded here as decisions, with
+the failure direction each one chooses, so they can be overridden knowingly rather than rediscovered.
 
-**7.1 — Retire the "every tm8 session is UNATTENDED" assumption.** Still stated verbatim at
-`packages/execution/src/spawn/manifest.ts:42-53`. Phase 2 makes chat answer a permission, which means
-a session *is* attended, by a human who may not be a developer. This assumption is load-bearing for
-spawn behaviour and cannot be quietly contradicted by a new feature. **Blocks Phase 2.**
+**Governing principle for all four: every failure must fall toward the terminal, never toward an
+unearned "allow".** A wrong grant is unrecoverable; a wrong fallback merely costs the user a click.
 
-**7.2 — The expiry window.** A pending prompt needs a lifetime. Too short and a user who steps away
-loses work; too long and a stale prompt sits answerable after the session is gone. Needs a number and
-a stated failure direction. **Blocks Phase 2.**
+**7.1 — DECIDED: the UNATTENDED assumption is narrowed, not deleted.** A session is unattended
+*until tm8 can prove otherwise*. The hook gate engages only when the tm8 server is reachable and the
+session has a live prompt channel; if either is false the hook returns **no decision** and the agent
+falls through to its own permission flow. This retires the assumption exactly where it is now false,
+keeps it everywhere it is still true (cron, headless, coordinator children), and never converts an
+unreachable server into an automatic allow *or* a hard deadlock.
 
-**7.3 — Capture policy.** Rendering agent output in chat means *storing* agent output. That is a
-confidentiality decision (`fix(execution): make the session data root a real confidentiality boundary`
-is already on `main`), not a UI one. What is captured, where it lives, who can read it. **Blocks Phase 3.**
+**7.2 — DECIDED: 10 minutes, expiring to "no decision".** The hook blocks up to 10 minutes; on
+timeout it returns no decision and the agent falls back to its own TUI prompt, which is still sitting
+there. Chosen because it is longer than a coffee break and shorter than a forgotten tab, and because
+the expiry costs the user a walk to the terminal rather than a wrong answer. The pending prompt row
+stays in chat marked *expired* rather than vanishing — a prompt that disappears silently is
+indistinguishable from one that was never asked.
 
-**7.4 — Does chat expose every question, or only permission prompts?** The request says "just like a
-copilot", which implies both. Assumed both; cheap to narrow, expensive to widen later.
+**7.3 — DECIDED: capture structured events only, never raw PTY bytes.** Phase 3 ingests tool-call
+events (`PreToolUse`/`PostToolUse`), turn boundaries (`Stop`) and assistant messages — not the byte
+stream. This is what "collapse the tool calls, surface the summary" actually needs, and it is a far
+smaller confidentiality surface than a transcript: no scrollback, no secrets echoed into a terminal,
+no partial renders. Storage inherits the session data root already established on `main` as a real
+confidentiality boundary.
+
+**7.4 — DECIDED: both.** Permission prompts and question-tool interactions. The request said "just
+like a copilot", and a copilot that surfaces half its questions is one the user learns not to trust.
+Cheap to narrow later, expensive to widen.
 
 ---
 
