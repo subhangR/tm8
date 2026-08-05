@@ -159,6 +159,22 @@ const PROMPT_WARM_READY_TIMEOUT_MS = 1000;
 /** Cap on the shorter output-idle wait taken between writing the body and
  *  pressing Enter (let the composer echo the paste before we commit it). */
 const PROMPT_PRE_SUBMIT_IDLE_TIMEOUT_MS = 1000;
+/** UNCONDITIONAL floor between the last body byte and the submit Enter.
+ *
+ *  The idle wait above is NOT this: it measures silence since the last byte the
+ *  PTY *produced*, and we reach it having just waited for exactly that silence —
+ *  so at the instant we write the body the stream still looks idle and the wait
+ *  returns immediately, putting the Enter microseconds behind the paste. A TUI
+ *  mid-paste absorbs that Enter: the text stays in the composer, unsent, and the
+ *  delivery looks like a silent no-op. Agent Orchestrator's tmux writer pauses
+ *  the same ~300ms after the body and before the trailing Enter for the same
+ *  reason. This floor RUNS FIRST; the idle wait may still extend it. */
+const PROMPT_PRE_SUBMIT_MIN_MS = 300;
+/** Largest single write handed to the PTY. One huge write can be truncated or
+ *  reordered by the tty line discipline, so the body is paced in bounded pieces
+ *  (same 16 KiB bound as the prior-art tmux writer). Split only on UTF-8
+ *  code-point boundaries — a halved multi-byte char is corruption. */
+const PROMPT_WRITE_CHUNK_BYTES = 16 * 1024;
 /** Delay after the FIRST Enter before the first submit verification. Also the
  *  first entry of {@link PROMPT_SUBMIT_BACKOFF_MS}. */
 const PROMPT_VERIFY_MS = 750;
@@ -871,7 +887,7 @@ export class PtyHostService {
 
     // 2) Content framing. Wrap in bracketed paste iff the agent turned it on.
     const framed = this.frameBody(entry, body);
-    if (framed) entry.proc.write(framed);
+    if (framed) this.writeChunked(entry, framed);
 
     // Paste mode never submits — the human presses Enter — so writing the body
     // IS this delivery's whole job; nothing further to verify.
@@ -890,6 +906,25 @@ export class PtyHostService {
       return BRACKETED_PASTE_START + body + BRACKETED_PASTE_END;
     }
     return body;
+  }
+
+  /** Hand `text` to the PTY in writes of at most {@link PROMPT_WRITE_CHUNK_BYTES},
+   *  splitting only between UTF-8 code points so no multi-byte character is cut
+   *  in half. Bodies under the bound take the single write they always did. */
+  private writeChunked(entry: PtyEntry, text: string): void {
+    const buf = Buffer.from(text, 'utf8');
+    if (buf.length <= PROMPT_WRITE_CHUNK_BYTES) {
+      entry.proc.write(text);
+      return;
+    }
+    for (let start = 0; start < buf.length; ) {
+      let end = Math.min(start + PROMPT_WRITE_CHUNK_BYTES, buf.length);
+      // Walk back off any UTF-8 continuation byte (0b10xxxxxx) so the split
+      // lands on a character boundary.
+      while (end > start + 1 && end < buf.length && ((buf[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+      entry.proc.write(buf.subarray(start, end).toString('utf8'));
+      start = end;
+    }
   }
 
   /**
@@ -953,7 +988,13 @@ export class PtyHostService {
     // exactly once and never guess with a second blind Enter.
     const tailToken = this.computeTailToken(body);
 
-    // Let the composer echo the paste before we commit it (short, best-effort).
+    // Let the composer START echoing the paste before we commit it. The floor is
+    // unconditional because the idle wait below cannot supply one: we arrive here
+    // having just waited for output silence, so it observes that same silence and
+    // returns instantly, landing the Enter on top of the paste (see
+    // PROMPT_PRE_SUBMIT_MIN_MS). Only the floor is guaranteed; the idle wait then
+    // extends it while the composer is still redrawing.
+    if (body) await new Promise((resolve) => setTimeout(resolve, PROMPT_PRE_SUBMIT_MIN_MS));
     await this.waitForOutputIdle(entry, PROMPT_IDLE_MS, PROMPT_PRE_SUBMIT_IDLE_TIMEOUT_MS);
     if (!isLive()) return { outcome: 'unknown', reason: 'session_replaced_or_exited' };
 
