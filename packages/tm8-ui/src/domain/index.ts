@@ -40,6 +40,7 @@ export type {
   PulseBinding,
   QueryFilter,
   RouteStrategy,
+  SetStateOutcome,
   SortKey,
   SortSpec,
   StateControl,

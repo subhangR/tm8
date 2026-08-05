@@ -41,7 +41,7 @@ import {
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
-import type { ActionContext } from '../domain/types';
+import type { ActionContext, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
@@ -79,6 +79,13 @@ export interface EntityViewProps {
    * persisted), which is why the dropdowns "started working after a refresh".
    */
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
+  /**
+   * §1.1 mode wiring: the shell holds the layout mode (it is route state) and
+   * this screen passes it through to the panel. Absent ⇒ the panel's local
+   * fallback, exactly as before.
+   */
+  mode?: CollectionMode;
+  onMode?(mode: CollectionMode): void;
 }
 
 /**
@@ -402,6 +409,9 @@ export function EntityView(props: EntityViewProps) {
         <EntityListPanel
           kind={kind}
           rowsFor={data.rowsFor(kind) as never}
+          boardFor={data.boardFor(kind) as never}
+          {...(props.mode !== undefined ? { mode: props.mode } : {})}
+          {...(props.onMode ? { onMode: props.onMode } : {})}
           members={data.members}
           ctx={ctx}
           createSlot={

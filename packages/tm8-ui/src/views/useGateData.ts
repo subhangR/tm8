@@ -57,6 +57,7 @@ import { resolveMenu, type ResolvedMenu } from '../shell/menu-resolve';
 import { toSessionRow } from '../terminal';
 import { terminalActivitySource, useTerminalActivityMap } from '../terminal/activity';
 import { useMessagePulses, type MessagePulse } from '../panels/list/useMessagePulses';
+import type { BoardSnapshot } from '../panels';
 import {
   CORE_CHAT_LAUNCH_PRESENTATION,
   type LaunchCapacity,
@@ -278,6 +279,19 @@ export interface GateData {
   livenessOf: (id: string) => SessionLiveness;
   /** Rows for a (kind, filter) pair — hydrated once, then served from memory. */
   rowsFor: (kind: string) => (filter?: unknown) => readonly EntitySummary[];
+  /**
+   * The BOARD's grouped read for a (kind, filter, groupBy) triple (A2).
+   *
+   * Same `collections.query`, plus `groupBy` — columns are the server's
+   * `CollectionResult.groups`; the client never groups (L3). `undefined`
+   * means in flight (the board renders skeletons). Kept current from the
+   * durable stream: any event re-arms the cached keys, debounced, and the
+   * stale snapshot keeps rendering until the fresh one lands — never a flash
+   * of empty columns.
+   */
+  boardFor: (
+    kind: string,
+  ) => (filter: unknown, groupBy: string) => BoardSnapshot | undefined;
   /**
    * The rail's counters for one kind, or `undefined` when there is no answer
    * yet (not read, or a node that cannot serve them).
@@ -734,6 +748,9 @@ export function useGateData(options: GateOptions): GateData {
     setReady(false);
     setBootError(null);
     setRows({});
+    // A space switch or resync invalidates every grouped read with the rows.
+    setBoards({});
+    pendingBoards.current.clear();
     setMembers([]);
     setViewerActor(null);
     setMenu(resolveMenu(null));
@@ -1217,6 +1234,101 @@ export function useGateData(options: GateOptions): GateData {
     }
   }, [ready, spaceId, seam, pendingTick, absorb]);
 
+  // -- Board reads (A2) -------------------------------------------------------
+  //
+  // Same key-miss-then-drain shape as `rowsFor` above, for the same reason:
+  // requesting from inside render must never dispatch. A separate cache
+  // because the answer is a different SHAPE — the server's groups, not a row
+  // array — and because its refresh rule differs: group membership is
+  // server-computed, so a state change must re-run the grouped read rather
+  // than re-project rows locally (the client never groups, L3).
+  const [boards, setBoards] = useState<Readonly<Record<string, BoardSnapshot>>>({});
+  const pendingBoards = useRef(new Set<string>());
+  const [boardTick, setBoardTick] = useState(0);
+  const boardKeys = useRef<readonly string[]>([]);
+  boardKeys.current = Object.keys(boards);
+
+  const boardFor = useCallback(
+    (kind: string) =>
+      (filter: unknown, groupBy: string): BoardSnapshot | undefined => {
+        const key = `${kind}::${groupBy}::${filter === undefined ? '*' : stableKey(filter)}`;
+        const hit = boards[key];
+        if (hit === undefined && !pendingBoards.current.has(key)) {
+          pendingBoards.current.add(key);
+          queueMicrotask(() => setBoardTick((n) => n + 1));
+        }
+        return hit;
+      },
+    [boards],
+  );
+
+  useEffect(() => {
+    if (!ready || !spaceId || pendingBoards.current.size === 0) return;
+    const keys = [...pendingBoards.current];
+    pendingBoards.current.clear();
+    for (const key of keys) {
+      const [kind, groupBy, filterPart] = key.split('::');
+      const query = {
+        spaceId,
+        kinds: [kind],
+        groupBy,
+        ...(filterPart && filterPart !== '*' ? { filters: JSON.parse(filterPart) } : {}),
+      } as unknown as CollectionQuery;
+      void seam
+        .query(query)
+        .then((result) => {
+          setBoards((current) => ({
+            ...current,
+            [key]: {
+              groups: result.groups ?? [],
+              nextCursor: result.page.nextCursor,
+              // The resolved query names the limit it applied; the honesty
+              // banner needs the number, not a guess.
+              limit: result.query.limit ?? result.page.items.length,
+            },
+          }));
+        })
+        .catch((error: unknown) => {
+          setBoards((current) => ({
+            ...current,
+            [key]: {
+              groups: [],
+              nextCursor: null,
+              limit: 0,
+              error: String((error as { message?: string })?.message ?? error),
+              retry: () => {
+                setBoards(({ [key]: _gone, ...rest }) => rest);
+                pendingBoards.current.add(key);
+                setBoardTick((n) => n + 1);
+              },
+            },
+          }));
+        });
+    }
+  }, [ready, spaceId, seam, boardTick]);
+
+  // Keep the board current from the durable stream, debounced like the
+  // counters read: any event re-arms every cached key. The STALE snapshot
+  // keeps rendering until the fresh one lands — a refetch must never flash
+  // skeletons over a board someone is dragging on.
+  useEffect(() => {
+    if (!spaceId) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = seam.onEvent(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (boardKeys.current.length === 0) return;
+        for (const key of boardKeys.current) pendingBoards.current.add(key);
+        setBoardTick((n) => n + 1);
+      }, COUNTS_DEBOUNCE_MS);
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [seam, spaceId]);
+
   const detailOf = useCallback((id: string) => details[id as EntityId], [details]);
   const connectionsOf = useCallback(
     (id: string) => selectConnectionsOf(id as EntityId)(domain.store.getState()),
@@ -1446,6 +1558,7 @@ export function useGateData(options: GateOptions): GateData {
       liveIds,
       livenessOf,
       rowsFor,
+      boardFor,
       countsFor,
       refreshCounts,
       detailOf,
@@ -1466,7 +1579,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, boardFor, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

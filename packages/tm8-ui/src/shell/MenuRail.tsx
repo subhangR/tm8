@@ -20,6 +20,7 @@
 import { useState } from 'react';
 import type { MenuConfig, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { REASONS } from '../domain';
+import type { CollectionMode } from '../domain';
 import { VIEW_PRESENTATION } from './menu-resolve';
 import { MENU_COLLAPSED, MENU_EXPANDED } from './geometry';
 
@@ -74,7 +75,12 @@ export type KindPresenter = (ref: string) => RefPresentation | null;
 
 export type MenuTarget =
   | { type: 'view'; ref: MenuViewRef }
-  | { type: 'kind'; ref: string }
+  /**
+   * `mode` is the kind screen's LAYOUT — route state the shell holds so the
+   * panel's switcher survives navigation (§1.1). The rail never sets it; it
+   * rides along so switching kinds and switching layout are one target shape.
+   */
+  | { type: 'kind'; ref: string; mode?: CollectionMode }
   | { type: 'entity'; ref: string; kind: string };
 
 export interface ServerRailItem {
