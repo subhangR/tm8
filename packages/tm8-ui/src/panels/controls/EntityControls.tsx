@@ -417,7 +417,15 @@ function RowAssignControl({
    * a menu drawn over it would say "there is nobody to assign" on a node full
    * of members.
    */
-  const roster = props.assignableActors ?? [];
+  // You cannot assign work to a process. `ActorSummary.kind` now honestly
+  // carries run-shaped summaries (a session whose persona is unknown); those
+  // may appear in actor payloads but are never OFFERABLE. The gate is the
+  // registry's own `actorKinds` declaration — no kind literal here (§15.2) —
+  // and it runs BEFORE the emptiness check, so a roster of only runs reads as
+  // "not loaded", never as a menu of processes.
+  const roster = (props.assignableActors ?? []).filter((actor) =>
+    control.actorKinds.includes(actor.kind),
+  );
   if (roster.length === 0) {
     return (
       <DisabledAction

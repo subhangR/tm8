@@ -49,12 +49,27 @@ export type Visibility = 'space' | 'restricted';
 
 export interface ActorSummary {
   id: EntityId;
-  kind: 'member' | 'team_member';
+  /**
+   * `work_session` joined 2026-08-05: most `working_on` edges are sourced from
+   * a RUN, not a person, and the two-value union forced the resolver to mint
+   * them as `{kind:'member', displayName:'Member'}` — a false human. A
+   * session-sourced actor now resolves to its PERSONA (kind `team_member`,
+   * plus `via`) when `participates_in` names one, and is otherwise typed as
+   * what it is. The ONE deliberate non-additive change in the board/people
+   * wave; adjudicated twice independently.
+   */
+  kind: 'member' | 'team_member' | 'work_session';
   displayName: string;
   avatar?: string | null;
   role?: string | null;
   ownerMemberId?: EntityId;       // present for a team_member
   isAgent: boolean;
+  /**
+   * Present when this actor was RESOLVED THROUGH a work_session: the summary
+   * is the persona, and `via.sessionId` is the run it acted through. Additive;
+   * a consumer that ignores it renders the persona and is still truthful.
+   */
+  via?: { sessionId: EntityId };
 }
 
 export interface EntityCounters {
