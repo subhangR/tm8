@@ -155,7 +155,7 @@ describe('what this node is, measured rather than assumed', () => {
       `[g06] ${server.baseUrl} operations=${h.operations} registered=${h.implemented} ` +
         `bind-start ${server.bindStart.files}/${server.bindStart.digest}`,
     );
-    expect(h.operations).toBe(128); // 126 -> 128 (2026-08-04): connected project folder file read and attach.
+    expect(h.operations).toBe(131); // 128 -> 131 (2026-08-05): per-user git credentials.
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

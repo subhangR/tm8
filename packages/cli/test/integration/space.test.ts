@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(128); // 126 -> 128 (2026-08-04): connected project folder file read and attach.
+    expect(health.operations).toBe(131); // 128 -> 131 (2026-08-05): per-user git credentials.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

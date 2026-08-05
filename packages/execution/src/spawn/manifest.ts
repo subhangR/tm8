@@ -25,6 +25,7 @@ import type {
   CommandNetworkPolicy,
   PermissionMode,
   ReasoningEffort,
+  GitCredential,
   SessionLaunchPosture,
   SpawnContext,
   SpawnRequest,
@@ -707,6 +708,69 @@ const SAFE_BASE_ENV_KEYS = [
 ] as const;
 
 /**
+ * The shell function git runs to answer a credential query for github.com.
+ *
+ * IT CONTAINS NO SECRET. It reads `$GH_TOKEN` out of the environment at the
+ * moment git asks, which is why this whole mechanism can be a config VALUE:
+ * the string is safe to appear in a process listing, in `git config --list`,
+ * and in the `envVarNames` record, while the token itself lives only in a
+ * variable the same process already has.
+ *
+ * WHY ENV CONFIG AND NOT A FILE. The obvious implementations both lose: a
+ * `~/.git-credentials` file or a generated askpass script writes the token to
+ * disk, and a `git config --global` write mutates state shared with every other
+ * session on the node — including sessions belonging to a DIFFERENT member,
+ * which is exactly the confusion this feature exists to end. `GIT_CONFIG_*`
+ * env config is per-process, leaves nothing behind when the PTY dies, and is
+ * honoured by every git since 2.31, so it respects the 0700/0600 confidentiality
+ * boundary by never creating a file to protect.
+ *
+ * `test "$1" = get` matters: git also calls helpers with `store` and `erase`,
+ * and a helper that answered those would be asked to persist the credential.
+ * This one silently declines, so nothing is ever written anywhere.
+ */
+const GIT_CREDENTIAL_HELPER =
+  '!f() { test "$1" = get && printf '
+  + '"username=%s\\npassword=%s\\n" "${TM8_GIT_LOGIN:-x-access-token}" "$GH_TOKEN"; }; f';
+
+/**
+ * Put the launching human's git identity into the agent's environment.
+ *
+ * The token lands in `GH_TOKEN`/`GITHUB_TOKEN` — what `gh` and most tooling
+ * read — and git is pointed at it through the helper above. The empty helper
+ * entry that precedes ours is not decoration: an empty value RESETS git's
+ * helper list, so a machine-wide helper the operator configured in
+ * `~/.gitconfig` cannot answer first and hand this session somebody else's
+ * login. That would be the exact failure this feature exists to end, arriving
+ * silently.
+ *
+ * Author identity is set alongside it when the credential carries a login, so
+ * the commits an agent makes are attributed to the human it is acting for
+ * rather than to whatever `user.email` the node's global config happens to
+ * hold. `@users.noreply.github.com` is GitHub's own construction for exactly
+ * this, and avoids inventing an email address for anyone.
+ */
+function applyGitCredential(env: Record<string, string>, credential: GitCredential): void {
+  env.GH_TOKEN = credential.token;
+  env.GITHUB_TOKEN = credential.token;
+  // Non-interactive by construction: a PTY agent has nobody to answer a
+  // username prompt, and a git that blocks on one looks exactly like a hang.
+  env.GIT_TERMINAL_PROMPT = '0';
+  env.GIT_CONFIG_COUNT = '2';
+  env.GIT_CONFIG_KEY_0 = 'credential.https://github.com.helper';
+  env.GIT_CONFIG_VALUE_0 = '';
+  env.GIT_CONFIG_KEY_1 = 'credential.https://github.com.helper';
+  env.GIT_CONFIG_VALUE_1 = GIT_CREDENTIAL_HELPER;
+  if (credential.login) {
+    env.TM8_GIT_LOGIN = credential.login;
+    env.GIT_AUTHOR_NAME = credential.login;
+    env.GIT_COMMITTER_NAME = credential.login;
+    env.GIT_AUTHOR_EMAIL = `${credential.login}@users.noreply.github.com`;
+    env.GIT_COMMITTER_EMAIL = env.GIT_AUTHOR_EMAIL;
+  }
+}
+
+/**
  * Compose the agent's environment.
  *
  * The session id, manifest path, base URL, and session-bound agent credential
@@ -736,6 +800,14 @@ export function composeEnv(
    */
   journalPath?: string,
   agentToken?: string,
+  /**
+   * The launching human's git credential, when they have connected one.
+   *
+   * Read LAST and used ONLY here. The manifest was already composed and is
+   * written to disk without it; `envVarNames` records the NAMES this function
+   * produced, which is what reaches the graph. See `applyGitCredential`.
+   */
+  gitCredential?: GitCredential | null,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -750,6 +822,7 @@ export function composeEnv(
   };
   if (journalPath) env.TM8_JOURNAL_PATH = journalPath;
   if (agentToken) env.TM8_AGENT_TOKEN = agentToken;
+  if (gitCredential) applyGitCredential(env, gitCredential);
 
   for (const key of SAFE_BASE_ENV_KEYS) {
     const value = parentEnv[key];

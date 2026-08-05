@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24",
+  "catalogDigest": "sha256:f243aaaff567f9d3e2a1080fbf713488e004eda2ecb7509220eeb4247baa5420",
   "catalog": {
-    "total": 129,
-    "v1": 127,
+    "total": 132,
+    "v1": 130,
     "reserved": 2,
-    "http": 128,
+    "http": 131,
     "ws": 1,
-    "registerableV1Http": 126,
+    "registerableV1Http": 129,
     "methods": {
-      "GET": 48,
-      "POST": 55,
+      "GET": 49,
+      "POST": 56,
       "PATCH": 10,
-      "DELETE": 8,
+      "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 51,
-      "command": 77,
+      "read": 52,
+      "command": 79,
       "stream": 1
     },
-    "uniqueNames": 129,
-    "uniqueBindings": 129
+    "uniqueNames": 132,
+    "uniqueBindings": 132
   },
   "reservedOperations": [
     "search.query",
@@ -1095,6 +1095,27 @@
         "path": "/v2/auth/session",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "gitCredentials.set",
+        "method": "POST",
+        "path": "/v2/identity/git-credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gitCredentials.status",
+        "method": "GET",
+        "path": "/v2/identity/git-credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "gitCredentials.delete",
+        "method": "DELETE",
+        "path": "/v2/identity/git-credentials",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1307,7 +1328,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 98
+    "unimplementedV1Http": 101
   },
   "schemas": {
     "additive": {
@@ -3604,6 +3625,57 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gitCredentials.set",
+        "noun": "git-credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gitCredentials.set",
+        "intentTags": [
+          "git",
+          "credentials",
+          "set"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gitCredentials.status",
+        "noun": "git-credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gitCredentials.status",
+        "intentTags": [
+          "git",
+          "credentials",
+          "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "gitCredentials.delete",
+        "noun": "git-credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/gitCredentials.delete",
+        "intentTags": [
+          "git",
+          "credentials",
+          "delete"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
