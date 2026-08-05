@@ -398,10 +398,27 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    *     it is still reachable from every tab, which is why it is rendered
    *     here rather than gated on the Content tab.
    *
-   * THE TERMINAL ARCHETYPE KEEPS THE OLD POSITION, and that is structural,
-   * not an exception carved for a kind: a terminal panel owns its full height
-   * below the tabs (user ruling 2026-07-31, "terminal all the way, till the
-   * component bottom"), so there is no band under the tabs to put a row in.
+   * NO ARCHETYPE KEEPS THE OLD POSITION — USER RULING 2026-08-05 (second), on
+   * the SESSION panel: "why is the session still showing that big row with
+   * state and status and all, the task detail panel already implements that,
+   * in a clean way."
+   *
+   * The first pass left the terminal archetype in the stacked `lines` variant
+   * ABOVE the tabs, reasoning that a terminal owns its full height below them
+   * (user ruling 2026-07-31, "terminal all the way, till the component
+   * bottom") and so had no band to sit in. That reasoning protected the wrong
+   * pixels. A session's two controls are BOTH REFUSALS — its state is observed
+   * rather than chosen, and archive is usually not permitted — and `lines`
+   * draws a refusal as a full sentence under its control, so the exemption
+   * spent ~90px printing two apologies ABOVE the canvas where the chip row
+   * spends ~34px BELOW the tabs and puts the same sentences in the tooltip the
+   * chip layout already gives every refused control (`panels.css`: "A REFUSED
+   * CHIP MUST NOT COST THE ROW ITS SECOND DIMENSION"). The terminal came out
+   * SHORTER under the rule that was meant to keep it tall.
+   *
+   * So: one strip, one layout, one position, and no `isTerminal` anywhere in
+   * this decision — which is also the only version of it a seventh archetype
+   * cannot arrive and forget.
    *
    * NOT ON A TOMBSTONE. A deleted entity cannot be edited (the server refuses,
    * and `useTaskSave` already says "restore it before editing"), and its ONE
@@ -415,7 +432,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         row={subjectOf(detail)}
         props={props.controls ?? { kind: detail.kind, ctx: props.ctx }}
         config={config}
-        variant={isTerminal ? 'lines' : 'chips'}
+        variant="chips"
       />
     ) : null;
 
@@ -462,9 +479,6 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         onCommitTitle={(title) => void save.commitNow({ title })}
       />
 
-      {/* The terminal archetype's only possible position; see `strip` above. */}
-      {isTerminal ? strip : null}
-
       {stalePin ? (
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
       ) : null}
@@ -508,10 +522,10 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         onSelect={selectTab}
       />
 
-      {/* The band is gated on the strip, not just on the archetype: a kind with
-          no controls (a doc declares none) would otherwise draw an empty
-          padded row with a hairline under the tabs. */}
-      {strip && !isTerminal ? (
+      {/* The band is gated on the strip alone: a kind with no controls (a doc
+          declares none) would otherwise draw an empty padded row with a
+          hairline under the tabs. No archetype gate — see `strip` above. */}
+      {strip ? (
         <div className="pn-controls" data-testid="panel-controls">
           {strip}
         </div>
