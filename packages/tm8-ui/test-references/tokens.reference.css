@@ -5,7 +5,10 @@
    host app. Dark = warm graphite via [data-theme="dark"] on .cv2-root or any
    ancestor. Status is ALWAYS color + word, never color alone.
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Self-hosted — see fonts.css. This used to be a fonts.googleapis.com @import,
+   which blocked first paint on a third-party round-trip and, offline, silently
+   dropped the whole type system to Georgia/system-ui. */
+@import './fonts.css';
 
 .cv2-root {
   /* --- 1 · paper & ink ---------------------------------------------------- */
