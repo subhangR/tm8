@@ -152,7 +152,11 @@ describe('the panel mounts the real control strip', () => {
     expect(select.dataset.source).toBe('priority');
 
     fireEvent.change(select, { target: { value: 'low' } });
-    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'priority', 'low');
+    // The fourth argument is the control's LABEL, and it is not decoration: a
+    // failure notice is user copy, and titling one with `source` produced
+    // "priority could not be changed" — lowercase mid-sentence. Both values
+    // come off the same registry control, so they cannot disagree.
+    expect(h.onSetValue).toHaveBeenCalledWith(TASK.id, 'priority', 'low', 'Priority');
   });
 
   it('the panel mounts a REAL assignee control, and it writes an EDGE', () => {

@@ -101,7 +101,14 @@ export interface ControlHost {
   onAction?: (ref: ActionRef, entityId: string) => void;
   onSetState?: (entityId: string, next: string, via: ActionRef) => void;
   onArchive?: (ref: ActionRef, entityId: string) => void;
-  onSetValue?: (entityId: string, source: string, next: string, label?: string) => void;
+  /**
+   * `label` rides along beside `source` because a failure notice is USER copy:
+   * `source` is the wire field name, and titling a notice with it produced
+   * "priority could not be changed" — lowercase mid-sentence. Both come off the
+   * same registry `ValueControl`, whose `label` is required, so it is required
+   * here too; an optional fourth argument would let a host silently drop it.
+   */
+  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
 }
