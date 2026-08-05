@@ -1,10 +1,11 @@
-/* Collab V2 shell — rails, center host, panel stack. Tokens only (--pn-*). */
+/* Collab V2 shell — Aurora Glass rails, center host, panel stack.
+   Tokens only (--pn-* / --grad-* / --glass-*). */
 
 .cv2-shell {
   display: flex;
   height: 100%;
   min-height: 0;
-  background: var(--pn-paper);
+  background: transparent; /* let the .cv2-root aurora canvas show through */
   color: var(--pn-ink);
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-body);
@@ -25,12 +26,14 @@
 
 .cv2-icon { flex: none; }
 
-/* --- Icon rail ---------------------------------------------------------------- */
+/* --- Icon rail (structural glass) --------------------------------------------- */
 .cv2-iconrail {
   width: 56px;
   flex: none;
   border-right: 1px solid var(--pn-line);
-  background: var(--pn-paper);
+  background: var(--pn-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -39,11 +42,15 @@
 }
 .cv2-iconrail__mark {
   font-family: var(--pn-mono);
-  color: var(--pn-brand);
   font-weight: 700;
   font-size: 15px;
   margin-bottom: var(--pn-space-2);
   user-select: none;
+  /* brand mark = gradient text (.t-gradient recipe inline) */
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .cv2-iconrail__spacer { flex: 1; }
 .cv2-iconrail__tile {
@@ -62,13 +69,16 @@
   justify-content: center;
   cursor: pointer;
   transition: background var(--pn-dur-fast) var(--pn-ease-standard),
-              color var(--pn-dur-fast) var(--pn-ease-standard);
+              color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-iconrail__tile:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-iconrail__tile:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-iconrail__tile[data-active] {
-  background: var(--pn-active);
-  border-color: var(--pn-line-2);
-  color: var(--pn-ink);
+  background: var(--grad-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.30);
+  color: var(--pn-brand);
+  box-shadow: var(--glow-brand-sm);
 }
 .cv2-iconrail__tile--ghost { border-color: transparent; }
 .cv2-iconrail__marker {
@@ -78,7 +88,8 @@
   bottom: 8px;
   width: 3px;
   border-radius: 2px;
-  background: var(--pn-brand);
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand-sm);
 }
 .cv2-iconrail__dot {
   position: absolute;
@@ -87,15 +98,18 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--pn-brand);
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand-sm);
 }
 
-/* --- Left rail ---------------------------------------------------------------- */
+/* --- Left rail (structural glass) ---------------------------------------------- */
 .cv2-leftrail {
   width: 232px;
   flex: none;
   border-right: 1px solid var(--pn-line);
   background: var(--pn-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -143,9 +157,17 @@
   font-size: var(--pn-fs-sm);
   text-align: left;
   cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-railitem:hover { background: var(--pn-hover); color: var(--pn-ink); }
-.cv2-railitem[data-active] { background: var(--pn-active); color: var(--pn-ink); font-weight: 600; }
+.cv2-railitem:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-railitem[data-active] {
+  background: var(--grad-brand-soft);
+  color: var(--pn-ink);
+  font-weight: 600;
+  box-shadow: var(--glow-brand-sm);
+}
 .cv2-railitem[data-unread] { color: var(--pn-ink); font-weight: 600; }
 .cv2-railitem__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv2-railitem__badge {
@@ -166,7 +188,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--pn-paper);
+  background: transparent; /* aurora shows through; views bring their own glass */
   overflow-y: auto;
 }
 .cv2-center--empty { align-items: center; justify-content: center; }
@@ -177,6 +199,8 @@
   padding: var(--pn-space-5) var(--pn-space-6) var(--pn-space-4);
   border-bottom: 1px solid var(--pn-line);
   background: var(--pn-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
 }
 .cv2-placeholder__h1 {
   font-family: var(--pn-serif);
@@ -193,17 +217,20 @@
   align-items: center;
   gap: var(--pn-space-2);
   width: 100%;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-md);
   padding: 9px 13px;
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
   font-family: inherit;
   font-size: var(--pn-fs-sm);
   text-align: left;
   cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.cv2-placeholder__row:hover { border-color: var(--pn-line-2); box-shadow: var(--pn-sh-md); }
+.cv2-placeholder__row:hover { border-color: var(--pn-line-2); box-shadow: var(--pn-sh-md), var(--glass-highlight); }
+.cv2-placeholder__row:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-placeholder__kind {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
@@ -213,7 +240,7 @@
 .cv2-placeholder__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .cv2-placeholder__hint { color: var(--pn-ink-3); font-size: var(--pn-fs-label); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 
-/* --- Panels ------------------------------------------------------------------- */
+/* --- Panels (glass) ------------------------------------------------------------ */
 .cv2-panelstack { position: relative; display: flex; flex: none; }
 .cv2-panelstack__shim {
   position: absolute;
@@ -231,6 +258,8 @@
   min-width: 0;
   border-left: 1px solid var(--pn-line);
   background: var(--pn-surface);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  backdrop-filter: blur(var(--glass-blur-strong));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -264,6 +293,7 @@
   cursor: pointer;
 }
 .cv2-panel__crumb:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-panel__crumb:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-panel__crumb[data-active] { color: var(--pn-ink); font-weight: 600; cursor: default; }
 .cv2-panel__chromespacer { flex: 1; }
 .cv2-panel__warn {
@@ -275,3 +305,8 @@
 .cv2-panel__placeholder { display: flex; flex-direction: column; gap: var(--pn-space-2); }
 .cv2-panel__placeholder-title { font-weight: 700; font-size: var(--pn-fs-title); }
 .cv2-panel__placeholder-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Respect reduced motion: drop panel slide. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-panel--stacked { animation: none; }
+}
