@@ -617,6 +617,23 @@
   min-height: 0;
   min-width: 0;
 }
+/* A DOCKED PANEL OWNS ITS COLUMN. The list panel sits in this flex column at
+   `flex: 0 1 auto`, so it sized to its content: measured at 1440x900 it was
+   394px tall inside an 857px column, ending at y=437 with ~460px of bare
+   surface beneath a floating rounded card — the Sessions column stopped at
+   y=305. It read as a half-drawn screen rather than a panel with room spare.
+
+   Scoped to the docked columns ON PURPOSE. The same panel components are used
+   by the panel stack, the peek and the Z4 host, where several panels share one
+   flex column and stretching them would be wrong. Only the docked case fills,
+   so the list gets the whole column for its scroll area and the panel's own
+   `3 open · 0 done · 1 archived` footer lands at the bottom of the column,
+   where a status line belongs. */
+.cv2-root .shell-ws__side-content > .lp,
+.cv2-root .shell-ws__side-content > .pn-panel {
+  flex: 1;
+  min-height: 0;
+}
 .cv2-root .shell-ws__gap {
   /* The 8px gap IS the resize-handle track (WLT §6). */
   position: relative;
@@ -843,13 +860,22 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 64px 24px;
+  /* Was 64px top. This pane is 873px tall at 1440x900 and held ~350px of
+     content, so the top inset was buying nothing but a longer reach to the
+     first row. 28px still separates it from the panel edge. */
+  padding: 28px 24px 24px;
   min-height: 0;
   overflow-y: auto;
 }
 .cv2-root .shell-empty__inner {
   width: 100%;
-  max-width: 520px;
+  /* Was max-width:520px inside a 625px column. A 520px measure is the right
+     call for PROSE — it is the wrong one for a status roster, which is scanned
+     down a column of names, not read across. Capping it left ~100px of the
+     centre unused on every window and forced the groups into one long stack.
+     1040px lets two group columns sit side by side on a wide window without
+     the rows themselves ever growing past a scannable width. */
+  max-width: 1040px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -865,9 +891,27 @@
   margin: 0;
 }
 .cv2-root .shell-empty__groups {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  /* Was a single flex column, so four status groups of one to three rows each
+     stacked into one narrow ribbon down the left of a 625px pane. They are
+     independent groups, not a sequence, so nothing was gained by the stack and
+     the pane read as empty.
+
+     auto-fit rather than a fixed count: on a narrow centre (or with the side
+     panels dragged wide) this collapses back to one column on its own — no
+     media query, and it stays right at every drag position of the splitters.
+
+     THE 360px FLOOR IS MEASURED, NOT CHOSEN. At 240px it truncated: the centre
+     is 568px wide, so two columns left each row 246px and
+     `scout · stale — node restarted · claude-sonnet-5 · record: running`
+     lost its tail mid-word. A row needs ~360px to carry name, status word and
+     agent. At the default 1440x900 this therefore resolves to ONE column and
+     changes nothing — it earns its keep only when the centre is genuinely wide
+     (side panels collapsed, or a large display). Do not lower it to make the
+     two-column layout appear at 1440; that trade is legibility for symmetry. */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  align-items: start;
+  gap: 12px 28px;
   margin-bottom: 4px;
 }
 .cv2-root .shell-empty__group {
