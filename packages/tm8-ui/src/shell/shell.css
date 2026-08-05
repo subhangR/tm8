@@ -155,6 +155,15 @@
    T0-1 canvas still draws is RETIRED — theme's home is the account menu. */
 
 /* --- Menu rail (T1-1 grammar, T0-1 footers) ------------------------------ */
+
+/* Kept HERE rather than in tokens.css: this is the rail scroller's own edge
+   shadow, not a palette entry, and tokens.css is under a byte-identity guard
+   whose twin should move only for genuine design-system changes. Warm, to
+   match --pn-sh-*; inverted below for dark. */
+.cv2-root { --pn-rail-fade: rgba(40, 34, 24, 0.16); }
+.cv2-root[data-theme='dark'],
+[data-theme='dark'] .cv2-root { --pn-rail-fade: rgba(0, 0, 0, 0.5); }
+
 .cv2-root .shell-rail {
   flex: none;
   background: var(--pn-surface);
@@ -169,6 +178,32 @@
   /* Floored, per L4: this scroller may shrink, but never below one row. */
   min-height: 34px;
   padding: 8px 0 4px;
+
+  /* SCROLL AFFORDANCE, and it is a correctness fix rather than a flourish.
+     Measured at 1024x768: this scroller overflows by 75px and `Settings` sits
+     entirely below the fold. Overlay scrollbars stay invisible until a wheel
+     event, and the last row clips mid-height, so the rail reads as a COMPLETE
+     list that happens to end at `lounge`. Nothing told the viewer to scroll.
+
+     The four layers are the classic pair-of-pairs: the two `local` gradients
+     scroll WITH the content and are painted in the rail's own surface colour,
+     so at each extreme they cover the matching `scroll` shadow underneath.
+     The shadow is therefore visible exactly when there IS more list in that
+     direction — no scroll listener, no ResizeObserver, and it stays honest
+     when the menu gains or loses a row at runtime. */
+  background:
+    linear-gradient(var(--pn-surface) 30%, rgba(255, 255, 255, 0)) top / 100% 16px no-repeat local,
+    linear-gradient(rgba(255, 255, 255, 0), var(--pn-surface) 70%) bottom / 100% 16px no-repeat local,
+    radial-gradient(farthest-side at 50% 0, var(--pn-rail-fade), rgba(255, 255, 255, 0)) top / 100% 8px no-repeat scroll,
+    radial-gradient(farthest-side at 50% 100%, var(--pn-rail-fade), rgba(255, 255, 255, 0)) bottom / 100% 8px no-repeat scroll;
+  /* Asks for a slim visible gutter on top of the fade. UNVERIFIED HERE, and
+     deliberately not claimed as fixed: the headless Firefox this was checked
+     in computes `scrollbar-width: none` regardless (overlay scrollbars are
+     forced in its profile), so the capture proves the FADE and says nothing
+     about the gutter. Kept because it is correct where the platform honours
+     it, and because the fade alone already carries the affordance. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--pn-line-2) transparent;
 }
 .cv2-root .shell-rail__servers { padding: 0 0 4px; }
 .cv2-root .shell-rail__server {
@@ -221,7 +256,13 @@
 .cv2-root .shell-rail__server-caret { flex: none; color: var(--pn-ink-4); font-size: 9px; }
 .cv2-root .shell-rail__server-divider { height: 1px; margin: 5px 12px 1px; background: var(--pn-line); }
 .cv2-root .shell-rail__header {
-  padding: 12px 12px 4px;
+  /* Was 12px top. Six group headers (HOME · WORKSPACE · TRACKING · COLLAB ·
+     VOICE · SETTINGS) label fourteen rows, so header chrome was costing more
+     vertical space per group than the rows it introduced — the direct reason
+     `Settings` fell 75px below the fold at 1024x768. 8px still separates the
+     groups clearly against a 12.5px row label; the eyebrow's .12em tracking
+     is what actually does the grouping work, not the whitespace. */
+  padding: 8px 12px 3px;
   /* .kit-eyebrow supplies the mono/600/.12em uppercase face. */
 }
 .cv2-root .shell-rail__group:first-child .shell-rail__header {
