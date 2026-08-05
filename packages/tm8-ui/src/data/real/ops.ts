@@ -40,6 +40,7 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type CreateEdgeInput,
   type CreateEntityInput,
   type CreateSpaceInput,
   type CreateSpaceResult,
@@ -90,7 +91,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts } from '../seam';
+import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -244,8 +245,23 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<Page<EntitySummary>>('entities.children', { params: { id }, query: pageQuery(opts) });
     },
 
-    connections(id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>> {
-      return http.call<Page<EdgeView>>('entities.connections', { params: { id }, query: pageQuery(opts) });
+    /**
+     * `types` travels as the PLURAL `?types=a,b` param: the server reads
+     * `type` via `getAll` (repeated keys) and `types` by splitting on commas
+     * (`entities-commands-tracking.ts:448`), and `QueryParams` is one value
+     * per key — so the comma form is the one this builder can express.
+     * Omitted keys are dropped by `http.ts`, leaving the unfiltered call
+     * byte-identical to what it sent before.
+     */
+    connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>> {
+      return http.call<Page<EdgeView>>('entities.connections', {
+        params: { id },
+        query: {
+          ...pageQuery(opts),
+          types: opts?.types && opts.types.length > 0 ? opts.types.join(',') : undefined,
+          direction: opts?.direction,
+        },
+      });
     },
 
     activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>> {
@@ -419,6 +435,21 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     work(id: EntityId, input: WorkInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.commands.work', { params: { id }, body: input });
+    },
+
+    createEdge(input: CreateEdgeInput): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.create', { body: input });
+    },
+
+    /**
+     * Same DELETE-carries-a-body rule as `deleteEntity`: the server binds
+     * `RequiredCommandContextSchema` to `edges.delete` (input-schemas.ts:165)
+     * and refuses without a `clientMutationId`. An omitted context reaches the
+     * node as `{}` and earns an honest `invalid_input` rather than a
+     * synthesized id the caller could never reconcile.
+     */
+    deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult> {
+      return http.call<CommandResult>('edges.delete', { params: { edgeId }, body: ctx ?? {} });
     },
 
     fileUploadInit(input: FileUploadInitInput): Promise<FileUploadGrant> {

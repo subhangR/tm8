@@ -35,12 +35,13 @@ import './subtree-body.css';
  * GenericBody idiom — structural questions about the shape in hand, never
  * "is this a task?" — and they are what keeps §15.2's guard green.
  *
- * ACCEPTANCE was the A2 deferral (D30, D48.2) and is now drawn: the criteria
- * ride in `content.acceptanceCriteria`, which the detail read has always
- * hydrated, so the panel was showing a task with none of the conditions that
- * decide whether it is finished. It is still a STRUCTURAL read — a content
- * shape that carries no criteria member gets no region, which is how the
- * archetype stays free of "is this a task?".
+ * ACCEPTANCE was the A2 deferral (D30, D48.2) and is now drawn — the reversal
+ * is RULED, in D73, not taken in a render file. The criteria ride in
+ * `content.acceptanceCriteria`, which the detail read has always hydrated, so
+ * the panel was showing a task with none of the conditions that decide whether
+ * it is finished. It is still a STRUCTURAL read — a content shape that carries
+ * no criteria member gets no region, which is how the archetype stays free of
+ * "is this a task?".
  *
  * WHAT IT DOES NOT DRAW, and why that is a ruling rather than an omission:
  *   · A `＋ add child…` that silently does nothing — R7: it renders disabled
@@ -77,12 +78,26 @@ export interface SubtreeBodyProps {
   /** Staged criteria; undefined means use the persisted ones. */
   criteriaDraft?: readonly AcceptanceCriterion[];
   /**
-   * Handed the WHOLE next array, never one criterion. `acceptanceCriteria` is
-   * patched as a unit, so a caller given a single flip would have to rebuild
-   * the array from a copy of the list — and a rebuild from a stale copy is how
-   * one tick silently drops another writer's.
+   * Handed the WHOLE next array, never one criterion — a SHAPE choice, and
+   * NOT a concurrency defence. An earlier version of this comment claimed it
+   * was one ("a caller given a single flip would rebuild from a stale copy");
+   * that was false. `acceptanceCriteria` is patched as a unit, so the array is
+   * rebuilt either way, and the array rebuilt HERE is `criteriaDraft ??
+   * persisted` — the currently-RENDERED list, which may already be stale.
+   * Handing it whole only moves where the stale copy is read; it centralises
+   * the rebuild, which is worth doing, and prevents nothing.
+   *
+   * THE ACTUAL DEFENCE is `useTaskSave`'s `expectedVersion`, captured at the
+   * FIRST edit and never re-read at save time: a write that lands while the
+   * boxes are being ticked becomes a 409 the user answers, not a silent
+   * overwrite. See that hook's `overwrite()` for the collection-specific edge
+   * it refuses.
    */
   onCriteriaChange?: (next: AcceptanceCriterion[]) => void;
+  /**
+   * A reason present WINS over a handler. Passing both resolves to REFUSAL —
+   * never a live, clickable box wearing a refusal tooltip.
+   */
   criteriaUnavailableReason?: string;
 }
 
@@ -174,8 +189,33 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
 
   const cells: { key: string; label: string; value: ReactNode }[] = [];
 
+  /**
+   * Fields the CONTROL STRIP now owns, and which this grid must therefore not
+   * draw a second time.
+   *
+   * This is the D67 amendment's rule applied to the panel. The tile used to
+   * carry static status / priority / assignee chips ABOVE a working control
+   * strip, and the reported bug was "the buttons are broken" when in truth the
+   * things that looked like buttons were `<span>`s and the real control was
+   * elsewhere. The panel had the identical shape: a read-only `PRIORITY: HIGH`
+   * tag and an avatar row in this grid. Now that the strip is mounted above,
+   * repeating them here would rebuild that exact confusion.
+   *
+   * Derived from the SAME registry declarations the strip reads, so the grid
+   * cannot fall out of step with it — a kind with no `assignControl` keeps its
+   * read-only assignee row, because for that kind the row is the only truth
+   * available and suppressing it would hide a fact rather than de-duplicate
+   * one.
+   */
+  const controlled = new Set<string>(
+    [
+      ...(config.list.valueControls ?? []).map((c) => c.source),
+      ...(config.list.assignControl ? [config.list.assignControl.source] : []),
+    ],
+  );
+
   const assignees = Array.isArray(state.assignees) ? (state.assignees as EntitySummary['createdBy'][]) : [];
-  if (assignees.length > 0) {
+  if (assignees.length > 0 && !controlled.has('assignees')) {
     cells.push({
       key: 'assignees',
       label: assignees.length > 1 ? 'Assignees' : 'Assignee',
@@ -194,7 +234,7 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
     });
   }
 
-  if (typeof state.priority === 'string' && state.priority.length > 0) {
+  if (typeof state.priority === 'string' && state.priority.length > 0 && !controlled.has('priority')) {
     cells.push({
       key: 'priority',
       label: 'Priority',
@@ -344,6 +384,13 @@ function AcceptanceSection({
   if (!Array.isArray(persisted)) return null;
   const criteria = (draft ?? persisted) as readonly AcceptanceCriterion[];
   const completed = criteria.filter((c) => c.done).length;
+  /*
+   * A REASON WINS OVER A HANDLER. `disabled={!onChange}` alone left a caller
+   * that passed BOTH with live, clickable boxes wearing a refusal tooltip —
+   * the control saying one thing and doing another. Both arms of the refusal
+   * are now the same decision.
+   */
+  const editable = onChange != null && unavailableReason == null;
 
   return (
     <section className="sb-section" data-testid="acceptance-section">
@@ -354,25 +401,8 @@ function AcceptanceSection({
         <p className="pn-section__empty">No acceptance criteria on this yet.</p>
       ) : (
         <div className="sb-rows">
-          {criteria.map((criterion, index) => (
-            <label
-              className="sb-criterion"
-              key={criterion.id || `criterion-${index}`}
-              data-testid="acceptance-row"
-              data-done={criterion.done ? 'true' : 'false'}
-            >
-              <input
-                type="checkbox"
-                className="sb-criterion__box"
-                checked={criterion.done}
-                disabled={!onChange}
-                title={unavailableReason}
-                onChange={(event) =>
-                  onChange?.(
-                    criteria.map((c, i) => (i === index ? { ...c, done: event.target.checked } : c)),
-                  )
-                }
-              />
+          {criteria.map((criterion, index) => {
+            const text = (
               <span
                 className={
                   criterion.done ? 'sb-criterion__text sb-criterion__text--done' : 'sb-criterion__text'
@@ -380,12 +410,75 @@ function AcceptanceSection({
               >
                 {criterion.text}
               </span>
-            </label>
-          ))}
+            );
+            const rowProps = {
+              className: 'sb-criterion',
+              'data-testid': 'acceptance-row',
+              'data-done': criterion.done ? 'true' : 'false',
+            } as const;
+            const key = criterion.id || `criterion-${index}`;
+
+            /*
+             * REFUSAL USES THE HONESTY VOCABULARY, not a native `disabled`
+             * plus a `title`. DisabledWithReason rules the native attribute
+             * out in terms: a natively disabled input is removed from the tab
+             * order, so a keyboard-only user can never reach it and therefore
+             * can never learn WHY — which defeats the whole treatment. The
+             * same file's `add child…` control two regions down already does
+             * this correctly; this region was reusing its cause—remedy STRING
+             * and dropping it into a tooltip.
+             */
+            if (!editable) {
+              return (
+                <div key={key} {...rowProps}>
+                  <DisabledIconControl
+                    label={criterion.text}
+                    glyph={criterion.done ? '☑' : '☐'}
+                    reason={unavailableReason ? toReason(unavailableReason) : NOT_WIRED_REASON}
+                  />
+                  {text}
+                </div>
+              );
+            }
+
+            return (
+              <label key={key} {...rowProps}>
+                <input
+                  type="checkbox"
+                  className="sb-criterion__box"
+                  checked={criterion.done}
+                  onChange={(event) =>
+                    onChange(
+                      criteria.map((c, i) => (i === index ? withDone(c, event.target.checked) : c)),
+                    )
+                  }
+                />
+                {text}
+              </label>
+            );
+          })}
         </div>
       )}
     </section>
   );
+}
+
+/**
+ * FLIPPING ONE CRITERION, with its PROVENANCE kept truthful.
+ *
+ * `{...criterion, done}` — what this did — is wrong at the un-tick edge:
+ * `doneBy`/`doneAt` survive verbatim beside `done:false`, so the record reads
+ * "not done, completed by forge at 09:14". The server normalizer
+ * (`entities-commands-tracking.ts:acceptanceCriteria`) passes both through
+ * verbatim too, so nothing downstream corrects it. Un-ticking therefore DROPS
+ * the stamp here.
+ *
+ * SETTING it on a tick is deliberately NOT done here: this client knows
+ * neither the acting member id at this depth nor a clock anyone should trust.
+ * That stamp belongs to the server, which has both, and is applied there.
+ */
+function withDone(criterion: AcceptanceCriterion, done: boolean): AcceptanceCriterion {
+  return done ? { ...criterion, done: true } : { id: criterion.id, text: criterion.text, done: false };
 }
 
 // ---------------------------------------------------------------------------

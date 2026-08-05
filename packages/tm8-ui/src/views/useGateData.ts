@@ -290,6 +290,20 @@ export interface GateData {
   /** Re-read the counters now — after a local action that changed what is seen. */
   refreshCounts: () => void;
   detailOf: (id: string) => EntityDetail | undefined;
+  /**
+   * Re-read one entity's detail NOW, whether or not it is already cached — for
+   * a local write whose effect lives on the detail rather than in a counter.
+   *
+   * The attachment strip is the case that named it: an `attached_to` edge lands
+   * on `detail.connections`, nothing about it bumps a counter, and the panel
+   * that must show it is by definition the one whose detail is already cached.
+   * `pull` cannot serve that (see its docblock) — it would early-return.
+   *
+   * REQUIRED, not optional. A host that forgets it draws a control that appears
+   * to work and changes nothing, which is the defect this replaced; making it
+   * required means the typechecker says so at the mount site.
+   */
+  refetchDetail: (id: string) => void;
   /** Live edge projection for a hydrated entity; unlike detail.connections it advances with events. */
   connectionsOf: (id: string) => import('@tm8/contract').Connections | undefined;
   /** Pool byte-activity, scripted in Phase 1 (§9.2 stub) — NEVER liveness. */
@@ -1225,6 +1239,17 @@ export function useGateData(options: GateOptions): GateData {
     [domain],
   );
 
+  /**
+   * FILL a panel's cache — never invalidate it. Safe to call from render, and
+   * `renderPanel` does exactly that, which is why the early return below is
+   * load-bearing rather than an optimisation.
+   *
+   * THE COROLLARY, stated because it was missed once: `pull` CANNOT refresh an
+   * open panel. Its detail is cached (that is why it renders) and an edge
+   * change bumps no message counter, so both halves read fresh and this
+   * returns without a request. A local write that must be re-read goes through
+   * `refetchDetail`.
+   */
   const pull = useCallback(
     async (id: string) => {
       const state = domain.store.getState();
@@ -1312,6 +1337,46 @@ export function useGateData(options: GateOptions): GateData {
     [seam, domain],
   );
 
+  /**
+   * RE-READ ONE ANCHOR'S DETAIL, UNCONDITIONALLY — the invalidating half that
+   * `pull` deliberately is not.
+   *
+   * WHY IT CANNOT BE `pull`. `pull` is a cache-FILL primitive: its `needsDetail`
+   * is `details[id] === undefined && !pulledDetails.has(id)`, and it early-returns
+   * when neither half is stale. AN OPEN PANEL ALWAYS HAS ITS DETAIL CACHED —
+   * that is why it renders at all — so `pull(id)` on an open panel is a no-op by
+   * construction. That early return is load-bearing (`renderPanel` calls `pull`
+   * FROM RENDER, so widening its staleness rule is a request loop against the
+   * node), which is why the invalidating path is a SECOND verb rather than a
+   * relaxed first one.
+   *
+   * WHAT MAKES IT SAFE TO BE UNCONDITIONAL: this is only ever called from an
+   * EVENT HANDLER for a write that already landed — an attachment uploaded, a
+   * link cut. One completed mutation, one read. It is never called from render,
+   * so there is no loop to bound and no budget to spend.
+   *
+   * NOT COALESCED, deliberately. Two uploads landing 200ms apart are two
+   * different facts, and handing the second one the first one's in-flight
+   * promise would answer it with a read that predates its own edge — the exact
+   * class of staleness this function exists to end.
+   *
+   * DETAIL ONLY. An attachment edge does not touch the thread, and re-reading
+   * messages here would spend a round-trip on data that did not change.
+   */
+  const refetchDetail = useCallback(
+    async (id: string) => {
+      const detail = await seam.entity(id as never).catch(() => undefined);
+      if (!detail) return;
+      // The id is now genuinely cached, so `pull` may keep early-returning for
+      // it, and a read that ANSWERED clears its own failure record — the same
+      // rule `pull` follows for the same reason.
+      pulledDetails.current.add(id);
+      readFailures.current.delete(readKey('d', id));
+      domain.store.getState().ingestDetail(detail);
+    },
+    [seam, domain],
+  );
+
   /** Post, then re-read THAT anchor's thread so the echo is visible truth. */
   const postAndRefresh = useCallback(
     async (input: PostMessageInput) => {
@@ -1384,6 +1449,7 @@ export function useGateData(options: GateOptions): GateData {
       countsFor,
       refreshCounts,
       detailOf,
+      refetchDetail: (id: string) => void refetchDetail(id),
       connectionsOf,
       activity,
       messagePulses,
@@ -1400,7 +1466,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

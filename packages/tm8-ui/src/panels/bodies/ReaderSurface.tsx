@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
-import { DocSplitView, EditEntryControl, useDocSave, type DocCommands } from '../../doc-edit';
+import {
+  DocSplitView,
+  EditEntryControl,
+  useDocSave,
+  type DocAttach,
+  type DocCommands,
+} from '../../doc-edit';
+import type { MarkdownFileHref } from '../../kit';
 import { ReaderBody } from './ReaderBody';
 
 /**
@@ -55,6 +62,20 @@ export interface ReaderSurfaceProps {
   commands?: Partial<DocCommands> | null;
   onSaved?: (result: CommandResult) => void;
   onReloadDetail?: (current: EntityDetail) => void;
+  /**
+   * Resolves `![](tm8://file/<id>)` to bytes. Handed to BOTH stances, and that
+   * is the point: a preview that resolves images differently from the reader is
+   * not a preview. Absent ⇒ every internal image states itself in both places
+   * rather than one of them guessing a URL.
+   */
+  fileHref?: MarkdownFileHref;
+  /**
+   * Uploads a file against this document and writes its reference at the
+   * caret. Absent ⇒ the editor's insert control renders disabled-with-reason.
+   */
+  attach?: DocAttach;
+  /** An upload landed — the host refetches so the strip shows the new edge. */
+  onAttached?: () => void;
 }
 
 export function ReaderSurface(props: ReaderSurfaceProps) {
@@ -114,6 +135,9 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
         <DocSplitView
           save={save}
           detail={detail}
+          fileHref={props.fileHref}
+          attach={props.attach}
+          onAttached={props.onAttached}
           onCollapse={save.dirty ? undefined : () => setEditing(false)}
           collapseRefusal={{
             cause: 'This document has unsaved changes',
@@ -140,6 +164,7 @@ export function ReaderSurface(props: ReaderSurfaceProps) {
           blocks={props.blocks}
           historyUnavailableReason={props.historyUnavailableReason}
           onOpenEntity={onOpenEntity}
+          fileHref={props.fileHref}
         />
       </div>
     </div>

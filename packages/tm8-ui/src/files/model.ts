@@ -145,6 +145,18 @@ export interface FileRow {
   mime: string;
   sizeBytes: number | null;
   /**
+   * The `attached_to` edge this row was READ THROUGH, when it was read through
+   * one — the only handle `edges.delete` accepts, and therefore the only thing
+   * that makes a row detachable.
+   *
+   * `null` is the common and correct case, not a hole: a row built from a file
+   * ENTITY (the files gallery) or from a MESSAGE attachment was not reached by
+   * an edge at all, so there is no link to cut and the strip draws no detach
+   * control for it. Defaulting this to some edge would offer to remove
+   * something the user is not looking at.
+   */
+  edgeId: string | null;
+  /**
    * Who attached it and when — the oracle's "340K · @ada · 2m" meta (L84).
    * The ACTOR is carried whole, not flattened to a name, because L125 makes
    * provenance visible: "a session's uploads use the same chips with agent
@@ -193,6 +205,7 @@ export function rowFromEntity(entity: EntitySummary): FileRow | null {
     },
     attributedAt: entity.createdAt,
     sourceMissing: false,
+    edgeId: null,
   };
 }
 
@@ -218,6 +231,7 @@ export function rowFromAttachment(
     },
     attributedAt: message.createdAt,
     sourceMissing: false,
+    edgeId: null,
   };
 }
 
@@ -252,6 +266,21 @@ export function enrich(rows: readonly FileRow[], entities: readonly EntitySummar
  */
 export const ATTACHED_TO = 'attached_to';
 
+/**
+ * READS THE DETAIL'S OWN SNAPSHOT, and deliberately NOT the store's live
+ * `selectConnectionsOf` projection — which is the obvious-looking fix and is
+ * wrong. That projection is built from the normalized edge family, and
+ * `ingestDetail`/`ingestEdges` only ever UPSERT into it: nothing removes an
+ * edge that a later read no longer reports. So the live view can gain a
+ * detached file's edge and never lose it, and a removed attachment would stay
+ * on screen forever. Removal only reaches it through an explicit
+ * `edge.deleted` event, which a local detach cannot be relied on to produce.
+ *
+ * `detail.connections` is a snapshot, so it is only as fresh as the last read —
+ * which is exactly why an attachment change must be followed by a real refetch
+ * of the anchor (`useGateData`'s `refetchDetail`). Snapshot plus invalidation
+ * is correct in BOTH directions; the live projection is correct in only one.
+ */
 export function attachedFiles(detail: EntityDetail): FileRow[] {
   const groups = [...detail.connections.incoming, ...detail.connections.outgoing];
   const rows: FileRow[] = [];
@@ -261,7 +290,10 @@ export function attachedFiles(detail: EntityDetail): FileRow[] {
       // The file is the peer, whichever end of the edge it sits on. Trying
       // both and keeping what parses is what makes this direction-agnostic
       // without a second branch on `group.direction`.
-      const row = rowFromEntity(edge.source) ?? rowFromEntity(edge.target);
+      const peer = rowFromEntity(edge.source) ?? rowFromEntity(edge.target);
+      // The edge id rides along HERE and only here — this is the one path that
+      // reached the file through a link, so it is the one path that can cut it.
+      const row = peer === null ? null : { ...peer, edgeId: edge.id };
       if (row && !rows.some((r) => r.fileEntityId === row.fileEntityId)) rows.push(row);
     }
   }

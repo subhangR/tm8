@@ -31,7 +31,14 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { EntityId, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
-import { EntityDetailPanel, EntityListPanel, EmptyBody, type DetailReasons, type PanelTab } from '../panels';
+import {
+  EntityDetailPanel,
+  EntityListPanel,
+  EmptyBody,
+  type ControlHost,
+  type DetailReasons,
+  type PanelTab,
+} from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext } from '../domain/types';
@@ -40,7 +47,7 @@ import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
-import { attachmentsPortFromSeam } from '../files/port';
+import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -146,7 +153,7 @@ export function EntityView(props: EntityViewProps) {
    * keystroke elsewhere in the view.
    */
   const attachments = useMemo(
-    () => attachmentsPortFromSeam(data.seam, data.spaceId),
+    () => attachmentsFor(data.seam, data.spaceId),
     [data.seam, data.spaceId],
   );
   const config = getKind(kind);
@@ -165,6 +172,34 @@ export function EntityView(props: EntityViewProps) {
     viewerMemberId: props.viewerMemberId,
     onNotice: props.onNotice,
   });
+
+  /**
+   * The PANEL's control strip, on the SAME executor as the list's.
+   *
+   * One host object, both surfaces: a task's state, priority and assignment
+   * behave identically whether the user changes them from a row in the list or
+   * from the panel that the ＋ New flow just opened. Wiring the panel to a
+   * second executor is how the two would come to disagree about what a write
+   * means — and the panel is where a just-created task is FIRST seen, so it is
+   * the surface that most needs the controls to be real.
+   *
+   * `kind` is the list's kind: it feeds only the "this kind has no state to
+   * set" refusal, and the strip reads the actual kind off the subject.
+   */
+  const controlHost = useMemo<ControlHost>(
+    () => ({
+      kind: config.kind,
+      ctx,
+      livenessOf: data.livenessOf,
+      capabilitiesOf: (id) => data.detailOf(id)?.capabilities,
+      onSetState: rowLifecycle.setState,
+      onArchive: rowLifecycle.archive,
+      onSetValue: rowLifecycle.setValue,
+      onAssign: rowLifecycle.assign,
+      assignableActors: rowLifecycle.assignable,
+    }),
+    [config.kind, ctx, data, rowLifecycle],
+  );
 
   /* Authoring mount 7a, EntityView host: +New in the list head creates for
      real and opens the new entity in the centre. quickCreate gates by
@@ -280,6 +315,11 @@ export function EntityView(props: EntityViewProps) {
       host="stack"
       reasons={reasons}
       ctx={{ ...ctx, entityId: selectedId }}
+      controls={controlHost}
+      /* The tombstone's way back. `restore` is the same verb the strip's
+         archive control flips to, through the same executor — so an archived
+         task reopens from wherever the user meets it. */
+      onRestore={() => rowLifecycle.archive('restore', selectedId)}
       pinned={false}
       // Pinning belongs to the workspace's stack economy; here the panel HAS
       // a permanent slot, so the verb is refused with the true reason rather
@@ -288,7 +328,7 @@ export function EntityView(props: EntityViewProps) {
       liveness={data.livenessOf(selectedId)}
       livenessOf={data.livenessOf}
       attachments={attachments}
-      onAttachmentUploaded={() => props.data.pull?.(selectedId)}
+      onAttachmentUploaded={() => props.data.refetchDetail(selectedId)}
       viewerMemberId={props.viewerMemberId}
       contentSurface={contentSurfaces[selectedId] ?? null}
       onContentSurfaceChange={(surface) => {
@@ -382,6 +422,9 @@ export function EntityView(props: EntityViewProps) {
           onKindChange={props.onKindChange}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           /* The SAME sources the workspace passes. `onFullOptions` is
              deliberately absent: the five-section sheet is mounted by the
              workspace centre and does not exist on this screen, so the escape
@@ -431,13 +474,15 @@ export function EntityView(props: EntityViewProps) {
                 host="stack"
                 reasons={reasons}
                 ctx={{ ...ctx, entityId: aux.id }}
+                controls={controlHost}
+                onRestore={() => rowLifecycle.archive('restore', aux.id)}
                 pinned={false}
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
                 livenessOf={data.livenessOf}
                 attachments={attachments}
-                onAttachmentUploaded={() => props.data.pull?.(aux.id)}
+                onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 connections={data.connectionsOf(aux.id)}

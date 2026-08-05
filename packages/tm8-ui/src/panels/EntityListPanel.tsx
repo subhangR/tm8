@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { ActorSummary, EntityCapabilities, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type {
   ActionContext,
   ActionRef,
+  AssignControl,
   KindConfig,
   LaunchCapacity,
   LaunchProjectOption,
@@ -16,9 +18,10 @@ import type {
   StateControl,
   StatusPillSpec,
   TeammateLaunchState,
+  ValueControl,
   CollectionMode,
 } from '../domain';
-import { ALL_MODES, collectionKinds, getKind, resolveAction } from '../domain';
+import { ALL_MODES, REASONS, collectionKinds, getKind, resolveAction } from '../domain';
 import { Avatar, type PillTone } from '../kit';
 import {
   CheckingPermission,
@@ -30,6 +33,7 @@ import {
 } from './honesty/DisabledWithReason';
 import { EmptyBody } from './detail/PanelStates';
 import { useDismissable } from './useDismissable';
+import { EntityControlStrip, RowAction, type ControlHost } from './controls/EntityControls';
 import { HANDLED_SOURCES, renderBadge, type TileSlot } from './list/tile-badges';
 import { MaestroTaskTile } from './list/MaestroTaskTile';
 import { MaestroSessionTile } from './list/MaestroSessionTile';
@@ -153,6 +157,44 @@ export interface EntityListPanelProps {
    * a dedicated prop, exactly as `onTerminate` already does.
    */
   onArchive?: (ref: ActionRef, entityId: string) => void;
+
+  /**
+   * Commit a value chosen in an expanded row's `valueControls` picker.
+   *
+   * ITS OWN PROP, NOT `onSetState`, because the two are not the same write. A
+   * state goes through a command verb and is unversioned; these go through the
+   * kind's content PATCH and are version-guarded, so the host has a 409 to
+   * handle here that `onSetState` never sees. Passing `source` rather than a
+   * field name keeps this panel free of the field it is editing.
+   *
+   * `label` rides beside `source` because they are two faces of one registry
+   * control: `source` is the WIRE field the host patches, `label` is its USER
+   * copy, and the host's failure notice is read by a person ("Priority could
+   * not be changed", not "priority could not be changed"). Sending both from
+   * the one `ValueControl` is what stops them disagreeing.
+   *
+   * Absent ⇒ the picker renders DISABLED WITH REASON, never enabled-inert.
+   */
+  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+
+  /**
+   * Add or remove ONE assignment on an expanded row.
+   *
+   * `edgeType` is registry data, passed through rather than known here — the
+   * panel is saying "this actor is / is not linked to this row by the edge the
+   * kind declares", which is the whole of what it can honestly claim. Per-actor
+   * and not a whole-array set, deliberately: a whole-collection write is the
+   * clobber that loses a concurrent editor's assignment silently.
+   */
+  onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
+
+  /**
+   * Who the assignee picker may offer. Injected like every other source.
+   *
+   * Absent or empty ⇒ the picker says the roster is not loaded rather than
+   * rendering an empty menu that looks like "nobody exists in this space".
+   */
+  assignableActors?: readonly ActorSummary[];
 }
 
 /** Everything the inline launch config needs, supplied by the shell. */
@@ -274,7 +316,13 @@ export function EntityListPanel(props: EntityListPanelProps) {
 
       <div className="lp__body">
         {list.sections && list.sections.length > 0 ? (
-          list.sections.map((section) => (
+          /* A section the active tier excludes outright renders NO heading.
+             Its rows would be empty by construction, and an empty band under
+             "COMPLETED · 0" inside the Open tier states something false about
+             the tier rather than about the data. */
+          list.sections
+            .filter((section) => scopeToTier(section.filter, activeTier) !== null)
+            .map((section) => (
             <Band
               key={section.id}
               label={section.label}
@@ -352,12 +400,58 @@ function rowsForBand(
    * disagree the moment a status is added. One filter, executed once, at the
    * seam.
    */
+  const scoped = scopeToTier(filter, tier);
+  // Disjoint band: the section asks for statuses this tier excludes, so it can
+  // hold nothing. Its caller skips the heading entirely — see `sectionsFor`.
+  if (scoped === null) return [];
+
   return props.rowsFor({
-    ...filter,
-    ...(tier?.filter ?? {}),
+    ...scoped,
     ...mergeSelectedFilters(config, selected),
     ...(selectedPeople.length > 0 ? { createdByIds: selectedPeople } : {}),
   });
+}
+
+/**
+ * Compose a SECTION's filter with the active TIER's — and the two compose
+ * differently per axis, which is the whole of this function.
+ *
+ * THE BUG THIS REPLACES. The tier's filter used to be spread AFTER the
+ * section's, so it silently overwrote it. Task lists declare both: tiers
+ * (Open · Done · Archived) and sections (Current · Completed). On the Open
+ * tier, the band headed "Completed" was therefore queried with the OPEN
+ * statuses — it rendered open tasks under a "Completed" heading and was an
+ * exact duplicate of the "Current" band above it. A user who marked a task
+ * done watched it stay put in a band labelled Completed that had been showing
+ * open tasks all along, which reads as "done did not work".
+ *
+ *   `workStatus` INTERSECTS. Both axes name a set of statuses and the band is
+ *   the overlap. An EMPTY overlap is a real answer (`null`): the Completed
+ *   band cannot exist inside the Open tier, and the honest rendering is no
+ *   band rather than an empty one under a heading that promises rows.
+ *
+ *   `deleted` — THE TIER WINS. It is the outer lifecycle scope, and the
+ *   sections' `deleted: 'exclude'` is a restatement of the common case, not a
+ *   constraint of their own. Intersecting it would make the Archived tier
+ *   ('only') disjoint with every section ('exclude') and empty the one tier
+ *   whose partition already worked.
+ *
+ * Anything else the tier names still wins, as before.
+ */
+function scopeToTier(section: QueryFilter, tier: LifecycleTier | null): QueryFilter | null {
+  const tierFilter = tier?.filter;
+  if (!tierFilter) return section;
+
+  const merged: QueryFilter = { ...section, ...tierFilter };
+
+  if (section.workStatus && tierFilter.workStatus) {
+    const allowed = new Set(tierFilter.workStatus);
+    const overlap = section.workStatus.filter((status) => allowed.has(status));
+    if (overlap.length === 0) return null;
+    merged.workStatus = overlap;
+  }
+
+  return merged;
 }
 
 /**
@@ -1275,191 +1369,6 @@ function resolvePulses(
   return { segments, endpoints };
 }
 
-/**
- * D67 — THE EXPANDED ROW'S STATE + ARCHIVE STRIP, shared by every list style.
- *
- * USER RULING 2026-08-02: "in every entity list style, each entity should have
- * an option to change its state as a dropdown when the entity is expanded on
- * the entity list itself... there is also an archived state, and the archived
- * state UI state works on top of the archived state."
- *
- * ONE COMPONENT, THREE ANATOMIES. The control-card, the session tree and the
- * standard tile all mount THIS — so a task, a session and a doc get the same
- * strip from the same code, and adding a fourth anatomy cannot forget it.
- *
- * WHY ARCHIVE SITS BESIDE THE DROPDOWN RATHER THAN INSIDE IT. They are two
- * different layers, and the ruling names both: the dropdown writes the kind's
- * OWN state (a task's `workStatus`), while archive writes the TOMBSTONE
- * (`entities.deleted_at`) that every kind shares and that the Archived
- * lifecycle tier queries as `deleted: 'only'`. Folding "Archived" into the
- * state list would claim it is a work status — it is not, a task keeps its
- * `workStatus` across an archive/restore round-trip (verified on this node),
- * and only 5 of 19 kinds have a state list to fold it into at all.
- *
- * ARCHIVE FLIPS TO RESTORE ON `deletedAt`, which is a STRUCTURAL read of the
- * envelope, not a kind branch: every kind carries it.
- */
-function RowDetail({
-  row,
-  props,
-  config,
-}: {
-  row: EntitySummary;
-  props: EntityListPanelProps;
-  config: KindConfig;
-}) {
-  const control = config.list.stateControl;
-  const archived = row.deletedAt != null;
-
-  return (
-    <div className="lp__rowdetail" onClick={(e) => e.stopPropagation()}>
-      <div className="lp__rowdetail-line">
-        <span className="lp__rowdetail-label">{control?.label ?? 'State'}</span>
-        <RowStateControl row={row} props={props} control={control} pill={config.panel.statusPill} />
-      </div>
-      <div className="lp__rowdetail-line">
-        <span className="lp__rowdetail-label">Archive</span>
-        {/* The tombstone verb. `restore` when this row is already archived —
-            the Archived tier is where a user meets these rows, and a tier that
-            could only put things IN would be a one-way door. */}
-        <RowAction
-          ref_={archived ? 'restore' : 'archive'}
-          row={row}
-          props={props}
-          onRun={props.onArchive}
-          variant="wide"
-        />
-      </div>
-    </div>
-  );
-}
-
-/**
- * The state dropdown, or the honest reason there is not one.
- *
- * FOUR DISTINCT REFUSALS, kept apart because collapsing them is how a UI
- * starts lying about which thing is missing:
- *
- *   no `stateControl`  — this KIND has no state to set (14 of 19 core kinds).
- *   `readOnlyReason`   — it HAS a state, but the node observes it (sessions).
- *   capabilities absent — not refused, still LOADING (the CheckingPermission
- *                        vocabulary, never the disabled one).
- *   no `onSetState`    — the host did not wire the write; disabled-with-reason
- *                        rather than a select that silently drops the change.
- */
-function RowStateControl({
-  row,
-  props,
-  control,
-  pill,
-}: {
-  row: EntitySummary;
-  props: EntityListPanelProps;
-  control: StateControl | undefined;
-  /** The kind's existing value→word / value→tone map. The ONLY source for both. */
-  pill: StatusPillSpec | undefined;
-}) {
-  const selectId = useId();
-  const wordFor = (value: string): string =>
-    pill?.labels?.[value] ?? value.replace(/_/g, ' ');
-  const toneFor = (value: string): PillTone => pill?.tones?.[value] ?? 'idle';
-
-  if (!control) {
-    return (
-      <DisabledAction
-        label="Change state"
-        reason={{
-          cause: `${getKind(props.kind).label} has no state to set on this node`,
-          remedy: 'the contract records no status field for this kind, so nothing could be written',
-        }}
-      >
-        <span className="lp__statesel lp__statesel--absent">no state</span>
-      </DisabledAction>
-    );
-  }
-
-  // Structural read of the state envelope: the registry names the FIELD, so no
-  // kind is named here and a new stateful kind needs no edit to this file.
-  const state = row.state as unknown as Record<string, unknown>;
-  const raw = state[control.source];
-  const current = typeof raw === 'string' ? raw : '';
-  const currentPill = (
-    <span className={`lp__statesel kit-pill--${toneFor(current)}`}>
-      {current === '' ? 'unknown' : wordFor(current)}
-    </span>
-  );
-
-  if (control.readOnlyReason) {
-    return (
-      <DisabledAction label="Change state" reason={toReason(control.readOnlyReason)}>
-        {currentPill}
-      </DisabledAction>
-    );
-  }
-
-  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label="Change state" />;
-  }
-
-  const availability = resolveAction(control.command).availability({
-    ...props.ctx,
-    entityId: row.id,
-    kind: row.kind,
-    capabilities: props.capabilitiesOf?.(row.id) ?? null,
-    liveness: props.livenessOf?.(row.id),
-  });
-
-  if (availability.kind === 'disabled') {
-    return (
-      <DisabledAction label="Change state" reason={toReason(availability.reason)}>
-        {currentPill}
-      </DisabledAction>
-    );
-  }
-
-  if (!props.onSetState) {
-    return (
-      <DisabledAction label="Change state" reason={NOT_WIRED_REASON}>
-        {currentPill}
-      </DisabledAction>
-    );
-  }
-
-  return (
-    // The wrapper exists ONLY to own the caret: see `.lp__statewrap::after`.
-    // The select cannot draw its own, because the pill tone class it carries
-    // sets the `background` shorthand and would reset any background-image.
-    <span className="lp__statewrap">
-    <select
-      id={selectId}
-      className={`lp__statesel lp__statesel--live kit-pill--${toneFor(current)}`}
-      aria-label={`Change state for ${row.title}`}
-      data-testid="row-state-select"
-      value={current}
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => {
-        const next = e.target.value;
-        if (next === current) return;
-        const chosen = control.options.find((o) => o.id === next);
-        // The option's own `via` wins: `done` must reach the completion verb,
-        // which carries the acceptance-criteria gate the work verb refuses.
-        props.onSetState?.(row.id, next, chosen?.via ?? control.command);
-      }}
-    >
-      {/* A value the registry does not list still shows, rather than the select
-          silently snapping to its first option and MISREPORTING the record. */}
-      {!control.options.some((o) => o.id === current) && current !== '' ? (
-        <option value={current}>{wordFor(current)}</option>
-      ) : null}
-      {control.options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {wordFor(o.id)}
-        </option>
-      ))}
-    </select>
-    </span>
-  );
-}
 
 function Tile({
   row,
@@ -1564,7 +1473,7 @@ function Tile({
         onToggleChildren={onToggleChildren}
         onSelect={() => props.onSelect?.(row.id)}
         onClose={props.onTerminate ? () => props.onTerminate?.(row.id) : undefined}
-        detail={<RowDetail row={row} props={props} config={config} />}
+        detail={<EntityControlStrip row={row} props={props} config={config} />}
       />
     );
   }
@@ -1614,47 +1523,13 @@ function Tile({
           }
         }}
       >
-        <div className="pn-tt__metarow">
-          {statusWord ? (
-            <span className={`pn-badge pn-badge--status-${statusTone}`}>
-              <span
-                className={[
-                  'lp__dot',
-                  `lp__dot--${statusTone}`,
-                  statusHollow ? 'lp__dot--hollow' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                aria-hidden
-              />
-              {statusWord}
-            </span>
-          ) : null}
-          {tag ? (
-            <span className={`pn-badge pn-badge--priority pn-badge--priority-${tag.tone}`}>
-              {tag.label}
-            </span>
-          ) : null}
-          <span className="pn-badge pn-badge--assignees">
-            <span className="pn-badge__people" aria-hidden>
-              {controlFacts.assignees.length > 0
-                ? controlFacts.assignees.slice(0, 3).map((actor) => (
-                    <Avatar
-                      key={actor.id}
-                      actorId={actor.id}
-                      provenance={actor.isAgent ? 'agent' : 'human'}
-                      label={actor.displayName}
-                      /* 15, not 20 — the avatar sits INSIDE a 24px chip and
-                         must not be what sets the chip's height. 15 is the
-                         smallest step `AvatarSize` offers. */
-                      size={15}
-                    />
-                  ))
-                : '♙'}
-            </span>
-            {controlFacts.assigneeLabel}
-          </span>
-        </div>
+        {/* D67 — status, priority, assigned and archive, as the FIRST row of
+            the expand. These used to be three static <span> badges here and a
+            second, working State+Archive strip at the bottom of the same
+            expand: two status controls, one of them inert. One strip now, in
+            the place the chips already occupied, so the thing that looks like
+            the control IS the control. */}
+        <EntityControlStrip row={row} props={props} config={config} variant="chips" />
 
         {flowRef ? (
           <div className="lp__flow lp__flow--control">
@@ -1687,10 +1562,6 @@ function Tile({
           ))}
           <span className="pn-tt__time">{relativeTileTime(row.updatedAt)}</span>
         </div>
-
-        {/* D67 — the state + archive strip. Last inside the expand, under the
-            facts, because it WRITES and everything above it reads. */}
-        <RowDetail row={row} props={props} config={config} />
       </MaestroTaskTile>
     );
   }
@@ -1841,7 +1712,7 @@ function Tile({
         </div>
       </div>
 
-      {detailsExpanded ? <RowDetail row={row} props={props} config={config} /> : null}
+      {detailsExpanded ? <EntityControlStrip row={row} props={props} config={config} /> : null}
 
       {/* The config is an attached card section, not a popover: the subject
           remains obvious while teammate/model choices are changed. */}
@@ -1873,7 +1744,6 @@ function Tile({
 
 interface ControlCardFacts {
   assignees: EntitySummary['createdBy'][];
-  assigneeLabel: string;
   /** Never null in practice — every row carries a creator. */
   creator: EntitySummary['createdBy'] | null;
   meta: string[];
@@ -1895,13 +1765,6 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
       typeof (value as { id?: unknown }).id === 'string' &&
       typeof (value as { displayName?: unknown }).displayName === 'string',
   );
-  const assigneeLabel =
-    assignees.length === 0
-      ? 'Unassigned'
-      : assignees.length === 1
-        ? assignees[0].displayName
-        : `${assignees[0].displayName} +${assignees.length - 1}`;
-
   const meta: string[] = [];
   const acceptance = state.acceptance as { completed?: unknown; total?: unknown } | undefined;
   if (typeof acceptance?.total === 'number' && acceptance.total > 0) {
@@ -1913,7 +1776,7 @@ function factsForControlCard(row: EntitySummary): ControlCardFacts {
   const pulls = row.badges.pulls?.length ?? 0;
   if (pulls > 0) meta.push(`${pulls} pulled`);
 
-  return { assignees, assigneeLabel, creator: row.createdBy ?? null, meta };
+  return { assignees, creator: row.createdBy ?? null, meta };
 }
 
 function relativeTileTime(iso: string): string {
@@ -1925,130 +1788,6 @@ function relativeTileTime(iso: string): string {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `updated ${hours}h ago`;
   return `updated ${Math.round(hours / 24)}d ago`;
-}
-
-/**
- * Row quick-actions are the SAME ActionRefs as the panel primaries, ⌘Enter and
- * the palette rows (§2.5) — one verb, one availability rule, one reason
- * string, four surfaces. Capabilities come from server truth; ABSENT means
- * unknown, and unknown means not permitted rather than optimistically enabled.
- */
-function RowAction({
-  ref_,
-  row,
-  props,
-  openFlow,
-  onFlow,
-  onRun,
-  variant = 'icon',
-}: {
-  ref_: ActionRef;
-  row: EntitySummary;
-  props: EntityListPanelProps;
-  openFlow?: ActionRef | null;
-  onFlow?: (ref: ActionRef | null) => void;
-  /**
-   * The handler for THIS verb, when the host wired one separately from the
-   * general `onAction`. Keeps one gating path (capabilities → checking →
-   * disabled → enabled) for every row verb rather than a second copy beside it.
-   */
-  onRun?: (ref: ActionRef, entityId: string) => void;
-  /**
-   * `wide` carries the LABEL beside the glyph. The hover-revealed row cluster
-   * is a fixed-width icon strip; inside an expanded detail strip there is room
-   * for the word, and an archive control is not one to leave as a bare glyph.
-   */
-  variant?: 'icon' | 'wide';
-}) {
-  const def = resolveAction(ref_);
-  const wide = variant === 'wide';
-  const ctx: ActionContext = {
-    ...props.ctx,
-    entityId: row.id,
-    kind: row.kind,
-    capabilities: props.capabilitiesOf?.(row.id) ?? null,
-    liveness: props.livenessOf?.(row.id),
-  };
-
-  /**
-   * D44 — a flow verb opens its config instead of dispatching, so it is NOT
-   * enabled-inert without `onAction`: clicking genuinely does something, and
-   * the config states for itself whether it can commit. Asking the resolved
-   * def for `flow` keeps this free of both kind and action-id literals.
-   */
-  const opensFlow = def.flow === 'launch' && onFlow != null;
-
-  /**
-   * A `wide` control refuses in the WIDE vocabulary too.
-   *
-   * The icon refusal is a bare glyph with a hover tooltip, which is right for
-   * a 22px cluster button and wrong here: verified in Chrome, the disabled
-   * Archive rendered as an unlabelled square directly beneath a STATE row that
-   * printed its reason as visible text. Same strip, same refusal, two
-   * different honesty vocabularies — and the quieter one was the destructive
-   * verb. `DisabledAction` carries the word and the reason, matching the row
-   * above it.
-   */
-  const refuse = (reason: UnavailableReason) =>
-    wide ? (
-      <DisabledAction label={def.label} reason={reason}>
-        <span className="lp__rowaction lp__rowaction--wide lp__rowaction--off">
-          <span aria-hidden>{def.icon}</span>
-          <span className="lp__rowaction-label">{def.label}</span>
-        </span>
-      </DisabledAction>
-    ) : (
-      <DisabledIconControl label={def.label} glyph={def.icon} reason={reason} />
-    );
-
-  const run = onRun ?? props.onAction;
-  if (!run && !opensFlow) {
-    return refuse(NOT_WIRED_REASON);
-  }
-
-  /**
-   * Not-yet-loaded is not not-permitted. A capability SOURCE that has not
-   * answered for this row yet renders in the loading vocabulary; only a
-   * source that answered "no" renders the refusal. Without this split both
-   * land on the same disabled button and a transient state reads as a
-   * permanent one.
-   */
-  if (props.capabilitiesOf && props.capabilitiesOf(row.id) === undefined) {
-    return <CheckingPermission label={def.label} glyph={def.icon} />;
-  }
-
-  const availability = def.availability(ctx);
-
-  if (availability.kind === 'disabled') {
-    return refuse(toReason(availability.reason));
-  }
-  const expanded = openFlow === ref_;
-  return (
-    <button
-      type="button"
-      className={[
-        'lp__rowaction',
-        wide ? 'lp__rowaction--wide' : '',
-        expanded ? 'lp__rowaction--on' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      title={def.label}
-      aria-label={def.label}
-      aria-expanded={opensFlow ? expanded : undefined}
-      onClick={(e) => {
-        e.stopPropagation();
-        if (opensFlow) {
-          onFlow?.(expanded ? null : ref_);
-          return;
-        }
-        run?.(ref_, row.id);
-      }}
-    >
-      <span aria-hidden>{def.icon}</span>
-      {wide ? <span className="lp__rowaction-label">{def.label}</span> : null}
-    </button>
-  );
 }
 
 

@@ -154,7 +154,15 @@ export const taskUuidTitle = summary({
     axes: { area: 'ui', wave: 'w5' },
     dueDate: '2026-07-30',
     assignees: [ada, forge],
-    acceptance: { total: 6, completed: 4 },
+    /*
+     * THE SUMMARY OF THE DETAIL'S OWN CRITERIA, and it has to be: this row's
+     * `fixtureDetails` entry carries four criteria of which two are done. It
+     * said 6/4 while the detail said 2/4, which nothing could see until the
+     * ACCEPTANCE region was drawn — and then the list tile read "4/6 criteria"
+     * beside a panel reading "ACCEPTANCE · 2/4" ON ONE SCREEN. One screen,
+     * one story: change the criteria below and change this with them.
+     */
+    acceptance: { total: 4, completed: 2 },
   },
   badges: {
     pulls: [

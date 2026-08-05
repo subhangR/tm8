@@ -50,6 +50,7 @@ export {
 export { BlockEditorSlot } from './BlockEditorSlot';
 export { DocEditor } from './DocEditor';
 export { DocPreview } from './DocPreview';
-export { DocSource } from './DocSource';
+export { DocSource, type DocAttach } from './DocSource';
 export { DocSplitView } from './DocSplitView';
 export { EditEntryControl } from './EditEntryControl';
+export { fileReference, spliceInto } from './insert';

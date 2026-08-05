@@ -294,6 +294,36 @@
   color: var(--pn-ink-2);
 }
 
+/* --- insert a file --------------------------------------------------------
+   A quiet strip directly under the source, above the fence chips: the two
+   belong together (both are "things in this document that are not prose") and
+   neither may take height from the writing surface. */
+.cv2-root .de-insert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  background: var(--pn-card);
+}
+/* The real input stays reachable to the keyboard and to a test, but the
+   button is the visible control — a raw file input cannot be styled to sit in
+   this row without lying about its size. */
+.cv2-root .de-insert__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.cv2-root .de-insert__hint,
+.cv2-root .de-insert__why {
+  font-family: var(--pn-mono);
+  font-size: 9px;
+  color: var(--pn-ink-4);
+}
+.cv2-root .de-insert__why { color: var(--pn-block); }
+
 /* --- the fence chips (F1b line 105-110) -----------------------------------
    Oracle: `border:1px dashed #D8D3C6;border-radius:7px;padding:6px 9px;
    display:flex;align-items:center;gap:7px;background:#FBFAF6`. The dashes are

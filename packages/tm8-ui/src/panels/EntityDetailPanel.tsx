@@ -10,7 +10,7 @@ import type {
 } from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type { ContentSurface } from '../routes';
-import type { ActionContext, ActionRef, ContentBlockRef } from '../domain';
+import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
 import { getKind } from '../domain';
 import {
   AuthoringHost,
@@ -37,6 +37,7 @@ import {
 } from './detail/PanelStates';
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
+import { EntityControlStrip, type ControlHost, type ControlSubject } from './controls/EntityControls';
 import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
@@ -80,6 +81,42 @@ import type { AttachmentsPort } from '../files/port';
  * rather than a placeholder. An honest partial beats a "coming soon".
  */
 const DEFAULT_BLOCKS: readonly ContentBlockRef[] = [{ block: 'fields' }];
+
+/**
+ * Does this kind declare anything for the strip to draw?
+ *
+ * REGISTRY DATA, NOT A KIND LIST. A doc declares none of the three and gets no
+ * strip; a task declares all three and gets all three; a kind that grows a
+ * second `ValueControl` tomorrow gets it here with no edit to this file. The
+ * archive verb alone is NOT enough to mount the strip — every kind has a
+ * tombstone, so keying on that would put a bare Archive bar under every panel
+ * in the app, which is a redesign and not this fix.
+ */
+function controlsFor(config: KindConfig): boolean {
+  const list = config.list;
+  return (
+    list.stateControl !== undefined ||
+    (list.valueControls?.length ?? 0) > 0 ||
+    list.assignControl !== undefined
+  );
+}
+
+/**
+ * Project an `EntityDetail` onto the subset the controls read.
+ *
+ * The two shapes already agree member for member — this exists so the port
+ * stays a SUBSET rather than growing an `EntityDetail` dependency, and so the
+ * compiler checks the projection instead of a cast hiding a renamed field.
+ */
+function subjectOf(detail: EntityDetail): ControlSubject {
+  return {
+    id: detail.id,
+    title: detail.title,
+    kind: detail.kind,
+    state: detail.state,
+    deletedAt: detail.deletedAt,
+  };
+}
 
 export interface DetailReasons {
   /** D7.2 — presence is measured-empty; the viewers footer is hollow. */
@@ -189,6 +226,34 @@ export interface EntityDetailPanelProps {
       ("Z3 opens, title in inline-edit focus"). */
   justCreated?: boolean;
 
+  /**
+   * THE CONTROL STRIP'S HOST — state, priority and assignment on the panel.
+   *
+   * THE SAME `ControlHost` THE LIST PASSES, and the same components behind it.
+   * Before this prop existed the panel drew `workStatus` as a read-only header
+   * pill and `priority` / `assignees` as `<span>`s in the meta grid, so the
+   * surface the generic-create pattern opens the instant you press "+ New
+   * task" was the one surface where none of the three could be set. That is
+   * the reported defect ("while creating a task I am not able to assign, edit
+   * priority"), and it is fixed by MOUNTING the existing controls rather than
+   * by growing a third copy of them (`controls/EntityControls.tsx` carries the
+   * full argument).
+   *
+   * Absent ⇒ the strip still renders and every control refuses with
+   * "not wired here". A missing host is never a hidden control: hiding it
+   * would claim the kind has no state to set, which is a different fact.
+   */
+  controls?: ControlHost | null;
+  /**
+   * Undo the tombstone. Absent ⇒ the tombstone's Restore button renders
+   * DISABLED with a reason instead of enabled-and-inert — it was the latter
+   * for the whole of this panel's life, because `TombstoneBody` has always
+   * drawn the button and nothing ever passed the handler. An archived task
+   * therefore had no way back, which is the second half of the reported
+   * defect ("after a task is archived I am not able to move it to open").
+   */
+  onRestore?: () => void;
+
   activeTab?: PanelTab;
   onTabChange?: (tab: PanelTab) => void;
   pinned?: boolean;
@@ -262,6 +327,9 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
     onReload: (current) => props.onReloadDetail?.(current),
     editRefusal: editableConfig?.panel.capabilityReasons?.canEdit,
   });
+  /** The refusal as ONE sentence. Three copies of this expression drifted the
+      moment any one of them was reworded, so there is one. */
+  const saveRefusal = refusalSentence(save);
 
   /**
    * PERMISSION-LOST SHORT-CIRCUITS EVERYTHING, and it must come first.
@@ -346,14 +414,27 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
            permit it. The visual treatment stays plain by user direction; the
            actual click/keyboard editor is still mounted only when writable. */
         titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
-        titleLockReason={
-          config.list.inlineEdit?.title && save.unavailable
-            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
-            : undefined
-        }
+        titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
         onCommitTitle={(title) => void save.commitNow({ title })}
       />
+
+      {/* THE CONTROL STRIP — under the title, above the tabs, so the three
+          writes sit with the identity of the thing they change and are
+          reachable from every tab rather than only from Content.
+
+          NOT ON A TOMBSTONE. A deleted entity cannot be edited (the server
+          refuses, and `useTaskSave` already says "restore it before editing"),
+          and its ONE live verb is restore — which `TombstoneBody` owns below.
+          Rendering the strip here too would put two restore controls in one
+          panel, which is the duplication D67 removed from the tile. */}
+      {controlsFor(config) && !detail.deletedAt ? (
+        <EntityControlStrip
+          row={subjectOf(detail)}
+          props={props.controls ?? { kind: detail.kind, ctx: props.ctx }}
+          config={config}
+        />
+      ) : null}
 
       {stalePin ? (
         <StalePinBanner pinnedVersion={stalePin.pinnedVersion} liveVersion={stalePin.liveVersion} />
@@ -439,6 +520,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 downloadHref={props.attachments?.downloadHref}
                 startUpload={props.attachments?.startUpload}
                 onUploaded={props.onAttachmentUploaded}
+                onDetach={props.attachments?.detach}
+                /* A detach and an upload change the SAME thing — the anchor's
+                   `attached_to` edges — so they share one refetch, and a host
+                   cannot wire adding without also wiring removing. */
+                onDetached={props.onAttachmentUploaded}
               />
             ) : null}
           </AuthoringHost>
@@ -463,6 +549,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
 
 }
 
+/**
+ * The save refusal rendered as ONE sentence, in the cause—remedy voice every
+ * `toReason()` consumer splits back apart. It reads the same in the title
+ * lock, the description editor and the acceptance boxes because there is one
+ * expression rather than three copies of it.
+ */
+function refusalSentence(save: TaskSaveHandle): string | undefined {
+  return save.unavailable
+    ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
+    : undefined;
+}
+
 function PanelBody(
   props: EntityDetailPanelProps & {
     detail: EntityDetail;
@@ -474,6 +572,8 @@ function PanelBody(
 ) {
   const { detail, tab, reasons, onOpenEntity, save } = props;
   const config = getKind(detail.kind);
+  const saveRefusal = refusalSentence(save);
+  const startUpload = props.attachments?.startUpload;
 
   if (tab === 'discussion') {
     return (
@@ -500,6 +600,12 @@ function PanelBody(
       <TombstoneBody
         deletedBy={detail.createdBy}
         canRestore={detail.capabilities.canDelete}
+        onRestore={props.onRestore}
+        restoreUnavailableReason={
+          detail.capabilities.canDelete && !props.onRestore
+            ? 'restoring is not wired on this surface'
+            : undefined
+        }
       />
     );
   }
@@ -568,22 +674,14 @@ function PanelBody(
         onDescriptionChange={
           save.unavailable ? undefined : (description) => save.edit({ description })
         }
-        descriptionUnavailableReason={
-          save.unavailable
-            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
-            : undefined
-        }
+        descriptionUnavailableReason={saveRefusal}
         criteriaDraft={save.edits.acceptanceCriteria}
         onCriteriaChange={
           save.unavailable
             ? undefined
             : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
         }
-        criteriaUnavailableReason={
-          save.unavailable
-            ? `${save.unavailable.cause} — ${save.unavailable.remedy}`
-            : undefined
-        }
+        criteriaUnavailableReason={saveRefusal}
       />
     );
   }
@@ -602,6 +700,18 @@ function PanelBody(
         commands={props.commands ?? null}
         onSaved={props.onSaved}
         onReloadDetail={props.onReloadDetail}
+        /* THE SAME RESOLVER THE STRIP USES, and deliberately the same one: a
+           file the strip can download is a file the document can show inline.
+           Absent host port ⇒ absent here ⇒ `Markdown` states each internal
+           image rather than guessing a transport path. */
+        fileHref={props.attachments?.downloadHref}
+        /* The anchor is bound HERE so `doc-edit/` never learns which entity it
+           is uploading against — and it is the document's own id, so an
+           inserted image is also a listed attachment on the same record. */
+        attach={
+          startUpload ? (file: File) => startUpload(file, detail.id) : undefined
+        }
+        onAttached={props.onAttachmentUploaded}
       />
     );
   }
@@ -672,6 +782,7 @@ function PanelBody(
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
       commands={props.commands}
+      downloadHref={props.attachments?.downloadHref}
     />
   );
 }

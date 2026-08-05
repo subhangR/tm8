@@ -44,6 +44,7 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { attachmentsFor } from '../files/port';
 import { representedThreadMessageCount } from './message-thread';
 
 /** The session collection is selected by capability, never by panel position
@@ -106,6 +107,24 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     viewerMemberId: props.viewerMemberId,
     onNotice: props.onNotice,
   });
+
+  /**
+   * The panel control strip's host, minus `kind` — the workspace is not scoped
+   * to one, so each panel supplies its own entity's kind at the call site.
+   * Everything else is the same executor the two side lists already use.
+   */
+  const controlHostBase = useMemo(
+    () => ({
+      livenessOf: data.livenessOf,
+      capabilitiesOf: (id: string) => data.detailOf(id)?.capabilities,
+      onSetState: rowLifecycle.setState,
+      onArchive: rowLifecycle.archive,
+      onSetValue: rowLifecycle.setValue,
+      onAssign: rowLifecycle.assign,
+      assignableActors: rowLifecycle.assignable,
+    }),
+    [data, rowLifecycle],
+  );
 
   const layout = useMemo(
     () =>
@@ -205,6 +224,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const leftCompact = layout.left <= 220;
   const rightCompact = layout.right <= 240;
 
+  /* ATTACHMENTS — one port for every panel this view mounts, memoized on the
+     seam and space so `renderPanel` does not hand the strip a fresh
+     `startUpload` identity on each layout measurement. */
+  const attachments = useMemo(
+    () => attachmentsFor(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
+
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
@@ -232,6 +259,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           host={host}
           reasons={reasons}
           ctx={{ ...ctx, entityId: id }}
+          controls={{ ...controlHostBase, kind: detail?.kind ?? '', ctx: { ...ctx, entityId: id } }}
+          onRestore={() => rowLifecycle.archive('restore', id)}
           pinned={nav.pinned.includes(id)}
           // A1c's contract: the refusal string renders as the disabled pin
           // control in T1-4's two-line form (my D14). `undefined` ⇒ pin is live.
@@ -242,6 +271,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           }
           liveness={data.livenessOf(id)}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+          attachments={attachments}
+          onAttachmentUploaded={() => props.data.refetchDetail(id)}
           livenessOf={data.livenessOf}
           viewerMemberId={props.viewerMemberId}
           contentSurface={nav.surfaceOf?.(id) ?? null}
@@ -299,7 +330,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded
@@ -392,6 +423,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           onKindChange={props.onLeftKindChange}
           // Capability truth comes from the DETAIL, not the summary
           // (EntityCapabilities lives on EntityDetail). A row whose detail is
@@ -478,6 +512,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
           onSetState={rowLifecycle.setState}
           onArchive={rowLifecycle.archive}
+          onSetValue={rowLifecycle.setValue}
+          onAssign={rowLifecycle.assign}
+          assignableActors={rowLifecycle.assignable}
           onKindChange={props.onRightKindChange}
           capabilitiesOf={(id) => data.detailOf(id)?.capabilities}
           launch={launchPort}

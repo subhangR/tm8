@@ -62,11 +62,27 @@ export type MarkdownFileHref = (fileEntityId: string) => string | null;
  * absolute URL — is treated as remote, because "looks like our path" is not a
  * proof of origin and this decision is the one guarding the request below.
  */
+/**
+ * `decodeURIComponent` THROWS a `URIError` on a malformed escape — `%zz`, or a
+ * lone `%` at the end. A doc body is arbitrary text a person typed, so
+ * `![](tm8://file/%zz)` is reachable input, and an uncaught throw here happens
+ * during RENDER: it takes down the whole markdown subtree rather than one
+ * image. A reference we cannot decode is simply not a file reference, which is
+ * what `null` already means everywhere else in this function.
+ */
+function decodeRef(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+}
+
 function fileRefIn(src: string): string | null {
   const scheme = /^tm8:\/\/file\/([^/?#]+)$/.exec(src.trim());
-  if (scheme) return decodeURIComponent(scheme[1]);
+  if (scheme) return decodeRef(scheme[1]);
   const path = /^\/v2\/files\/([^/?#]+)\/download$/.exec(src.trim());
-  if (path) return decodeURIComponent(path[1]);
+  if (path) return decodeRef(path[1]);
   return null;
 }
 

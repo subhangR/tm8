@@ -3,7 +3,7 @@ import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import { EmptyBody } from '../detail/PanelStates';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
-import { Markdown, headingsIn } from '../../kit';
+import { Markdown, headingsIn, type MarkdownFileHref } from '../../kit';
 import './reader-body.css';
 
 /**
@@ -62,9 +62,15 @@ export interface ReaderBodyProps {
   historyUnavailableReason: string;
   /** Absent ⇒ chapter chips render disabled-with-reason, never live-and-dead. */
   onOpenEntity?: (id: string) => void;
+  /**
+   * Resolves `![](tm8://file/<id>)` to bytes this reader may load. Absent ⇒
+   * every internal image states itself instead of rendering — see `Markdown`'s
+   * `img` override, which never guesses a transport path.
+   */
+  fileHref?: MarkdownFileHref;
 }
 
-export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity }: ReaderBodyProps) {
+export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEntity, fileHref }: ReaderBodyProps) {
   const content = detail.content as unknown as Record<string, unknown>;
   const state = detail.state as unknown as Record<string, unknown>;
 
@@ -127,7 +133,7 @@ export function ReaderBody({ detail, blocks, historyUnavailableReason, onOpenEnt
           as asterisks. `Markdown` is CommonMark + GFM; the headings it draws
           in place are the SAME ones the outline above lists, which is
           deliberate — the outline is navigation, the body is the document. */}
-      <Markdown source={source ?? ''} className="rd-md" testId="reader-markdown" />
+      <Markdown source={source ?? ''} className="rd-md" testId="reader-markdown" fileHref={fileHref} />
 
       {notices.map((text) => (
         <p className="pn-notice" data-testid="reader-notice" key={text}>

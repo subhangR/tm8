@@ -436,6 +436,9 @@ describe('T3-4 — reads that are real', () => {
       attributedTo: null,
       attributedAt: null,
       sourceMissing: false,
+      // Not reached through a link — this row comes off a message bubble, so
+      // there is no `attached_to` edge to cut and no detach control is drawn.
+      edgeId: null,
     };
     render(<FilesScreen destinationLabel="T" bubble={{ ...SPECIMEN_BUBBLE, files: [row] }} />);
     const chip = screen.getByTestId('file-chip');
@@ -487,6 +490,7 @@ describe('T3-4 — the preview overlay', () => {
       attributedTo: null,
       attributedAt: null,
       sourceMissing: false,
+      edgeId: null,
     };
     render(
       <FilesScreen

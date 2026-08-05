@@ -161,3 +161,33 @@
   background: var(--pn-active, var(--pn-surface));
   color: var(--pn-ink);
 }
+
+/* Detach. Quiet until hovered: removing an attachment is a deliberate act, so
+   the control must be reachable without competing with the file's own name. */
+.fn-strip__detach {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+
+.fn-strip__detach:hover:not(:disabled) {
+  border-color: var(--pn-line);
+  color: var(--pn-block);
+}
+
+.fn-strip__detach:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.fn-strip__detach-why {
+  font-size: 10.5px;
+  color: var(--pn-block);
+}

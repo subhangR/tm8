@@ -60,7 +60,7 @@ import {
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, Unsubscribe } from '../seam';
+import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -274,7 +274,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
     children: (id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> => ops.children(id, opts),
-    connections: (id: EntityId, opts?: PageOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),
+    connections: (id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),
     activity: (id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>> => ops.activity(id, opts),
     messages: (anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>> => ops.messages(anchorId, opts),
     handoffs: (workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> =>
@@ -308,6 +308,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       restoreEntity: (id, ctx) => ops.restoreEntity(id, ctx),
       complete: (id, input) => ops.complete(id, input),
       work: (id, input) => ops.work(id, input),
+      createEdge: (input) => ops.createEdge(input),
+      deleteEdge: (edgeId, ctx) => ops.deleteEdge(edgeId, ctx),
       postMessage: (input) => ops.postMessage(input),
       editMessage: (id, input): Promise<CommandResult> => ops.editMessage(id, input),
       react: (id, input) => ops.react(id, input),

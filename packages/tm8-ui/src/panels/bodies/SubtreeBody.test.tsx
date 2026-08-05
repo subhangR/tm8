@@ -29,9 +29,20 @@ import { SubtreeBody } from './SubtreeBody';
  *      "running" over a dead session — the defect preserved in gate-evidence.
  *   2. NO VERDICT IS NOT A ZERO. With no `livenessOf`, the eyebrow may not say
  *      "0 LIVE" — that claims a measurement nobody took (the HollowValue law).
- *   3. ACCEPTANCE STAYS OUT (D30 / D48.2). It is A2 depth, ruled-not-missed;
- *      a body that quietly grew it would deliver the deferred half while the
- *      ledger still says deferred.
+ *   3. ACCEPTANCE IS DRAWN, AND THE DEFERRAL IS REVERSED (D73, superseding
+ *      D48.2's clause 2). This docblock used to read "ACCEPTANCE STAYS OUT
+ *      (D30 / D48.2) … a body that quietly grew it would deliver the deferred
+ *      half while the ledger still says deferred" — and that sentence was
+ *      still here, 150 lines above a suite asserting the region renders, which
+ *      is exactly the failure it warns about. It is corrected rather than
+ *      deleted so the reversal is legible.
+ *      WHY THE DEFERRAL FELL: D48.2 was survivable only because its mitigation
+ *      was "the panel says so out loud" through a registry `notice` block. No
+ *      such block was ever configured — `registry.ts`'s `task` row declares no
+ *      `panel.blocks` at all — so the gap was INVISIBLE rather than disclosed,
+ *      and a deferral nobody can see is indistinguishable from an omission.
+ *      What the tests still pin is the STRUCTURAL law: an absent criteria
+ *      member draws no region, so the archetype never asks "is this a task?".
  *   4. DONE-NESS IS REGISTRY DATA. A struck row means the child's status is in
  *      its own kind's `done` lifecycle tier — not a literal this file knows.
  *
@@ -110,12 +121,39 @@ describe('the composed metadata grid', () => {
     expect(grid.textContent).toContain(parent.title);
   });
 
-  it('renders assignees, priority and the id', () => {
+  it('renders the id and the scalars the strip does not own', () => {
     const { getByTestId } = renderBody();
     const grid = getByTestId('subtree-grid');
-    expect(grid.textContent).toContain(`@${ada.displayName}`);
-    expect(grid.textContent).toMatch(/URGENT/);
     expect(grid.textContent).toContain(taskUuidTitle.id);
+    // `dueDate` has no registry control, so the grid is still its only home.
+    expect(grid.textContent).toMatch(/Due/);
+  });
+
+  /**
+   * The grid must NOT restate a field the control strip now owns.
+   *
+   * This is the D67 amendment's rule, applied to the panel. The task tile once
+   * carried static priority/assignee chips ABOVE a working control strip, and
+   * the bug users reported was "the buttons are broken" — the things that
+   * looked like controls were `<span>`s while the real control sat elsewhere.
+   * The panel had the same shape: a read-only `URGENT` tag and an avatar row
+   * here, with no way to change either. Now that `EntityControlStrip` is
+   * mounted above this body, drawing them here again would rebuild exactly
+   * that confusion, so suppression is asserted rather than assumed.
+   *
+   * Keyed on the REGISTRY declaring a control (task declares `valueControls`
+   * for priority and an `assignControl`), never on the kind — a kind with no
+   * assign control keeps its read-only assignee row, because there the row is
+   * the only truth available.
+   */
+  it('does NOT restate priority or assignees — the control strip owns both', () => {
+    const config = getKind('task');
+    expect(config.list.valueControls?.some((c) => c.source === 'priority')).toBe(true);
+    expect(config.list.assignControl?.source).toBe('assignees');
+
+    const grid = renderBody().getByTestId('subtree-grid');
+    expect(grid.textContent).not.toContain(`@${ada.displayName}`);
+    expect(grid.textContent).not.toMatch(/URGENT/);
   });
 
   it('renders the points estimate, which lives in CONTENT rather than state', () => {
@@ -198,8 +236,12 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
   });
 
   it('hands back the WHOLE array on a tick, with only that criterion flipped', () => {
-    // A caller given one flip would rebuild the array from a copy, and a
-    // rebuild from a stale copy is how one tick silently drops another's.
+    // A SHAPE assertion, not a concurrency one. The comment that used to sit
+    // here claimed the whole-array dispatch stopped one tick from dropping
+    // another writer's; it does not. The array is rebuilt from `draft ??
+    // persisted` — the rendered, possibly-stale list — so this only says WHERE
+    // the rebuild happens. The lost-update defence is `expectedVersion`, and
+    // it is asserted end-to-end in panels/detail/save-wiring.test.tsx.
     const onCriteriaChange = vi.fn();
     const { getByTestId } = renderBody({ onCriteriaChange });
     const boxes = within(getByTestId('acceptance-section')).getAllByRole('checkbox');
@@ -218,11 +260,64 @@ describe('ACCEPTANCE — the conditions that decide whether the work is done', (
     expect(section.textContent).toMatch(/ACCEPTANCE · 4\/4/);
   });
 
-  it('disables every box with its reason when the entity cannot be saved (R7)', () => {
-    const { getByTestId } = renderBody({ criteriaUnavailableReason: 'You cannot edit this — the server refuses edits here' });
-    const boxes = within(getByTestId('acceptance-section')).getAllByRole('checkbox') as HTMLInputElement[];
-    expect(boxes.every((b) => b.disabled)).toBe(true);
-    expect(boxes[0]?.title).toMatch(/cannot edit this/i);
+  it('CLEARS doneBy/doneAt when a criterion is un-ticked', () => {
+    // The stamp is provenance for a fact that is no longer true. `{...c, done}`
+    // kept it verbatim, producing `{done:false, doneBy:'forge…', doneAt:'…'}`,
+    // and the server normalizer passes both through untouched — so nothing
+    // downstream would have corrected it. Setting it on a TICK is the server's
+    // job (it has the actor and the clock); clearing it is this body's.
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({ onCriteriaChange });
+    const boxes = within(getByTestId('acceptance-section')).getAllByRole('checkbox');
+    // Row 0 is the done one, and the fixture stamps it.
+    expect(criteriaOf(taskDetail())[0]?.doneBy).toBeTruthy();
+    fireEvent.click(boxes[0]!);
+
+    const next = onCriteriaChange.mock.calls[0]?.[0] as AcceptanceCriterion[];
+    expect(next[0]).toEqual({ id: 'ac-1', text: 'Crash reproduced under fixture data', done: false });
+    // Every other row is handed back untouched, stamp included.
+    expect(next[1]).toEqual(criteriaOf(taskDetail())[1]);
+  });
+
+  it('refuses every box with the HONESTY vocabulary when the entity cannot be saved (R7)', () => {
+    // NOT a native `disabled` + `title`: DisabledWithReason rules that out
+    // because a natively disabled control leaves the tab order, so the
+    // keyboard-only user it refuses can never read the refusal.
+    const { getByTestId } = renderBody({
+      onCriteriaChange: vi.fn(),
+      criteriaUnavailableReason: 'You cannot edit this — the server refuses edits here',
+    });
+    const section = getByTestId('acceptance-section');
+    expect(within(section).queryAllByRole('checkbox')).toHaveLength(0);
+    const refusals = within(section).getAllByTestId('disabled-with-reason');
+    expect(refusals).toHaveLength(4);
+    expect(refusals[0]?.getAttribute('tabindex')).toBe('0');
+    expect(refusals[0]?.textContent).toMatch(/cannot edit this/i);
+    expect(refusals[0]?.textContent).toMatch(/refuses edits here/i);
+  });
+
+  it('a REASON beats a handler — passing both refuses rather than half-refusing', () => {
+    // The real arm of the contract, and the one `disabled={!onChange}` got
+    // wrong: with both props the boxes stayed live and clickable while wearing
+    // a refusal tooltip, so the control said one thing and did another.
+    const onCriteriaChange = vi.fn();
+    const { getByTestId } = renderBody({
+      onCriteriaChange,
+      criteriaUnavailableReason: 'You cannot edit this — the server refuses edits here',
+    });
+    const section = getByTestId('acceptance-section');
+    fireEvent.click(within(section).getAllByTestId('disabled-with-reason')[0]!);
+    expect(onCriteriaChange).not.toHaveBeenCalled();
+  });
+
+  it('names the NOT-WIRED reason when no dispatch was handed in at all', () => {
+    // The other refusal cause, and the reason the R7 test above was half
+    // tautological: `renderBody` supplies no `onCriteriaChange`, so a test that
+    // only asserted "disabled" passed with no reason string present anywhere.
+    const section = renderBody().getByTestId('acceptance-section');
+    expect(within(section).getAllByTestId('disabled-with-reason')[0]?.textContent).toContain(
+      'This action isn’t connected yet',
+    );
   });
 
   it('states an empty criteria list rather than drawing an empty region', () => {
