@@ -100,10 +100,17 @@ export async function workspaceScopeFor(db: Db, claims: DbClaims): Promise<Works
   }
   // Through a definer accessor, not a direct read: `tm8_app` has no grant on
   // public.accounts, and giving it one would hand the application role every
-  // account row so it could learn one fact about itself. See migration 080.
+  // account row so it could learn one fact about itself.
+  //
+  // ONE function answers this, defined once in migration 078. There were
+  // briefly three — 078 and 079 both defined `current_account_id` and this file
+  // called a third, `workspace_account_id`, from a migration of its own. All
+  // three had identical bodies and all used `create or replace`, so apply order
+  // silently decided which survived; a later edit to one of them would have
+  // been quietly undone by the next. Collapsed deliberately.
   const rows = await db.query<AccountRow>(
     claims,
-    `select internal.workspace_account_id()::text as id`,
+    `select internal.current_account_id()::text as id`,
   );
   const accountId = rows[0]?.id;
   if (!accountId) {
