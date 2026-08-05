@@ -168,6 +168,6 @@ describe('W5.C generator proof', () => {
     // 65 -> 66 on 2026-08-01: identity.profile.update bound its input DTO.
     // 66 -> 69 on 2026-08-02: auth.signup/login/logout bound their input DTOs.
     // 69 -> 70 on 2026-08-04: projects.files.attach bound its input DTO.
-    expect(ENTRIES).toHaveLength(70);
+    expect(ENTRIES).toHaveLength(72);
   });
 });
