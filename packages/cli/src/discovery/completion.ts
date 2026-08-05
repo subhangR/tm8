@@ -39,6 +39,9 @@ const ROOT_COMMANDS: readonly (readonly string[])[] = [
   ['completion', 'zsh'],
   ['completion', 'fish'],
   ['worker', 'init'],
+  // `doctor` is a LOCAL diagnostic, not a catalog operation, so it reaches
+  // `COMMAND_PATHS` no more than `help` does and is completable only from here.
+  ['doctor'],
 ];
 
 const ALL_PATHS: readonly string[] = [...ROOT_COMMANDS, ...COMMAND_PATHS]
@@ -59,7 +62,25 @@ const GLOBAL_OPTIONS: readonly string[] = [
   '--help',
 ];
 
-const FIRST_WORDS: readonly string[] = [...new Set(['help', 'completion', ...NOUNS])].sort();
+/**
+ * The first word of every completable path — fish's `__fish_use_subcommand`
+ * list.
+ *
+ * DERIVED, not hand-listed. This used to read `['help', 'completion',
+ * ...NOUNS]`, which is a SECOND hand-list beside `ROOT_COMMANDS` and silently
+ * disagreed with it: a root command absent here is absent from fish only, while
+ * bash and zsh (both generated from `ALL_PATHS`) complete it fine — so the
+ * cross-shell parity guard fires and the single-shell nature of the gap is the
+ * confusing part. `worker` was already missing this way, which is why `worker
+ * init` — the first command a spawned agent runs — had no fish root completion
+ * despite being listed in `ROOT_COMMANDS`.
+ *
+ * `NOUNS` is still unioned in: it carries documented nouns that own no command
+ * path, and dropping them would REMOVE completions rather than add them.
+ */
+const FIRST_WORDS: readonly string[] = [
+  ...new Set([...ALL_PATHS.map((p) => p.split(' ')[0] as string), ...NOUNS]),
+].sort();
 
 function bash(): string {
   // bash's `compgen -W` takes bare words and cannot carry per-option

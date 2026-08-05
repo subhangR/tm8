@@ -27,6 +27,7 @@
 import type { CommandModule } from '../run.js';
 import { workerInit } from './worker-init.js';
 import { completion } from './completion.js';
+import { doctor } from './doctor.js';
 import { help } from './help.js';
 import { searchQuery } from './search.js';
 import { KIND_COMMANDS } from './kind.js';
@@ -64,10 +65,21 @@ import { VOICE_COMMANDS } from './voice.js';
  * Root discovery commands (§4.16). Not domain grammar: they take no Space, no
  * actor, and never reach the network, which is why they are listed here rather
  * than in a noun module.
+ *
+ * `doctor` joins them as the third LOCAL-ONLY command. It is not a catalog
+ * operation and must never become one: it diagnoses the environment (PATH, the
+ * database, db/migrations, git, the data dir) and makes exactly one diagnostic
+ * probe at whichever node context resolved. It reaches the network only as the
+ * SUBJECT of a check, never to perform an operation, so it takes no Space and
+ * no actor exactly as `help` and `completion` do. Registering it here rather
+ * than in `src/discovery/operations.ts` is deliberate: one catalog row costs a
+ * frozen count pin, a pinned digest, a generated manifest and a
+ * grammar-completeness guard, and `doctor` needs none of them.
  */
 const DISCOVERY_COMMANDS: CommandModule[] = [
   { path: ['help'], run: (cmd) => help(cmd.args, cmd.options, cmd.out) },
   { path: ['completion'], run: (cmd) => completion(cmd.args, cmd.out) },
+  { path: ['doctor'], run: (cmd) => doctor({ args: cmd.args, ctx: cmd.ctx, out: cmd.out }) },
 ];
 
 /**
