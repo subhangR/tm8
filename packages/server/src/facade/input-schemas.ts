@@ -108,19 +108,6 @@ const UndoCommandInputSchema = z.object({
   clientMutationId: z.string().min(1).optional(),
 }).strict();
 
-/**
- * `gitCredentials.delete` carries no payload: the provider is fixed and the
- * subject is always the caller, so there is nothing a body could say. Bound
- * anyway — an unbound command is an unvalidated one — and bound as OPTIONAL
- * because a DELETE legitimately arrives with no body at all, while a node
- * running with idempotency disabled has `normalizeCommandInputForIdempotencyMode`
- * inject a `clientMutationId` into every command body on its way past. Strict,
- * so anything else is a typo the caller hears about.
- */
-const GitCredentialDeleteInputSchema = z.object({
-  clientMutationId: z.string().min(1).optional(),
-}).strict().optional();
-
 export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // identity (v2 Stage 0). The DTO deliberately has no actorId — strictness
   // refuses an actor on the wire rather than ignoring it.
@@ -139,7 +126,13 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   // environment. `delete` takes no body at all — the provider is fixed and the
   // subject is always the caller.
   'gitCredentials.set': GitCredentialSetInputSchema,
-  'gitCredentials.delete': GitCredentialDeleteInputSchema,
+  // RequiredCommandContextSchema, not a fully-optional body: this is a durable
+  // command, and a durable command carries a mutation id so a retry replays
+  // instead of acting twice. A schema that accepts `undefined` would also make
+  // the binding pointless — the no-body probe would already reach the handler —
+  // which is exactly what W5.C's generator proof refuses. Same shape as
+  // `projects.unlink` and `spaces.invites.revoke`.
+  'gitCredentials.delete': RequiredCommandContextSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,
