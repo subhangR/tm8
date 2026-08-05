@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { useState } from 'react';
 import {
   CollabError,
@@ -477,7 +477,11 @@ describe('blocks', () => {
     expect(chip.textContent).toContain('mermaid');
     expect(chip.textContent).toContain('breakpoint-cascade');
     // No renderer and no block editor exist — so the entry states that.
-    expect(screen.getByTestId('disabled-with-reason')).toBeTruthy();
+    // Scoped to THE CHIP: the editor now carries a second honest refusal (the
+    // file-insert control, mounted without an attachment port), so a global
+    // query is ambiguous — which is the query reporting two refusals, not the
+    // assertion breaking.
+    expect(within(chip).getByTestId('disabled-with-reason')).toBeTruthy();
   });
 
   it('the preview shows an ordinary fence as REAL code, labelled with its language', () => {

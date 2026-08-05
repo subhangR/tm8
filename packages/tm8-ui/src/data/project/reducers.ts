@@ -160,6 +160,26 @@ export function reduceCounterChanged(
   return mergeSummary(state, { ...summary, counters });
 }
 
+/*
+ * WHY NEITHER EDGE REDUCER TOUCHES `details[id].connections`, asked and
+ * answered while fixing the attachment strip.
+ *
+ * `EntityDetail.connections` is a READ-TIME SNAPSHOT of the same fact these
+ * two functions maintain in `edges`/`edgeIdsByEntity`. Folding events into it
+ * as well would give the store TWO live copies of one fact, which have to be
+ * kept in agreement forever — and `ingestDetail` overwrites the detail
+ * wholesale on every read, so the two would diverge on the very next fetch.
+ *
+ * The live answer already exists and needs no second copy:
+ * `selectConnectionsOf` regroups the normalized family below into a
+ * `Connections` on demand, which is how an open Connections tab already sees
+ * an edge created after it was opened. A consumer that needs the CURRENT
+ * connections reads that selector; one that reads `detail.connections` is
+ * asking for the snapshot and gets it. The attachment strip was reading the
+ * snapshot by mistake — fixed there (`files/model.ts` `attachedFiles(detail,
+ * live)`), not by adding a third copy here.
+ */
+
 /** `edge.upsert`: upsert the edge and index it under both endpoints. */
 export function reduceEdgeUpsert(state: DomainState, edge: EdgeView): Partial<DomainState> {
   let index = state.edgeIdsByEntity;

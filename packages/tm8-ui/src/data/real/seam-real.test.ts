@@ -260,8 +260,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // Amendment 5 (2026-08-04): the RELATIONSHIP write side. `assignees` is
       // a projection of `assigned_to` edges, so every surface could show an
       // assignment and none could make one — the seam had the reads and not
-      // the writes. Sorts around `createEntity` / `deleteEntity`, beside the
-      // entity verbs they mirror.
+      // the writes. `deleteEdge` serves BOTH unassign and detach; detach never
+      // deletes the file behind the `attached_to` link. Assignment and
+      // attachment reached this op from two different features at once; it is
+      // ONE Amendment 5, not two. Sorts around `createEntity` / `deleteEntity`,
+      // beside the entity verbs they mirror.
       'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
       'editMessage', 'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
@@ -297,6 +300,23 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       'delivery', 'attentionRequests']) {
       expect(typeof (seam as unknown as Record<string, unknown>)[m]).toBe('function');
     }
+  });
+
+  /**
+   * Amendment 5 — DETACH ON THE WIRE. The method and the path are the whole
+   * risk here: `edges.delete` is DELETE /v2/edges/:edgeId, and a detach that
+   * POSTed, or that put the FILE's id in the path, would be green on every
+   * spy-based test and would remove the wrong thing (or nothing) in
+   * production. The body carries the mutation id because the server binds
+   * `RequiredCommandContextSchema` and refuses without it.
+   */
+  it('detach speaks DELETE /v2/edges/:edgeId and carries the mutation id', async () => {
+    const { seam, f } = mk(() => ok({ patches: [] }));
+    await seam.commands.deleteEdge('edge-7', { clientMutationId: 'cmid-detach' });
+    const call = f.calls[f.calls.length - 1]!;
+    expect(call.method).toBe('DELETE');
+    expect(call.url).toBe('/v2/edges/edge-7');
+    expect(call.body).toEqual({ clientMutationId: 'cmid-detach' });
   });
 
   it('dispose tears down both managers', async () => {

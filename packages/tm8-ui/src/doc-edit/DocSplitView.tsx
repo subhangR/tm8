@@ -1,9 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import type { EntityDetail } from '@tm8/contract';
 import { DisabledIconControl } from '../panels/honesty/DisabledWithReason';
+import type { MarkdownFileHref } from '../kit';
 import type { DocBlock } from './blocks';
 import { DocPreview } from './DocPreview';
-import { DocSource } from './DocSource';
+import { DocSource, type DocAttach } from './DocSource';
 import { ConflictBanner, RefusalHost, SaveActions, SaveWord } from './EditorChrome';
 import type { DocSaveHandle } from './useDocSave';
 
@@ -27,9 +28,17 @@ export function DocSplitView({
   collapseRefusal,
   onOpenBlock,
   conflictActor,
+  fileHref,
+  attach,
+  onAttached,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
+  /** Resolves `tm8://file/<id>` images in the preview pane. See `DocPreview`. */
+  fileHref?: MarkdownFileHref;
+  /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
+  attach?: DocAttach;
+  onAttached?: () => void;
   /** ⇲ — back to the panel. Absent ⇒ disabled-with-reason, never hidden. */
   onCollapse?: () => void;
   /**
@@ -74,7 +83,13 @@ export function DocSplitView({
 
       <div className="de-split__panes" ref={frame}>
         <div className="de-split__pane" style={{ flexGrow: ratio }}>
-          <DocSource save={save} onOpenBlock={onOpenBlock} label="Document source (split view)" />
+          <DocSource
+            save={save}
+            onOpenBlock={onOpenBlock}
+            label="Document source (split view)"
+            attach={attach}
+            onAttached={onAttached}
+          />
         </div>
         {/*
          * A REAL SEPARATOR, not a decorative 1px div. The oracle draws a grab
@@ -99,7 +114,7 @@ export function DocSplitView({
           <span className="de-split__grip" aria-hidden />
         </div>
         <div className="de-split__pane de-split__pane--preview" style={{ flexGrow: 1 - ratio }}>
-          <DocPreview source={save.body} />
+          <DocPreview source={save.body} fileHref={fileHref} />
         </div>
       </div>
 

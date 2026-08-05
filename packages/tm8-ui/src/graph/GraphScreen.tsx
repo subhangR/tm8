@@ -25,6 +25,7 @@ import type { ActionContext } from '../domain/types';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { attachmentsFor } from '../files/port';
 
 export interface GraphScreenData {
   spaceId: string;
@@ -36,7 +37,13 @@ export interface GraphScreenData {
    *  rather than a broken table. */
   seam?: Seam;
   activity: Readonly<Record<string, boolean>>;
+  /** Cache FILL for an aside whose detail is missing. Never a refresh — see
+   *  `refetchDetail`, and `useGateData`'s docblock on the difference. */
   pull?(id: string): void;
+  /** Invalidating re-read, for a local write that lands on the detail itself
+   *  (an `attached_to` edge). REQUIRED: a host without it draws an attachment
+   *  control that changes nothing on screen. */
+  refetchDetail(id: string): void;
 }
 
 export interface GraphScreenProps {
@@ -61,6 +68,14 @@ export function GraphScreen(props: GraphScreenProps) {
   const [mode, setMode] = useState<DetailMode>('aside');
 
   const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+
+  /* ATTACHMENTS. `data.seam` is optional on this port, so the helper answers
+     `undefined` for a host without one and the strip stays read-only rather
+     than drawing a dropzone that could not upload. */
+  const attachments = useMemo(
+    () => attachmentsFor(data.seam, data.spaceId),
+    [data.seam, data.spaceId],
+  );
 
   // Esc walks DOWN one level per press (EntityView's ladder, same reasons):
   // only when the event reaches the document unclaimed — a focused canvas
@@ -97,6 +112,8 @@ export function GraphScreen(props: GraphScreenProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      attachments={attachments}
+      onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       messages={messages}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,

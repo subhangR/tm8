@@ -8,6 +8,8 @@ import type {
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import { Chip, Eyebrow } from '../../kit';
+import { canThumbnail } from '../../files/AttachmentStrip';
+import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
 
 /**
@@ -42,11 +44,19 @@ export function GenericBody({
   blocks,
   onOpenEntity,
   commands,
+  downloadHref,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
   commands?: Partial<ArtifactPreviewCommands> | null;
+  /**
+   * Resolves a file entity's bytes URL, from the host's attachment port — the
+   * SAME resolver the attachment strip uses, so a file previews here exactly
+   * when it thumbnails there. Absent ⇒ `file-preview` says it cannot fetch,
+   * rather than building a URL this lane has no right to build.
+   */
+  downloadHref?: DownloadHref;
 }) {
   if (blocks.length === 0) {
     return (
@@ -61,7 +71,14 @@ export function GenericBody({
   return (
     <div className="pn-body" id="tabpanel-content" role="tabpanel" aria-labelledby="tab-content">
       {blocks.map((block, i) => (
-        <ContentBlock key={`${block.block}:${i}`} detail={detail} block={block} onOpenEntity={onOpenEntity} commands={commands} />
+        <ContentBlock
+          key={`${block.block}:${i}`}
+          detail={detail}
+          block={block}
+          onOpenEntity={onOpenEntity}
+          commands={commands}
+          downloadHref={downloadHref}
+        />
       ))}
     </div>
   );
@@ -72,11 +89,13 @@ function ContentBlock({
   block,
   onOpenEntity,
   commands,
+  downloadHref,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
   onOpenEntity?: (id: string) => void;
   commands?: Partial<ArtifactPreviewCommands> | null;
+  downloadHref?: DownloadHref;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -85,7 +104,7 @@ function ContentBlock({
       case 'link-summary':
         return <LinkSummaryBlock detail={detail} />;
       case 'file-preview':
-        return <FilePreviewBlock detail={detail} />;
+        return <FilePreviewBlock detail={detail} downloadHref={downloadHref} />;
       case 'artifact-preview':
         return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
       case 'items':
@@ -182,31 +201,77 @@ function LinkSummaryBlock({ detail }: { detail: EntityDetail }) {
 }
 
 /**
- * FILE-PREVIEW — mime-gated. A preview is only claimed for types that can
- * actually be previewed; everything else gets an honest "no preview" with the
- * download affordance still present.
+ * FILE-PREVIEW — mime-gated, and now it actually PREVIEWS.
+ *
+ * It used to draw a captioned empty box reading "image preview · image/png"
+ * next to the real image it was refusing to fetch — a label claiming the very
+ * thing it was not doing. The bytes were always reachable; what was missing was
+ * a resolver, because this lane may not build a transport URL itself. It takes
+ * one now, from the same host port the attachment strip uses.
+ *
+ * TWO GATES, both borrowed rather than re-derived:
+ *   · `canThumbnail` — the mime is an image AND is not `image/svg+xml`, which
+ *     the node refuses to serve inline (stored-XSS guard). One copy of that
+ *     rule, in `files/`, so the panel cannot drift from the strip or the server.
+ *   · a resolved href — no resolver, or a resolver answering null, means the
+ *     bytes are not reachable from this host and the box says so.
+ *
+ * `content.downloadUrl` stays as a second source because fixtures carry it and
+ * a real detail does not; the resolver wins where both exist.
  */
-function FilePreviewBlock({ detail }: { detail: EntityDetail }) {
+function FilePreviewBlock({
+  detail,
+  downloadHref,
+}: {
+  detail: EntityDetail;
+  downloadHref?: DownloadHref;
+}) {
   const state = detail.state as unknown as Record<string, unknown>;
   const content = detail.content as unknown as Record<string, unknown>;
   const mime = typeof state.mimeType === 'string' ? state.mimeType : '';
-  const downloadUrl = typeof content.downloadUrl === 'string' ? content.downloadUrl : null;
-  const previewable = mime.startsWith('image/');
+  const fallbackUrl = typeof content.downloadUrl === 'string' ? content.downloadUrl : null;
+  const href = (downloadHref ? downloadHref(detail.id) : null) ?? fallbackUrl;
+  const shown = href !== null && canThumbnail(mime);
 
   return (
     <div className="pn-preview">
-      <div className={previewable ? 'pn-preview__box' : 'pn-preview__box pn-preview__box--none'}>
-        <span className="pn-preview__label">
-          {previewable ? `image preview · ${mime}` : `no preview for ${mime || 'this type'}`}
-        </span>
-      </div>
-      {downloadUrl ? (
-        <a className="pn-btn" href={downloadUrl} download>
+      {shown ? (
+        <img
+          className="pn-preview__img"
+          data-testid="file-preview-image"
+          src={href}
+          alt={detail.title}
+          loading="lazy"
+          /* The size guard rides on the element as well as the stylesheet: a
+             5000px photo must not blow out a 440px panel column even where
+             this component renders without its CSS. */
+          style={{ maxWidth: '100%', maxHeight: '360px', objectFit: 'contain' }}
+        />
+      ) : (
+        <div className="pn-preview__box pn-preview__box--none">
+          <span className="pn-preview__label">{noPreviewWords(mime, href !== null)}</span>
+        </div>
+      )}
+      {href ? (
+        <a className="pn-btn" href={href} download={detail.title}>
           Download ↓
         </a>
       ) : null}
     </div>
   );
+}
+
+/**
+ * WHY there is no picture, in the caller's own terms. "We can't fetch it here"
+ * and "this type has no preview" are different facts, and a single sentence
+ * covering both would be true of neither.
+ */
+function noPreviewWords(mime: string, reachable: boolean): string {
+  if (!reachable) return `no download URL for this file here${mime ? ` · ${mime}` : ''}`;
+  if (/^image\/svg(\+xml)?$/i.test(mime.trim())) {
+    return 'SVG is not shown inline — it is a script-bearing document, not a picture';
+  }
+  return `no preview for ${mime || 'this type'}`;
 }
 
 /**

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { EntityDetail } from '@tm8/contract';
+import type { MarkdownFileHref } from '../kit';
 import type { DocBlock } from './blocks';
 import { DocPreview } from './DocPreview';
-import { DocSource } from './DocSource';
+import { DocSource, type DocAttach } from './DocSource';
 import {
   ConflictBanner,
   RefusalHost,
@@ -52,9 +53,17 @@ export function DocEditor({
   onStanceChange,
   onOpenBlock,
   conflictActor,
+  fileHref,
+  attach,
+  onAttached,
 }: {
   save: DocSaveHandle;
   detail: EntityDetail;
+  /** Resolves `tm8://file/<id>` images in the preview stance. See `DocPreview`. */
+  fileHref?: MarkdownFileHref;
+  /** Uploads a file and writes its reference at the caret. See `DocAttach`. */
+  attach?: DocAttach;
+  onAttached?: () => void;
   /** Controlled stance, for a host that persists it. Uncontrolled by default. */
   stance?: DocStance;
   onStanceChange?: (next: DocStance) => void;
@@ -82,9 +91,9 @@ export function DocEditor({
 
       <div className="de-body">
         {stance === 'write' ? (
-          <DocSource save={save} onOpenBlock={onOpenBlock} />
+          <DocSource save={save} onOpenBlock={onOpenBlock} attach={attach} onAttached={onAttached} />
         ) : (
-          <DocPreview source={save.body} />
+          <DocPreview source={save.body} fileHref={fileHref} />
         )}
       </div>
 

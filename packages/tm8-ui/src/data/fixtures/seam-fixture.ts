@@ -1332,6 +1332,45 @@ export function createFixtureSeam(): FixtureSeam {
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, ctx);
         return commandResult(s);
       },
+      /**
+       * Detach. Fixture edges are stored per-endpoint inside `extras`, so the
+       * SAME edge id appears twice — once outgoing on the source, once
+       * incoming on the target. Removing one copy would leave the peer's panel
+       * still listing the attachment, which is precisely the split-brain a
+       * real DELETE cannot produce; both copies go, and a group emptied by the
+       * removal goes with them so `attached_to · 0` is never rendered.
+       *
+       * It also serves UNASSIGN, which reached this op from the other side:
+       * `state.assignees` is projected from `assigned_to` edges, so every
+       * touched summary is re-projected here exactly as the node's read path
+       * does. One implementation, two callers — an outgoing-only variant would
+       * leave the target's panel still listing an assignment that is gone.
+       */
+      async deleteEdge(edgeId, ctx) {
+        let removed: EdgeView | null = null;
+        const touched: EntitySummary[] = [];
+        for (const [id, e] of extras) {
+          let hit = false;
+          for (const side of ['outgoing', 'incoming'] as const) {
+            for (const group of e.connections[side]) {
+              const found = group.edges.find((edge) => edge.id === edgeId);
+              if (!found) continue;
+              removed ??= found;
+              group.edges = group.edges.filter((edge) => edge.id !== edgeId);
+              hit = true;
+            }
+            e.connections[side] = e.connections[side].filter((group) => group.edges.length > 0);
+          }
+          if (hit) touched.push(requireSummary(id));
+        }
+        if (removed === null) throw new CollabError('not_found', `edge ${edgeId} not found`);
+        for (const s of touched) {
+          projectAssignees(s);
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, ctx);
+        }
+        return { patches: touched.map((s) => clone(s)) };
+      },
       async complete(id, input: CompleteTaskInput) {
         const s = requireSummary(id);
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
@@ -1380,21 +1419,6 @@ export function createFixtureSeam(): FixtureSeam {
         touch(src);
         emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, input);
         return commandResult(src);
-      },
-      async deleteEdge(edgeId, ctx) {
-        for (const [ownerId, e] of extras) {
-          for (const group of e.connections.outgoing) {
-            const at = group.edges.findIndex((edge) => edge.id === edgeId);
-            if (at < 0) continue;
-            group.edges.splice(at, 1);
-            const src = requireSummary(ownerId);
-            projectAssignees(src);
-            touch(src);
-            emit(src.spaceId, { type: 'entity.upsert', entity: clone(src) }, ctx);
-            return commandResult(src);
-          }
-        }
-        throw new CollabError('not_found', `edge ${edgeId} not found`);
       },
       async postMessage(input: PostMessageInput): Promise<CommandResult | MessageBatchResult> {
         if (input.anchorIds.length === 0) throw new CollabError('invalid_input', 'anchorIds must not be empty');

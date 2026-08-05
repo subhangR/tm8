@@ -44,6 +44,7 @@ export {
 
 /* ── the seam adapter (the ONLY place this lane touches a seam) ─────────── */
 export {
+  attachmentsFor,
   attachmentsPortFromSeam,
   type AttachmentsPort,
   filesPortFromSeam,

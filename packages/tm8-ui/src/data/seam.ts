@@ -396,6 +396,20 @@ export interface Seam {
      * `write_edge` UPSERTS on (src, dst, type), so create is idempotent on the
      * edge identity; delete is addressed by the edge's own id, which callers
      * read from `connections()`.
+     *
+     * DETACH IS THE SAME OPERATION. Attaching a file writes ONE `attached_to`
+     * edge and nothing else, so un-attaching is the deletion of that edge —
+     * not of the file, which may be attached elsewhere and whose bytes are not
+     * this surface's to destroy. The catalog has carried `edges.delete`
+     * (DELETE /v2/edges/:edgeId) since v1; the seam simply never named it,
+     * which is why the attachment strip shipped as a one-way door. Assignment
+     * and attachment reached this op from two different features at once; it
+     * is ONE Amendment 5, not two.
+     *
+     * `ctx` is optional in the type and REQUIRED by the server
+     * (`RequiredCommandContextSchema`), exactly as `deleteEntity` is: an
+     * omitted context earns an honest `invalid_input` rather than a
+     * synthesized id the caller could not reconcile.
      */
     createEdge(input: CreateEdgeInput): Promise<CommandResult>;
     deleteEdge(edgeId: string, ctx?: CommandContext): Promise<CommandResult>;

@@ -1,4 +1,4 @@
-import { Markdown } from '../kit';
+import { Markdown, type MarkdownFileHref } from '../kit';
 
 /**
  * THE PREVIEW STANCE — what the draft will read as, rendered from the DRAFT and
@@ -21,7 +21,21 @@ import { Markdown } from '../kit';
  * chips to offer per-block editors — parsing for a control is a different job
  * from parsing for a rendering.
  */
-export function DocPreview({ source, testId = 'doc-preview' }: { source: string; testId?: string }) {
+export function DocPreview({
+  source,
+  testId = 'doc-preview',
+  fileHref,
+}: {
+  source: string;
+  testId?: string;
+  /**
+   * Resolves `![](tm8://file/<id>)` to bytes, from the host's attachment port.
+   * Absent ⇒ an internal image states itself instead of rendering, which is
+   * also what the reader does — the preview must not resolve an image the read
+   * stance would refuse, or "what it will look like" stops being true.
+   */
+  fileHref?: MarkdownFileHref;
+}) {
   if (source.trim() === '') {
     return (
       <div className="de-preview" data-testid={testId}>
@@ -32,7 +46,7 @@ export function DocPreview({ source, testId = 'doc-preview' }: { source: string;
 
   return (
     <div className="de-preview" data-testid={testId}>
-      <Markdown source={source} testId={`${testId}-markdown`} />
+      <Markdown source={source} testId={`${testId}-markdown`} fileHref={fileHref} />
     </div>
   );
 }

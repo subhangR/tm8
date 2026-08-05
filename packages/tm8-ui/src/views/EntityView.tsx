@@ -47,7 +47,7 @@ import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
-import { attachmentsPortFromSeam } from '../files/port';
+import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
 import { useRowLifecycle } from './useRowLifecycle';
@@ -153,7 +153,7 @@ export function EntityView(props: EntityViewProps) {
    * keystroke elsewhere in the view.
    */
   const attachments = useMemo(
-    () => attachmentsPortFromSeam(data.seam, data.spaceId),
+    () => attachmentsFor(data.seam, data.spaceId),
     [data.seam, data.spaceId],
   );
   const config = getKind(kind);
@@ -328,7 +328,7 @@ export function EntityView(props: EntityViewProps) {
       liveness={data.livenessOf(selectedId)}
       livenessOf={data.livenessOf}
       attachments={attachments}
-      onAttachmentUploaded={() => props.data.pull?.(selectedId)}
+      onAttachmentUploaded={() => props.data.refetchDetail(selectedId)}
       viewerMemberId={props.viewerMemberId}
       contentSurface={contentSurfaces[selectedId] ?? null}
       onContentSurfaceChange={(surface) => {
@@ -482,7 +482,7 @@ export function EntityView(props: EntityViewProps) {
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
                 livenessOf={data.livenessOf}
                 attachments={attachments}
-                onAttachmentUploaded={() => props.data.pull?.(aux.id)}
+                onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 connections={data.connectionsOf(aux.id)}
