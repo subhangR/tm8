@@ -45,10 +45,13 @@ class SeedDb implements Db {
     return {} as T;
   }
 
-  async tx<T>(_claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
+  // Routed to the same fakes, not stubbed empty: the teammate roster is seeded
+  // inside a transaction now, and a tx that answers nothing would report seven
+  // creations on every pass and hide the idempotence this test exists to prove.
+  async tx<T>(claims: DbClaims, run: (q: Querier) => Promise<T>): Promise<T> {
     return run({
-      query: async <R>() => [] as R[],
-      rpc: async <T2>() => ({} as T2),
+      query: <R>(sql: string) => this.query<R>(claims, sql),
+      rpc: <T2>(fn: string, args?: readonly unknown[]) => this.rpc<T2>(claims, fn, args),
     });
   }
 

@@ -1,18 +1,11 @@
 import { stat } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
-import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 import type { Db, DbClaims } from '../db/types.js';
 import type { LoopbackOwner } from '../identity/loopback.js';
+import { ensureDefaultTeammates } from './default-teammates.js';
 
 interface SpaceRow { id: string }
 interface ProjectRow { id: string; trust: 'trusted' | 'untrusted' }
-interface TeammateRow {
-  id: string;
-  version: number;
-  name: string;
-  model: string | null;
-  agent_tool: string | null;
-}
 
 interface ProjectMutation { project?: { id?: string } }
 
@@ -95,79 +88,10 @@ export async function ensureLaunchResources(args: {
       `bootstrap:project-link:${space.id}:${project.id}`,
     ]);
 
-    const rows = await args.db.query<TeammateRow>(
-      claims,
-      `select entity_row.id::text id, entity_row.version, teammate.name,
-              teammate.model, teammate.agent_tool
-         from public.entities entity_row
-         join public.team_members teammate on teammate.entity_id = entity_row.id
-        where entity_row.space_id = $1 and entity_row.deleted_at is null`,
-      [space.id],
-    );
-    const byName = new Map(rows.map((row) => [row.name, row]));
-
-    // Repair the historical smoke seed so the current UI stops presenting an
-    // unknown tool with an empty model picker after restart.
-    const smoke = byName.get('Smoke Agent');
-    if (smoke && (smoke.model === null || smoke.agent_tool === null)) {
-      await updateTeammate(args.db, claims, smoke, 'claude-sonnet-5', 'claude-code', space.id);
-      teammatesUpdated += 1;
-    }
-
-    for (const entry of LAUNCH_MODEL_CATALOG) {
-      const existing = byName.get(entry.seedName);
-      if (!existing) {
-        await args.db.rpc(claims, 'public.create_team_member', [
-          space.id,
-          entry.seedName,
-          null,
-          'Launch persona',
-          `${entry.label} via ${entry.agentTool}`,
-          entry.model,
-          entry.agentTool,
-          'worker',
-          null,
-          JSON.stringify({}),
-          JSON.stringify({}),
-          null,
-          null,
-          null,
-          `bootstrap:teammate:${space.id}:${entry.model}`,
-        ]);
-        teammatesCreated += 1;
-      } else if (existing.model !== entry.model || existing.agent_tool !== entry.agentTool) {
-        await updateTeammate(args.db, claims, existing, entry.model, entry.agentTool, space.id);
-        teammatesUpdated += 1;
-      }
-    }
+    const seeded = await args.db.tx(claims, (q) => ensureDefaultTeammates(q, space.id));
+    teammatesCreated += seeded.created;
+    teammatesUpdated += seeded.updated;
   }
 
   return { spaces: spaces.length, projectId: project.id, teammatesCreated, teammatesUpdated };
-}
-
-async function updateTeammate(
-  db: Db,
-  claims: DbClaims,
-  teammate: TeammateRow,
-  model: string,
-  agentTool: string,
-  spaceId: string,
-): Promise<void> {
-  await db.rpc(claims, 'public.update_team_member', [
-    teammate.id,
-    teammate.version,
-    null,
-    null,
-    null,
-    null,
-    model,
-    agentTool,
-    null,
-    null,
-    null,
-    null,
-    null,
-    null,
-    `bootstrap:teammate-update:${spaceId}:${teammate.id}:v${teammate.version}:${model}`,
-  ]);
 }

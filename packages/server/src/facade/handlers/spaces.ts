@@ -17,6 +17,7 @@ import {
   type SpaceSummary,
 } from '@tm8/contract';
 import type { OperationHandler } from '../../http/types.js';
+import { ensureDefaultTeammates } from '../../bootstrap/default-teammates.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
 import { queryCollection } from './collections.js';
@@ -139,6 +140,24 @@ export function spacesCreate(deps: FacadeDeps): OperationHandler {
         envelope.clientMutationId ?? null,
       ],
     );
+
+    // A space with no team_member rows has nothing to launch, and the boot-time
+    // bootstrap only ever sees spaces that existed when the process started —
+    // so before this, a space was unlaunchable until someone restarted the node.
+    // Seeded outside the create: the roster is a convenience, and losing the
+    // space itself because a persona insert was refused would be the worse
+    // trade. Boot repairs whatever is missing.
+    if (deps.config.launchBootstrap) {
+      try {
+        await deps.db.tx(claimsFor(owner, ctx), (q) =>
+          ensureDefaultTeammates(q, result.space.id),
+        );
+      } catch (error) {
+        console.warn(
+          `  default teammates not seeded for space ${result.space.id}: ${String(error)}`,
+        );
+      }
+    }
 
     // Read the summary back through the same path `spaces.get` uses, rather
     // than shaping a second one from the RPC's raw row — one assembler per

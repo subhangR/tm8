@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
+import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { observeG15DatabaseOutcome } from '../agentic-observer.js';
@@ -225,7 +226,14 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     expect(after.ledgerEntriesForClientMutationIds).toEqual([
       { clientMutationId, operation: 'spaces.create' },
     ]);
-    expect(after.totalCommandLedgerRows).toBe(before.totalCommandLedgerRows + 1);
+    // spaces.create is one ledgered command PLUS one per default teammate: a
+    // new space seeds the launch roster so it is launchable without waiting for
+    // the next boot pass. Counted exactly rather than loosened to "more than
+    // before", because the point of this cell is that the oracle sees precisely
+    // what the operation wrote.
+    expect(after.totalCommandLedgerRows).toBe(
+      before.totalCommandLedgerRows + 1 + LAUNCH_MODEL_CATALOG.length,
+    );
     expect(after.totalEntityRows).toBeGreaterThan(before.totalEntityRows);
   }, 120_000);
 
