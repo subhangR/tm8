@@ -266,6 +266,11 @@ export function ChannelScreen({
           </p>
         ) : null}
 
+        {/* S09's honesty line describes the PAGING BOUNDARY, so it lives at
+            the boundary — the top of the feed, beside "load earlier ↑" —
+            not below the newest message, where the chat surface must end at
+            the composer. */}
+        <Provenance page={page} />
         <LoadEarlier
           cursor={page?.nextCursor ?? null}
           busy={loadingEarlier}
@@ -322,8 +327,6 @@ export function ChannelScreen({
             ))}
           </ul>
         )}
-
-        <Provenance page={page} />
       </div>
 
       <Composer
@@ -547,7 +550,8 @@ function EmptyFeed({ onSwitchToTerminal }: { onSwitchToTerminal?: () => void }) 
 }
 
 /**
- * The oracle's footer line, and the one number it is allowed to state.
+ * The oracle's provenance line (rendered at the TOP of the feed, at the
+ * paging boundary it describes), and the one number it is allowed to state.
  *
  * S09 is explicit: "1 item returned · continue via nextCursor — no total shown,
  * ever." A total would require counting rows the viewer may not be authorized

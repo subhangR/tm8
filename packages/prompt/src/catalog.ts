@@ -332,6 +332,8 @@ const CONTROL_SPECS: readonly ControlSpec[] = [
       body: '{the message body, excerpted by the caller}',
       truncated: false,
       fetchRef: '{fetchRef}',
+      parentBody: '{the thread parent message body, excerpted to 1,500 chars — omitted when no readable parent}',
+      parentAuthorDisplay: '{parentAuthorDisplay}',
     }),
     budget: 'incomingMessageInjection',
   },

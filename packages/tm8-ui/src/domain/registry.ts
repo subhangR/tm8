@@ -476,6 +476,13 @@ const ROWS: readonly KindConfig[] = [
         pulse: { signal: 'terminal-activity', gate: 'live' },
       },
       liveCount: { filter: NOT_DELETED, label: (n) => `● ${n} live` },
+      // Sessions are LAUNCHED, not created: `quickLaunch` below is the real
+      // affordance, so the inherited quickCreate:true only mounted a Create
+      // control that refuses. Same defect class as the rowActions note below —
+      // "Keeping this true mounted a refused Save control whose full reason
+      // squeezed Discussion/Connections/Activity out of the compact panel
+      // row" — ruled once already; a refused control is not a control.
+      quickCreate: false,
       quickLaunch: 'launch-session',
       filters: [deletedFilter],
       sort: [BY_ACTIVITY, BY_CREATED],
@@ -501,6 +508,9 @@ const ROWS: readonly KindConfig[] = [
       // Availability is still pin-projected at the panel mount: the registry
       // declares the complete work-session surface vocabulary, not permission.
       contentSurfaces: ['terminal', 'chat'],
+      // Already excluded from strip/footer via the terminal archetype arm;
+      // the flag states the reason structurally: this body ends at a composer.
+      composition: 'chat',
       z4: { immersive: true },
     },
     palette: { createLabel: 'Launch session', primaryAction: 'launch-session' },
@@ -565,7 +575,10 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
       inlineEdit: { title: true },
     }),
-    panel: { archetype: 'hub', primaries: ['add-child'] },
+    // composition:'chat' — the hub body is a conversation ending at its
+    // composer: no AttachmentStrip (the composer's + owns attach) and no
+    // PanelFooter below it.
+    panel: { archetype: 'hub', composition: 'chat', primaries: ['add-child'] },
     palette: { createLabel: 'New channel' },
   },
 

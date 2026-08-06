@@ -375,6 +375,169 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
     ]);
   });
 
+  // D1b — the parent-message excerpt. The route carries the thread parent as
+  // an ID only; post() loads the parent body inside the same tx under the
+  // sender's claims and hands it to the renderer. Three truths pinned here:
+  // a parented route gets the second untrusted block, an unparented route
+  // gets none, and a parent the viewer cannot read yields no block AND no
+  // error — RLS absence is silence, never a throw.
+  describe('D1b parent-message excerpt', () => {
+    const PARENT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const PARENT_AUTHOR = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+    function excerptSetup(options: {
+      threadParentMessageId: string | null;
+      parentReadable: boolean;
+    }) {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        expect(name).toBe('w2_record_session_message_routes');
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: options.threadParentMessageId,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      db.queryImpl = async <R>(sql, params) => {
+        if (sql.includes('profile_display_name')) {
+          return [
+            {
+              id: IDS.author, kind: 'member', space_id: IDS.space,
+              member_display_name: 'Message Author', member_role: 'owner',
+              team_member_name: null, team_member_avatar: null, team_member_owner_id: null,
+              profile_display_name: 'Message Author', profile_avatar: null,
+            },
+            {
+              id: PARENT_AUTHOR, kind: 'member', space_id: IDS.space,
+              member_display_name: 'Parent Author', member_role: 'owner',
+              team_member_name: null, team_member_avatar: null, team_member_owner_id: null,
+              profile_display_name: 'Parent Author', profile_avatar: null,
+            },
+          ] as R[];
+        }
+        if (sql.includes('left join public.messages msg')) {
+          // Both the batch reload and the parent load share this SQL shape;
+          // the requested id array decides what the "database" can see. An
+          // unreadable parent is a row RLS simply does not return.
+          const ids = (params[0] ?? []) as string[];
+          const rows: EntityRow[] = [];
+          if (ids.includes(IDS.message)) rows.push(messageRow());
+          if (options.parentReadable && ids.includes(PARENT)) {
+            rows.push(messageRow({
+              id: PARENT,
+              author_id: PARENT_AUTHOR,
+              message_batch_id: 'parent-batch',
+              message_body: 'the parent said this',
+            }));
+          }
+          return rows as R[];
+        }
+        return [];
+      };
+      const contents: string[] = [];
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+        messageDelivery: {
+          reserve: async (intent) => {
+            contents.push(String(intent.content));
+            return {
+              deliveryId: IDS.delivery,
+              messageId: IDS.message,
+              targetWorkSessionId: IDS.targetSession,
+              reservationVersion: 3,
+              expiresAt: '2026-07-26T12:15:00.000Z',
+              content: String(intent.content),
+              mode: 'send',
+            };
+          },
+          principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+      return { db, registry, contents };
+    }
+
+    function post(registry: HandlerRegistry) {
+      return handler(registry, 'messages.post')(request('messages.post', {
+        body: {
+          clientMutationId: 'batch-1',
+          actorId: IDS.author,
+          anchorIds: [IDS.anchor],
+          body: 'stored body',
+        },
+      }));
+    }
+
+    it('renders the parent excerpt block when the route carries a readable thread parent', async () => {
+      const { registry, contents } = excerptSetup({
+        threadParentMessageId: PARENT,
+        parentReadable: true,
+      });
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      const content = contents[0]!;
+      expect(content).toContain('type="parent-message-body"');
+      expect(content).toContain('author="Parent Author"');
+      expect(content).toContain(`message_id="${PARENT}"`);
+      expect(content).toContain('the parent said this');
+      // The excerpt is small, so it arrives whole.
+      expect(content).toContain('truncated="false"');
+    });
+
+    it('renders no parent block for a route without a thread parent', async () => {
+      const { registry, contents } = excerptSetup({
+        threadParentMessageId: null,
+        parentReadable: true,
+      });
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).not.toContain('parent-message-body');
+      // The route still delivers its own body.
+      expect(contents[0]).toContain('stored body');
+    });
+
+    it('delivers without an excerpt — and without an error — when the parent is unreadable', async () => {
+      const { registry, contents } = excerptSetup({
+        threadParentMessageId: PARENT,
+        parentReadable: false,
+      });
+      const result = await post(registry);
+      expect(result).toMatchObject({ messageBatchId: 'batch-1' });
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).not.toContain('parent-message-body');
+    });
+
+    it('loads the parent inside the storage transaction, under the sender claims', async () => {
+      const { db, registry } = excerptSetup({
+        threadParentMessageId: PARENT,
+        parentReadable: true,
+      });
+      await post(registry);
+      const parentLoad = db.calls.find((call) =>
+        call.kind === 'query' &&
+        call.name.includes('left join public.messages msg') &&
+        Array.isArray(call.args[0]) &&
+        (call.args[0] as string[]).includes(PARENT));
+      expect(parentLoad?.inTx).toBe(true);
+    });
+  });
+
   it('maps frozen PostgreSQL detail strings to the contract details.reason field', async () => {
     const db = new FakeDb();
     db.rpcImpl = async () => {

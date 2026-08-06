@@ -10,6 +10,7 @@ import {
   fixtureHandoffs,
   fixtureSummaries,
   presenceHollowReason,
+  channelDesign,
   sessionLive,
   sessionStale,
   docLayoutSpec,
@@ -125,8 +126,14 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
    * terminal panels do without it. Both halves are asserted together because
    * the risk is symmetric: dropping it everywhere would silently delete honest
    * chrome (D7.2's hollow "— viewing") from every document panel.
+   *
+   * D2 (session-UI design v1, 2026-08-06) EXTENDS the exclusion — deliberately
+   * overturning this test's earlier "and only for it" half: a
+   * `composition: 'chat'` body (channel's hub) ends at its composer for the
+   * same structural reason the terminal ends at its canvas. Document panels
+   * still keep the footer.
    */
-  it('drops the footer for the terminal archetype, and only for it', () => {
+  it('drops the footer for the terminal archetype and chat compositions, and only those', () => {
     const session = render(
       <EntityDetailPanel
         detail={fixtureDetails[sessionStale.id]!}
@@ -136,6 +143,11 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
       />,
     );
     expect(session.queryByTestId('panel-footer')).toBeNull();
+
+    const channel = render(
+      <EntityDetailPanel detail={fixtureDetails[channelDesign.id]!} reasons={REASONS} ctx={ctx} />,
+    );
+    expect(channel.queryByTestId('panel-footer')).toBeNull();
 
     const task = render(
       <EntityDetailPanel detail={fixtureDetails[taskUuidTitle.id]!} reasons={REASONS} ctx={ctx} />,
@@ -1178,7 +1190,14 @@ describe('share drop target — refusing honestly', () => {
  * nobody asserted the mount.
  */
 describe('EntityDetailPanel — attachments ride in the content body (D3 intact)', () => {
-  const anyDetail = Object.values(fixtureDetails).find((d) => d.deletedAt == null)!;
+  // Any kind that MOUNTS the strip — not terminal, not a chat composition
+  // (D2: those bodies end at their composer, whose + owns attach).
+  const anyDetail = Object.values(fixtureDetails).find(
+    (d) =>
+      d.deletedAt == null &&
+      getKind(d.kind).panel.archetype !== 'terminal' &&
+      getKind(d.kind).panel.composition !== 'chat',
+  )!;
 
   /** A file peer on an `attached_to` edge — the shape `edges.list` answers. */
   function withAttachment(detail: EntityDetail, over?: Partial<{ name: string; mime: string }>): EntityDetail {
@@ -1247,16 +1266,26 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
     expect(queryByTestId('attachment-strip')).toBeNull();
   });
 
-  it('is kind-agnostic: EVERY non-terminal kind with a fixture mounts the strip', () => {
+  it('is kind-agnostic: EVERY non-terminal, non-chat kind with a fixture mounts the strip', () => {
     // The claim the brief made ("wire it into the shared/generic body path so
     // it appears for task, doc, work_session etc.") measured rather than
     // asserted once on a task and generalised.
+    //
+    // D2 (session-UI design v1, 2026-08-06) narrows "every non-terminal kind"
+    // — deliberately overturning the earlier universal half of this test:
+    // a `composition: 'chat'` body (channel's hub) ends at its composer, whose
+    // + button already owns attach, so the strip there was duplication.
     const covered = allKinds()
       .map((config) => ({
         config,
         detail: Object.values(fixtureDetails).find((d) => d.kind === config.kind && d.deletedAt == null),
       }))
-      .filter((r) => r.detail != null && r.config.panel.archetype !== 'terminal');
+      .filter(
+        (r) =>
+          r.detail != null &&
+          r.config.panel.archetype !== 'terminal' &&
+          r.config.panel.composition !== 'chat',
+      );
     expect(covered.length).toBeGreaterThan(8);
 
     for (const { config, detail } of covered) {
@@ -1269,6 +1298,18 @@ describe('EntityDetailPanel — attachments ride in the content body (D3 intact)
       ).not.toBeNull();
       unmount();
     }
+  });
+
+  it('a chat composition (channel) mounts NO strip — the composer + owns attach', () => {
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel
+        detail={withAttachment(fixtureDetails[channelDesign.id]!)}
+        reasons={REASONS}
+        ctx={ctx}
+      />,
+    );
+    expect(getByTestId('entity-detail-panel')).toBeTruthy();
+    expect(queryByTestId('attachment-strip')).toBeNull();
   });
 });
 

@@ -567,12 +567,17 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               work_session and every custom kind, and no future archetype can
               forget to include it.
 
-              TWO EXCLUSIONS, both structural, neither a kind check. The
+              THREE EXCLUSIONS, all structural, none a kind check. The
               terminal archetype owns its full height (a live PTY canvas with a
-              strip stapled under it is not a design, it is a leak), and a
-              tombstone shows only its tombstone.
+              strip stapled under it is not a design, it is a leak), a
+              tombstone shows only its tombstone, and a composition:'chat'
+              body ends at its composer — the composer's + button already owns
+              attach, so a strip below it is duplication.
             */}
-            {tab === 'content' && !isTombstone && config.panel.archetype !== 'terminal' ? (
+            {tab === 'content' &&
+            !isTombstone &&
+            config.panel.archetype !== 'terminal' &&
+            config.panel.composition !== 'chat' ? (
               <AttachmentStrip
                 anchorId={detail.id}
                 files={attachedFiles(detail)}
@@ -595,8 +600,11 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
           panel edge, so terminal panels do without it. It stays for every
           other archetype: the reading it carries (presence · author · version)
           is honest chrome for a document, and only the terminal has a primary
-          surface whose whole value is the pixels this row was taking. */}
-      {isTerminal ? null : (
+          surface whose whole value is the pixels this row was taking.
+          composition:'chat' joins the exclusion for the same structural
+          reason: a conversation ends at its composer, not at a chrome strip
+          below it. */}
+      {isTerminal || config.panel.composition === 'chat' ? null : (
         <PanelFooter
           detail={detail}
           presenceHollowReason={reasons.presenceHollow}

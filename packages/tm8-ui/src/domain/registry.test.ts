@@ -314,6 +314,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
 
   it('7. quick launch → list.quickLaunch', () => {
     expect(getKind('work_session').list.quickLaunch).toBe('launch-session');
+    // Launch is the ONLY birth affordance: the inherited quickCreate:true
+    // mounted a Create control that refuses (same defect class as the refused
+    // Save control ruled on the rowActions note), so the row opts out.
+    expect(getKind('work_session').list.quickCreate).toBe(false);
   });
 
   it('8. per-kind filters → list.filters (and a sort with exactly one default)', () => {
@@ -677,6 +681,16 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
     for (const row of allKinds()) {
       if (row.kind === 'work_session') continue;
       expect(row.panel.contentSurfaces).toBeUndefined();
+    }
+  });
+
+  it("D2: chat surfaces end at the composer — composition:'chat' on channel and work_session only", () => {
+    // The flag is what the panel's strip/footer exclusion reads; work_session
+    // is already excluded via the terminal arm, so there it states the reason
+    // structurally rather than changing behaviour.
+    for (const row of allKinds()) {
+      const expected = row.kind === 'channel' || row.kind === 'work_session' ? 'chat' : undefined;
+      expect(row.panel.composition, String(row.kind)).toBe(expected);
     }
   });
 

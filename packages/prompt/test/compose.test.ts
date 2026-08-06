@@ -47,6 +47,15 @@ describe('four-mode identity', () => {
     expect(instructionFor('worker')).not.toMatch(/coordinator/i);
   });
 
+  it('D4: teaches the worker the reply verb the incoming envelope advertises', () => {
+    // §14.4 incoming-message envelopes carry a `<reply>` element naming a
+    // context_message_id. The identity must teach the MATCHING verb, or the
+    // agent answers a threaded question by hand-addressing `message send`
+    // and the thread context the envelope named is lost.
+    expect(instructionFor('worker')).toContain('<reply>');
+    expect(instructionFor('worker')).toContain('tm8 message reply <context_message_id>');
+  });
+
   it('NEVER advertises a verb outside the frozen grammar', () => {
     // THIS TEST'S PREMISE CHANGED, on purpose. It used to forbid `session
     // spawn` and `session siblings` on the argument that the CLI did not

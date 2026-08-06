@@ -57,6 +57,12 @@ export interface UntrustedBlock {
   truncated?: boolean;
   /** Cursor-bearing reference to the full payload; `none` when there is none. */
   fetchRef?: string | null;
+  /**
+   * Additional identifying attributes (e.g. `author`, `message_id` on a
+   * parent-message excerpt). Values pass through `escapeAttr` like every
+   * other attribute — callers never hand-roll a block to add one.
+   */
+  extraAttrs?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -70,6 +76,9 @@ export interface UntrustedBlock {
 export function untrustedData(block: UntrustedBlock): string {
   const attrs = [
     `type="${escapeAttr(block.type)}"`,
+    ...Object.entries(block.extraAttrs ?? {}).map(
+      ([name, value]) => `${name}="${escapeAttr(value)}"`,
+    ),
     `encoding="${block.encoding ?? 'escaped-utf8'}"`,
     `truncated="${block.truncated === true ? 'true' : 'false'}"`,
     `fetch_ref="${block.fetchRef ? escapeAttr(block.fetchRef) : 'none'}"`,
