@@ -563,6 +563,7 @@ const ROWS: readonly KindConfig[] = [
     labelPlural: 'Channels',
     icon: '#',
     iconArt: KIND_ART.channel,
+    titleGrammar: 'slug',
     slug: 'channels',
     strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
@@ -603,6 +604,7 @@ const ROWS: readonly KindConfig[] = [
     // font, so the audio note stands in until the canvas-extracted set lands.
     icon: '♪',
     iconArt: KIND_ART.voice_channel,
+    titleGrammar: 'slug',
     slug: null,
     strategy: 'special',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/voice/${id}`,

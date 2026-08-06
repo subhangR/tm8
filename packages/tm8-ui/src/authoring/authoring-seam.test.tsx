@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import type { EntityDetail, SpaceId } from '@tm8/contract';
+import type { EntityDetail, EntityKind, SpaceId } from '@tm8/contract';
 import { createFixtureSeam } from '../data/fixtures/seam-fixture';
 import type { Seam } from '../data/seam';
 import { FIXTURE_SPACE_ID } from '../fixtures';
@@ -51,17 +51,23 @@ function seamOf(): { seam: Seam; commands: AuthoringCommands } {
 describe('the port is the real seam, structurally', () => {
   it('accepts seam.commands with neither adapter nor cast, and both members are live', () => {
     const { commands } = seamOf();
-    expect(typeof commands.createTask).toBe('function');
+    expect(typeof commands.createEntity).toBe('function');
     expect(typeof commands.patchTask).toBe('function');
   });
 });
 
 describe('create → open → rename, end to end through the fixture seam', () => {
-  function Flow({ seam, commands }: { seam: Seam; commands: AuthoringCommands }) {
+  function Flow({ seam, commands, kind = 'task', label = 'Task' }: {
+    seam: Seam;
+    commands: AuthoringCommands;
+    kind?: EntityKind;
+    label?: string;
+  }) {
     const [detail, setDetail] = useState<EntityDetail | null>(null);
     const create = useNewTask({
       spaceId: SPACE,
-      placeholderTitle: placeholderTitleFor('Task'),
+      kind,
+      placeholderTitle: placeholderTitleFor(label),
       commands,
       onCreated: (id) => {
         // What the coordinator's wiring does: open the panel on the new id.
@@ -104,6 +110,33 @@ describe('create → open → rename, end to end through the fixture seam', () =
     expect(created?.version).toBe(1);
   });
 
+  /**
+   * THE CROSSING THAT WAS MISSING, and the reason the defect survived every
+   * green run: this file only ever stood on `Task`, so `createTask` — which
+   * sends `kind: 'task'` — was accidentally right here and wrong everywhere
+   * else. On the channels list the press made a task, the channel list could
+   * not show it, and the report was "I create a channel and save, nothing
+   * happens". The assertion is against the DATASET, queried BY KIND.
+   */
+  it('a channel create lands as a CHANNEL in the dataset, not as a task', async () => {
+    const { seam, commands } = seamOf();
+    await seam.openSpace(SPACE);
+    render(<Flow seam={seam} commands={commands} kind="channel" label="Channel" />);
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /new/i })); });
+    await act(async () => {});
+
+    const channels = await seam.query({ spaceId: SPACE, kinds: ['channel'] } as never);
+    const created = channels.page.items.find((row) => row.title === 'Untitled channel');
+    expect(created, 'the new channel must exist among the CHANNELS').toBeTruthy();
+
+    const tasks = await seam.query({ spaceId: SPACE, kinds: ['task'] } as never);
+    expect(
+      tasks.page.items.some((row) => row.title === 'Untitled channel'),
+      'and nothing may have been created among the tasks',
+    ).toBe(false);
+  });
+
   it('Enter renames it FOR REAL — the seam read comes back with the new title', async () => {
     const { seam, commands } = seamOf();
     await seam.openSpace(SPACE);
@@ -135,8 +168,9 @@ describe('the executor really refuses a stale expectedVersion', () => {
      */
     const { seam, commands } = seamOf();
     await seam.openSpace(SPACE);
-    const created = await commands.createTask({
+    const created = await commands.createEntity({
       spaceId: SPACE,
+      kind: 'task',
       title: 'contested',
       clientMutationId: 'seam-test-1',
     });
@@ -181,8 +215,9 @@ describe('the executor really refuses a stale expectedVersion', () => {
   it('overwrite, once CHOSEN, lands at the current version', async () => {
     const { seam, commands } = seamOf();
     await seam.openSpace(SPACE);
-    const created = await commands.createTask({
+    const created = await commands.createEntity({
       spaceId: SPACE,
+      kind: 'task',
       title: 'contested-2',
       clientMutationId: 'seam-test-3',
     });

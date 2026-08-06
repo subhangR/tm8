@@ -43,6 +43,7 @@ import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
+import { placeholderNameFor } from '../domain/title-grammar';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
@@ -213,7 +214,10 @@ export function EntityView(props: EntityViewProps) {
      registry data. */
   const createFlow = useNewTask({
     spaceId: data.spaceId,
-    placeholderTitle: placeholderTitleFor(config.label),
+    kind: config.kind,
+    // "Untitled channel" is neither a legal channel name nor a unique one, and
+    // the create commits before the user types. `placeholderNameFor` settles both.
+    placeholderTitle: placeholderNameFor(config, placeholderTitleFor(config.label)),
     commands: data.seam.commands,
     onCreated: (id) => setSelectedId(id as EntityId),
   });
