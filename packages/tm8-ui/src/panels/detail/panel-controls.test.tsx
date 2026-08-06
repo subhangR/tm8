@@ -314,42 +314,43 @@ describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
     expect(panel(doc, host({ kind: 'doc' })).queryByTestId('panel-controls')).toBeNull();
   });
 
-  it('puts the TERMINAL archetype in the same band, in the same layout', () => {
+  it('draws NO band, and no strip anywhere, above a terminal', () => {
     /**
-     * USER RULING 2026-08-05 (second), verbatim: "why is the session still
-     * showing that big row with state and status and all, the task detail
-     * panel already implements that, in a clean way. fix the session entity
-     * detail panel."
+     * USER RULING 2026-08-06, on the bar above the terminal: remove it.
      *
-     * The first pass exempted the terminal archetype and left it stacked ABOVE
-     * the tabs, on the reasoning that a terminal owns its full height below
-     * them. That cost the session MORE height, not less: both of its controls
-     * are refusals (state is observed, archive is usually not permitted), and
-     * `lines` prints a refusal as a full sentence under its control while
-     * `chips` puts the same sentence in a tooltip.
+     * The band held exactly two things for a session and a user could act on
+     * neither: the state is observed rather than chosen (the registry says so
+     * with `readOnlyReason`) and archive is not the verb anyone opens a live
+     * terminal to reach. The status itself is not lost — `StatusPillFor` draws
+     * it in the header, carrying the liveness verdict the strip's copy never
+     * had.
+     *
+     * BOTH assertions, because either alone passes while the bar is on screen:
+     * `panel-controls` is the band under the tabs, and `.lp__rowdetail` is the
+     * strip itself, which an `isTerminal ? strip : null` elsewhere in the panel
+     * would happily re-mount above the canvas.
      */
     const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
     if (!session) throw new Error('the fixtures must carry a work_session');
 
-    const { getByTestId } = panel(session, host({ kind: 'work_session' }));
+    const { queryByTestId, container } = panel(session, host({ kind: 'work_session' }));
 
-    const band = getByTestId('panel-controls');
-    expect(band.firstElementChild?.className).toContain('lp__rowdetail--chips');
-    // Node.DOCUMENT_POSITION_FOLLOWING === 4.
-    expect(getByTestId('panel-toolbar').compareDocumentPosition(band) & 4).toBe(4);
+    expect(queryByTestId('panel-controls')).toBeNull();
+    expect(container.querySelectorAll('.lp__rowdetail')).toHaveLength(0);
   });
 
-  it('leaves a session no stacked strip anywhere in the panel', () => {
-    // The regression guard for the mount that was deleted rather than moved:
-    // an `isTerminal ? strip : null` above the tabs would satisfy the test
-    // above (the band would also render) while still drawing the big row.
+  it('still draws the session status, in the header pill', () => {
+    // The removal is of a CONTROL that could not be used, not of the fact it
+    // showed. A session that stopped reporting its state anywhere would be the
+    // regression this ruling did not ask for.
     const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
     if (!session) throw new Error('the fixtures must carry a work_session');
 
-    const { container } = panel(session, host({ kind: 'work_session' }));
-    const strips = container.querySelectorAll('.lp__rowdetail');
-    expect(strips).toHaveLength(1);
-    expect(strips[0]!.className).toContain('lp__rowdetail--chips');
+    const status = (session.state as { status?: string }).status;
+    if (!status) throw new Error('the work_session fixture must carry a status');
+
+    const { getByTestId } = panel(session, host({ kind: 'work_session' }));
+    expect(getByTestId('panel-header').textContent).toContain(status.replace(/_/g, ' '));
   });
 });
 
