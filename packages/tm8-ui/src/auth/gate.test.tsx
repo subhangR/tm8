@@ -23,6 +23,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import type { IdentityView } from '../data/seam';
 import {
   AccountMenu,
+  AuthFlow,
   AuthGate,
   readActiveAccount,
   readKnownAccountsHere,
@@ -512,11 +513,38 @@ describe('THE HONESTY LAW, at the gate', () => {
     expect(refusals.some((r) => /sign in with token/i.test(r.textContent ?? ''))).toBe(true);
   });
 
-  it('the first-run card says why it completes at step 1 of 3', async () => {
+  /**
+   * THIS TEST CHANGED SHAPE, and the law it enforces did not.
+   *
+   * It used to require the GATE to print "STEP 1 OF 3" and then explain, in
+   * the same card, that steps 2 and 3 have no operation behind them. That is
+   * one way to satisfy "never draw a wizard whose last two steps do nothing" —
+   * disclose the gap. Pixel verification showed what it costs: a first-time
+   * viewer meets a three-dot progress indicator, finishes, and is in, having
+   * been promised two steps that never come; and the explanation clearing it
+   * up is written in words they have no referent for ("the oracle", "the
+   * seam", `spaces.create`).
+   *
+   * So the gate now satisfies the SAME law by removing the wizard instead of
+   * annotating it, and the disclosure stays where its reader is — the review
+   * board, which exists to be diffed against the canvas. Both halves are
+   * asserted here, because "the gate dropped the counter" is only honest if
+   * the board still carries it.
+   */
+  it('the gate shows no multi-step counter it cannot honour', () => {
     render(<AuthGate>{APP}</AuthGate>);
     const frame = screen.getByTestId('auth-frame');
+    expect(frame.textContent).toMatch(/first run/i);
+    expect(frame.textContent).not.toMatch(/step\s*1\s*of\s*3/i);
+    // and no leftover explanation of steps this viewer will never be shown
+    expect(frame.textContent).not.toMatch(/spaces\.create|the oracle/i);
+  });
+
+  it('the review board keeps the designed counter AND the disclosure', () => {
+    render(<AuthFlow frame="1a" onDone={() => {}} />);
+    const frame = screen.getByTestId('auth-frame');
     expect(frame.textContent).toMatch(/step 1 of 3/i);
-    // …and states that the remaining two steps have no operation behind them,
+    // …states that the remaining two steps have no operation behind them,
     // rather than drawing a wizard whose last two steps do nothing.
     expect(frame.textContent).toMatch(/no operation|isn’t connected|not connected/i);
   });

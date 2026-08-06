@@ -37,15 +37,26 @@ import type { FrameProps } from './types';
  * the identical component refuses, because the executor arrives through
  * context and nothing else changes.
  *
- * WHY IT COMPLETES AT STEP 1 OF 3, and why the dots still say 1 of 3. The
- * oracle draws three first-run steps: you, the server, the first space. Steps
- * 2 and 3 have NO operation behind them — nothing sets a server's name, and
- * `spaces.create` is a contract op the seam does not expose. The acceptance
- * loop has to land in the app, so the gate completes here. The dots are not
- * adjusted to say "1 of 1" because that would be the lie in a different place:
- * you ARE at step 1 of a designed 3, and the note below says the other two
- * cannot run and why. Frames 1b and 1c remain on the review board, drawn as
- * designed and refusing as built.
+ * WHY IT COMPLETES AT STEP 1 OF 3, and why the dots say 1 of 3 ON THE BOARD
+ * ONLY. The oracle draws three first-run steps: you, the server, the first
+ * space. Steps 2 and 3 have NO operation behind them — nothing sets a server's
+ * name, and `spaces.create` is a contract op the seam does not expose. The
+ * acceptance loop has to land in the app, so the gate completes here. Frames
+ * 1b and 1c remain on the review board, drawn as designed and refusing as
+ * built, and there the counter and the disclosure note both belong.
+ *
+ * IN THE LIVE GATE THEY DO NOT, and that was a real defect rather than a
+ * quibble. Pixel-verified 2026-08-05: a first-time viewer met "STEP 1 OF 3"
+ * over three progress dots, finished, and was in — a progress indicator that
+ * promises two more steps and then never shows them. Below it sat a paragraph
+ * naming "the oracle", "the seam" and `spaces.create`: a note written for a
+ * reviewer reading the design against the build, rendered to somebody who has
+ * seen neither. Correct reasoning, wrong audience.
+ *
+ * So the same `actions` seam this file already branches on everywhere else
+ * decides both: the board keeps the designed counter and the disclosure, the
+ * gate says FIRST RUN and shows the one step that exists. Neither reader is
+ * lied to, and the oracle transcription in `specimen.ts` is untouched.
  */
 export function FrameClaim(props: FrameProps) {
   const actions = useAuthActions();
@@ -65,9 +76,9 @@ export function FrameClaim(props: FrameProps) {
     <AuthStage meta={SERVER.unclaimedMeta}>
       <AuthCard>
         <div className="auth-card__head">
-          <AuthEyebrow>FIRST RUN · STEP 1 OF 3</AuthEyebrow>
+          <AuthEyebrow>{actions ? 'FIRST RUN' : 'FIRST RUN · STEP 1 OF 3'}</AuthEyebrow>
           <span className="auth-spacer" />
-          <AuthSteps of={3} at={1} />
+          {actions ? null : <AuthSteps of={3} at={1} />}
         </div>
         <AuthTitle>
           {another ? CLAIM.anotherTitle : actions ? CLAIM.gateTitle : CLAIM.title}
@@ -127,9 +138,11 @@ export function FrameClaim(props: FrameProps) {
           </>
         )}
 
-        {/* The step-2/3 disclosure. Named operations, so a reader can tell
-            when they arrive. */}
-        <AuthCaption>{CLAIM.stepsNote}</AuthCaption>
+        {/* The step-2/3 disclosure — BOARD ONLY. It names the operations so a
+            reviewer can tell when they arrive; in the gate it is a note about
+            two steps the viewer will never be shown, written in vocabulary
+            they do not have. See the header comment. */}
+        {actions ? null : <AuthCaption>{CLAIM.stepsNote}</AuthCaption>}
         <AuthFootnote>{actions ? CLAIM.gateFooter : CLAIM.footer}</AuthFootnote>
         {actions ? (
           <div className="auth-switch">
