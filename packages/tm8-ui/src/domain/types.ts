@@ -675,6 +675,13 @@ export interface PanelConfig {
   capabilityReasons?: Partial<Record<keyof EntityCapabilities, string>>;
   /** work_session only. */
   contentSurfaces?: ContentSurfaces;
+  /**
+   * 'chat': the content body is a conversation that ENDS at its composer —
+   * the panel mounts no AttachmentStrip (the composer's + owns attach) and no
+   * PanelFooter below it. Terminal panels already skip both via the archetype
+   * arm; this flag states the same reason structurally for chat surfaces.
+   */
+  composition?: 'chat';
   z4?: { immersive?: boolean };
 }
 

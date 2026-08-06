@@ -206,7 +206,10 @@ const WORKER_IDENTITY_INSTRUCTION =
   'command, and communicate durably with graph messages: ' +
   '`tm8 message send --to <anchor-entity-id> "<body>"` on the assignment anchor is ' +
   'how a milestone, a result or a blocker becomes visible, and work nobody can see ' +
-  'has not happened. Completion needs a verified result and a durable receipt — ' +
+  'has not happened. When an incoming message envelope carries a `<reply>` element, ' +
+  'answer with `tm8 message reply <context_message_id> "<body>"` — the reply verb ' +
+  'derives the thread and anchor from that message id, so your answer lands where ' +
+  'the question was asked. Completion needs a verified result and a durable receipt — ' +
   'your process exiting is not completion: close out with one `tm8 message send` ' +
   'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
   'questions, and next-session pointers.';

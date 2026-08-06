@@ -123,8 +123,11 @@
 
 .chs-actions {
   position: absolute;
-  top: -12px;
-  right: 8px;
+  /* Below the row, slightly overlapping it, aligned to the BODY column
+     (row padding 6px + gutter 38px + gap 10px = 54px) — a top-anchored
+     overlay covered the previous message's last line. */
+  top: calc(100% - 6px);
+  left: 54px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -611,10 +614,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   padding: 2px 0 8px;
 }
 
+/* At the TOP of the feed (D2), above "load earlier ↑": the rule sits under
+   the line, marking the paging boundary it describes. */
 .chs-provenance {
-  margin: 12px 0 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--pn-line);
+  margin: 0 0 4px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
   font-size: 9px;
   color: var(--pn-ink-4);
@@ -1031,8 +1036,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-message-meta { flex-wrap: wrap; }
   .chs-parent__jump { flex-wrap: wrap; }
   .chs-targets__row { flex-wrap: wrap; }
-  /* No hover on touch: actions stay reachable as a permanent overlay. */
-  .chs-actions { opacity: 1; pointer-events: auto; top: -8px; right: 2px; }
+  /* No hover on touch: actions stay reachable as a permanent overlay —
+     bottom-anchored like the pointer state; 30px gutter shifts the body
+     column to 6 + 30 + 10 = 46px. */
+  .chs-actions { opacity: 1; pointer-events: auto; top: calc(100% - 6px); left: 46px; right: auto; }
   .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
   .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
   .chs-composer { padding-inline: 8px; }
