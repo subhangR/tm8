@@ -20,9 +20,9 @@
  *  - Scale honesty: the model's RENDER_CAP truncation renders as a banner,
  *    never a silent cut; filtered-to-nothing teaches, never blanks.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { EdgeView, EntityId, EntitySummary } from '@tm8/contract';
-import { getKind, type StatusSource } from '../domain';
+import { KindIcon, getKind, type StatusSource } from '../domain';
 import type { SessionLiveness } from '../data/seam';
 import { useDismissable } from '../panels/useDismissable';
 import { Avatar, Chip, Eyebrow, IconBtn, Pill, type PillTone } from '../kit';
@@ -731,7 +731,7 @@ export function GraphView(props: GraphViewProps) {
           label="Entities"
           options={kindsPresent.map((kind) => {
             const row = getKind(kind);
-            return { id: kind, label: row.labelPlural, icon: row.icon as unknown as string };
+            return { id: kind, label: row.labelPlural, icon: <KindIcon kind={kind} /> };
           })}
           offIds={kindsOff}
           onToggle={(id) => setKindsOff((prior) => toggle(prior, id))}
@@ -948,7 +948,7 @@ export function GraphView(props: GraphViewProps) {
                   </button>
                   <span className="gv-node__head">
                     <span className="gv-node__glyph" aria-hidden>
-                      {row.icon}
+                      <KindIcon kind={p.entity.kind} />
                     </span>
                     <span className="gv-node__kind">{row.label}</span>
                     <span className="gv-node__pills">
@@ -1007,7 +1007,7 @@ export function GraphView(props: GraphViewProps) {
             {model.shelf.map((entity) => (
               <Chip
                 key={entity.id}
-                glyph={getKind(entity.kind).icon as string}
+                glyph={<KindIcon kind={entity.kind} />}
                 title={`${entity.title} — no edges under the current filters`}
                 onClick={() => onSelect(entity.id)}
               >
@@ -1069,7 +1069,7 @@ function FilterSelect({
   onShowAll,
 }: {
   label: string;
-  options: readonly { id: string; label: string; icon?: string }[];
+  options: readonly { id: string; label: string; icon?: ReactNode }[];
   offIds: ReadonlySet<string>;
   onToggle(id: string): void;
   onShowAll(): void;

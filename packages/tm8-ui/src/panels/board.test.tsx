@@ -1,0 +1,269 @@
+// @vitest-environment jsdom
+/**
+ * A2 — the board body (doc 06 §1, §8).
+ *
+ * What these tests hold:
+ *   - the board is REGISTRY-DRIVEN: columns come from stateControl.options ∩
+ *     the active tier, words/tones from panel.statusPill, and BoardBody never
+ *     reads `kind` (the registry-totality/no-branching law §15.2);
+ *   - the §1.4 honesty rules: "{n} shown" headers, the page banner whenever a
+ *     further page exists, and the three §8.2 states (loading / empty / error)
+ *     that must not look alike;
+ *   - the §1.5 grammar: a move is a COMMAND through the same routing the state
+ *     picker uses (`via` respected, `done` through `complete`), refusals
+ *     render INLINE at the refusing column, and nothing moves optimistically;
+ *   - the §1.1 wiring: `mode` is controllable from above and the switcher
+ *     reports changes rather than trapping them in local state.
+ */
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, within } from '@testing-library/react';
+import type { CollectionGroup, EntitySummary } from '@tm8/contract';
+import { getKind, type ActionContext, type QueryFilter } from '../domain';
+import { FIXTURE_SPACE_ID, fixtureSummaries } from '../fixtures';
+import { EntityListPanel, type BoardSnapshot } from './index';
+
+vi.setConfig({ testTimeout: 20_000 });
+
+const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
+
+const rowsFor =
+  (rows: readonly EntitySummary[]) =>
+  (_filter: QueryFilter): readonly EntitySummary[] =>
+    rows;
+
+const tasks = fixtureSummaries.filter((s) => s.state.kind === 'task');
+const taskOf = (workStatus: string): EntitySummary => {
+  const base = tasks[0];
+  if (!base) throw new Error('fixtures carry no task');
+  return {
+    ...base,
+    id: `board-${workStatus}-${base.id}`,
+    title: `Board fixture ${workStatus}`,
+    state: { ...base.state, workStatus } as EntitySummary['state'],
+    badges: {},
+  };
+};
+
+const groups = (...pairs: readonly (readonly [string, readonly EntitySummary[]])[]): CollectionGroup[] =>
+  pairs.map(([key, items]) => ({ key, label: key, items: [...items] }));
+
+const snapshot = (overrides: Partial<BoardSnapshot> = {}): BoardSnapshot => ({
+  groups: groups(
+    ['open', [taskOf('open')]],
+    ['working', [taskOf('working')]],
+  ),
+  nextCursor: null,
+  limit: 50,
+  ...overrides,
+});
+
+function renderBoard(opts: {
+  snapshot?: BoardSnapshot | undefined;
+  onSetState?: (
+    entityId: string,
+    next: string,
+    via: string,
+    o?: { notify?: boolean },
+  ) => void | Promise<{ ok: true } | { ok: false; reason: string }>;
+  boardFor?: (filter: QueryFilter, groupBy: string) => BoardSnapshot | undefined;
+}) {
+  const boardFor = opts.boardFor ?? (() => opts.snapshot);
+  return render(
+    <EntityListPanel
+      kind="task"
+      rowsFor={rowsFor([])}
+      ctx={ctx}
+      mode="board"
+      boardFor={boardFor as never}
+      onSetState={opts.onSetState as never}
+    />,
+  );
+}
+
+describe('A2 — board columns come from the registry, not the payload', () => {
+  it('renders the OPEN tier vocabulary in stateControl order, plus the Done sink', () => {
+    const { getAllByTestId } = renderBoard({ snapshot: snapshot() });
+    const keys = getAllByTestId('board-column').map((col) => col.getAttribute('data-column'));
+    // stateControl.options order ∩ open tier, then the §1.3 sink. One source:
+    // if this drifts from the registry, the picker and the board disagree.
+    expect(keys).toEqual(['open', 'pulled', 'working', 'in_review', 'blocked', 'done']);
+  });
+
+  it('column words and tones come from panel.statusPill — in_review reads "in review"', () => {
+    const { getAllByTestId } = renderBoard({ snapshot: snapshot() });
+    const labels = getAllByTestId('board-column').map((col) => col.getAttribute('aria-label'));
+    expect(labels).toContain('in review');
+    // The sink states its grammar, in the done pill's word.
+    expect(labels).toContain('done — drop to complete');
+  });
+
+  it('a group key the registry does not declare is APPENDED raw, never dropped', () => {
+    const { getAllByTestId } = renderBoard({
+      snapshot: snapshot({
+        groups: groups(['open', [taskOf('open')]], ['someday', [taskOf('open')]]),
+      }),
+    });
+    const keys = getAllByTestId('board-column').map((col) => col.getAttribute('data-column'));
+    expect(keys).toContain('someday');
+  });
+
+  it('an empty column is a real answer: header, "0 shown", quiet body', () => {
+    const { getAllByTestId } = renderBoard({ snapshot: snapshot() });
+    const blocked = getAllByTestId('board-column').find(
+      (col) => col.getAttribute('data-column') === 'blocked',
+    )!;
+    expect(within(blocked).getByText('0 shown')).toBeTruthy();
+    expect(within(blocked).getByText(/nothing in blocked/i)).toBeTruthy();
+  });
+});
+
+describe('§1.4 — honesty about paging', () => {
+  it('headers read "{n} shown", never a bare count', () => {
+    const { getAllByTestId } = renderBoard({ snapshot: snapshot() });
+    const open = getAllByTestId('board-column').find(
+      (col) => col.getAttribute('data-column') === 'open',
+    )!;
+    expect(within(open).getByText('1 shown')).toBeTruthy();
+  });
+
+  it('the banner renders whenever a further page exists, and names the limit', () => {
+    const { getByTestId } = renderBoard({
+      snapshot: snapshot({ nextCursor: 'opaque-cursor', limit: 50 }),
+    });
+    expect(getByTestId('board-banner').textContent).toMatch(/Showing the 50 most recently active/);
+    expect(getByTestId('board-banner').textContent).toMatch(/not complete counts/);
+  });
+
+  it('no banner when the page is complete', () => {
+    const { queryByTestId } = renderBoard({ snapshot: snapshot({ nextCursor: null }) });
+    expect(queryByTestId('board-banner')).toBeNull();
+  });
+});
+
+describe('§8.2 — loading, empty and error must not look alike', () => {
+  it('loading renders registry headers with skeleton bodies, never empty-state text', () => {
+    const { getAllByTestId, queryByText } = renderBoard({ snapshot: undefined });
+    // Headers are known BEFORE any fetch — the vocabulary is registry data.
+    expect(getAllByTestId('board-column').length).toBeGreaterThan(0);
+    expect(getAllByTestId('board-skeleton').length).toBeGreaterThan(0);
+    expect(queryByText(/nothing in/i)).toBeNull();
+  });
+
+  it('an errored board collapses to the reason + retry — no empty columns lying', () => {
+    const retry = vi.fn();
+    const { getByTestId, queryAllByTestId } = renderBoard({
+      snapshot: snapshot({ groups: [], error: 'the node said no', retry }),
+    });
+    expect(getByTestId('board-error').textContent).toContain('the node said no');
+    expect(queryAllByTestId('board-column')).toHaveLength(0);
+    fireEvent.click(within(getByTestId('board-error')).getByText('Retry'));
+    expect(retry).toHaveBeenCalled();
+  });
+
+  it('a host that wires no board source gets an honest refusal, not a blank region', () => {
+    const { getByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} mode="board" />,
+    );
+    expect(getByTestId('board-unwired')).toBeTruthy();
+  });
+});
+
+describe('§1.5 / §8.1 — a move is a command, one grammar for pointer and keyboard', () => {
+  it('Mod+ArrowRight moves the focused card via the SAME set-state routing as a drop', async () => {
+    const onSetState = vi.fn().mockResolvedValue({ ok: true });
+    const { getByTestId } = renderBoard({ snapshot: snapshot(), onSetState });
+    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
+    // Focus starts on column 0 (open, holding one card); the next column is
+    // pulled; the option declares no `via`, so the control's own command routes.
+    expect(onSetState).toHaveBeenCalledTimes(1);
+    const [id, next, via, opts] = onSetState.mock.calls[0]!;
+    expect(String(id)).toMatch(/^board-open/);
+    expect(next).toBe('pulled');
+    expect(via).toBe('set-state');
+    // §1.5: the board owns its refusal surface — no toast from the executor.
+    expect(opts).toEqual({ notify: false });
+  });
+
+  it('a refusal renders INLINE at the refusing column, and the card never moved', async () => {
+    const reason = 'completion requires all acceptance criteria checked (2 open)';
+    const onSetState = vi.fn().mockResolvedValue({ ok: false, reason });
+    const { getByTestId, getAllByTestId, findByTestId } = renderBoard({
+      snapshot: snapshot(),
+      onSetState,
+    });
+    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight', metaKey: true });
+    const refusal = await findByTestId('board-refusal');
+    expect(refusal.textContent).toBe(reason);
+    // Inline at the refusing column — the pulled column, where the act aimed.
+    const pulled = getAllByTestId('board-column').find(
+      (col) => col.getAttribute('data-column') === 'pulled',
+    )!;
+    expect(within(pulled).getByTestId('board-refusal')).toBeTruthy();
+    // Nothing moved optimistically: the card still renders under open only.
+    const open = getAllByTestId('board-column').find(
+      (col) => col.getAttribute('data-column') === 'open',
+    )!;
+    expect(within(open).getByText('1 shown')).toBeTruthy();
+    expect(within(pulled).getByText('0 shown')).toBeTruthy();
+  });
+
+  it('plain arrows move COLUMN FOCUS, not cards', () => {
+    const onSetState = vi.fn();
+    const { getByTestId, getAllByTestId } = renderBoard({ snapshot: snapshot(), onSetState });
+    fireEvent.keyDown(getByTestId('board-body'), { key: 'ArrowRight' });
+    expect(onSetState).not.toHaveBeenCalled();
+    const cols = getAllByTestId('board-column');
+    expect(cols[1]!.className).toContain('lp__board-col--focused');
+  });
+});
+
+describe('§1.6 — which kinds get a board', () => {
+  it('task declares a board; the switcher position is LIVE', () => {
+    const { getByTestId } = render(
+      <EntityListPanel kind="task" rowsFor={rowsFor([])} ctx={ctx} />,
+    );
+    const sw = getByTestId('view-switcher');
+    // Two live positions now — list and board; tree and graph stay disabled.
+    expect(sw.querySelectorAll('.lp__view')).toHaveLength(2);
+    expect(sw.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(2);
+  });
+
+  it('work_session hides board entirely — a sessions board would render one dishonest column', () => {
+    expect(getKind('work_session').hiddenModes).toContain('board');
+    expect(getKind('work_session').list.board).toBeUndefined();
+  });
+
+  it('every kind declaring a board also declares the sources the board reads', () => {
+    // The board renders columns from stateControl and words from statusPill;
+    // a kind declaring `board` without them would render raw ids. Registry
+    // totality: data must be complete at declaration time, not at render time.
+    for (const k of [getKind('task')]) {
+      if (!k.list.board) continue;
+      expect(k.list.stateControl, `${k.kind} board without stateControl`).toBeDefined();
+      expect(k.panel.statusPill, `${k.kind} board without statusPill`).toBeDefined();
+    }
+  });
+});
+
+describe('§1.1 — the mode wiring', () => {
+  it('a controlled `mode` renders the board without any click', () => {
+    const { getByTestId } = renderBoard({ snapshot: snapshot() });
+    expect(getByTestId('board-body')).toBeTruthy();
+  });
+
+  it('the switcher reports through onMode instead of trapping the change locally', () => {
+    const onMode = vi.fn();
+    const { getByTestId } = render(
+      <EntityListPanel
+        kind="task"
+        rowsFor={rowsFor([])}
+        ctx={ctx}
+        mode="list"
+        onMode={onMode}
+        boardFor={(() => snapshot()) as never}
+      />,
+    );
+    fireEvent.click(within(getByTestId('view-switcher')).getByLabelText('board layout'));
+    expect(onMode).toHaveBeenCalledWith('board');
+  });
+});

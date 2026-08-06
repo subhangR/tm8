@@ -346,6 +346,7 @@ interface ActorRow {
   team_member_owner_id: string | null;
   profile_display_name: string | null;
   profile_avatar: string | null;
+  session_title: string | null;
 }
 
 /**
@@ -354,6 +355,17 @@ interface ActorRow {
  * `isAgent` is `kind === 'team_member'` and nothing else — it is the flag the
  * UI uses to tell a human from a persona, so it must not be inferred from a
  * name or a model field that happens to be set.
+ *
+ * THE SECOND HOP (doc 06 §2.1-2.2). Most `working_on` edges are sourced from
+ * a work_session, and this resolver used to collapse those ids to
+ * `{kind:'member', displayName:'Member'}` — a false human, minted here, that
+ * no renderer downstream could detect. A session id now resolves through
+ * `participates_in` to its PERSONA: the summary is the persona's (kind
+ * `team_member`, isAgent true), with `via.sessionId` naming the run it acted
+ * through. A session with no persona — a human at a terminal; live data, not
+ * an edge case — is typed as what it is: `kind:'work_session'`, displayName =
+ * the session title. The literal-'Member' fallback dies here, where it was
+ * born: THE ENFORCEMENT POINT IS THE RESOLVER, NOT THE COMPONENT.
  */
 export async function loadActors(
   q: Querier,
@@ -368,16 +380,78 @@ export async function loadActors(
             mem.display_name as member_display_name, mem.role as member_role,
             tm.name as team_member_name, tm.avatar as team_member_avatar,
             tm.owner_member_id as team_member_owner_id,
-            up.display_name as profile_display_name, up.avatar as profile_avatar
+            up.display_name as profile_display_name, up.avatar as profile_avatar,
+            ws.title as session_title
        from public.entities e
        left join public.members mem on mem.entity_id = e.id
        left join public.team_members tm on tm.entity_id = e.id
        left join public.user_profiles up on up.identity_id = mem.identity_id
+       left join public.work_sessions ws on ws.entity_id = e.id
       where e.id = any($1::uuid[])`,
     [unique],
   );
 
+  // One batched hop, paid only when the page references sessions at all.
+  // Several personas can share a session over its life; the most recent
+  // `participates_in` edge wins — attribution follows who is acting now.
+  const sessionIds = rows.filter((r) => r.kind === 'work_session').map((r) => r.id);
+  const personaOf = new Map<
+    string,
+    { persona_id: string; name: string | null; avatar: string | null; owner_member_id: string | null }
+  >();
+  if (sessionIds.length > 0) {
+    const personaRows = await q.query<{
+      session_id: string;
+      persona_id: string;
+      name: string | null;
+      avatar: string | null;
+      owner_member_id: string | null;
+    }>(
+      `select distinct on (pe.dst_id)
+              pe.dst_id as session_id, pe.src_id as persona_id,
+              tm.name, tm.avatar, tm.owner_member_id
+         from public.edges pe
+         join public.team_members tm on tm.entity_id = pe.src_id
+        where pe.type = 'participates_in' and pe.dst_id = any($1::uuid[])
+        order by pe.dst_id, pe.created_at desc`,
+      [sessionIds],
+    );
+    for (const p of personaRows) personaOf.set(p.session_id, p);
+  }
+
   for (const row of rows) {
+    if (row.kind === 'work_session') {
+      const persona = personaOf.get(row.id);
+      // The MAP KEY stays the referencing id (the edge names the session);
+      // the summary's OWN id is the persona's, so colour/identity aggregate
+      // per person across every run they act through.
+      out.set(
+        row.id,
+        persona
+          ? {
+              id: persona.persona_id,
+              kind: 'team_member',
+              displayName: persona.name ?? 'Agent',
+              avatar: persona.avatar,
+              role: null,
+              ...(persona.owner_member_id ? { ownerMemberId: persona.owner_member_id } : {}),
+              isAgent: true,
+              via: { sessionId: row.id },
+            }
+          : {
+              id: row.id,
+              kind: 'work_session',
+              displayName: row.session_title || 'Session',
+              avatar: null,
+              role: null,
+              // Not a persona: a run with no participating team_member is a
+              // human at a terminal. The kind carries the provenance; lying
+              // `isAgent: true` here would dress a person as an agent.
+              isAgent: false,
+            },
+      );
+      continue;
+    }
     const isAgent = row.kind === 'team_member';
     out.set(row.id, {
       id: row.id,
@@ -426,6 +500,8 @@ export interface EntityRelations {
   pulls: Map<string, Array<{ actorId: string; props: Record<string, unknown>; at: string }>>;
   /** `working_on` edges pointing AT the entity. */
   workingOn: Map<string, Array<{ actorId: string; props: Record<string, unknown>; at: string }>>;
+  /** Latest `completed_by` target per entity — the house-pattern ending. */
+  completedBy: Map<string, { actorId: string; at: string }>;
   /** `contains` count, per collection. */
   itemCounts: Map<string, number>;
   /** Raw mark-edge material for `badges.staleness` — derived in badgesOf, never stored. */
@@ -459,6 +535,7 @@ const EMPTY_RELATIONS: EntityRelations = {
   blockedBy: new Map(),
   pulls: new Map(),
   workingOn: new Map(),
+  completedBy: new Map(),
   itemCounts: new Map(),
   marks: new Map(),
 };
@@ -484,6 +561,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     blockedBy: new Map(),
     pulls: new Map(),
     workingOn: new Map(),
+    completedBy: new Map(),
     itemCounts: new Map(),
     marks: new Map(),
   };
@@ -498,7 +576,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   }>(
     `select id, src_id, dst_id, type, props, created_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
          or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on', 'supersedes', 'disputes', 'verifies'))`,
     [unique],
   );
@@ -551,6 +629,17 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
       case 'assigned_to':
         if (wanted.has(edge.src_id)) push(relations.assignees, edge.src_id, edge.dst_id);
         break;
+      case 'completed_by': {
+        // Latest wins: completion writes one edge per completer, and the
+        // badge is a single header line, not a roster.
+        if (!wanted.has(edge.src_id)) break;
+        const at = iso(edge.created_at);
+        const prior = relations.completedBy.get(edge.src_id);
+        if (!prior || at > prior.at) {
+          relations.completedBy.set(edge.src_id, { actorId: edge.dst_id, at });
+        }
+        break;
+      }
       case 'contains':
         if (wanted.has(edge.src_id)) {
           relations.itemCounts.set(edge.src_id, (relations.itemCounts.get(edge.src_id) ?? 0) + 1);
@@ -624,6 +713,44 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
         break;
       default:
         break;
+    }
+  }
+
+  // The tense rule (doc 06 §2.3): `workingActors` means "working NOW", but
+  // `working_on` cannot express an ending — its propsSchema has no `endedAt`,
+  // so edges accumulate forever. Liveness is therefore DERIVED, never stored:
+  // a session-sourced edge counts only while its work_session is in a live
+  // status. `work_sessions.status` is trustworthy for this — it has an
+  // enforced single writer (001:727-746). Person-sourced edges pass through
+  // (a person has no status row); a source row this querier cannot see proves
+  // nothing, so it does not get the badge. The terminal-task half of the rule
+  // lives in badgesOf, where the row is at hand.
+  if (relations.workingOn.size > 0) {
+    const sourceIds = [
+      ...new Set([...relations.workingOn.values()].flat().map((w) => w.actorId)),
+    ];
+    const sourceRows = await q.query<{ id: string; kind: string; status: string | null }>(
+      `select e.id, e.kind, ws.status
+         from public.entities e
+         left join public.work_sessions ws on ws.entity_id = e.id
+        where e.id = any($1::uuid[])
+          and e.deleted_at is null`,
+      [sourceIds],
+    );
+    const liveSource = new Map(
+      sourceRows.map((r) => [
+        r.id,
+        r.kind !== 'work_session' ||
+          r.status === 'spawning' ||
+          r.status === 'running' ||
+          r.status === 'idle',
+      ]),
+    );
+    for (const [id, list] of relations.workingOn) {
+      const live = list.filter((w) => liveSource.get(w.actorId) === true);
+      if (live.length === list.length) continue;
+      if (live.length === 0) relations.workingOn.delete(id);
+      else relations.workingOn.set(id, live);
     }
   }
 
@@ -1061,7 +1188,11 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
   }
 
   const working = ctx.relations.workingOn.get(row.id) ?? [];
-  if (working.length > 0 && ctx.related) {
+  // The other half of the §2.3 tense rule: a terminal task is not being
+  // worked on, whatever its edges say. Past tense ("Worked on by") is a
+  // detail-panel aggregation, never a tile badge.
+  const terminal = row.kind === 'task' && (row.work_status === 'done' || row.work_status === 'cancelled');
+  if (working.length > 0 && !terminal && ctx.related) {
     const self = ctx.related.get(row.id);
     if (self) {
       badges.workingActors = working.map(
@@ -1073,6 +1204,11 @@ function badgesOf(row: EntityRow, ctx: AssemblyContext): EntityBadges {
         }),
       );
     }
+  }
+
+  const completion = ctx.relations.completedBy.get(row.id);
+  if (completion) {
+    badges.completedBy = { actor: actorOf(ctx.actors, completion.actorId), at: completion.at };
   }
 
   if (row.visibility === 'restricted') badges.restricted = true;
@@ -1387,6 +1523,7 @@ export async function assembleSummaries(
   for (const list of relations.assignees.values()) actorIds.push(...list);
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));
+  for (const completion of relations.completedBy.values()) actorIds.push(completion.actorId);
 
   const actors = await loadActors(q, actorIds);
 

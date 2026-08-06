@@ -346,6 +346,10 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
          fields rather than one overloaded `controls`. */
       'valueControls',
       'assignControl',
+      /* Opened 2026-08-05 with A2: the board is declared per-kind as DATA —
+         only the grouping axis, because vocabulary/order/tone stay owned by
+         stateControl and statusPill (doc 06 §1.2). */
+      'board',
     ];
     for (const row of allKinds()) {
       for (const key of Object.keys(row.list)) {
@@ -688,6 +692,48 @@ describe('panel archetypes are total over the kind set (LLD §2.3)', () => {
 describe('Z1 / Z2 specs', () => {
   it('gives every kind an icon (the collapsed 48px menu rail needs one)', () => {
     for (const row of allKinds()) expect(row.icon.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * THE ARTWORK GUARDS — the defect that produced them, stated so nobody
+   * relaxes them later: thirteen of the twenty text glyphs (◻ ▣ ▦ ◈ ❖ ◇ ◉ ◍
+   * ◆ ⬢ ✧ ✦ ⌬) were the same small lozenge at the size they ship at, so the
+   * Connections tab showed a reader WHAT was linked without showing WHICH KIND
+   * it was. Totality alone would not have caught that — every one of those
+   * kinds HAD an icon. Uniqueness is the assertion that matters.
+   */
+  it('gives every kind DRAWN artwork, not just a character', () => {
+    for (const row of allKinds()) {
+      expect(row.iconArt.length, `${row.kind} has no artwork`).toBeGreaterThan(0);
+      for (const d of row.iconArt) {
+        // Path data, on the 16×16 grid every mark is authored to.
+        expect(d, `${row.kind} draws something that is not a path`).toMatch(/^M[\s\d.-]/);
+      }
+    }
+  });
+
+  it('NO TWO KINDS SHARE A MARK — the whole point of the set', () => {
+    const seen = new Map<string, string>();
+    for (const row of allKinds()) {
+      const signature = row.iconArt.join('|');
+      const owner = seen.get(signature);
+      expect(owner, `${row.kind} draws exactly what ${owner} draws`).toBeUndefined();
+      seen.set(signature, row.kind);
+    }
+  });
+
+  it('every mark stays inside the 16×16 grid it is drawn on', () => {
+    // A path that overflows the viewBox is clipped, and a clipped icon is a
+    // DIFFERENT icon — silently, and only at some sizes. Absolute coordinates
+    // only: relative arc/curve segments are offsets and mean nothing here.
+    for (const row of allKinds()) {
+      for (const d of row.iconArt) {
+        for (const n of d.match(/(?<![a-zA-Z\d.])-?\d+(\.\d+)?/g) ?? []) {
+          const v = Math.abs(Number(n));
+          expect(v, `${row.kind} draws at ${n}, outside 0–16`).toBeLessThanOrEqual(16);
+        }
+      }
+    }
   });
 
   it('summarises with 2–4 card fields', () => {

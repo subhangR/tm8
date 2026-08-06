@@ -314,27 +314,43 @@ describe('the strip is ONE ROW, and it sits UNDER THE TABS', () => {
     expect(panel(doc, host({ kind: 'doc' })).queryByTestId('panel-controls')).toBeNull();
   });
 
-  it('leaves the terminal archetype where it was, ABOVE the tabs', () => {
+  it('draws NO band, and no strip anywhere, above a terminal', () => {
     /**
-     * NOT an exception carved for a kind — a structural consequence. A
-     * terminal panel owns its full height below the tabs (user ruling
-     * 2026-07-31, "terminal all the way, till the component bottom"), so
-     * there is no band under the tabs for a row to sit in.
+     * USER RULING 2026-08-06, on the bar above the terminal: remove it.
+     *
+     * The band held exactly two things for a session and a user could act on
+     * neither: the state is observed rather than chosen (the registry says so
+     * with `readOnlyReason`) and archive is not the verb anyone opens a live
+     * terminal to reach. The status itself is not lost — `StatusPillFor` draws
+     * it in the header, carrying the liveness verdict the strip's copy never
+     * had.
+     *
+     * BOTH assertions, because either alone passes while the bar is on screen:
+     * `panel-controls` is the band under the tabs, and `.lp__rowdetail` is the
+     * strip itself, which an `isTerminal ? strip : null` elsewhere in the panel
+     * would happily re-mount above the canvas.
      */
     const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
     if (!session) throw new Error('the fixtures must carry a work_session');
 
-    const { container, getByTestId, queryByTestId } = panel(session, host({ kind: 'work_session' }));
-    expect(queryByTestId('panel-controls')).toBeNull();
+    const { queryByTestId, container } = panel(session, host({ kind: 'work_session' }));
 
-    const tabs = getByTestId('panel-toolbar');
-    // Queried by class, not by `row-state-select`: a session's state control
-    // is `readOnlyReason` — observed, not chosen — so it renders as a refusal
-    // and there is no `<select>` to find.
-    const strip = container.querySelector('.lp__rowdetail');
-    expect(strip).not.toBeNull();
-    // DOCUMENT_POSITION_PRECEDING === 2.
-    expect(tabs.compareDocumentPosition(strip!) & 2).toBe(2);
+    expect(queryByTestId('panel-controls')).toBeNull();
+    expect(container.querySelectorAll('.lp__rowdetail')).toHaveLength(0);
+  });
+
+  it('still draws the session status, in the header pill', () => {
+    // The removal is of a CONTROL that could not be used, not of the fact it
+    // showed. A session that stopped reporting its state anywhere would be the
+    // regression this ruling did not ask for.
+    const session = Object.values(fixtureDetails).find((d) => d.kind === 'work_session');
+    if (!session) throw new Error('the fixtures must carry a work_session');
+
+    const status = (session.state as { status?: string }).status;
+    if (!status) throw new Error('the work_session fixture must carry a status');
+
+    const { getByTestId } = panel(session, host({ kind: 'work_session' }));
+    expect(getByTestId('panel-header').textContent).toContain(status.replace(/_/g, ' '));
   });
 });
 

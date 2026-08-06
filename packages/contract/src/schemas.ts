@@ -126,12 +126,13 @@ export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
 
 export const ActorSummarySchema: z.ZodType<ActorSummary> = z.object({
   id: EntityIdSchema,
-  kind: z.enum(['member', 'team_member']),
+  kind: z.enum(['member', 'team_member', 'work_session']),
   displayName: z.string(),
   avatar: z.string().nullable().optional(),
   role: z.string().nullable().optional(),
   ownerMemberId: EntityIdSchema.optional(),
   isAgent: z.boolean(),
+  via: z.object({ sessionId: EntityIdSchema }).strict().optional(),
 }).strict();
 
 export const EntityCountersSchema: z.ZodType<EntityCounters> = z.object({
@@ -316,6 +317,7 @@ export const EntityBadgesSchema: z.ZodType<EntityBadges> = z.lazy(() => z.object
   }).strict().optional(),
   pulls: z.array(PullStateSchema).optional(),
   workingActors: z.array(LiveWorkSchema).optional(),
+  completedBy: z.object({ actor: ActorSummarySchema, at: z.string() }).strict().optional(),
   restricted: z.boolean().optional(),
   staleness: EntityStalenessSchema.optional(),
 }).strict());
@@ -547,6 +549,7 @@ export const EntityCapabilitiesSchema: z.ZodType<EntityCapabilities> = z.object(
   canReact: z.boolean(),
   canGrantPoints: z.boolean(),
   canComplete: z.boolean(),
+  allowedTransitions: z.array(z.string()).optional(),
 }).strict();
 
 export const HierarchySchema: z.ZodType<Hierarchy> = z.lazy(() => z.object({
@@ -585,6 +588,7 @@ const CollectionFiltersSchema = z.object({
   readyToPull: z.boolean().optional(),
   inReviewForActorId: EntityIdSchema.optional(),
   mentionedActorId: EntityIdSchema.optional(),
+  workedByActorId: EntityIdSchema.optional(),
   inFlightForActorId: EntityIdSchema.optional(),
   needsActorId: EntityIdSchema.optional(),
   sessionStatus: z.array(WorkSessionStatusSchema).optional(),
@@ -626,6 +630,7 @@ export const CollectionGroupSchema: z.ZodType<CollectionGroup> = z.lazy(() => z.
   label: z.string(),
   items: z.array(EntitySummarySchema),
   nextCursor: CursorSchema.optional(),
+  total: z.number().int().nonnegative().optional(),
 }).strict());
 
 export const CollectionResultSchema: z.ZodType<CollectionResult> = z.lazy(() => z.object({

@@ -20,6 +20,7 @@
  */
 import { useId, useMemo, useState } from 'react';
 import { Avatar, Eyebrow, Pill } from '../kit';
+import { KindIcon } from '../domain';
 import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import {
   CLICK_THROUGH_CAPTION,
@@ -342,7 +343,7 @@ function Row({
           <span className="ibx-row__meta">
             {row.target ? (
               <>
-                <span aria-hidden>{row.target.glyph}</span> {row.target.title} ·{' '}
+                <KindIcon kind={row.target.kind} size={13} /> {row.target.title} ·{' '}
               </>
             ) : null}
             {row.recency}

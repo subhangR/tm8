@@ -17,16 +17,24 @@
  * canvas (the dedicated rail frame); the unified server rows and the two
  * footers from T0-1. Colors always resolve through tokens (D5).
  */
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { MenuConfig, MenuItem, MenuLeaf, MenuViewRef } from '@tm8/contract';
 import { REASONS } from '../domain';
+import { VectorIcon } from '../kit';
+import type { CollectionMode } from '../domain';
 import { VIEW_PRESENTATION } from './menu-resolve';
 import { MENU_COLLAPSED, MENU_EXPANDED } from './geometry';
 
 /** What a menu ref needs in order to be drawn. */
 export interface RefPresentation {
   label: string;
-  icon: string;
+  /**
+   * The row's mark. A NODE, not a character: kinds and views are both drawn
+   * (`KindIcon` / `VectorIcon`) because the collapsed 48px rail is icon-ONLY,
+   * and that is the state where near-identical text glyphs stopped being a
+   * cosmetic problem — with the labels gone, the mark is the entire row.
+   */
+  icon: ReactNode;
   /** Optional trailing count, e.g. Tasks `18`. */
   badge?: string | number;
   /** Optional live count — renders as the green `● n` treatment. */
@@ -74,7 +82,12 @@ export type KindPresenter = (ref: string) => RefPresentation | null;
 
 export type MenuTarget =
   | { type: 'view'; ref: MenuViewRef }
-  | { type: 'kind'; ref: string }
+  /**
+   * `mode` is the kind screen's LAYOUT — route state the shell holds so the
+   * panel's switcher survives navigation (§1.1). The rail never sets it; it
+   * rides along so switching kinds and switching layout are one target shape.
+   */
+  | { type: 'kind'; ref: string; mode?: CollectionMode }
   | { type: 'entity'; ref: string; kind: string };
 
 export interface ServerRailItem {
@@ -161,7 +174,9 @@ function entityTree(rows: readonly MenuEntityRow[]): MenuEntityNode[] {
 
 /** Resolves an item/leaf to its presentation, or null when it cannot be drawn. */
 function present(node: MenuItem | MenuLeaf, presentKind: KindPresenter): RefPresentation | null {
-  return node.type === 'view' ? VIEW_PRESENTATION[node.ref] ?? null : presentKind(node.ref);
+  if (node.type !== 'view') return presentKind(node.ref);
+  const view = VIEW_PRESENTATION[node.ref];
+  return view ? { label: view.label, icon: <VectorIcon paths={view.art} /> } : null;
 }
 
 /**

@@ -410,6 +410,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             ) : undefined
           }
           rowsFor={data.rowsFor(leftKind) as never}
+          boardFor={data.boardFor(leftKind) as never}
           members={data.members}
           ctx={ctx}
           compact={leftCompact}
@@ -499,6 +500,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
             ) : undefined
           }
           rowsFor={data.rowsFor(rightKind) as never}
+          boardFor={data.boardFor(rightKind) as never}
           members={data.members}
           ctx={ctx}
           compact={rightCompact}

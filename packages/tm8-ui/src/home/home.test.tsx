@@ -291,23 +291,26 @@ describe('mentions keep three different facts apart', () => {
 
 describe('activity rows say only what their event says', () => {
   const envelope = { spaceId: FIXTURE_SPACE_ID, seq: 7, occurredAt: NOW.toISOString(), schemaVersion: 1 };
-  const glyphOf = () => '◻';
 
   it('credits createdBy ONLY on an entity that has never been updated', () => {
     const created = { ...taskGuideLines, updatedAt: taskGuideLines.createdAt, createdBy: forge };
     const row = activityRowOf(
       { ...envelope, type: 'entity.upsert', entity: created } as DurableWorkspaceEvent,
-      glyphOf,
     );
     expect(row?.verb).toBe('created');
     expect(row?.actor).toBe(forge.displayName);
+    // The row carries the KIND, not a mark for it: the screen draws the
+    // registry artwork from this. It replaced an injected `glyphOf` that
+    // returned a text character — one indirection for a lookup the view can
+    // do itself, and a character that could not stay distinct across twenty
+    // kinds anyway.
+    expect(row?.objectKind).toBe(created.kind);
   });
 
   it('names NO actor on an update — `createdBy` is the creator, not this actor', () => {
     const updated = { ...taskGuideLines, updatedAt: '2026-07-28T11:00:00.000Z' };
     const row = activityRowOf(
       { ...envelope, type: 'entity.upsert', entity: updated } as DurableWorkspaceEvent,
-      glyphOf,
     );
     expect(row?.verb).toBe('updated');
     expect(row?.actor).toBeNull();
@@ -320,13 +323,12 @@ describe('activity rows say only what their event says', () => {
         type: 'notification.created',
         notification: {} as NotificationItem,
       } as DurableWorkspaceEvent,
-      glyphOf,
     );
     expect(row).toBeNull();
   });
 
   it('dedupes on the seq spine and caps the window', () => {
-    const row = { id: 'a#1', seq: 1, actor: null, isAgent: false, verb: 'x', objectGlyph: null, objectTitle: null, objectId: null, at: NOW.toISOString(), tone: 'info' as const };
+    const row = { id: 'a#1', seq: 1, actor: null, isAgent: false, verb: 'x', objectKind: null, objectTitle: null, objectId: null, at: NOW.toISOString(), tone: 'info' as const };
     expect(appendActivity([row], row)).toHaveLength(1);
   });
 
@@ -337,8 +339,8 @@ describe('activity rows say only what their event says', () => {
     expect(recencyOf('2026-07-28T11:00:00.000Z', NOW)).toBe('1h');
     const buckets = bucketActivity(
       [
-        { id: 'a#2', seq: 2, actor: null, isAgent: false, verb: 'x', objectGlyph: null, objectTitle: null, objectId: null, at: NOW.toISOString(), tone: 'info' },
-        { id: 'a#1', seq: 1, actor: null, isAgent: false, verb: 'y', objectGlyph: null, objectTitle: null, objectId: null, at: '2026-07-27T09:00:00.000Z', tone: 'info' },
+        { id: 'a#2', seq: 2, actor: null, isAgent: false, verb: 'x', objectKind: null, objectTitle: null, objectId: null, at: NOW.toISOString(), tone: 'info' },
+        { id: 'a#1', seq: 1, actor: null, isAgent: false, verb: 'y', objectKind: null, objectTitle: null, objectId: null, at: '2026-07-27T09:00:00.000Z', tone: 'info' },
       ],
       NOW,
     );

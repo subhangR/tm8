@@ -28,6 +28,7 @@ import { useId, useMemo, useState } from 'react';
 import type { CustomFieldType, EntityKindDef } from '@tm8/contract';
 import { Pill } from '../kit';
 import { DisabledAction } from '../panels';
+import { KindIcon } from '../domain/KindIcon';
 import { getKind } from '../domain/registry';
 import {
   FIELD_TYPES,
@@ -421,7 +422,10 @@ function WhatYouGetCard({ draft }: { draft: KindDraft }) {
               floor every custom kind lands on, with no code written per kind
             </li>
             <li>
-              glyph painted: <span className="gov-mono">{fallback.chip.glyph}</span>
+              {/* The mark painted is now the fallback row's DRAWN artwork, so the
+                  verdict shows the drawing — quoting the text character would
+                  state a fact this build stopped producing. */}
+              mark painted: <KindIcon kind={fallback.kind} size={13} />
               {authored !== fallback.chip.glyph ? (
                 <>
                   {' '}
@@ -498,7 +502,7 @@ function ExistingKindsCard({ kinds }: { kinds: LoadState<readonly EntityKindDef[
                 <li key={def.id} className="gov-row" data-testid="existing-kind-row">
                   <div className="gov-row__head">
                     <span aria-hidden className="gov-row__glyph">
-                      {def.icon || getKind(def.kind).chip.glyph}
+                      {def.icon || <KindIcon kind={def.kind} />}
                     </span>
                     <span className="gov-row__title">{def.kind}</span>
                     <span className="gov-card__spacer" />
@@ -524,8 +528,9 @@ function ExistingKindsCard({ kinds }: { kinds: LoadState<readonly EntityKindDef[
       <div className="gov-fallback">
         <GovEyebrow>UNKNOWN KIND — FALLBACK</GovEyebrow>
         <p className="gov-prose gov-prose--quiet">
-          A kind defined by a newer tm8 than this UI knows still opens: {getKind('c:unknown').chip.glyph}{' '}
-          glyph, raw key:values, and the {getKind('c:unknown').panel.archetype} archetype. Open,
+          A kind defined by a newer tm8 than this UI knows still opens: the{' '}
+          <KindIcon kind="c:unknown" size={13} /> fallback mark, raw key:values, and the{' '}
+          {getKind('c:unknown').panel.archetype} archetype. Open,
           discuss and link keep working — only typed rendering is missing, and the caption says so
           rather than hiding the fields.
         </p>

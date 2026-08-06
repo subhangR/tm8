@@ -1,11 +1,18 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { ActorSummary, EntityCapabilities, EntitySummary, ExecutionSpawnInput } from '@tm8/contract';
+import type {
+  ActorSummary,
+  CollectionGroup,
+  EntityCapabilities,
+  EntitySummary,
+  ExecutionSpawnInput,
+} from '@tm8/contract';
 import type { SessionLiveness } from '../data/seam';
 import type {
   ActionContext,
   ActionRef,
   AssignControl,
+  GroupByKey,
   KindConfig,
   LaunchCapacity,
   LaunchProjectOption,
@@ -14,14 +21,16 @@ import type {
   LiveTreatment,
   ProfileResolution,
   QueryFilter,
+  SetStateOutcome,
   SortKey,
   StateControl,
+  StateOption,
   StatusPillSpec,
   TeammateLaunchState,
   ValueControl,
   CollectionMode,
 } from '../domain';
-import { ALL_MODES, REASONS, collectionKinds, getKind, resolveAction } from '../domain';
+import { ALL_MODES, KindIcon, REASONS, collectionKinds, getKind, resolveAction } from '../domain';
 import { Avatar, type PillTone } from '../kit';
 import {
   CheckingPermission,
@@ -104,6 +113,25 @@ export interface EntityListPanelProps {
   compact?: boolean;
 
   /**
+   * Doc 06 §1.1 — the mode-wiring fix. The ROUTE holds the layout mode and the
+   * shell passes it down; local state remains only the uncontrolled fallback
+   * for hosts that do not route it. Without this pair the codec parsed
+   * `?mode=` and the value died before reaching the panel.
+   */
+  mode?: CollectionMode;
+  onMode?: (mode: CollectionMode) => void;
+
+  /**
+   * Board mode's data source (A2). The shell backs it with the SAME
+   * `collections.query` the rows come from, plus `groupBy` — columns are
+   * `CollectionResult.groups`, computed server-side; the client never groups
+   * (L3). `undefined` means loading, which renders skeletons — never empty
+   * columns, because "an empty column is a real answer" only works if the
+   * answer is never shown before the question returns (§8.2).
+   */
+  boardFor?: (filter: QueryFilter, groupBy: GroupByKey) => BoardSnapshot | undefined;
+
+  /**
    * Focus handle for the D36 `list.search` command (`f`). The keyboard
    * controller emits the command and consumes the event; it never touches the
    * DOM — the shell calls this on the FOCUSED panel.
@@ -142,8 +170,19 @@ export interface EntityListPanelProps {
    * already uses for the one session verb with its own host handler.
    *
    * Absent ⇒ the dropdown renders DISABLED WITH REASON, never enabled-inert.
+   *
+   * MAY return the outcome. The board renders refusals INLINE at the column
+   * header (§1.5 — no toasts on the board), so it passes `{notify: false}` and
+   * consumes the returned outcome; the dropdown path passes nothing and the
+   * host keeps noticing. A host returning `void` still works — the board then
+   * simply cannot show the reason and the card stays where the data says.
    */
-  onSetState?: (entityId: string, next: string, via: ActionRef) => void;
+  onSetState?: (
+    entityId: string,
+    next: string,
+    via: ActionRef,
+    opts?: { notify?: boolean },
+  ) => void | Promise<SetStateOutcome>;
 
   /**
    * D67 — commit the expanded row's archive / restore.
@@ -211,6 +250,21 @@ export interface LaunchSources {
   mutationId: (entityId: string) => string;
 }
 
+/**
+ * One grouped read's answer, as the shell delivers it. `limit` and
+ * `nextCursor` exist for the §1.4 honesty banner: groups are PAGE-SCOPED and
+ * no per-group total exists yet, so the board must say "{n} shown" and name
+ * the page size rather than let column heights read as complete counts.
+ */
+export interface BoardSnapshot {
+  groups: readonly CollectionGroup[];
+  nextCursor: unknown;
+  limit: number;
+  /** A failed fetch — the board renders the reason, never empty columns. */
+  error?: string;
+  retry?: () => void;
+}
+
 export function EntityListPanel(props: EntityListPanelProps) {
   const config = getKind(props.kind);
   const list = config.list;
@@ -228,7 +282,12 @@ export function EntityListPanel(props: EntityListPanelProps) {
   const [selectedPeople, setSelectedPeople] = useState<readonly string[]>([]);
   const [sortKey, setSortKey] = useState(list.sort.find((s) => s.default)?.key ?? list.sort[0]?.key);
   const [query, setQuery] = useState('');
-  const [mode, setMode] = useState<CollectionMode>(config.defaultMode);
+  // §1.1: route-held when the host passes the pair; local only as the
+  // uncontrolled fallback. `props.mode` null-ish means "the route says
+  // nothing", which falls through to local state, which seeds from registry.
+  const [localMode, setLocalMode] = useState<CollectionMode>(config.defaultMode);
+  const mode = props.mode ?? localMode;
+  const setMode = props.onMode ?? setLocalMode;
 
   const activeTier = list.lifecycle?.find((t) => t.id === tierId) ?? null;
   const members = props.members ?? EMPTY_MEMBERS;
@@ -315,7 +374,20 @@ export function EntityListPanel(props: EntityListPanelProps) {
       />
 
       <div className="lp__body">
-        {list.sections && list.sections.length > 0 ? (
+        {mode === 'board' && list.board ? (
+          <BoardBody
+            props={props}
+            config={config}
+            tier={activeTier}
+            onTier={setTierId}
+            filter={{
+              ...(scopeToTier(activeTier?.filter ?? {}, activeTier) ?? {}),
+              ...mergeSelectedFilters(config, selected),
+              ...(selectedPeople.length > 0 ? { createdByIds: selectedPeople } : {}),
+            }}
+            query={query}
+          />
+        ) : list.sections && list.sections.length > 0 ? (
           /* A section the active tier excludes outright renders NO heading.
              Its rows would be empty by construction, and an empty band under
              "COMPLETED · 0" inside the Open tier states something false about
@@ -508,7 +580,7 @@ function KindSelector({
     <div className="lp__selector" ref={ref}>
       <button type="button" className="lp__kind" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className="lp__kind-glyph" aria-hidden>
-          {config.chip.glyph}
+          <KindIcon kind={config.kind} />
         </span>
         {config.labelPlural}
         <span className="lp__caret" aria-hidden>
@@ -543,7 +615,7 @@ function KindSelector({
                   onKindChange?.(k.kind);
                 }}
               >
-                <span aria-hidden>{k.chip.glyph}</span>
+                <KindIcon kind={k.kind} />
                 {k.labelPlural}
               </button>
             </li>
@@ -599,11 +671,16 @@ function ViewSwitcher({
   return (
     <span className="lp__views" role="group" aria-label="Layout" data-testid="view-switcher">
       {positions.map((m) => {
-        const built = m === 'list';
+        // A2: board is built for kinds that DECLARE one. A kind without a
+        // `board` registry row keeps its position honestly disabled — the
+        // declaration is data, so a kind gains a board by registry entry.
+        const built = m === 'list' || (m === 'board' && config.list.board !== undefined);
         const reason =
           m === 'graph'
             ? 'Graph view isn’t available yet.'
-            : `The ${m} layout arrives with A2 — the switcher position is real, the body is not built yet.`;
+            : m === 'board'
+              ? `${config.labelPlural} have no board: this kind declares no board grouping in the registry.`
+              : `The ${m} layout arrives with A2 — the switcher position is real, the body is not built yet.`;
         if (!built) {
           return (
             <DisabledIconControl key={m} label={`${m} layout`} glyph={MODE_GLYPH[m]} reason={toReason(reason)} />
@@ -1016,6 +1093,415 @@ function mergeSelectedFilters(
 }
 
 // ---------------------------------------------------------------------------
+// Board (A2, doc 06 §1) — geometry only. Columns, headers, drag. The CARD is
+// the existing Tile; the vocabulary is stateControl.options; the words and
+// tones are panel.statusPill. This component never reads `kind`.
+// ---------------------------------------------------------------------------
+
+interface BoardColumnSpec {
+  key: string;
+  label: string;
+  tone: PillTone;
+  /** How a drop here dispatches. `null` ⇒ not a legal drop target. */
+  option: StateOption | null;
+  /** The §1.3 Done sink — a drop target, never a fetched column. */
+  sink: boolean;
+}
+
+/**
+ * Column MEMBERSHIP and ORDER = stateControl.options ∩ the active tier's
+ * workStatus filter; words/tones from panel.statusPill. One source — the
+ * picker, the pill and the column cannot drift (§1.3).
+ */
+function boardColumns(
+  config: KindConfig,
+  tier: LifecycleTier | null,
+  groups: readonly CollectionGroup[],
+): BoardColumnSpec[] {
+  const stateControl = config.list.stateControl;
+  const pill = config.panel.statusPill;
+  const labelOf = (id: string, fallback?: string): string =>
+    pill?.labels?.[id] ?? fallback ?? id.replace(/_/g, ' ');
+  const toneOf = (id: string): PillTone => pill?.tones?.[id] ?? 'idle';
+
+  if (!stateControl) {
+    // No settable state ⇒ the server's raw groups, neutral tone, never
+    // invented vocabulary. (Today no board-declaring kind lacks one; this
+    // branch keeps the component honest rather than reachable.)
+    return groups.map((g) => ({ key: g.key, label: g.label, tone: 'idle', option: null, sink: false }));
+  }
+
+  const tierStatuses = tier?.filter.workStatus as readonly string[] | undefined;
+  const columns: BoardColumnSpec[] = stateControl.options
+    .filter((o) => !tierStatuses || tierStatuses.includes(o.id))
+    .map((o) => ({ key: o.id, label: labelOf(o.id), tone: toneOf(o.id), option: o, sink: false }));
+
+  // §1.3 — the Done sink. The tier rule alone would leave the Open board with
+  // no terminal column, making the single most-performed Kanban action
+  // impossible. Derived from DATA: the option routed `via:'complete'` that the
+  // active tier excludes. `cancelled` gets no sink — a rare deliberate act
+  // that stays in the state picker.
+  if (tier?.id === 'open') {
+    const sinkOption = stateControl.options.find(
+      (o) => o.via === 'complete' && !columns.some((c) => c.key === o.id),
+    );
+    if (sinkOption) {
+      columns.push({
+        key: sinkOption.id,
+        label: `${labelOf(sinkOption.id)} — drop to complete`,
+        tone: toneOf(sinkOption.id),
+        option: sinkOption,
+        sink: true,
+      });
+    }
+  }
+
+  // A group key the registry does not declare renders APPENDED with the raw
+  // key and neutral tone — never dropped (§1.3).
+  for (const group of groups) {
+    if (!columns.some((c) => c.key === group.key)) {
+      columns.push({ key: group.key, label: group.label || group.key, tone: 'idle', option: null, sink: false });
+    }
+  }
+
+  return columns;
+}
+
+function BoardBody({
+  props,
+  config,
+  tier,
+  onTier,
+  filter,
+  query,
+}: {
+  props: EntityListPanelProps;
+  config: KindConfig;
+  tier: LifecycleTier | null;
+  onTier: (tierId: string) => void;
+  filter: QueryFilter;
+  query: string;
+}) {
+  const list = config.list;
+  const board = list.board as NonNullable<typeof list.board>;
+  const stateControl = list.stateControl;
+  /** Cards completed via the sink THIS view session — its only body (§1.3). */
+  const [completedHere, setCompletedHere] = useState<readonly EntitySummary[]>([]);
+  /** The §1.5 inline refusal: rendered at the refusing column's header. */
+  const [refusal, setRefusal] = useState<{ column: string; reason: string } | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  /** The card in flight. The ROW rides along so a drop needs no cache lookup. */
+  const [dragging, setDragging] = useState<EntitySummary | null>(null);
+  /** §8.1 roving focus: column index + card index within it. */
+  const [focus, setFocus] = useState<{ col: number; row: number }>({ col: 0, row: 0 });
+
+  // Archived tier: board disabled with reason — archived rows have no
+  // workflow. Same honesty kit as every other foreseeable refusal (§8.5).
+  if (tier?.id === 'archived') {
+    return (
+      <div className="lp__board lp__board--off" data-testid="board-disabled">
+        <DisabledAction
+          label="Board"
+          reason={toReason('Archived rows have no workflow — there is nothing to move between columns.')}
+        >
+          Board
+        </DisabledAction>
+      </div>
+    );
+  }
+
+  const snapshot = props.boardFor?.(filter, board.groupBy);
+
+  // No source wired: say so. A board that silently renders nothing is
+  // indistinguishable from an empty tier, and only one of those is true.
+  if (!props.boardFor) {
+    return (
+      <div className="lp__board lp__board--off" data-testid="board-unwired">
+        <DisabledAction label="Board" reason={NOT_WIRED_REASON}>
+          Board
+        </DisabledAction>
+      </div>
+    );
+  }
+
+  // §8.2 — error must not look like empty: columns collapse to a single body
+  // with the reason and a retry.
+  if (snapshot?.error) {
+    return (
+      <div className="lp__board lp__board--error" data-testid="board-error" role="alert">
+        <p className="lp__board-reason">{`The board could not load: ${snapshot.error}`}</p>
+        {snapshot.retry ? (
+          <button type="button" className="lp__board-retry" onClick={snapshot.retry}>
+            Retry
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  const loading = snapshot === undefined;
+  const columns = boardColumns(config, tier, snapshot?.groups ?? []);
+  const groupOf = new Map((snapshot?.groups ?? []).map((g) => [g.key, g] as const));
+  const itemsOf = (column: BoardColumnSpec): readonly EntitySummary[] =>
+    column.sink ? matching(completedHere, query) : matching(groupOf.get(column.key)?.items ?? [], query);
+
+  // §8.4 — quick-add ONLY on the column whose status is the kind's creation
+  // status: the FIRST stateControl option (creation IS that state; a quick-add
+  // elsewhere would silently create a card belonging to another column).
+  const creationKey = stateControl?.options[0]?.id;
+
+  const dispatchDrop = (row: EntitySummary, column: BoardColumnSpec): void => {
+    if (!column.option || !stateControl || !props.onSetState) return;
+    if (!column.sink && itemsOf(column).some((r) => r.id === row.id)) return;
+    setRefusal(null);
+    setPendingId(row.id);
+    const outcome = props.onSetState(
+      row.id,
+      column.option.id,
+      column.option.via ?? stateControl.command,
+      { notify: false },
+    );
+    void Promise.resolve(outcome).then((result) => {
+      setPendingId(null);
+      if (result && result.ok === false) {
+        // §1.5/§8.5: attempted-and-refused renders where the act happened.
+        // The card never moved (no optimistic swap), so nothing snaps back.
+        setRefusal({ column: column.key, reason: result.reason });
+        return;
+      }
+      if (column.sink) setCompletedHere((prior) => [...prior, row]);
+    });
+  };
+
+  // §8.1 — drag is never the only path. The same dispatch as a drop, so one
+  // command path serves pointer and keyboard.
+  const onKeyDown = (event: React.KeyboardEvent): void => {
+    const mod = event.metaKey || event.ctrlKey;
+    const colCount = columns.length;
+    if (colCount === 0) return;
+    const col = Math.min(focus.col, colCount - 1);
+    const rows = itemsOf(columns[col]!);
+    const row = Math.min(focus.row, Math.max(0, rows.length - 1));
+    const focused = rows[row];
+
+    const move = (delta: number): void => {
+      if (!focused) return;
+      const target = columns[col + delta];
+      if (!target || !target.option) return;
+      dispatchDrop(focused, target);
+    };
+
+    switch (event.key) {
+      case 'ArrowLeft':
+      case 'h':
+        if (mod) move(-1);
+        else setFocus({ col: Math.max(0, col - 1), row: 0 });
+        break;
+      case 'ArrowRight':
+      case 'l':
+        if (mod) move(1);
+        else setFocus({ col: Math.min(colCount - 1, col + 1), row: 0 });
+        break;
+      case 'ArrowDown':
+      case 'j':
+        setFocus({ col, row: Math.min(Math.max(0, rows.length - 1), row + 1) });
+        break;
+      case 'ArrowUp':
+      case 'k':
+        setFocus({ col, row: Math.max(0, row - 1) });
+        break;
+      case 'Enter':
+        if (focused) props.onSelect?.(focused.id);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  return (
+    <div
+      className="lp__board"
+      data-testid="board-body"
+      role="application"
+      aria-label={`${config.labelPlural} board`}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+    >
+      {/* §1.4 — the honesty banner. Groups are page-scoped and no total is
+          returned, so column heights are not complete counts and the board
+          says so whenever a further page exists. */}
+      {!loading && snapshot?.nextCursor != null ? (
+        <div className="lp__board-banner" data-testid="board-banner">
+          {`Showing the ${snapshot.limit} most recently active ${config.labelPlural.toLowerCase()} — columns are not complete counts.`}
+        </div>
+      ) : null}
+
+      <div className="lp__board-cols">
+        {columns.map((column, index) => (
+          <BoardColumn
+            key={column.key}
+            column={column}
+            rows={loading ? undefined : itemsOf(column)}
+            props={props}
+            config={config}
+            focused={index === Math.min(focus.col, columns.length - 1)}
+            focusRow={focus.row}
+            refusal={refusal?.column === column.key ? refusal.reason : null}
+            pendingId={pendingId}
+            dragging={dragging}
+            onDragStart={setDragging}
+            onDrop={dispatchDrop}
+            createSlot={!column.sink && column.key === creationKey ? props.createSlot : undefined}
+            doneTierLink={
+              column.sink
+                ? () => {
+                    const doneTier = list.lifecycle?.find((t) =>
+                      (t.filter.workStatus as readonly string[] | undefined)?.includes(column.key),
+                    );
+                    if (doneTier) onTier(doneTier.id);
+                  }
+                : undefined
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BoardColumn({
+  column,
+  rows,
+  props,
+  config,
+  focused,
+  focusRow,
+  refusal,
+  pendingId,
+  dragging,
+  onDragStart,
+  onDrop,
+  createSlot,
+  doneTierLink,
+}: {
+  column: BoardColumnSpec;
+  /** `undefined` ⇒ loading: header renders from the registry, body shimmers. */
+  rows: readonly EntitySummary[] | undefined;
+  props: EntityListPanelProps;
+  config: KindConfig;
+  focused: boolean;
+  focusRow: number;
+  refusal: string | null;
+  pendingId: string | null;
+  dragging: EntitySummary | null;
+  onDragStart: (row: EntitySummary | null) => void;
+  onDrop: (row: EntitySummary, column: BoardColumnSpec) => void;
+  createSlot?: ReactNode;
+  doneTierLink?: () => void;
+}) {
+  const droppable = Boolean(column.option && props.onSetState);
+
+  return (
+    <section
+      className={
+        column.sink
+          ? 'lp__board-col lp__board-col--sink'
+          : focused
+            ? 'lp__board-col lp__board-col--focused'
+            : 'lp__board-col'
+      }
+      data-testid="board-column"
+      data-column={column.key}
+      aria-label={column.label}
+      onDragOver={
+        droppable
+          ? (event) => {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = 'move';
+            }
+          : undefined
+      }
+      onDrop={
+        droppable
+          ? (event) => {
+              event.preventDefault();
+              const id = event.dataTransfer.getData('text/plain');
+              const row = dragging && dragging.id === id ? dragging : null;
+              onDragStart(null);
+              if (row) onDrop(row, column);
+            }
+          : undefined
+      }
+    >
+      <header className="lp__board-head">
+        <span className={`kit-pill kit-pill--${column.tone} lp__board-pill`}>{column.label}</span>
+        {/* "{n} shown", never "{n}" — no per-group total exists yet (§1.4). */}
+        <span className="lp__board-count">{rows === undefined ? '…' : `${rows.length} shown`}</span>
+      </header>
+
+      {refusal ? (
+        // Attempted-and-refused: inline, at the column that refused (§8.5).
+        <p className="lp__board-refusal" role="alert" data-testid="board-refusal">
+          {refusal}
+        </p>
+      ) : null}
+
+      {createSlot ? <div className="lp__board-add">{createSlot}</div> : null}
+
+      <div className="lp__board-cards" role="list">
+        {rows === undefined ? (
+          // §8.2 loading: skeletons, never empty-state text before the answer.
+          <>
+            <div className="lp__board-skeleton" aria-hidden data-testid="board-skeleton" />
+            <div className="lp__board-skeleton" aria-hidden />
+          </>
+        ) : rows.length === 0 ? (
+          column.sink ? (
+            <p className="lp__board-empty">drop a card here to complete it</p>
+          ) : (
+            // §1.3: an empty column is a real answer.
+            <p className="lp__board-empty">{`nothing in ${column.label}`}</p>
+          )
+        ) : (
+          rows.map((row, index) => (
+            <div
+              key={row.id}
+              role="listitem"
+              className={
+                row.id === pendingId
+                  ? 'lp__board-card lp__board-card--pending'
+                  : row.id === dragging?.id
+                    ? 'lp__board-card lp__board-card--dragging'
+                    : focused && index === focusRow
+                      ? 'lp__board-card lp__board-card--focused'
+                      : 'lp__board-card'
+              }
+              draggable={droppable || undefined}
+              onDragStart={(event) => {
+                event.dataTransfer.setData('text/plain', row.id);
+                event.dataTransfer.effectAllowed = 'move';
+                onDragStart(row);
+              }}
+              onDragEnd={() => onDragStart(null)}
+            >
+              <Tile row={row} props={props} config={config} />
+            </div>
+          ))
+        )}
+      </div>
+
+      {column.sink && doneTierLink ? (
+        <button type="button" className="lp__board-done-link" onClick={doneTierLink}>
+          {'View all done →'}
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Bands, trees, tiles
 // ---------------------------------------------------------------------------
 
@@ -1085,12 +1571,12 @@ function Band({
          */
         query && query.trim().length > 0 ? (
           <EmptyBody
-            glyph={config.chip.glyph}
+            glyph={<KindIcon kind={config.kind} size={22} />}
             sentence={`No ${config.labelPlural.toLowerCase()} match “${query.trim()}”. Clear the search to see them all.`}
           />
         ) : (
           <EmptyBody
-            glyph={config.chip.glyph}
+            glyph={<KindIcon kind={config.kind} size={22} />}
             sentence={`No ${config.labelPlural.toLowerCase()} here yet — create one, or press / and type a name.`}
           />
         )
@@ -1624,7 +2110,7 @@ function Tile({
                   .join(' ')}
               />
             ) : (
-              <span className="lp__kindmark">{config.chip.glyph}</span>
+              <span className="lp__kindmark"><KindIcon kind={config.kind} /></span>
             )}
           </span>
 
