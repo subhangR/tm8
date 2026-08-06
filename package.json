@@ -8,6 +8,7 @@
     "tools/*"
   ],
   "scripts": {
+    "postinstall": "bash scripts/repair-node-pty.sh",
     "dev": "node scripts/dev.mjs",
     "dev:server": "node scripts/dev.mjs --server-only",
     "start": "node scripts/start.mjs",
