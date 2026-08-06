@@ -91,11 +91,23 @@ const DEFAULT_BLOCKS: readonly ContentBlockRef[] = [{ block: 'fields' }];
  * archive verb alone is NOT enough to mount the strip — every kind has a
  * tombstone, so keying on that would put a bare Archive bar under every panel
  * in the app, which is a redesign and not this fix.
+ *
+ * AND NEITHER IS AN OBSERVED STATE — USER RULING 2026-08-06, on the session
+ * panel: remove the bar above the terminal. A `stateControl` carrying
+ * `readOnlyReason` is a state the node REPORTS, not one a user authors; drawn
+ * in the strip it is a badge that looks like a control, sitting next to an
+ * Archive the panel is not otherwise asking for. The session's status is
+ * already in the header pill — and there it carries the LIVENESS verdict the
+ * strip's copy never had (`StatusPillFor`), so the band was the less truthful
+ * of the two renderings as well as the more expensive one.
+ *
+ * This is still registry data and still no archetype gate: a kind whose state
+ * becomes authorable gets its band back by dropping `readOnlyReason`.
  */
 function controlsFor(config: KindConfig): boolean {
   const list = config.list;
   return (
-    list.stateControl !== undefined ||
+    (list.stateControl !== undefined && list.stateControl.readOnlyReason === undefined) ||
     (list.valueControls?.length ?? 0) > 0 ||
     list.assignControl !== undefined
   );
@@ -398,27 +410,22 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    *     it is still reachable from every tab, which is why it is rendered
    *     here rather than gated on the Content tab.
    *
-   * NO ARCHETYPE KEEPS THE OLD POSITION — USER RULING 2026-08-05 (second), on
-   * the SESSION panel: "why is the session still showing that big row with
-   * state and status and all, the task detail panel already implements that,
-   * in a clean way."
+   * NO ARCHETYPE KEEPS THE OLD POSITION, and the SESSION now keeps no band at
+   * all — USER RULING 2026-08-06, on the bar above the terminal: remove it.
    *
-   * The first pass left the terminal archetype in the stacked `lines` variant
-   * ABOVE the tabs, reasoning that a terminal owns its full height below them
-   * (user ruling 2026-07-31, "terminal all the way, till the component
-   * bottom") and so had no band to sit in. That reasoning protected the wrong
-   * pixels. A session's two controls are BOTH REFUSALS — its state is observed
-   * rather than chosen, and archive is usually not permitted — and `lines`
-   * draws a refusal as a full sentence under its control, so the exemption
-   * spent ~90px printing two apologies ABOVE the canvas where the chip row
-   * spends ~34px BELOW the tabs and puts the same sentences in the tooltip the
-   * chip layout already gives every refused control (`panels.css`: "A REFUSED
-   * CHIP MUST NOT COST THE ROW ITS SECOND DIMENSION"). The terminal came out
-   * SHORTER under the rule that was meant to keep it tall.
+   * The history is worth one paragraph because it is two rulings deep. A first
+   * pass left the terminal archetype in the stacked `lines` variant ABOVE the
+   * tabs, reasoning that a terminal owns its full height below them (user
+   * ruling 2026-07-31, "terminal all the way, till the component bottom"). A
+   * second ruling (2026-08-05) moved it into the chip band with everything
+   * else, which was cheaper — ~34px instead of ~90px — but still spent the row
+   * on two things a session cannot do: its state is observed, not chosen, and
+   * archive is not the verb anyone opens a live terminal to reach.
    *
-   * So: one strip, one layout, one position, and no `isTerminal` anywhere in
-   * this decision — which is also the only version of it a seventh archetype
-   * cannot arrive and forget.
+   * So the band is gone for the session, and it is `controlsFor` above that
+   * removes it — on the registry's own `readOnlyReason`, not on `isTerminal`.
+   * There is still no archetype literal in this decision, which is what keeps
+   * a seventh archetype from arriving and having to remember it.
    *
    * NOT ON A TOMBSTONE. A deleted entity cannot be edited (the server refuses,
    * and `useTaskSave` already says "restore it before editing"), and its ONE
