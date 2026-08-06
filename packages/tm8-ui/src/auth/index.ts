@@ -39,6 +39,7 @@ export {
 } from './session';
 export {
   authTokenFor,
+  noteServerOrigin,
   readServerPass,
   PASSES_STORAGE_KEY,
   KNOWN_ACCOUNTS_KEY,

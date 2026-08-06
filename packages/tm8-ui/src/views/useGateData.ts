@@ -37,7 +37,8 @@ import type {
   SpaceSummary,
   ProjectResource,
 } from '@tm8/contract';
-import { launchModel } from '@tm8/contract';
+import { CollabError, launchModel } from '@tm8/contract';
+import { subscribeToSession } from '../auth/session';
 import type { ConnectionState, LivenessSnapshot, Seam, SessionLiveness } from '../data/seam';
 import {
   browserWebSocketFactory,
@@ -273,6 +274,14 @@ export interface GateData {
   connection: ConnectionState;
   /** Set when the first read failed — an unreachable node, honestly held. */
   bootError: string | null;
+  /**
+   * The active server ANSWERED the boot read with `unauthenticated`. A node
+   * that refuses the credential is a different fact from a node that cannot be
+   * reached: the cure is a sign-in, not a retry — so while this is set the
+   * boot loop waits on the session store instead of the backoff timer, and the
+   * host renders the sign-in frame for this server instead of the retry card.
+   */
+  authRequired: boolean;
   /** Live set, verbatim from the seam snapshot. The ONLY source for `● N live`. */
   liveIds: readonly string[];
   /** THE verdict. Never computed in the UI. */
@@ -674,6 +683,7 @@ export function useGateData(options: GateOptions): GateData {
   const seededIds = useRef(new Map<string, string[]>());
 
   const [bootError, setBootError] = useState<string | null>(null);
+  const [authRequired, setAuthRequired] = useState(false);
 
   // Fetch the viewer's spaces. Opening and hydrating the selected space
   // is a separate effect below so the tab bar is a real switch, not a painted
@@ -695,11 +705,13 @@ export function useGateData(options: GateOptions): GateData {
   useEffect(() => {
     let cancelled = false;
     let delayHandle: ReturnType<typeof setTimeout> | undefined;
+    let unsubscribe: (() => void) | undefined;
     void (async () => {
       for (let attempt = 0; !cancelled; attempt++) {
         try {
           const list = await seam.spaces();
           if (cancelled) return;
+          setAuthRequired(false);
           setSpaces(list);
           const first = list[0];
           if (!first) {
@@ -724,9 +736,26 @@ export function useGateData(options: GateOptions): GateData {
           // it. (With the fixture seam this could never happen; found as an
           // unhandled rejection the first time the real flag met a down node.)
           if (cancelled) return;
+          // A node that ANSWERED with "unauthenticated" is not unreachable —
+          // it is refusing this browser's credential (or its absence). No
+          // retry can change that answer; only a new pass can. So the loop
+          // parks on the session store and re-reads the moment a sign-in (or
+          // sign-out, or another tab's change) lands, instead of hammering a
+          // refusal on a timer.
+          const unauthenticated =
+            error instanceof CollabError && error.code === 'unauthenticated';
+          setAuthRequired(unauthenticated);
           setBootError(String((error as { message?: string })?.message ?? error));
           await new Promise<void>((resolve) => {
-            delayHandle = setTimeout(resolve, bootRetryDelayMs(attempt, error));
+            if (unauthenticated) {
+              unsubscribe = subscribeToSession(() => {
+                unsubscribe?.();
+                unsubscribe = undefined;
+                resolve();
+              });
+            } else {
+              delayHandle = setTimeout(resolve, bootRetryDelayMs(attempt, error));
+            }
           });
         }
       }
@@ -734,6 +763,7 @@ export function useGateData(options: GateOptions): GateData {
     return () => {
       cancelled = true;
       if (delayHandle !== undefined) clearTimeout(delayHandle);
+      unsubscribe?.();
     };
   }, [seam]);
 
@@ -1555,6 +1585,7 @@ export function useGateData(options: GateOptions): GateData {
       menu,
       connection,
       bootError,
+      authRequired,
       liveIds,
       livenessOf,
       rowsFor,
@@ -1579,7 +1610,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, liveIds, livenessOf, rowsFor, boardFor, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, authRequired, liveIds, livenessOf, rowsFor, boardFor, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;
