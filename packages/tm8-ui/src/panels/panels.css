@@ -1027,7 +1027,38 @@
   padding: 0 4px;
   cursor: help;
 }
-.cv2-root .pn-msg__body { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); text-wrap: pretty; }
+/* A message body is a MARKDOWN root here too. `.md-root` is `.cv2-root .md-root`
+   in markdown.css, so the qualifier is what stops a discussion line inheriting
+   the doc reader's serif column at doc size whatever order the sheets import in. */
+.cv2-root .pn-msg__body,
+.cv2-root .md-root.pn-msg__body { margin: 0; font-family: var(--pn-ui); font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); text-wrap: pretty; overflow-wrap: anywhere; }
+.cv2-root .md-root.pn-msg__body p,
+.cv2-root .md-root.pn-msg__body ul,
+.cv2-root .md-root.pn-msg__body ol,
+.cv2-root .md-root.pn-msg__body blockquote,
+.cv2-root .md-root.pn-msg__body .md-fence,
+.cv2-root .md-root.pn-msg__body .md-tablewrap,
+.cv2-root .md-root.pn-msg__body .md-mermaid { margin-bottom: 0.5em; }
+.cv2-root .md-root.pn-msg__body > :last-child { margin-bottom: 0; }
+/* A heading in a message is emphasis within a thread row, not a chapter. */
+.cv2-root .md-root.pn-msg__body h1,
+.cv2-root .md-root.pn-msg__body h2,
+.cv2-root .md-root.pn-msg__body h3,
+.cv2-root .md-root.pn-msg__body h4,
+.cv2-root .md-root.pn-msg__body h5,
+.cv2-root .md-root.pn-msg__body h6 {
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.7em 0 0.3em;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cv2-root .md-root.pn-msg__body h1 { font-family: var(--pn-ui); font-size: 13.5px; }
+/* Marked-up TEXT, deliberately not button-shaped: this tab has no navigation
+   handler, so the mention names someone without offering to open them. */
+.cv2-root .pn-msg__mention { color: var(--pn-ink-1); font-weight: 600; }
 .cv2-root .pn-msg__reply-context {
   display: flex;
   align-items: baseline;

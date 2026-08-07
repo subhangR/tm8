@@ -1,7 +1,12 @@
 import { useState } from 'react';
 import type { ActivityItem, Connections, EdgeGroup, EntityDetail, MessageView } from '@tm8/contract';
-import { Avatar, Chip, Eyebrow } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown, type MarkdownComponents } from '../../kit';
 import { KindIcon, getKind } from '../../domain';
+/* Module-deep into the chat lane's PURE half — `feed-model` is plain functions
+   with no React and no DOM. A message body is a message body wherever it is
+   drawn, so the Discussion tab shares the channel's source preparation instead
+   of growing a second copy that could drift from it. */
+import { chatMarkdownSource, mentionIdInHref } from '../../channel-screen/feed-model';
 import { EmptyBody } from './PanelStates';
 
 /**
@@ -194,11 +199,58 @@ function MessageRow({
             <ProvenanceChip value={provenance} hollowReason={provenanceHollowReason} />
           ) : null}
         </div>
-        <p className="pn-msg__body">{message.content.body}</p>
+        <MessageBody message={message} />
       </div>
     </article>
   );
 }
+
+/**
+ * The body — MARKDOWN, exactly as the channel feed draws it.
+ *
+ * The SAME message rendered as markdown in a channel and as one flat paragraph
+ * here, because the Discussion tab is a different component from `FeedRow` and
+ * only the feed was converted. A heading came out as a literal `##`, a table as
+ * a row of pipes, a fence as a run-on line.
+ *
+ * Sharing `chatMarkdownSource` is what keeps the two surfaces honest: a lone
+ * newline is a hard break in both, a fenced block keeps its bytes in both, and
+ * a display name is escaped rather than obeyed in both.
+ */
+function MessageBody({ message }: { message: MessageView }) {
+  const { body, mentions } = message.content;
+  const { source } = chatMarkdownSource(body, mentions);
+  return (
+    <Markdown
+      source={source}
+      className="pn-msg__body"
+      testId="pn-msg-body"
+      components={MENTION_COMPONENTS}
+    />
+  );
+}
+
+/**
+ * A mention here is a LABEL, not a control.
+ *
+ * `chatMarkdownSource` encodes each canonical mention as a link, so something
+ * has to catch that href — left to the kit it would render as an outbound
+ * anchor to `#tm8-mention-…`, which navigates nowhere. The channel feed rebuilds
+ * a button because it is handed an `onOpenEntity`; this tab is not, and
+ * inventing a control that cannot open anything is exactly the dishonesty the
+ * panel's own rules forbid. So the mention is drawn as marked-up text, and any
+ * other href stays an ordinary link.
+ */
+const MENTION_COMPONENTS: MarkdownComponents = {
+  a({ href, children, ...rest }) {
+    if (mentionIdInHref(href)) return <span className="pn-msg__mention">{children}</span>;
+    return (
+      <a href={href} target="_blank" rel="noreferrer noopener" className="md-link" {...rest}>
+        {children}
+      </a>
+    );
+  },
+};
 
 function DiscussionReplyContext({
   target,

@@ -94,3 +94,59 @@ describe('DiscussionTab reply context', () => {
     expect(context.textContent).not.toContain('Root request.');
   });
 });
+
+/**
+ * THE DISCUSSION TAB DRAWS THE SAME BODY THE CHANNEL DOES — the defect these pin.
+ *
+ * A message body is markdown, and the channel feed learned to render it while
+ * this tab kept drawing one flat `<p>`. The same message therefore read as a
+ * heading in a channel and as a literal `##` in the panel beside it.
+ */
+describe('a discussion message body is markdown', () => {
+  function bodyOf(markdown: string, mentions: MessageView['content']['mentions'] = []) {
+    const root = message('root-1', markdown);
+    (root.content as { mentions: unknown }).mentions = mentions;
+    const { container } = render(
+      <DiscussionTab messages={[root]} provenanceHollowReason="Not recorded" />,
+    );
+    return container;
+  }
+
+  it('a heading, bold and a list are DRAWN, not printed as their source', () => {
+    const container = bodyOf('## Status\n\n**done** and:\n\n- one\n- two');
+    expect(container.querySelector('.pn-msg__body h2')?.textContent).toBe('Status');
+    expect(container.querySelector('.pn-msg__body strong')?.textContent).toBe('done');
+    expect(container.querySelectorAll('.pn-msg__body li')).toHaveLength(2);
+    expect(container.textContent).not.toContain('**done**');
+  });
+
+  it('a fenced block and a GFM table survive into the panel', () => {
+    expect(bodyOf('```sql\nselect 1;\n```').querySelector('.pn-msg__body .md-fence')?.getAttribute('data-lang')).toBe('sql');
+    expect(bodyOf('| a | b |\n| --- | --- |\n| 1 | 2 |').querySelectorAll('.pn-msg__body .md-table th')).toHaveLength(2);
+  });
+
+  it('RAW HTML IS NOT RENDERED — a body is untrusted text other members read', () => {
+    const container = bodyOf('hi <img src=x onerror="alert(1)"> there');
+    expect(container.querySelector('.pn-msg__body img')).toBeNull();
+    expect(container.textContent).toContain('onerror');
+  });
+
+  it('a mention is marked-up TEXT here, never a control — this tab opens nothing', () => {
+    const container = bodyOf('ping @Haiku 4.5 now', [
+      { entityId: 'ent-haiku', kind: 'team_member', display: 'Haiku 4.5' },
+    ]);
+    expect(container.querySelector('.pn-msg__mention')?.textContent).toBe('@Haiku 4.5');
+    // No button, and no dead anchor pointing at the mention's own href.
+    expect(container.querySelector('.pn-msg__body button')).toBeNull();
+    expect(container.querySelector('a[href^="#tm8-mention-"]')).toBeNull();
+  });
+
+  it('the reply-context excerpt stays FLAT — a body cut mid-fence would swallow the row', () => {
+    const reply = message('reply-1', 'ack', { rootId: 'root-1', agent: true });
+    const root = message('root-1', '## Heading\n\n```sh\nrun me', { replyCount: 1, replies: [reply] });
+    render(<DiscussionTab messages={[root]} provenanceHollowReason="Not recorded" />);
+    const context = screen.getByTestId('pn-msg-reply-context');
+    expect(context.textContent).toContain('## Heading');
+    expect(context.querySelector('.md-root')).toBeNull();
+  });
+});
