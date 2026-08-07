@@ -211,23 +211,6 @@ comment on function internal.live_work_session_count(uuid) is
   'session_kind predicate is load-bearing (082 D3): without it a credential '
   'login terminal consumes a node-wide agent spawn slot.';
 
--- The mirror. A credential terminal is metered, just not against the agent cap:
--- the two counts are disjoint by construction, so a full agent cap can never
--- block a login and a stuck login can never block a spawn.
-create or replace function internal.credential_session_count(target_space uuid default null)
-returns integer language sql stable set search_path = public, internal, pg_temp as $$
-  select count(*)::integer
-    from public.work_sessions ws
-    join public.entities e on e.id = ws.entity_id
-   where ws.status in ('spawning','running','idle')
-     and ws.session_kind = 'credential'
-     and e.deleted_at is null
-     and (target_space is null or e.space_id = target_space)
-$$;
-
-revoke all on function internal.credential_session_count(uuid) from public;
-grant execute on function internal.credential_session_count(uuid) to tm8_app;
-
 -- -----------------------------------------------------------------------------
 -- 4. Metadata for FILE-shaped credentials. No secret columns — see the header.
 -- -----------------------------------------------------------------------------
@@ -318,6 +301,56 @@ create unique index credential_sessions_one_live_per_account_provider
 -- The expiry sweep's driving index: rows still open, oldest deadline first.
 create index credential_sessions_open_expiry_idx
   on public.credential_sessions(expires_at) where finished_at is null;
+
+-- The MIRROR CAP's count. It lives HERE, after the table, and not beside
+-- `live_work_session_count` in section 3 where its twin is, for a reason that
+-- is not stylistic: `check_function_bodies` is on by default, so a `language
+-- sql` body naming `public.credential_sessions` cannot be created before that
+-- table exists. Defining it above would abort the migration.
+-- The mirror. A credential terminal is metered, just not against the agent cap:
+-- the two counts are disjoint by construction, so a full agent cap can never
+-- block a login and a stuck login can never block a spawn.
+--
+-- IT COUNTS FROM `credential_sessions`'s OWN LIFECYCLE COLUMNS, NOT FROM
+-- `work_sessions.status`, AND THAT IS THE WHOLE POINT (architect ruling R10).
+--
+-- The obvious predicate — `ws.status in ('spawning','running','idle')`, mirror
+-- of the agent count above — is a permanent denial of service after one crash,
+-- and the chain is short enough to state in full:
+--
+--   * the only writer of a credential session's `status` is the process-side
+--     PTY-exit path (see `finish_credential_session`, which stamps `finished_at`
+--     and nothing else);
+--   * that path dies WITH the node, so a node that crashes leaves its credential
+--     rows at 'running';
+--   * the ghost reaper cannot clean them: it lists candidates by `node_id`, and
+--     `node_id` is NULL on a credential session BY CONSTRUCTION (D5 above);
+--   * so nothing, ever, moves that row off 'running'.
+--
+-- Two crash-orphans against a default cap of 2 and NO MEMBER ON THE NODE CAN
+-- EVER OPEN A LOGIN AGAIN, with no error that names the cause. Counting from
+-- `finished_at`/`expires_at` instead makes an orphan age out of the cap in at
+-- most the TTL ceiling (1800s, clamped in `start_credential_session`) with no
+-- writer involved at all.
+--
+-- The trade, stated so it is not rediscovered as a bug: a terminal that is
+-- still LIVE past its expiry is undercounted until the credential-sessions
+-- service's interval sweep terminates it. That is bounded by the sweep
+-- interval and self-correcting; the status-based version's failure was
+-- unbounded and self-reinforcing.
+create or replace function internal.credential_session_count(target_space uuid default null)
+returns integer language sql stable set search_path = public, internal, pg_temp as $$
+  select count(*)::integer
+    from public.credential_sessions cs
+    join public.entities e on e.id = cs.work_session_id
+   where cs.finished_at is null
+     and cs.expires_at > now()
+     and e.deleted_at is null
+     and (target_space is null or e.space_id = target_space)
+$$;
+
+revoke all on function internal.credential_session_count(uuid) from public;
+grant execute on function internal.credential_session_count(uuid) to tm8_app;
 
 comment on table public.credential_sessions is
   'One row per interactive vendor-login terminal (082). The work session it '
