@@ -7,7 +7,7 @@
  * goes red.
  */
 import { describe, expect, it } from 'vitest';
-import { WorkspaceEventSchema, type EntitySummary } from '@tm8/contract';
+import { WorkspaceEventSchema, type ActorSummary, type EntitySummary } from '@tm8/contract';
 
 import { OffContractEventError } from '../../src/events/emitter.js';
 import {
@@ -274,6 +274,86 @@ describe('WorkspaceEventMapper', () => {
     const bad = new Map([[TASK, { ...summary(), counters: 'not-counters' } as unknown as EntitySummary]]);
     const m = new WorkspaceEventMapper(fixedProjector(bad));
     expect(() => m.mapRow(row(), bad)).toThrow(OffContractEventError);
+  });
+
+  /**
+   * The inbox preview line.
+   *
+   * Every notification producer that carries a preview writes it under
+   * `payload.excerpt` — `003_read_model.sql:155` and `019_w2_messages_handoffs.sql:267`
+   * for `mention`, `077_notify_anchor_watchers.sql:156` for `anchor_message`.
+   * NOTHING has ever written `payload.message`. The mapper read only `message`,
+   * so `NotificationItem.message` was permanently absent and the preview line
+   * rendered for no notification, of any kind, ever.
+   *
+   * The fixture below is the payload the production trigger actually builds.
+   * The pre-existing tests used a hand-written `{"message": ...}` payload, which
+   * is precisely why the gap survived: the fixture asserted the reader's
+   * assumption instead of the writer's output.
+   */
+  describe('notification preview (payload.excerpt)', () => {
+    const RECIPIENT: ActorSummary = {
+      id: MEMBER,
+      kind: 'member',
+      displayName: 'Owner',
+      avatar: null,
+      role: 'owner',
+      isAgent: false,
+    };
+    const actorMap = new Map([[MEMBER, RECIPIENT]]);
+
+    function notificationRow(payload: Record<string, unknown>): WorkspaceEventRow {
+      return row({
+        event_type: 'notification.created',
+        payload: {
+          id: '019f9896-928d-7b00-9000-000000000001',
+          kind: 'mention',
+          recipient_member_id: MEMBER,
+          actor_id: MEMBER,
+          target_entity_id: TASK,
+          read_at: null,
+          created_at: '2026-07-25T00:00:00.000Z',
+          payload,
+        },
+      });
+    }
+
+    function notificationOf(payload: Record<string, unknown>): { message?: string } {
+      const event = mapper.mapRow(notificationRow(payload), entities, actorMap);
+      return (event as unknown as { notification: { message?: string } }).notification;
+    }
+
+    it('renders the excerpt the mention trigger actually writes', () => {
+      expect(
+        notificationOf({
+          messageId: '019f9896-928d-7b00-9000-000000000002',
+          anchorId: TASK,
+          excerpt: 'ship it, prove it with a test',
+        }).message,
+      ).toBe('ship it, prove it with a test');
+    });
+
+    it('prefers an explicit message over the excerpt, so a producer can override', () => {
+      expect(notificationOf({ message: 'explicit', excerpt: 'fallback' }).message).toBe('explicit');
+    });
+
+    /**
+     * `message_reply` (019:486) and the edge/award/join producers write no
+     * preview at all. Absent must stay ABSENT, not empty string: the contract
+     * field is optional and the schemas are `.strict()`.
+     */
+    it('omits the field entirely when no producer wrote a preview', () => {
+      const notification = notificationOf({
+        messageId: '019f9896-928d-7b00-9000-000000000002',
+        parentMessageId: TASK,
+        anchorId: TASK,
+      });
+      expect('message' in notification).toBe(false);
+    });
+
+    it('treats an empty excerpt as no preview rather than a blank line', () => {
+      expect('message' in notificationOf({ excerpt: '' })).toBe(false);
+    });
   });
 
   it('maps an empty page without touching the projector', async () => {
