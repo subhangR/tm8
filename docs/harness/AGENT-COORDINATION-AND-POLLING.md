@@ -1,6 +1,6 @@
 # Agent coordination and polling
 
-How several agent sessions in one Space actually reach each other, and the four
+How several agent sessions in one Space actually reach each other, and the five
 ways that silently fails.
 
 Everything below was **measured on 2026-08-07** by three sessions coordinating
@@ -10,7 +10,7 @@ silence rather than an error** — a poller with any of these looks like a polle
 with nothing to read.
 
 > The failure mode this document exists to prevent: *a confident read of a
-> label instead of the thing.* All four traps have that shape.
+> label instead of the thing.* All five traps have that shape.
 
 ---
 
@@ -154,6 +154,75 @@ stream to a parser.
 
 ---
 
+## Trap 5 — `message list` omits every THREADED reply
+
+`tm8 message list <anchor>` returns only messages with
+`messages.root_message_id IS NULL`. Threaded replies — everything sent with
+`tm8 message reply` — are omitted entirely, with no error and no flag.
+
+Measured on one session anchor:
+
+```console
+$ tm8 message list <anchor> --limit 100
+13 items,  nextCursor: null
+
+$ psql -c "select (root_message_id is not null) as threaded, count(*) …"
+ f | 13
+ t |  4
+```
+
+Perfect correlation: the four the CLI hides are exactly the four threaded ones.
+**Not pagination** — no cursor at `--limit 100`. **Not RLS** — the hidden rows
+were byte-identical in visibility, author and `deleted_at` to rows the CLI did
+return.
+
+**Why this is the most costly of the five.** It hides the *replies*, which is
+precisely the traffic coordination consists of. In the session that found it,
+all four hidden messages were one agent's answers to direct questions from two
+peers — including a "no, I am not touching your files, do not sequence behind
+me" that another session was actively waiting on.
+
+It also compounds with notifications: **threaded replies are the one path that
+reliably fires a `message_reply` notification today.** So the message most
+likely to notify someone is the message the flat read hides — a ping to
+something the recipient then cannot find.
+
+**Practical rule: post top-level for anything substantive.** Threading is
+prettier and it is a read-path landmine.
+
+To see everything on an anchor, go to the table:
+
+```sql
+select m.entity_id, e.created_at, m.root_message_id is not null as threaded, m.body
+  from public.messages m join public.entities e on e.id = m.entity_id
+ where m.anchor_id = '<anchor>' and e.deleted_at is null
+ order by e.created_at;
+```
+
+`psql "postgresql://127.0.0.1:5442/tm8_prod"` — peer auth, no user in the URL,
+no password (5442 and 5443 both; 5444 prompts). Raw SQL bypasses RLS, so this
+is a diagnostic tool, not a substitute for the contract path.
+
+**Do not watermark such a poll on `created_at`.** It defaults to `now()` =
+*transaction start*, so a peer transaction that begins before yours and commits
+after gets an earlier timestamp and is skipped permanently once the watermark
+passes it. The codebase already rejected this for itself — `unread_counts`
+(`db/migrations/007_rpc_catalog.sql:1985`): *"The comparison rides the uuidv7
+primary key (04 §3) instead of a timestamp column."* Compare on the uuidv7 id,
+or re-scan an overlap window with a seen-id set (which also covers clock skew).
+
+### The distinction that decides whether to re-post
+
+Trap 5 is the one case where re-sending is correct, and it must not be confused
+with the delivery rule above:
+
+| Situation | Do |
+|---|---|
+| Delivery reported failed, row exists, peer's read returns it | **Nothing.** Resending duplicates a message they can already read |
+| Row exists, peer's READ omits it by construction (this trap) | **Re-post top-level.** It is the only way to make it reachable |
+
+---
+
 ## Bounded waits
 
 `event watch --until-match` refuses to run unbounded:
@@ -168,7 +237,7 @@ open subscription. For anything longer, poll `event list --after`.
 
 ---
 
-## A poll loop that has none of the four
+## A poll loop that has none of the five
 
 ```python
 # baseline once, from provenance — never from an unbounded list (Trap 1)
@@ -185,6 +254,11 @@ while True:
         body = fetch_full_body(ent["id"])   # not ent["title"] (Trap 3)
         handle(body)
 ```
+
+It reads the **event stream**, not `message list`, so Trap 5 does not apply to
+it — the event stream carries threaded messages fine. That asymmetry is worth
+naming: an agent polling events can see a peer's threaded replies while its own
+threaded replies stay invisible to a peer polling `message list`.
 
 `obj()` brace-matches and uses `strict=False` (Trap 4).
 
