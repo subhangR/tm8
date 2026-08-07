@@ -372,6 +372,13 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * entity first, which is the same lie for 16ms. Keyed on IDENTITY alone —
    * anything broader (a counter tick, a streamed message) would slam the card
    * shut mid-edit, which is a worse bug than the one it fixes.
+   *
+   * "Identity" INCLUDES absence: `detail` going momentarily undefined for the
+   * same entity — a cache refetch — also closes it. Stated because the rule
+   * above reads narrower than the code, and this is the honest description.
+   * Kept rather than special-cased: the config is a commitment surface, and
+   * leaving one open over a loading skeleton is the same claim-without-a-
+   * subject the reset exists to prevent.
    */
   const [flowSubjectId, setFlowSubjectId] = useState(detail?.id);
   if (detail?.id !== flowSubjectId) {

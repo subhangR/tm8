@@ -142,17 +142,34 @@ export function LaunchQuickConfig({
 
   const first = teammates[0];
   const defaultProjectId = projects.find((project) => project.trusted)?.projectId ?? null;
-  /*
-   * THE MODE COMES FROM THE VERB THAT OPENED THIS. One config serves every
-   * launch verb, and it seeded `worker` unconditionally — so Coordinate opened
-   * this card and spawned a worker, which is the button naming one act and
-   * performing another. The caller reads it off the action registry
-   * (`ActionDef.launchMode`), so nothing here has to know the verb's name.
+  /**
+   * THE ONE PLACE A CONFIG IS SEEDED — and it exists because scattering that
+   * was already a bug twice over.
+   *
+   * The mode comes from the VERB that opened this card (`ActionDef.launchMode`),
+   * not from the persona: one config serves Run, Coordinate and Launch session,
+   * and `defaultConfigFor` hard-codes `mode: 'worker'`. There are THREE re-seed
+   * paths — the initializer, the late-teammate effect, and the teammate SELECT —
+   * and each one re-seeds WHOLE on purpose, because a teammate's recorded tool
+   * and model travel together and patching one field would mix two personas.
+   *
+   * Spreading the mode at each call site fixed two of the three and missed the
+   * one the USER drives: picking a teammate is the first thing anyone does, and
+   * it silently demoted Coordinate back to a worker. Routing every seed through
+   * here is what makes a fourth path impossible to get wrong, rather than
+   * merely unlikely.
    */
-  const [config, setConfig] = useState<LaunchConfig>(() => {
-    const seed = first ? defaultConfigFor(first, defaultProjectId) : emptyConfig(defaultProjectId);
-    return mode ? { ...seed, mode } : seed;
-  });
+  const seedConfig = useCallback(
+    (teammate: LaunchTeammateOption | undefined): LaunchConfig => {
+      const base = teammate
+        ? defaultConfigFor(teammate, defaultProjectId)
+        : emptyConfig(defaultProjectId);
+      return mode ? { ...base, mode } : base;
+    },
+    [defaultProjectId, mode],
+  );
+
+  const [config, setConfig] = useState<LaunchConfig>(() => seedConfig(first));
 
   /**
    * RE-SEED WHEN THE SELECTION STOPS EXISTING.
@@ -174,9 +191,7 @@ export function LaunchQuickConfig({
     // Re-seed WHOLE, for the same reason the change handler does: a teammate's
     // recorded tool and model travel together, and patching one field would mix
     // two personas' settings.
-    // `mode` survives the re-seed: it is the VERB's fact, not the persona's,
-    // so a teammate arriving late must not quietly demote Coordinate to worker.
-    setConfig({ ...defaultConfigFor(first, defaultProjectId), ...(mode ? { mode } : {}) });
+    setConfig(seedConfig(first));
   }, [first, teammates, config.teamMemberId, defaultProjectId]);
 
   /** The node's own words when it refuses. Null until it does. */
@@ -214,7 +229,10 @@ export function LaunchQuickConfig({
               // Re-seed from the NEW teammate's record rather than patching one
               // field: its recorded tool and model travel together, and a
               // half-updated config would silently mix two personas' settings.
-              if (next) setConfig(defaultConfigFor(next, defaultProjectId));
+              // Through `seedConfig`, so the VERB's mode survives the swap —
+              // this is the path that dropped it, and it is the one a user
+              // touches first.
+              if (next) setConfig(seedConfig(next));
             }}
           >
             {teammates.length === 0 ? <option value="">no teammates available</option> : null}
