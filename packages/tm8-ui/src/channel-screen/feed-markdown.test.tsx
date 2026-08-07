@@ -141,6 +141,25 @@ describe('the feed renders a message body as markdown', () => {
     expect(screen.queryByLabelText('Mentions')).toBeNull();
   });
 
+  /**
+   * WHY MENTIONS ARE RESOLVED IN THE SOURCE AND NOT IN THE OUTPUT.
+   *
+   * The obvious implementation slices the raw body at each mention's offsets
+   * into a `ReactNode[]` and wraps the pieces — and it SEVERS every span that
+   * straddles a mention, so `**bold @x more**` loses its emphasis and prints
+   * its asterisks. Rewriting the mention into a markdown link before parsing
+   * has no such seam: the link is an inline node inside the `strong`, and the
+   * parser never sees a boundary at all. This pins that difference, because
+   * the two approaches are indistinguishable on every body without one.
+   */
+  it('a mention INSIDE emphasis keeps both — the body is never cut at its offsets', () => {
+    const { container } = renderBody(msg('**bold @Haiku 4.5 more**', [HAIKU]), vi.fn());
+    const strong = container.querySelector('.chs-text strong');
+    expect(strong?.querySelector('.chs-mention-inline')?.textContent).toBe('@Haiku 4.5');
+    expect(strong?.textContent).toBe('bold @Haiku 4.5 more');
+    expect(container.textContent).not.toContain('**');
+  });
+
   it('a hand-written link that only LOOKS like a mention stays an ordinary link', () => {
     const { container } = renderBody(msg('[x](#tm8-mention-ent-nobody)', []));
     const link = container.querySelector('.chs-text a');
