@@ -300,6 +300,18 @@ async function queryInbox(
   return q.query<NotificationRow>(statement.sql, statement.params);
 }
 
+/**
+ * The message a notification is about, or `''` when it names none.
+ *
+ * `mention` (003:154, 019:266), `anchor_message` (077:152) and `message_reply`
+ * (019:486) all carry `messageId`. The edge/unblock/award/join producers carry
+ * none, and correctly get no preview.
+ */
+function messageIdOf(row: NotificationRow): string {
+  const id = row.payload?.['messageId'];
+  return typeof id === 'string' ? id : '';
+}
+
 async function hydrateNotifications(
   q: Querier,
   rows: readonly NotificationRow[],
@@ -313,7 +325,12 @@ async function hydrateNotifications(
   ]);
   const targets = await loadEntitySummariesByIds(
     q,
-    rows.map((row) => row.target_entity_id ?? ''),
+    [
+      ...rows.map((row) => row.target_entity_id ?? ''),
+      // The message each notification is ABOUT, for the preview line below.
+      // Same batch loader, same call — no extra round-trip.
+      ...rows.map(messageIdOf),
+    ],
     viewerIdentityId,
   );
   const targetsById = new Map(targets.map((target) => [target.id, target]));
@@ -321,14 +338,30 @@ async function hydrateNotifications(
   return rows.map((row) => {
     const recipientId = row.recipient_team_member_id ?? row.recipient_member_id;
     const recipient: ActorSummary = actorOf(actors, recipientId);
-    // `payload.message` has never had a writer. Every producer that carries a
-    // preview stores it under `excerpt` (003:155 mention, 019:267 mention,
-    // 077:156 anchor_message), so reading only `message` meant the inbox
-    // preview line rendered for nothing, ever. `message` stays preferred so a
-    // future producer can override it. MUST stay in step with the event mapper
-    // (`events/mapper.ts`, notification.created/read) — the two assemblers
-    // produce the same NotificationItem and a divergence here is intermittent.
-    const rawMessage = row.payload?.message ?? row.payload?.excerpt;
+    // The inbox preview line.
+    //
+    // This read `payload.message`, a key NO producer has ever written, so the
+    // preview rendered for no notification of any kind, ever. The payload DOES
+    // carry `excerpt` (003:155, 019:267, 077:156) but wiring that to a renderer
+    // is forbidden: it is a raw `left(body, 280)` cut in plpgsql with no
+    // markdown strip and no whitespace flatten, and a fourth independent
+    // excerpt cap is what the one-helper rule exists to prevent (Messaging
+    // Format §3.5.1).
+    //
+    // So the preview is the MESSAGE entity's own summary excerpt, which comes
+    // from `entity-read.ts`'s single `excerpt()` helper and inherits its
+    // markdown handling for free. NOT the target's excerpt: `target_entity_id`
+    // is the ANCHOR (003:152 passes `new.anchor_id`), so that would preview the
+    // channel topic instead of the body that mentioned you.
+    //
+    // A message the viewer cannot read is not in `targetsById`, so it yields no
+    // preview — strictly better than the payload copy, which would have handed
+    // out the body regardless of readability.
+    //
+    // MUST stay in step with the event mapper (`events/mapper.ts`,
+    // notification.created/read): the two assemblers produce the same
+    // NotificationItem and a divergence here is intermittent, not constant.
+    const rawMessage = targetsById.get(messageIdOf(row))?.excerpt;
     return {
       id: row.id,
       spaceId: row.space_id,

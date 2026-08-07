@@ -199,6 +199,11 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
         str(p['actor_id']),
         str(p['recipient_team_member_id']),
         str(p['recipient_member_id']),
+        // The message the notification is ABOUT. `target_entity_id` is the
+        // ANCHOR (003:152 passes `new.anchor_id`), so the target's excerpt is
+        // the channel topic or task description — not the body that mentioned
+        // you. The preview has to come from the message entity itself.
+        str(record(p['payload'])['messageId']),
       ].filter((v): v is string => v !== null);
     default:
       return [];
@@ -639,16 +644,31 @@ export class WorkspaceEventMapper {
           readAt: iso(p['read_at']),
           createdAt: iso(p['created_at']) ?? new Date(0).toISOString(),
         };
-        // `payload.message` has never had a writer. Every producer that carries
-        // a preview stores it under `excerpt` (003:155 mention, 019:267 mention,
-        // 077:156 anchor_message), so reading only `message` meant the preview
-        // line rendered for nothing, ever. `message` is still preferred so a
-        // future producer can override; `excerpt` is the fallback that is
-        // actually populated today. MUST stay in step with the facade reader in
+        // The inbox preview line.
+        //
+        // This read `payload.message`, a key NO producer has ever written, so
+        // the preview rendered for no notification of any kind, ever. The
+        // payload DOES carry `excerpt` (003:155, 019:267, 077:156) but wiring
+        // that to a renderer is forbidden: it is a raw `left(body, 280)` cut in
+        // plpgsql with no markdown strip and no whitespace flatten, and a
+        // fourth independent excerpt cap is exactly what the one-helper rule
+        // exists to prevent (Messaging Format §3.5.1).
+        //
+        // So the preview is derived from the MESSAGE entity's own summary,
+        // which comes from `entity-read.ts`'s single `excerpt()` helper and
+        // therefore inherits its markdown handling for free. `messageId` is
+        // requested in `referencedEntityIds` above; NOT `target_entity_id`,
+        // which is the anchor, not the message.
+        //
+        // A message the viewer cannot read is absent from `entities`, so it
+        // yields no preview — strictly better than the payload copy, which
+        // would have handed out the body regardless of readability.
+        //
+        // MUST stay in step with the facade reader in
         // `facade/services/w2/inbox-read-marks.ts` — same two assemblers, same
         // NotificationItem.
-        const payload = record(p['payload']);
-        const message = str(payload['message']) ?? str(payload['excerpt']);
+        const messageId = str(record(p['payload'])['messageId']);
+        const message = messageId === null ? null : entities.get(messageId)?.excerpt ?? null;
         return {
           type: row.event_type,
           notification: message === null ? notification : { ...notification, message },
