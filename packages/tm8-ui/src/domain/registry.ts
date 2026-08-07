@@ -319,6 +319,7 @@ const ROWS: readonly KindConfig[] = [
       },
     },
     palette: { createLabel: 'New task', primaryAction: 'run' },
+    authoring: { editCommand: 'typed' },
   },
 
   // -- work_session ---------------------------------------------------------
@@ -338,6 +339,7 @@ const ROWS: readonly KindConfig[] = [
     },
     card: { fields: ['sessionStatus', 'agentTool', 'model', 'activityAt'] },
     list: baseList({
+      quickCreate: false,
       lifecycle: SESSION_TIERS,
       tree: { by: 'hierarchy', guideLines: true, messagePulse: true },
       tile: {
@@ -440,6 +442,14 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: { archetype: 'hub', primaries: ['add-child'] },
     palette: { createLabel: 'New channel' },
+    // Channel names are unique slugs. The generic "Untitled channel" title
+    // contains a space and is rejected by the channel RPC; wall-clock entropy
+    // plus the mutation id keeps the placeholder collision-resistant across
+    // reloads until the viewer renames it.
+    authoring: {
+      createTitle: (clientMutationId) =>
+        `untitled-channel-${Date.now().toString(36)}-${clientMutationId}`,
+    },
   },
 
   // -- voice_channel (special strategy — a ROOM, not a feed) ----------------
@@ -563,6 +573,9 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '◆', tintBy: 'none' },
     card: { fields: ['owner', 'model', 'liveWork'] },
     list: baseList({
+      // Teammate creation is the designed multi-field dialog exception, not
+      // the generic placeholder-title flow.
+      quickCreate: false,
       tile: { badges: [{ source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
@@ -750,8 +763,15 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'generic',
+      // `manage` and `tree` are BLOCK PARAMETERS, not a bespoke block kind:
+      // §2.4's seam is "a new display need = a new block parameter", and the
+      // same `items` block still serves equipped spells and a member's work
+      // without either. `manage` turns the read-only chip row into remove +
+      // drag-reorder; `tree` lets a row expand — a nested collection by its
+      // own membership, anything else by its hierarchy children, so a
+      // collection of tasks shows their subtasks without a second block.
       blocks: [
-        { block: 'items', label: 'ITEMS' },
+        { block: 'items', label: 'ITEMS', params: { manage: true, tree: true } },
         { block: 'fields', label: 'DETAILS' },
       ],
     },

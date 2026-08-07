@@ -276,6 +276,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           /* GAP-2 (data-wiring handover): hand the seam commands down so the
              save path is live in the workspace panels too. */
           commands={data.seam.commands}
+      reads={data.seam}
           onSaved={data.reconcileCommand}
           streaming={data.activity[id] ?? false}
           onPin={() => {
@@ -338,13 +339,15 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const rightConfig = getKind(rightKind);
   const leftCreateFlow = useNewTask({
     spaceId: data.spaceId,
-    placeholderTitle: placeholderTitleFor(leftConfig.label),
+    kind: leftKind,
+    placeholderTitle: leftConfig.authoring?.createTitle ?? placeholderTitleFor(leftConfig.label),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });
   const rightCreateFlow = useNewTask({
     spaceId: data.spaceId,
-    placeholderTitle: placeholderTitleFor(rightConfig.label),
+    kind: rightKind,
+    placeholderTitle: rightConfig.authoring?.createTitle ?? placeholderTitleFor(rightConfig.label),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });
@@ -364,7 +367,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         <EntityListPanel
           kind={leftKind}
           createSlot={
-            leftConfig.list.quickCreate && leftConfig.list.tile.anatomy === 'control-card' ? (
+            leftConfig.list.quickCreate ? (
               <NewTaskControl
                 flow={leftCreateFlow}
                 label={leftConfig.palette?.createLabel ?? '＋ New'}
@@ -447,7 +450,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         <EntityListPanel
           kind={rightKind}
           createSlot={
-            rightConfig.list.quickCreate && rightConfig.list.tile.anatomy === 'control-card' ? (
+            rightConfig.list.quickCreate ? (
               <NewTaskControl
                 flow={rightCreateFlow}
                 label={rightConfig.palette?.createLabel ?? '＋ New'}

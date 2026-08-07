@@ -96,6 +96,15 @@ export const OPERATIONS = [
 
   // collections / graph / placements / undo
   { name: 'collections.query',       method: 'POST',   path: '/v2/collections/query',                       kind: 'read',    status: 'v1' },
+  // Membership is `contains` edges, so both of these are reachable through
+  // `edges.create`/`edges.delete` — and both are painful that way. Adding
+  // means computing the next `props.position` client-side (a read, a max, and
+  // a race with anyone else appending), and removing means knowing the EDGE's
+  // id when all the caller has is the pair. These bind the pair directly and
+  // let the database do the positioning, which is what `set_collection_item`
+  // (007:1160) was written for and never wired to.
+  { name: 'collections.addItem',     method: 'POST',   path: '/v2/collections/:id/items',                   kind: 'command', status: 'v1' },
+  { name: 'collections.removeItem',  method: 'DELETE', path: '/v2/collections/:id/items/:entityId',         kind: 'command', status: 'v1' },
   { name: 'graph.query',             method: 'POST',   path: '/v2/graph/query',                             kind: 'read',    status: 'v1' },
   { name: 'placements.apply',        method: 'POST',   path: '/v2/placements',                              kind: 'command', status: 'v1' },
   { name: 'commands.undo',           method: 'POST',   path: '/v2/undo',                                    kind: 'command', status: 'v1' },

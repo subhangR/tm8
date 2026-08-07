@@ -155,11 +155,18 @@ function readQuerier(rows: Array<EntityRow & { __sort: string; __sort_cursor: st
 }
 
 describe('W2.G05 collection, graph, and undo handlers', () => {
-  it('registers exactly the three frozen G05 operations', () => {
+  it('registers the G05 seam: the three frozen operations plus collection membership', () => {
     const db = new FakeDb(readQuerier([]));
     const registry = new HandlerRegistry();
     registerW2CollectionsGraphUndoHandlers(registry, deps(db));
-    expect(registry.implemented()).toEqual(['collections.query', 'commands.undo', 'graph.query']);
+    // addItem/removeItem mount here because they share `handlers/collections.ts`
+    // with `collections.query`, not because membership is a graph concern —
+    // the module is the ownership unit, so a second registration seam for two
+    // handlers in an already-mounted file would be the divergence, not this.
+    expect(registry.implemented()).toEqual([
+      'collections.addItem', 'collections.query', 'collections.removeItem',
+      'commands.undo', 'graph.query',
+    ]);
   });
 
   it('binds a collection cursor to the normalized query fingerprint and operation scope', async () => {

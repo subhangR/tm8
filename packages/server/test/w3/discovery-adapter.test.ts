@@ -16,12 +16,13 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // execution.journal, identity.profile.update).
         // -> {126/124/125/123} (2026-08-02: local project directory browsing).
         // -> {128/126/127/125} (2026-08-04: connected project folder file ops).
-        total: 128,
-        v1: 126,
+        // -> {130/128/129/127} (2026-08-07: collection membership writes).
+        total: 130,
+        v1: 128,
         reserved: 2,
-        http: 127,
+        http: 129,
         ws: 1,
-        registerableV1Http: 125,
+        registerableV1Http: 127,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

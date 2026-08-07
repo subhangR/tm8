@@ -708,6 +708,33 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['search', 'find', 'list', 'filter', 'tasks', 'my-work'],
     examples: ['tm8 entity query --kind task --assignee <actor-id> --work-status working'],
   },
+  'collections.addItem': {
+    cmd: ['collection', 'add'],
+    syn: 'tm8 collection add <collection-id> <entity-id> [--position <number>]',
+    sum: 'Put any entity in a collection — a curated, heterogeneous set that the hierarchy cannot express',
+    authz: 'space',
+    input: 'bound',
+    tags: ['collection', 'list', 'group', 'organize', 'curate', 'add'],
+    examples: ['tm8 collection add <collection-id> <task-id>'],
+    notes: [
+      'the entity may be ANY kind — tasks, teammates, memories, docs and other collections go in the same collection',
+      'omit --position to append; pass it to place the item, usually the midpoint between its two new neighbours',
+      're-adding an entity already in the collection MOVES it rather than failing, so this is also how a reorder is spelled',
+    ],
+  },
+  'collections.removeItem': {
+    cmd: ['collection', 'remove'],
+    syn: 'tm8 collection remove <collection-id> <entity-id>',
+    sum: 'Take an entity back out of a collection, leaving the entity itself untouched',
+    authz: 'space',
+    input: 'none',
+    tags: ['collection', 'list', 'group', 'organize', 'remove'],
+    examples: ['tm8 collection remove <collection-id> <task-id>'],
+    notes: [
+      'removes the MEMBERSHIP only — the entity itself is not deleted and stays in every other collection it is in',
+      'removing something already absent succeeds and reports removed:false, so a retry is safe',
+    ],
+  },
   'graph.query': {
     cmd: ['graph', 'query'],
     syn: 'tm8 graph query [--space <space-id>] [--focus <entity-id>] [--hops <n>] [--edge-type <type>...] [--mode free|dependency] [--limit <count>] [--cursor <cursor>]',
@@ -1540,7 +1567,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:2c944d4f5ef1cd0b831ac28d322f7de2aa6246a109d8bab4dd3e8de0d35b1a45';
+  'sha256:9173fcd7db36672154c9ec584b5c54c3e6b26e98c132d22580352d7cc57622b7';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -1766,7 +1793,7 @@ const NOUN_SUMMARY: Record<string, string> = {
   tracking: 'Refresh external pull-request and commit tracking state',
   edge: 'Typed relationships between entities, and the edge-type registry',
   'edge-type': 'The registered edge types and their endpoint rules',
-  collection: 'Structured entity queries across a Space (invoked as `entity query`)',
+  collection: 'Curated, heterogeneous sets of any entity kind — and the entity query behind every list (invoked as `entity query`)',
   message: 'Durable messages — the only public communication action for text',
   'read-mark': 'Per-anchor read cursors (invoked as `message mark-read`)',
   graph: 'Graph traversal outward from a focus entity',

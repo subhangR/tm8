@@ -288,6 +288,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
 
     commands: {
       createEntity: (input) => ops.createEntity(input),
+      addCollectionItem: (collectionId, input) => ops.addCollectionItem(collectionId, input),
+      removeCollectionItem: (collectionId, entityId, ctx) =>
+        ops.removeCollectionItem(collectionId, entityId, ctx),
       createTask: (input) => ops.createTask(input),
       patchEntity: (id, input) => ops.patchEntity(id, input),
       patchTask: (id, input) => ops.patchTask(id, input),

@@ -243,12 +243,19 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
   it('the seam surface matches the locked interface, method for method', () => {
     const { seam } = mk(() => ok({}));
     expect(Object.keys(seam.commands).sort()).toEqual([
+      // 2026-08-07: addCollectionItem / removeCollectionItem — curated
+      // membership. `addCollectionItem` sorts FIRST, ahead of `complete`,
+      // which is not where a reader expects a new command to appear; locked
+      // here so the seam cannot gain one without this list saying so.
+      'addCollectionItem',
       'complete', 'createEntity', 'createTask', 'deleteEntity', 'editMessage', 'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).
       'previewArtifact',
       'prompt', 'react',
+      // Sorts between `react` and `resolveAttention` ('rem' < 'res').
+      'removeCollectionItem',
       // `resolveAttention` shipped into the seam without this lock being
       // updated, so the guard was red in-tree before the attention inbox
       // landed. Recorded here rather than silently corrected.

@@ -26,11 +26,12 @@ import {
 // Re-pinned 2026-07-31 (was sha256:df96ff5a…): the consolidation wave landed
 // voice, artifacts, attention, memories and worktrees operations, moving the
 // catalog to 117 rows. The digest is sha256(JSON.stringify(OPERATIONS)).
-// Frozen digest of the current 128-row catalog. This literal had gone stale
+// Frozen digest of the current 130-row catalog. This literal had gone stale
 // again on the tree — it still described the 121-row catalog while five
 // further amendments had landed — and was re-derived 2026-08-04 alongside
-// projects.files.list / projects.files.attach.
-const CATALOG_DIGEST = 'sha256:2c944d4f5ef1cd0b831ac28d322f7de2aa6246a109d8bab4dd3e8de0d35b1a45';
+// projects.files.list / projects.files.attach, then again 2026-08-07 for
+// collections.addItem / collections.removeItem.
+const CATALOG_DIGEST = 'sha256:9173fcd7db36672154c9ec584b5c54c3e6b26e98c132d22580352d7cc57622b7';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -99,7 +100,8 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // execution.journal, identity.profile.update.
     // 121 -> 128 (2026-08-04): this pin had gone stale across five amendments
     // and is re-derived alongside projects.files.list / projects.files.attach.
-    expect(root.catalog.total).toBe(128);
+    // 128 -> 130 (2026-08-07): the two collection membership operations.
+    expect(root.catalog.total).toBe(130);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

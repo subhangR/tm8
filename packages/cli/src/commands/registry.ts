@@ -40,6 +40,7 @@ import { EDGE_COMMANDS } from './edge.js';
 import { PLACEMENT_COMMANDS } from './placement.js';
 import { INBOX_COMMANDS } from './inbox.js';
 import { SAVED_VIEW_COMMANDS } from './saved-view.js';
+import { COLLECTION_COMMANDS } from './collection.js';
 import { ACTION_COMMANDS } from './action.js';
 import { EVENT_COMMANDS } from './event.js';
 import { PRESENCE_COMMANDS } from './presence.js';
@@ -97,6 +98,7 @@ export const COMMANDS: CommandModule[] = [
   ...PLACEMENT_COMMANDS,
   ...INBOX_COMMANDS,
   ...SAVED_VIEW_COMMANDS,
+  ...COLLECTION_COMMANDS,
   ...ACTION_COMMANDS,
   ...EVENT_COMMANDS,
   ...PRESENCE_COMMANDS,

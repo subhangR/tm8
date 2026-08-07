@@ -294,9 +294,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 114 -> 118 on 2026-08-01: execution.resume, spaces.counts,
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
-    expect(SURFACE).toHaveLength(125);
-    expect(rows).toHaveLength(125);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(125);
+    // 125 -> 127 on 2026-08-07: collections.addItem and collections.removeItem.
+    expect(SURFACE).toHaveLength(127);
+    expect(rows).toHaveLength(127);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(127);
   });
 
   /**
@@ -391,7 +392,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // moving it, the same drift 067 had just reconciled. 069 (channels into
     // Home) is the second of the two.
     // 65 -> 66 on 2026-08-02: 070 (entities_select restricted-projection policy).
-    expect(server.appliedMigrations.length).toBe(66);
+    // 66 -> 68 on 2026-08-07: the pin was ALREADY red at 67 when this lane
+    // arrived — 076 (derived_from props schema) landed from another lane
+    // without moving it, the same drift 067 and 069 each reconciled before.
+    // 077 (collection membership) is the second of the two.
+    expect(server.appliedMigrations.length).toBe(68);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

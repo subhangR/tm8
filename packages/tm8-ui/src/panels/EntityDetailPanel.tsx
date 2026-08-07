@@ -37,7 +37,12 @@ import {
 } from './detail/PanelStates';
 import { ActivityTab, ConnectionsTab, DiscussionTab } from './detail/tabs';
 import { CatchBoundary } from './detail/CatchBoundary';
-import { GenericBody, type ArtifactPreviewCommands } from './bodies/GenericBody';
+import {
+  GenericBody,
+  type ArtifactPreviewCommands,
+  type CollectionItemCommands,
+  type CollectionItemReads,
+} from './bodies/GenericBody';
 import { TerminalBody } from './bodies/TerminalBody';
 import { SubtreeBody } from './bodies/SubtreeBody';
 import { ReaderSurface } from './bodies/ReaderSurface';
@@ -176,7 +181,19 @@ export interface EntityDetailPanelProps {
    * only the task half gets a reader panel whose `Edit` is
    * disabled-with-reason, which is the honest report of what it wired.
    */
-  commands?: (AuthoringCommands & Partial<DocCommands> & Partial<ArtifactPreviewCommands>) | null;
+  commands?: (
+    AuthoringCommands
+    & Partial<DocCommands>
+    & Partial<ArtifactPreviewCommands>
+    & Partial<CollectionItemCommands>
+  ) | null;
+  /**
+   * Reads a `tree` items block needs to expand a row. Structural subset of
+   * `Seam['reads']`, so a host assigns `seam.reads` with no cast. Absent means
+   * rows simply do not expand — no caret is drawn, rather than one that opens
+   * onto a permanent blank.
+   */
+  reads?: CollectionItemReads | null;
   /** A save landed. The durable event carries only a summary, so the host
       must receive this result to reconcile heavy detail fields such as the
       task description into its detail cache. */
@@ -663,6 +680,7 @@ function PanelBody(
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
       commands={props.commands}
+      reads={props.reads}
     />
   );
 }

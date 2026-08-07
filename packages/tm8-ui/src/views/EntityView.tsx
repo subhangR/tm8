@@ -158,7 +158,8 @@ export function EntityView(props: EntityViewProps) {
      registry data. */
   const createFlow = useNewTask({
     spaceId: data.spaceId,
-    placeholderTitle: placeholderTitleFor(config.label),
+    kind,
+    placeholderTitle: config.authoring?.createTitle ?? placeholderTitleFor(config.label),
     commands: data.seam.commands,
     onCreated: (id) => setSelectedId(id as EntityId),
   });
@@ -311,6 +312,7 @@ export function EntityView(props: EntityViewProps) {
          is live only where the host hands down the seam's commands.
          AuthoringCommands is a structural subset, no cast. */
       commands={data.seam.commands}
+      reads={data.seam}
       onSaved={data.reconcileCommand}
       streaming={data.activity[selectedId] ?? false}
       /* THE AUX ROUTE. A reference inside the body opens BESIDE the document
@@ -417,6 +419,7 @@ export function EntityView(props: EntityViewProps) {
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 commands={data.seam.commands}
+      reads={data.seam}
                 onSaved={data.reconcileCommand}
                 // Drilling from the aux REPLACES the aux, it does not open a
                 // fourth column. Three regions is the ruling; a stack here

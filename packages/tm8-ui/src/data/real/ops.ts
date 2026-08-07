@@ -37,6 +37,7 @@ import {
   type AttentionRequestPage,
   type CollectionQuery,
   type CollectionResult,
+  type AddCollectionItemInput,
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
@@ -334,6 +335,37 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     createEntity(input: CreateEntityInput): Promise<CommandResult> {
       return http.call<CommandResult>('entities.create', { body: input });
+    },
+
+    /**
+     * The collection is a PATH param and the entity is in the body — that
+     * asymmetry is the catalog's (`POST /v2/collections/:id/items`), not a
+     * choice here. `position` is passed through only when present: the DTO is
+     * `.strict()` and an explicit `undefined` is not the same request as an
+     * absent key, which is what means "append".
+     */
+    addCollectionItem(collectionId: EntityId, input: AddCollectionItemInput): Promise<CommandResult> {
+      return http.call<CommandResult>('collections.addItem', {
+        params: { id: collectionId },
+        body: input,
+      });
+    },
+
+    /**
+     * Both ids are path params, so the body carries only the command envelope.
+     * The server answers 200 with `removed:false` when the pair was already
+     * absent, so `removed` is defaulted rather than assumed present.
+     */
+    async removeCollectionItem(
+      collectionId: EntityId,
+      entityId: EntityId,
+      ctx?: CommandContext,
+    ): Promise<CommandResult & { removed: boolean }> {
+      const result = await http.call<CommandResult & { removed?: boolean }>('collections.removeItem', {
+        params: { id: collectionId, entityId },
+        body: ctx ?? {},
+      });
+      return { ...result, removed: result.removed ?? false };
     },
 
     /** Note 1: no task route exists; kind-specific fields travel in `content`. */

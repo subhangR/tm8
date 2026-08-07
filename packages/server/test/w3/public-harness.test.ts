@@ -31,8 +31,9 @@ describe.sequential('W3 production-Server public harness', () => {
       ok: true,
       server: 'tm8-server',
       // Re-derived 2026-08-04 (was 120, stale across five amendments) with
-      // projects.files.list / projects.files.attach.
-      operations: 127,
+      // projects.files.list / projects.files.attach, then 2026-08-07 with
+      // collections.addItem / collections.removeItem.
+      operations: 129,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -46,7 +47,8 @@ describe.sequential('W3 production-Server public harness', () => {
     // execution.journal, identity.profile.update.
     // 118 -> 125 (2026-08-04): re-derived with the same five stale amendments
     // as the operations pin above, plus the two projects.files.* handlers.
-    expect(body.implemented).toBe(125);
+    // 125 -> 127 (2026-08-07): the two collections.*Item handlers.
+    expect(body.implemented).toBe(127);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

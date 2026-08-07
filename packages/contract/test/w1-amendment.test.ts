@@ -48,7 +48,7 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 128-row target, including node-local project folder reads, without changing reserved honesty', () => {
+  it('reconciles the additive 130-row target, including collection membership writes, without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
@@ -57,8 +57,12 @@ describe('W1 adopted catalog target', () => {
     // 126 -> 128 (2026-08-04): projects.files.list (GET read) +
     // projects.files.attach (POST command) — reading and attaching files out
     // of an already-connected project folder.
-    expect(OPERATIONS).toHaveLength(128);
-    expect(V1_OPERATIONS).toHaveLength(126);
+    // 128 -> 130 (2026-08-07): collections.addItem (POST command) +
+    // collections.removeItem (DELETE command) — pair-addressed curated
+    // membership, so a collection can be written AND read back in its own
+    // order rather than only queried.
+    expect(OPERATIONS).toHaveLength(130);
+    expect(V1_OPERATIONS).toHaveLength(128);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -74,12 +78,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 47, POST: 55, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 47, POST: 56, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 50, command: 77, stream: 1 });
+    }).toEqual({ read: 50, command: 79, stream: 1 });
   });
 });
 

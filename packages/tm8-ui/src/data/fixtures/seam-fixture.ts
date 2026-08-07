@@ -400,6 +400,35 @@ export function createFixtureSeam(): FixtureSeam {
     return e;
   }
 
+  /** Curated positions per collection — the fixture's `contains` edge table. */
+  const collectionMembership = new Map<EntityId, Map<EntityId, number>>();
+
+  function collectionPositions(collectionId: EntityId): Map<EntityId, number> {
+    let m = collectionMembership.get(collectionId);
+    if (!m) {
+      m = new Map();
+      collectionMembership.set(collectionId, m);
+    }
+    return m;
+  }
+
+  /**
+   * Re-derive `content.items` and `state.itemCount` from the positions, in one
+   * place. Restamped rather than incremented so the count can never drift from
+   * the list beside it — the exact defect this lane started as, where
+   * `itemCount` reported the truth and `items` was empty.
+   *
+   * Ties break by id, matching the server's `(position, id)` keyset.
+   */
+  function restampCollection(collection: EntitySummary, positions: Map<EntityId, number>): void {
+    const items = [...positions.entries()]
+      .sort(([aId, a], [bId, b]) => a - b || (aId < bId ? -1 : 1))
+      .map(([id]) => clone(requireSummary(id)));
+    const e = extrasOf(collection.id);
+    e.content = { ...(e.content as object), items } as EntityContent;
+    collection.state = { ...collection.state, itemCount: items.length } as EntitySummary['state'];
+  }
+
   function childrenOf(id: EntityId): EntitySummary[] {
     return [...summaries.values()]
       .filter((s) => s.parentId === id && s.deletedAt === null)
@@ -1058,6 +1087,44 @@ export function createFixtureSeam(): FixtureSeam {
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
       },
+      /**
+       * Membership mirrors the SERVER's model exactly: a position per member,
+       * with `content.items` DERIVED by sorting on it. The tempting shortcut —
+       * storing the ordered array and treating `position` as an array index —
+       * disagrees with the server the moment a caller sends a float, which is
+       * precisely what a reorder does. A fixture that reorders differently
+       * from production is worse than no fixture: every test built on it
+       * passes while the real drag lands the row somewhere else.
+       *
+       * Append and reorder share this path, as the RPC does: a member already
+       * present is MOVED, never duplicated.
+       */
+      async addCollectionItem(collectionId, input) {
+        const collection = requireSummary(collectionId);
+        const member = requireSummary(input.entityId);
+        const positions = collectionPositions(collectionId);
+        const next = input.position
+          ?? Math.max(0, ...[...positions.values()]) + 1;
+        positions.set(member.id, next);
+        restampCollection(collection, positions);
+        emit(collection.spaceId, { type: 'entity.upsert', entity: clone(collection) }, input);
+        return commandResult(collection);
+      },
+
+      async removeCollectionItem(collectionId, entityId, ctx) {
+        const collection = requireSummary(collectionId);
+        const positions = collectionPositions(collectionId);
+        // Absent is not an error — the caller asked for a state that already
+        // holds. Nothing is emitted then, so a retried remove does not produce
+        // a second event for the stores to reconcile against.
+        if (!positions.delete(entityId)) {
+          return { ...commandResult(collection), removed: false };
+        }
+        restampCollection(collection, positions);
+        emit(collection.spaceId, { type: 'entity.upsert', entity: clone(collection) }, ctx);
+        return { ...commandResult(collection), removed: true };
+      },
+
       async createTask(input: CreateTaskInput) {
         if (input.parentId) requireSummary(input.parentId);
         const criteria = (input.acceptanceCriteria ?? []).map((c, i) => ({

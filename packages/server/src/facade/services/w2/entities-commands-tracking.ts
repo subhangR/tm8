@@ -688,7 +688,7 @@ async function buildUniversalDetail(
   ).length;
   return {
     ...summary,
-    content: detailContent(row, enrichment),
+    content: withCollectionItems(detailContent(row, enrichment), id, connectionItems),
     hierarchy,
     connections: {
       outgoing: byType('outgoing'),
@@ -697,6 +697,47 @@ async function buildUniversalDetail(
     },
     capabilities: capabilitiesFor(row, summary),
   };
+}
+
+/**
+ * Fill a collection's `content.items` from the `contains` edges already loaded.
+ *
+ * `contentOf` returns `items: []` for every collection because it is a pure
+ * function of ONE entity row and membership lives in `edges` — so until this
+ * ran, the UI's ITEMS block (tm8-ui registry `collection.panel.blocks`) had a
+ * heading and nothing under it no matter how full the collection was, and
+ * `state.itemCount` right beside it said otherwise.
+ *
+ * NO EXTRA QUERY. `connectionItems` above is already the complete, cursor-
+ * exhausted edge set for this entity, both directions, and each `EdgeView`
+ * carries its target as a fully assembled `EntitySummary`. Re-fetching the
+ * members would be a second trip for rows in hand — and worse, a second RLS
+ * evaluation that could disagree with the first. Anything the viewer cannot
+ * see is already absent here: `edgeView` drops an edge whose endpoint failed
+ * to assemble rather than rendering half of it.
+ *
+ * ORDERED BY `props.position`, id as the tiebreaker — the same total order the
+ * `edges_contains_position_idx` index (077) serves and `collections.query`'s
+ * `position` sort reproduces, so the panel and the paged list agree. A member
+ * whose position is missing or non-numeric sorts last rather than poisoning
+ * the comparison with NaN, which in a JS sort silently scrambles the array.
+ */
+function withCollectionItems(
+  content: EntityContent,
+  collectionId: string,
+  edges: readonly EdgeView[],
+): EntityContent {
+  if (content.kind !== 'collection') return content;
+  const positionOf = (edge: EdgeView): number => {
+    const raw = (edge.props as Record<string, unknown> | undefined)?.position;
+    const value = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(value) ? value : Number.POSITIVE_INFINITY;
+  };
+  const items = edges
+    .filter((edge) => edge.type === 'contains' && edge.source.id === collectionId)
+    .sort((a, b) => positionOf(a) - positionOf(b) || (a.target.id < b.target.id ? -1 : 1))
+    .map((edge) => edge.target);
+  return { ...content, items };
 }
 
 async function activityById(q: Querier, id: string): Promise<ActivityItem | undefined> {

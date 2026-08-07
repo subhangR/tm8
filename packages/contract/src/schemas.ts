@@ -22,7 +22,7 @@ import type {
 import type {
   AcceptanceCriterion, ActionDiscoveryResult, ActivateInteractionProfileInput,
   AmendmentErrorReason,
-  ActivityItem, ActorSummary, AddMessageAttachmentsInput,
+  ActivityItem, ActorSummary, AddCollectionItemInput, AddMessageAttachmentsInput,
   AuthAccountView, AuthLoginInput, AuthLoginResult, AuthLogoutInput,
   AuthLogoutResult, AuthSessionGetResult, AuthSessionView, AuthSignupInput,
   AuthSignupResult, ChannelTab,
@@ -1276,6 +1276,19 @@ export const CreateEdgeInputSchema: z.ZodType<CreateEdgeInput> = z.object({
 export const PatchEdgeInputSchema: z.ZodType<PatchEdgeInput> = z.object({
   ...commandContextShape,
   props: z.record(z.unknown()),
+}).strict();
+
+/**
+ * `position` is `finite()` because the sort it feeds is a keyset comparison:
+ * an Infinity or a NaN in that column is not merely a strange place in the
+ * list, it makes the ordering non-total and a paged read starts losing rows at
+ * the page boundary. Refusing it at the edge is cheaper than the sentinel
+ * gymnastics the reader would otherwise need.
+ */
+export const AddCollectionItemInputSchema: z.ZodType<AddCollectionItemInput> = z.object({
+  ...commandContextShape,
+  entityId: EntityIdSchema,
+  position: z.number().finite().optional(),
 }).strict();
 
 export const PlacementInputSchema: z.ZodType<PlacementInput> = z.object({

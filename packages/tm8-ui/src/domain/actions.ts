@@ -193,6 +193,28 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
       opGate(ctx, 'entities.create') ?? capabilityGate(ctx, 'canAddChild', REASONS.cannotAddChild) ?? AVAILABLE,
   ),
 
+  /**
+   * Opens a collection picker rather than dispatching a write directly: the
+   * verb knows the entity but not which list it is going into, and that second
+   * id cannot be guessed. The picker supplies it and calls the seam.
+   *
+   * Gated on `collections.addItem` — the operation actually performed. Gating
+   * on `edges.create` would be the near-miss: a node could have the generic
+   * edge writer mounted and still answer 501 here, and the affordance would
+   * render enabled and then fail.
+   *
+   * No `capabilityGate`. Membership is a property of the COLLECTION, not of
+   * the entity being filed, so there is no per-entity capability to consult —
+   * `canLink` is about this entity's own edges. The server is the authority on
+   * whether the target collection accepts the write.
+   */
+  'add-to-collection': define(
+    'add-to-collection',
+    'Add to collection',
+    '▦',
+    (ctx) => (ctx.entityId ? opGate(ctx, 'collections.addItem') ?? AVAILABLE : disabled(REASONS.noEntity)),
+  ),
+
   react: define(
     'react',
     'React',

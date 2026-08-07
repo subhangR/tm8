@@ -253,6 +253,12 @@ export type ActionRef =
   | 'pull'
   | 'link'
   | 'add-child'
+  // Curated membership. NOT `add-child`: that writes the HIERARCHY, where a
+  // parent may only hold children of its own kind. This writes a `contains`
+  // edge, which is the only relation in the graph that is heterogeneous and
+  // ordered, and is therefore available on every kind rather than on the few
+  // that can parent something.
+  | 'add-to-collection'
   | 'react'
   | 'grant-points'
   // execution verbs (R-UI-6)
@@ -556,6 +562,18 @@ export interface KindConfig {
   list: ListConfig;
   panel: PanelConfig;
   palette?: { createLabel?: string; primaryAction?: ActionRef };
+  /**
+   * Which contract commands back the generic create/inline-title flow.
+   *
+   * Entity screens are deliberately kind-agnostic, so command selection and
+   * any kind-constrained placeholder grammar live here with the rest of the
+   * kind's data. `createTitle` receives the command's mutation id, allowing a
+   * unique placeholder without a second source of identity.
+   */
+  authoring?: {
+    editCommand?: 'typed' | 'entity';
+    createTitle?: (clientMutationId: string) => string;
+  };
   /**
    * Can a session be launched ON this kind — the Run button.
    *

@@ -71,6 +71,7 @@ import type {
   CommandContext,
   CommandResult,
   CompleteTaskInput,
+  AddCollectionItemInput,
   CreateEntityInput,
   CreateSpaceInput,
   CreateSpaceResult,
@@ -355,6 +356,36 @@ export interface Seam {
   //    reconcile on echo — event or CommandResult — rollback on rejection) ----
   commands: {
     createEntity(input: CreateEntityInput): Promise<CommandResult>;
+    /**
+     * Put an entity in a collection, or move it within one.
+     *
+     * `position` OMITTED means append, and the SERVER resolves it against the
+     * current maximum. Do not compute it here: a client that reads the items,
+     * takes the max and adds one races every other client doing the same, and
+     * the two appends collide on one number. Pass `position` only to place a
+     * row deliberately — the reorder case, where it is the midpoint between
+     * the item's two new neighbours.
+     *
+     * Re-adding an entity already in the collection is a MOVE, not an error
+     * (the underlying edge upserts), so this is also how a drag-reorder is
+     * spelled. `entityId` is unconstrained by kind on purpose: a collection is
+     * heterogeneous, which is the whole reason it exists beside the hierarchy.
+     */
+    addCollectionItem(collectionId: EntityId, input: AddCollectionItemInput): Promise<CommandResult>;
+    /**
+     * Take an entity back out. Addressed by the PAIR, because that is all a
+     * caller looking at a rendered item has — `content.items` carries entity
+     * summaries, never the id of the edge that joins them.
+     *
+     * Removing something already absent RESOLVES with `removed: false` rather
+     * than rejecting: the caller asked for a state that already holds. Surfaces
+     * should use the flag to decide what to say, not whether to recover.
+     */
+    removeCollectionItem(
+      collectionId: EntityId,
+      entityId: EntityId,
+      ctx?: CommandContext,
+    ): Promise<CommandResult & { removed: boolean }>;
     createTask(input: CreateTaskInput): Promise<CommandResult>;
     patchEntity(id: EntityId, input: PatchEntityInput): Promise<CommandResult>;
     patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;

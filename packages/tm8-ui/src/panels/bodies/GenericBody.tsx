@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import type {
+  AddCollectionItemInput,
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
+  CommandContext,
+  CommandResult,
   EntityDetail,
   EntitySummary,
+  Page,
 } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { getKind } from '../../domain';
 import { Chip, Eyebrow } from '../../kit';
+import { CollectionPicker, type PickerReads } from './CollectionPicker';
 import { EmptyBody } from '../detail/PanelStates';
 
 /**
@@ -18,6 +23,32 @@ import { EmptyBody } from '../detail/PanelStates';
  */
 export interface ArtifactPreviewCommands {
   previewArtifact(id: string, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
+}
+
+/**
+ * The membership writers, as a STRUCTURAL SUBSET of `Seam['commands']` — a
+ * host assigns `seam.commands` with no cast, exactly as it does for the
+ * preview command above. Both are optional: a surface that wires neither gets
+ * the read-only list, which is why `manage` checks for the functions rather
+ * than trusting the registry flag alone.
+ */
+export interface CollectionItemCommands {
+  addCollectionItem(collectionId: string, input: AddCollectionItemInput): Promise<CommandResult>;
+  removeCollectionItem(
+    collectionId: string,
+    entityId: string,
+    ctx?: CommandContext,
+  ): Promise<CommandResult & { removed: boolean }>;
+}
+
+/**
+ * The reads the managed items block needs — structural subset of
+ * `Seam['reads']`, so a host assigns `seam.reads` with no cast. `entity` and
+ * `children` expand a `tree` row; `query` populates the add-items picker.
+ */
+export interface CollectionItemReads extends PickerReads {
+  entity(id: string): Promise<EntityDetail>;
+  children(id: string): Promise<Page<EntitySummary>>;
 }
 
 /**
@@ -42,11 +73,13 @@ export function GenericBody({
   blocks,
   onOpenEntity,
   commands,
+  reads,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
-  commands?: Partial<ArtifactPreviewCommands> | null;
+  commands?: Partial<ArtifactPreviewCommands & CollectionItemCommands> | null;
+  reads?: CollectionItemReads | null;
 }) {
   if (blocks.length === 0) {
     return (
@@ -61,7 +94,14 @@ export function GenericBody({
   return (
     <div className="pn-body" id="tabpanel-content" role="tabpanel" aria-labelledby="tab-content">
       {blocks.map((block, i) => (
-        <ContentBlock key={`${block.block}:${i}`} detail={detail} block={block} onOpenEntity={onOpenEntity} commands={commands} />
+        <ContentBlock
+          key={`${block.block}:${i}`}
+          detail={detail}
+          block={block}
+          onOpenEntity={onOpenEntity}
+          commands={commands}
+          reads={reads}
+        />
       ))}
     </div>
   );
@@ -72,11 +112,13 @@ function ContentBlock({
   block,
   onOpenEntity,
   commands,
+  reads,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
   onOpenEntity?: (id: string) => void;
-  commands?: Partial<ArtifactPreviewCommands> | null;
+  commands?: Partial<ArtifactPreviewCommands & CollectionItemCommands> | null;
+  reads?: CollectionItemReads | null;
 }) {
   const body = (() => {
     switch (block.block) {
@@ -89,7 +131,15 @@ function ContentBlock({
       case 'artifact-preview':
         return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
       case 'items':
-        return <ItemsBlock detail={detail} block={block} onOpenEntity={onOpenEntity} />;
+        return (
+          <ItemsBlock
+            detail={detail}
+            block={block}
+            onOpenEntity={onOpenEntity}
+            commands={commands}
+            reads={reads}
+          />
+        );
       case 'lifecycle':
         return <LifecycleBlock detail={detail} />;
       case 'notice':
@@ -315,39 +365,388 @@ function formatBytes(bytes: number): string {
 }
 
 /**
- * ITEMS — an `EntitySummary` chip list. `params.source` names which content
- * member holds them (defaults to `items`), which is how one block serves
- * collections, equipped spells and a member's work without knowing any of
- * those kinds.
+ * ITEMS — an `EntitySummary` list. `params.source` names which content member
+ * holds them (defaults to `items`), which is how one block serves collections,
+ * equipped spells and a member's work without knowing any of those kinds.
+ *
+ * TWO PARAMETERS CHANGE THE SHAPE, and both default OFF so every other kind
+ * using this block keeps the read-only chip row it has today:
+ *
+ *  - `manage` — remove and drag-reorder. Only a curated set can be edited in
+ *    place; a member's `work` list is derived, and offering a remove button on
+ *    derived rows would advertise a write with nothing behind it.
+ *  - `tree` — rows expand. A nested COLLECTION expands by its own membership,
+ *    anything else by its hierarchy children, so a collection of tasks shows
+ *    their subtasks without a second block and without this file naming a kind
+ *    (it asks the content structurally: does it carry `items`?).
  */
 function ItemsBlock({
   detail,
   block,
   onOpenEntity,
+  commands,
+  reads,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
   onOpenEntity?: (id: string) => void;
+  commands?: Partial<CollectionItemCommands> | null;
+  reads?: CollectionItemReads | null;
 }) {
   const content = detail.content as unknown as Record<string, unknown>;
   const key = typeof block.params?.source === 'string' ? block.params.source : 'items';
   const raw = content[key] ?? content.items ?? content.equipped ?? content.work;
   const items: EntitySummary[] = Array.isArray(raw) ? (raw as EntitySummary[]) : [];
 
+  const tree = block.params?.tree === true;
+  // Manage is a JOINT condition: the registry must ask for it AND the host
+  // must have wired the writers. Rendering a remove button off the registry
+  // flag alone would produce the enabled-inert affordance `define()` throws
+  // over — an control that looks live and does nothing.
+  const manage = block.params?.manage === true
+    && typeof commands?.addCollectionItem === 'function'
+    && typeof commands?.removeCollectionItem === 'function';
+
   if (items.length === 0) {
     // A designed empty, not an accidental one: an empty collection is a real
     // state and must read as "nothing here yet", never as a failed load.
     return <p className="pn-section__empty">Nothing here yet.</p>;
   }
+  if (!manage && !tree) {
+    return (
+      <div className="pn-chiprow">
+        {items.map((item) => (
+          <Chip key={item.id} glyph={getKind(item.kind).chip.glyph} onClick={() => onOpenEntity?.(item.id)}>
+            {item.title}
+          </Chip>
+        ))}
+      </div>
+    );
+  }
   return (
-    <div className="pn-chiprow">
-      {items.map((item) => (
-        <Chip key={item.id} glyph={getKind(item.kind).chip.glyph} onClick={() => onOpenEntity?.(item.id)}>
-          {item.title}
-        </Chip>
+    <ManagedItems
+      collectionId={detail.id}
+      spaceId={detail.spaceId}
+      items={items}
+      manage={manage}
+      tree={tree}
+      onOpenEntity={onOpenEntity}
+      commands={commands}
+      reads={reads}
+    />
+  );
+}
+
+/**
+ * The interactive item list.
+ *
+ * REORDER RENUMBERS THE WHOLE LIST, deliberately. `content.items` is a list of
+ * entity summaries and carries no curated position, so the midpoint a drag
+ * would normally send cannot be computed from what the client holds — after
+ * one reorder the real positions are floats the client never saw, and any
+ * index-derived guess lands the row somewhere else. Renumbering 1..N is the
+ * only ordering this client can produce that is CORRECT rather than usually
+ * right, and it has the side benefit of returning positions to canonical form.
+ * The cost is one write per item; curated lists are small, and the honest
+ * cheaper fix is a bulk reorder operation, not a cleverer guess here.
+ *
+ * The list is optimistic: it reorders locally first so the row lands under the
+ * cursor, and restores the previous order if the writes reject. Waiting for N
+ * round trips before moving anything would make a drag feel broken.
+ */
+function ManagedItems({
+  collectionId,
+  spaceId,
+  items,
+  manage,
+  tree,
+  onOpenEntity,
+  commands,
+  reads,
+}: {
+  collectionId: string;
+  spaceId: string;
+  items: readonly EntitySummary[];
+  manage: boolean;
+  tree: boolean;
+  onOpenEntity?: (id: string) => void;
+  commands?: Partial<CollectionItemCommands> | null;
+  reads?: CollectionItemReads | null;
+}) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /**
+   * The optimistic view, STAMPED WITH THE SERVER STATE IT WAS BUILT ON.
+   *
+   * The `base` is what makes this correct. An optimistic list cannot be
+   * validated by comparing it to the server's — a remove and a reorder both
+   * make them differ ON PURPOSE, so any such comparison throws away the very
+   * update it was meant to protect. (It did: an earlier form here kept the
+   * copy only while the lengths matched, which silently discarded every
+   * optimistic REMOVE and put the row straight back.)
+   *
+   * So the copy is held against the snapshot it was derived from, and dropped
+   * the moment the server's own list changes — which is exactly when the echo
+   * has landed and server truth should win.
+   */
+  const [optimistic, setOptimistic] = useState<
+    { base: string; rows: readonly EntitySummary[] } | null
+  >(null);
+  const serverIds = items.map((i) => i.id).join(',');
+  const shown = optimistic && optimistic.base === serverIds ? optimistic.rows : items;
+  const setOrder = (rows: readonly EntitySummary[] | null): void => {
+    setOptimistic(rows === null ? null : { base: serverIds, rows });
+  };
+
+  async function commitOrder(next: readonly EntitySummary[]): Promise<void> {
+    const previous = shown;
+    setOrder(next);
+    setBusy(true);
+    setFailure(null);
+    try {
+      // Sequential, not concurrent: these all write the same collection, and
+      // firing them together lets the server interleave them into an order
+      // that is not the one dropped.
+      for (let i = 0; i < next.length; i += 1) {
+        await commands?.addCollectionItem?.(collectionId, {
+          entityId: next[i]!.id,
+          position: i + 1,
+        });
+      }
+    } catch (error) {
+      setOrder(previous);
+      setFailure(reorderFailure(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: string): Promise<void> {
+    const previous = shown;
+    setOrder(previous.filter((i) => i.id !== id));
+    setBusy(true);
+    setFailure(null);
+    try {
+      await commands?.removeCollectionItem?.(collectionId, id);
+    } catch (error) {
+      setOrder(previous);
+      setFailure(removeFailure(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function drop(targetId: string): void {
+    if (!dragging || dragging === targetId) return;
+    const from = shown.findIndex((i) => i.id === dragging);
+    const to = shown.findIndex((i) => i.id === targetId);
+    setDragging(null);
+    if (from < 0 || to < 0) return;
+    const next = [...shown];
+    const [moved] = next.splice(from, 1);
+    if (moved) next.splice(to, 0, moved);
+    void commitOrder(next);
+  }
+
+  async function add(entity: EntitySummary): Promise<void> {
+    setPicking(false);
+    setBusy(true);
+    setFailure(null);
+    try {
+      // No `position`: append is the server's to resolve. See the seam doc —
+      // a client that computes max+1 races every other client appending.
+      await commands?.addCollectionItem?.(collectionId, { entityId: entity.id });
+    } catch (error) {
+      setFailure(addFailure(entity.title, error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="pn-itemlist" data-testid="collection-items">
+      {manage && reads ? (
+        picking ? (
+          <CollectionPicker
+            spaceId={spaceId}
+            excludeIds={shown.map((i) => i.id)}
+            label="Add to this collection"
+            reads={reads}
+            onPick={add}
+            onCancel={() => setPicking(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="pn-itemlist__add"
+            disabled={busy}
+            onClick={() => setPicking(true)}
+          >
+            ＋ Add items
+          </button>
+        )
+      ) : null}
+      {failure ? <p className="pn-section__error" role="status">{failure}</p> : null}
+      {shown.map((item) => (
+        <ItemRow
+          key={item.id}
+          item={item}
+          manage={manage}
+          tree={tree}
+          busy={busy}
+          onOpenEntity={onOpenEntity}
+          onRemove={() => void remove(item.id)}
+          onDragStart={() => setDragging(item.id)}
+          onDropOn={() => drop(item.id)}
+          reads={reads}
+        />
       ))}
     </div>
   );
+}
+
+/**
+ * One row, with its own expansion state.
+ *
+ * Children load LAZILY and once. A collection can hold anything, so eagerly
+ * resolving every row's subtree would issue a request per member on open — for
+ * a list whose whole purpose is to be long.
+ */
+function ItemRow({
+  item,
+  manage,
+  tree,
+  busy,
+  onOpenEntity,
+  onRemove,
+  onDragStart,
+  onDropOn,
+  reads,
+}: {
+  item: EntitySummary;
+  manage: boolean;
+  tree: boolean;
+  busy: boolean;
+  onOpenEntity?: (id: string) => void;
+  onRemove: () => void;
+  onDragStart: () => void;
+  onDropOn: () => void;
+  reads?: CollectionItemReads | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [children, setChildren] = useState<EntitySummary[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // A row is expandable only if something could actually be under it. Without
+  // a reader wired there is nothing to fetch, so no caret is drawn rather than
+  // one that expands into a permanent blank.
+  const expandable = tree && Boolean(reads);
+
+  async function toggle(): Promise<void> {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (children || loading || !reads) return;
+    setLoading(true);
+    try {
+      // Structural, not kind-keyed: a nested collection's members live in its
+      // own `content.items`, everything else's live in the hierarchy. Asking
+      // the detail first and falling back keeps the kind literal out of here.
+      const detail = await reads.entity(item.id);
+      const nested = (detail.content as unknown as Record<string, unknown>).items;
+      if (Array.isArray(nested)) {
+        setChildren(nested as EntitySummary[]);
+      } else {
+        const page = await reads.children(item.id);
+        setChildren(page.items);
+      }
+    } catch {
+      // An expansion that cannot load says so by staying empty with a reason,
+      // never by throwing through the panel.
+      setChildren([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="pn-item">
+      <div
+        className="pn-item__row"
+        draggable={manage}
+        onDragStart={manage ? onDragStart : undefined}
+        onDragOver={manage ? (e) => e.preventDefault() : undefined}
+        onDrop={manage ? (e) => { e.preventDefault(); onDropOn(); } : undefined}
+      >
+        {expandable ? (
+          <button
+            type="button"
+            className="pn-item__caret"
+            aria-expanded={open}
+            aria-label={open ? `Collapse ${item.title}` : `Expand ${item.title}`}
+            onClick={() => void toggle()}
+          >
+            {open ? '▾' : '▸'}
+          </button>
+        ) : null}
+        <Chip glyph={getKind(item.kind).chip.glyph} onClick={() => onOpenEntity?.(item.id)}>
+          {item.title}
+        </Chip>
+        {manage ? (
+          <button
+            type="button"
+            className="pn-item__remove"
+            aria-label={`Remove ${item.title} from this collection`}
+            disabled={busy}
+            onClick={onRemove}
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+      {open ? (
+        <div className="pn-item__children">
+          {loading ? <p className="pn-section__empty">Loading…</p> : null}
+          {!loading && (children?.length ?? 0) === 0
+            ? <p className="pn-section__empty">Nothing under this.</p>
+            : null}
+          {(children ?? []).map((child) => (
+            <Chip
+              key={child.id}
+              glyph={getKind(child.kind).chip.glyph}
+              onClick={() => onOpenEntity?.(child.id)}
+            >
+              {child.title}
+            </Chip>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * L6: name what failed and what the user can do, never a raw transport string.
+ * The two are separate sentences because the recoveries differ — a rejected
+ * reorder has been rolled back and can be retried, a rejected remove leaves
+ * the item exactly where it was.
+ */
+function reorderFailure(error: unknown): string {
+  return `Could not save the new order (${errorSentence(error)}). The list has been put back.`;
+}
+
+function addFailure(title: string, error: unknown): string {
+  return `Could not add "${title}" (${errorSentence(error)}). Nothing was changed.`;
+}
+
+function removeFailure(error: unknown): string {
+  return `Could not remove that item (${errorSentence(error)}). It is still in the collection.`;
+}
+
+function errorSentence(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'the server refused';
 }
 
 /** LIFECYCLE — status + version provenance (template key/version/hash). */

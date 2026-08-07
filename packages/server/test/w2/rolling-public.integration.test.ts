@@ -248,12 +248,26 @@ const PROJECT_FOLDER_NET_NEW_OPERATIONS = [
   'projects.files.attach',
 ] as const;
 
+/**
+ * Curated collection membership.
+ *
+ * Both net-new, both mounted in the G05 seam beside `collections.query`
+ * because they share its handler module. They complete a framework that had
+ * been half-built since 001: the `collections` table, the `contains` edge and
+ * `set_collection_item` all shipped, with no API able to reach the last two.
+ */
+const COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS = [
+  'collections.addItem',
+  'collections.removeItem',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
   ...CONSOLIDATION_NET_NEW_OPERATIONS,
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...PROJECT_FOLDER_NET_NEW_OPERATIONS,
+  ...COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -377,14 +391,16 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
     // 113 -> 116 (2026-08-04): the three node-local project folder operations,
     // one of which had already landed unpinned — see the block above.
-    expect(registry.size).toBe(116);
+    // 116 -> 118 (2026-08-07): collections.addItem and collections.removeItem.
+    expect(registry.size).toBe(118);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
         + TRANCHE_V3_NET_NEW_OPERATIONS.length
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
-        + PROJECT_FOLDER_NET_NEW_OPERATIONS.length,
+        + PROJECT_FOLDER_NET_NEW_OPERATIONS.length
+        + COLLECTION_MEMBERSHIP_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -532,7 +548,11 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // auth.session.get is a GET and binds nothing.
     // 69 -> 70 (2026-08-04): projects.files.attach; projects.files.list is a
     // GET and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(70);
+    // 70 -> 72 (2026-08-07): collections.addItem binds its input DTO, and
+    // collections.removeItem binds the bare command envelope — both ids are
+    // path params, so there is nothing else to send, and binding it anyway is
+    // what refuses an unexpected field instead of ignoring it.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(72);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -672,9 +692,12 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 120/118 -> 124/122 (2026-08-02): the four auth.* rows, all implemented.
     // 125/123 -> 127/125 (2026-08-04): projects.files.list and
     // projects.files.attach, both implemented.
-    expect(health).toMatchObject({ ok: true, operations: 127, implemented: 125 });
+    // 127/125 -> 129/127 (2026-08-07): collections.addItem and
+    // collections.removeItem, both implemented.
+    expect(health).toMatchObject({ ok: true, operations: 129, implemented: 127 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
-    expect(harness.production.server.registry.size).toBe(125);
+    // 125 -> 127 (2026-08-07): the two collection membership operations.
+    expect(harness.production.server.registry.size).toBe(127);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -689,7 +712,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 123 -> 125 (2026-08-04): projects.files.list + projects.files.attach.
-    expect(registered.size + residual.length).toBe(125);
+    // 125 -> 127 (2026-08-07): collections.addItem + collections.removeItem.
+    expect(registered.size + residual.length).toBe(127);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

@@ -969,6 +969,31 @@ export interface CreateEdgeInput extends CommandContext {
 }
 export interface PatchEdgeInput extends CommandContext { props: Record<string, unknown> }
 
+/**
+ * Put an entity in a collection. The collection is the path param; this is the
+ * rest.
+ *
+ * `entityId` is deliberately unconstrained by kind — a collection is a
+ * HETEROGENEOUS set, which is the whole reason it exists alongside the
+ * hierarchy (the hierarchy can only hold one kind under one parent). Tasks,
+ * teammates, memories, docs and other collections all go in the same list.
+ *
+ * `position` OMITTED means append, resolved by the database against the
+ * current maximum rather than by the caller: two clients appending at once
+ * both get a place in line instead of both computing the same number and one
+ * silently overwriting the other. Pass it explicitly ONLY to place an item at
+ * a known spot — the usual reorder is the midpoint between its new
+ * neighbours, which is why this is a float and not an integer rank.
+ *
+ * Re-adding an entity already in the collection is a MOVE, not an error: the
+ * underlying edge is unique on `(src, dst, type)` and the write upserts, so
+ * this is also how a reorder is spelled.
+ */
+export interface AddCollectionItemInput extends CommandContext {
+  entityId: EntityId;
+  position?: number;
+}
+
 export type PlacementIntent = 'attach'|'assign'|'depend'|'subtask'|'embed'|'reparent';
 export interface PlacementInput extends CommandContext {
   sourceId: EntityId;

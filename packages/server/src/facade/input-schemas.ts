@@ -27,6 +27,7 @@ import {
   AuthLoginInputSchema,
   AuthLogoutInputSchema,
   AuthSignupInputSchema,
+  AddCollectionItemInputSchema,
   CollectionQuerySchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
@@ -178,6 +179,11 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // collections / graph / placements
   'collections.query': CollectionQuerySchema,
+  'collections.addItem': AddCollectionItemInputSchema,
+  // Both ids are path params, so the body is the bare command envelope —
+  // bound anyway, like `edges.delete`, so an unexpected field is refused
+  // rather than silently ignored.
+  'collections.removeItem': RequiredCommandContextSchema,
   'graph.query': GraphQuerySchema,
   'placements.apply': PlacementInputSchema,
   'commands.undo': UndoCommandInputSchema,

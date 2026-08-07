@@ -24,6 +24,7 @@ import {
   CollabError,
   decodeCursor,
   encodeCursor,
+  type AddCollectionItemInput,
   type CollectionGroup,
   type CollectionQuery,
   type CollectionResult,
@@ -33,7 +34,8 @@ import {
 import type { Querier } from '../../db/types.js';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
-import { claimsFor, limitOf, MAX_LIMIT } from '../context.js';
+import { claimsFor, commandEnvelope, limitOf, MAX_LIMIT, requireUuidParam } from '../context.js';
+import { toCommandResult, type RpcCommandResult } from './entities.js';
 import {
   assembleSummaries, ENTITY_COLUMNS, ENTITY_FROM, MICROS, type EntityRow,
 } from '../entity-read.js';
@@ -99,6 +101,66 @@ const SORTS: Record<SortName, SortSpec> = {
 };
 
 const DEFAULT_SORT: SortName = 'activityAt_desc';
+
+/**
+ * Sentinel for a `contains` edge carrying no readable `props.position`.
+ *
+ * Same trick, and the same reason, as `dueDate`'s `'9999-12-31'`: a keyset
+ * comparison over a nullable column cannot express "nulls last" as one row
+ * comparison, so an unpositioned member would be lost at a page boundary
+ * rather than merely misplaced. Coalescing makes the column total-ordered.
+ * `set_collection_item` always writes a position, so this covers only rows
+ * written straight through `edges.create` with bare props.
+ */
+const UNPOSITIONED = '1e308';
+
+/**
+ * Resolve `sort` against the query, because ONE sort name means two different
+ * columns depending on what is being listed.
+ *
+ * `position` on a hierarchy listing means `e.position` — where the entity sits
+ * among its siblings under a shared parent. `position` on a COLLECTION's
+ * membership means `props.position` on the `contains` edge, which is a
+ * completely different number about a completely different tree. Until this
+ * existed only the first was implemented, so asking a collection for its items
+ * in curated order returned them in hierarchy order: a confident, stable,
+ * wrong answer, and the reason a curated list could be written but never read
+ * back as curated. Nothing surfaced it because both orderings are plausible
+ * lists of the right rows.
+ *
+ * The trigger is the membership filter itself — `filters.edge` naming
+ * `contains` INCOMING from a collection is exactly "the items of that
+ * collection", so the sort follows the filter rather than needing a new
+ * caller-supplied sort name that every existing client would have to learn.
+ * An OUTGOING `contains` filter is not membership (it asks "which collections
+ * is this in"), so it keeps hierarchy position.
+ *
+ * The correlated subquery is safe against duplicates: `edges` is unique on
+ * `(src_id, dst_id, type)`, so at most one row can match and the scalar can
+ * never raise 21000.
+ */
+function resolveSort(query: CollectionQuery, sortName: SortName, p: Params): SortSpec {
+  const base = SORTS[sortName];
+  const f = query.filters;
+  if (
+    sortName !== 'position'
+    || !f?.edge
+    || f.edge.type !== 'contains'
+    || f.edge.direction !== 'incoming'
+  ) {
+    return base;
+  }
+  const collection = p.add(assertUuid(f.edge.entityId, 'filters.edge.entityId'));
+  const expr = `coalesce((
+      select (g.props ->> 'position')::double precision
+        from public.edges g
+       where g.src_id = ${collection} and g.dst_id = e.id and g.type = 'contains'
+     ), ${UNPOSITIONED}::double precision)`;
+  // `cursorExpr` is the same expression, not a rendered form: the value is a
+  // float8 the cursor carries verbatim, so there is no precision to lose the
+  // way a timestamptz or a date has (see SortSpec.cursorExpr).
+  return { expr, dir: 'asc', cast: 'double precision', cursorExpr: expr };
+}
 
 /**
  * Bind an opaque keyset to the complete semantic query that minted it.
@@ -455,8 +517,7 @@ export async function queryCollection(
   cursorScope = 'collections.query',
 ): Promise<CollectionResult> {
   const sortName: SortName = query.sort ?? DEFAULT_SORT;
-  const sort = SORTS[sortName];
-  if (!sort) throw new CollabError('invalid_input', `unsupported sort: ${String(query.sort)}`);
+  if (!SORTS[sortName]) throw new CollabError('invalid_input', `unsupported sort: ${String(query.sort)}`);
 
   if (query.groupBy && !['workStatus', 'assignee'].includes(query.groupBy) && !query.groupBy.startsWith('axis:')) {
     throw new CollabError('invalid_input', `unsupported groupBy: ${query.groupBy}`);
@@ -465,6 +526,10 @@ export async function queryCollection(
   const limit = limitOf(query.limit);
   const fingerprint = cursorFingerprint(query, sortName, cursorScope);
   const p = new Params();
+  // Resolved BEFORE the predicates so the collection id it may bind is added
+  // to the same `Params`. Placeholders carry their own index, so the order of
+  // `p.add` calls does not have to match the order they appear in the SQL.
+  const sort = resolveSort(query, sortName, p);
   const where = buildWhere(query, p);
 
   if (query.cursor) {
@@ -523,5 +588,77 @@ export function collectionsQuery(deps: FacadeDeps): OperationHandler {
     const owner = await deps.owner();
     const query = ctx.body as CollectionQuery;
     return deps.db.tx(claimsFor(owner, ctx), (q) => queryCollection(q, query, owner.identityId));
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Membership writes
+// ---------------------------------------------------------------------------
+
+/**
+ * `collections.addItem` — put an entity in a collection, or move it within one.
+ *
+ * Thin by design: every rule lives in `set_collection_item` (007:1160), which
+ * resolves the actor, appends at `max(position)+1` when none is given, upserts
+ * on the unique `(src,dst,type)` so a re-add is a move, and — since 077 made
+ * `contains` acyclic — refuses a nesting cycle. Re-implementing the append
+ * here would put the max-and-insert in two statements the way a client would
+ * have to, which is the race the RPC exists to avoid.
+ *
+ * 200, not 201: an upsert cannot honestly claim to have created something. The
+ * same call is both "add" and "reorder", and the second one creates nothing.
+ */
+export function collectionsAddItem(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const collectionId = requireUuidParam(ctx, 'id');
+    const envelope = commandEnvelope(ctx);
+    const input = ctx.body as AddCollectionItemInput;
+
+    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<RpcCommandResult>('set_collection_item', [
+        collectionId,
+        input.entityId,
+        input.position ?? null,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      return toCommandResult(q, raw, owner.identityId);
+    });
+  };
+}
+
+/**
+ * `collections.removeItem` — take an entity back out.
+ *
+ * Path-addressed by the PAIR, which is the point: `edges.delete` already does
+ * this but needs the edge's id, and nothing on the read side hands one out for
+ * a collection member — `content.items` is a list of entity summaries. The
+ * caller who wants "take this out of that list" knows exactly two ids, and
+ * these are they.
+ *
+ * Removing something that is not in the collection is a 200 reporting
+ * `removed:false`, not a 404. The caller asked for a state ("not in this
+ * list") that already holds, and a retry after a dropped response must not
+ * become an error. The RPC records no activity in that case, so a repeated
+ * remove does not fill the collection's timeline with `unlinked` noise.
+ */
+export function collectionsRemoveItem(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const collectionId = requireUuidParam(ctx, 'id');
+    const entityId = requireUuidParam(ctx, 'entityId');
+    const envelope = commandEnvelope(ctx);
+
+    return deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+      const raw = await q.rpc<RpcCommandResult & { removed?: boolean }>('unset_collection_item', [
+        collectionId,
+        entityId,
+        envelope.actorId ?? null,
+        envelope.clientMutationId ?? null,
+      ]);
+      const result = await toCommandResult(q, raw, owner.identityId);
+      return { ...result, removed: raw?.removed ?? false };
+    });
   };
 }

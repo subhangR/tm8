@@ -116,6 +116,7 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
         body,
       })}
       commands={data.seam.commands}
+      reads={data.seam}
       onSaved={data.reconcileCommand}
       streaming={data.activity[selectedId] ?? false}
       onOpenEntity={(id) => setSelectedId(id as EntityId)}

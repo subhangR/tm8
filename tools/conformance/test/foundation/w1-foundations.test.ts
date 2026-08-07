@@ -38,23 +38,23 @@ describe('W1.C generated catalog and reachability foundations', () => {
 
     // A21 (execution.liveness, GET read) is the +1 on each affected axis.
     expect(manifest.catalog).toEqual({
-      total: 128,
-      v1: 126,
+      total: 130,
+      v1: 128,
       reserved: 2,
-      http: 127,
+      http: 129,
       ws: 1,
-      registerableV1Http: 125,
-      methods: { GET: 47, POST: 55, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 },
-      kinds: { read: 50, command: 77, stream: 1 },
-      uniqueNames: 128,
-      uniqueBindings: 128,
+      registerableV1Http: 127,
+      methods: { GET: 47, POST: 56, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 },
+      kinds: { read: 50, command: 79, stream: 1 },
+      uniqueNames: 130,
+      uniqueBindings: 130,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(127);
+    expect(manifest.routes.http).toHaveLength(129);
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -80,8 +80,8 @@ describe('W1.C generated catalog and reachability foundations', () => {
     });
     expect(manifest.serverRegistries.inputSchemas.bound).toHaveLength(36);
     expect(manifest.serverRegistries.inputSchemas.unboundCommands).toHaveLength(13);
-    // 125 current registerable v1 HTTP ops minus the 28 W1-implemented.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(97);
+    // 127 current registerable v1 HTTP ops minus the 28 W1-implemented.
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(99);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -102,9 +102,9 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(snapshot.inputSchemas.unboundCommands).toHaveLength(13);
     expect(manifest.serverRegistries).toEqual({
       ...snapshot,
-      // 125 current registerable v1 HTTP ops minus the 28 in the
+      // 127 current registerable v1 HTTP ops minus the 28 in the
       // frozen snapshot. The snapshot itself never rotates.
-      unimplementedV1Http: 97,
+      unimplementedV1Http: 99,
     });
   });
 
@@ -156,7 +156,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(128);
+    expect(manifest.help.operations).toHaveLength(130);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -320,7 +320,13 @@ describe('W2.C01 current mounted registry inventory', () => {
       readInputSchemaSourceInventory(),
     ]);
 
-    expect(handlers.facade).toHaveLength(116);
+    expect(handlers.facade).toHaveLength(118);
+    // Tranche-v7 = tranche-v6 plus exactly TWO facade handlers, both in the
+    // collection-membership lane: collections.addItem and
+    // collections.removeItem. They mount beside collections.query in the G05
+    // seam (handlers/w2/graph-undo.ts) because they share its module, not
+    // because membership is a graph concern.
+    //
     // Tranche-v6 = tranche-v5 plus exactly TWO facade handlers, both in the
     // local-project-folder lane: projects.files.list and projects.files.attach.
     // They mount beside the files lane, not the projects lane, because both
@@ -333,14 +339,17 @@ describe('W2.C01 current mounted registry inventory', () => {
     //    revisions.list, preview.start, export, restore.
     // Control, verified this run: stripping exactly those seven names from the
     // live list reproduces the tranche-v4 sha efd55f5b…58229d byte-for-byte.
+    // Same control for tranche-v7: stripping collections.addItem and
+    // collections.removeItem reproduces the tranche-v6 sha 4434c05f…7bf3
+    // byte-for-byte, so those two names are the WHOLE delta.
     expect(handlers.execution).toHaveLength(7);
     expect(handlers.events).toHaveLength(2);
-    expect(handlers.all).toHaveLength(125);
+    expect(handlers.all).toHaveLength(127);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('4434c05fc0bf437d95e65622ccedcb2f683082f165a98aaa54a7455923fe7bf3');
+      .toBe('30a2708436d7cd40bc5d7571b86df7f91acc9835131870e73dae4f7d9d46b8f3');
 
-    expect(inputSchemas.bound).toHaveLength(70);
+    expect(inputSchemas.bound).toHaveLength(72);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -357,7 +366,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     const registerableV1Http = OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
-    expect(registerableV1Http).toHaveLength(125);
+    expect(registerableV1Http).toHaveLength(127);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);
