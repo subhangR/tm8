@@ -7,7 +7,7 @@
  * goes red.
  */
 import { describe, expect, it } from 'vitest';
-import { WorkspaceEventSchema, type EntitySummary } from '@tm8/contract';
+import { WorkspaceEventSchema, type ActorSummary, type EntitySummary } from '@tm8/contract';
 
 import { OffContractEventError } from '../../src/events/emitter.js';
 import {
@@ -274,6 +274,133 @@ describe('WorkspaceEventMapper', () => {
     const bad = new Map([[TASK, { ...summary(), counters: 'not-counters' } as unknown as EntitySummary]]);
     const m = new WorkspaceEventMapper(fixedProjector(bad));
     expect(() => m.mapRow(row(), bad)).toThrow(OffContractEventError);
+  });
+
+  /**
+   * The inbox preview line.
+   *
+   * The mapper read `payload.message`, a key NO notification producer has ever
+   * written, so `NotificationItem.message` was permanently absent and the
+   * preview rendered for no notification, of any kind, ever.
+   *
+   * The payload DOES carry `excerpt` (003:155, 019:267, 077:156), but wiring
+   * that to a renderer is forbidden by Messaging Format §3.5.1 — it is a raw
+   * `left(body, 280)` cut in plpgsql with no markdown strip, and a fourth
+   * independent excerpt cap is what the one-helper rule exists to prevent. The
+   * preview is the MESSAGE entity's summary excerpt, hydrated by adding
+   * `payload.messageId` to `referencedEntityIds`.
+   *
+   * NOT the target's excerpt: `target_entity_id` is the ANCHOR (003:152 passes
+   * `new.anchor_id`). The `TASK` summary here has a distinct title so a
+   * regression to `target` shows as a WRONG string, not an absent one.
+   *
+   * Must stay in step with the facade's copy of this rule
+   * (`test/w2/inbox-read-marks.test.ts`).
+   */
+  describe('notification preview (derived from the message summary)', () => {
+    const MESSAGE = '019f9896-928d-7b00-9000-000000000002';
+    const BODY = 'ship it, prove it with a test';
+    const RECIPIENT: ActorSummary = {
+      id: MEMBER,
+      kind: 'member',
+      displayName: 'Owner',
+      avatar: null,
+      role: 'owner',
+      isAgent: false,
+    };
+    const actorMap = new Map([[MEMBER, RECIPIENT]]);
+
+    function messageSummary(excerpt?: string): EntitySummary {
+      return {
+        ...summary({ id: MESSAGE, kind: 'message', title: BODY }),
+        ...(excerpt === undefined ? {} : { excerpt }),
+      };
+    }
+
+    /** Anchor + message, the two entities a mention notification references. */
+    const hydrated = new Map([
+      [TASK, summary({ excerpt: 'ANCHOR EXCERPT — wrong source for a preview' })],
+      [MESSAGE, messageSummary(BODY)],
+    ]);
+
+    function notificationRow(payload: Record<string, unknown>): WorkspaceEventRow {
+      return row({
+        event_type: 'notification.created',
+        payload: {
+          id: '019f9896-928d-7b00-9000-000000000001',
+          kind: 'mention',
+          recipient_member_id: MEMBER,
+          actor_id: MEMBER,
+          target_entity_id: TASK,
+          read_at: null,
+          created_at: '2026-07-25T00:00:00.000Z',
+          payload,
+        },
+      });
+    }
+
+    function notificationOf(
+      payload: Record<string, unknown>,
+      hydration: Map<string, EntitySummary> = hydrated,
+    ): { message?: string } {
+      const event = mapper.mapRow(notificationRow(payload), hydration, actorMap);
+      return (event as unknown as { notification: { message?: string } }).notification;
+    }
+
+    /** Verbatim key set of jsonb_build_object at 003_read_model.sql:154-155. */
+    const MENTION_PAYLOAD = {
+      messageId: MESSAGE,
+      anchorId: TASK,
+      excerpt: 'RAW PAYLOAD COPY — must never reach the renderer',
+    };
+
+    it('previews the mentioning message, not the anchor it was posted to', () => {
+      const notification = notificationOf(MENTION_PAYLOAD);
+      expect(notification.message).toBe(BODY);
+      expect(notification.message).not.toBe('ANCHOR EXCERPT — wrong source for a preview');
+    });
+
+    it('ignores payload.excerpt even when it is populated', () => {
+      expect(notificationOf(MENTION_PAYLOAD).message).not.toBe(
+        'RAW PAYLOAD COPY — must never reach the renderer',
+      );
+    });
+
+    /**
+     * `message_reply` (019:486) writes `messageId` but no excerpt, so this
+     * source fixes the most common kind in this Space with no migration.
+     */
+    it('previews a message_reply, whose payload carries no excerpt at all', () => {
+      expect(
+        notificationOf({ messageId: MESSAGE, parentMessageId: TASK, anchorId: TASK }).message,
+      ).toBe(BODY);
+    });
+
+    /**
+     * The edge/award/join producers name no message. Absent must stay ABSENT,
+     * not empty string: the field is optional and the schemas are `.strict()`.
+     */
+    it('omits the field entirely for a producer that names no message', () => {
+      expect('message' in notificationOf({ amount: 5, reason: 'review' })).toBe(false);
+    });
+
+    /**
+     * Readability, which the payload copy would have bypassed: an unreadable
+     * message is simply not in the hydration map.
+     */
+    it('omits the preview when the message is not readable by the viewer', () => {
+      const anchorOnly = new Map([[TASK, summary()]]);
+      expect('message' in notificationOf(MENTION_PAYLOAD, anchorOnly)).toBe(false);
+    });
+
+    /** A message with no excerpt (redacted or empty body) previews nothing. */
+    it('omits the preview when the message summary carries no excerpt', () => {
+      const noExcerpt = new Map([
+        [TASK, summary()],
+        [MESSAGE, messageSummary()],
+      ]);
+      expect('message' in notificationOf(MENTION_PAYLOAD, noExcerpt)).toBe(false);
+    });
   });
 
   it('maps an empty page without touching the projector', async () => {

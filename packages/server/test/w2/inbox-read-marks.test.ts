@@ -56,7 +56,15 @@ const PERSONAL_ROW: NotificationRow = {
   target_entity_id: IDS.target,
   actor_id: IDS.actor,
   kind: 'message_reply',
-  payload: { message: 'A durable reply is ready' },
+  // The key set `internal.w2_send_message` actually builds at
+  // 019_w2_messages_handoffs.sql:486. This used to be a hand-written
+  // `{ message: 'A durable reply is ready' }` — a shape no trigger produces —
+  // which is why it stayed green while the preview line was dead.
+  payload: {
+    messageId: '00000000-0000-7000-8000-00000000080d',
+    parentMessageId: IDS.target,
+    anchorId: IDS.target,
+  },
   read_at: null,
   created_at: '2026-07-26T12:00:00.000Z',
 };
@@ -285,7 +293,6 @@ describe('W2.G08 inbox and read-mark handlers', () => {
     expect(NotificationItemSchema.parse(result.items[0])).toMatchObject({
       id: IDS.notification,
       kind: 'message_reply',
-      message: 'A durable reply is ready',
       recipient: { id: IDS.member, kind: 'member' },
       actor: { id: IDS.actor },
       target: { id: IDS.target, title: 'Readable task' },
@@ -299,6 +306,146 @@ describe('W2.G08 inbox and read-mark handlers', () => {
         query: listQuery({ limit: 1, unread: true, cursor: result.nextCursor! }),
       }),
     )).rejects.toMatchObject({ code: 'invalid_cursor' });
+  });
+
+  /**
+   * The inbox preview line, from the facade side.
+   *
+   * `hydrateNotifications` read `payload.message`, which NO producer has ever
+   * written, so `NotificationItem.message` was permanently absent and the
+   * preview rendered for nothing, ever.
+   *
+   * The payload DOES carry `excerpt` (003:155, 019:267, 077:156), but wiring
+   * that to a renderer is forbidden by Messaging Format §3.5.1 — it is a raw
+   * `left(body, 280)` cut in plpgsql, and a fourth independent excerpt cap is
+   * what the one-helper rule exists to prevent. The preview is therefore the
+   * MESSAGE entity's own summary excerpt, resolved through the batch loader
+   * this service already calls.
+   *
+   * NOT the target's excerpt: `target_entity_id` is the ANCHOR (003:152 passes
+   * `new.anchor_id`), so that would preview the channel topic or task
+   * description rather than the body that mentioned you. The `taskRow` target
+   * below carries a description precisely so a regression to `target.excerpt`
+   * shows up as the WRONG string rather than as an absent one.
+   *
+   * `PERSONAL_ROW` did not catch the original defect because its payload was
+   * hand-written `{ message: ... }` on a `message_reply` — a shape the trigger
+   * at 019:486 does not build. It asserted the reader's assumption rather than
+   * the writer's output, and was green for the entire life of a dead feature.
+   *
+   * Must stay in step with the mapper's copy of this rule
+   * (`test/events/mapper.test.ts`).
+   */
+  describe('notification preview (derived from the message summary)', () => {
+    const MESSAGE_ID = '00000000-0000-7000-8000-00000000080d';
+    const BODY = 'unread state is read_marks, not attention';
+
+    function messageRow(body: string | null, redacted = false): EntityRow {
+      return {
+        ...taskRow(MESSAGE_ID),
+        kind: 'message',
+        task_title: null,
+        task_description: null,
+        message_body: body,
+        message_redacted_at: redacted ? '2026-07-26T12:00:00.000Z' : null,
+      };
+    }
+
+    /** Verbatim key set of jsonb_build_object at 003_read_model.sql:154-155. */
+    const mentionRow: NotificationRow = {
+      ...PERSONAL_ROW,
+      kind: 'mention',
+      payload: {
+        messageId: MESSAGE_ID,
+        anchorId: IDS.target,
+        excerpt: 'RAW PAYLOAD COPY — must never reach the renderer',
+      },
+    };
+
+    async function listOne(
+      row: NotificationRow,
+      targets: EntityRow[] = [taskRow(IDS.target), messageRow(BODY)],
+    ): Promise<Record<string, unknown>> {
+      const db = new FakeDb();
+      db.queryImpl = hydratedQuery([row], targets);
+      const result = await handler(registryFor(db), 'inbox.list')(
+        request('inbox.list', { query: listQuery({ limit: 10 }) }),
+      ) as { items: unknown[] };
+      return NotificationItemSchema.parse(result.items[0]) as Record<string, unknown>;
+    }
+
+    it('previews the mentioning message, not the anchor it was posted to', async () => {
+      const item = await listOne(mentionRow);
+      expect(item).toMatchObject({ kind: 'mention', message: BODY });
+      // The anchor's own excerpt, which a `target.excerpt` regression would show.
+      expect(item['message']).not.toBe('Notification target');
+    });
+
+    /**
+     * The whole point of §3.5.1: the preview must come from the one helper, so
+     * `payload.excerpt` being present and DIFFERENT must not change the output.
+     */
+    it('ignores payload.excerpt even when it is populated', async () => {
+      expect(await listOne(mentionRow)).not.toMatchObject({
+        message: 'RAW PAYLOAD COPY — must never reach the renderer',
+      });
+    });
+
+    it('previews an anchor_message the watcher trigger produced', async () => {
+      // 077_notify_anchor_watchers.sql:151-156 — extra keys, same messageId slot.
+      const item = await listOne({
+        ...mentionRow,
+        kind: 'anchor_message',
+        payload: {
+          messageId: MESSAGE_ID,
+          anchorId: IDS.target,
+          anchorKind: 'task',
+          watchReason: ['assignee'],
+        },
+      });
+      expect(item['message']).toBe(BODY);
+    });
+
+    /**
+     * `message_reply` (019:486) writes `messageId` but NO excerpt, so deriving
+     * from the message summary fixes the most common kind in this Space without
+     * a migration. The payload-copy approach could not have.
+     */
+    it('previews a message_reply, which carries no excerpt in its payload at all', async () => {
+      const item = await listOne({
+        ...PERSONAL_ROW,
+        payload: {
+          messageId: MESSAGE_ID,
+          parentMessageId: IDS.target,
+          anchorId: IDS.target,
+        },
+      });
+      expect(item).toMatchObject({ kind: 'message_reply', message: BODY });
+    });
+
+    /**
+     * Absent must stay ABSENT rather than become a blank line —
+     * `NotificationItem.message` is optional and the schemas are `.strict()`.
+     */
+    it('omits the field for a producer that names no message (award, join, edge)', async () => {
+      const item = await listOne({ ...PERSONAL_ROW, kind: 'award', payload: { amount: 5 } });
+      expect('message' in item).toBe(false);
+    });
+
+    /**
+     * Readability, which the payload copy would have bypassed entirely: an
+     * unreadable message is simply absent from the batch loader's result.
+     */
+    it('omits the preview when the message is not readable by the viewer', async () => {
+      const item = await listOne(mentionRow, [taskRow(IDS.target)]);
+      expect('message' in item).toBe(false);
+    });
+
+    /** Redaction suppresses the excerpt at the helper, so it suppresses here. */
+    it('shows no preview for a redacted message', async () => {
+      const item = await listOne(mentionRow, [taskRow(IDS.target), messageRow(BODY, true)]);
+      expect('message' in item).toBe(false);
+    });
   });
 
   it('uses acting-as RLS for a Teammate but the named read-only RPC for owner inspection', async () => {

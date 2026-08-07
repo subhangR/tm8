@@ -41,6 +41,10 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
+// The ONE unread definition, shared with the facade assembler on purpose — see
+// the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
+// so this direction adds no cycle.
+import { loadUnreadCounts } from '../facade/entity-read.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -489,11 +493,16 @@ export class PgEntityProjector implements EntityProjector {
       else if (edge.type === 'stars') viewerReactions.set(edge.dst_id, 'star');
     }
 
+    // Viewer-scoped, and the SAME source the facade assembler uses, so a
+    // channel's unread badge is identical whether it arrived over the event
+    // feed or over a read. Skipped entirely when no channel is in the batch.
+    const unreadCounts = await loadUnreadCounts(q, rows);
+
     for (const r of rows) {
       out.set(
         r.id,
         this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], viewerReactions.get(r.id) ?? null,
-          attention.get(r.id)),
+          attention.get(r.id), unreadCounts),
       );
     }
     return out;
@@ -562,6 +571,7 @@ export class PgEntityProjector implements EntityProjector {
     assignees: readonly string[],
     viewerReaction: EntityCounters['viewerReaction'],
     attention: EntityAttentionSummary | undefined,
+    unreadCounts: ReadonlyMap<string, number>,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -587,7 +597,7 @@ export class PgEntityProjector implements EntityProjector {
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
       counters,
-      state: this.stateOf(r, actors, assignees),
+      state: this.stateOf(r, actors, assignees, unreadCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -754,6 +764,7 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    unreadCounts: ReadonlyMap<string, number>,
   ): EntityState {
     switch (r.kind) {
       case 'task': {
@@ -783,7 +794,12 @@ export class PgEntityProjector implements EntityProjector {
         return {
           kind: 'channel',
           topic: r.channel_topic ?? '',
-          unreadCount: 0,
+          // MIRRORS entity-read.ts stateOf, deliberately: this query runs under
+          // the caller's claims, so `public.unread_counts` resolves the same
+          // viewer it does on the read path. If this stayed 0 while the facade
+          // reported the truth, every `entity.upsert` for a channel would
+          // overwrite a correct badge with a false zero.
+          unreadCount: unreadCounts.get(r.id) ?? 0,
           workingAgentCount: 0,
         };
       case 'voice_channel':
@@ -979,8 +995,6 @@ export class PgEntityProjector implements EntityProjector {
  *
  * - `badges.blocked` / `badges.pulls` / `badges.workingActors` — omitted (all
  *   optional; `{}` is contract-valid). Each needs an edge traversal per entity.
- * - `state.channel.unreadCount` — 0. Viewer-scoped: needs `read_marks` for the
- *   caller's member.
  * - `state.channel.workingAgentCount` — 0. Needs live `working_on` edges.
  * - `state.doc.childCount` — 0. Needs a child count per doc.
  * - `state.member.taskDoneCount` — 0. Needs a completed-task aggregate.
@@ -995,7 +1009,8 @@ export const KNOWN_GAPS = Object.freeze([
   // per-entity graph work as blocked/pulls. A feed-driven UI sees a staleness
   // change on re-read, not live (consistent with the two badges above).
   'badges.staleness',
-  'state.channel.unreadCount',
+  // `state.channel.unreadCount` used to be here. It is now computed, from the
+  // same `public.unread_counts` the facade assembler uses.
   'state.channel.workingAgentCount',
   'state.doc.childCount',
   'state.member.taskDoneCount',
