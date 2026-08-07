@@ -71,7 +71,45 @@ export function credentialsRoot(dataDir: string): string {
   return join(dataDir, 'credentials');
 }
 
-/** `<dataDir>/credentials/<identityId>` — the login terminal's entire HOME. */
+/**
+ * `<dataDir>/credentials/<identityId>` — the login terminal's entire HOME.
+ *
+ * ===========================================================================
+ * THIS PATH IS KEYED ON IDENTITY, AND THAT IS SAFE ONLY BECAUSE OF ONE NAMED
+ * CONSTRAINT: `accounts_identity_id_key` — the `UNIQUE (identity_id)` on
+ * `public.accounts`, `002_identity.sql:47`.
+ * ===========================================================================
+ *
+ * The secret on disk is addressed by IDENTITY, while `account_agent_credentials`
+ * — the index that decides what gets injected at spawn — is keyed by ACCOUNT.
+ * Those two are the same fact only while identity and account are 1:1 BY
+ * CONSTRAINT rather than by convention (architect ruling R14).
+ *
+ * WHAT BREAKS IF IT IS DROPPED, concretely, because "do not drop this" on its
+ * own invites someone to decide the constraint is obsolete. Two accounts
+ * sharing one identity would read and write ONE directory:
+ *
+ *   * member A disconnects — `delete_account_agent_credential` removes A's
+ *     index row and R3's `credentials.delete` removes the DIRECTORY — and
+ *     member B, sharing that identity, silently loses a credential they never
+ *     touched and never consented to lose;
+ *   * in the other direction, B's live secret sits in exactly the directory
+ *     A's next spawn resolves to, so A's agent runs as B.
+ *
+ * **If that constraint is ever dropped, this must be re-keyed to `account_id`
+ * IN THE SAME CHANGE.** `test/db/identity-account-canary.pg.test.ts` is the
+ * canary that makes forgetting impossible — it names the constraint by string
+ * and fails with the remedy in its message. But the canary only fires AFTER the
+ * drop; this comment is what you are meant to find while deciding to make it.
+ *
+ * AND WHY IDENTITY IS THE RIGHT KEY, not merely the one that shipped — so this
+ * is not re-litigated as an accident of history. `account_id` is a SURROGATE
+ * that changes across an account delete/recreate, while `identity_id` is the
+ * stable external name. An identity-keyed home is re-adopted correctly by the
+ * same human's re-created account; an account-keyed home ORPHANS on every
+ * recreate, leaving a live secret on disk that nothing references. The
+ * constraint is what makes the better key also the safe one.
+ */
 export function credentialHomeDir(dataDir: string, identityId: string): string {
   assertSafeIdentityId(identityId);
   return join(credentialsRoot(dataDir), identityId);
