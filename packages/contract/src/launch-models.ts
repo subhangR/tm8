@@ -24,12 +24,28 @@ export const LAUNCH_MODEL_CATALOG = [
     seedName: 'Opus 5 Teammate',
   },
   {
+    model: 'claude-opus-5[1m]',
+    label: 'Claude Opus 5 (1M)',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: '1M-context variant via Claude Code',
+    seedName: 'Opus 5 1M Teammate',
+  },
+  {
     model: 'claude-fable-5',
     label: 'Claude Fable 5',
     provider: 'anthropic',
     agentTool: 'claude-code',
     note: 'Anthropic model via Claude Code',
     seedName: 'Fable 5 Teammate',
+  },
+  {
+    model: 'claude-fable-5[1m]',
+    label: 'Claude Fable 5 (1M)',
+    provider: 'anthropic',
+    agentTool: 'claude-code',
+    note: '1M-context variant via Claude Code',
+    seedName: 'Fable 5 1M Teammate',
   },
   {
     model: 'gpt-5.6-sol',
