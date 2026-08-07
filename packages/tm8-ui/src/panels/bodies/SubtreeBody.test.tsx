@@ -169,7 +169,68 @@ describe('the composed metadata grid', () => {
   });
 });
 
-describe('DESCRIPTION — always present and growing in document flow', () => {
+/**
+ * THE DESCRIPTION IS READ BEFORE IT IS WRITTEN.
+ *
+ * It used to be a permanently-mounted textarea, so a task's markdown reached
+ * every reader as its own source — `## Plan` printed, not drawn — in a field
+ * that looked like an invitation to type even for a viewer who may not. These
+ * pin the `ReaderSurface` stance: rendered by default, the SAME textarea on
+ * request, and no stance carried from one task onto the next.
+ */
+describe('DESCRIPTION — a stance, not a permanent textarea', () => {
+  it('DRAWS the markdown by default — no textarea until Edit is asked for', () => {
+    const { queryByRole, getByTestId, getByText } = renderBody({
+      detail: withDescription('## Plan\n\n- one\n- two'),
+      onDescriptionChange: vi.fn(),
+    });
+
+    expect(queryByRole('textbox', { name: 'Description' })).toBeNull();
+    const view = getByTestId('task-description-view');
+    expect(view.querySelector('h2')?.textContent).toBe('Plan');
+    expect(view.querySelectorAll('li')).toHaveLength(2);
+    expect(view.textContent).not.toContain('## Plan');
+
+    fireEvent.click(getByText('Edit'));
+    const input = getByTestId('task-description-editor').querySelector('textarea')!;
+    // EDITING IS UNCHANGED — the source, in the same growing field.
+    expect((input as HTMLTextAreaElement).value).toBe('## Plan\n\n- one\n- two');
+  });
+
+  it('leaves edit for the preview again, and forgets the stance on the next task', () => {
+    const { getByText, getByTestId, queryByRole, rerender } = render(
+      <SubtreeBody detail={withDescription('Body one')} onDescriptionChange={vi.fn()} />,
+    );
+    fireEvent.click(getByText('Edit'));
+    expect(queryByRole('textbox', { name: 'Description' })).not.toBeNull();
+    fireEvent.click(getByText('Done'));
+    expect(getByTestId('task-description-view').textContent).toContain('Body one');
+
+    fireEvent.click(getByText('Edit'));
+    rerender(
+      <SubtreeBody
+        detail={{ ...withDescription('Body two'), id: 'other-task' }}
+        onDescriptionChange={vi.fn()}
+      />,
+    );
+    // A different task is a different text: it opens READ, never mid-edit.
+    expect(queryByRole('textbox', { name: 'Description' })).toBeNull();
+    expect(getByTestId('task-description-view').textContent).toContain('Body two');
+  });
+
+  it('REFUSES OUT LOUD when the panel cannot save — never a live field that drops text', () => {
+    const { getByTestId, queryByRole } = renderBody({
+      detail: withDescription('Read-only body'),
+      descriptionUnavailableReason: 'You have viewer access here — ask an owner to edit',
+    });
+    expect(queryByRole('textbox', { name: 'Description' })).toBeNull();
+    const refusal = within(getByTestId('task-description-editor')).getByTestId(
+      'disabled-with-reason',
+    );
+    expect(refusal.getAttribute('aria-disabled')).toBe('true');
+    expect(refusal.textContent).toContain('viewer access');
+  });
+
   it('renders an editable empty widget when the task has no description', () => {
     const onDescriptionChange = vi.fn();
     const { getByRole } = renderBody({
@@ -185,12 +246,6 @@ describe('DESCRIPTION — always present and growing in document flow', () => {
     expect(onDescriptionChange).toHaveBeenCalledWith('The task now has a description.');
   });
 
-  it('shows an existing description in the same editor', () => {
-    const { getByRole } = renderBody({ detail: withDescription('Persisted task context') });
-    const input = getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
-    expect(input.value).toBe('Persisted task context');
-  });
-
   it('grows to its content and keeps the lower regions after it', () => {
     const onDescriptionChange = vi.fn();
     const { getByRole, getByTestId, rerender } = render(
@@ -203,6 +258,9 @@ describe('DESCRIPTION — always present and growing in document flow', () => {
     const input = getByRole('textbox', { name: 'Description' }) as HTMLTextAreaElement;
     Object.defineProperty(input, 'scrollHeight', { configurable: true, value: 180 });
 
+    // Through the field, as the panel drives it: typing latches the stance, so
+    // the draft arriving back as a prop cannot close the editor mid-keystroke.
+    fireEvent.change(input, { target: { value: 'First line\nSecond line\nThird line' } });
     rerender(
       <SubtreeBody
         detail={withDescription('')}

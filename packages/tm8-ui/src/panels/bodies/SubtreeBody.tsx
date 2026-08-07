@@ -1,9 +1,9 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { AcceptanceCriterion, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ContentBlockRef, KindConfig, StatusSource } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
-import { Avatar, Chip, Eyebrow } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import './subtree-body.css';
@@ -309,6 +309,26 @@ function MetaGrid({ detail, onOpenEntity }: { detail: EntityDetail; onOpenEntity
   );
 }
 
+/**
+ * THE DESCRIPTION HAS A STANCE — read by default, edit on request.
+ *
+ * A task description is markdown, like every other body in this app, and it
+ * used to be a PERMANENTLY-MOUNTED textarea: there was no `<p>` to swap, so the
+ * markdown pass that fixed the channel feed and the panel bodies could not
+ * reach it. A reader therefore saw `## Plan` and `- step` as their own source,
+ * in a field that looked like it was asking to be typed in even when the viewer
+ * had no right to type.
+ *
+ * The stance is `ReaderSurface`'s, deliberately — same shape, one region
+ * smaller: rendered markdown with an `Edit` entry, and the untouched textarea
+ * behind it. THE EDITOR ITSELF IS UNCHANGED (user ruling): editing a task is
+ * still plain markdown source in a growing field, not a rich-text surface.
+ *
+ * EXITING EDIT DISCARDS NOTHING, which is why there is no dirty refusal here
+ * and there is one in `ReaderSurface`. The draft is held by the panel's save
+ * bar, not by this component, so the preview renders the DRAFT and the save bar
+ * keeps its unsaved-changes state exactly as before.
+ */
 function DescriptionEditor({
   detail,
   draft,
@@ -329,6 +349,19 @@ function DescriptionEditor({
         : '';
   const value = draft ?? persisted;
   const textarea = useRef<HTMLTextAreaElement | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  // A different entity in the same panel slot is a different task, and its
+  // description is a different text — the stance must not ride across.
+  useEffect(() => {
+    setEditing(false);
+  }, [detail.id]);
+
+  // An EMPTY description has nothing to preview, so it opens as the editor and
+  // keeps its "Add a description…" invitation. Typing latches the stance, or
+  // the field would snap shut under the cursor on the first keystroke.
+  const empty = value.trim() === '';
+  const showEditor = editing || empty;
 
   // The field has no internal scroll. Its box follows scrollHeight, which
   // pushes every later task region downward in the body's normal document flow.
@@ -337,23 +370,74 @@ function DescriptionEditor({
     if (!node) return;
     node.style.height = '0px';
     node.style.height = `${Math.max(node.scrollHeight, 72)}px`;
-  }, [value]);
+  }, [value, showEditor]);
 
   return (
-    <label className="sb-description" data-testid="task-description-editor">
-      <span className="sb-description__label">Description</span>
-      <textarea
-        ref={textarea}
-        className="sb-description__input"
-        aria-label="Description"
-        value={value}
-        placeholder="Add a description…"
-        readOnly={!onChange}
-        title={unavailableReason}
-        rows={1}
-        onChange={(event) => onChange?.(event.target.value)}
-      />
-    </label>
+    <div className="sb-description" data-testid="task-description-editor">
+      <div className="sb-description__head">
+        <span className="sb-description__label">Description</span>
+        <StanceControl
+          editing={showEditor}
+          // Nothing to leave the editor FOR while the text is empty, so the
+          // verb is withheld rather than offered as a no-op.
+          onToggle={onChange && !(showEditor && empty) ? () => setEditing(!showEditor) : undefined}
+          unavailableReason={unavailableReason}
+        />
+      </div>
+      {showEditor ? (
+        <textarea
+          ref={textarea}
+          className="sb-description__input"
+          aria-label="Description"
+          value={value}
+          placeholder="Add a description…"
+          readOnly={!onChange}
+          title={unavailableReason}
+          rows={1}
+          onChange={(event) => {
+            setEditing(true);
+            onChange?.(event.target.value);
+          }}
+        />
+      ) : (
+        <Markdown source={value} className="pn-prose" testId="task-description-view" />
+      )}
+    </div>
+  );
+}
+
+function StanceControl({
+  editing,
+  onToggle,
+  unavailableReason,
+}: {
+  editing: boolean;
+  onToggle?: () => void;
+  unavailableReason?: string;
+}) {
+  const label = editing ? 'Done' : 'Edit';
+  if (!onToggle) {
+    // Not offered is not the same as not there: the verb keeps its place and
+    // says why it is refused, per L6.
+    if (editing) return null;
+    return (
+      <DisabledIconControl
+        label="Edit description"
+        reason={unavailableReason ? toReason(unavailableReason) : NOT_WIRED_REASON}
+      >
+        {label}
+      </DisabledIconControl>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="sb-description__stance"
+      data-testid="task-description-stance"
+      onClick={onToggle}
+    >
+      {label}
+    </button>
   );
 }
 
