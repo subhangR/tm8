@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
@@ -244,17 +245,68 @@ export function ActionBar({
   config,
   ctx,
   onAction,
+  openFlow,
+  onFlow,
+  flowSurface,
+  barRef,
+  wiredActions,
 }: {
   config: KindConfig;
   ctx: ActionContext;
   onAction?: (ref: ActionRef) => void;
+  /**
+   * WHICH verbs the host's dispatcher can actually perform.
+   *
+   * R5 #9 used to gate on the mere PRESENCE of `onAction`, which is only
+   * correct while a host either performs every primary or none. It does not:
+   * a host wires Terminate and has no executor for a doc's `add-child`, and
+   * under a presence-only check that unimplemented verb would light up and do
+   * nothing — trading one enabled-inert button for another.
+   *
+   * Absent ⇒ presence-only, the original behaviour, for hosts and tests that
+   * genuinely cover every primary they render.
+   */
+  wiredActions?: readonly ActionRef[];
+  /**
+   * The bar element, for a host that needs the TRIGGER and the expand inside
+   * one dismissal boundary — see `flowSurface`.
+   */
+  barRef?: React.RefObject<HTMLDivElement>;
+  /** The flow verb whose config is currently expanded, if any. */
+  openFlow?: ActionRef | null;
+  /** Toggles that expand. Absent ⇒ a flow verb falls back to `onAction`. */
+  onFlow?: (ref: ActionRef | null) => void;
+  /**
+   * The expanded flow's own surface, rendered by the host.
+   *
+   * It hangs off THIS row rather than taking one of its own: the bar is a
+   * fixed 32px strip beside the tabs and the header is already dense, so an
+   * expand that occupied layout height would push the body down every time
+   * someone pressed Run. `pn-actions--inline` opens the positioning context;
+   * `pn-actions__flow` is absolute, so the popover costs the header no pixels
+   * and the terminal below it never moves.
+   */
+  flowSurface?: ReactNode;
 }) {
   const primaries = config.panel.primaries ?? [];
   return (
-    <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar">
+    <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar" ref={barRef}>
       {primaries.map((ref) => (
-        <ActionButton key={ref} ref_={ref} ctx={ctx} onAction={onAction} primary />
+        <ActionButton
+          key={ref}
+          ref_={ref}
+          ctx={ctx}
+          onAction={wiredActions && !wiredActions.includes(ref) ? undefined : onAction}
+          openFlow={openFlow}
+          onFlow={onFlow}
+          primary
+        />
       ))}
+      {flowSurface ? (
+        <div className="pn-actions__flow" data-testid="panel-action-flow">
+          {flowSurface}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -263,15 +315,30 @@ function ActionButton({
   ref_,
   ctx,
   onAction,
+  openFlow,
+  onFlow,
   primary = false,
 }: {
   ref_: ActionRef;
   ctx: ActionContext;
   onAction?: (ref: ActionRef) => void;
+  openFlow?: ActionRef | null;
+  onFlow?: (ref: ActionRef | null) => void;
   primary?: boolean;
 }) {
   const def = resolveAction(ref_);
   const availability = def.availability(ctx);
+
+  /*
+   * D44 — a flow verb OPENS ITS CONFIG instead of dispatching, exactly as the
+   * list row's `RowAction` does. Asking the resolved def for `flow` keeps this
+   * free of both kind and action-id literals (§15.2): the registry says which
+   * verbs configure before they commit, and this only knows how to honour it.
+   *
+   * It is therefore NOT enabled-inert without `onAction` — clicking genuinely
+   * does something, and the config states for itself whether it can commit.
+   */
+  const opensFlow = def.flow === 'launch' && onFlow != null;
 
   /*
    * R5 #9: an unwired verb is DISABLED-WITH-REASON, not enabled-inert. The
@@ -279,7 +346,7 @@ function ActionButton({
    * that did nothing when clicked — the user cannot distinguish that from a
    * broken app. Structural check, so it cannot drift from what is wired.
    */
-  if (!onAction) {
+  if (!onAction && !opensFlow) {
     return (
       <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON}>
         {primary ? def.label : null}
@@ -302,11 +369,24 @@ function ActionButton({
       </DisabledIconControl>
     );
   }
+  const expanded = openFlow === ref_;
   return (
     <button
       type="button"
-      className={primary ? 'pn-btn pn-btn--primary' : 'pn-actions__verb'}
-      onClick={() => onAction?.(ref_)}
+      className={[
+        primary ? 'pn-btn pn-btn--primary' : 'pn-actions__verb',
+        expanded ? 'pn-actions__verb--on' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      aria-expanded={opensFlow ? expanded : undefined}
+      onClick={() => {
+        if (opensFlow) {
+          onFlow?.(expanded ? null : ref_);
+          return;
+        }
+        onAction?.(ref_);
+      }}
     >
       {primary ? def.label : `${def.icon} ${def.label}`}
     </button>

@@ -5,11 +5,16 @@ import type {
   EntityDetail,
   EntityId,
   EntitySummary,
+  ExecutionSpawnInput,
 } from '@tm8/contract';
+import type { Notice } from '../shell/notices';
 import { LazyChannelScreen } from '../channel-screen/LazyChannelScreen';
 import { useChannelFeed } from '../channel-screen/useChannelFeed';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { KindIcon, getKind } from '../domain';
+import type { ActionRef } from '../domain';
+import { useLaunchPort } from './useLaunchPort';
+import { usePanelPrimaries } from './usePanelPrimaries';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
@@ -25,6 +30,13 @@ export interface ChannelViewProps {
   channelId: EntityId;
   serverBaseUrl?: string;
   reasons: DetailReasons;
+  /**
+   * Commits a spawn from the panel's Run config. Absent ⇒ Launch renders
+   * disabled-with-reason, exactly as it does on a list tile without one.
+   */
+  onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
+  /** Where a failed command reports. Absent ⇒ nothing to say it failed. */
+  onNotice?(notice: Notice): void;
 }
 
 type DetailMode = 'aside' | 'full';
@@ -33,13 +45,40 @@ type DetailMode = 'aside' | 'full';
  * The Collab v2 channel destination in the new UI: channel header, pinned
  * shelf, projected tabs, the real entities.feed surface, and its composer.
  */
-export function ChannelView({ data, channelId, serverBaseUrl, reasons }: ChannelViewProps) {
+export function ChannelView({
+  data,
+  channelId,
+  serverBaseUrl,
+  reasons,
+  onSpawn,
+  onNotice,
+}: ChannelViewProps) {
   const [activeTab, setActiveTab] = useState(FEED_KEY);
   /* ONE feed implementation, shared with the panel-hosted ChannelChatSurface
      (channel-screen/useChannelFeed). This view used to own it inline; the
      2026-08-01 ruling gave channels a second host, and two copies of the @tag
      dispatch — which can SPAWN a teammate — is not a thing to keep. */
   const feedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
+  /* The entity beside the feed is a FULL panel, so its primaries are wired
+     from the same two hooks the workspace uses. A session opened from a
+     channel message otherwise carried the same permanently-dead Terminate. */
+  const launchPort = useLaunchPort(data, onSpawn ? { onSpawn } : {});
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    ...(onNotice
+      ? {
+          onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
+            onNotice({
+              id: 'session-close-failed',
+              tone: 'error',
+              title: 'Session could not be closed',
+              body: String((error as { message?: string })?.message ?? error),
+              ttlMs: 6_000,
+            }),
+        }
+      : {}),
+  });
   const feed = useChannelFeed(feedPort, channelId);
   /*
    * Per-CHANNEL stack (user ruling 2026-07-31): each channel keeps its own
@@ -113,6 +152,9 @@ export function ChannelView({ data, channelId, serverBaseUrl, reasons }: Channel
       host="stack"
       reasons={reasons}
       ctx={{ spaceId: data.spaceId, entityId: selectedId }}
+      onAction={primaries.forEntity(selectedId)}
+      wiredActions={primaries.wiredActions}
+      launch={launchPort}
       pinned={false}
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}

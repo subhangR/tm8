@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type {
   ActivityItem,
   CommandResult,
@@ -11,7 +11,9 @@ import type {
 import type { SessionLiveness } from '../data/seam';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
-import { getKind } from '../domain';
+import { getKind, newLaunchMutationId } from '../domain';
+import { LaunchQuickConfig } from './launch/LaunchQuickConfig';
+import type { LaunchSources } from './EntityListPanel';
 import {
   AuthoringHost,
   SaveControls,
@@ -273,7 +275,35 @@ export interface EntityDetailPanelProps {
   onPin?: () => void;
   onPromote?: () => void;
   onClose?: () => void;
+  /**
+   * THE EXECUTOR FOR PANEL PRIMARIES — Terminate, and every other verb the
+   * registry names in `panel.primaries` that commits directly.
+   *
+   * Absent ⇒ the action bar renders those verbs DISABLED-WITH-REASON rather
+   * than enabled-inert (R5 #9). It was absent at EVERY one of this panel's
+   * five mounts for the whole of its life, which is the reported defect: the
+   * Terminate button above a live terminal, and Run on a task, were drawn and
+   * permanently greyed out. The verbs and their executors both existed; only
+   * this prop was missing.
+   */
   onAction?: (ref: ActionRef) => void;
+  /**
+   * Which primaries `onAction` can actually perform. Absent ⇒ all of them.
+   * A host that wires Terminate and has no `add-child` executor names the one
+   * it has, and the other keeps its honest refusal. See `ActionBar`.
+   */
+  wiredActions?: readonly ActionRef[];
+  /**
+   * THE LAUNCH SOURCES for Run's inline configuration — the SAME `LaunchSources`
+   * the list panel takes, so the two surfaces cannot drift into two different
+   * spawn semantics.
+   *
+   * Run does not commit on click: it carries `flow: 'launch'` in registry data,
+   * so it expands the config and the config commits. That makes it independent
+   * of `onAction` — a host with launch sources and no dispatcher still has a
+   * working Run. Absent ⇒ Run falls back to the disabled-with-reason path.
+   */
+  launch?: LaunchSources | null;
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
 }
@@ -311,6 +341,19 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * #310 the moment a permission-lost or detail-less panel rendered first.
    */
   const [surfaceSlot, setSurfaceSlot] = useState<HTMLDivElement | null>(null);
+
+  /**
+   * D44 — which flow verb's config is expanded on the action bar, if any.
+   *
+   * ABOVE EVERY EARLY RETURN for the same reason `surfaceSlot` is: hooks do.
+   *
+   * `actionBarRef` is the DISMISSAL BOUNDS, and it has to contain both the
+   * trigger and the card. The config dismisses on outside mousedown, so with
+   * bounds covering only the card, Run's own mousedown would dismiss it a
+   * moment before its click re-opened it — and the toggle could never close.
+   */
+  const [flowRef, setFlowRef] = useState<ActionRef | null>(null);
+  const actionBarRef = useRef<HTMLDivElement>(null);
   const selectTab = (t: PanelTab) => {
     setUncontrolledTab(t);
     onTabChange?.(t);
@@ -507,6 +550,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               />
             ) : null}
             <ActionBar
+              barRef={actionBarRef}
               config={config}
               ctx={{
                 ...ctx,
@@ -516,6 +560,40 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 liveness: ctx.liveness ?? props.liveness,
               }}
               onAction={props.onAction}
+              wiredActions={props.wiredActions}
+              openFlow={flowRef}
+              /* Only when the host actually has launch sources. Without them
+                 the expand would render an empty teammate select over an
+                 un-committable Launch — a config that cannot configure is a
+                 worse answer than the honest "not wired here" refusal. */
+              onFlow={props.launch ? setFlowRef : undefined}
+              flowSurface={
+                flowRef && props.launch ? (
+                  <LaunchQuickConfig
+                    subject={detail}
+                    spaceId={props.launch.spaceId || ctx.spaceId}
+                    teammates={props.launch.teammates}
+                    projects={props.launch.projects}
+                    loadFor={props.launch.loadFor}
+                    capacity={props.launch.capacity}
+                    profileFor={props.launch.profileFor}
+                    onSpawn={props.launch.onSpawn}
+                    onFullOptions={
+                      props.launch.onFullOptions
+                        ? () => {
+                            props.launch?.onFullOptions?.(detail.id);
+                            setFlowRef(null);
+                          }
+                        : undefined
+                    }
+                    onDismiss={() => setFlowRef(null)}
+                    boundsRef={actionBarRef}
+                    newClientMutationId={() =>
+                      props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
+                    }
+                  />
+                ) : null
+              }
             />
             {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
               <SaveControls save={save} />

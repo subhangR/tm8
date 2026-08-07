@@ -42,6 +42,7 @@ import type { Seam } from '../data/seam';
 import { useGateData } from './useGateData';
 import { useSidePanelKinds } from './useSidePanelKinds';
 import { useLaunchSheet } from './useLaunchSheet';
+import { useLaunchPort } from './useLaunchPort';
 import { useTheme } from '../theme/useTheme';
 import { AccountMenu, AuthFlow, authTokenFor, noteServerOrigin, useAuthActions } from '../auth';
 import { WorkspaceView } from './WorkspaceView';
@@ -184,6 +185,18 @@ export function GateApp(props: GateAppProps = {}) {
      closes only on success; the refusal state lives here because the sheet
      is stateless about outcomes by design. */
   const [launchRefusal, setLaunchRefusal] = useState<{ cause: string; detail: string } | null>(null);
+
+  /* GraphScreen takes its launch sources as a PROP (its data port is
+     deliberately narrow), so the shell builds them here — from the same hook
+     every other screen uses, so its Run config cannot be the one that shows
+     an empty teammate list. */
+  const graphLaunchPort = useLaunchPort(data, {
+    onSpawn: async (input) => {
+      const sessionId = await data.spawn(input);
+      setActiveTarget({ type: 'view', ref: 'workspace' });
+      nav.push(sessionId);
+    },
+  });
 
   // Bind A1a's store to my narrow port. This is the adapter nav-port.ts exists
   // for: shell drives a small, explicit surface rather than the whole store.
@@ -471,6 +484,14 @@ export function GateApp(props: GateAppProps = {}) {
               channelId={activeTarget.ref as EntityId}
               serverBaseUrl={activeServer.routeBaseUrl}
               reasons={reasons}
+              onNotice={notices.push}
+              /* The same verb every other screen commits, so the panel beside
+                 the feed launches for real instead of refusing. */
+              onSpawn={async (input) => {
+                const sessionId = await data.spawn(input);
+                setActiveTarget({ type: 'view', ref: 'workspace' });
+                nav.push(sessionId);
+              }}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'graph' ? (
             /* ◉ Graph follows the D65 pattern exactly:
@@ -488,6 +509,8 @@ export function GateApp(props: GateAppProps = {}) {
               loading={data.graph.loading}
               error={data.graph.error}
               onRetry={data.graph.refresh}
+              launch={graphLaunchPort}
+              onNotice={notices.push}
             />
           ) : data.ready && activeTarget?.type === 'kind' ? (
             /* D65: a rail KIND row opens its EntityView — wide list, Z3 aside

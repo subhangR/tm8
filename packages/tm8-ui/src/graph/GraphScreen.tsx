@@ -20,8 +20,10 @@ import type {
   MessageView,
   PostMessageInput,
 } from '@tm8/contract';
-import { EntityDetailPanel, type DetailReasons } from '../panels';
-import type { ActionContext } from '../domain/types';
+import { EntityDetailPanel, type DetailReasons, type LaunchSources } from '../panels';
+import type { ActionContext, ActionRef } from '../domain/types';
+import type { Notice } from '../shell/notices';
+import { usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
@@ -50,6 +52,17 @@ export interface GraphScreenProps {
   data: GraphScreenData;
   serverBaseUrl?: string;
   reasons: DetailReasons;
+  /**
+   * Run's configuration sources for the aside panel.
+   *
+   * A PROP rather than a member of `GraphScreenData`, deliberately: the port
+   * above names what this screen READS, and these are the shell's verbs and
+   * catalogues. It also keeps the narrow port from having to describe the
+   * whole launch surface. Absent ⇒ Run keeps its disabled-with-reason.
+   */
+  launch?: LaunchSources;
+  /** Where a failed panel command reports. Absent ⇒ it fails silently. */
+  onNotice?(notice: Notice): void;
   nodes: readonly EntitySummary[];
   edges: readonly EdgeView[];
   timeline?: readonly GraphTimelineStep[];
@@ -76,6 +89,26 @@ export function GraphScreen(props: GraphScreenProps) {
     () => attachmentsFor(data.seam, data.spaceId),
     [data.seam, data.spaceId],
   );
+
+  /* The aside is a FULL panel, so its primaries are wired from the same hook
+     the workspace uses. `data.seam` is optional on this port; without one the
+     hook answers `undefined` and the verb keeps its honest refusal rather than
+     drawing a button whose command could not be sent. */
+  const primaries = usePanelPrimaries({
+    ...(data.seam ? { seam: data.seam } : {}),
+    ...(props.onNotice
+      ? {
+          onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
+            props.onNotice?.({
+              id: 'session-close-failed',
+              tone: 'error',
+              title: 'Session could not be closed',
+              body: String((error as { message?: string })?.message ?? error),
+              ttlMs: 6_000,
+            }),
+        }
+      : {}),
+  });
 
   // Esc walks DOWN one level per press (EntityView's ladder, same reasons):
   // only when the event reaches the document unclaimed — a focused canvas
@@ -106,6 +139,9 @@ export function GraphScreen(props: GraphScreenProps) {
       host="stack"
       reasons={reasons}
       ctx={{ ...ctx, entityId: selectedId }}
+      onAction={primaries.forEntity(selectedId)}
+      wiredActions={primaries.wiredActions}
+      launch={props.launch}
       pinned={false}
       // Same refusal shape as EntityView: the panel HAS a permanent slot here,
       // so the pin verb is refused with the true reason, never hidden (L6).

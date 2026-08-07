@@ -37,6 +37,7 @@ import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
+import { usePanelPrimaries } from './usePanelPrimaries';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -154,10 +155,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
      anywhere in the workspace. */
   const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
-  const handleSessionClose = useCallback((entityId: string) => {
-    void data.seam.commands.terminate(entityId as EntityId, {
-      clientMutationId: `terminate:${entityId}:${Date.now()}`,
-    }).then(data.reconcileCommand).catch((error: unknown) => {
+  /* The panel action bar's executor AND the session tile's ✕, from one hook —
+     see `usePanelPrimaries` for why the wiring is not written inline here. */
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onError: (_verb, _entityId, error) => {
       props.onNotice({
         id: 'session-close-failed',
         tone: 'error',
@@ -165,8 +168,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         body: String((error as { message?: string })?.message ?? error),
         ttlMs: 6_000,
       });
-    });
-  }, [data.seam.commands, data.reconcileCommand, props.onNotice]);
+    },
+  });
+  const handleSessionClose = primaries.terminate;
 
   /**
    * Resume — the inverse of close, and the reason the exited card has a button.
@@ -233,6 +237,20 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [data.seam, data.spaceId],
   );
 
+  /* ONE construction, shared with EntityView. It used to be built inline here,
+     twice — and not at all on the kind screens, which is why their quick config
+     showed no teammates and no models. See `useLaunchPort`.
+
+     ABOVE `renderPanel`, which now consumes it: the panels' Run opens the same
+     quick config the list rows do, and a port declared below its consumer
+     would be a TDZ error rather than a lint note. */
+  const launchPort = useLaunchPort(data, {
+    ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
+    ...(props.onLaunchOpen
+      ? { onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId) }
+      : {}),
+  });
+
   const renderPanel = useCallback(
     (id: EntityId, host: 'pinned' | 'stack') => {
       const detail = data.detailOf(id);
@@ -261,6 +279,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           reasons={reasons}
           ctx={{ ...ctx, entityId: id }}
           controls={{ ...controlHostBase, kind: detail?.kind ?? '', ctx: { ...ctx, entityId: id } }}
+          /* The panel primaries, finally executable: Terminate commits here,
+             and Run expands the same launch config the list rows open. */
+          onAction={primaries.forEntity(id)}
+          wiredActions={primaries.wiredActions}
+          launch={launchPort}
           onRestore={() => rowLifecycle.archive('restore', id)}
           pinned={nav.pinned.includes(id)}
           // A1c's contract: the refusal string renders as the disabled pin
@@ -331,7 +354,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         />
       );
     },
-    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments],
+    [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort],
   );
 
   /** Keep the server's recent-activity order; EmptyCenter applies the bounded
@@ -359,15 +382,6 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     [linkedTasksBySession],
   );
 
-  /* ONE construction, shared with EntityView. It used to be built inline here,
-     twice — and not at all on the kind screens, which is why their quick config
-     showed no teammates and no models. See `useLaunchPort`. */
-  const launchPort = useLaunchPort(data, {
-    ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
-    ...(props.onLaunchOpen
-      ? { onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId) }
-      : {}),
-  });
   const profileFor = launchPort.profileFor;
 
   /* Each dock owns a create-flow hook so a quick-create panel keeps the
