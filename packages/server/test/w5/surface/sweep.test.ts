@@ -406,10 +406,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 072 session io routes and 073 session launch prompts.
     // 71 -> 73 on 2026-08-04. Two moves, and the first was not mine: the pin
     // still read 71 while the chain already applied 72, the same after-the-fact
-    // drift the comments above keep recording. 73 adds 076, backfilling the
+    // drift the comments above keep recording. 73 adds 078, backfilling the
     // props_schema that 064 never gave `derived_from` — the one edge type whose
     // props went unvalidated on insert.
-    expect(server.appliedMigrations.length).toBe(75);
+    expect(server.appliedMigrations.length).toBe(77);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

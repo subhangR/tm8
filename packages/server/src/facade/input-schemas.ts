@@ -119,7 +119,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.login': AuthLoginInputSchema,
   'auth.logout': AuthLogoutInputSchema,
 
-  // gitCredentials (079). `set` is the only one with a body, and its binding
+  // gitCredentials (081). `set` is the only one with a body, and its binding
   // is a security control, not hygiene: the token it carries becomes an
   // environment variable in a spawned PTY, so the character class in
   // `GitCredentialSetInputSchema` is what keeps a newline out of a child's

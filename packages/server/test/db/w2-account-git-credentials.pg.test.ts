@@ -1,5 +1,5 @@
 /**
- * 079 against a real Postgres: the table, the RLS policy, the column grant and
+ * 081 against a real Postgres: the table, the RLS policy, the column grant and
  * the three RPCs.
  *
  * The assertions here are the SECURITY claims, not the CRUD ones. Anyone can
@@ -79,7 +79,7 @@ afterAll(async () => {
   await database?.destroy();
 }, 240_000);
 
-describe('079 account_git_credentials', () => {
+describe('081 account_git_credentials', () => {
   it('stores one credential per account+provider, and upserting rotates rather than duplicates', async () => {
     const stored = await asApp(fixture.identityA, async (client) =>
       (await client.query<{ value: Record<string, unknown> }>(
@@ -152,7 +152,7 @@ describe('079 account_git_credentials', () => {
 
   it('does not let tm8_app name the ciphertext columns at all', async () => {
     // Not "returns null", not "returns an empty row" — the PRIVILEGE is absent,
-    // so the statement cannot be planned. This is the claim in the 079 header
+    // so the statement cannot be planned. This is the claim in the 081 header
     // that a policy change alone could never undo.
     await expect(
       asApp(fixture.identityA, (client) =>

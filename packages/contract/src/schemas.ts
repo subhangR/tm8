@@ -1075,7 +1075,7 @@ export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.obj
 }).strict();
 
 // ---------------------------------------------------------------------------
-// gitCredentials.* — the caller's own third-party git identity (079).
+// gitCredentials.* — the caller's own third-party git identity (081).
 //
 // The token schema is the LAST place a malformed credential can be stopped
 // cheaply, and it is doing two different jobs. The length bound keeps a

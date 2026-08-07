@@ -1,10 +1,10 @@
 /**
- * The encryption half of 079, tested where it can be tested honestly: with no
+ * The encryption half of 081, tested where it can be tested honestly: with no
  * database, no server, and no PTY.
  *
  * These assertions are the ones the migration header PROMISES. If any of them
  * fails, the claim "a database dump yields ciphertext and nothing else" has
- * stopped being true, and the prose in `db/migrations/079_account_git_credentials.sql`
+ * stopped being true, and the prose in `db/migrations/081_account_git_credentials.sql`
  * is a lie rather than a description.
  */
 import { mkdtemp, readFile, stat, writeFile, chmod } from 'node:fs/promises';
@@ -141,7 +141,7 @@ describe('sealSecret / openSecret', () => {
     expect(() => sealSecret(Buffer.alloc(16), TOKEN, BINDING)).toThrow(/32 bytes/);
   });
 
-  it('stores bytes that satisfy the 079 CHECK constraints', async () => {
+  it('stores bytes that satisfy the 081 CHECK constraints', async () => {
     const key = await loadOrCreateCredentialKey(await scratchDir());
     const sealed = sealSecret(key, TOKEN, BINDING);
     // octet_length(token_nonce) = 12, and ciphertext between 17 and 4096.

@@ -1,5 +1,5 @@
 -- =============================================================================
--- 078 — per-user PRIVATE Projects: an owner column, a share mode, and the two
+-- 080 — per-user PRIVATE Projects: an owner column, a share mode, and the two
 --       read predicates that must always agree about them.
 --
 -- THE PROBLEM. `public.projects` (001:246-259) is a NODE registry: a row has a
@@ -133,11 +133,11 @@ create index if not exists projects_owner_account_idx
 
 comment on column public.projects.owner_account_id is
   'Node-level principal that owns this Project (accounts.id). NULL = node-owned, '
-  'the pre-078 shape. Deliberately an account and not a member: a Project spans '
+  'the pre-080 shape. Deliberately an account and not a member: a Project spans '
   'Spaces, so its owner must survive leaving one.';
 comment on column public.projects.share_mode is
-  'private = visible only to owner_account_id, Space admins included (078). '
-  'space = the pre-078 behaviour: visible to every member of every linked Space.';
+  'private = visible only to owner_account_id, Space admins included (080). '
+  'space = the pre-080 behaviour: visible to every member of every linked Space.';
 
 -- -----------------------------------------------------------------------------
 -- 2. The caller's account, resolved from the ONE claim with authority.
@@ -343,7 +343,7 @@ begin
   end if;
 
   -- A private project defaults to the caller; a shared one defaults to nobody,
-  -- which is the pre-078 node-owned shape.
+  -- which is the pre-080 node-owned shape.
   owner_account := coalesce(
     p_owner_account_id,
     case when share = 'private' then caller_account else null end
@@ -564,11 +564,11 @@ grant execute on function public.update_owned_project(uuid, jsonb, text) to tm8_
 
 comment on function public.create_owned_project(
   text, text, text, text, jsonb, text, uuid, uuid, text) is
-  'Member-path Project registration (078). A non-admin may create only a '
+  'Member-path Project registration (080). A non-admin may create only a '
   'private, untrusted Project owned by their own account; node admins are '
   'unrestricted here and keep public.create_project as well.';
 comment on function public.update_owned_project(uuid, jsonb, text) is
-  'Owner-path Project edit (078). Authority is owner_account_id = the caller''s '
+  'Owner-path Project edit (080). Authority is owner_account_id = the caller''s '
   'account; node admins who are not the owner use public.update_project_w2.';
 
 reset role;

@@ -136,7 +136,7 @@ export function registerFacadeHandlers(
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
   registerW2AuthHandlers(registry, facade);
   registerW2ServerConnectionHandlers(registry, facade);
-  // gitCredentials.* (079): the caller's own GitHub identity, so their agent
+  // gitCredentials.* (081): the caller's own GitHub identity, so their agent
   // sessions push as them. `dataDir` is where the encryption key lives, and it
   // is passed rather than resolved in the service for the same reason nothing
   // else in this tree resolves configuration for itself.

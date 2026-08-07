@@ -1,5 +1,5 @@
 -- =============================================================================
--- 079 — per-account GitHub credentials. THE FIRST THIRD-PARTY SECRET tm8 STORES.
+-- 081 — per-account GitHub credentials. THE FIRST THIRD-PARTY SECRET tm8 STORES.
 --
 -- WHY THIS REVERSES 044's RULING, AND WHAT CHANGED.
 --
@@ -67,10 +67,10 @@
 set role tm8_graph_owner;
 
 -- `internal.current_account_id()` — the caller's own account, resolved from the
--- identity bound to the transaction — is DEFINED IN 078 and only depended on
+-- identity bound to the transaction — is DEFINED IN 080 and only depended on
 -- here. It was briefly defined in both files with identical bodies, which meant
 -- apply order decided which one survived and an edit to either could be undone
--- by the other without anything going red. One function, one definition; 078
+-- by the other without anything going red. One function, one definition; 080
 -- sorts first, so this file may assume it exists.
 
 create table public.account_git_credentials (
@@ -101,7 +101,7 @@ create table public.account_git_credentials (
 
 comment on table public.account_git_credentials is
   'Per-account third-party git credentials, encrypted at rest with a key that '
-  'lives on the node filesystem and never in this database. Read the 079 '
+  'lives on the node filesystem and never in this database. Read the 081 '
   'header before adding a column, a policy, or a grant.';
 comment on column public.account_git_credentials.token_ciphertext is
   'AES-256-GCM ciphertext||tag. AAD is <account_id>|<provider>. Never granted '

@@ -1,7 +1,7 @@
 /**
  * Third-party secret storage for one tm8 node. The whole module is two files:
  * a key that lives on disk and never in Postgres, and an AEAD that binds every
- * ciphertext to the row it belongs to. See db/migrations/079 for the threat
+ * ciphertext to the row it belongs to. See db/migrations/081 for the threat
  * model these implement.
  */
 export {

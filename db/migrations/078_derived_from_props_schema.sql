@@ -1,7 +1,7 @@
 -- =============================================================================
--- 076 — every registered edge type publishes a props schema again.
+-- 078 — every registered edge type publishes a props schema again.
 --
--- NUMBERED 076, NOT 071: this branch is behind origin/main, whose chain already
+-- NUMBERED 078, NOT 071: this branch is behind origin/main, whose chain already
 -- reaches 075_shared_teammate_authority.sql (071-075 are applied on the staging
 -- database). A gap here is the same kind of gap 025/026/028 already are.
 --

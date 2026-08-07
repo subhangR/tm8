@@ -67,7 +67,7 @@ export interface SpawnServiceOptions {
   /**
    * The launching human's git credential, if this node stores one for them.
    *
-   * OPTIONAL, and its absence is a real deployment: a node built before 079, or
+   * OPTIONAL, and its absence is a real deployment: a node built before 081, or
    * one wired without the port, spawns agents with no GitHub identity at all —
    * exactly the behaviour every session had before this existed. Nothing in the
    * spawn flow branches on whether it is present beyond adding env vars.

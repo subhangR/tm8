@@ -6,7 +6,7 @@
  * hands Postgres bytes; `status` reads through the RLS-limited SELECT, whose
  * column grant does not include the ciphertext at all; `delete` names nothing.
  * The decrypt path lives in `git-credentials-port.ts` and is reachable only
- * from spawn — see db/migrations/079 for why that separation is structural
+ * from spawn — see db/migrations/081 for why that separation is structural
  * rather than stylistic.
  *
  * There is no `list` and no `get by account`: every operation's subject is the
@@ -27,7 +27,7 @@ import type { RequestContext } from '../../../http/types.js';
 import { claimsFor } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 
-/** The only provider 079's CHECK constraint admits. */
+/** The only provider 081's CHECK constraint admits. */
 const DEFAULT_PROVIDER: GitCredentialProvider = 'github';
 
 interface StatusRow {

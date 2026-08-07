@@ -709,7 +709,7 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
-    // 079: the launching human's own GitHub credential, decrypted at spawn and
+    // 081: the launching human's own GitHub credential, decrypted at spawn and
     // placed in the child's environment. Wired only when a data directory is
     // known, because that is where the encryption key lives — a node without
     // one spawns agents with no git identity, exactly as before this existed.

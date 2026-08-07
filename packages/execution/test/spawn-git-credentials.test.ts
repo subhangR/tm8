@@ -1,4 +1,4 @@
-// Per-user git credentials at the spawn seam (079).
+// Per-user git credentials at the spawn seam (081).
 //
 // THE ASSERTION THAT MATTERS IS THE NEGATIVE ONE. That the child's environment
 // carries `GH_TOKEN` is easy to get right and easy to see; that the token is in

@@ -1,5 +1,5 @@
 // =============================================================================
-// 078 — per-user PRIVATE Projects, proved through the ROLE THAT ACTUALLY READS.
+// 080 — per-user PRIVATE Projects, proved through the ROLE THAT ACTUALLY READS.
 //
 // WHY THIS FILE EXISTS SEPARATELY FROM w2-projects.pg.test.ts. That suite seeds
 // and then reads back as `tm8_graph_owner`. The graph owner owns every table in
@@ -65,7 +65,7 @@ let fixture: Fixture;
  * claim. NOT the owner role — see this file's header.
  *
  * `nodeAdmin` binds `tm8.node_admin` as well, because `projects_select`'s
- * node-admin branch (008:179, unchanged by 078) reads that CLAIM rather than
+ * node-admin branch (008:179, unchanged by 080) reads that CLAIM rather than
  * the `accounts` table — so an admin who is merely an admin in the database,
  * with no claim bound, is correctly not one here. The server binds it in
  * `db/client.ts`; a test that never binds it would be quietly asserting the
@@ -229,7 +229,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe.sequential('078 · per-user private Projects', () => {
+describe.sequential('080 · per-user private Projects', () => {
   it('a member creates a private Project in their own name, and it is theirs', async () => {
     const created = await asApp(fixture.ownerIdentity, async (client) => {
       const result = await client.query<{ result: { project: ProjectRow } }>(
@@ -245,7 +245,7 @@ describe.sequential('078 · per-user private Projects', () => {
     expect(created.share_mode).toBe('private');
     expect(created.owner_account_id).toBe(fixture.ownerAccount);
     // The relaxation is genuine: this caller is not a node admin, and the
-    // pre-078 `create_project` would have refused them outright.
+    // pre-080 `create_project` would have refused them outright.
     expect(created.trust).toBe('untrusted');
     expect(created.working_dir).toBe('/tmp/pp-owner-private');
   });
@@ -308,7 +308,7 @@ describe.sequential('078 · per-user private Projects', () => {
       return project;
     });
 
-    // Untouched by 078: no owner, and the backfilled default share mode.
+    // Untouched by 080: no owner, and the backfilled default share mode.
     expect(shared.owner_account_id).toBeNull();
     expect(shared.share_mode).toBe('space');
 
@@ -464,7 +464,7 @@ describe.sequential('078 · per-user private Projects', () => {
     });
   });
 
-  it('every pre-078 Project row was backfilled to the shape that keeps it visible', async () => {
+  it('every pre-080 Project row was backfilled to the shape that keeps it visible', async () => {
     const rows = await asOwner(async (client) => (
       await client.query<{ share_mode: string; owner_account_id: string | null }>(
         `select share_mode, owner_account_id from public.projects where working_dir = '/tmp/pp-shared'`,
