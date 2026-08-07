@@ -35,6 +35,13 @@ export interface CodexRolloutIdentity {
   timestamp: string | null;
 }
 
+/** A located rollout: its identity plus the file it was proven from. Resume
+ *  needs only the id; the transcript reader needs the path, and re-running the
+ *  scan to recover it would be the same walk twice. */
+export interface CodexRollout extends CodexRolloutIdentity {
+  path: string;
+}
+
 /**
  * Parse one rollout head: the `session_meta` identity plus proof of ownership
  * by `tm8SessionId`. Returns null unless BOTH are present.
@@ -98,6 +105,23 @@ export async function resolveCodexNativeSessionId(opts: {
   tm8SessionId: string;
   cwd?: string | null;
 }): Promise<string | null> {
+  return (await resolveCodexRollout(opts))?.nativeSessionId ?? null;
+}
+
+/**
+ * The scan behind {@link resolveCodexNativeSessionId}, returning the winning
+ * rollout WITH its path.
+ *
+ * Separate public entry point rather than a widened return type on the resume
+ * helper: resume must keep answering `string | null`, because a caller that
+ * can accidentally treat an object as truthy is exactly how a fail-closed
+ * refusal turns into a resume of the wrong conversation.
+ */
+export async function resolveCodexRollout(opts: {
+  home: string;
+  tm8SessionId: string;
+  cwd?: string | null;
+}): Promise<CodexRollout | null> {
   const root = join(opts.home, '.codex', 'sessions');
   let entries: string[];
   try {
@@ -106,13 +130,14 @@ export async function resolveCodexNativeSessionId(opts: {
     return null; // no ~/.codex/sessions — nothing to prove, refuse upstream
   }
 
-  const candidates: CodexRolloutIdentity[] = [];
+  const candidates: CodexRollout[] = [];
   for (const entry of entries) {
     if (!entry.endsWith('.jsonl')) continue;
-    const head = await readHead(join(root, entry), HEAD_WINDOW_BYTES);
+    const path = join(root, entry);
+    const head = await readHead(path, HEAD_WINDOW_BYTES);
     if (head === null) continue;
     const identity = extractCodexRolloutIdentity(head, opts.tm8SessionId);
-    if (identity !== null) candidates.push(identity);
+    if (identity !== null) candidates.push({ ...identity, path });
   }
   if (candidates.length === 0) return null;
 
@@ -122,7 +147,7 @@ export async function resolveCodexNativeSessionId(opts: {
     if (aCwd !== bCwd) return bCwd - aCwd;
     return (b.timestamp ?? '').localeCompare(a.timestamp ?? '');
   });
-  return candidates[0]?.nativeSessionId ?? null;
+  return candidates[0] ?? null;
 }
 
 /** First `bytes` of a file as utf8, or null when unreadable. */

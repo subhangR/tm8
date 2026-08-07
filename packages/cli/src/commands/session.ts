@@ -46,7 +46,7 @@ import { InterruptedError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
-import type { SessionJournalPage, SessionLaunchRecord } from '@tm8/contract';
+import type { SessionJournalPage, SessionLaunchRecord, SessionTranscriptPage } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
@@ -253,6 +253,99 @@ function renderLaunch(record: SessionLaunchRecord): string {
     lines.push('system prompt:', record.prompts.system ?? '  (none sent)');
     lines.push('', 'task prompt:', record.prompts.task ?? '  (none sent)');
   }
+  return lines.join('\n');
+}
+
+/**
+ * `tm8 session transcript <id>` — what a session's agent SAID.
+ *
+ * The third face of a session: `launch` is what it was TOLD, `journal` is what
+ * it DID through tm8, and this is what it actually said back. The bytes are the
+ * agent's OWN transcript file on the node — not the terminal, whose scrollback
+ * is ANSI repaints, and not the journal, which records no model output at all.
+ */
+async function sessionTranscript(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('session transcript', cmd.options.value('mutation-id'));
+  const workSessionId = cmd.args[0];
+  if (workSessionId === undefined) {
+    throw new CliError('tm8 session transcript requires a work-session id', EXIT_USAGE, {
+      hint: 'find one with `tm8 session liveness` or `tm8 entity query`',
+    });
+  }
+  const query: Record<string, string> = {};
+  const last = cmd.options.value('last');
+  if (last !== undefined) query.last = last;
+
+  const page = await observedInvoke<SessionTranscriptPage>(
+    clientFor(cmd.ctx),
+    'execution.transcript',
+    { params: { workSessionId }, query },
+  );
+  cmd.out.data(page, renderTranscript);
+  return EXIT_OK;
+}
+
+function renderTranscript(page: SessionTranscriptPage): string {
+  if (!page.available) {
+    // Four different facts, four different sentences. "No transcript" and "this
+    // agent does not write one" lead to opposite next actions.
+    const why = {
+      no_native_session_id:
+        'its native session id was never recorded, so its transcript cannot be located',
+      unsupported_agent_tool:
+        'it runs an agent tool that writes no transcript tm8 can read',
+      no_transcript_file:
+        'its agent has not written a transcript yet, or the file has been removed',
+      unreadable: 'its transcript file could not be read',
+    }[page.unavailableReason ?? 'no_transcript_file'];
+    return `no transcript for ${page.sessionId}: ${why}`;
+  }
+
+  const lines: string[] = [];
+  const s = page.stats;
+  if (s === null) {
+    lines.push('(no statistics recorded for this transcript)');
+    return lines.join('\n');
+  }
+  const tokens = [
+    s.inputTokens === null ? null : `${String(s.inputTokens)} in`,
+    s.outputTokens === null ? null : `${String(s.outputTokens)} out`,
+    s.cacheReadTokens === null ? null : `${String(s.cacheReadTokens)} cache read`,
+  ].filter((p): p is string => p !== null);
+
+  lines.push(
+    `${page.agentTool ?? 'agent'}${s.models.length > 0 ? ` (${s.models.join(', ')})` : ''}`,
+    `${String(s.userMessages)} user / ${String(s.assistantMessages)} assistant turns, ` +
+      `${String(s.toolCalls)} tool calls`,
+    tokens.length > 0 ? `tokens: ${tokens.join(', ')}` : 'tokens: not reported',
+  );
+  if (s.tools.length > 0) {
+    lines.push(`tools: ${s.tools.map((t) => `${t.name}×${String(t.count)}`).join(' ')}`);
+  }
+  if (s.partial) {
+    // The counts describe the WINDOW, not the session. Saying so is the
+    // difference between a statistic and a wrong statistic.
+    lines.push('(tail only — these counts cover the returned window, not the whole session)');
+  }
+  if (page.malformed > 0) {
+    lines.push(`${String(page.malformed)} unreadable records were skipped`);
+  }
+  if (page.stuck !== null) {
+    lines.push(
+      `POSSIBLY STUCK: ${String(page.stuck.toolCallsSinceText)} tool calls with no prose` +
+        (page.stuck.silentMs > 0
+          ? `, silent ${String(Math.round(page.stuck.silentMs / 1000))}s`
+          : '') +
+        ' — a heuristic, not a liveness check (`tm8 session liveness`)',
+    );
+  }
+
+  lines.push('');
+  for (const e of page.entries) {
+    const when = e.at === null ? '        ' : e.at.slice(11, 19);
+    lines.push(`${when}  ${e.source}: ${e.text}${e.truncated ? ' …' : ''}`);
+  }
+  if (page.entries.length === 0) lines.push('(no turns in the read window)');
   return lines.join('\n');
 }
 
@@ -552,6 +645,7 @@ export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'liveness'], run: sessionLiveness },
   { path: ['session', 'journal'], run: sessionJournal },
   { path: ['session', 'launch'], run: sessionLaunch },
+  { path: ['session', 'transcript'], run: sessionTranscript },
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },
