@@ -647,22 +647,24 @@ export class DbGraphPort implements GraphPort {
   }
 
   /**
-   * The `in_worktree` edge. `props` is left EMPTY on purpose: `origin` is
-   * Server-owned and `write_edge` refuses a caller that supplies it
-   * (018:164-166), so the stamping trigger is what records that this
-   * association came from a spawn rather than being drawn by hand.
+   * The `in_worktree` edge, through its OWN door rather than generic
+   * `write_edge`.
+   *
+   * 052 added `in_worktree` to the origin-stamping branch and minted a
+   * `worktree_manager` writer token so that "a spawn-created association is
+   * distinguishable from a hand-drawn one". `write_edge` sets no token, so an
+   * edge written through it stamps `origin = 'user'` — right for a human
+   * drawing the edge, wrong for this, and it would have quietly made 052's
+   * token dead code. `props` is still never supplied: `origin` is Server-owned
+   * and the trigger is what writes it.
    */
   async linkSessionToWorktree(
     auth: GraphAuth,
     input: { spaceId: string; sessionId: string; worktreeId: string },
   ): Promise<void> {
-    await this.db.rpc(this.claims(auth), 'public.write_edge', [
+    await this.db.rpc(this.claims(auth), 'public.link_session_worktree', [
       input.sessionId,
       input.worktreeId,
-      'in_worktree',
-      '{}',
-      null,
-      null,
     ]);
   }
 

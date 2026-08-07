@@ -290,6 +290,52 @@ end
 $$;
 
 -- -----------------------------------------------------------------------------
+-- A6b. The `in_worktree` edge, written UNDER THE WRITER TOKEN.
+--
+-- 052 added `in_worktree` to the origin-stamping branch and minted a
+-- `worktree_manager` token for exactly this, with the stated purpose that "a
+-- spawn-created association is distinguishable from a hand-drawn one". The
+-- generic `public.write_edge` door sets no token, so an edge written through it
+-- stamps `origin = 'user'` — which is the correct answer for a human drawing
+-- the edge and the WRONG one for the provisioning saga. Going through
+-- write_edge would have quietly made 052's token dead code and erased the one
+-- distinction it exists to record.
+--
+-- Deliberately NOT recorder-owned: `in_worktree` stays an ordinarily mutable
+-- association, correctable through generic edges.create/edges.delete (057:165).
+-- This door changes who is recorded as having written it, not whether it can
+-- ever be corrected.
+-- -----------------------------------------------------------------------------
+create or replace function public.link_session_worktree(
+  p_session_id uuid, p_worktree_entity_id uuid
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  session_entity public.entities;
+  edge_id uuid;
+begin
+  select * into session_entity from public.entities
+   where id = p_session_id and deleted_at is null;
+  if not found or session_entity.kind <> 'work_session' then
+    raise exception 'no live work session %', p_session_id using errcode = 'P0002';
+  end if;
+  perform internal.require_space_member(session_entity.space_id);
+  if not exists (select 1 from public.worktrees where entity_id = p_worktree_entity_id) then
+    raise exception 'no worktree %', p_worktree_entity_id using errcode = 'P0002';
+  end if;
+
+  perform internal.w1_set_writer('worktree_manager');
+  insert into public.edges(space_id, src_id, dst_id, type, created_by)
+  values (session_entity.space_id, p_session_id, p_worktree_entity_id, 'in_worktree',
+          internal.resolve_actor(null, session_entity.space_id))
+  returning id into edge_id;
+  perform internal.w1_set_writer('');
+
+  return jsonb_build_object('edgeId', edge_id, 'sessionId', p_session_id,
+                            'worktreeId', p_worktree_entity_id);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
 -- A7. The reconciler's read. Design §6.1 cross-checks five sources; this
 --     returns the two that live in Postgres (the allocation row and whether an
 --     entity backs it), leaving Git, the filesystem and the live PTY map to the
@@ -338,6 +384,8 @@ revoke all on function public.record_worktree_preflight(uuid,text) from public;
 grant execute on function public.record_worktree_preflight(uuid,text) to tm8_app;
 revoke all on function public.node_worktree_allocations(text) from public;
 grant execute on function public.node_worktree_allocations(text) to tm8_app;
+revoke all on function public.link_session_worktree(uuid,uuid) from public;
+grant execute on function public.link_session_worktree(uuid,uuid) to tm8_app;
 
 -- =============================================================================
 -- B. The tracking observer surface.

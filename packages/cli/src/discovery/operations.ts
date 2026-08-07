@@ -1027,7 +1027,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
