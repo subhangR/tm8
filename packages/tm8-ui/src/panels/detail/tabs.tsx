@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import type { ActivityItem, Connections, EdgeGroup, EntityDetail, MessageView } from '@tm8/contract';
+import type {
+  ActivityItem,
+  Connections,
+  EdgeGroup,
+  EntityDetail,
+  EntityId,
+  Mention,
+  MessageView,
+} from '@tm8/contract';
 import { Avatar, Chip, Eyebrow, Markdown, type MarkdownComponents } from '../../kit';
 import { KindIcon, getKind } from '../../domain';
 /* Module-deep into the chat lane's PURE half — `feed-model` is plain functions
@@ -30,6 +38,7 @@ export function DiscussionTab({
   canPost,
   postDisabledReason,
   onPost,
+  onOpenEntity,
 }: {
   messages: readonly MessageView[];
   /** D7.3 copy for the hollow "from this session" chip. */
@@ -42,6 +51,9 @@ export function DiscussionTab({
       reason (Surface Audit 2026-07-29: it rendered enabled and wired to
       nothing — inviting an action it could not perform). R5 #9, structural. */
   onPost?: (body: string) => Promise<void> | void;
+  /** Opens a mentioned entity. ABSENT ⇒ a mention stays marked-up TEXT, never
+      a button that opens nothing. */
+  onOpenEntity?: (id: EntityId) => void;
 }) {
   const branches = discussionBranches(messages);
   return (
@@ -61,6 +73,7 @@ export function DiscussionTab({
               replyToId={replyToId}
               authoredFrom={authoredFrom}
               provenanceHollowReason={provenanceHollowReason}
+              onOpenEntity={onOpenEntity}
             />
           ))}
         </ul>
@@ -117,12 +130,14 @@ function MessageBranch({
   replyToId,
   authoredFrom,
   provenanceHollowReason,
+  onOpenEntity,
 }: {
   root: MessageView;
   replies: readonly MessageView[];
   replyToId: string | null;
   authoredFrom?: Readonly<Record<string, string | null>>;
   provenanceHollowReason: string;
+  onOpenEntity?: (id: EntityId) => void;
 }) {
   const hiddenReplyCount = Math.max(0, root.replyCount - replies.length);
   const branchMessages = new Map([root, ...replies].map((message) => [message.id, message]));
@@ -134,6 +149,7 @@ function MessageBranch({
         provenanceHollowReason={provenanceHollowReason}
         hasProvenanceSlot={root.id in (authoredFrom ?? {})}
         provenance={authoredFrom?.[root.id] ?? null}
+        onOpenEntity={onOpenEntity}
       />
       {replies.length > 0 ? (
         <ul className="pn-thread__replies" aria-label={`Replies to ${root.state.author.displayName}`}>
@@ -147,6 +163,7 @@ function MessageBranch({
                   provenanceHollowReason={provenanceHollowReason}
                   hasProvenanceSlot={reply.id in (authoredFrom ?? {})}
                   provenance={authoredFrom?.[reply.id] ?? null}
+                  onOpenEntity={onOpenEntity}
                 />
               </li>
             );
@@ -168,12 +185,14 @@ function MessageRow({
   provenanceHollowReason,
   hasProvenanceSlot,
   provenance,
+  onOpenEntity,
 }: {
   message: MessageView;
   replyTo: { id: string; message: MessageView | null } | null;
   provenanceHollowReason: string;
   hasProvenanceSlot: boolean;
   provenance: string | null;
+  onOpenEntity?: (id: EntityId) => void;
 }) {
   // `MessageView.state` is typed as the message state, so the author is always
   // present — no kind comparison is needed, and §15.2 forbids one anyway.
@@ -199,7 +218,7 @@ function MessageRow({
             <ProvenanceChip value={provenance} hollowReason={provenanceHollowReason} />
           ) : null}
         </div>
-        <MessageBody message={message} />
+        <MessageBody message={message} onOpenEntity={onOpenEntity} />
       </div>
     </article>
   );
@@ -217,7 +236,13 @@ function MessageRow({
  * newline is a hard break in both, a fenced block keeps its bytes in both, and
  * a display name is escaped rather than obeyed in both.
  */
-function MessageBody({ message }: { message: MessageView }) {
+function MessageBody({
+  message,
+  onOpenEntity,
+}: {
+  message: MessageView;
+  onOpenEntity?: (id: EntityId) => void;
+}) {
   const { body, mentions } = message.content;
   const { source } = chatMarkdownSource(body, mentions);
   return (
@@ -225,32 +250,56 @@ function MessageBody({ message }: { message: MessageView }) {
       source={source}
       className="pn-msg__body"
       testId="pn-msg-body"
-      components={MENTION_COMPONENTS}
+      components={mentionComponents(mentions, onOpenEntity)}
     />
   );
 }
 
 /**
- * A mention here is a LABEL, not a control.
+ * A mention is a CONTROL where it can open something, and TEXT where it cannot.
  *
  * `chatMarkdownSource` encodes each canonical mention as a link, so something
  * has to catch that href — left to the kit it would render as an outbound
- * anchor to `#tm8-mention-…`, which navigates nowhere. The channel feed rebuilds
- * a button because it is handed an `onOpenEntity`; this tab is not, and
- * inventing a control that cannot open anything is exactly the dishonesty the
- * panel's own rules forbid. So the mention is drawn as marked-up text, and any
- * other href stays an ordinary link.
+ * anchor to `#tm8-mention-…`, which navigates nowhere. With a handler it
+ * becomes a button, exactly as the channel feed's does. WITHOUT one it stays
+ * marked-up text: a control that opens nothing is the dishonesty the panel's
+ * own rules forbid, and both halves are structural — the branch reads whether
+ * a handler exists, so it cannot drift from what is wired.
+ *
+ * The id is checked against THIS MESSAGE's mention list first, because a body
+ * may legally contain a hand-written look-alike href that nobody vouched for.
  */
-const MENTION_COMPONENTS: MarkdownComponents = {
-  a({ href, children, ...rest }) {
-    if (mentionIdInHref(href)) return <span className="pn-msg__mention">{children}</span>;
-    return (
-      <a href={href} target="_blank" rel="noreferrer noopener" className="md-link" {...rest}>
-        {children}
-      </a>
-    );
-  },
-};
+function mentionComponents(
+  mentions: readonly Mention[],
+  onOpenEntity?: (id: EntityId) => void,
+): MarkdownComponents {
+  return {
+    a({ href, children, ...rest }) {
+      const id = mentionIdInHref(href);
+      if (id) {
+        const mention = mentions.find((m) => m.entityId === id);
+        if (!mention || !onOpenEntity) {
+          return <span className="pn-msg__mention">{children}</span>;
+        }
+        return (
+          <button
+            type="button"
+            className="pn-msg__mention pn-msg__mention--open"
+            aria-label={`Open mention ${mention.display}`}
+            onClick={() => onOpenEntity(mention.entityId)}
+          >
+            {children}
+          </button>
+        );
+      }
+      return (
+        <a href={href} target="_blank" rel="noreferrer noopener" className="md-link" {...rest}>
+          {children}
+        </a>
+      );
+    },
+  };
+}
 
 function DiscussionReplyContext({
   target,

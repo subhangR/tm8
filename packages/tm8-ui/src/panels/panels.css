@@ -1056,9 +1056,21 @@
   border-bottom: none;
 }
 .cv2-root .md-root.pn-msg__body h1 { font-family: var(--pn-ui); font-size: 13.5px; }
-/* Marked-up TEXT, deliberately not button-shaped: this tab has no navigation
-   handler, so the mention names someone without offering to open them. */
+/* The NAME reads the same either way — raised ink, 600 — so a mention is
+   legible as a mention whether or not it can be opened. Only the affordance
+   differs: with a handler it is a real button and takes the pointer. */
 .cv2-root .pn-msg__mention { color: var(--pn-ink-1); font-weight: 600; }
+.cv2-root button.pn-msg__mention {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: var(--pn-ink-1);
+  font-weight: 600;
+  cursor: pointer;
+}
+.cv2-root button.pn-msg__mention:hover { color: var(--pn-brand-2); }
 .cv2-root .pn-msg__reply-context {
   display: flex;
   align-items: baseline;

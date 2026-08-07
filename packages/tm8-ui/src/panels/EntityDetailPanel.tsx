@@ -778,6 +778,7 @@ function PanelBody(
         authoredFrom={props.authoredFrom}
         canPost={detail.capabilities.canEdit || detail.capabilities.canReact}
         onPost={props.onPostMessage}
+        onOpenEntity={onOpenEntity}
       />
     );
   }
