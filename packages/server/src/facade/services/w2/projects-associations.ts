@@ -310,9 +310,11 @@ export class W2ProjectsAssociationsService {
 
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
-    if (claimsFor(owner, ctx).nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to browse project directories');
-    }
+    // Browsing is available to every authenticated local user. Filesystem
+    // exposure is bounded by TM8_PROJECT_ROOTS (the OS user's home by default),
+    // canonical-path containment, symlink exclusion, and OS read permissions.
+    // Node-admin remains required for creating a missing directory below.
+    claimsFor(owner, ctx);
     return listProjectDirectories(ctx.query.get('path') ?? undefined);
   };
 
