@@ -216,24 +216,19 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
           order by e.position asc, e.id asc`,
         [spaceId],
       );
-      const summaries = await assembleSummaries(q, rows, owner.identityId);
+      // Per-channel `unreadCount` is no longer patched in here: the assembler
+      // resolves it from the same `public.unread_counts`, so the nav tree and a
+      // directly-fetched channel cannot disagree.
+      const navigableSummaries = await assembleSummaries(q, rows, owner.identityId);
+
+      // The space-wide total still needs its own call, and it is NOT the sum of
+      // the channel counts above: `unread_counts` reports every anchor kind, so
+      // unread messages on a task or a doc belong in this total and have no
+      // channel row to be summed from.
       const unreadRows = await q.rpc<Array<{ anchor_id: string; unread: number }>>(
         'unread_counts',
         [spaceId],
       );
-      const unreadByAnchor = new Map(
-        unreadRows.map((row) => [row.anchor_id, Number(row.unread)]),
-      );
-      const navigableSummaries = summaries.map((summary) => {
-        if (summary.state.kind !== 'channel') return summary;
-        return {
-          ...summary,
-          state: {
-            ...summary.state,
-            unreadCount: unreadByAnchor.get(summary.id) ?? 0,
-          },
-        };
-      });
 
       // Build the tree in one pass, then attach. A channel whose parent is
       // outside this result set (deleted, or not readable) is surfaced at the
@@ -258,7 +253,7 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
       const navigation: SpaceNavigation = {
         spaceId,
         viewer,
-        unreadTotal: [...unreadByAnchor.values()].reduce((total, unread) => total + unread, 0),
+        unreadTotal: unreadRows.reduce((total, row) => total + Number(row.unread), 0),
         channels: roots,
       };
       return navigation;

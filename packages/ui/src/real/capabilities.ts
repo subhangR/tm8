@@ -110,7 +110,10 @@ export const UNIMPLEMENTED = {
  * spot-checked against live responses.
  */
 export const HOLLOW_FIELDS: Readonly<Record<string, string>> = {
-  'channel.state.unreadCount': 'always 0 — unread_counts RPC not built',
+  // `channel.state.unreadCount` was here, with the reason "unread_counts RPC
+  // not built". The RPC has in fact existed since 016, and the field is now
+  // resolved from it on BOTH the read path and the event feed, so the entry
+  // was removed rather than left as a claim that hides a working field.
   'space.unreadTotal': 'always 0 — unread aggregation not built',
   'navigation.unreadTotal': 'always 0 — unread aggregation not built',
   'member.state.taskDoneCount': 'always 0 — completion tally not built',

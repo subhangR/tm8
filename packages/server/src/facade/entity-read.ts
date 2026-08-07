@@ -886,6 +886,52 @@ export async function loadViewerReactions(
   return out;
 }
 
+/**
+ * Per-viewer unread message counts, per anchor.
+ *
+ * Delegates to `public.unread_counts` (016:47) rather than re-deriving the
+ * predicate here, because "unread" must have exactly ONE definition: this is
+ * the same function `spaces.navigation` already calls for the channel tree
+ * (handlers/spaces.ts), and a second implementation would let the nav badge and
+ * the channel itself disagree about the same number. Re-deriving it locally is
+ * also not available: the predicate compares `entity_id` against
+ * `internal.uuid_at(last_read_at)`, and `internal` functions are granted to
+ * `tm8_app` one at a time (047, 070) — `uuid_at` is not among them.
+ *
+ * The function is SECURITY DEFINER and resolves the viewer from the
+ * TRANSACTION CLAIMS (`internal.current_member_id` → `internal.identity_id`),
+ * not from a parameter, so it reports the caller's own unread on both the
+ * facade and the projector path. It already excludes the viewer's own messages
+ * and re-checks `entity_readable` on both the message and its anchor.
+ *
+ * Only anchors WITH unread appear in the result (it is a `group by`), so a
+ * missing key means zero — which is a true zero, unlike the hardcoded one this
+ * replaced.
+ */
+export async function loadUnreadCounts(
+  q: Querier,
+  // Structural, not `EntityRow`: the projector assembles from its own row type
+  // and must resolve this from the same place, or the two paths diverge.
+  rows: readonly { kind: string; space_id: string }[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  // Scoped to channels: they are the only kind whose state carries a count, and
+  // this keeps the extra round-trip off every read that renders no channel.
+  const spaceIds = [
+    ...new Set(rows.filter((r) => r.kind === 'channel').map((r) => r.space_id).filter(Boolean)),
+  ];
+  if (spaceIds.length === 0) return out;
+
+  for (const spaceId of spaceIds) {
+    // Sequential for the same reason the assembler is: one pooled client.
+    const unreadRows = await q.rpc<Array<{ anchor_id: string; unread: number }>>('unread_counts', [
+      spaceId,
+    ]);
+    for (const row of unreadRows) out.set(row.anchor_id, Number(row.unread));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Assembly
 // ---------------------------------------------------------------------------
@@ -988,6 +1034,8 @@ export interface AssemblyContext {
   actors: Map<string, ActorSummary>;
   relations: EntityRelations;
   viewerReactions: Map<string, EntityCounters['viewerReaction']>;
+  /** Per-viewer unread message counts, per anchor. Absent key means zero. */
+  unreadCounts?: Map<string, number>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
 }
@@ -1029,10 +1077,12 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       return {
         kind: 'channel',
         topic: row.channel_topic ?? '',
-        // Per-member unread counts are `unread_counts` (007:1986) and are not
-        // on the G1A loop. Reported as 0 rather than omitted, because the field
-        // is required and a wrong-but-typed 0 beats a crash in the renderer.
-        unreadCount: 0,
+        // Real, per-viewer, from `public.unread_counts` (016:47) — see
+        // loadUnreadCounts. A missing key is a genuine zero (the RPC groups,
+        // so it only returns anchors that HAVE unread), not the "not built"
+        // zero this used to report. MIRRORED by the projector twin so the read
+        // path and the event feed agree.
+        unreadCount: ctx.unreadCounts?.get(row.id) ?? 0,
         workingAgentCount: (ctx.relations.workingOn.get(row.id) ?? []).length,
       };
     case 'voice_channel':
@@ -1510,6 +1560,7 @@ export async function assembleSummaries(
   // nothing and breaks at pg 9.
   const relations = await loadRelations(q, ids);
   const viewerReactions = await loadViewerReactions(q, ids, viewerIdentityId);
+  const unreadCounts = await loadUnreadCounts(q, rows);
 
   // Dependency targets are referenced by the blocked badge and are usually NOT
   // in the page being rendered, so they are fetched explicitly.
@@ -1548,7 +1599,7 @@ export async function assembleSummaries(
   );
 
   // Pass 2: the real thing, with relations and the summaries the badges need.
-  const ctx: AssemblyContext = { actors, relations, viewerReactions, related };
+  const ctx: AssemblyContext = { actors, relations, viewerReactions, unreadCounts, related };
   return rows.map((r) => toEntitySummary(r, ctx));
 }
 
