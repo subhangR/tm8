@@ -254,7 +254,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           spaceId={data.spaceId}
           commands={data.seam.commands}
           onCreated={openEntity}
-          onSaved={(saved) => props.data.refetchDetail(saved)}
+          onSaved={(_saved, result) => data.reconcileCommand(result)}
         >
           {(verbs) => (
         <EntityDetailPanel

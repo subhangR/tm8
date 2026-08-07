@@ -149,120 +149,21 @@ describe('the panel mounts the real save path', () => {
     expect(description.value).toBe('Context that grows with the task.');
   });
 
-  it('ticks an acceptance criterion through to patchTask, at the version the tick was based on', async () => {
-    // THE COLLECTION CROSSING. `acceptanceCriteria` is the first ARRAY routed
-    // through `useTaskSave`, and the seven render-level tests in
-    // bodies/SubtreeBody.test.tsx prove only that the boxes draw and that the
-    // callback fires — none of them touches patchTask, expectedVersion or a
-    // 409, so the wiring between the checkbox and the seam had no test at all.
-    if (TASK.content.kind !== 'task') throw new Error('the task fixture must carry task content');
-    const before = TASK.content.acceptanceCriteria;
-    const patchTask = patchSpy();
-
-    const { container, getByTestId } = render(
-      <div className="cv2-root">
-        <EntityDetailPanel
-          detail={TASK}
-          reasons={REASONS}
-          ctx={ctx}
-          commands={{ createEntity: vi.fn(ok), patchTask }}
-        />
-      </div>,
-    );
-
-    const boxes = container.querySelectorAll<HTMLInputElement>(
-      '[data-testid="acceptance-section"] input[type=checkbox]',
-    );
-    expect(boxes).toHaveLength(before.length);
-    // Row 2 is open in the fixture; ticking it is the ordinary gesture.
-    fireEvent.click(boxes[2]!);
-    fireEvent.click(getByTestId('authoring-save'));
-
-    await waitFor(() => expect(patchTask).toHaveBeenCalledTimes(1));
-    const [id, patch] = patchTask.mock.calls[0]!;
-    expect(id).toBe(TASK.id);
-    expect(patch.expectedVersion).toBe(TASK.version);
-    // The WHOLE list is patched — the field is written as a unit — and only
-    // the ticked entry moved.
-    expect(patch.acceptanceCriteria).toHaveLength(before.length);
-    expect(patch.acceptanceCriteria?.map((c) => c.done)).toEqual([true, true, true, false]);
-    expect(patch.acceptanceCriteria?.[2]).toMatchObject({ id: 'ac-3', done: true });
-    // The client stamps NEITHER doneBy nor doneAt: it knows neither the acting
-    // principal nor a clock worth recording. The server owns that stamp.
-    expect(patch.acceptanceCriteria?.[2]?.doneBy).toBeUndefined();
-    expect(patch.acceptanceCriteria?.[2]?.doneAt).toBeUndefined();
-  });
-
-  it('UN-ticking sends the criterion with its doneBy/doneAt CLEARED', async () => {
-    if (TASK.content.kind !== 'task') throw new Error('the task fixture must carry task content');
-    // Guard the premise: row 0 is done AND stamped in the fixture, so the
-    // assertion below is about clearing rather than about an absent field.
-    expect(TASK.content.acceptanceCriteria[0]).toMatchObject({ done: true });
-    expect(TASK.content.acceptanceCriteria[0]?.doneBy).toBeTruthy();
-    const patchTask = patchSpy();
-
-    const { container, getByTestId } = render(
-      <div className="cv2-root">
-        <EntityDetailPanel
-          detail={TASK}
-          reasons={REASONS}
-          ctx={ctx}
-          commands={{ createEntity: vi.fn(ok), patchTask }}
-        />
-      </div>,
-    );
-
-    fireEvent.click(
-      container.querySelectorAll('[data-testid="acceptance-section"] input[type=checkbox]')[0]!,
-    );
-    fireEvent.click(getByTestId('authoring-save'));
-
-    await waitFor(() => expect(patchTask).toHaveBeenCalledTimes(1));
-    const sent = patchTask.mock.calls[0]![1].acceptanceCriteria?.[0];
-    expect(sent).toEqual({ id: 'ac-1', text: 'Crash reproduced under fixture data', done: false });
-  });
-
-  it('a 409 on a criteria tick REFUSES overwrite rather than deleting the winner’s entries', async () => {
-    // THE SHARP EDGE, pinned. `overwrite()` re-flushes the SAME draft at the
-    // WINNER's version. For a title that is what "keep mine" means. For a
-    // whole-array field it means: if the other writer APPENDED a fifth
-    // criterion, my four-entry draft replaces the list and theirs is gone —
-    // the silent lost update this flow exists to prevent, arriving through the
-    // one button allowed to overwrite. So the move is refused with its reason
-    // and `reload` is left as the move that destroys nothing.
-    const patchTask = vi.fn(() => Promise.reject(conflictError(TASK.version + 3)));
-    const { container, getByTestId } = render(
-      <div className="cv2-root">
-        <EntityDetailPanel
-          detail={TASK}
-          reasons={REASONS}
-          ctx={ctx}
-          commands={{ createEntity: vi.fn(ok), patchTask: patchTask as never }}
-        />
-      </div>,
-    );
-
-    fireEvent.click(
-      container.querySelectorAll('[data-testid="acceptance-section"] input[type=checkbox]')[2]!,
-    );
-    fireEvent.click(getByTestId('authoring-save'));
-
-    const card = await waitFor(() => {
-      const found = container.querySelector('[data-testid="authoring-conflict"]');
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    // The node DID say which version won, so this is not the unknown-version
-    // arm — the refusal is about the collection.
-    expect(card.textContent).toContain(`the saved version is now v${TASK.version + 3}`);
-    expect(card.textContent).toContain('this edit replaces a whole list');
-    // Exactly one overwrite affordance and it is the disabled one.
-    const overwrites = within(card as HTMLElement).getAllByRole('button', { name: /overwrite/i });
-    expect(overwrites).toHaveLength(1);
-    expect(overwrites[0]?.getAttribute('aria-disabled')).toBe('true');
-    // And nothing was re-sent behind the refusal.
-    expect(patchTask).toHaveBeenCalledTimes(1);
-  });
+  /*
+   * THE THREE ACCEPTANCE-CRITERIA TESTS FROM #42 ARE NOT ON THIS LINE, and
+   * their absence is deliberate rather than a cut corner.
+   *
+   * This is the STAGING DEPLOY branch — `9b877ac` plus #42 plus the channels
+   * work — and `SubtreeBody` here has no `acceptance-section` at all: it
+   * arrives with a change that has not reached this line. The three tests
+   * therefore assert against a surface that does not exist, and they fail as
+   * `expected [] to have a length of 4`. Keeping them would mean shipping a
+   * branch with three permanently red tests that describe nothing about this
+   * build; removing them here removes nothing from `main`, which keeps all
+   * three and where the section they cover is real.
+   *
+   * DO NOT CARRY THIS DELETION BACK TO MAIN.
+   */
 
   it('the title is a REAL editor and it sends patchTask', async () => {
     const patchTask = patchSpy();

@@ -327,8 +327,10 @@ export function EntityView(props: EntityViewProps) {
     commands: data.seam.commands,
     onCreated: (id) => setSelectedId(id),
     /* The topic lives in the DETAIL and the echo carries only the summary —
-       without this the header renames and the hub body keeps the old topic. */
-    onSaved: (id) => props.data.refetchDetail(id),
+       without this the header renames and the hub body keeps the old topic.
+       `reconcileCommand` ingests `result.entity` as a detail; this line has no
+       `refetchDetail`, and `pull` is a read-through that would return early. */
+    onSaved: (_id, result) => data.reconcileCommand(result),
   });
 
   const detailPanel = selectedId ? (

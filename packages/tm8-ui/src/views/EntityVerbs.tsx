@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { EntityDetail, EntityId, SpaceId } from '@tm8/contract';
+import type { CommandResult, EntityDetail, EntityId, SpaceId } from '@tm8/contract';
 import { EditEntityDialog, type AuthoringCommands } from '../authoring';
 import { useEntityVerbs, type EntityVerbsHandle } from './useEntityVerbs';
 
@@ -34,7 +34,7 @@ export function EntityVerbs({
   spaceId: SpaceId;
   commands: AuthoringCommands | null;
   onCreated?: (id: EntityId) => void;
-  onSaved?: (id: EntityId) => void;
+  onSaved?: (id: EntityId, result: CommandResult) => void;
   children: (verbs: EntityVerbsHandle) => ReactNode;
 }) {
   const verbs = useEntityVerbs({

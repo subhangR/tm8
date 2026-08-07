@@ -27,7 +27,7 @@
  * live; one removed goes back to being honestly disabled.
  */
 import { useCallback, useMemo } from 'react';
-import type { EntityDetail, EntityId, SpaceId } from '@tm8/contract';
+import type { CommandResult, EntityDetail, EntityId, SpaceId } from '@tm8/contract';
 import {
   editsFrom,
   fieldKey,
@@ -73,8 +73,15 @@ export interface EntityVerbsOptions {
    * body still shows the old topic. Measured in Firefox against the fixture
    * seam: header `design-review` (new) beside description `tm8-ui build` (old),
    * which is the worst of both — it looks like the save half-worked.
+   *
+   * The RESULT is handed over as well as the id, because the two hosts on the
+   * two lines close this the two ways their own seam offers: `refetchDetail(id)`
+   * where that member exists, and `reconcileCommand(result)` — which ingests
+   * `result.entity` as a detail — where it does not. `pull(id)` is NOT an
+   * option for either: it is a read-THROUGH with a `details[id] === undefined`
+   * guard, so after a save it returns early and re-reads nothing.
    */
-  onSaved?(id: EntityId): void;
+  onSaved?(id: EntityId, result: CommandResult): void;
 }
 
 export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
@@ -111,7 +118,7 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
   const edit = useEntityEdit({
     detail,
     commands,
-    onSaved: () => { if (detail) onSaved?.(detail.id); },
+    onSaved: (result) => { if (detail) onSaved?.(detail.id, result); },
   });
 
   /**
