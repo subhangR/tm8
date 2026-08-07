@@ -33,6 +33,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
+import type { AgentCredentialHome, AgentCredentialHomePort } from './agent-credentials.js';
 import type {
   GraphAuth,
   GraphPort,
@@ -62,6 +63,15 @@ export interface SpawnServiceOptions {
   bootSettlementMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
+  /**
+   * Resolves the spawning identity's own vendor credential home, so an agent
+   * authenticates as the MEMBER rather than as the node's machine account.
+   *
+   * OPTIONAL. A node that does not wire it injects nothing and behaves exactly
+   * as it did before — which is what lets this land ahead of the settings
+   * screen that populates the credentials, without a feature flag.
+   */
+  credentialHome?: AgentCredentialHomePort;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -158,6 +168,7 @@ export class SpawnService {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  private readonly credentialHome: AgentCredentialHomePort | undefined;
   /** One fail-closed remediation pass per service lifetime. */
   private privateDataLayoutReady: Promise<void> | undefined;
 
@@ -188,6 +199,28 @@ export class SpawnService {
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+    this.credentialHome = options.credentialHome;
+  }
+
+  /**
+   * The spawning identity's credential home for this session's agent tool, or
+   * null when there is nothing to inject.
+   *
+   * ERRORS ARE NOT SWALLOWED, and that is the deliberate half of this method.
+   * A member who HAS connected their own identity and then silently gets the
+   * node's machine account back is exactly the misattribution this whole build
+   * exists to end — and it is invisible, because the session runs perfectly and
+   * simply commits as somebody else. So a resolution failure fails the spawn
+   * with its real reason. A clean `null` is the ordinary answer, not a failure:
+   * it means this identity has not connected this provider, and today's
+   * behaviour is correct for them.
+   */
+  private async resolveCredentialHome(
+    auth: GraphAuth,
+    agentTool: string,
+  ): Promise<AgentCredentialHome | null> {
+    if (!this.credentialHome) return null;
+    return this.credentialHome.resolve(auth, { agentTool });
   }
 
   /**
@@ -508,6 +541,7 @@ export class SpawnService {
         this.env,
       );
 
+      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -515,6 +549,7 @@ export class SpawnService {
         this.env,
         this.journalPathFor(sessionId),
         agentToken,
+        credentialHome ?? undefined,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -841,6 +876,12 @@ export class SpawnService {
         this.env,
       );
 
+      // Resolved on resume too, not just spawn: a member who connects their
+      // identity between a session's spawn and its resume should get their own
+      // credential on the way back up, and one that has been disconnected must
+      // stop being injected. A resume that kept the launch-time answer would be
+      // the one path where Ruling 3's "disconnect terminates" could be undone.
+      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -848,6 +889,7 @@ export class SpawnService {
         this.env,
         this.journalPathFor(sessionId),
         agentToken,
+        credentialHome ?? undefined,
       );
       const envVarNames = Object.keys(env).sort();
 

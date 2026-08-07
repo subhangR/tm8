@@ -32,6 +32,11 @@ import type {
   WorkdirMode,
 } from './types.js';
 import { SpawnError } from './types.js';
+import {
+  AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
+  agentCredentialEnv,
+  type AgentCredentialHome,
+} from './agent-credentials.js';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -690,7 +695,26 @@ const AUTH_ENV_KEYS = [
   'GOOGLE_GENAI_USE_GCA',
 ] as const;
 
-/** Non-secret process basics an interactive CLI needs to behave normally. */
+/**
+ * Non-secret process basics an interactive CLI needs to behave normally.
+ *
+ * `XDG_CONFIG_HOME` USED TO BE ON THIS LIST AND IS DELIBERATELY NOT — sub-doc
+ * 14's channel C5. It is not a process basic at all; it is a credential
+ * LOOKUP PATH. `gh` resolves its config directory as `GH_CONFIG_DIR` >
+ * `$XDG_CONFIG_HOME/gh` > `$HOME/.config/gh`, so copying it out of the server
+ * process hands every spawned agent whatever the server's own value points at
+ * — and it OUTRANKS `HOME`, so a per-identity home does not cover it.
+ *
+ * It is latent today only because the variable happens to be unset on the
+ * deployed unit. One operator `Environment=XDG_CONFIG_HOME=...` line in the
+ * unit file would silently revert `gh` isolation for every session, with no
+ * error, no log line and no failing test. Inheritance is exactly the wrong
+ * default for a value like that, so `composeEnv` now DECIDES it: set to the
+ * spawning identity's own config directory when they have a credential home,
+ * and otherwise absent. Never copied.
+ *
+ * `XDG_CACHE_HOME` stays: a cache directory is not an authentication input.
+ */
 const SAFE_BASE_ENV_KEYS = [
   'HOME',
   'USER',
@@ -702,7 +726,6 @@ const SAFE_BASE_ENV_KEYS = [
   'TERM',
   'COLORTERM',
   'TMPDIR',
-  'XDG_CONFIG_HOME',
   'XDG_CACHE_HOME',
 ] as const;
 
@@ -736,6 +759,20 @@ export function composeEnv(
    */
   journalPath?: string,
   agentToken?: string,
+  /**
+   * The spawning identity's own credential home, when they have connected the
+   * provider this session's agent tool authenticates with.
+   *
+   * A VALUE, not a flag. `composeEnv` and `composeCredentialEnv` remain two
+   * separate functions with no boolean selecting between them — see
+   * `credential-env.ts`'s header for why that matters. This parameter cannot
+   * turn an agent environment into a login-terminal environment or the reverse;
+   * it only names which directory the agent's vendor CLI reads.
+   *
+   * Absent is the ordinary case: a member who has not connected keeps today's
+   * behaviour, where the agent uses whatever credential the node itself has.
+   */
+  credentialHome?: AgentCredentialHome,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -761,6 +798,33 @@ export function composeEnv(
   for (const key of AUTH_ENV_KEYS) {
     const value = parentEnv[key];
     if (value) env[key] = value;
+  }
+
+  // The spawning identity's OWN vendor credential, when they have connected one.
+  //
+  // This is the read half of Tier B: the login terminal wrote
+  // `<dataDir>/credentials/<identityId>/<provider>/` and this is what makes an
+  // ordinary agent session read it, so the member's work is attributed to the
+  // member rather than to the node's machine account.
+  //
+  // It also carries the ONLY `XDG_CONFIG_HOME` this function ever emits.
+  // Placed AFTER the two copy loops on purpose: both are allowlists over
+  // `parentEnv`, and a deliberate per-identity value must not be overwritable
+  // by an inherited one if either list ever grows a name that collides.
+  if (credentialHome) {
+    Object.assign(env, agentCredentialEnv(credentialHome));
+    // C8 / ruling 13 — and this DELETE is the load-bearing half.
+    //
+    // Setting the config directory is not enough on a node whose own
+    // `ANTHROPIC_API_KEY` is forwarded by `AUTH_ENV_KEYS` a few lines above:
+    // measured against the real CLI, that key competes with — and with an
+    // unpopulated identity home outright beats — the member's own login, so the
+    // session would run on the node's key under the member's name with nothing
+    // red anywhere. Scoped to the connected provider only, so a member who has
+    // NOT connected keeps today's behaviour exactly.
+    for (const key of AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS[credentialHome.provider]) {
+      delete env[key];
+    }
   }
 
   // Explicit empty strings also defend wrappers that interpret presence.

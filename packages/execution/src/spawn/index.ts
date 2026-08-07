@@ -34,6 +34,17 @@ export {
   resolveCodexNativeSessionId,
   type CodexRolloutIdentity,
 } from './native-session.js';
+export {
+  AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+  AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
+  AGENT_TOOL_CREDENTIAL_PROVIDER,
+  agentCredentialEnv,
+  agentCredentialProviderFor,
+  agentCredentialXdgConfigHome,
+  type AgentCredentialHome,
+  type AgentCredentialHomePort,
+  type AgentCredentialProvider,
+} from './agent-credentials.js';
 export { SpawnError } from './types.js';
 export type {
   AgentMode,
