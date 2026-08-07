@@ -11,7 +11,7 @@ import { chmod, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/pro
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { PtyHostService } from '../pty/PtyHostService.js';
-import type { Logger, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
+import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/types.js';
 import { composePrompt } from '@tm8/prompt';
 
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
@@ -33,6 +33,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
+import { probeCodexSandbox } from './sandbox-probe.js';
 import type {
   GraphAuth,
   GraphPort,
@@ -63,6 +64,25 @@ export interface SpawnServiceOptions {
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
 }
+
+/**
+ * The outcome of the sandbox preflight for one launch.
+ *
+ * Returned rather than stashed on the service, because spawns run CONCURRENTLY
+ * — five at once across both providers is a supported case and was measured
+ * working — and a mutable "last degradation" field would let one launch's
+ * verdict land on another's manifest. The decision belongs to the launch that
+ * asked for it.
+ */
+interface SandboxDecision {
+  /** `buildAgentCommand` must not emit a sandbox flag it cannot honour. */
+  unavailable: boolean;
+  /** Why, in one sentence, for the manifest. Null when nothing was degraded. */
+  degradedReason: string | null;
+}
+
+/** The ordinary case: whatever the posture asked for, the node can give it. */
+const CONFINED: SandboxDecision = { unavailable: false, degradedReason: null };
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
  *  graph in lifecycle states, and 'completed' is not one of the five the
@@ -222,6 +242,106 @@ export class SpawnService {
 
   private manifestPathFor(sessionId: string): string {
     return join(this.dataDir, 'manifests', `${sessionId}.json`);
+  }
+
+  /**
+   * Decide what a launch is allowed to do when the node cannot actually give it
+   * the sandbox its posture asks for. Returns whether `buildAgentCommand` must
+   * drop `--sandbox`; throws when the launch may not proceed at all.
+   *
+   * THE DEFECT THIS CLOSES is not "codex could not sandbox" — it is that tm8
+   * asked for a sandbox it could not have, got a session that could not run a
+   * single command, and then reported that session as healthy for as long as
+   * anyone cared to look. Measured on the prod node 2026-08-02: spawn returned
+   * in 0.77s, `status` stayed `running`, `session liveness` kept listing it,
+   * and every command inside it died with `bwrap: loopback: Failed RTM_NEWADDR`.
+   *
+   * WHY IT DEGRADES RATHER THAN REFUSES, which is a reversal worth explaining.
+   * The first cut of this refused the spawn outright, on the argument that
+   * running unconfined should require someone to say so. That argument is right
+   * about the direction and wrong about the baseline, and old maestro is the
+   * evidence: its codex spawner has flag-for-flag the same branch as ours, and
+   * it ran fifteen real codex sessions to completion on THIS node — building
+   * PDFs, generating image sets, hundreds of shell commands. It managed that
+   * because nothing in maestro ever resolved a posture that demanded a sandbox:
+   * maestro has no default permission mode at all, so a session fell through to
+   * whatever its team member was configured with, and those were configured
+   * `bypassPermissions`.
+   *
+   * tm8 then invented `auto`, made it `DEFAULT_PERMISSION_MODE`, and mapped it
+   * to `--ask-for-approval never --sandbox workspace-write`. Maestro has no
+   * `auto` in either vocabulary — its accessMode union is
+   * `['safe','acceptEdits','plan','fullAccess']`. So tm8 created a default that
+   * silently REQUIRES a working sandbox where its own behavioural oracle
+   * required nothing, and every codex teammate created without an explicit
+   * posture inherited it. That is the regression, and refusing the spawn would
+   * have made tm8 stricter than the thing it was ported from while still not
+   * running any codex — a worse outcome on both axes.
+   *
+   * So the default matches the oracle: the launch proceeds. What it does NOT do
+   * is proceed silently. The degradation is logged in full and recorded on the
+   * manifest as `sandboxDegraded`, so "this agent is running unconfined" is a
+   * fact someone can read rather than one they have to reproduce. That is the
+   * part the status quo was missing — codex was ALREADY running unconfined
+   * wherever a teammate was set to `bypassPermissions`, with nothing anywhere
+   * saying so.
+   *
+   * An operator who genuinely requires confinement sets
+   * `TM8_REQUIRE_CODEX_SANDBOX=1` and gets the refusal instead — the strict
+   * posture is still one env var away, it just is not imposed on a node whose
+   * predecessor never imposed it.
+   *
+   * The probe result is cached for the process, so this costs one subprocess
+   * per node boot, not one per spawn.
+   */
+  private async resolveSandboxPosture(launch: ResolvedLaunchConfig): Promise<SandboxDecision> {
+    // Only codex has an OS-level sandbox tm8 drives through flags. Claude Code's
+    // permission modes are enforced inside the agent, so there is nothing here
+    // to probe and nothing that can silently fail this way.
+    if (launch.agentTool !== 'codex') return CONFINED;
+    if (launch.permissionMode === 'bypassPermissions') return CONFINED;
+
+    const availability = await probeCodexSandbox({
+      binary: this.env.TM8_AGENT_CMD?.trim() || 'codex',
+      env: this.env,
+      logger: this.logger,
+    });
+    if (availability.usable) return CONFINED;
+
+    const strict = this.env.TM8_REQUIRE_CODEX_SANDBOX?.trim() === '1';
+    if (strict) {
+      throw new SpawnError(
+        `this node cannot sandbox codex and TM8_REQUIRE_CODEX_SANDBOX=1 forbids running it ` +
+          `unconfined, so a '${launch.permissionMode}' launch cannot be honoured: ` +
+          `${availability.detail}. ` +
+          `Fix the node (on Ubuntu 24.04 this is usually AppArmor's unprivileged-userns restriction — ` +
+          `installing the 'bubblewrap' package supplies /etc/apparmor.d/bwrap-userns-restrict and puts a ` +
+          `profiled bwrap on PATH), or unset TM8_REQUIRE_CODEX_SANDBOX to let the launch proceed ` +
+          `unconfined and recorded.`,
+        'conflict',
+        {
+          agentTool: launch.agentTool,
+          permissionMode: launch.permissionMode,
+          sandboxProbe: availability.reason,
+        },
+      );
+    }
+
+    // Proceeding unconfined. Said ONCE, in full, at the moment it actually
+    // happens, and recorded on the manifest besides — the failure this whole
+    // path exists to end was not "codex ran unconfined", it was that nothing
+    // anywhere said which of the two things had happened.
+    this.logger?.warn?.(
+      'SpawnService: launching codex UNCONFINED — this node cannot sandbox it. ' +
+        'Install the `bubblewrap` package to restore confinement, or set ' +
+        'TM8_REQUIRE_CODEX_SANDBOX=1 to refuse these launches instead.',
+      {
+        requestedPermissionMode: launch.permissionMode,
+        sandboxProbe: availability.reason,
+        detail: availability.detail,
+      },
+    );
+    return { unavailable: true, degradedReason: availability.detail };
   }
 
   /**
@@ -413,6 +533,12 @@ export class SpawnService {
     // A ledger replay is a transport retry of the original command result, not
     // permission to boot another child under the old work-session id.
     if (replayed) {
+      // No sandbox preflight on a replay branch: this re-renders the ORIGINAL
+      // command result and boots no child, so it cannot produce a session that
+      // looks alive and is not. Preflighting here would let a node whose
+      // sandbox broke since the first call turn a successful, already-completed
+      // spawn into an error on retry, which is precisely what idempotent replay
+      // exists to prevent.
       const command = buildAgentCommand(launch, this.env);
       const manifestPath = this.manifestPathFor(sessionId);
       const manifest = composeManifest({
@@ -461,7 +587,15 @@ export class SpawnService {
       // prompt is then derived FROM that manifest and appended to produce the
       // line the PTY actually runs. See `withAgentPrompt` for why this is two
       // steps and not one — it unties an apparent circular dependency.
-      const baseCommand = buildAgentCommand(launch, this.env, { claudeSessionId: nativeSessionId });
+      // Preflight the sandbox BEFORE the command is built, so that a node which
+      // cannot honour this posture refuses here — with a sentence naming the
+      // precondition — instead of booting an agent that will look healthy and
+      // be unable to run anything. Throws unless the operator has opted in.
+      const sandbox = await this.resolveSandboxPosture(launch);
+      const baseCommand = buildAgentCommand(launch, this.env, {
+        claudeSessionId: nativeSessionId,
+        sandboxUnavailable: sandbox.unavailable,
+      });
       const manifestPath = this.manifestPathFor(sessionId);
       const manifest = composeManifest({
         sessionId,
@@ -472,6 +606,7 @@ export class SpawnService {
         interactionProfile,
         workdir: { mode: workdir.mode, path: cwd },
         command: baseCommand,
+        sandboxDegraded: sandbox.degradedReason,
         baseUrl: this.baseUrl,
       });
 
@@ -820,7 +955,15 @@ export class SpawnService {
 
       // NO --session-id on a resume invocation: the id is already Claude's, and
       // naming it twice (`--session-id` + `--resume`) is two flags to disagree.
-      const baseCommand = buildAgentCommand(launch, this.env);
+      //
+      // Resume gets the SAME sandbox preflight as a fresh spawn, because it
+      // boots a real child on this node: a session that was sandboxed where it
+      // first ran is not sandboxed by having been sandboxed before, and resume
+      // is exactly the path that moves a session onto a different node.
+      const sandbox = await this.resolveSandboxPosture(launch);
+      const baseCommand = buildAgentCommand(launch, this.env, {
+        sandboxUnavailable: sandbox.unavailable,
+      });
       const manifest = composeManifest({
         sessionId,
         request: syntheticRequest,
@@ -830,6 +973,7 @@ export class SpawnService {
         ...(interactionProfile ? { interactionProfile } : {}),
         workdir: { mode: info.workdirMode, path: cwd },
         command: baseCommand,
+        sandboxDegraded: sandbox.degradedReason,
         baseUrl: this.baseUrl,
       });
       const envelope = composePrompt(manifest, { sessionId, baseUrl: this.baseUrl });
@@ -1177,6 +1321,63 @@ export class SpawnService {
     }
     return retired;
   }
+
+  /**
+   * The PTY-activity sink. Wire this into `PtyHostService`'s
+   * `onActivityChange` at construction, exactly as `handlePtyExit` is wired
+   * into `onSessionStatus`.
+   *
+   * WHAT THIS UNBLOCKS. `'idle'` has been a legal `work_session` status since
+   * migration 043 (which accepts it, and permits running -> idle -> running:
+   * only transitions OUT of a terminal status and INTO 'spawning' are refused),
+   * and `needs-you` has been a fully drawn UI state since R8 — the presentation
+   * verdict, the pill, the interrupt banner and the home-screen group all exist.
+   * The predicate that lights them is `live && status === 'idle'`, and until
+   * this method nothing in the product ever wrote that status, so the whole
+   * chain was unreachable on real data. This is the missing writer, and it is
+   * why no new UI is needed to make a blocked session visible.
+   *
+   * WHY THE GRAPH AND NOT A SIDE-CHANNEL. Writing status makes the signal an
+   * ordinary entity change, so it rides the durable event spine every other
+   * change rides: ordered by `seq`, deduplicated client-side by the
+   * drop-if-not-newer rule, replayed on reconnect from the client's cursor, and
+   * it nudges a liveness re-read on arrival. A bespoke socket would have had to
+   * re-earn all four.
+   *
+   * HONESTY BOUND. `'idle'` here means "this PTY has been silent for the host's
+   * quiescence threshold", nothing more. It is NOT proof an agent is waiting on
+   * a human — a silent `npm install` produces the same evidence — so no caller
+   * may render it as a specific question. Distinguishing the two needs a
+   * structured signal from the agent, which this repo does not have.
+   */
+  handlePtyActivity = async (sessionId: string, activity: PtyActivity): Promise<void> => {
+    const auth = this.sessionAuth.get(sessionId);
+    // No claims ⇒ nothing can be written (see the sessionAuth docstring). Unlike
+    // the exit path this is not worth shouting about: an activity signal for an
+    // unknown session is a missed nicety, not a ghost row, and the exit path
+    // legitimately deletes the claims before a late timer can fire.
+    if (auth === undefined) return;
+    // A PTY that has already gone means any status this would write is stale,
+    // and the RPC would refuse it with a 23514 anyway. Checking here keeps a
+    // routine race out of the error log.
+    if (!this.pty.hasSession(sessionId)) return;
+    try {
+      await this.graph.transition(auth, {
+        sessionId,
+        status: activity === 'idle' ? 'idle' : 'running',
+      });
+    } catch (error) {
+      // Deliberately NOT `loud`. A failed exit transition leaves a ghost that
+      // corrupts the concurrency cap forever; a failed activity transition
+      // leaves a session showing the previous one of two non-terminal states,
+      // and the next transition corrects it. Same reason it does not retry.
+      this.logger?.warn?.('SpawnService: failed to record session activity transition', {
+        sessionId,
+        activity,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   /**
    * The PTY-exit sink (R29's single writer). Wire this into

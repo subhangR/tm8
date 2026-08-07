@@ -17,7 +17,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   const h = await server.health();
   expect(h.ok).toBe(true);
   expect(h.server).toBe('tm8-server');
-  expect(h.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+  expect(h.operations).toBe(128); // 126 -> 128 (2026-08-04): the two connected project folder file reads.
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

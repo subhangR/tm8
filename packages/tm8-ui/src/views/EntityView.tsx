@@ -44,6 +44,7 @@ import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
+import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
 import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
@@ -391,6 +392,12 @@ export function EntityView(props: EntityViewProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the list already"
       liveness={data.livenessOf(selectedId)}
       livenessOf={data.livenessOf}
+      /* The block signal reaches BOTH content surfaces through this one prop —
+         a session that needs you must not be visible only to whichever surface
+         happens to be selected. Evaluated through the shared predicate so this
+         view and the entity list can never disagree about the same session. */
+      needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
+      attentionDetail={QUIET_SESSION_DETAIL}
       attachments={attachments}
       onAttachmentUploaded={() => props.data.refetchDetail(selectedId)}
       viewerMemberId={props.viewerMemberId}
@@ -421,6 +428,8 @@ export function EntityView(props: EntityViewProps) {
           sessionExited={recordedStatus === 'exited' || recordedStatus === 'failed'}
           defaultLimit={selectedContent?.interactionProfile?.feedPolicy.pageSize}
           composerPolicy={selectedContent?.interactionProfile?.composerPolicy}
+          needsAttention={detail ? needsAttentionOf(detail, data.livenessOf) : false}
+          attentionDetail={QUIET_SESSION_DETAIL}
           onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
           onSwitchToTerminal={() => {
             setContentSurfaces((current) => ({ ...current, [selectedId]: 'terminal' }));

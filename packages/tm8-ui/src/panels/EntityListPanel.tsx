@@ -17,7 +17,6 @@ import type {
   LaunchCapacity,
   LaunchProjectOption,
   LifecycleTier,
-  ListRowFacts,
   LiveTreatment,
   ProfileResolution,
   QueryFilter,
@@ -30,7 +29,15 @@ import type {
   ValueControl,
   CollectionMode,
 } from '../domain';
-import { ALL_MODES, KindIcon, REASONS, collectionKinds, getKind, resolveAction } from '../domain';
+import {
+  ALL_MODES,
+  KindIcon,
+  REASONS,
+  collectionKinds,
+  getKind,
+  resolveAction,
+  toRowFacts,
+} from '../domain';
 import { Avatar, type PillTone } from '../kit';
 import {
   CheckingPermission,
@@ -1609,17 +1616,6 @@ function splitAttention(
     (row.badges.attention || derivedAttention ? attention : rest).push(row);
   }
   return { attention, rest };
-}
-
-function toRowFacts(row: EntitySummary): ListRowFacts {
-  const state = row.state as unknown as Record<string, unknown>;
-  return {
-    id: row.id,
-    kind: row.kind,
-    activityAt: row.activityAt,
-    status: typeof state.status === 'string' ? state.status : null,
-    blockedCount: row.badges.blocked?.unresolvedHardDependencyCount ?? 0,
-  };
 }
 
 /**

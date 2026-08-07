@@ -848,6 +848,30 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
   },
+  'projects.files.list': {
+    cmd: null,
+    sum: 'Browse files and folders inside one connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'folder', 'browse', 'local', 'attach'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'confined to the project working directory AND to TM8_PROJECT_ROOTS; symlink rows are omitted rather than followed',
+      'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
+  'projects.files.attach': {
+    cmd: null,
+    sum: 'Attach one file read from a connected project folder, without a browser byte transfer',
+    authz: 'project',
+    input: 'bound',
+    tags: ['file', 'attach', 'local', 'folder'],
+    reason: 'use_file_upload',
+    notes: [
+      'the browser cannot name an absolute node path, so a connected folder is readable only by the node holding it',
+      '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
+    ],
+  },
 
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
@@ -1555,7 +1579,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -30,6 +30,14 @@ export {
   type CodexNetworkPreflight,
 } from './codex-network-preflight.js';
 export {
+  DEFAULT_MAX_SKILLS,
+  resolveSkills,
+  type ManifestSkill,
+  type ResolvedSkillRow,
+  type SkillResolution,
+  type SkillResolutionOptions,
+} from './skills.js';
+export {
   extractCodexRolloutIdentity,
   resolveCodexNativeSessionId,
   type CodexRolloutIdentity,
@@ -43,6 +51,7 @@ export type {
   GraphAuth,
   GraphPort,
   LoadSpawnContextInput,
+  ManifestSkillContext,
   PermissionMode,
   ProjectContext,
   ResolvedInteractionProfileContext,

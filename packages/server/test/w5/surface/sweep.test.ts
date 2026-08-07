@@ -290,13 +290,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
+    // 123 -> 125 on 2026-08-04: projects.files.list and projects.files.attach.
     // 114 -> 118 on 2026-08-01: execution.resume, spaces.counts,
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    expect(SURFACE).toHaveLength(123);
-    expect(rows).toHaveLength(123);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
+    expect(SURFACE).toHaveLength(125);
+    expect(rows).toHaveLength(125);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(125);
   });
 
   /**

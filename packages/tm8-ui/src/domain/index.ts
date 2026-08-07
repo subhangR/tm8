@@ -75,6 +75,8 @@ export { REASONS, allActions, deferredActions, resolveAction } from './actions';
 
 export { actorPresentation, type ActorPresentation } from './actors';
 
+export { QUIET_SESSION_DETAIL, needsAttentionOf, toRowFacts } from './needs-attention';
+
 export {
   AGENT_TOOLS,
   LAUNCH_MODES,
