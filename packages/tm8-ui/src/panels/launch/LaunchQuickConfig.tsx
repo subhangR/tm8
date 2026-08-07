@@ -118,6 +118,11 @@ export interface LaunchQuickConfigProps {
    * Coordinate from opening this card and spawning a worker.
    */
   mode?: LaunchMode;
+  /**
+   * The opening verb's word — `ActionDef.label`. Absent ⇒ "Run", which is the
+   * verb this card was built for and still its only caller-less default.
+   */
+  verbLabel?: string;
 }
 
 export function LaunchQuickConfig({
@@ -135,6 +140,7 @@ export function LaunchQuickConfig({
   clientMutationId,
   newClientMutationId,
   mode,
+  verbLabel,
 }: LaunchQuickConfigProps) {
   const ref = useRef<HTMLDivElement>(null);
   const noop = useCallback(() => {}, []);
@@ -207,7 +213,16 @@ export function LaunchQuickConfig({
   return (
     <div className="lq" ref={ref} data-testid="launch-quick-config">
       <div className="lq__head">
-        <span className="lq__heading">Run configuration</span>
+        {/* THE CARD NAMES THE VERB THAT OPENED IT. One config serves Run,
+            Coordinate and Launch session, and this said "Run configuration"
+            verbatim — so pressing Coordinate opened a card naming the OTHER
+            verb, over a payload that (once the mode fix landed) really did
+            coordinate. Same naming-one-act-performing-another class as the
+            mode bug, moved into the copy. The word comes from the caller's
+            own `ActionDef.label`, so it cannot drift from the button. */}
+        <span className="lq__heading" data-testid="launch-heading">
+          {`${verbLabel ?? 'Run'} configuration`}
+        </span>
         <span className="lq__subject" title={subject.title}>
           {subject.title}
         </span>

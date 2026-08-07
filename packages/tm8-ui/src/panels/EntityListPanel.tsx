@@ -2021,6 +2021,7 @@ function Tile({
           <div className="lp__flow lp__flow--control">
             <LaunchQuickConfig
               subject={row}
+              verbLabel={resolveAction(flowRef).label}
               {...(resolveAction(flowRef).launchMode
                 ? { mode: resolveAction(flowRef).launchMode }
                 : {})}
@@ -2209,6 +2210,7 @@ function Tile({
         <div className="lp__flow" onClick={(e) => e.stopPropagation()}>
           <LaunchQuickConfig
             subject={row}
+            verbLabel={resolveAction(flowRef).label}
             {...(resolveAction(flowRef).launchMode
               ? { mode: resolveAction(flowRef).launchMode }
               : {})}

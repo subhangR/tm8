@@ -605,6 +605,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     /* The mode is the VERB's, read off the registry — so
                        Coordinate commits a coordinator and not Run's worker,
                        and no component here has to name either verb. */
+                    verbLabel={resolveAction(flowRef).label}
                     {...(resolveAction(flowRef).launchMode
                       ? { mode: resolveAction(flowRef).launchMode }
                       : {})}

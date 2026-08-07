@@ -662,6 +662,37 @@ describe('the launch mode belongs to the verb, all the way to the spawn', () => 
     expect(input.teamMemberId).toBe('tm-scout');
   });
 
+  it('the card NAMES the verb that opened it', () => {
+    // It said "Run configuration" verbatim, so pressing Coordinate opened a
+    // card naming the other verb over a payload that really did coordinate —
+    // the same naming-one-act-performing-another failure as the mode bug,
+    // moved into the copy. The word comes from the caller's `ActionDef.label`,
+    // so it cannot drift from the button that was pressed.
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        mode="coordinator"
+        verbLabel={resolveAction('coordinate').label}
+        onSpawn={vi.fn()}
+        clientMutationId="m:1"
+      />,
+    );
+    expect(getByTestId('launch-heading').textContent).toBe('Coordinate configuration');
+  });
+
+  it('no verb label ⇒ Run, the verb this card was built for', () => {
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        onSpawn={vi.fn()}
+        clientMutationId="m:1"
+      />,
+    );
+    expect(getByTestId('launch-heading').textContent).toBe('Run configuration');
+  });
+
   it('no mode prop ⇒ the config’s own default, which is Run’s', async () => {
     const onSpawn = vi.fn();
     const { getByTestId } = render(
