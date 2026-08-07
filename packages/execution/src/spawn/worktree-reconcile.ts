@@ -17,7 +17,7 @@
 //     traffic. Every repair is individually guarded and every failure is
 //     reported in the returned record instead of aborting the sweep.
 
-import { stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import type { Logger } from '../pty/types.js';
@@ -112,6 +112,23 @@ export async function reconcileNodeWorktrees(
   const gitPaths = new Map<string, Set<string>>();
   const repoRoots = new Map<string, string>();
   const projectIds = new Set(rows.map((r) => r.projectId).filter((id): id is string => !!id));
+
+  // §6.1's third source: the FILESYSTEM under `<worktreeRoot>/<projectId>/`.
+  //
+  // Unioned in rather than derived from the rows, and that is the whole point
+  // of quarantine: a checkout with no allocation row belongs to a project this
+  // node may have no surviving rows for at all. Scanning only the projects the
+  // rows mention would look everywhere except where the orphans are.
+  let area: string | null = null;
+  try {
+    area = await params.manager.worktreeRoot();
+    for (const entry of await readdir(area, { withFileTypes: true })) {
+      if (entry.isDirectory()) projectIds.add(entry.name);
+    }
+  } catch {
+    // No area yet, or unreadable. Narrower sweep, never a wrong repair.
+  }
+
   for (const projectId of projectIds) {
     try {
       const repoRoot = params.repoRootFor ? await params.repoRootFor(projectId) : null;
@@ -146,12 +163,6 @@ export async function reconcileNodeWorktrees(
   // worktrees, and a reconciler that deletes what it does not recognise is a
   // reconciler that eventually deletes someone's afternoon.
   const known = new Set(rows.map((r) => r.path).filter((p): p is string => !!p));
-  let area: string | null = null;
-  try {
-    area = await params.manager.worktreeRoot();
-  } catch {
-    area = null;
-  }
   if (area) {
     for (const [projectId, paths] of gitPaths) {
       for (const path of paths) {
