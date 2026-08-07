@@ -188,6 +188,25 @@ const W1_TABLE_COLUMNS: Record<(typeof W1_TABLES)[number], readonly string[]> = 
   ],
 };
 
+/**
+ * ⚠ POSITION-PINNED FIXTURE. Suites built on this assert CHAIN POSITION 015,
+ * not present system behaviour. READ THIS BEFORE "CLEANING" ANY TEST THAT USES
+ * IT: a later migration's removal never reaches these suites, so an assertion
+ * about a feature the system no longer has is CORRECT here, not stale.
+ * (R15 / R15b, 2026-08-07.)
+ *
+ * Greenness cannot classify a suite. After a removal, a green pg suite is
+ * EITHER pinned below the change (leave it) OR full-chain and passing vacuously
+ * (fix it) — opposite edits, and only this `.apply(...)` argument tells them
+ * apart. Reference counts and grep hits are non-evidence for that question.
+ *
+ * Worked example, measured: `083` removed the wake budget, and the budget
+ * assertions in this file stayed correct because `015` still creates
+ * `session_wake_budgets`. The sibling pin is `explicitG04Migrations()` in
+ * `w2-messages-handoffs.pg.test.ts` (019), where deleting the budget references
+ * turned a correct test RED. The full-chain suite where 083's removal IS proved
+ * is `w2-execution.pg.test.ts`, which applies `migrationFiles()` whole.
+ */
 function w1MigrationFiles(): string[] {
   const files = migrationFiles();
   const tail = files.indexOf('015_w1_foundations.sql');
