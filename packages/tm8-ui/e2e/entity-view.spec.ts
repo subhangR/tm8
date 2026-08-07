@@ -233,3 +233,58 @@ test('the layout holds for a non-doc kind — it is generic, not doc-special', a
   expect(list.x).toBeLessThan(detail.x);
   expect(detail.width).toBeGreaterThan(list.width * 3);
 });
+
+/**
+ * THE BOARD IS THE EXCEPTION TO THE RAIL, and this is the only place the claim
+ * is checkable. The unit test can say the centre is unmounted; it cannot say
+ * the board actually got the width, because jsdom has no layout engine and a
+ * board still trapped in a 320px rail passes every structural assertion there.
+ */
+test('switching to the board gives it the WHOLE screen, rail width and all', async ({ page }) => {
+  await boot(page, 'task');
+
+  const railWidth = (await box(page, LIST)).width;
+  const screen = await box(page, '[data-testid="entity-view"]');
+
+  await page.getByRole('button', { name: 'board layout' }).click();
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  // The centre is GONE, not merely covered.
+  await expect(page.locator(DETAIL)).toHaveCount(0);
+
+  const board = await box(page, LIST);
+  expect(board.width).toBeGreaterThan(railWidth * 3);
+  // "The entire thing" — the region spans the screen, give or take a border.
+  expect(screen.width - board.width).toBeLessThan(2);
+
+  // And the width buys what it was for: more than the one-and-a-bit columns
+  // that fitted in the rail. 236px floor each, so a rail could never do this.
+  const columns = page.locator('.lp__board-col');
+  expect(await columns.count()).toBeGreaterThan(3);
+});
+
+test('a card on the board opens BESIDE it — the board keeps its width', async ({ page }) => {
+  await boot(page, 'task');
+  await page.getByRole('button', { name: 'board layout' }).click();
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  const before = await box(page, LIST);
+  await page.locator('.lp__board-col [data-testid="list-tile"]').first().click();
+
+  // The aux column, not the centre: there is no centre in this layout, so
+  // routing the click there would have opened nothing at all.
+  await expect(page.locator(AUX)).toBeVisible();
+  await expect(page.locator(DETAIL)).toHaveCount(0);
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  const after = await box(page, LIST);
+  const aux = await box(page, AUX);
+  expect(after.x).toBeLessThan(aux.x);
+  // The board yields the aux column's width and no more — it is still the
+  // subject of the screen, not a rail again.
+  expect(after.width).toBeGreaterThan(before.width - aux.width - 2);
+
+  // Esc walks down the same rung it does everywhere else.
+  await page.keyboard.press('Escape');
+  await expect(page.locator(AUX)).toHaveCount(0);
+});

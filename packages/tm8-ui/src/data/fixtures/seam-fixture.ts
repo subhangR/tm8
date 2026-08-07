@@ -31,6 +31,7 @@ import {
   type ActorSummary,
   type AttentionRequest,
   type AttentionRequestPage,
+  type CollectionGroup,
   type CollectionQuery,
   type CollectionResult,
   type CommandContext,
@@ -579,6 +580,32 @@ export function createFixtureSeam(): FixtureSeam {
     return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null, total: all.length };
   }
 
+  /**
+   * `groupBy` answered for real, PAGE-SCOPED like the node's own.
+   *
+   * The fixture used to drop the member silently, so every board mounted over
+   * it drew its columns and reported "0 shown" in all of them — indistinguish-
+   * able from a genuinely empty tier, which is the one thing the board's
+   * honesty rules exist to prevent. A query the fixture cannot group returns
+   * NO `groups` member rather than an empty array, so the board's "no source
+   * wired" path stays reachable and true.
+   */
+  function groupsFor(rows: EntitySummary[], input: CollectionQuery): { groups?: CollectionGroup[] } {
+    const groupBy = input.groupBy;
+    if (groupBy !== 'workStatus') return {};
+    const byKey = new Map<string, EntitySummary[]>();
+    for (const row of pageOf(rows, input).items) {
+      if (row.state.kind !== 'task') continue;
+      const key = row.state.workStatus;
+      const bucket = byKey.get(key);
+      if (bucket) bucket.push(row);
+      else byKey.set(key, [row]);
+    }
+    return {
+      groups: [...byKey].map(([key, items]) => ({ key, label: key, items })),
+    };
+  }
+
   function subtreeIds(rootId: EntityId): Set<EntityId> {
     const ids = new Set<EntityId>([rootId]);
     let grew = true;
@@ -839,7 +866,7 @@ export function createFixtureSeam(): FixtureSeam {
           default: return b.activityAt.localeCompare(a.activityAt);
         }
       });
-      return clone({ query: input, page: pageOf(rows, input) });
+      return clone({ query: input, page: pageOf(rows, input), ...groupsFor(rows, input) });
     },
     async graph(input: GraphQuery): Promise<GraphResult> {
       const collection = await seam.query({ ...input, limit: input.limit ?? 150 });
