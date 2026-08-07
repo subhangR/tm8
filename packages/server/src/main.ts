@@ -156,13 +156,25 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
             token: raw,
             ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
+            // 082 / R11. Taken straight off the verified session row, which
+            // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
+            // server fact, not a client assertion. This is the only thing that
+            // distinguishes a human from an agent carrying that human's full
+            // identity (sub-doc 14, channel C7).
+            authKind: session.kind,
           };
         }
 
         const fallback = await autoOwnerResolver(headers, context);
         if (fallback.kind === 'anonymous') return fallback;
         const resolved = await owner!();
-        return { kind: 'auto-owner', identityId: resolved.identityId };
+        // The auto-owner is the person at the node's own UI — a browser session
+        // in everything but the token. It is never an agent: an agent always
+        // arrives with a bearer credential on the branch above. The auto-owner
+        // path's own exposure is gated by TM8_DISABLE_AUTO_OWNER; refusing it a
+        // kind here would duplicate that control in the wrong file and break
+        // local development for no gain.
+        return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
       }
     : undefined;
 

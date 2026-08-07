@@ -58,5 +58,9 @@ export type {
 
 export * from './spawn/index.js';
 export * from './worktree/index.js';
+// The vendor-login (Tier B credential) block. Its own barrel rather than part
+// of `spawn/`, so that importing a login primitive is a deliberate act and a
+// reader can see at the import site which of the two environments is in play.
+export * from './credentials/index.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';

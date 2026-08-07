@@ -33,12 +33,22 @@ export interface ClaimBinding {
   value: string;
 }
 
-/** The complete trusted claim surface. Adding a name here widens what RLS can trust. */
+/**
+ * The complete trusted claim surface. Adding a name here widens what RLS can
+ * trust.
+ *
+ * `authKind` joined it in 082 (architect ruling R11). The test that admitted it
+ * is IMMUTABILITY, not usefulness: the header above rejects membership because
+ * every membership-changing verb opens a window where the claim disagrees with
+ * the rows. An auth session's kind is fixed at issue and no verb changes it, so
+ * that window does not exist. Apply the same test to a sixth.
+ */
 export const CLAIM_NAMES = {
   identityId: 'tm8.identity_id',
   actorId: 'tm8.actor_id',
   nodeAdmin: 'tm8.node_admin',
   requestId: 'tm8.request_id',
+  authKind: 'tm8.auth_kind',
 } as const;
 
 /**
@@ -66,11 +76,22 @@ function boolClaim(value: boolean): string {
  * The db layer applies each as `SELECT set_config($1, $2, true)` — `true` = local
  * to the transaction, so claims never leak across pooled connections.
  */
-export function toClaimBindings(claims: ClaimSet, requestId?: string): ClaimBinding[] {
+export function toClaimBindings(
+  claims: ClaimSet,
+  requestId?: string,
+  /**
+   * The auth session's kind, when the caller knows it. OMITTED means "not
+   * stated", which `internal.require_human_auth_kind()` refuses — see
+   * `anonymousClaimBindings` for why the refusing value is bound explicitly
+   * rather than left unbound.
+   */
+  authKind?: string,
+): ClaimBinding[] {
   const bindings: ClaimBinding[] = [
     { name: CLAIM_NAMES.identityId, value: claims.identityId },
     { name: CLAIM_NAMES.actorId, value: claims.actorId },
     { name: CLAIM_NAMES.nodeAdmin, value: boolClaim(claims.isNodeAdmin) },
+    { name: CLAIM_NAMES.authKind, value: authKind ?? '' },
   ];
   if (requestId !== undefined) {
     bindings.push({ name: CLAIM_NAMES.requestId, value: requestId });
@@ -89,6 +110,10 @@ export function anonymousClaimBindings(requestId?: string): ClaimBinding[] {
     { name: CLAIM_NAMES.identityId, value: '' },
     { name: CLAIM_NAMES.actorId, value: '' },
     { name: CLAIM_NAMES.nodeAdmin, value: 'off' },
+    // Bound to the refusing value rather than left unbound, for the same reason
+    // the three above are: an unbound claim could in principle be inherited,
+    // and "no identity" must mean "not human" as well as "nobody".
+    { name: CLAIM_NAMES.authKind, value: '' },
   ];
   if (requestId !== undefined) {
     bindings.push({ name: CLAIM_NAMES.requestId, value: requestId });
