@@ -16,15 +16,14 @@
  * blocklist of caller shapes: the positive half is unforgeable, so the negative
  * half does not have to enumerate anything.
  *
- * B2 — one durable unordered pair budget per Teammate-authored live delivery.
- * Nothing in this file counts wakes. That is deliberate and it is the whole
- * design: `public.reserve_session_message_delivery` (015 §7) derives the pair
- * with `least()/greatest()`, takes `for update` on the pair row, refuses the
- * fifth consecutive attempt as `failed_permanent`/`automated_wake_limit`, and
- * bumps `version`. A process-local counter here would be a SECOND budget that
- * a restart resets — which is precisely what "DURABLE" forbids. So this file's
- * B2 responsibility is narrow and total: hold NO wake state, and route every
- * reservation through the RPC so the count survives this process.
+ * B2 — REMOVED by 083. There was a durable budget of four consecutive
+ * Teammate-authored wakes per unordered session pair, enforced in
+ * `public.reserve_session_message_delivery`. It fired on exactly the traffic
+ * this system exists to carry — a coordinator and its worker are a long
+ * agent-to-agent exchange with no human in the pair — and it fired silently,
+ * because `messages.post` answers with a message id while the refusal lands
+ * only in `session_message_deliveries`. Nothing in this file ever counted
+ * wakes and nothing here should start.
  *
  * WHY A SECOND DATABASE CONNECTION EXISTS IN THIS FILE.
  * `internal.require_delivery_principal` demands `session_user` or `role` be
@@ -279,21 +278,12 @@ export type DeliverySettlementStatus =
   | 'failed_permanent'
   | 'unknown';
 
-/**
- * One minted authority's coordinates, as the RPCs want them.
- *
- * `pairBudgetVersion` is `null` for a delivery with no source session — a
- * Member-authored message consumes no wake budget, so 015 stores NULL and
- * `require_delivery_principal` compares NULL. It is a distinct value from 0,
- * which never occurs for a real pair (reserve bumps `version` before writing
- * the row, so a paired delivery is always >= 1).
- */
+/** One minted authority's coordinates, as the RPCs want them. */
 export interface DeliveryPrincipalLease {
   readonly deliveryId: string;
   readonly messageId: string;
   readonly targetWorkSessionId: string;
   readonly expiresAt: string;
-  readonly pairBudgetVersion: number | null;
 }
 
 export interface StoredDelivery {
@@ -302,7 +292,6 @@ export interface StoredDelivery {
   readonly targetWorkSessionId: string;
   readonly status: StoredDeliveryStatus;
   readonly attemptNo: number;
-  readonly pairBudgetVersion: number | null;
   readonly failureReason: string | null;
 }
 
@@ -329,7 +318,6 @@ interface DeliveryRowJson {
   target_work_session_id: string;
   status: string;
   attempt_no: number;
-  pair_budget_version: number | null;
   failure_reason: string | null;
 }
 
@@ -340,7 +328,6 @@ function storedDeliveryOf(row: DeliveryRowJson): StoredDelivery {
     targetWorkSessionId: row.target_work_session_id,
     status: row.status as StoredDeliveryStatus,
     attemptNo: row.attempt_no,
-    pairBudgetVersion: row.pair_budget_version,
     failureReason: row.failure_reason,
   };
 }
@@ -364,8 +351,7 @@ const SET_DELIVERY_CLAIMS = `
          set_config('tm8.delivery_id', $1, true),
          set_config('tm8.delivery_message_id', $2, true),
          set_config('tm8.delivery_target_work_session_id', $3, true),
-         set_config('tm8.delivery_expires_at', $4, true),
-         set_config('tm8.delivery_pair_budget_version', $5, true)`;
+         set_config('tm8.delivery_expires_at', $4, true)`;
 
 /**
    * Refuse a delivery URL that is not AUTHENTICATED as `tm8_delivery_worker`.
@@ -461,7 +447,6 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
         lease.messageId,
         lease.targetWorkSessionId,
         lease.expiresAt,
-        lease.pairBudgetVersion === null ? '' : String(lease.pairBudgetVersion),
       ]);
       const result = await fn(client);
       await client.query('commit');
@@ -492,8 +477,8 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
   async claim(lease: DeliveryPrincipalLease): Promise<StoredDelivery> {
     return this.withPrincipal(lease, async (client) => {
       const result = await client.query<{ row: DeliveryRowJson }>(
-        `select public.claim_session_message_delivery($1, $2, $3, $4) as row`,
-        [lease.deliveryId, lease.messageId, lease.targetWorkSessionId, lease.pairBudgetVersion],
+        `select public.claim_session_message_delivery($1, $2, $3, null) as row`,
+        [lease.deliveryId, lease.messageId, lease.targetWorkSessionId],
       );
       return storedDeliveryOf(result.rows[0]!.row);
     });
@@ -511,7 +496,7 @@ export class PgW2DeliveryRpcPort implements W2DeliveryRpcPort {
           lease.deliveryId,
           lease.messageId,
           lease.targetWorkSessionId,
-          lease.pairBudgetVersion,
+          null,
           status,
           failureReason,
         ],
@@ -672,13 +657,12 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
   }
 
   /**
-   * Reserve one attempt against the DURABLE pair budget.
+   * Reserve one attempt.
    *
-   * Returns `null` — never an error, never a byte — when 015 refuses. The
-   * refusal it produces is `failed_permanent`/`automated_wake_limit` on the
-   * fifth consecutive Teammate wake of the same unordered pair, and it arrives
-   * as a settled row rather than an exception because the reservation IS the
-   * record of the refusal.
+   * Returns `null` — never an error, never a byte — when the RPC refuses. A
+   * refusal arrives as a settled row rather than an exception because the
+   * reservation IS the record of the refusal: `session_not_live` for a dead
+   * target, and nothing else since 083 retired the wake budget.
    */
   async reserve(intent: W2DeliveryReservationIntent): Promise<ReservedMessageDelivery | null> {
     const attemptNo = intent.attemptNo ?? 1;
@@ -687,7 +671,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       messageId: intent.messageId,
       targetWorkSessionId: intent.targetWorkSessionId,
       expiresAt: new Date(this.now() + this.leaseMs).toISOString(),
-      pairBudgetVersion: null,
     };
     let stored: StoredDelivery;
     try {
@@ -709,9 +692,10 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       deliveryId: lease.deliveryId,
       messageId: lease.messageId,
       targetWorkSessionId: lease.targetWorkSessionId,
-      // 0 means "no pair budget applies" (see DeliveryPrincipalLease). The
-      // real value goes to the RPCs through `inFlight`, never through here.
-      reservationVersion: stored.pairBudgetVersion ?? 0,
+      // The RPCs stopped versioning reservations with 083. `W2DeliveryBinding`
+      // still carries the field, so it is pinned at 0 — the value that always
+      // meant "no version applies".
+      reservationVersion: 0,
       expiresAt: lease.expiresAt,
       content: intent.content,
       mode: intent.mode,
@@ -735,10 +719,6 @@ export class W2ExecutionDeliveryService implements PreReservedMessageDeliveryAda
       messageId: attempt.messageId,
       targetWorkSessionId: attempt.targetWorkSessionId,
       expiresAt: attempt.expiresAt,
-      // `reservationVersion` 0 encodes "no pair"; anything else is the stored
-      // `pair_budget_version` and must be sent back verbatim or the RPC's
-      // tuple check refuses.
-      pairBudgetVersion: attempt.reservationVersion === 0 ? null : attempt.reservationVersion,
     };
     this.inFlight.set(attempt.deliveryId, { lease, principal: attempt.principal });
     try {
