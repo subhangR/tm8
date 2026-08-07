@@ -89,6 +89,21 @@ describe('TmClient — the DELETE and PUT verbs', () => {
   });
 });
 
+describe('space creation — mutation identity is always present', () => {
+  it('sends a clientMutationId required by the spaces.create contract', async () => {
+    let sent: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', stubFetch((_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return { body: { data: { space: { id: 's1', name: 'My Space' } }, requestId: 'r' } };
+    }));
+
+    await new RealFacade(new TmClient()).createSpace('My Space');
+
+    expect(sent.name).toBe('My Space');
+    expect(sent.clientMutationId).toEqual(expect.stringMatching(/^space-create_/));
+  });
+});
+
 describe('grantPoints — implemented server-side, so no longer refused', () => {
   it('POSTs to /v2/entities/:id/points and returns a CommandResult', async () => {
     let sent: Record<string, unknown> = {};
