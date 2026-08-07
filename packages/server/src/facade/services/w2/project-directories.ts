@@ -12,12 +12,12 @@ function configuredRoots(raw = process.env.TM8_PROJECT_ROOTS): string[] {
   return roots.length > 0 ? roots : [homedir()];
 }
 
-function containedBy(root: string, candidate: string): boolean {
+export function containedBy(root: string, candidate: string): boolean {
   const offset = relative(root, candidate);
   return offset === '' || (!offset.startsWith('..') && !isAbsolute(offset));
 }
 
-async function canonicalRoots(rawRoots = configuredRoots()): Promise<string[]> {
+export async function canonicalRoots(rawRoots = configuredRoots()): Promise<string[]> {
   const roots = await Promise.all(rawRoots.map(async (raw) => {
     if (!isAbsolute(raw)) {
       throw new CollabError('invalid_input', `TM8_PROJECT_ROOTS entries must be absolute: ${raw}`);
@@ -36,13 +36,13 @@ async function canonicalRoots(rawRoots = configuredRoots()): Promise<string[]> {
   return [...new Set(roots)].sort((a, b) => a.localeCompare(b));
 }
 
-function requireAllowed(path: string, roots: readonly string[]): void {
+export function requireAllowed(path: string, roots: readonly string[]): void {
   if (!roots.some((root) => containedBy(root, path))) {
     throw new CollabError('forbidden', 'project directory is outside TM8_PROJECT_ROOTS');
   }
 }
 
-async function canonicalDirectory(raw: string): Promise<string> {
+export async function canonicalDirectory(raw: string): Promise<string> {
   if (!isAbsolute(raw)) {
     throw new CollabError('invalid_input', 'project directory path must be absolute');
   }
