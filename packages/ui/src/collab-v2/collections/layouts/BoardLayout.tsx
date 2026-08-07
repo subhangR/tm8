@@ -70,7 +70,7 @@ export function BoardLayout({ items, groupBy, axes, onOpen, rowAction, selection
       {banner && (
         <div className="cv2-board__banner" role="alert">
           {banner}
-          <button type="button" className="cv2-board__bannerclose" onClick={() => setBanner(null)}>✕</button>
+          <button type="button" className="cv2-board__bannerclose" aria-label="Dismiss message" onClick={() => setBanner(null)}>✕</button>
         </div>
       )}
       <div className="cv2-board__columns">

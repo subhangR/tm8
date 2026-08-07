@@ -1,9 +1,13 @@
+/* Tag suggestion rows — Aurora Glass. Rendered inside the frosted mentions
+   popover (thread.css owns that glass); rows themselves stay cheap. */
+
 .cv2-root .cv2-tag-option {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--pn-space-2);
   min-width: min(360px, 72vw);
+  border-radius: var(--pn-r-xs);
 }
 
 .cv2-root .cv2-tag-option__glyph {
@@ -12,11 +16,17 @@
   height: 26px;
   place-items: center;
   border-radius: var(--pn-r-sm);
-  background: var(--pn-brand-soft);
+  background: var(--grad-brand-soft);
   color: var(--pn-brand);
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-label);
   font-weight: 600;
+}
+
+.cv2-root .cv2-tag-option[data-focused] .cv2-tag-option__glyph {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--glow-brand-sm);
 }
 
 .cv2-root .cv2-tag-option__copy {

@@ -1,21 +1,62 @@
-/* Gallery (G1 proof page) layout — tokens only. */
+/* Gallery (G1 proof page) — Aurora Glass. Tokens only; the aurora canvas
+   paints on .cv2-root, so the page container stays transparent and each
+   kind-section sits on it as a frosted glass panel. */
 .cv2g {
   min-height: 100vh;
   padding: var(--pn-space-8) var(--pn-space-10) var(--pn-space-16);
   display: flex;
   flex-direction: column;
-  gap: var(--pn-space-8);
+  gap: var(--pn-space-6);
+  background: transparent;
 }
-.cv2g-header { display: flex; flex-direction: column; gap: 6px; max-width: 720px; }
+
+.cv2g-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  max-width: 720px;
+  padding-bottom: var(--pn-space-2);
+}
+/* One gradient heading per view (spec §3): the gallery title. */
+.cv2g-header .t-h1 {
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  width: fit-content;
+}
 .cv2g-lede { margin: 0; }
 
+/* Each kind row is a glass panel floating on the aurora canvas. */
 .cv2g-kind {
-  border-top: 1px solid var(--pn-line);
-  padding-top: var(--pn-space-5);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
+  padding: var(--pn-space-5) var(--pn-space-6) var(--pn-space-6);
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-3);
 }
+/* Gradient hairline marker on the section seam (active-nav recipe, calm). */
+.cv2g-kind__head {
+  border-bottom: 1px solid var(--pn-line);
+  padding-bottom: var(--pn-space-2);
+  position: relative;
+}
+.cv2g-kind__head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: var(--pn-space-10);
+  height: 2px;
+  border-radius: var(--pn-r-pill);
+  background: var(--grad-brand);
+}
+
 .cv2g-kind__grid {
   display: grid;
   grid-template-columns: 260px 340px minmax(420px, 560px);
@@ -25,15 +66,33 @@
 @media (max-width: 1100px) {
   .cv2g-kind__grid { grid-template-columns: 1fr; }
 }
-.cv2g-cell { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+.cv2g-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+  min-width: 0;
+}
 .cv2g-cell__label {
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-micro);
   font-weight: 600;
   letter-spacing: var(--pn-track-label);
   text-transform: uppercase;
   color: var(--pn-brand);
 }
-.cv2g-cell__row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.cv2g-proseline { font-size: 13px; color: var(--pn-ink-2); }
-.cv2g-badges { display: flex; flex-wrap: wrap; gap: var(--pn-space-4); }
+.cv2g-cell__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+.cv2g-proseline {
+  font-size: var(--pn-fs-sm);
+  color: var(--pn-ink-2);
+}
+.cv2g-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pn-space-4);
+}

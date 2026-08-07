@@ -1,3 +1,47 @@
+# tm8 UI — "Aurora Glass" redesign spec (AUTHORITATIVE)
+
+This document is the single source of truth for the full UI redesign. Every agent
+building any part of the UI MUST read this first and build to it exactly. The goal:
+a vivid, premium, frosted-glass + gradient platform that feels like nothing else,
+while staying fully readable in dense views (task boards, terminals, threads).
+
+## 0. Non-negotiable rules
+
+1. **Token-first, always.** Never write a raw color/size in a component CSS file.
+   Style only through `--pn-*` / `--cv2-*` / `--grad-*` / `--glass-*` tokens defined in
+   `tokens.css`. Existing `var(--pn-x, #fallback)` fallbacks may stay.
+2. **Never delete an existing token name.** `tokens.css` is a *superset* of the old set —
+   every old `--pn-*` name keeps existing (with new values) so nothing breaks.
+3. **Class names are frozen.** Keep every `cv2-*` / existing class name. This is a
+   restyle + functional vetting pass, NOT a markup rewrite. Change CSS values and add
+   glass/gradient layers; do not rename classes or restructure the DOM unless a control
+   is broken.
+4. **Status is color + word, never color alone.** Keep every status label text.
+5. **Ownership:** foundation owns `tokens.css`, `kit/kit.css`, `shell/shell.css`. Every
+   other agent edits ONLY files inside its assigned directory and must NOT touch those
+   three shared files. If you need a new shared token, list it in your report; do not add it.
+
+## 1. Aesthetic
+
+**Aurora Glass.** A soft aurora gradient canvas (indigo / violet / magenta blooms)
+sits behind frosted, translucent panels. Interactive accents use a vivid brand
+gradient; active/primary states glow. Dark is the hero theme; light is a frosted-white
+variant of the same system. Motion is quick and smooth with a subtle spring on
+expressive accents (never on dense list items).
+
+- **Big containers become translucent** so the aurora canvas shows through the glass.
+  Panels/cards use `--pn-card` (already translucent) + `backdrop-filter: blur(var(--glass-blur))`.
+- **Primary buttons** get the brand gradient (`--grad-brand`) + `--glow-brand` on hover.
+- **Active nav / selected** states get a gradient marker/underline + soft glow.
+- Use blur on structural surfaces (rails, panels, popovers, headers), NOT on every tiny
+  tile — keep dense lists cheap to paint.
+
+## 2. AUTHORITATIVE `tokens.css`
+
+Foundation agent: replace `packages/ui/src/collab-v2/tokens.css` with EXACTLY this
+(you may reflow comments, but keep every token name and value):
+
+```css
 /* ==========================================================================
    tm8 — "AURORA GLASS" design tokens. Module-scoped under .cv2-root.
    Frosted glass + vivid gradient. Dark = hero via [data-theme="dark"].
@@ -94,25 +138,6 @@
   --pn-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --pn-dur-fast: 120ms; --pn-dur-base: 180ms; --pn-dur-slow: 280ms;
 
-  /* --- 10 · scrim / soft blur (modal dim layers) -------------------------- */
-  --pn-scrim:         rgba(19, 20, 39, 0.28);
-  --glass-blur-soft:  4px;
-
-  /* --- 11 · terminal chrome (real/workspace) ------------------------------ */
-  --pn-term-surface:      #131126;
-  --pn-term-surface-dark: #0C0A18;
-  --pn-term-canvas:       #100E20;
-  --pn-term-canvas-dark:  #0C0A18;
-  --pn-term-ink-token:    #2C2E4A;
-  --pn-term-dim-token:    #6A6C90;
-  --pn-term-line:         rgba(19, 20, 39, 0.10);
-
-  /* --- 12 · agent identity accents (kept vivid + distinct per provider) --- */
-  --pn-agent-claude: #E77955;
-  --pn-agent-codex:  #00A67E;
-  --pn-agent-gemini: #4285F4;
-  --pn-agent-hermes: #F59E0B;
-
   /* module base */
   font-family: var(--pn-ui);
   font-size: var(--pn-fs-body);
@@ -162,14 +187,6 @@
   --pn-sh-sm:  0 1px 2px rgba(0,0,0,0.45);
   --pn-sh-md:  0 4px 16px rgba(0,0,0,0.50), 0 16px 44px rgba(0,0,0,0.42);
   --pn-sh-pop: 0 22px 56px rgba(0,0,0,0.62);
-
-  /* dark: deeper scrim, dark terminal chrome, brighter agent accents */
-  --pn-scrim:          rgba(4, 4, 9, 0.52);
-  --pn-term-ink-token: #C9CBE8;
-  --pn-term-dim-token: #7B7EA3;
-  --pn-term-line:      rgba(255,255,255,0.08);
-  --pn-agent-claude:   #A984FF;
-  --pn-agent-gemini:   #38BDF8;
 }
 
 /* --- semantic type classes (scoped) -------------------------------------- */
@@ -186,3 +203,49 @@
 .cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
 .cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }
 .cv2-root .t-gradient { background: var(--grad-text); -webkit-background-clip: text; background-clip: text; color: transparent; }
+```
+
+## 3. Glass component recipes (apply across all areas)
+
+- **Panel / card:** `background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--glass-border); box-shadow: var(--pn-sh-md), var(--glass-highlight); border-radius: var(--pn-r-lg);`
+- **Rails / headers (structural):** translucent (`--pn-surface`) + `backdrop-filter: blur(var(--glass-blur-strong))`, `border` on the seam side only.
+- **Primary button:** `background: var(--grad-brand); color: #fff; border: none;` → hover adds `box-shadow: var(--glow-brand); transform: translateY(-1px);` (transition `--pn-dur-fast`). Active/selected chips may use `--grad-brand-soft` + brand text.
+- **Secondary button:** transparent glass (`--pn-surface`) + `1px var(--pn-line-2)` → hover `--pn-hover`.
+- **Active nav marker:** gradient bar `background: var(--grad-brand)` + `box-shadow: var(--glow-brand-sm)`.
+- **Brand mark / key headings:** may use `.t-gradient` (gradient text) sparingly (one per view max).
+- **Focus-visible:** `outline: 2px solid var(--pn-brand); outline-offset: 2px;` — keep on every interactive element.
+- **Big screen containers:** set background `transparent` (let the aurora show) OR a very light glass; do NOT paint them a solid opaque color.
+- Respect `@media (prefers-reduced-motion: reduce)` — drop transforms/springs.
+
+## 4. Functional vetting protocol (every area, every control)
+
+For EACH interactive element in your area's `.tsx` (`<button>`, `onClick`, `onSubmit`,
+`role="button"`, menu items, tabs, toggles, drag handles):
+
+1. Trace its handler. Is it wired to a real store action / facade call / navigation?
+2. **Wired & correct** → leave logic, restyle only.
+3. **Broken / no-op** (empty handler, `onClick={() => {}}`, missing handler, obviously
+   wrong target) AND the correct wiring is unambiguous from sibling code / the facade /
+   the store → FIX it. Match existing patterns; do not invent new backend/contract calls.
+4. **Ambiguous / needs a decision / needs a new backend op** → do NOT guess. Leave it,
+   and report it under `controlsBrokenNeedsReview` with file:line and why.
+5. Every control must have a visible hover + focus-visible state and an accessible label
+   (`aria-label` if icon-only). Add if missing.
+
+Never delete a feature to "fix" it. Never weaken a real handler into a stub.
+
+## 5. Report shape (return this exactly)
+
+```json
+{
+  "area": "<name>",
+  "cssFilesChanged": ["..."],
+  "tsxFilesChanged": ["..."],
+  "controlsFound": 0,
+  "controlsWiredOk": 0,
+  "controlsFixed": [{"file":"","line":0,"control":"","fix":""}],
+  "controlsNeedsReview": [{"file":"","line":0,"control":"","why":""}],
+  "newSharedTokensRequested": [],
+  "notes": ""
+}
+```

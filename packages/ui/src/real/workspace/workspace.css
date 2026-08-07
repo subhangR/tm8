@@ -48,12 +48,14 @@
  *
  * The bar and the rail draw themselves; these two rules only place them.
  */
+/* Aurora Glass: the app skeleton is TRANSPARENT so the aurora canvas painted on
+   .cv2-root shows through every glass pane above it (spec §3, big containers). */
 .ws-app {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--pn-paper);
+  background: transparent;
 }
 
 .ws-app__body {
@@ -78,7 +80,7 @@
     minmax(220px, var(--ws-right, 319px));
   height: 100%;
   min-height: 0;
-  background: var(--pn-paper);
+  background: transparent;
 }
 
 /* --- resizers ------------------------------------------------------------ */
@@ -100,6 +102,11 @@
 }
 .ws-resizer:hover,
 .ws-resizer:active { background-color: var(--pn-brand-soft); }
+.ws-resizer:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  background-color: var(--pn-brand-soft);
+}
 
 /* --- shared chrome ------------------------------------------------------- */
 
@@ -124,11 +131,18 @@
 .ws-btn:disabled { opacity: 0.42; cursor: default; }
 
 .ws-btn--run {
-  border-color: var(--pn-brand);
-  color: var(--pn-brand-2);
+  border: none;
+  background: var(--grad-brand);
+  color: #fff;
   font-weight: 600;
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+              transform var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.ws-btn--run:hover:not(:disabled) { background: var(--pn-brand-soft); }
+.ws-btn--run:hover:not(:disabled) {
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
 
 .ws-chip {
   padding: 2px 8px;
@@ -143,10 +157,12 @@
 }
 .ws-chip:hover { background: var(--pn-hover); color: var(--pn-ink-2); }
 .ws-chip[data-active] {
-  background: var(--pn-brand-soft);
+  background: var(--grad-brand-soft);
   border-color: var(--pn-brand);
   color: var(--pn-brand-2);
+  box-shadow: var(--glow-brand-sm);
 }
+.ws-chip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .ws-chip--clear { border-style: dashed; }
 
 .ws-error {
@@ -169,8 +185,10 @@
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  border-right: 1px solid var(--pn-line);
+  border-right: 1px solid var(--glass-border);
   background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
 }
 
 .ws-tasks__head {
@@ -404,7 +422,12 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--pn-paper);
+  background: transparent;
+}
+
+/* Motion is a garnish here, never a requirement. */
+@media (prefers-reduced-motion: reduce) {
+  .ws-btn--run:hover:not(:disabled) { transform: none; }
 }
 
 /* Everything inside the center column is Lane C's `CenterPane` and styles

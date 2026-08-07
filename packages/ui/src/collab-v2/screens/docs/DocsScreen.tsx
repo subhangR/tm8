@@ -100,7 +100,7 @@ export function DocsScreen({ facade, spaceId, entityId, onOpenEntity }: ShellVie
           </button>
           <button
             type="button"
-            className="cv2-actionbtn"
+            className="cv2-actionbtn cv2-actionbtn--primary"
             title="Create a child doc under this one and open it"
             disabled={!selected || busy}
             onClick={() => void split()}

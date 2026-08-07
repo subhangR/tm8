@@ -129,6 +129,7 @@ export function CenterPane({ facade, sessionId, taskId, onCloseSession }: Center
                   data-testid="center-tab-terminal"
                   onClick={() => setTab('terminal')}
                   title="Terminal"
+                  aria-label="Terminal"
                 >
                   <span className="termStripActionGlyph terminalGlyph">&gt;_</span>
                 </button>
@@ -140,6 +141,7 @@ export function CenterPane({ facade, sessionId, taskId, onCloseSession }: Center
                   data-testid="center-tab-thread"
                   disabled={!taskId}
                   title={taskId ? 'Task thread' : 'select a task to see its thread'}
+                  aria-label={taskId ? 'Task thread' : 'Task thread — select a task first'}
                   onClick={() => setTab('thread')}
                 >
                   <span className="termStripActionGlyph">#</span>

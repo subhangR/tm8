@@ -235,6 +235,21 @@ function Resizer({ side, onDrag, label }: {
   };
 
   /**
+   * Keyboard resize: a focusable separator that cannot be operated from the
+   * keyboard is decoration. Each step reflows the terminal immediately via the
+   * same end-event the pointer path fires — no drag class is latched, so a
+   * keypress is a complete move rather than an open drag.
+   */
+  const KEY_STEP = 16;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const delta = e.key === 'ArrowLeft' ? -KEY_STEP : e.key === 'ArrowRight' ? KEY_STEP : 0;
+    if (delta === 0) return;
+    e.preventDefault();
+    onDrag(delta);
+    window.dispatchEvent(new Event(RESIZE_END_EVENT));
+  };
+
+  /**
    * Idempotent, because it is called from pointerup, pointercancel AND unmount,
    * and firing the end-event twice would make the terminal reflow twice.
    */
@@ -258,8 +273,10 @@ function Resizer({ side, onDrag, label }: {
       role="separator"
       aria-orientation="vertical"
       aria-label={label}
+      tabIndex={0}
       data-side={side}
       data-testid={`ws-resizer-${side}`}
+      onKeyDown={onKeyDown}
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId);
         beginDrag(e.clientX);
@@ -298,6 +315,11 @@ export function WorkspaceScreen({ facade, spaceId, view, onNavigate }: ShellView
   // shell already owns rather than a second source of truth, the same way
   // `SpawnDialog` reaches `setView`.
   const setSpace = useNavStore((s) => s.setSpace);
+  // The palette is the shell's own; reaching it through the store is the same
+  // seam `setSpace` uses. `onNavigate('settings')` follows the IconRail pattern
+  // — 'settings' is a registered ViewName, so this is a view switch, not a new
+  // surface.
+  const openPalette = useNavStore((s) => s.openPalette);
 
   useEffect(() => {
     const onSessionSpawned = (event: Event) => {
@@ -342,6 +364,8 @@ export function WorkspaceScreen({ facade, spaceId, view, onNavigate }: ShellView
         projects={spaceTabs}
         activeProjectId={spaceId}
         onSelectProject={setSpace}
+        onOpenSettings={() => onNavigate('settings')}
+        onOpenCommandPalette={openPalette}
       />
 
       <div className="ws-app__body">

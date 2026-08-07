@@ -1,44 +1,56 @@
 /* GraphCanvas — kind-shaped Z2 nodes, typed edges, dashed containment
-   clusters, dependency-mode red blocked path. */
+   clusters, dependency-mode red blocked path (Aurora Glass). */
 
 .cv2-graph {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--pn-space-2);
   min-height: 320px;
 }
 .cv2-graph__controls {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--pn-space-2);
 }
-.cv2-graph__filter { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.cv2-graph__filter { display: inline-flex; gap: var(--pn-space-1); flex-wrap: wrap; }
 .cv2-graph__viewselect,
 .cv2-graph__focus select {
   border: 1px solid var(--pn-line-2);
-  border-radius: 7px;
-  background: var(--pn-card);
+  border-radius: var(--pn-r-xs);
+  background: var(--glass-bg);
   color: var(--pn-ink);
   font: inherit;
-  font-size: 12.5px;
-  padding: 3px 6px;
+  font-size: var(--pn-fs-label);
+  padding: 3px var(--pn-space-1);
+  cursor: pointer;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-graph__viewselect:hover,
+.cv2-graph__focus select:hover { border-color: var(--pn-brand); }
+.cv2-graph__viewselect:focus-visible,
+.cv2-graph__focus select:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
 }
 .cv2-graph__focus {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--pn-space-1);
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-2);
 }
 .cv2-graph__canvas {
   position: relative;
   flex: 1;
   min-height: 280px;
-  border: 1px solid var(--pn-line);
-  border-radius: 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
   overflow: hidden;
-  background: var(--pn-paper);
+  /* translucent — the aurora canvas shows through behind the flow (no blur:
+     panning a node field repaints constantly, keep it cheap). */
+  background: var(--pn-surface);
+  box-shadow: var(--glass-highlight);
 }
 
 /* --- entity nodes: the same Z2 card, kind-shaped ---------------------------- */
@@ -47,16 +59,18 @@
   width: 260px;
   height: 150px;
   overflow: hidden;
-  border-radius: 12px;
-  transition: opacity 120ms ease;
+  border-radius: var(--pn-r-md);
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
+.cv2-gnode:hover { box-shadow: var(--glow-brand-sm); }
 .cv2-gnode .cv2-card { height: 100%; }
 
 /* Kind-shaped accents: a colored spine + silhouette per kind family. */
 .cv2-gnode { border-left: 4px solid var(--pn-idle); }
-.cv2-gnode--task         { border-left-color: var(--pn-brand); border-radius: 8px; }
+.cv2-gnode--task         { border-left-color: var(--pn-brand); border-radius: var(--pn-r-sm); }
 .cv2-gnode--doc          { border-left-color: var(--pn-info); border-radius: 2px 14px 2px 14px; }
-.cv2-gnode--channel      { border-left-color: var(--pn-run); border-radius: 18px; }
+.cv2-gnode--channel      { border-left-color: var(--pn-run); border-radius: var(--pn-r-lg); }
 .cv2-gnode--member,
 .cv2-gnode--team_member  { border-left-color: var(--pn-wait); border-radius: 26px 12px 26px 12px; }
 .cv2-gnode--pull_request,
@@ -71,21 +85,32 @@
 .cv2-gnode__handle {
   width: 9px;
   height: 9px;
-  background: var(--pn-ink-4);
+  background: var(--pn-brand);
   border: 2px solid var(--pn-card);
 }
 .cv2-gnode__collapse {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--pn-space-1);
+  right: var(--pn-space-1);
   z-index: 3;
   border: 1px solid var(--pn-line-2);
-  border-radius: 6px;
+  border-radius: var(--pn-r-xs);
   background: var(--pn-surface);
   color: var(--pn-ink-2);
-  font-size: 11px;
+  font-size: var(--pn-fs-micro);
   cursor: pointer;
-  padding: 1px 6px;
+  padding: 1px var(--pn-space-1);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-gnode__collapse:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-brand);
+  color: var(--pn-brand-2);
+}
+.cv2-gnode__collapse:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
 }
 
 /* --- containment clusters: dashed BOXES, never lines ------------------------ */
@@ -93,21 +118,22 @@
   width: 100%;
   height: 100%;
   border: 1.5px dashed var(--pn-ink-4);
-  border-radius: 14px;
+  border-radius: var(--pn-r-lg);
   background: rgba(var(--pn-brand-rgb), 0.035);
-  transition: opacity 120ms ease;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard);
 }
 .cv2-gcluster--dimmed { opacity: 0.22; }
 .cv2-gcluster__bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-1) var(--pn-space-2);
 }
 .cv2-gcluster__label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
   color: var(--pn-ink-3);
 }
@@ -116,7 +142,14 @@
   background: transparent;
   color: var(--pn-ink-3);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
+  border-radius: var(--pn-r-xs);
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-gcluster__toggle:hover { color: var(--pn-brand); }
+.cv2-gcluster__toggle:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
 }
 
 /* --- edges: typed, labeled, directional lines ------------------------------- */
@@ -135,37 +168,55 @@
 .cv2-gedge .react-flow__edge-text {
   fill: var(--pn-ink-3);
   font-size: 10px;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--pn-track-label);
 }
 .cv2-gedge--blocked .react-flow__edge-text { fill: var(--pn-block); font-weight: 700; }
 
 /* --- edge composer ----------------------------------------------------------- */
 .cv2-edgecomposer {
   position: absolute;
-  top: 16px;
+  top: var(--pn-space-4);
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  border: 1px solid var(--pn-line-2);
-  border-radius: 12px;
-  background: var(--pn-card);
-  box-shadow: 0 12px 32px rgba(35, 32, 27, 0.16);
+  gap: var(--pn-space-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  box-shadow: var(--pn-sh-pop), var(--glass-highlight);
   padding: 14px;
   min-width: 300px;
 }
-.cv2-edgecomposer__head { display: flex; align-items: center; gap: 8px; }
+.cv2-edgecomposer__head { display: flex; align-items: center; gap: var(--pn-space-2); }
 .cv2-edgecomposer__arrow { color: var(--pn-ink-3); }
-.cv2-edgecomposer__types { display: flex; flex-wrap: wrap; gap: 6px; }
-.cv2-edgecomposer__custom { display: flex; gap: 6px; }
+.cv2-edgecomposer__types { display: flex; flex-wrap: wrap; gap: var(--pn-space-1); }
+.cv2-edgecomposer__custom { display: flex; gap: var(--pn-space-1); }
 .cv2-edgecomposer__cancel {
   align-self: flex-end;
   border: none;
   background: transparent;
   color: var(--pn-ink-3);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   cursor: pointer;
+  border-radius: var(--pn-r-xs);
+  padding: 2px var(--pn-space-1);
+  transition: color var(--pn-dur-fast) var(--pn-ease-standard),
+              background var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.cv2-edgecomposer__cancel:hover { color: var(--pn-ink); background: var(--pn-hover); }
+.cv2-edgecomposer__cancel:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 1px;
+}
+
+/* --- motion safety ----------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-gnode,
+  .cv2-gcluster,
+  .cv2-gedge { transition: none; }
 }

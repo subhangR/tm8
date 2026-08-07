@@ -1,4 +1,7 @@
-/* Tracking (L5) — PR rows with freshness + refresh, then commits. */
+/* Tracking (L5) — PR rows with freshness + refresh, then commits.
+   Aurora Glass: the screen container is transparent so the aurora canvas
+   shows through; the commits section is a frosted glass panel; the header's
+   key action ("Refresh all") is the gradient primary. Scoped under .cv2-root. */
 
 .cv2-root .cv2-track {
   display: flex;
@@ -8,7 +11,7 @@
   height: 100%;
   overflow: auto;
   padding: var(--pn-space-5);
-  background: var(--pn-paper);
+  background: transparent;
 }
 
 .cv2-root .cv2-track__head {
@@ -23,13 +26,18 @@
   gap: var(--pn-space-3);
 }
 
+/* One gradient heading per view (spec §3): the screen title. */
 .cv2-root .cv2-track__h1 {
   font-family: var(--pn-serif);
-  font-weight: 500;
+  font-weight: 600;
   font-size: var(--pn-fs-h1);
   line-height: var(--pn-lh-tight);
-  color: var(--pn-ink);
+  letter-spacing: var(--pn-track-tight);
   margin: 0;
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .cv2-root .cv2-track__headspace { flex: 1 1 auto; }
@@ -53,15 +61,24 @@
   align-items: start;
 }
 
+/* PR card wrapper: soft lift + brand glow on hover (dense rows — no blur here). */
 .cv2-root .cv2-track__card {
   min-width: 0;
   cursor: pointer;
-  border-radius: var(--pn-r-md);
-  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out);
+  border-radius: var(--pn-r-lg);
+  transition:
+    box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.cv2-root .cv2-track__card:hover { box-shadow: var(--pn-sh-md); }
-.cv2-root .cv2-track__card:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-root .cv2-track__card:hover {
+  box-shadow: var(--pn-sh-md), var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.cv2-root .cv2-track__card:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
 
 .cv2-root .cv2-track__side {
   display: flex;
@@ -74,19 +91,73 @@
 .cv2-root .cv2-track__links {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--pn-space-1);
   flex: 1 1 auto;
   min-width: 0;
 }
 
+/* Commits: a big container → frosted glass panel over the aurora. */
 .cv2-root .cv2-track__commits {
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
-  border-top: 1px solid var(--pn-line);
-  padding-top: var(--pn-space-4);
+  padding: var(--pn-space-4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
+}
+
+/* Action buttons (.cv2-actionbtn base lives in entity.css; scoped enhancements
+   only — hover lift + glow, focus ring, disabled). */
+.cv2-root .cv2-track .cv2-actionbtn {
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .cv2-track .cv2-actionbtn:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.cv2-root .cv2-track .cv2-actionbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+.cv2-root .cv2-track .cv2-actionbtn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* "Refresh all" is this screen's key action → gradient primary + glow. */
+.cv2-root .cv2-track__headrow .cv2-actionbtn {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+}
+.cv2-root .cv2-track__headrow .cv2-actionbtn:hover:not(:disabled) {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--glow-brand);
+  transform: translateY(-1px);
 }
 
 @media (max-width: 900px) {
   .cv2-root .cv2-track__row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- motion safety ---------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .cv2-track__card,
+  .cv2-root .cv2-track__card:hover,
+  .cv2-root .cv2-track .cv2-actionbtn,
+  .cv2-root .cv2-track .cv2-actionbtn:hover:not(:disabled),
+  .cv2-root .cv2-track__headrow .cv2-actionbtn:hover:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
 }

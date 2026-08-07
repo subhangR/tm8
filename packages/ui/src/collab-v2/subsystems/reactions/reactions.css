@@ -1,4 +1,6 @@
-/* ReactionsPointsBar — identical on every entity, two densities. */
+/* ReactionsPointsBar — identical on every entity, two densities.
+   AURORA GLASS reskin: token-only values; glass picker popover; gradient
+   primary "Grant"; glow on active reactions (via kit's .cv2-iconbtn). */
 
 .cv2-rxbar {
   display: inline-flex;
@@ -13,8 +15,8 @@
 
 .cv2-rxbar[data-size='sm'] .cv2-iconbtn,
 .cv2-rxbar[data-size='sm'] .cv2-points__btn {
-  padding: 1px 4px;
-  font-size: 11px;
+  padding: 1px var(--pn-space-1);
+  font-size: var(--pn-fs-micro);
 }
 
 .cv2-rxbar__error {
@@ -38,19 +40,23 @@
   gap: 2px;
   background: none;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--pn-r-xs);
   padding: 2px 6px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--pn-fs-label);
   color: var(--pn-ink-2);
   cursor: pointer;
   touch-action: none; /* hold-to-choose must not scroll the panel */
   user-select: none;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              color var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-out);
 }
 
 .cv2-points__caret {
   padding: 2px 3px;
-  font-size: 9px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
 }
 
@@ -58,63 +64,153 @@
 .cv2-points__caret:hover {
   background: var(--pn-hover);
   border-color: var(--pn-line);
+  color: var(--pn-ink);
+}
+
+.cv2-points__btn:active,
+.cv2-points__caret:active {
+  background: var(--pn-active);
+}
+
+.cv2-points__btn:focus-visible,
+.cv2-points__caret:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* The caret advertises the open picker: soft brand chip + glow. */
+.cv2-points__caret[aria-expanded='true'] {
+  background: var(--grad-brand-soft);
+  border-color: var(--pn-line);
+  color: var(--pn-brand);
+  box-shadow: var(--glow-brand-sm);
 }
 
 .cv2-points__btn:disabled,
-.cv2-points__caret:disabled { color: var(--pn-ink-4); cursor: default; background: none; }
+.cv2-points__caret:disabled {
+  color: var(--pn-ink-4);
+  cursor: default;
+  background: none;
+  box-shadow: none;
+}
+
+/* --- hold/caret amount picker: frosted glass popover -------------------------- */
 
 .cv2-points__picker {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--pn-space-1));
   left: 0;
   z-index: 40;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 6px;
+  gap: var(--pn-space-1);
+  padding: var(--pn-space-2);
   min-width: 170px;
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: 7px;
-  box-shadow: 0 8px 22px rgba(35, 32, 27, 0.12);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-md);
+  box-shadow: var(--pn-sh-pop), var(--glass-highlight);
+  animation: cv2-points-picker-in var(--pn-dur-fast) var(--pn-ease-out);
 }
 
+@keyframes cv2-points-picker-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Preset chips: secondary glass buttons. */
 .cv2-points__preset {
   font: inherit;
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--pn-ink-2);
   background: var(--pn-surface);
-  border: 1px solid var(--pn-line);
-  border-radius: 5px;
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
   padding: 2px 7px;
   cursor: pointer;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-.cv2-points__preset:hover { background: var(--pn-hover); color: var(--pn-ink); }
+.cv2-points__preset:hover {
+  background: var(--grad-brand-soft);
+  color: var(--pn-ink);
+}
 
-.cv2-points__customrow { display: flex; align-items: center; gap: 4px; width: 100%; }
+.cv2-points__preset:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.cv2-points__customrow {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  width: 100%;
+}
 
 .cv2-points__input {
   font: inherit;
   font-size: var(--pn-fs-label);
   width: 68px;
   color: var(--pn-ink);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: 5px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-xs);
   padding: 3px 6px;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-out);
 }
 
-/* --- hover pool popover ------------------------------------------------------ */
+.cv2-points__input:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
 
-.cv2-points__pool { display: flex; flex-direction: column; gap: 4px; min-width: 180px; }
+/* "Grant" is the picker's primary action: brand gradient + glow on hover.
+   (Base .cv2-actionbtn lives in entity.css; this is a points-scoped
+   enhancement — the shared file stays untouched.) */
+.cv2-root .cv2-points__customrow .cv2-actionbtn {
+  background: var(--grad-brand);
+  color: #fff;
+  border: none;
+  transition: box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+              transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.cv2-root .cv2-points__customrow .cv2-actionbtn:hover {
+  background: var(--grad-brand);
+  color: #fff;
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+
+.cv2-root .cv2-points__customrow .cv2-actionbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+/* --- hover pool popover (rides inside the shared glass .cv2-popover) ---------- */
+
+.cv2-points__pool {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+  min-width: 180px;
+}
 
 .cv2-points__pooltotal {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-h3);
-  color: var(--pn-brand);
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 .cv2-points__granters {
@@ -139,4 +235,19 @@
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--pn-brand);
+}
+
+/* --- motion ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-points__picker { animation: none; }
+  .cv2-points__btn,
+  .cv2-points__caret,
+  .cv2-points__preset,
+  .cv2-points__input,
+  .cv2-root .cv2-points__customrow .cv2-actionbtn,
+  .cv2-root .cv2-points__customrow .cv2-actionbtn:hover {
+    transition: none;
+    transform: none;
+  }
 }

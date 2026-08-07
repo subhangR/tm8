@@ -1,4 +1,4 @@
-/* Inbox — cross-space notification list. Tokens only (--pn-*). */
+/* Inbox — cross-space notification list. Aurora Glass reskin. Tokens only (--pn-*/--grad-*/--glass-*). */
 
 .cv2-inbox {
   height: 100%;
@@ -7,6 +7,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-4);
+  /* big screen container stays transparent so the aurora canvas shows through */
+  background: transparent;
 }
 
 .cv2-inbox__header { display: flex; flex-direction: column; gap: var(--pn-space-2); }
@@ -16,7 +18,11 @@
   font-size: var(--pn-fs-h1);
   line-height: var(--pn-lh-tight);
   letter-spacing: var(--pn-track-tight);
-  font-weight: 500;
+  font-weight: 600;
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .cv2-inbox__tools { display: flex; align-items: center; gap: var(--pn-space-2); }
 .cv2-inbox__unreadcount {
@@ -25,22 +31,49 @@
   color: var(--pn-ink-3);
   margin-right: auto;
 }
+
+/* Chips = secondary glass buttons; active chip = soft-gradient selected state. */
 .cv2-inbox__chip {
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   letter-spacing: var(--pn-track-label);
   border: 1px solid var(--pn-line-2);
   border-radius: var(--pn-r-pill);
-  background: var(--pn-card);
+  background: var(--pn-surface);
   color: var(--pn-ink-2);
   padding: 3px 10px;
   cursor: pointer;
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-out),
+    color var(--pn-dur-fast) var(--pn-ease-out),
+    border-color var(--pn-dur-fast) var(--pn-ease-out),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-out);
 }
-.cv2-inbox__chip:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
-.cv2-inbox__chip[data-active='true'] { background: var(--pn-brand-soft); color: var(--pn-brand); border-color: var(--pn-brand); }
-.cv2-inbox__chip:disabled { color: var(--pn-ink-4); cursor: default; }
+.cv2-inbox__chip:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); border-color: var(--pn-line-2); }
+.cv2-inbox__chip:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.cv2-inbox__chip[data-active='true'] {
+  background: var(--grad-brand-soft);
+  color: var(--pn-brand);
+  border-color: var(--pn-brand);
+  box-shadow: var(--glow-brand-sm);
+}
+.cv2-inbox__chip:disabled { color: var(--pn-ink-4); cursor: default; box-shadow: none; }
 
-.cv2-inbox__rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* Rows sit inside one frosted glass panel (single blur — rows stay cheap). */
+.cv2-inbox__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
+  overflow: hidden;
+}
 
 .cv2-inbox__row {
   display: flex;
@@ -49,6 +82,7 @@
   border-bottom: 1px solid var(--pn-line);
   min-width: 0;
 }
+.cv2-inbox__row:last-child { border-bottom: 0; }
 .cv2-inbox__row[data-read='false'] { background: var(--pn-brand-soft); }
 
 .cv2-inbox__main {
@@ -60,18 +94,25 @@
   background: none;
   border: 0;
   text-align: left;
-  padding: var(--pn-space-3) var(--pn-space-2);
+  padding: var(--pn-space-3) var(--pn-space-3);
   cursor: pointer;
   color: inherit;
   font: inherit;
+  transition: background var(--pn-dur-fast) var(--pn-ease-out);
 }
 .cv2-inbox__main:hover { background: var(--pn-hover); }
+.cv2-inbox__main:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: -2px; border-radius: var(--pn-r-sm); }
+
+/* Unread marker: gradient dot with a soft brand glow. */
 .cv2-inbox__dot {
   width: 7px; height: 7px; flex: none;
   border-radius: var(--pn-r-pill);
   background: transparent;
 }
-.cv2-inbox__dot[data-unread='true'] { background: var(--pn-brand); }
+.cv2-inbox__dot[data-unread='true'] {
+  background: var(--grad-brand);
+  box-shadow: var(--glow-brand-sm);
+}
 .cv2-inbox__msg {
   flex: 1;
   min-width: 0;
@@ -90,7 +131,7 @@
   display: flex;
   align-items: center;
   gap: var(--pn-space-2);
-  padding-right: var(--pn-space-2);
+  padding-right: var(--pn-space-3);
   flex: none;
 }
 .cv2-inbox__space {
@@ -108,5 +149,16 @@
   padding: var(--pn-space-10) 0;
   color: var(--pn-ink-3);
   font-size: var(--pn-fs-sm);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
 }
 .cv2-inbox__emptyglyph { font-size: 26px; color: var(--pn-ink-4); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-inbox__chip,
+  .cv2-inbox__main { transition: none; }
+}

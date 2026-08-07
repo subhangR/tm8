@@ -1,8 +1,14 @@
 /*
- * Sessions surface. Uses the module's `--pn-*` tokens so it themes with
- * everything else (including dark mode) rather than hardcoding a palette —
- * this screen is supplied from the integration layer, but it must not LOOK
- * like it came from somewhere else.
+ * Sessions surface — Aurora Glass.
+ * Uses ONLY the module's `--pn-*` / `--glass-*` / `--grad-*` tokens so it
+ * themes with everything else (including dark mode) rather than hardcoding a
+ * palette — this screen is supplied from the integration layer, but it must
+ * not LOOK like it came from somewhere else.
+ *
+ * Glass strategy: the screen container is transparent so the aurora canvas
+ * shows through; the detail header is a frosted structural surface; session
+ * rows are cheap translucent cards (no per-row blur — dense list stays cheap
+ * to paint).
  */
 
 .tm8-sess {
@@ -13,6 +19,8 @@
   padding: var(--pn-space-6);
   gap: var(--pn-space-4);
   overflow-y: auto;
+  /* big screen container: let the aurora show through */
+  background: transparent;
 }
 
 .tm8-sess__head {
@@ -25,7 +33,9 @@
   font-family: var(--pn-serif);
   font-size: var(--pn-fs-h1);
   line-height: var(--pn-lh-tight);
+  letter-spacing: var(--pn-track-tight);
   margin: 0 0 var(--pn-space-2);
+  color: var(--pn-ink);
 }
 .tm8-sess__blurb {
   margin: 0;
@@ -35,29 +45,40 @@
 }
 .tm8-sess__spacer { flex: 1; }
 
+/* Secondary glass button (Refresh / back / Prompt / Terminate). */
 .tm8-sess__btn {
   padding: 5px 12px;
   border-radius: var(--pn-r-sm);
-  border: 1px solid var(--pn-line);
-  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  background: var(--pn-surface);
   color: inherit;
   font: inherit;
   font-size: var(--pn-fs-sm);
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+              transform var(--pn-dur-fast) var(--pn-ease-out);
 }
-.tm8-sess__btn:hover:not(:disabled) { background: var(--pn-hover); }
-.tm8-sess__btn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
+.tm8-sess__btn:hover:not(:disabled) {
+  background: var(--pn-hover);
+  border-color: var(--pn-brand);
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.tm8-sess__btn:active:not(:disabled) { transform: translateY(0); }
+.tm8-sess__btn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .tm8-sess__btn:disabled { opacity: 0.45; cursor: default; }
 
-.tm8-sess__group { display: flex; flex-direction: column; gap: var(--pn-space-1); }
+.tm8-sess__group { display: flex; flex-direction: column; gap: var(--pn-space-2); }
 .tm8-sess__group .cv2-eyebrow { margin-bottom: var(--pn-space-2); }
 
 .tm8-sess__error {
   margin: 0;
   padding: var(--pn-space-3);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   background: var(--pn-block-soft);
   border: 1px solid var(--pn-block);
   color: var(--pn-block);
@@ -68,28 +89,44 @@
 
 /* --- a session row -------------------------------------------------------- */
 
+/*
+ * Translucent card, deliberately WITHOUT backdrop-filter: rows are a dense
+ * list and blur on every tile is expensive. Glass reads through --pn-card's
+ * own translucency over the aurora canvas.
+ */
 .tm8-sessrow {
   display: flex;
   align-items: center;
   gap: var(--pn-space-3);
   width: 100%;
   padding: var(--pn-space-3);
-  border: 1px solid var(--pn-line);
+  border: 1px solid var(--glass-border);
   border-radius: var(--pn-r-md);
   background: var(--pn-card);
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
   transition: background var(--pn-dur-fast) var(--pn-ease-standard),
-              border-color var(--pn-dur-fast) var(--pn-ease-standard);
+              border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
-.tm8-sessrow:hover { background: var(--pn-hover); border-color: var(--pn-line-2); }
-.tm8-sessrow:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 1px; }
-.tm8-sessrow[data-active="true"] { border-color: var(--pn-brand); background: var(--pn-brand-soft); }
+.tm8-sessrow:hover {
+  background: var(--pn-hover);
+  border-color: var(--pn-line-2);
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
+}
+.tm8-sessrow:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
+.tm8-sessrow[data-active="true"] {
+  border-color: var(--pn-brand);
+  background: var(--grad-brand-soft);
+  box-shadow: var(--glow-brand-sm);
+}
 
 .tm8-sessrow__title {
   font-weight: 500;
+  color: var(--pn-ink);
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -118,18 +155,39 @@
   min-height: 0;
   gap: var(--pn-space-3);
 }
+
+/* Structural header: frosted glass strip above the terminal. */
 .tm8-sessdetail__head {
   display: flex;
   align-items: center;
   gap: var(--pn-space-3);
   flex: 0 0 auto;
   flex-wrap: wrap;
+  padding: var(--pn-space-3);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
 }
 .tm8-sessdetail__title {
-  font-weight: 500;
+  font-weight: 600;
   font-size: var(--pn-fs-title);
+  color: var(--pn-ink);
 }
 .tm8-sessdetail__id {
   color: var(--pn-ink-4);
   font-size: var(--pn-fs-micro);
+}
+
+/* Motion is a garnish, never a requirement. */
+@media (prefers-reduced-motion: reduce) {
+  .tm8-sess__btn,
+  .tm8-sess__btn:hover:not(:disabled),
+  .tm8-sess__btn:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+  .tm8-sessrow { transition: none; }
 }

@@ -307,7 +307,7 @@ export function CommandPalette({
             role="checkbox"
             aria-checked={activeKinds.length === 0}
             data-active={activeKinds.length === 0 || undefined}
-            onClick={() => { setKinds([]); inputRef.current?.focus(); }}
+            onClick={() => { setKinds([]); setIndex(0); inputRef.current?.focus(); }}
           >
             All
           </button>

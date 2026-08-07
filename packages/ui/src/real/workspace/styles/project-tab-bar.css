@@ -11,8 +11,11 @@
   align-items: center;
   gap: 12px;
   padding: 0 14px;
-  background: var(--pn-paper);
-  border-bottom: 1px solid var(--pn-line);
+  /* Aurora Glass header: translucent + strong blur, seam on the bottom only. */
+  background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .cv2-root .pn-ptabs { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
@@ -30,12 +33,14 @@
   background: transparent;
   border: 1px solid transparent;
 }
+.cv2-root .pn-ptab:hover:not(.pn-ptab--active) { background: var(--pn-hover); color: var(--pn-ink-2); }
+/* Active space tab: soft brand gradient chip + glow (spec §3, active chips). */
 .cv2-root .pn-ptab--active {
-  background: var(--pn-card);
-  color: var(--pn-ink);
-  border-color: var(--pn-line);
+  background: var(--grad-brand-soft);
+  color: var(--pn-brand-2);
+  border-color: var(--pn-brand);
   font-weight: 600;
-  box-shadow: var(--pn-sh-sm);
+  box-shadow: var(--glow-brand-sm);
 }
 .cv2-root .pn-top-r { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 
@@ -86,6 +91,9 @@
 .cv2-root .pn-ib:hover:not(:disabled) { background: var(--pn-hover); color: var(--pn-ink); }
 .cv2-root .pn-ib:disabled { cursor: not-allowed; }
 .cv2-root .pn-ib svg { width: 16px; height: 16px; }
+.cv2-root .pn-ib:focus-visible,
+.cv2-root .projectTabMain:focus-visible,
+.cv2-root .projectTabSettingsBtn:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 
 .cv2-root .projectTabs {
   min-width: 0;
@@ -158,4 +166,9 @@
 @media (max-width: 768px) {
   .cv2-root .projectTab { min-height: 44px; display: flex; align-items: center; }
   .cv2-root .projectTabMain { min-height: 44px; align-items: center; padding: 0 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .pn-dot--live::after { animation: none; }
+  .cv2-root .projectTabNeedsInput { animation: none; }
 }

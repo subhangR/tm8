@@ -30,7 +30,9 @@ export function ChannelShelf({ items, onOpenEntity }: ChannelShelfProps) {
           className="cv2-hub__shelfcell"
           data-entity={item.id}
           onClick={() => onOpenEntity(item.id)}
-          onKeyDown={(e) => { if (e.key === 'Enter') onOpenEntity(item.id); }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenEntity(item.id); }
+          }}
         >
           <span className="cv2-hub__pin" aria-hidden="true">📌</span>
           <EntityCard entity={item} />

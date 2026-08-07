@@ -1,25 +1,28 @@
 /**
- * Docs screen — chapter rail + reader. Paper & ink, scoped under .cv2-root.
+ * Docs screen — chapter rail + reader, Aurora Glass. Scoped under .cv2-root.
  * The reader's own typography lives in entity.css (the Z4 `reader` layout);
  * this file only lays out the screen frame, the toolbar and the history list.
+ * Big containers stay translucent so the aurora canvas shows through.
  */
 
 .cv2-root .cv2-docs {
   display: flex;
   min-height: 0;
   height: 100%;
-  background: var(--pn-paper);
+  background: transparent;
 }
 
-/* --- chapter rail ---------------------------------------------------------- */
+/* --- chapter rail (structural glass) --------------------------------------- */
 .cv2-root .cv2-docs__rail {
   width: 264px;
   flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--pn-line);
+  border-right: 1px solid var(--glass-border);
   background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
 }
 .cv2-root .cv2-docs__railhead {
   display: flex;
@@ -44,30 +47,82 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  background: transparent;
 }
 .cv2-root .cv2-docs__toolbar {
   display: flex;
   align-items: center;
   gap: var(--pn-space-2);
   padding: var(--pn-space-2) var(--pn-space-5);
-  border-bottom: 1px solid var(--pn-line);
+  border-bottom: 1px solid var(--glass-border);
   background: var(--pn-surface);
+  backdrop-filter: blur(var(--glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong));
   flex: none;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 .cv2-root .cv2-docs__toolbarspace { flex: 1; }
 .cv2-root .cv2-docs__toolbarmeta { color: var(--pn-ink-3); }
 
-/* --- version history ------------------------------------------------------- */
+/* Toolbar controls: glass secondary chips with glow on hover/press.
+   (.cv2-actionbtn base lives in entity.css; these are scoped enhancements —
+   focus-visible + hover lift + a gradient primary for the screen's key action.) */
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn {
+  transition:
+    background var(--pn-dur-fast) var(--pn-ease-standard),
+    box-shadow var(--pn-dur-fast) var(--pn-ease-standard),
+    transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+/* Toggled state of the History disclosure = active brand chip. */
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn[aria-pressed="true"] {
+  background: var(--grad-brand-soft);
+  border-color: rgba(var(--pn-brand-rgb), 0.35);
+  color: var(--pn-brand);
+  box-shadow: var(--glow-brand-sm);
+}
+/* Primary action ("Split to child doc"): brand gradient + glow. */
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn--primary {
+  background: var(--grad-brand);
+  border-color: transparent;
+  color: #fff;
+}
+.cv2-root .cv2-docs__toolbar .cv2-actionbtn--primary:hover:not(:disabled) {
+  background: var(--grad-brand);
+  color: #fff;
+  filter: none;
+  box-shadow: var(--glow-brand);
+  transform: translateY(-1px);
+}
+
+/* --- version history (glass card) ------------------------------------------ */
 .cv2-root .cv2-docs__history {
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-2);
   margin: var(--pn-space-4) var(--pn-space-5) 0;
   padding: var(--pn-space-3) var(--pn-space-4);
-  border: 1px solid var(--pn-line);
-  border-radius: var(--pn-r-lg, 12px);
-  background: var(--pn-card);
-  box-shadow: var(--pn-sh-sm);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-lg);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--pn-sh-md), var(--glass-highlight);
 }
 .cv2-root .cv2-docs__versions {
   list-style: none;
@@ -80,10 +135,18 @@
   display: flex;
   align-items: center;
   gap: var(--pn-space-2);
-  padding: var(--pn-space-2) 0;
+  padding: var(--pn-space-2) var(--pn-space-2);
   border-bottom: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-sm);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
+.cv2-root .cv2-docs__version:hover { background: var(--pn-hover); }
 .cv2-root .cv2-docs__version:last-child { border-bottom: none; }
+/* The row you are reading gets the active gradient marker + soft glow. */
+.cv2-root .cv2-docs__version[data-current] {
+  background: var(--grad-brand-soft);
+  box-shadow: var(--glow-brand-sm);
+}
 .cv2-root .cv2-docs__versionno {
   width: 44px;
   flex: none;
@@ -98,6 +161,16 @@
 .cv2-root .cv2-docs__versionnow {
   color: var(--pn-brand);
   text-transform: uppercase;
-  letter-spacing: var(--pn-track-mega, 0.08em);
+  letter-spacing: var(--pn-track-mega);
   font-size: var(--pn-fs-micro);
+}
+
+/* --- motion safety ---------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root .cv2-docs__toolbar .cv2-actionbtn,
+  .cv2-root .cv2-docs__toolbar .cv2-actionbtn:hover:not(:disabled),
+  .cv2-root .cv2-docs__toolbar .cv2-actionbtn--primary:hover:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
 }

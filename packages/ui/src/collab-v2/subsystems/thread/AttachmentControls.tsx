@@ -262,11 +262,14 @@ export const AttachmentControls = forwardRef<AttachmentControlsHandle, Attachmen
                   <span className="cv2-thread__entityactions">
                     {messageAddMode(item.kind) === 'file' && (
                       <button type="button" className="cv2-thread__act"
+                        aria-label={`Attach ${item.title}`}
                         onClick={() => attachExistingFile(item)}>Attach</button>
                     )}
                     <button type="button" className="cv2-thread__act"
+                      aria-label={`Reference ${item.title}`}
                       onClick={() => addEntity(item, 'reference')}>Reference</button>
                     <button type="button" className="cv2-thread__act"
+                      aria-label={`Add ${item.title} as card`}
                       onClick={() => addEntity(item, 'card')}>Add card</button>
                   </span>
                 </div>
@@ -320,8 +323,11 @@ export const AttachmentControls = forwardRef<AttachmentControlsHandle, Attachmen
                 {row.error && <span className="cv2-thread__uploaderror">{row.error}</span>}
                 {row.status === 'failed' && (
                   <>
-                    <button type="button" className="cv2-thread__act" onClick={() => void uploadOne(row)}>Retry</button>
                     <button type="button" className="cv2-thread__act"
+                      aria-label={`Retry uploading ${row.file.name}`}
+                      onClick={() => void uploadOne(row)}>Retry</button>
+                    <button type="button" className="cv2-thread__act"
+                      aria-label={`Dismiss failed upload ${row.file.name}`}
                       onClick={() => setUploads((current) => current.filter((item) => item.id !== row.id))}>Dismiss</button>
                   </>
                 )}

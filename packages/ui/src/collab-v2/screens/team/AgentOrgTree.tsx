@@ -42,8 +42,11 @@ export function AgentOrgTree({ rows, facade, onOpen }: AgentOrgTreeProps) {
             role="button"
             tabIndex={0}
             className="cv2-team__orgcell"
+            aria-label={`Open ${entity.title}'s profile`}
             onClick={() => onOpen(entity.id)}
-            onKeyDown={(e) => { if (e.key === 'Enter') onOpen(entity.id); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(entity.id); }
+            }}
           >
             <EntityCard entity={entity} />
             <LiveBadges entity={entity} facade={facade} workingStyle="pulses" compact />

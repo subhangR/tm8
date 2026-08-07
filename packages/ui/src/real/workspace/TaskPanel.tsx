@@ -310,6 +310,7 @@ function TaskRowView({
             className="pn-tt__run"
             data-testid={`task-run-${task.id}`}
             title="Run an agent on this task"
+            aria-label="Run an agent on this task"
             onClick={onRun}
           >
             <Icon name="play" />
@@ -320,6 +321,7 @@ function TaskRowView({
             data-testid={`task-complete-${task.id}`}
             disabled={busy || finished}
             title={finished ? `Already ${state.workStatus}` : 'Complete this task'}
+            aria-label={finished ? `Already ${state.workStatus}` : 'Complete this task'}
             onClick={onComplete}
           >
             <Icon name="check" />
@@ -557,17 +559,17 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
         </button>
         <span className="pn-head-spacer" />
         <button type="button" className={`pn-subtab ${tab === 'current' ? 'pn-subtab--active' : ''}`}
-          onClick={showCurrent} title="Current tasks">
+          onClick={showCurrent} title="Current tasks" aria-label="Current tasks">
           <Icon name="listChecks" /> {countLabel(activeCounter.items)}
         </button>
-        <button type="button" className="pn-subtab" {...PINNED}>
+        <button type="button" className="pn-subtab" aria-label="Pinned tasks — unavailable" {...PINNED}>
           <Icon name="pin" /> —
         </button>
         <button type="button" className={`pn-subtab ${tab === 'completed' ? 'pn-subtab--active' : ''}`}
-          onClick={showCompleted} title="Completed tasks">
+          onClick={showCompleted} title="Completed tasks" aria-label="Completed tasks">
           <Icon name="check" /> {countLabel(doneCounter.items)}
         </button>
-        <button type="button" className="pn-subtab" {...ARCHIVED}>
+        <button type="button" className="pn-subtab" aria-label="Archived tasks — unavailable" {...ARCHIVED}>
           <Icon name="archive" /> —
         </button>
       </div>
@@ -597,7 +599,7 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
         <input ref={searchRef} type="search" placeholder="Search tasks" value={search}
           onChange={(event) => setSearch(event.currentTarget.value)} />
         {search ? (
-          <button type="button" className="pn-ib pn-search__clear" title="Clear" onClick={() => setSearch('')}>
+          <button type="button" className="pn-ib pn-search__clear" title="Clear" aria-label="Clear search" onClick={() => setSearch('')}>
             <Icon name="x" size={13} />
           </button>
         ) : <span className="pn-kbd">⌘K</span>}
@@ -626,7 +628,8 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
           </select>
         </label>
         <button type="button" className={`pn-filter ${filtersOpen ? 'pn-filter--active' : ''}`}
-          onClick={() => setFiltersOpen((open) => !open)} title="Expand filters">
+          onClick={() => setFiltersOpen((open) => !open)} title="Expand filters"
+          aria-label="Expand filters" aria-expanded={filtersOpen}>
           <Icon name="filter" size={13} />
           {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
         </button>
@@ -651,12 +654,19 @@ export function TaskPanel({ facade, spaceId, selectedTaskId, onSelectTask }: Tas
       {(runError || error || activeCounter.error || doneCounter.error || writes.error) && (
         <div className="pn-task-error" role="alert" data-testid="task-error">
           <span>{runError ?? writes.error ?? error ?? activeCounter.error ?? doneCounter.error}</span>
-          <button type="button" className="pn-ib" title="Dismiss" onClick={writes.clearError}><Icon name="x" /></button>
+          <button
+            type="button"
+            className="pn-ib"
+            title="Dismiss"
+            aria-label="Dismiss error"
+            onClick={() => { writes.clearError(); setRunError(null); }}
+          ><Icon name="x" /></button>
         </div>
       )}
 
       <div className="executionBar executionBar--inactive">
         <RunCoordButton kind="run" title={selectedTaskId ? 'Run the selected task' : 'Select a task to run'}
+          disabled={!selectedTaskId || running}
           onClick={() => { if (selectedTaskId) void run(selectedTaskId); }}>run</RunCoordButton>
         <RunCoordButton kind="coord" disabled={COORDINATE.disabled} title={COORDINATE.title}
           onClick={() => undefined}>coordinate</RunCoordButton>

@@ -37,6 +37,7 @@ export function InvitesSection({ invites, unavailable = false }: InvitesSectionP
               type="button"
               className="cv2-set__rowname t-code cv2-set__copy"
               title="Copy invite code"
+              aria-label={`Copy invite code ${invite.code}`}
               onClick={() => copy(invite.code)}
             >
               {invite.code}

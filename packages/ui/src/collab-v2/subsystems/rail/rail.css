@@ -1,10 +1,13 @@
-/* ConnectionsRail — paper/ink rail styling. Tokens only, no magic colors. */
+/* ConnectionsRail — Aurora Glass rail styling. Tokens only, no magic colors.
+   The rail sits inside a glass panel: the rail itself stays transparent, its
+   structural sub-surfaces (blocked banner, composer) get the glass recipe. */
 
 .cv2-rail {
   display: flex;
   flex-direction: column;
   gap: var(--pn-space-3);
   font-size: var(--pn-fs-sm);
+  background: transparent;
 }
 
 /* --- blocked rollup ---------------------------------------------------------- */
@@ -14,11 +17,14 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: var(--pn-space-2) var(--pn-space-3);
   border: 1px solid var(--cv2-status-blocked);
   border-left-width: 3px;
-  border-radius: 6px;
+  border-radius: var(--pn-r-md);
   background: var(--cv2-status-blocked-soft);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
 }
 
 .cv2-rail__blockedtext {
@@ -45,16 +51,17 @@
 
 .cv2-rail__count {
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-3);
-  padding: 0 4px;
+  padding: 0 var(--pn-space-1);
   border: 1px solid var(--pn-line);
-  border-radius: 99px;
+  border-radius: var(--pn-r-pill);
+  background: var(--pn-surface);
 }
 
 .cv2-rail__warn {
   font-family: var(--pn-mono);
-  font-size: 10.5px;
+  font-size: var(--pn-fs-micro);
   color: var(--cv2-status-blocked);
 }
 
@@ -73,19 +80,24 @@
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 6px;
-  border-radius: 6px;
+  border-radius: var(--pn-r-sm);
 }
 
 .cv2-rail__children {
   flex-direction: column;
   align-items: stretch;
-  padding: 4px;
+  padding: var(--pn-space-1);
   border: 1px dashed transparent;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              background var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
+/* Live reparent drop target → brand glow so the gesture reads as "droppable". */
 .cv2-rail__children[data-dropactive] {
   border-color: var(--pn-brand);
-  background: var(--pn-brand-soft);
+  background: var(--grad-brand-soft);
+  box-shadow: var(--glow-brand-sm);
 }
 
 .cv2-rail__axis {
@@ -105,7 +117,7 @@
 
 .cv2-rail__ordinal {
   font-family: var(--pn-mono);
-  font-size: 10px;
+  font-size: var(--pn-fs-micro);
   color: var(--pn-ink-4);
   min-width: 14px;
   text-align: right;
@@ -113,7 +125,7 @@
 
 .cv2-rail__reorder { display: inline-flex; gap: 0; }
 
-/* --- edge items -------------------------------------------------------------- */
+/* --- edge items (dense list: NO blur here, keep paints cheap) ---------------- */
 
 .cv2-rail__edges {
   display: flex;
@@ -135,8 +147,9 @@
   align-items: center;
   gap: 5px;
   padding: 1px 2px;
-  border-radius: 5px;
+  border-radius: var(--pn-r-xs);
   min-width: 0;
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
 .cv2-rail__item:hover { background: var(--pn-hover); }
@@ -144,7 +157,7 @@
 /* Remove-on-hover: the row's icon buttons stay out of the way until wanted. */
 .cv2-rail__item .cv2-iconbtn {
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
 .cv2-rail__item:hover .cv2-iconbtn,
@@ -152,10 +165,10 @@
 
 .cv2-rail__res {
   font-family: var(--pn-mono);
-  font-size: 9.5px;
+  font-size: var(--pn-fs-micro);
   letter-spacing: var(--pn-track-label);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--pn-r-xs);
   color: var(--pn-ink-3);
   background: var(--pn-active);
 }
@@ -187,23 +200,29 @@
   padding: 2px 0;
   font: inherit;
   font-size: var(--pn-fs-label);
+  font-weight: 500;
   color: var(--pn-brand);
   cursor: pointer;
+  border-radius: var(--pn-r-xs);
 }
 
 .cv2-rail__showall:hover { text-decoration: underline; }
+.cv2-rail__showall:focus-visible { outline: 2px solid var(--pn-brand); outline-offset: 2px; }
 .cv2-rail__showall:disabled { color: var(--pn-ink-4); cursor: default; text-decoration: none; }
 
-/* --- composer ---------------------------------------------------------------- */
+/* --- composer (structural glass surface) ------------------------------------- */
 
 .cv2-rail__composer {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--pn-line);
-  border-radius: 6px;
-  background: var(--pn-surface);
+  padding: var(--pn-space-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--pn-r-md);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--pn-sh-sm), var(--glass-highlight);
 }
 
 .cv2-rail__composerrow {
@@ -213,7 +232,7 @@
   gap: 6px;
 }
 
-.cv2-rail__composeractions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.cv2-rail__composeractions { margin-left: auto; display: inline-flex; align-items: center; gap: var(--pn-space-1); }
 
 .cv2-rail__composertype {
   font-size: var(--pn-fs-label);
@@ -226,16 +245,28 @@
   font: inherit;
   font-size: var(--pn-fs-label);
   color: var(--pn-ink);
-  background: var(--pn-card);
-  border: 1px solid var(--pn-line);
-  border-radius: 5px;
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  border-radius: var(--pn-r-sm);
   padding: 3px 6px;
+  transition: border-color var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-standard);
+}
+
+.cv2-rail__select:hover,
+.cv2-rail__input:hover { border-color: rgba(var(--pn-brand-rgb), 0.35); }
+
+.cv2-rail__select:focus-visible,
+.cv2-rail__input:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-color: var(--pn-brand);
 }
 
 .cv2-rail__candidates {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--pn-space-1);
 }
 
 .cv2-rail__error {
@@ -243,4 +274,64 @@
   font-family: var(--pn-mono);
   font-size: var(--pn-fs-micro);
   color: var(--cv2-status-blocked);
+}
+
+/* --- action buttons, rail-scoped (base .cv2-actionbtn lives in entity.css;
+       these enhance without touching the shared file) ------------------------- */
+
+/* Secondary rail actions: glass chip → hover wash, brand focus ring. */
+.cv2-root .cv2-rail .cv2-actionbtn {
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line-2);
+  transition: background var(--pn-dur-fast) var(--pn-ease-standard),
+              box-shadow var(--pn-dur-fast) var(--pn-ease-out),
+              transform var(--pn-dur-fast) var(--pn-ease-out);
+}
+
+.cv2-root .cv2-rail .cv2-actionbtn:hover:not(:disabled) {
+  background: var(--pn-hover);
+  color: var(--pn-ink);
+}
+
+.cv2-root .cv2-rail .cv2-actionbtn:focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+}
+
+.cv2-root .cv2-rail .cv2-actionbtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Primary ("Link" submit): brand gradient + glow on hover. */
+.cv2-root .cv2-rail .cv2-actionbtn--primary {
+  background: var(--grad-brand);
+  color: #fff;
+  border: none;
+}
+
+.cv2-root .cv2-rail .cv2-actionbtn--primary:hover:not(:disabled) {
+  background: var(--grad-brand);
+  color: #fff;
+  filter: none;
+  box-shadow: var(--glow-brand-sm);
+  transform: translateY(-1px);
+}
+
+/* --- motion ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .cv2-rail__children,
+  .cv2-rail__item,
+  .cv2-rail__item .cv2-iconbtn,
+  .cv2-rail__select,
+  .cv2-rail__input,
+  .cv2-root .cv2-rail .cv2-actionbtn,
+  .cv2-root .cv2-rail .cv2-actionbtn:hover:not(:disabled),
+  .cv2-root .cv2-rail .cv2-actionbtn--primary:hover:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
 }
