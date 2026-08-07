@@ -56,6 +56,7 @@ import { ATTENTION_COMMANDS } from './attention.js';
 import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
 import { GRAPH_COMMANDS } from './graph.js';
+import { WORKTREE_COMMANDS } from './worktree.js';
 import { UNDO_COMMANDS } from './undo.js';
 import { SERVER_COMMANDS } from './server.js';
 import { ARTIFACT_COMMANDS } from './artifact.js';
@@ -124,6 +125,7 @@ export const COMMANDS: CommandModule[] = [
   ...TASK_COMMANDS,
   ...TRACKING_COMMANDS,
   ...GRAPH_COMMANDS,
+  ...WORKTREE_COMMANDS,
   ...UNDO_COMMANDS,
   ...ARTIFACT_COMMANDS,
   ...VOICE_COMMANDS,
