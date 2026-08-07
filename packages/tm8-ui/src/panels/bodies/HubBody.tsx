@@ -1,7 +1,7 @@
 import type { EntityDetail, EntitySummary, MessageView } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
-import { Avatar, Chip, Eyebrow } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import './hub-body.css';
@@ -97,9 +97,7 @@ export function HubBody({
           body already owns that treatment, so this reuses it rather than
           declaring a second one that could drift from it. */}
       {description ? (
-        <p className="pn-prose" data-testid="hub-description">
-          {description}
-        </p>
+        <Markdown source={description} className="pn-prose" testId="hub-description" />
       ) : null}
 
       {pinned.length > 0 ? (

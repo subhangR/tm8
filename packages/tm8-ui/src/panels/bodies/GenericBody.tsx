@@ -7,7 +7,7 @@ import type {
 } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
 import { KindIcon, getKind } from '../../domain';
-import { Chip, Eyebrow } from '../../kit';
+import { Chip, Eyebrow, Markdown } from '../../kit';
 import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
@@ -155,7 +155,10 @@ function FieldsBlock({ detail }: { detail: EntityDetail }) {
   if (rows.length === 0 && !prose) return null;
   return (
     <>
-      {prose ? <p className="pn-prose">{prose}</p> : null}
+      {/* A task's body is markdown — checklists, fenced commands, links. Drawn
+          as a plain paragraph it came out as literal `##` and `-`, which is
+          how the whole panel read for anything an agent wrote. */}
+      {prose ? <Markdown source={prose} className="pn-prose" testId="pn-prose" /> : null}
       {rows.length > 0 ? (
         <dl className="pn-fields">
           {rows.map(([key, value]) => (

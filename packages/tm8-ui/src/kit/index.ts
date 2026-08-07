@@ -9,5 +9,11 @@ export { ActorRef } from './ActorRef';
 export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';
 export { BootLoader } from './BootLoader';
-export { Markdown, headingsIn, type MarkdownFileHref, type MarkdownProps } from './Markdown';
+export {
+  Markdown,
+  headingsIn,
+  type MarkdownComponents,
+  type MarkdownFileHref,
+  type MarkdownProps,
+} from './Markdown';
 export { Mermaid, type MermaidProps } from './Mermaid';

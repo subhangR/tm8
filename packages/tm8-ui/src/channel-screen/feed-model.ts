@@ -4,6 +4,7 @@ import type {
   EntitySummary,
   FeedItem,
   FeedVia,
+  Mention,
   MessageDeliveryStatus,
 } from '@tm8/contract';
 import type { PillTone } from '../kit';
@@ -337,6 +338,102 @@ export interface ChannelPostInput {
 export interface ChannelRefusal {
   kind: 'forbidden' | 'not_found';
   message: string;
+}
+
+// ---------------------------------------------------------------------------
+// Message bodies are MARKDOWN
+// ---------------------------------------------------------------------------
+
+/**
+ * A message body is markdown and always was — agents post headings, tables and
+ * fenced code, and the feed used to draw all of it as one plain paragraph of
+ * literal asterisks and pipes. `chatMarkdownSource` prepares such a body for
+ * `kit/Markdown`, and it does exactly two things to it.
+ *
+ * ONE — CANONICAL MENTIONS BECOME LINKS. A mention has to survive as a
+ * CONTROL, not as text, so each `@display` token that the message's own
+ * mention list vouches for is rewritten to a markdown link carrying the entity
+ * id. `FeedRow`'s `a` override turns those back into buttons; every other link
+ * is left to the kit. Matching is exact-token against this message's own list
+ * — nothing in the body is guessed at — and a token inside a fenced block is
+ * left alone, because in a code block an `@name` is code.
+ *
+ * TWO — A NEWLINE IS A LINE BREAK. Chat is written with Enter, not with
+ * markdown's two-space hard break, so a lone newline that CommonMark would
+ * fold into a space would silently reflow every message anyone has already
+ * posted. Non-empty prose lines therefore end in a hard break. Fenced blocks
+ * keep their bytes: their whitespace is content.
+ */
+export function chatMarkdownSource(
+  body: string,
+  mentions: readonly Mention[],
+): { source: string; inlined: ReadonlySet<string> } {
+  const inlined = new Set<string>();
+  const out: string[] = [];
+  let inFence = false;
+  for (const line of body.split('\n')) {
+    if (/^\s{0,3}(```|~~~)/.test(line)) {
+      inFence = !inFence;
+      out.push(line);
+      continue;
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    const linked = linkMentions(line, mentions, inlined).trimEnd();
+    out.push(linked === '' ? '' : `${linked}  `);
+  }
+  return { source: out.join('\n'), inlined };
+}
+
+/** The key both halves of the mention split agree on. */
+export function mentionKey(mention: Mention): string {
+  return `${mention.kind}:${mention.entityId}`;
+}
+
+const MENTION_HREF_PREFIX = '#tm8-mention-';
+
+/**
+ * The entity a rendered link names, or `null` if it names none.
+ *
+ * A body can legally contain a hand-written `[x](#tm8-mention-…)`, so the
+ * caller checks the id against the message's OWN mention list before it draws
+ * a control — the prefix proposes, the mention list decides.
+ */
+export function mentionIdInHref(href: string | undefined): EntityId | null {
+  if (typeof href !== 'string' || !href.startsWith(MENTION_HREF_PREFIX)) return null;
+  const id = href.slice(MENTION_HREF_PREFIX.length);
+  return id === '' ? null : (id as EntityId);
+}
+
+function linkMentions(line: string, mentions: readonly Mention[], inlined: Set<string>): string {
+  type Match = { start: number; end: number; mention: Mention };
+  const candidates: Match[] = [];
+  for (const mention of mentions) {
+    const token = `@${mention.display}`;
+    for (let at = line.indexOf(token); at !== -1; at = line.indexOf(token, at + token.length)) {
+      candidates.push({ start: at, end: at + token.length, mention });
+    }
+  }
+  if (candidates.length === 0) return line;
+  // Earliest first; on a tie the longer token wins so "@Haiku 4.5" beats "@Haiku".
+  candidates.sort((a, b) => a.start - b.start || b.end - a.end);
+  let out = '';
+  let from = 0;
+  for (const match of candidates) {
+    if (match.start < from) continue;
+    out += line.slice(from, match.start);
+    out += `[@${escapeInlineMarkdown(match.mention.display)}](${MENTION_HREF_PREFIX}${match.mention.entityId})`;
+    inlined.add(mentionKey(match.mention));
+    from = match.end;
+  }
+  return out + line.slice(from);
+}
+
+/** A display name is a NAME, never markup — `a_b_c` must not come out italic. */
+function escapeInlineMarkdown(text: string): string {
+  return text.replace(/([\\`*_[\]<>])/g, '\\$1');
 }
 
 /** `HH:MM` in the viewer's locale — the oracle's rail time (hero line 91). */

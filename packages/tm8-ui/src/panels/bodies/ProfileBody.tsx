@@ -1,7 +1,7 @@
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { KindIcon, getKind } from '../../domain';
-import { Avatar, Chip, Eyebrow } from '../../kit';
+import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts`, deliberately: the barrel also
  * exports `LiveTerminal`, which pulls xterm into the graph of whatever imports
@@ -288,7 +288,7 @@ function BioBlock({ detail, params }: { detail: EntityDetail; params: Params }) 
   const raw = key ? content[key] : null;
   const text = typeof raw === 'string' && raw.length > 0 ? raw : null;
   if (!text) return null;
-  return <p className="pn-prose">{text}</p>;
+  return <Markdown source={text} className="pn-prose" testId="pn-prose" />;
 }
 
 /**

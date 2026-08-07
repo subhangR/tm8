@@ -878,7 +878,30 @@
 .cv2-root .pn-drift__text { font-size: 11px; color: var(--pn-ink-2); }
 
 /* --- generic body blocks ------------------------------------------------- */
-.cv2-root .pn-prose { font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); margin: 0; text-wrap: pretty; }
+/* Prose is MARKDOWN (kit/Markdown), so this is a markdown root and not a
+   paragraph. The `.md-root` qualifier is what makes the panel's own measure
+   outrank markdown.css's `.cv2-root .md-root` whatever order they import in;
+   the bare selector stays for the plain-text prose still drawn elsewhere. */
+.cv2-root .pn-prose,
+.cv2-root .md-root.pn-prose { font-family: var(--pn-ui); font-size: 12.5px; line-height: 1.55; color: var(--pn-ink-2); margin: 0; text-wrap: pretty; }
+.cv2-root .md-root.pn-prose > :last-child { margin-bottom: 0; }
+/* Panel headings are the SECTION eyebrows; a heading inside a body is emphasis
+   within it, so it does not get the doc reader's serif-and-rule treatment. */
+.cv2-root .md-root.pn-prose h1,
+.cv2-root .md-root.pn-prose h2,
+.cv2-root .md-root.pn-prose h3,
+.cv2-root .md-root.pn-prose h4,
+.cv2-root .md-root.pn-prose h5,
+.cv2-root .md-root.pn-prose h6 {
+  font-family: var(--pn-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.8em 0 0.3em;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cv2-root .md-root.pn-prose h1 { font-family: var(--pn-ui); font-size: 13.5px; }
 .cv2-root .pn-fields {
   margin: 0;
   display: flex;
