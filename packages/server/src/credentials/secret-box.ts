@@ -4,7 +4,7 @@
  *
  * AES-256-GCM, because the requirement is not merely confidentiality: a
  * ciphertext that could be MOVED between rows would let anyone with write
- * access to `public.account_git_credentials` (which nobody has — see 079) point
+ * access to `public.account_git_credentials` (which nobody has — see 081) point
  * one account's row at another account's token. GCM's additional authenticated
  * data closes that by construction: the AAD is `<accountId>|<provider>`, so a
  * ciphertext decrypted under the wrong row's AAD fails the tag check and

@@ -1,8 +1,8 @@
 -- =============================================================================
--- 077 — the core-default draft is a VALID Interaction Profile draft again.
+-- 079 — the core-default draft is a VALID Interaction Profile draft again.
 --
--- NUMBERED 077, NOT 076: origin/main already carries a
--- `076_derived_from_props_schema.sql` that this branch does not. Claiming 076
+-- NUMBERED 079, NOT 076: origin/main already carries a
+-- `078_derived_from_props_schema.sql` that this branch does not. Claiming 076
 -- here would collide on merge. A gap is the same kind of gap 025/026/028
 -- already are, and `w2-migration-order.pg.test.ts:70` requires only that the
 -- three-digit prefixes be UNIQUE and sorted — never contiguous.

@@ -242,7 +242,7 @@ const ONBOARDING_NET_NEW_OPERATIONS = [
   'projects.files.attach',
 ] as const;
 
-/** Per-user git credentials (079). Net-new, mounted unconditionally. */
+/** Per-user git credentials (081). Net-new, mounted unconditionally. */
 const GIT_CREDENTIAL_NET_NEW_OPERATIONS = [
   'gitCredentials.set',
   'gitCredentials.status',

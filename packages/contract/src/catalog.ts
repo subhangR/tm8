@@ -224,7 +224,7 @@ export const OPERATIONS = [
 
   // gitCredentials.* — the caller's OWN third-party git identity, so their
   // agent sessions push as them and not as whatever machine-wide login the
-  // operator left in `~/.gitconfig` (db/migrations/079).
+  // operator left in `~/.gitconfig` (db/migrations/081).
   //
   // Bound under `/v2/identity` rather than a family of its own because the
   // subject is the caller themself: there is no id in any path, and no

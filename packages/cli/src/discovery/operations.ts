@@ -161,7 +161,7 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
-  // ── git credentials (079) ────────────────────────────────────────────────
+  // ── git credentials (081) ────────────────────────────────────────────────
   //
   // ALL THREE HAVE NO CLI COMMAND, and the reason is the same one that made
   // the feature necessary. A `tm8 git-credential set --token ghp_...` writes a

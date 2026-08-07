@@ -1542,7 +1542,7 @@ export interface ProjectCreateInput extends CommandContext {
  * `private` is not an "unlisted" hint — it is the answer to "may other people
  * in this Space see the path I work out of, the repo I have checked out, and
  * the sessions I spawn there". It hides the Project from every other member,
- * Space admins included; see db/migrations/078 for why admin-over-a-container
+ * Space admins included; see db/migrations/080 for why admin-over-a-container
  * does not imply read-over-its-members' private things.
  */
 export type ProjectShareMode = 'private' | 'space';
