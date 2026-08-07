@@ -146,6 +146,28 @@ const TASK_ASSIGN_CONTROL: AssignControl = {
   actorKinds: ['member', 'team_member'],
 };
 
+/**
+ * Channel membership, and it is the SAME control as assignment because it is
+ * the same mechanic: pick an actor, write one edge, remove it by edge id. Only
+ * three literals differ, and all three are data.
+ *
+ * `has_member` is registered by migration 080 as channel → {member,
+ * team_member} and `internal.validate_edge` enforces those endpoints, so this
+ * declares the type and lets the node refuse anything illegal — one rule in
+ * one place, exactly as `TASK_ASSIGN_CONTROL` above.
+ *
+ * The label is MEMBERS, not "Assigned": a member belongs to a channel and is
+ * not accountable for it. `state.members` is its own field for the same
+ * reason.
+ */
+const CHANNEL_MEMBER_CONTROL: AssignControl = {
+  source: 'members',
+  label: 'Members',
+  emptyLabel: 'No members',
+  edgeType: 'has_member',
+  actorKinds: ['member', 'team_member'],
+};
+
 const TASK_STATE_CONTROL: StateControl = {
   source: 'workStatus',
   label: 'State',
@@ -581,11 +603,19 @@ const ROWS: readonly KindConfig[] = [
      * `update_channel` COALESCEs a null topic to the existing one (007:1095),
      * so clearing it sends `''` and not `null`.
      *
-     * MEMBERS ARE NOT HERE YET, and their absence is a filed decision rather
-     * than an oversight: no membership edge exists (`member_of` is
-     * team_member→team_member, 001:922) so there is nothing to render. They
-     * become one more entry in this array once the edge lands — which is the
-     * point of the field being data.
+     * MEMBERS ARE STILL NOT AN `editFields` ENTRY, and now for a different
+     * reason than when this comment was written. The edge exists (`has_member`,
+     * migration 080) and membership IS settable — through
+     * `list.assignControl`, the same actor picker that assigns a task, because
+     * membership is the same mechanic: one edge, one actor, removed by edge id.
+     * An `editFields` row would be a second way to write the same edge, with
+     * its own dirty-state and its own bugs. A member added there would also be
+     * written by a DIFFERENT verb than the dialog's `patch_entity`, so a failed
+     * save would leave the roster changed and the name not — two writes wearing
+     * one Save button.
+     *
+     * Adding members AT CREATION is `CreateEntityInput.connections`, which
+     * `attachInitialConnections` writes inside the create transaction.
      */
     editFields: [
       {
@@ -614,6 +644,7 @@ const ROWS: readonly KindConfig[] = [
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'unread' }, { source: 'workingAgents' }, { source: 'messages' }] },
       inlineEdit: { title: true },
+      assignControl: CHANNEL_MEMBER_CONTROL,
     }),
     // composition:'chat' — the hub body is a conversation ending at its
     // composer: no AttachmentStrip (the composer's + owns attach) and no
