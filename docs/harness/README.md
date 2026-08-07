@@ -12,6 +12,7 @@ discover, and what it can orchestrate.
 | [`RUNTIME-CONFIG-TEMPLATES-AND-MODEL-TIERS.md`](RUNTIME-CONFIG-TEMPLATES-AND-MODEL-TIERS.md) | Template block vocabulary, runtime config vs. team member, model tiers |
 | [`PROMPT-REFERENCE.md`](PROMPT-REFERENCE.md) | The prompt catalog — every prompt the system can emit, in one place |
 | [`SESSION-SURFACE-ENGINEER-PROMPT.md`](SESSION-SURFACE-ENGINEER-PROMPT.md) | A worked persona, kept as an example of the shape a teammate prompt takes |
+| [`AGENT-COORDINATION-AND-POLLING.md`](AGENT-COORDINATION-AND-POLLING.md) | How sessions reach each other, and the five ways polling silently reports nothing |
 
 ## [`reviews/`](reviews/)
 
