@@ -968,10 +968,16 @@ export interface PatchTaskInput extends CommandContext {
  * tm8: `work_session` is not client-creatable either — it is born only from
  * `execution.spawn` (03 §1.1); custom `c:*` kinds create through here.
  */
+/** The kinds `entities.create` accepts — named so a caller can narrow to it. */
+export type CreatableEntityKind = Exclude<
+  EntityKind,
+  'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'
+>;
+
 export interface CreateEntityInput extends CommandContext {
   clientMutationId: string;
   spaceId: SpaceId;
-  kind: Exclude<EntityKind, 'message' | 'member' | 'work_session' | 'project' | 'interaction_profile' | 'artifact' | 'worktree'>;
+  kind: CreatableEntityKind;
   title: string;
   parentId?: EntityId | null;
   position?: number;

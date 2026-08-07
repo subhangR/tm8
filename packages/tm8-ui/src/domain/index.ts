@@ -115,6 +115,8 @@ export type {
   TeammateLaunchState,
 } from './launch';
 
+export { placeholderNameFor, slugifyTitle, titleNormalizerFor } from './title-grammar';
+
 export {
   SHIPPED_DEFAULT_MENU,
   SHIPPED_DEFAULT_MENU_REVISION,

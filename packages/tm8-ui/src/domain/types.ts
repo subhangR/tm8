@@ -671,6 +671,20 @@ export interface KindConfig {
   labelPlural: string;
   /** Required by the collapsed 48px menu rail state (02-LAYOUT §1). */
   icon: IconRef;
+  /**
+   * The grammar the SERVER enforces on this kind's title, when it is narrower
+   * than free text. Absent means free text.
+   *
+   * `'slug'` is `channels.name`'s check constraint (001_core_graph.sql:503,
+   * and 053:61 for voice_channels): `^[a-z0-9][a-z0-9_-]{0,79}$`. For these
+   * kinds the name IS the title — `internal.create_envelope` stores no title
+   * column, so the read side derives one from `channels.name`. The RPC only
+   * `lower(btrim())`s it, which fixes CASE and not SPACES, so "Untitled
+   * channel" was refused by Postgres with an opaque `invariant_violation` at
+   * both create and rename. Stating the grammar as registry data lets the
+   * editor show the real name while it is being typed instead.
+   */
+  titleGrammar?: 'slug';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

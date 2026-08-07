@@ -35,7 +35,7 @@ Measured against `src/data/seam.ts` + `@tm8/contract`, not remembered.
 | step | executor |
 |---|---|
 | `＋ New` pressed | none (UI) |
-| create for real, instantly | `commands.createTask(CreateTaskInput{spaceId, title, clientMutationId})` |
+| create for real, instantly | `commands.createEntity(CreateEntityInput{spaceId, kind, title, clientMutationId})` |
 | in-flight | **no executor** — a designed pending state (`aria-busy` + "creating…" + a phase guard) |
 | Z3 opens on the new id, title focused | navStore push = **coordinator wiring**; I ship the focused editor |
 | type, Enter commits | `commands.patchTask(id, {expectedVersion, title, clientMutationId})` |
@@ -43,7 +43,9 @@ Measured against `src/data/seam.ts` + `@tm8/contract`, not remembered.
 | create refused | `CollabError` → refusal card |
 | create returned no id | `CommandResult.entity` is OPTIONAL — a third state, neither success-with-open nor failure |
 
-`CreateTaskInput.clientMutationId` is **optional** (it rides in via `CommandContext`), unlike `CreateEntityInput`'s which is required. `newTaskInput()` stamps one unconditionally rather than trusting a caller to remember.
+`CreateEntityInput.clientMutationId` is **required**, so `newEntityInput()` stamps one rather than trusting a caller to remember.
+
+**THE KIND TRAVELS WITH THE INPUT.** This used to call `createTask`, which `data/real/ops.ts` sends as a hard-coded `kind: 'task'` — so `＋ New channel` on the channels list created a task, the channels list could not show it, and the report was "I create a channel and save, nothing happens". `useNewTask` now takes the host's registry `kind`. A kind `entities.create` cannot make (`work_session`, `member`, …, per the contract's own `CreatableEntityKindSchema`) renders **disabled-with-reason** instead of quietly making a task.
 
 **SAVE**
 
@@ -124,6 +126,7 @@ import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 
 const create = useNewTask({
   spaceId,                                   // GateData.spaceId
+  kind: config.kind,                         // the registry kind of the list this control is in
   placeholderTitle: placeholderTitleFor(config.label),   // registry label → "Untitled task"
   commands: seam.commands,                   // GateData.seam.commands — assigns with NO cast
   onCreated: (id) => { openPanel(id); focusTitle(id); },  // navStore push + the flag in 7b
@@ -132,7 +135,7 @@ const create = useNewTask({
 <NewTaskControl flow={create} label={config.palette?.createLabel ?? '＋ New'} />
 ```
 
-`NewTaskControl` renders `className="lp__new"` by default, so the chip is byte-identical to today's; pass `className` if a different host needs another chip. **Only wire this for `task`** — see GAPS G1.
+`NewTaskControl` renders `className="lp__new"` by default, so the chip is byte-identical to today's; pass `className` if a different host needs another chip. It is now wired for **every** `quickCreate` kind on the `k/` screen, and refuses honestly on the kinds that are born another way.
 
 ### 7b. The title — `panels/detail/chrome.tsx`, `PanelHeader`
 
@@ -244,7 +247,7 @@ The 03:45 failures were **never mine** and are gone without any action by me: `s
 
 ## 9. GAPS — steps with no executor, and the data that does not exist
 
-- **G1 — NO REGISTRY FIELD NAMES A KIND'S CREATE/PATCH COMMAND.** The oracle promises "＋ New on ANY plain kind … does exactly this", but nothing in `domain/types.ts` says whether a kind creates through `createTask` or `createEntity` (and patches through `patchTask` or `patchEntity`). `ListConfig.quickCreate` is a **boolean** — it says *that* a kind quick-creates, never *how*. Generic create for `doc`/`channel`/`collection`/`c:*` therefore cannot be built without either a kind literal in this lane (§15.2 build failure) or a new registry field (`domain/` is not my lane). **Built the task flow as directed; reported the missing field rather than inventing one.** Non-task `＋ New` is neither enabled nor broken by this work. Suggested shape: `KindConfig.authoring?: { create: 'task' | 'entity'; patch: 'task' | 'entity' }` — data, in `domain/`, where kind literals are legal.
+- **G1 — CLOSED for CREATE, and it was not harmless while it stood.** It was reported as "non-task `＋ New` is neither enabled nor broken by this work". It was **broken**: the control was wired on every `quickCreate` kind anyway, and `createTask` sends `kind: 'task'`, so `＋ New channel` created a task the channels list could not show. The user reported it as "channel creation is not working — I create a channel and save, nothing happens". The resolution needed **no new registry field**: `useNewTask` takes the host's `config.kind` and calls `createEntity`, and the contract's own `CreatableEntityKindSchema` (added beside the new `CreatableEntityKind` type) answers "can a generic create make this kind" as DATA — so this lane still holds no kind literal. Kinds born another way (`work_session` from a spawn, `member` from an invite) render disabled-with-reason. **The PATCH half is still open**: `useTaskSave` still writes through `patchTask`, so a doc or channel edit saves through the task writer.
 - **G2 — `ListConfig.inlineEdit { status?, title? }` HAS NO CONSUMER anywhere in the tree.** Same defect class as D39 part 2 (`tile.badges`: 35 sources, zero readers). This flow is its first reader, and only if you wire 7b/7e to it.
 - **G3 — WHICH KINDS LOCK THEIR TITLE IS NOT DATA.** T0-4 draws three locked cases, each with its own sentence: message ("title is the excerpt, never editable"), member ("identity is theirs"), commit ("tracked from GitHub"). Those are per-kind sentences ⇒ registry data (L2), and no field carries them. `InlineTitleEditor` takes `editable` + `lockedReason` and knows nothing about kinds; **until the field exists, every kind with `canEdit: true` will render an editable title, including tracked ones.** That is a real wrong state, not a cosmetic one. Suggested: `PanelConfig.titleLock?: string`.
 - **G4 — description / priority / dueDate / acceptance have no EDITOR.** `useTaskSave` accepts all of them (`TaskEdits` is derived from `PatchTaskInput` by subtraction, so they are already wired end to end) but only the title and status have a UI. Adding one is a component, not a flow change.

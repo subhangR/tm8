@@ -536,6 +536,7 @@ const ROWS: readonly KindConfig[] = [
     label: 'Channel',
     labelPlural: 'Channels',
     icon: '#',
+    titleGrammar: 'slug',
     slug: 'channels',
     strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
@@ -572,6 +573,7 @@ const ROWS: readonly KindConfig[] = [
     // header): a speaker glyph from the pictograph block tofus in the system
     // font, so the audio note stands in until the canvas-extracted set lands.
     icon: '♪',
+    titleGrammar: 'slug',
     slug: null,
     strategy: 'special',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/voice/${id}`,

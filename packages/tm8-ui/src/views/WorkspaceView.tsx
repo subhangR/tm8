@@ -34,6 +34,7 @@ import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { allKinds, getKind } from '../domain/registry';
+import { placeholderNameFor } from '../domain/title-grammar';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { EmptyCenter } from './EmptyCenter';
@@ -365,13 +366,15 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const rightConfig = getKind(rightKind);
   const leftCreateFlow = useNewTask({
     spaceId: data.spaceId,
-    placeholderTitle: placeholderTitleFor(leftConfig.label),
+    kind: leftConfig.kind,
+    placeholderTitle: placeholderNameFor(leftConfig, placeholderTitleFor(leftConfig.label)),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });
   const rightCreateFlow = useNewTask({
     spaceId: data.spaceId,
-    placeholderTitle: placeholderTitleFor(rightConfig.label),
+    kind: rightConfig.kind,
+    placeholderTitle: placeholderNameFor(rightConfig, placeholderTitleFor(rightConfig.label)),
     commands: data.seam.commands,
     onCreated: (id) => nav.push?.(id as EntityId),
   });

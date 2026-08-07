@@ -13,8 +13,9 @@ import './authoring.css';
 
 export {
   classifyFailure,
+  creatableKind,
   createdIdOf,
-  newTaskInput,
+  newEntityInput,
   nextMutationId,
   placeholderTitleFor,
   taskPatchInput,
