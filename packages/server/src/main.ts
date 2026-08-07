@@ -572,6 +572,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     if (retired > 0) {
       console.log(`  reconciled: retired ${retired} ghost session(s) left by a previous run`);
     }
+    // Worktree allocations, same posture, same place in the sequence. Kept
+    // separate from the ghost sweep because they answer different questions: a
+    // ghost is a stuck row, a stranded allocation is a leaked Git checkout —
+    // and the second one costs disk and can be hiding someone's uncommitted
+    // work.
+    const worktrees = await execution.reconcileWorktrees();
+    if (worktrees.repaired.length > 0) {
+      console.log(`  reconciled: repaired ${worktrees.repaired.length} worktree allocation(s)`);
+      for (const repair of worktrees.repaired) {
+        console.log(`    ${repair.worktreeId}: ${repair.observed} → ${repair.action}`);
+      }
+    }
+    // Quarantine is reported LOUDLY and acted on NEVER: these are Git worktrees
+    // inside the node's own area that it does not recognise, and the repository
+    // may be shared with a human's own (§6.3).
+    for (const foreign of worktrees.quarantined) {
+      console.log(`  quarantined worktree (untouched): ${foreign.path} — ${foreign.reason}`);
+    }
+    for (const problem of worktrees.errors) {
+      console.log(`  worktree reconciliation could not finish: ${problem.message}`);
+    }
   }
 
   return { server, subscriptions, events, url, db, delivery, preview };
