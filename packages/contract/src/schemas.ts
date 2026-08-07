@@ -1140,14 +1140,17 @@ export const PatchTaskInputSchema: z.ZodType<PatchTaskInput> = z.object({
   dueDate: z.string().nullable().optional(),
 }).strict();
 
+/** The runtime half of `CreatableEntityKind` — the one place the set is stated. */
+export const CreatableEntityKindSchema = z.union([
+  CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact']),
+  CustomEntityKindSchema,
+]);
+
 export const CreateEntityInputSchema: z.ZodType<CreateEntityInput> = z.object({
   ...commandContextShape,
   clientMutationId: z.string().min(1),
   spaceId: SpaceIdSchema,
-  kind: z.union([
-    CoreEntityKindSchema.exclude(['message', 'member', 'work_session', 'project', 'interaction_profile', 'worktree', 'artifact']),
-    CustomEntityKindSchema,
-  ]),
+  kind: CreatableEntityKindSchema,
   title: z.string().min(1),
   parentId: EntityIdSchema.nullable().optional(),
   position: z.number().optional(),

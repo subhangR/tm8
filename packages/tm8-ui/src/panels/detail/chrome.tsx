@@ -1,7 +1,7 @@
 import type { EntityDetail, EntityState } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import type { ActionContext, ActionRef, KindConfig, StatusSource } from '../../domain';
-import { KindIcon, resolveAction } from '../../domain';
+import { KindIcon, resolveAction, titleNormalizerFor } from '../../domain';
 import { InlineTitleEditor } from '../../authoring';
 import { Avatar, IconBtn, Pill, type PillTone } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
@@ -104,6 +104,7 @@ export function PanelHeader({
             editable
             placeholder={titlePlaceholder}
             autoFocus={autoFocusTitle}
+            normalize={titleNormalizerFor(config)}
             onCommit={onCommitTitle}
           />
         ) : (

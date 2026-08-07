@@ -33,6 +33,7 @@ export function InlineTitleEditor({
   lockedReason,
   placeholder = false,
   autoFocus = false,
+  normalize,
   onCommit,
   onCancel,
 }: {
@@ -50,6 +51,19 @@ export function InlineTitleEditor({
   placeholder?: boolean;
   /** The create flow opens straight into edit — "Z3 opens, title in inline-edit focus". */
   autoFocus?: boolean;
+  /**
+   * Coerces the draft to the grammar the server will accept, ON EVERY
+   * KEYSTROKE so the name you will get is the name you can see.
+   *
+   * Supplied by the caller from registry data (`titleNormalizerFor`), which
+   * keeps this component's stated law intact: it takes behaviour as props and
+   * knows nothing about kinds. Absent ⇒ free text, unchanged.
+   *
+   * It runs on the DRAFT rather than at commit because a silent rewrite at
+   * commit is the same lie in slower motion — you would type "Design Review",
+   * press Enter, and a different name would appear.
+   */
+  normalize?: (raw: string) => string;
   onCommit(title: string): void;
   onCancel?(): void;
 }) {
@@ -112,7 +126,7 @@ export function InlineTitleEditor({
       data-testid="authoring-title-input"
       aria-label="Title"
       value={draft}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => setDraft(normalize ? normalize(e.target.value) : e.target.value)}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
