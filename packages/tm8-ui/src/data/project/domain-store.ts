@@ -326,6 +326,7 @@ export function projectRows(input: RowProjection): EntitySummary[] {
     // nothing rather than an empty shell. (Every read ingests, so this is the
     // transient window between a read landing and its ingest, not a leak.)
     if (!row) continue;
+    if (isCredentialLoginSession(row)) continue;
     if (membershipOf(filter, row) === 'out') continue;
     base.push(row);
   }
@@ -336,11 +337,41 @@ export function projectRows(input: RowProjection): EntitySummary[] {
         !seen.has(e.id) &&
         e.kind === kind &&
         e.spaceId === spaceId &&
+        !isCredentialLoginSession(e) &&
         membershipOf(filter, e) === 'in',
     )
     .sort((a, b) => (a.activityAt < b.activityAt ? 1 : a.activityAt > b.activityAt ? -1 : 0));
 
   return arrived.length === 0 ? base : [...arrived, ...base];
+}
+
+/**
+ * A CREDENTIAL LOGIN TERMINAL IS NOT WORK, and must not sit in a session list
+ * pretending to be (082, architect Ruling 16).
+ *
+ * ONE PLACE, DELIBERATELY. Every list in this app draws its rows through
+ * `projectRows`, so filtering here covers the panels, the rosters and any
+ * surface a later lane mounts, instead of leaving each one to remember. The
+ * cost of the alternative is measured, not hypothetical: this repo already has
+ * a session bar built and never mounted, and a per-surface filter would have
+ * missed it and every future sibling.
+ *
+ * WRITTEN AS `!== 'credential'`, NEVER `=== 'agent'` — and this inversion is
+ * the whole point of the function. The field is OPTIONAL: a node predating
+ * 082, or a row hydrated from a payload cached before the column shipped,
+ * carries no `sessionKind` at all. Testing the positive would classify every
+ * one of those as "not an agent session" and silently blank the session list
+ * for exactly the users least able to explain why — a bug that reproduces on
+ * nobody's fresh local data. Absence therefore means VISIBLE.
+ *
+ * Note the polarity is the OPPOSITE of PR3's server-side auth guard, which
+ * allowlists `browser|cli` so an unknown value is REFUSED. Both are correct:
+ * for a security guard the safe default is deny, for a visibility filter the
+ * safe default is show.
+ */
+function isCredentialLoginSession(row: EntitySummary): boolean {
+  const state = row.state as { sessionKind?: unknown } | null | undefined;
+  return state?.sessionKind === 'credential';
 }
 
 // --- narrow selector helpers (mirroring collab-v2 graph.ts) -----------------

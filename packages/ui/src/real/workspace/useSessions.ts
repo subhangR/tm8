@@ -35,6 +35,8 @@ export interface SessionState {
   model?: string | null;
   startedAt?: string | null;
   exitedAt?: string | null;
+  /** 082's discriminator. Optional — a pre-082 node omits it. See `isWork`. */
+  sessionKind?: string | null;
 }
 
 export function sessionState(s: EntitySummary): SessionState {
@@ -82,10 +84,38 @@ export function groupSessions(sessions: EntitySummary[]): SessionGroups {
   return { live, finished };
 }
 
-/** The shared session list. Every panel that wants sessions calls this. */
+/**
+ * IS THIS SESSION WORK, or a private credential login terminal?
+ *
+ * 082 mints the login terminals `credentials.loginSessions.start` opens with
+ * `session_kind='credential'`. They are a member authenticating an agent tool
+ * against their own account — not work — and they must not sit in the session
+ * lists this module feeds (architect Ruling 16).
+ *
+ * PHRASED AS THE INVERSE OF THE SQL, ON PURPOSE. The database column is NOT
+ * NULL so server SQL tests `session_kind = 'agent'` directly; here the field is
+ * OPTIONAL and a session read from a node predating 082 carries none. Testing
+ * `=== 'agent'` would drop every one of those from the list — a bug that
+ * reproduces on no fresh local data and blanks the list for users on an older
+ * node. An absent field is WORK.
+ */
+export function isWork(s: EntitySummary | null | undefined): boolean {
+  if (!s) return false;
+  return sessionState(s).sessionKind !== 'credential';
+}
+
+/**
+ * The shared session list. Every panel that wants sessions calls this.
+ *
+ * Login terminals are removed HERE rather than in each tab, so `sessions`,
+ * `live` and `finished` are all already free of them and no consumer — present
+ * or future — has to remember. The three tabs that render these
+ * (SessionTree/AgentsTab/TerminalsTab) get it by construction.
+ */
 export function useSessions(facade: RealFacade, spaceId: string) {
   const { items, error, reload } = usePolledCollection(facade, sessionsQuery(spaceId), LIST_POLL_MS);
-  return { sessions: items, error, reload, ...groupSessions(items ?? []) };
+  const work = items?.filter(isWork) ?? null;
+  return { sessions: work, error, reload, ...groupSessions(work ?? []) };
 }
 
 // ---------------------------------------------------------------------------

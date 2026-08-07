@@ -121,7 +121,26 @@ export type CoreEntityState =
   // tm8 additions (03 §1) — see §2 for the enums.
   | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;
-      startedAt: string | null; exitedAt: string | null }
+      startedAt: string | null; exitedAt: string | null;
+      /**
+       * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
+       * tell a private credential login terminal from ordinary work (082).
+       *
+       * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. A node that predates 082,
+       * or a row hydrated from a payload cached before the column shipped,
+       * carries no value here. Absence therefore means `agent` — the pre-082
+       * behaviour — so a frozen server degrades to showing everything rather
+       * than to showing nothing.
+       *
+       * WRITE EVERY CLIENT FILTER AS `sessionKind !== 'credential'`, NEVER AS
+       * `=== 'agent'`. SQL surfaces test the positive (`session_kind =
+       * 'agent'`, credential-catalog.ts:506) because the database column is
+       * NOT NULL; TypeScript surfaces must test the INVERSE, because here the
+       * field can be missing. `=== 'agent'` passes every test written against
+       * fresh data and silently blanks the session list for anyone holding an
+       * older payload.
+       */
+      sessionKind?: WorkSessionKind }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
@@ -1588,6 +1607,17 @@ export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
 
 /** Graph-side announce/authorize state for live terminal sharing (T-L10). */
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
+
+/**
+ * What a work_session IS, mirroring 082's `work_sessions.session_kind`.
+ *
+ * `agent` is ordinary work. `credential` is a private login terminal minted by
+ * `credentials.loginSessions.start` so a member can authenticate an agent tool
+ * against their own account — it is not work, and it must not sit in session
+ * lists pretending to be. See the note on `EntityState`'s work_session arm for
+ * why every client filter must be written as the INVERSE of the SQL one.
+ */
+export type WorkSessionKind = 'agent' | 'credential';
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 

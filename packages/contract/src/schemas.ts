@@ -73,7 +73,7 @@ import type {
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
-  WorkInput, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -121,6 +121,9 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
+/** Mirrors 082's `work_sessions.session_kind` CHECK exactly. */
+export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
+  z.enum(['agent', 'credential']);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -241,6 +244,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     shareMode: WorkSessionShareModeSchema,
     startedAt: z.string().nullable(),
     exitedAt: z.string().nullable(),
+    // OPTIONAL, not nullable: a pre-082 node omits it entirely, and callers
+    // read that absence as `agent` so a frozen server keeps today's behaviour.
+    // Clients filter with `!== 'credential'`; see the DTO note in contract.ts.
+    sessionKind: WorkSessionKindSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),

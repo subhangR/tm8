@@ -80,7 +80,7 @@ export const ENTITY_COLUMNS = `
   ws.title as ws_title, ws.status as ws_status, ws.agent_tool as ws_agent_tool,
   ws.model as ws_model, ws.share_mode as ws_share_mode, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
-  ws.transcript_doc_id as ws_transcript_doc_id,
+  ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -206,6 +206,7 @@ export interface EntityRow {
   ws_node_id: string | null;
   ws_project_id: string | null;
   ws_transcript_doc_id: string | null;
+  ws_session_kind: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -1138,6 +1139,12 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         shareMode: (row.ws_share_mode ?? 'none') as 'none' | 'space' | 'explicit',
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
+        // OMITTED, never defaulted, when the column has no value: the DTO
+        // makes absence mean `agent`, so a node whose rows predate 082 keeps
+        // the pre-082 behaviour instead of being told they are all agents by
+        // a server that never looked. `.strict()` refuses an explicit
+        // `undefined` key, hence the spread rather than a ternary value.
+        ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as 'agent' | 'credential' } : {}),
       };
     case 'collection':
       return {
