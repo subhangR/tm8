@@ -70,6 +70,56 @@ describe('CANARY — identity is 1:1 with account, by constraint', () => {
     expect(rows[0]?.contype).toBe('u');
   });
 
+  it('and the constraint actually BITES — two accounts cannot share one identity_id', async () => {
+    // The two catalog reads above prove the constraint is DECLARED. This one
+    // proves it is ENFORCED, and they are not the same claim: a constraint that
+    // exists as a `pg_constraint` row but has been deferred, disabled, or
+    // shadowed by a later migration passes both reads and still lets a
+    // duplicate through. Since the entire purpose of this canary is to catch a
+    // future migration quietly undoing the uniqueness the credential home's
+    // directory layout depends on, "declared" is the weaker claim and the one
+    // more likely to survive a bad change. Credit to PR3, which built this
+    // third test independently and handed it over.
+    //
+    // THE USERNAMES MUST DIFFER. `username` is ALSO `not null unique`, so two
+    // rows sharing a username would raise 23505 from
+    // `accounts_username_key` — the test would pass while proving nothing
+    // about identity_id at all. That is why the assertion is on the constraint
+    // NAME and not merely on the SQLSTATE.
+    // BOTH ROWS IN ONE `insert`, INSIDE ONE TRANSACTION — PR3's measurement,
+    // adopted over the two-statement version this file first carried. Two
+    // separate statements leave the first row committed in precisely the case
+    // where the second is wrongly ACCEPTED, polluting the scratch database at
+    // the exact moment the canary is already telling you something is broken,
+    // and they need a manual `rollback` that depends on aborted-transaction
+    // subtleties. As written the violation aborts the whole transaction and
+    // nothing persists: self-cleaning by construction, no `afterEach`.
+    let caught: { code?: string; constraint?: string } | undefined;
+
+    try {
+      await database.transaction(async (client) => {
+        await client.query(
+          `insert into public.accounts(identity_id, username, display_name)
+           values ('r14-canary-identity', 'r14-canary-a', 'Canary A'),
+                  ('r14-canary-identity', 'r14-canary-b', 'Canary B')`,
+        );
+      });
+    } catch (error) {
+      caught = error as { code?: string; constraint?: string };
+    }
+
+    expect(
+      caught,
+      'a SECOND account was accepted with an identity_id the first already had. ' +
+        'Identity is no longer 1:1 with account, so the credential home cannot ' +
+        'stay identity-keyed. See this file header.',
+    ).toBeDefined();
+    expect(caught?.code).toBe('23505');
+    // Named, so a duplicate rejected by some OTHER unique constraint can never
+    // be mistaken for this one holding.
+    expect(caught?.constraint).toBe('accounts_identity_id_key');
+  });
+
   it('and identity_id is still NOT NULL, so no account can exist without one', async () => {
     // Uniqueness alone is not enough: Postgres permits many NULLs in a unique
     // column, so a nullable identity_id would let several accounts share the
