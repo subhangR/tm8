@@ -44,7 +44,8 @@ import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
@@ -311,6 +312,25 @@ export function EntityView(props: EntityViewProps) {
   const auxDetail = auxId ? data.detailOf(auxId) : null;
   if (auxId && !auxDetail) props.data.pull?.(auxId);
 
+  /**
+   * The panel action bar's executor — `edit` (the `editFields` dialog) and
+   * `add-child` (a subchannel, when the open entity is a channel).
+   *
+   * SUBJECT-DRIVEN, NOT LIST-DRIVEN: it reads `detail`, so drilling from a task
+   * list into a channel offers the channel's verbs and the channel's fields.
+   * The created child opens exactly as `＋ New` opens a new root, so the two
+   * creates land the user in the same place.
+   */
+  const verbs = useEntityVerbs({
+    detail,
+    spaceId: data.spaceId,
+    commands: data.seam.commands,
+    onCreated: (id) => setSelectedId(id),
+    /* The topic lives in the DETAIL and the echo carries only the summary —
+       without this the header renames and the hub body keeps the old topic. */
+    onSaved: (id) => props.data.refetchDetail(id),
+  });
+
   const detailPanel = selectedId ? (
     <EntityDetailPanel
       detail={detail ?? null}
@@ -324,6 +344,8 @@ export function EntityView(props: EntityViewProps) {
          archive control flips to, through the same executor — so an archived
          task reopens from wherever the user meets it. */
       onRestore={() => rowLifecycle.archive('restore', selectedId)}
+      onAction={verbs.onAction}
+      wiredActions={verbs.wiredActions}
       pinned={false}
       // Pinning belongs to the workspace's stack economy; here the panel HAS
       // a permanent slot, so the verb is refused with the true reason rather
@@ -402,6 +424,14 @@ export function EntityView(props: EntityViewProps) {
       data-mode={selectedId ? 'detail' : 'list'}
       data-aux={aux ? aux.sort : 'none'}
     >
+      {/* AT THE VIEW ROOT, NOT INSIDE THE PANEL. The dialog is `position:
+          fixed` over a scrim, so nesting it in the panel's own overflow
+          context would clip it against a column it is supposed to cover. */}
+      <EditEntityDialog
+        flow={verbs.edit}
+        fields={verbs.editFields}
+        title={verbs.editTitle}
+      />
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}

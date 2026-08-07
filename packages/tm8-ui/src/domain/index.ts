@@ -25,6 +25,7 @@ export type {
   ContentBlockRef,
   ContentSurfaces,
   CustomKindFallback,
+  EditFieldSpec,
   FilterOption,
   FilterSpec,
   GroupByKey,

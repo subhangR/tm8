@@ -11,6 +11,7 @@ verification specific to it.
 | Artifacts | [`artifacts/`](artifacts/) | [`ARTIFACTS-DESIGN.md`](artifacts/ARTIFACTS-DESIGN.md) |
 | Derived edges | [`graph/`](graph/) | [`README.md`](graph/README.md) |
 | Voice channels | [`voice/`](voice/) | [`VOICE-CHANNELS-PLAN.md`](voice/VOICE-CHANNELS-PLAN.md) |
+| Channels | [`channels/`](channels/) | [`README.md`](channels/README.md) |
 | Session resume | [`resume/`](resume/) | [`SESSION-RESUME-PLAN.md`](resume/SESSION-RESUME-PLAN.md) |
 | Hosted workspaces | [`shared-workspace/`](shared-workspace/) | [`README.md`](shared-workspace/README.md) |
 

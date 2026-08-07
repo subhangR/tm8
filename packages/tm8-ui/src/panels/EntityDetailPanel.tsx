@@ -262,6 +262,8 @@ export interface EntityDetailPanelProps {
   onPromote?: () => void;
   onClose?: () => void;
   onAction?: (ref: ActionRef) => void;
+  /** The subset of `onAction` the host really handles — see `ActionBar`. */
+  wiredActions?: readonly ActionRef[];
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
 }
@@ -467,6 +469,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 liveness: ctx.liveness ?? props.liveness,
               }}
               onAction={props.onAction}
+              wiredActions={props.wiredActions}
             />
             {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
               <SaveControls save={save} />
