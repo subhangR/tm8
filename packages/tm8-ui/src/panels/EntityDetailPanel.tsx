@@ -605,6 +605,18 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                     /* The mode is the VERB's, read off the registry — so
                        Coordinate commits a coordinator and not Run's worker,
                        and no component here has to name either verb. */
+                    /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
+                       `mode` and `verbLabel` are props, but the config is STATE
+                       seeded once. Without this key, pressing Coordinate then
+                       Run reused the instance: the heading re-rendered to "Run
+                       configuration" over a config still holding
+                       mode:'coordinator', and Launch spawned a coordinator
+                       under a button labelled Run. The dismissal cannot save it
+                       either — the other verb's button is inside the same
+                       `actionBarRef` bounds as the card. Remounting also clears
+                       the refusal, pending and access-mode state, all of which
+                       are equally stale across a verb switch. */
+                    key={flowRef}
                     verbLabel={resolveAction(flowRef).label}
                     {...(resolveAction(flowRef).launchMode
                       ? { mode: resolveAction(flowRef).launchMode }

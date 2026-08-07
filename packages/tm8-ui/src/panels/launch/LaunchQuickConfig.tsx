@@ -198,7 +198,11 @@ export function LaunchQuickConfig({
     // recorded tool and model travel together, and patching one field would mix
     // two personas' settings.
     setConfig(seedConfig(first));
-  }, [first, teammates, config.teamMemberId, defaultProjectId]);
+    // `seedConfig` belongs here: omitted, this effect closed over a stale
+    // `mode`. The mount key makes that unreachable in practice — a verb change
+    // remounts — but a dep list that is wrong only because something else
+    // prevents the call is a trap for whoever removes that something else.
+  }, [first, teammates, config.teamMemberId, defaultProjectId, seedConfig]);
 
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);

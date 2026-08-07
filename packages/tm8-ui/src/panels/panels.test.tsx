@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { ALL_MODES, allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
 import { REASONS as DOMAIN_REASONS } from '../domain';
@@ -17,6 +17,7 @@ import {
   taskGuideLines,
   taskTombstone,
   taskUuidTitle,
+  teamMemberForge,
   ada,
   noor,
 } from '../fixtures';
@@ -1179,6 +1180,65 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
       />,
     );
     expect(view.getByTestId('launch-quick-config')).toBeTruthy();
+  });
+
+  it('REVIEW R3: switching verb with the card OPEN re-seeds it — Run cannot spawn a coordinator', async () => {
+    /*
+     * The team_member panel is the one surface carrying BOTH launch verbs
+     * (`['run','coordinate']`). The card is not remounted when the opening
+     * verb changes: same element type, same position, no key — so React reuses
+     * the instance. `mode` and `verbLabel` are props and re-render, but the
+     * config is STATE, seeded once. Press Coordinate then Run and the heading
+     * says "Run configuration" over `mode: 'coordinator'`.
+     *
+     * The dismissal does not save it either: the Run button lives inside
+     * `actionBarRef`, the same bounds that contain the card, so an outside
+     * click never fires.
+     *
+     * MY OWN BUG INVERTED, and worse for the heading fix: while the card
+     * always said "Run" the payload was at least the only thing lying.
+     */
+    const detail = fixtureDetails[teamMemberForge.id]!;
+    const onSpawn = vi.fn();
+    const view = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        launch={{ ...LAUNCH_SOURCES, onSpawn }}
+      />,
+    );
+    const bar = view.getByTestId('panel-action-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
+    expect(view.getByTestId('launch-heading').textContent).toBe('Coordinate configuration');
+
+    // Switch verbs WITHOUT closing the card — two clicks, no navigation.
+    fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
+    expect(view.getByTestId('launch-heading').textContent).toBe('Run configuration');
+
+    fireEvent.click(view.getByTestId('launch-commit'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    // The payload must agree with the button that was actually pressed.
+    expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
+  });
+
+  it('REVIEW R3: and the converse — Coordinate after Run commits a coordinator', async () => {
+    const detail = fixtureDetails[teamMemberForge.id]!;
+    const onSpawn = vi.fn();
+    const view = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        launch={{ ...LAUNCH_SOURCES, onSpawn }}
+      />,
+    );
+    const bar = view.getByTestId('panel-action-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
+    fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
+    fireEvent.click(view.getByTestId('launch-commit'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
   });
 
   it('wiredActions narrows the dispatcher: a verb it cannot perform stays refused', () => {
