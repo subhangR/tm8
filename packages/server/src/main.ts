@@ -35,6 +35,8 @@ import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
+import { Scheduler } from './scheduler/scheduler.js';
+import { createTrackingObserverJob } from './tracking/observer.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
 import { resolveBearerIdentity } from './identity/pg-auth.js';
 import {
@@ -566,11 +568,69 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * AFTER listen(), deliberately: this is cleanup, not a precondition, and it
    * must never be able to delay or prevent the node accepting connections. It
    * never rejects, so there is nothing to catch.
+   *
+   * (The tracking observer below it is started first only because it is a
+   * timer, not a sweep — nothing in either depends on the other.)
    */
+
+  /**
+   * The tracking observer — 006's queue finally gets its worker.
+   *
+   * Started AFTER listen() and on the R26 runner every future periodic job
+   * belongs on; a second timer subsystem is the thing `scheduler.ts` exists to
+   * prevent. Only this job is registered — backup and retention have their own
+   * wiring decisions and are not this change's business.
+   *
+   * The scheduler's timers are `unref`'d, so it cannot by itself keep the
+   * process alive and shutdown needs no new coordination.
+   */
+  if (db && owner) {
+    const scheduler = new Scheduler();
+    scheduler.register(
+      createTrackingObserverJob({
+        db,
+        claims: async () => {
+          // The doors go through `require_space_member`, which has no
+          // node-admin bypass, so bare `{ nodeAdmin: true }` would raise 42501
+          // on every write. The node's own owner is the honest actor here.
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'tracking-observer',
+          };
+        },
+      }),
+    );
+    scheduler.start();
+    console.log('  tracking: observer draining the refresh queue every 60s');
+  }
+
   if (execution) {
     const retired = await execution.reconcileGhosts();
     if (retired > 0) {
       console.log(`  reconciled: retired ${retired} ghost session(s) left by a previous run`);
+    }
+    // Worktree allocations, same posture, same place in the sequence. Kept
+    // separate from the ghost sweep because they answer different questions: a
+    // ghost is a stuck row, a stranded allocation is a leaked Git checkout —
+    // and the second one costs disk and can be hiding someone's uncommitted
+    // work.
+    const worktrees = await execution.reconcileWorktrees();
+    if (worktrees.repaired.length > 0) {
+      console.log(`  reconciled: repaired ${worktrees.repaired.length} worktree allocation(s)`);
+      for (const repair of worktrees.repaired) {
+        console.log(`    ${repair.worktreeId}: ${repair.observed} → ${repair.action}`);
+      }
+    }
+    // Quarantine is reported LOUDLY and acted on NEVER: these are Git worktrees
+    // inside the node's own area that it does not recognise, and the repository
+    // may be shared with a human's own (§6.3).
+    for (const foreign of worktrees.quarantined) {
+      console.log(`  quarantined worktree (untouched): ${foreign.path} — ${foreign.reason}`);
+    }
+    for (const problem of worktrees.errors) {
+      console.log(`  worktree reconciliation could not finish: ${problem.message}`);
     }
   }
 

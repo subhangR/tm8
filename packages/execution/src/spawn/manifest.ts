@@ -311,6 +311,16 @@ export function resolveWorkdir(
     });
   }
 
+  // Worktree mode requires a project for the mirror of scratch mode's reason: a
+  // worktree is a checkout OF something (design §4.1). The path returned for it
+  // here is the REPOSITORY root, which the provisioning saga replaces with the
+  // checkout it creates — that is what keeps this function pure and Git-free.
+  if (mode === 'worktree' && !context.project) {
+    throw new SpawnError('workdir.mode "worktree" requires a project', 'invalid_input', {
+      reason: 'worktree_requires_project',
+    });
+  }
+
   if (context.project) {
     const dir = context.project.workingDir;
     if (!dir.startsWith('/') || dir.includes('..')) {
