@@ -19,6 +19,7 @@ import {
   isAdvertised,
   isBrowserReserved,
   isTerminalBlurChord,
+  isTerminalPasteChord,
   type KeyInput,
   type KeyboardContext,
   type Platform,
@@ -340,6 +341,35 @@ describe('advertising discipline (R8-3)', () => {
     const other = controller({}, 'other');
     other.c.handle(key({ key: 'k', ctrlKey: true }));
     expect(other.commands).toEqual([{ command: 'palette.open', ref: undefined }]);
+  });
+});
+
+describe('the terminal paste chord', () => {
+  // Regression: xterm's default keymap encodes Ctrl+V as 0x16 and cancels the
+  // event, so the browser never emitted a `paste` event and nothing could be
+  // pasted into a session terminal. LiveTerminal returns false from
+  // attachCustomKeyEventHandler for these, which is what lets the NATIVE paste
+  // run — the one paste path that needs no Clipboard API, and so the only one
+  // that works on the plain-http:// (non-secure-context) deployments.
+  it('matches Ctrl+V, Cmd+V and the terminal-native Ctrl+Shift+V', () => {
+    expect(isTerminalPasteChord(key({ key: 'v', ctrlKey: true }))).toBe(true);
+    expect(isTerminalPasteChord(key({ key: 'v', metaKey: true }))).toBe(true);
+    expect(isTerminalPasteChord(key({ key: 'v', ctrlKey: true, shiftKey: true }))).toBe(true);
+  });
+
+  it('matches uppercase V — Shift reports key as "V"', () => {
+    expect(isTerminalPasteChord(key({ key: 'V', ctrlKey: true, shiftKey: true }))).toBe(true);
+  });
+
+  it('leaves a bare v alone, so typing v still reaches the PTY', () => {
+    expect(isTerminalPasteChord(key({ key: 'v' }))).toBe(false);
+  });
+
+  it('leaves Ctrl+Alt+V to the PTY, and never claims another letter', () => {
+    expect(isTerminalPasteChord(key({ key: 'v', ctrlKey: true, altKey: true }))).toBe(false);
+    expect(isTerminalPasteChord(key({ key: 'c', ctrlKey: true }))).toBe(false);
+    // Ctrl+C must stay SIGINT — the copy chord is Cmd+C / Ctrl+Shift+C.
+    expect(isTerminalPasteChord(key({ key: 'c', ctrlKey: true, shiftKey: true }))).toBe(false);
   });
 });
 
