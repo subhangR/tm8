@@ -40,17 +40,23 @@ PATH=/opt/homebrew/opt/postgresql@18/bin:$PATH \
   -o "-p 5442 -c listen_addresses=127.0.0.1" start
 ```
 
-**On a fresh clone, and after any `bun install` or `bun add`, repair node-pty.**
-This is not optional and it is the first thing a new machine trips over: bun
+**node-pty is repaired automatically now — you no longer run anything.** bun
 extracts npm tarballs without the executable bit, so `spawn-helper` lands at
 0644 and **every PTY spawn dies with `posix_spawnp failed`** — which surfaces
-as "spawning is broken" rather than as an install problem. The prebuilt
-binaries survive; only the mode bit is lost.
+as "spawning is broken", or in production as a bare 503 on
+`/v2/execution/spawn`, rather than as an install problem. The prebuilt binaries
+survive; only the mode bit is lost.
+
+This used to be a manual step documented here, which meant it was skipped
+exactly when it mattered — a fresh worktree, installed and deployed by someone
+who had not read this file. The root `postinstall` runs
+`scripts/repair-node-pty.sh` after every `bun install`, and `deploy/prod/deploy.sh`
+asserts the bit before it rotates a snapshot, so a broken helper can no longer
+reach a running server.
 
 ```bash
 cd ~/Desktop/Projects/tm8
-bun install
-bash scripts/repair-node-pty.sh
+bun install                                  # → postinstall repairs node-pty
 cd packages/execution && bun run harness     # → 5/5 checks passed / HARNESS GREEN
 ```
 
@@ -363,7 +369,7 @@ red while most of the catalog is still deliberately unbuilt.
 |---|---|
 | `implemented: 0` in the startup banner | No `TM8_DATABASE_URL`. Every operation will 501. |
 | `501 not_implemented` | That operation genuinely is not built. Not an error — check §Scope. |
-| `posix_spawnp failed` on spawn | A `bun install` stripped node-pty's exec bit. Run `bash scripts/repair-node-pty.sh`. |
+| `posix_spawnp failed` on spawn | node-pty's exec bit is missing, and `postinstall` did not run — you copied `node_modules` in, or installed with `--ignore-scripts`. Run `bash scripts/repair-node-pty.sh`. |
 | `ECONNREFUSED` right after starting the server | The backgrounded server was reaped between shell invocations. Use the single command in §1, or run the server in its own window. |
 | Server exits 0 silently, no output | You ran `dist/main.js`. Use `dist/index.js`. |
 | `28000 no identity bound to this transaction` | The request reached the database with no identity claim. Should not happen on loopback; report it. |

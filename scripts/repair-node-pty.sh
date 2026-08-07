@@ -5,8 +5,14 @@
 # node-pty's `spawn-helper` lands as 0644 and every PTY spawn dies with
 # "posix_spawnp failed". npm does not have this problem; bun does, every time.
 #
-# Run this after ANY bun install/add anywhere in the workspace, then confirm
-# with `cd packages/execution && bun run harness` (expects 5/5).
+# The root package.json runs this as `postinstall`, so it fires after every
+# `bun install` without anyone remembering to. It stayed a documented MANUAL
+# step for months, which meant it was skipped exactly when it mattered: a fresh
+# worktree, installed and deployed by someone who had not read HOW-TO-TEST.md,
+# whose PTY spawns then died as a bare 503. Run it by hand only after copying a
+# node_modules in, or installing with --ignore-scripts.
+#
+# Confirm with `cd packages/execution && bun run harness` (expects 5/5).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -360,6 +360,20 @@ if (( ${#missing[@]} )); then
 fi
 ok "workspace dependencies present"
 
+# node-pty's spawn-helper must be executable or EVERY PTY spawn dies with
+# "posix_spawnp failed", which reaches the user as a bare 503 on
+# /v2/execution/spawn — a symptom that names nothing. bun extracts npm tarballs
+# without the exec bit, `postinstall` repairs that, and step 3 hardlinks
+# node_modules, so the mode here IS the mode prod will run with. The install
+# above is conditional, so a node_modules left over from an install that predates
+# the postinstall would otherwise be rotated in unrepaired. Repair, then assert.
+bash "$SRC/scripts/repair-node-pty.sh" >/dev/null 2>&1 || true
+while IFS= read -r helper; do
+  [[ -x "$helper" ]] || die "not executable: $helper
+       Every PTY spawn would fail with posix_spawnp. Fix: bash $SRC/scripts/repair-node-pty.sh"
+done < <(find "$SRC/node_modules" -path '*/node-pty/prebuilds/*/spawn-helper' -not -path '*/win32-*/*')
+ok "node-pty spawn-helper executable"
+
 GIT_SHA="$(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 GIT_BRANCH="$(git -C "$SRC" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 GIT_DIRTY="$(git -C "$SRC" status --porcelain 2>/dev/null | wc -l | tr -d ' ' || true)"
