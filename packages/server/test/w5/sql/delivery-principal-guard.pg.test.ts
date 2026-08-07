@@ -321,10 +321,18 @@ describe.sequential('W5 Duo A — the delivery principal guard', () => {
     expect(normalise(shippedGuardText)).toBe(normalise(derivedGuardText));
     expect(normalise(shippedGuardText)).toContain(TIGHTENED_CONDITION);
 
-    // The other four checks the guard performs are present in BOTH worlds.
+    // The other checks the guard performs are present in BOTH worlds.
+    //
+    // 'delivery reservation version mismatch' was a fifth entry here until 083
+    // removed the wake budget. The `expected_budget_version` PARAMETER survives
+    // and is ignored — the frozen server binary on :7778 calls this with four
+    // arguments and dropping one would refuse every delivery on that node the
+    // moment the migration applied — but there is no version left to compare,
+    // so the raise is gone. Asserting a string the guard no longer contains
+    // would fail; asserting the parameter's mere presence would assert wire
+    // shape while calling it a check, which is worse than dropping the line.
     for (const surviving of [
       'delivery principal tuple mismatch',
-      'delivery reservation version mismatch',
       'delivery principal expired',
       'delivery principal cannot carry actor claims',
     ]) {

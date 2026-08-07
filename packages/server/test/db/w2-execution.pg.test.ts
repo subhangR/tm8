@@ -1,31 +1,39 @@
 /**
- * W2 G11 — B2, proved by execution against a real Postgres.
+ * W2 G11 — the server delivery path, proved by execution against a real Postgres.
  *
- * B2: every Teammate-authored live delivery uses ONE DURABLE UNORDERED PAIR
- * BUDGET, so that no thread root and no process restart mints a fresh
- * allowance. Both adjectives are load-bearing and both are proved here by
- * OBSERVATION rather than by reading that a value was stored:
+ * ⚠ B2 — THE DURABLE UNORDERED PAIR BUDGET — IS REMOVED, by migration 083.
  *
- *   DURABLE   — the process is destroyed. The `W2ExecutionDeliveryService`,
- *               the `W2MessageDeliveryAdapter` inside it and the pg `Pool`
- *               underneath it are all torn down and rebuilt from nothing, and
- *               the budget is then observed to CONTINUE rather than restart.
- *               A comment saying "the counter lives in Postgres" is not this
- *               test; a fresh process that gets four more wakes would fail it.
- *   UNORDERED — {A,B} and {B,A} are shown to be one row and one counter, by
- *               driving a wake in each direction and counting both.
+ * It was this file's original subject: every Teammate-authored live delivery
+ * charged ONE durable unordered pair budget, and the fifth consecutive wake of
+ * a pair settled itself `failed_permanent` / `automated_wake_limit`. Measured
+ * on the live database 2026-08-07, 15 of 39 pairs sat AT the cap and 16
+ * deliveries in three hours were refused by it. A coordinator and its worker
+ * are exactly a long agent-to-agent exchange with no human inside the pair, so
+ * the guard fired on precisely the traffic this system exists to carry — and it
+ * fired SILENTLY, because `messages.post` answers with a message id while the
+ * refusal lands only in `session_message_deliveries`.
  *
- * WHAT THIS FILE DELIBERATELY DOES NOT RE-PROVE. 015's own suite already
- * establishes the schema-level facts (5-way concurrent reserve → 4 pending + 1
- * `failed_permanent`, budget {wakes: 4, version: 4}, claim/settle, the Member
- * reset). Re-asserting them here would inflate the evidence without adding
- * any. What was NOT covered anywhere, and is the entire reason G11 exists, is
- * that NOTHING IN THE SERVER EVER CALLED ANY OF IT: `mintSystemDeliveryPrincipal`
- * had zero production call sites, `W2MessageDeliveryAdapter` had zero
- * production instantiations, and the `options.messageDelivery` seam G04 cut and
- * labelled "G11 owns this" was filled by no caller in src or test. A written
- * authorizer that nothing invokes is a comment, not a defence. So this file's
- * subject is the SERVER PATH, end to end, over the real RPCs.
+ * Five cases here asserted that cap and are DELETED, not relaxed: one budget
+ * across thread roots, {A,B} == {B,A}, the process-restart continuation, the
+ * Member reset, and the retry charging the same allowance. A test whose subject
+ * has been removed cannot fail for the right reason again, and a weakened
+ * survivor would hold the slot a real test needs while proving nothing. What
+ * replaces them is one case with a subject that CAN fail: an agent-to-agent
+ * pair exchanging more than four consecutive wakes, every one delivered.
+ *
+ * WHAT SURVIVES UNCHANGED, because none of it was ever the budget: the delivery
+ * principal boundary in production shape, the teammate-provenance requirement,
+ * 040's exited-target `session_not_live` settlement WITH its pair columns, and
+ * the delivery role's three-function surface.
+ *
+ * WHAT THIS FILE DELIBERATELY DOES NOT RE-PROVE. What was NOT covered anywhere,
+ * and is the entire reason G11 exists, is that NOTHING IN THE SERVER EVER
+ * CALLED ANY OF IT: `mintSystemDeliveryPrincipal` had zero production call
+ * sites, `W2MessageDeliveryAdapter` had zero production instantiations, and the
+ * `options.messageDelivery` seam G04 cut and labelled "G11 owns this" was
+ * filled by no caller in src or test. A written authorizer that nothing invokes
+ * is a comment, not a defence. So this file's subject is the SERVER PATH, end
+ * to end, over the real RPCs.
  *
  * MEASUREMENT VALIDITY — read this before trusting the result.
  * Every existing pg test reaches the three delivery RPCs by running as the
@@ -185,34 +193,16 @@ async function newTeammateMessage(
   });
 }
 
-/** A Member reply under a Teammate message — the human turn that resets B2. */
-async function newMemberReply(
-  database: W1ScratchDatabase,
-  fx: Fixture,
-  parentMessageId: string,
-): Promise<string> {
-  return database.transaction(async (client) => {
-    await client.query('set local role tm8_graph_owner');
-    const id = (await client.query<{ id: string }>(`select internal.new_id()::text id`)).rows[0]!.id;
-    await client.query(
-      `insert into public.entities(id, space_id, kind, parent_id, created_by)
-       values ($1, $2, 'message', $3, $4)`,
-      [id, fx.spaceId, parentMessageId, fx.memberId],
-    );
-    await client.query(
-      `insert into public.messages(entity_id, anchor_id, root_message_id, author_id, body)
-       values ($1, $2, $3, $4, 'human turn')`,
-      [id, fx.channelId, parentMessageId, fx.memberId],
-    );
-    return id;
-  });
-}
+// `newMemberReply` lived here — a Member reply under a Teammate message, the
+// human turn that reset the wake budget. It is deleted with 083: the only
+// caller was the Member-reset case, and a human reply now resets nothing
+// because there is nothing to reset.
 
 // ---------------------------------------------------------------------------
 // the "process"
 // ---------------------------------------------------------------------------
 
-/** Counts what actually reached a terminal. Zero is half of B1 and half of B2. */
+/** Counts what actually reached a terminal. Zero is half of B1. */
 class RecordingPty implements InternalPromptPty {
   readonly deliveries: Array<{ sessionId: string; content: string }> = [];
   bytes = 0;
@@ -308,28 +298,27 @@ async function deliver(
 
 // ---------------------------------------------------------------------------
 
-describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RPCs', () => {
+describe('W2 G11 — the server delivery path, over the real delivery RPCs', () => {
   let database: W1ScratchDatabase;
   let fx: Fixture;
   let deliveryUrl: string;
   let appUrl: string;
 
-  const budgetOf = async (a: string, b: string) =>
-    (await database.query<{ consecutive_agent_wakes: number; version: number }>(
-      `select consecutive_agent_wakes, version from public.session_wake_budgets
-        where low_work_session_id = least($1::uuid, $2::uuid)
-          and high_work_session_id = greatest($1::uuid, $2::uuid)`,
+  /** Every delivery row this pair produced, oldest first. */
+  const deliveriesForPair = async (a: string, b: string) =>
+    database.query<{
+      status: string;
+      failure_reason: string | null;
+      pair_low_session_id: string | null;
+      pair_high_session_id: string | null;
+    }>(
+      `select status, failure_reason,
+              pair_low_session_id::text, pair_high_session_id::text
+         from public.session_message_deliveries
+        where pair_low_session_id = least($1::uuid, $2::uuid)
+          and pair_high_session_id = greatest($1::uuid, $2::uuid)
+        order by reserved_at, delivery_id`,
       [a, b],
-    ))[0] ?? null;
-
-  const budgetRowCount = async (a: string, b: string) =>
-    Number(
-      (await database.query<{ n: string }>(
-        `select count(*)::text n from public.session_wake_budgets
-          where (low_work_session_id, high_work_session_id)
-                in ((least($1::uuid,$2::uuid), greatest($1::uuid,$2::uuid)))`,
-        [a, b],
-      ))[0]!.n,
     );
 
   beforeAll(async () => {
@@ -430,181 +419,130 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     }
   });
 
-  // -- B2: one budget across thread roots -------------------------------------
+  // -- the case the wake cap was the absence of ---------------------------------
 
-  it('a top-level wake and a reply wake share ONE budget — no thread root mints an allowance', async () => {
-    const source = await newSession(database, fx, 'G11 source');
-    const target = await newSession(database, fx, 'G11 target');
-    const proc = boot(deliveryUrl, [target]);
-    try {
-      const root = await newTeammateMessage(database, fx, source, 'top level');
-      const reply = await newTeammateMessage(database, fx, source, 'in thread', root);
-
-      // Concurrent, because a budget that only holds when calls are serialized
-      // is not a budget — 015 takes `for update` on the pair row and this is
-      // what exercises it from the server path.
-      const [a, b] = await Promise.all([
-        deliver(proc, root, target, 'wake one'),
-        deliver(proc, reply, target, 'wake two'),
-      ]);
-      expect([a.outcome, b.outcome]).toEqual(['delivered', 'delivered']);
-
-      expect(await budgetRowCount(source, target)).toBe(1);
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 2 });
-      expect(proc.pty.bytes).toBeGreaterThan(0);
-    } finally {
-      await proc.shutdown();
-    }
-  }, 60_000);
-
-  it('{A,B} and {B,A} are the SAME budget — the pair is unordered', async () => {
-    const alpha = await newSession(database, fx, 'G11 alpha');
-    const beta = await newSession(database, fx, 'G11 beta');
+  /**
+   * THE REGRESSION THIS WHOLE CHANGE EXISTS FOR, and the one case the old suite
+   * could not contain: a long agent-to-agent exchange, DELIVERED.
+   *
+   * SEVEN consecutive teammate-authored wakes across ONE unordered pair, in
+   * BOTH directions, with no Member reply anywhere in it — which is the exact
+   * shape of a coordinator and its worker, and the exact shape the cap refused
+   * at the fifth. Seven and not five so the count is unambiguously past the old
+   * boundary rather than sitting on it.
+   *
+   * THIS CASE CAN FAIL, which is the property the deleted cap tests lost. If
+   * any budget is ever reintroduced — in the RPC, in a trigger, or in the
+   * service — the fifth wake here settles itself instead of delivering, and the
+   * assertions below go red on THREE independent observations rather than one:
+   * the dispatch outcome, the bytes at the terminal, and the settled rows in
+   * `session_message_deliveries`. The row check is the load-bearing one: the
+   * refusal was always SILENT at the API, so a test that only read outcomes
+   * could be green while the database recorded seven `automated_wake_limit`s.
+   *
+   * The pair columns are asserted too. They survive 083 — they are honest
+   * provenance about which two sessions an attempt joined — and only the budget
+   * VERSION went, so a delivery that stopped recording its pair would be a
+   * different regression and this notices it.
+   */
+  it('an agent-to-agent pair exchanges SEVEN consecutive wakes and delivers every one', async () => {
+    const alpha = await newSession(database, fx, 'G11 long-exchange alpha');
+    const beta = await newSession(database, fx, 'G11 long-exchange beta');
+    // Both ends live: this is a conversation, not a broadcast, so the wakes run
+    // in both directions across the SAME unordered pair — the pair the budget
+    // used to be keyed on. A one-directional run would leave open whether the
+    // cap merely moved to the other ordering.
     const proc = boot(deliveryUrl, [alpha, beta]);
+    const WAKES = 7;
     try {
-      const fromAlpha = await newTeammateMessage(database, fx, alpha, 'alpha speaks');
-      expect((await deliver(proc, fromAlpha, beta, 'a to b')).outcome).toBe('delivered');
-      expect(await budgetOf(alpha, beta)).toMatchObject({ consecutive_agent_wakes: 1 });
+      for (let i = 0; i < WAKES; i += 1) {
+        const speaker = i % 2 === 0 ? alpha : beta;
+        const listener = i % 2 === 0 ? beta : alpha;
+        const message = await newTeammateMessage(database, fx, speaker, `turn ${i}`);
+        const result = await deliver(proc, message, listener, `turn ${i}`);
+        // Named per turn: a bare loop that failed at turn 5 would report the
+        // same thing as one that failed at turn 1, and WHICH turn broke is the
+        // entire diagnosis when a cap comes back.
+        expect(result, `turn ${i} was not delivered`).toEqual({
+          reserved: true,
+          outcome: 'delivered',
+        });
+      }
 
-      // The other direction. If direction minted its own row this would read 1.
-      const fromBeta = await newTeammateMessage(database, fx, beta, 'beta answers');
-      expect((await deliver(proc, fromBeta, alpha, 'b to a')).outcome).toBe('delivered');
+      // Every turn reached a terminal. The old fifth wake was refused BEFORE
+      // any byte, so a byte count short of seven is the cap's fingerprint.
+      expect(proc.pty.deliveries).toHaveLength(WAKES);
+      expect(proc.pty.bytes).toBeGreaterThan(0);
 
-      expect(await budgetRowCount(alpha, beta)).toBe(1);
-      expect(await budgetRowCount(beta, alpha)).toBe(1);
-      expect(await budgetOf(beta, alpha)).toMatchObject({ consecutive_agent_wakes: 2 });
-    } finally {
-      await proc.shutdown();
-    }
-  }, 60_000);
-
-  // -- B2: the restart proof --------------------------------------------------
-
-  it('SURVIVES A PROCESS RESTART: a fresh process does not mint a fresh allowance', async () => {
-    const source = await newSession(database, fx, 'G11 restart source');
-    const target = await newSession(database, fx, 'G11 restart target');
-    const messages: string[] = [];
-    for (let i = 0; i < 6; i += 1) {
-      messages.push(await newTeammateMessage(database, fx, source, `wake ${i}`));
-    }
-
-    // ── process 1 ──
-    const first = boot(deliveryUrl, [target]);
-    expect((await deliver(first, messages[0]!, target, 'one')).outcome).toBe('delivered');
-    expect((await deliver(first, messages[1]!, target, 'two')).outcome).toBe('delivered');
-    expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 2 });
-    const bytesBefore = first.pty.bytes;
-    expect(bytesBefore).toBeGreaterThan(0);
-
-    // ── the restart. Pool, adapter, dedup map and PTY are all destroyed. ──
-    await first.shutdown();
-
-    // ── process 2: shares no object with process 1 ──
-    const second = boot(deliveryUrl, [target]);
-    try {
-      expect(second.pty.bytes).toBe(0);
-
-      // A fresh allowance would let all four through. The budget continues, so
-      // exactly two remain.
-      expect((await deliver(second, messages[2]!, target, 'three')).outcome).toBe('delivered');
-      expect((await deliver(second, messages[3]!, target, 'four')).outcome).toBe('delivered');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
-
-      // The fifth is refused, and refused BEFORE any byte: `reserve` returns
-      // null, so nothing is minted, claimed or written.
-      const bytesAtLimit = second.pty.bytes;
-      const fifth = await deliver(second, messages[4]!, target, 'five');
-      expect(fifth).toEqual({ reserved: false, outcome: null });
-      expect(second.pty.bytes).toBe(bytesAtLimit);
-      expect(second.pty.deliveries).toHaveLength(2);
-
-      const refused = (await database.query<{ status: string; failure_reason: string }>(
-        `select status, failure_reason from public.session_message_deliveries
-          where message_id = $1 and target_work_session_id = $2`,
-        [messages[4]!, target],
-      ))[0]!;
-      expect(refused).toEqual({
-        status: 'failed_permanent',
-        failure_reason: 'automated_wake_limit',
-      });
-
-      // ── and once more, to close the loophole a restart-at-the-limit would be ──
-      await second.shutdown();
-      const third = boot(deliveryUrl, [target]);
-      try {
-        const afterRestartAtLimit = await deliver(third, messages[5]!, target, 'six');
-        expect(afterRestartAtLimit).toEqual({ reserved: false, outcome: null });
-        expect(third.pty.bytes).toBe(0);
-        expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
-      } finally {
-        await third.shutdown();
+      // And the durable record agrees with the outcomes. This is the half that
+      // catches a silent refusal: `messages.post` answers with a message id
+      // either way, and only these rows ever said otherwise.
+      const rows = await deliveriesForPair(alpha, beta);
+      expect(rows).toHaveLength(WAKES);
+      expect(rows.map((row) => row.status)).toEqual(Array(WAKES).fill('delivered'));
+      expect(rows.map((row) => row.failure_reason)).toEqual(Array(WAKES).fill(null));
+      // No row carries the retired reason, whatever its status.
+      expect(rows.filter((row) => row.failure_reason === 'automated_wake_limit')).toEqual([]);
+      // 083 keeps the pair columns; every row names the same unordered pair.
+      const [low, high] = [alpha, beta].sort();
+      for (const row of rows) {
+        expect([row.pair_low_session_id, row.pair_high_session_id]).toEqual([low, high]);
       }
     } finally {
-      await second.shutdown().catch(() => undefined);
-    }
-  }, 120_000);
-
-  // -- B2: Member reset and retry ---------------------------------------------
-
-  it('a Member reply resets the budget, and the SAME pair then wakes again', async () => {
-    const source = await newSession(database, fx, 'G11 reset source');
-    const target = await newSession(database, fx, 'G11 reset target');
-    const proc = boot(deliveryUrl, [target]);
-    try {
-      const first = await newTeammateMessage(database, fx, source, 'before the human');
-      expect((await deliver(proc, first, target, 'pre-reset')).outcome).toBe('delivered');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 1 });
-
-      const reply = await newMemberReply(database, fx, first);
-      // A BOUND caller: `tm8.identity_id` names a real member of the space.
-      // Deliberately so — the authorization on this RPC is tightening in a
-      // migration authored elsewhere, and a proof that depended on an UNBOUND
-      // caller reaching it would be a proof of the defect, not of B2.
-      const reset = await database.transaction(async (client) => {
-        await client.query('set local role tm8_app');
-        await client.query(`select set_config('tm8.identity_id', $1, true)`, [fx.identityId]);
-        return (await client.query<{ reset: { reset: boolean } }>(
-          `select public.reset_session_wake_budget_for_member_reply($1, $2) as reset`,
-          [reply, `g11-reset-${randomUUID()}`],
-        )).rows[0]!.reset;
-      });
-      expect(reset).toMatchObject({ reset: true });
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 0 });
-
-      // Still ONE row: a reset is a reset, not a new budget.
-      expect(await budgetRowCount(source, target)).toBe(1);
-      const after = await newTeammateMessage(database, fx, source, 'after the human');
-      expect((await deliver(proc, after, target, 'post-reset')).outcome).toBe('delivered');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 1 });
-    } finally {
       await proc.shutdown();
     }
-  }, 60_000);
+  }, 180_000);
 
-  it('a RETRY consumes the same allowance rather than a fresh one', async () => {
+  // -- refusal that is NOT a cap: a target with no live terminal ---------------
+
+  /**
+   * SURVIVING COVERAGE, deliberately kept when its sibling was deleted.
+   *
+   * This case used to be titled "a RETRY consumes the same allowance rather
+   * than a fresh one" and its budget assertions are gone with the budget. What
+   * is left is not a weakened version of that test — it is the OTHER subject it
+   * always carried, and the only real-Postgres proof of it in the tree: a
+   * teammate wake at a live session with NO terminal settles
+   * `failed_retryable` / `no_live_terminal`, and attempt 2 is a DISTINCT
+   * delivery row against the same message and target rather than a rewrite of
+   * attempt 1. Both halves can fail; neither mentions a budget.
+   */
+  it('a wake at a target with no live terminal settles failed_retryable, and a retry is a NEW row', async () => {
     const source = await newSession(database, fx, 'G11 retry source');
     const target = await newSession(database, fx, 'G11 retry target');
-    // The target has NO live terminal, so the first attempt settles refused —
-    // which is exactly the situation that produces a retry.
+    // The target is LIVE — so this is not 040's exited-target branch — but the
+    // process holds no terminal for it, which is exactly what produces a retry.
     const proc = boot(deliveryUrl, []);
     try {
       const message = await newTeammateMessage(database, fx, source, 'retry me');
       expect((await deliver(proc, message, target, 'attempt one')).outcome).toBe('refused');
       expect(proc.pty.bytes).toBe(0);
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 1 });
 
-      const stored = (await database.query<{ status: string; failure_reason: string }>(
-        `select status, failure_reason from public.session_message_deliveries
-          where message_id = $1 and attempt_no = 1`,
-        [message],
-      ))[0]!;
-      expect(stored).toEqual({ status: 'failed_retryable', failure_reason: 'no_live_terminal' });
-
-      // Attempt 2 is a NEW delivery id against the SAME message and target, and
-      // it charges the same pair again. A retry that reset the count would read 1.
       expect((await deliver(proc, message, target, 'attempt two', 2)).outcome).toBe('refused');
-      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 2 });
-      expect(await budgetRowCount(source, target)).toBe(1);
+      expect(proc.pty.bytes).toBe(0);
+
+      // TWO rows, one per attempt, each settled on its own — not one row
+      // overwritten twice, which is what a retry that reused the reservation
+      // would leave behind.
+      const rows = await database.query<{
+        attempt_no: number;
+        delivery_id: string;
+        status: string;
+        failure_reason: string;
+      }>(
+        `select attempt_no, delivery_id::text, status, failure_reason
+           from public.session_message_deliveries
+          where message_id = $1 order by attempt_no`,
+        [message],
+      );
+      expect(rows.map((row) => row.attempt_no)).toEqual([1, 2]);
+      expect(new Set(rows.map((row) => row.delivery_id)).size).toBe(2);
+      for (const row of rows) {
+        expect({ status: row.status, failure_reason: row.failure_reason }).toEqual({
+          status: 'failed_retryable',
+          failure_reason: 'no_live_terminal',
+        });
+      }
     } finally {
       await proc.shutdown();
     }
@@ -702,7 +640,7 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
    *
    * KNOWN-GOOD half: the behaviour `040` repaired. A Teammate-authored wake at an
    * exited target must write exactly ONE `failed_permanent` / `session_not_live`
-   * row WITH its three `pair_*` columns populated. Before `040` this raised 23514
+   * row WITH its `pair_*` columns populated. Before `040` this raised 23514
    * and wrote ZERO rows; if `040` is ever reverted or overwritten by a later
    * `create or replace`, this goes red on the row count and the pair columns.
    *
@@ -711,6 +649,22 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
    * — that branch always worked — so asserting only `failed_permanent` /
    * `session_not_live` would be satisfied by the half that was never broken.
    * The `pair_*` columns are what distinguishes the repaired Teammate path.
+   *
+   * ⚠ THIS GUARD IS WHY `083` HAD TO BE BASED ON `040` AND NOT ON `019`. `083`
+   * rebuilt `reserve_session_message_delivery` with no budget at all, and it
+   * took `040`'s body to do it — so the exited-target branch still populates its
+   * pair columns and this stays green. A rebuild off `019` would have reverted
+   * the repair with no conflict and no migration error, and only this test would
+   * have said so. There is a stale `078_remove_agent_wake_cap.sql` on the
+   * unmerged `feat/agent-msg-protocol` branch that was written off `019` and
+   * would do exactly that. Do not copy from it.
+   *
+   * `pair_budget_version` was asserted here too until `083` dropped the column.
+   * The two remaining pair columns SURVIVE — they are honest provenance about
+   * which two sessions an attempt joined, and `pair_shape` still requires them
+   * together with `source_work_session_id` — so the distinguishing power of this
+   * assertion is unchanged: before `040` it was ZERO rows, not a row with a
+   * missing version.
    */
   it('REGRESSION GUARD (040): a Teammate wake at an exited target writes ONE row WITH pair columns', async () => {
     const source = await newSession(database, fx, 'G11 dead source');
@@ -733,10 +687,9 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
       source_work_session_id: string | null;
       pair_low_session_id: string | null;
       pair_high_session_id: string | null;
-      pair_budget_version: number | null;
     }>(
       `select status, failure_reason, source_work_session_id::text,
-              pair_low_session_id::text, pair_high_session_id::text, pair_budget_version
+              pair_low_session_id::text, pair_high_session_id::text
          from public.session_message_deliveries where message_id = $1`,
       [message],
     );
@@ -745,14 +698,22 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     const row = rows[0]!;
     expect(row.status).toBe('failed_permanent');
     expect(row.failure_reason).toBe('session_not_live');
-    // A Teammate carries provenance, so `pair_shape` requires all four together.
+    // A Teammate carries provenance, so `pair_shape` requires all three together.
     expect(row.source_work_session_id).not.toBeNull();
     expect(row.pair_low_session_id).not.toBeNull();
     expect(row.pair_high_session_id).not.toBeNull();
-    expect(row.pair_budget_version).not.toBeNull();
     // ...and the pair is the unordered {source, target} identity, not an arbitrary pair.
     expect([row.pair_low_session_id, row.pair_high_session_id].sort())
       .toEqual([source, target].sort());
+    // The dropped column is really gone — not merely unselected above. A test
+    // that stopped reading a column would look identical to one whose column
+    // was removed, and only this tells the two apart.
+    const budgetColumn = await database.query<{ n: string }>(
+      `select count(*)::text n from information_schema.columns
+        where table_schema = 'public' and table_name = 'session_message_deliveries'
+          and column_name = 'pair_budget_version'`,
+    );
+    expect(budgetColumn[0]!.n).toBe('0');
   }, 120_000);
 
   /**
@@ -842,22 +803,38 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
       });
     }
 
-    // Eligibility is derived, not asserted by the delivery role: both sessions
-    // are terminal and nothing is pending or dispatching.
-    await database.query(`select internal.w1_refresh_wake_budget_cleanup_eligibility()`);
-    const eligible = (await database.query<{ eligible_for_cleanup_at: string | null }>(
-      `select eligible_for_cleanup_at from public.session_wake_budgets
-        where low_work_session_id = least($1::uuid,$2::uuid)
-          and high_work_session_id = greatest($1::uuid,$2::uuid)`,
-      [source, target],
-    ))[0]!;
-    expect(eligible.eligible_for_cleanup_at).not.toBeNull();
-
-    const pruned = (await database.query<{ result: { budgetsDeleted: number } }>(
+    // The budget half of this test is gone with 083: there is no
+    // `internal.w1_refresh_wake_budget_cleanup_eligibility` to call, no
+    // `session_wake_budgets` row to become eligible, and no `budgetsDeleted` in
+    // the result. What is asserted instead is the DELIVERY half, which 083 left
+    // untouched — settled rows past their 30-day retention are deleted by the
+    // same owner-path function, so the claim in this test's title survives with
+    // a subject that can still fail.
+    const pruned = (await database.query<{ result: Record<string, number> }>(
       `select internal.w1_prune_operational_state(now() + interval '31 days') as result`,
     ))[0]!.result;
-    expect(pruned.budgetsDeleted).toBeGreaterThanOrEqual(1);
-    expect(await budgetRowCount(source, target)).toBe(0);
+    expect(pruned.deliveriesDeleted).toBeGreaterThanOrEqual(1);
+    expect(
+      await database.query(
+        `select 1 from public.session_message_deliveries
+          where pair_low_session_id = least($1::uuid,$2::uuid)
+            and pair_high_session_id = greatest($1::uuid,$2::uuid)`,
+        [source, target],
+      ),
+    ).toEqual([]);
+
+    // THE RESULT'S KEY SET, EXACTLY. `budgetsDeleted` was a sixth key until 083
+    // removed the table it counted. Asserting the whole set rather than the
+    // absence of one name means a key SILENTLY ADDED later is caught too — and
+    // an absence assertion alone would pass just as well against a function that
+    // returned nothing at all.
+    expect(Object.keys(pruned).sort()).toEqual([
+      'cancelled',
+      'deliveriesDeleted',
+      'dispatchingUnknown',
+      'expired',
+      'handoffsUnknown',
+    ]);
 
     // The delivery role's surface is still exactly three functions.
     const granted = await database.query<{ proname: string }>(

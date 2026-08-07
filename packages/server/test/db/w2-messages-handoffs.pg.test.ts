@@ -22,6 +22,24 @@ import {
 // every `it` in the file. Precedent: test/integration/inbox.test.ts:39.
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
+/**
+ * ⚠ THIS SUITE IS PINNED AT CHAIN POSITION 019 — it applies 001-019 and stops.
+ *
+ * So the WAKE BUDGET IS STILL LIVE in every scratch database this file builds,
+ * even though migration `083` removed it from the system. That is why
+ * `asDelivery` binds `tm8.delivery_pair_budget_version`, and why reserve/claim/
+ * settle thread `pair_budget_version` through: at 019 those are required, and
+ * `claim_session_message_delivery` raises `delivery reservation not found` when
+ * the version does not match. MEASURED, not assumed — removing the binding and
+ * passing `null` here turns that test red with exactly that message.
+ *
+ * DO NOT "clean up" the budget references below, and do not read them as
+ * evidence that the cap still exists. The rule: A FULL-CHAIN SUITE ASSERTS
+ * PRESENT SYSTEM BEHAVIOUR; A POSITION-PINNED SUITE ASSERTS THAT POSITION.
+ * `test/db/w2-execution.pg.test.ts` applies `migrationFiles()` whole and is
+ * where the cap's removal is proved; `test/db/w1-foundations.test.ts` carries
+ * the same fence at position 015.
+ */
 const REQUIRED_G04_SLICE = Array.from({ length: 19 }, (_, index) =>
   `${String(index + 1).padStart(3, '0')}_`,
 );

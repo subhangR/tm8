@@ -136,7 +136,10 @@ describe('one identity path (R2 / claims contract)', () => {
         'delivery_message_id',
         'delivery_target_work_session_id',
         'delivery_expires_at',
-        'delivery_pair_budget_version',
+        // `delivery_pair_budget_version` was here until 083 removed the wake
+        // budget. It is deleted rather than left in place: this list GRANTS
+        // permission, so a stale entry is a standing licence to re-bind a claim
+        // the database now ignores, and nothing would go red if someone did.
       ],
       reason:
         'The system delivery adapter. Permitted on four facts, each checkable: ' +
