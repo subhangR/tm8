@@ -53,6 +53,7 @@ import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } fro
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { nodeKeyOf } from '../data/launch-cache';
+import { readLastTarget, writeLastTarget } from './last-place';
 import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
 
 /**
@@ -81,6 +82,9 @@ const DEFAULT_RIGHT_KIND = 'work_session';
  * for. Named for what it is instead.
  */
 const LIVE_COUNT_KIND = 'work_session';
+
+/** The screen a viewer with no remembered place lands on. */
+const WORKSPACE_TARGET: MenuTarget = { type: 'view', ref: 'workspace' };
 
 export interface GateAppProps {
   activeServer?: UiServer;
@@ -153,10 +157,31 @@ export function GateApp(props: GateAppProps = {}) {
   const [addServerOpen, setAddServerOpen] = useState(false);
   const [newSpaceOpen, setNewSpaceOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
-  const [activeTarget, setActiveTarget] = useState<MenuTarget | null>({
-    type: 'view',
-    ref: 'workspace',
-  });
+  const [activeTarget, setActiveTarget] = useState<MenuTarget | null>(WORKSPACE_TARGET);
+
+  /**
+   * WHICH VIEW, remembered per (node, space) — the other half of the place a
+   * server round trip used to destroy. `setActiveTarget` still exists for the
+   * two switch handlers, which set an interim workspace target the restore
+   * below replaces; every USER navigation goes through this so there is no
+   * second write path that can forget.
+   */
+  const nodeKey = nodeKeyOf(activeServer.routeBaseUrl);
+  const navigateTo = useCallback((target: MenuTarget) => {
+    setActiveTarget(target);
+    if (data.spaceId) writeLastTarget(nodeKey, data.spaceId, target);
+  }, [nodeKey, data.spaceId]);
+
+  // Restore once per space. Deliberately NOT paired with a persisting effect:
+  // an effect watching `activeTarget` would run in the same pass as this one,
+  // still holding the outgoing space's target, and overwrite the very record
+  // this just read.
+  const restoredSpace = useRef<string | null>(null);
+  useEffect(() => {
+    if (!data.spaceId || restoredSpace.current === data.spaceId) return;
+    restoredSpace.current = data.spaceId;
+    setActiveTarget(readLastTarget(nodeKey, data.spaceId) ?? WORKSPACE_TARGET);
+  }, [nodeKey, data.spaceId]);
   const projectOnboardingPort = useMemo<ProjectOnboardingPort | null>(() => {
     const setup = data.seam.projectSetup;
     if (!setup) return null;
@@ -385,13 +410,13 @@ export function GateApp(props: GateAppProps = {}) {
   const openPaletteView = useCallback((id: string) => {
     const [scope, ref] = id.split(':', 2) as [string, string];
     if (scope === 'view' && ref === 'channels' && channelEntities[0]) {
-      setActiveTarget({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
+      navigateTo({ type: 'entity', ref: channelEntities[0].id, kind: channelEntities[0].kind });
     } else if (scope === 'view') {
-      setActiveTarget({ type: 'view', ref: ref as never });
+      navigateTo({ type: 'view', ref: ref as never });
     }
-    if (scope === 'kind') setActiveTarget({ type: 'kind', ref });
+    if (scope === 'kind') navigateTo({ type: 'kind', ref });
     setPaletteOpen(false);
-  }, [channelEntities]);
+  }, [channelEntities, navigateTo]);
 
   return (
     <div className="cv2-root" data-theme={theme === 'dark' ? 'dark' : undefined}>
@@ -437,7 +462,7 @@ export function GateApp(props: GateAppProps = {}) {
             collapsed={menuCollapsed}
             onToggle={() => setMenuCollapsed((c) => !c)}
             activeTarget={activeTarget}
-            onNavigate={setActiveTarget}
+            onNavigate={navigateTo}
             presentKind={presentKind}
             dynamicGroups={{ voice: voiceGroup }}
             servers={props.servers}
@@ -525,23 +550,23 @@ export function GateApp(props: GateAppProps = {}) {
               kind={activeTarget.ref}
               reasons={reasons}
               onNotice={notices.push}
-              onKindChange={(next) => setActiveTarget({ type: 'kind', ref: next })}
+              onKindChange={(next) => navigateTo({ type: 'kind', ref: next })}
               /* §1.1 — the shell HOLDS the layout mode, so the switcher's
                  choice survives re-renders of this ternary and a kind switch
-                 resets it honestly (a new target has no mode yet). */
+                 resets it honestly (a new target has no mode yet). It rides on
+                 the target, so remembering the target remembers the layout. */
               {...(activeTarget.mode !== undefined ? { mode: activeTarget.mode } : {})}
-              onMode={(m) =>
-                setActiveTarget((current) =>
-                  current?.type === 'kind' ? { ...current, mode: m } : current,
-                )
-              }
+              onMode={(m) => {
+                if (activeTarget.type !== 'kind') return;
+                navigateTo({ ...activeTarget, mode: m });
+              }}
               /* The same verb the workspace's tiles commit. Passing it is what
                  makes the tile's `Launch ▸` a live control here instead of a
                  disabled-with-reason one; the sources behind it come from
                  `useLaunchPort` inside the view. */
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
-                setActiveTarget({ type: 'view', ref: 'workspace' });
+                navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
             />
@@ -618,7 +643,7 @@ export function GateApp(props: GateAppProps = {}) {
                   )
                   .then((sessionId) => {
                     launch.close();
-                    setActiveTarget({ type: 'view', ref: 'workspace' });
+                    navigateTo(WORKSPACE_TARGET);
                     nav.push(sessionId);
                     notices.push({
                       id: 'launch-done',
@@ -641,7 +666,7 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
-                setActiveTarget({ type: 'view', ref: 'workspace' });
+                navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
               menuCollapsed={menuCollapsed}
