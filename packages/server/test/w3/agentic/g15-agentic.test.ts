@@ -31,7 +31,7 @@ import {
 // again on the tree — it still described the 121-row catalog while five
 // further amendments had landed — and was re-derived 2026-08-04 alongside
 // projects.files.list / projects.files.attach.
-const CATALOG_DIGEST = 'sha256:2c944d4f5ef1cd0b831ac28d322f7de2aa6246a109d8bab4dd3e8de0d35b1a45';
+const CATALOG_DIGEST = 'sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {

@@ -15,7 +15,6 @@ import type { Logger, PtyActivity, PtyExitInfo, PtySessionStatus } from '../pty/
 import { composePrompt } from '@tm8/prompt';
 
 import { trustClaudeWorkspace, trustCodexWorkspace } from './workspace-trust.js';
-import type { ResolvedLaunchConfig } from './manifest.js';
 import {
   preflightCodexNetworkPolicy,
   type CodexNetworkPreflight,

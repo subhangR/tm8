@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:2c944d4f5ef1cd0b831ac28d322f7de2aa6246a109d8bab4dd3e8de0d35b1a45",
+  "catalogDigest": "sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24",
   "catalog": {
-    "total": 128,
-    "v1": 126,
+    "total": 129,
+    "v1": 127,
     "reserved": 2,
-    "http": 127,
+    "http": 128,
     "ws": 1,
-    "registerableV1Http": 125,
+    "registerableV1Http": 126,
     "methods": {
-      "GET": 47,
+      "GET": 48,
       "POST": 55,
       "PATCH": 10,
       "DELETE": 8,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 50,
+      "read": 51,
       "command": 77,
       "stream": 1
     },
-    "uniqueNames": 128,
-    "uniqueBindings": 128
+    "uniqueNames": 129,
+    "uniqueBindings": 129
   },
   "reservedOperations": [
     "search.query",
@@ -1307,7 +1307,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 97
+    "unimplementedV1Http": 98
   },
   "schemas": {
     "additive": {

@@ -338,7 +338,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     expect(handlers.all).toHaveLength(126);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('85f0a2adeae474acd4031fb601e63eaeeba077d32896f2a5ec2a65da2e916d80');
+      .toBe('007ac4eb7ae18b4a88d4cead882954b0875583546a7ef5ecc7de7ef89fdaf7bb');
 
     expect(inputSchemas.bound).toHaveLength(70);
     expect(inputSchemas.unboundCommands).toEqual([
