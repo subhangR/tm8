@@ -246,6 +246,15 @@ describe('buildAgentCommand', () => {
     );
   });
 
+  it('quotes the 1M-context suffix so the shell cannot glob it away', () => {
+    // `claude-opus-5[1m]` is a real catalog id and `[1m]` is a shell character
+    // class: unquoted it expands to `1` or `m` if such a file exists in the
+    // workdir, and the agent silently starts on the wrong model.
+    expect(buildAgentCommand({ ...launch, model: 'claude-opus-5[1m]' }, {})).toBe(
+      "claude --permission-mode acceptEdits --model 'claude-opus-5[1m]'",
+    );
+  });
+
   it('appends the composed system prompt for claude, shell-quoted', () => {
     const base = buildAgentCommand(launch, {});
     const prompt = "<tm8_system_prompt>it's \"quoted\"\nand multiline</tm8_system_prompt>";
