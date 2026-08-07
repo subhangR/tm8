@@ -411,10 +411,22 @@ export interface Tm8Manifest {
 
   tasks: TaskContext[];
 
-  /** Skills the agent should load. G1A composes none — the graph-side skill
-   *  resolution is post-loop work. Emitted as an empty array rather than
-   *  omitted so the CLI's shape stays stable. */
+  /** Skills the agent should load, resolved across the persona's ancestor
+   *  chain and de-duplicated nearest-first. Emitted as an empty array rather
+   *  than omitted so the CLI's shape stays stable. */
   skills: Array<{ name: string; body: string }>;
+
+  /**
+   * Names the skill resolver dropped to stay inside its cap, or [] when it
+   * kept everything.
+   *
+   * Emitted for the same reason as `launch.sandboxDegraded`: without it a
+   * persona truncated from 80 skills to 64 reaches the CLI looking exactly
+   * like a persona that only ever had 64, and nothing anywhere records which
+   * of the two happened. A smaller persona is survivable; a smaller persona
+   * that reports itself as complete is the defect.
+   */
+  droppedSkills: string[];
 
   /** Coordinator re-rooting (R27) is post-G1A; always null in this wave. */
   coordinator: { sessionId: string; displayName: string } | null;

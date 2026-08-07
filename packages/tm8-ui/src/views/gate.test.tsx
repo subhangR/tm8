@@ -85,6 +85,18 @@ describe('THE GATE — composed T0-1 master screen', () => {
       expect(left.querySelector('[data-testid="entity-list-panel"]')?.getAttribute('data-kind'))
         .toBe('channel'));
 
+    // Regression: this button used the task-specific create command for every
+    // kind, so "New channel" created a task and opened a subtree panel. It now
+    // creates a real channel with a valid, unique slug placeholder.
+    const before = left.querySelectorAll('[data-testid="list-tile"]').length;
+    fireEvent.click(within(left).getByRole('button', { name: 'New channel' }));
+    await waitFor(() => {
+      expect(left.querySelectorAll('[data-testid="list-tile"]').length).toBe(before + 1);
+      expect(left.textContent).toMatch(/untitled-channel-[a-z0-9]+-au-\d+/);
+    });
+    const createdPanel = await view.findByTestId('entity-detail-panel');
+    expect(createdPanel.getAttribute('data-archetype')).toBe('hub');
+
     const row = await waitFor(() => {
       const found = within(left).getByText('design');
       expect(found).toBeTruthy();

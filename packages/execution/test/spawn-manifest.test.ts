@@ -507,6 +507,58 @@ describe('composeEnv', () => {
 });
 
 describe('composeManifest', () => {
+  // The resolver knowing what it dropped is not the same as the AGENT knowing.
+  // `resolveSkills` reported truncation from the day it was written, and the
+  // manifest still discarded it — so a persona cut from 66 skills to 64 arrived
+  // at the CLI indistinguishable from one that never had more. That is the same
+  // silent-degradation failure `launch.sandboxDegraded` exists to end, and the
+  // pure-function test one file over could not see it, because the field died
+  // between the resolver and the manifest.
+  it('reports the skills the resolver dropped, not merely the ones it kept', () => {
+    const manifest = composeManifest({
+      sessionId: 'sess-dropped',
+      request: base,
+      context: {
+        ...context(),
+        skills: [{ name: 'Kept', body: 'body' }],
+        droppedSkills: ['Cut', 'AlsoCut'],
+      },
+      launch: {
+        mode: 'worker',
+        model: 'opus',
+        agentTool: 'claude-code',
+        permissionMode: 'bypassPermissions',
+      },
+      workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+      command: 'claude',
+      baseUrl: 'http://127.0.0.1:4610',
+    });
+
+    expect(manifest.skills).toEqual([{ name: 'Kept', body: 'body' }]);
+    expect(manifest.droppedSkills).toEqual(['Cut', 'AlsoCut']);
+  });
+
+  it('reports an untruncated persona as dropping nothing, not as absent', () => {
+    const manifest = composeManifest({
+      sessionId: 'sess-intact',
+      request: base,
+      context: context(),
+      launch: {
+        mode: 'worker',
+        model: 'opus',
+        agentTool: 'claude-code',
+        permissionMode: 'bypassPermissions',
+      },
+      workdir: { mode: 'project', path: '/tmp/tm8-fixture' },
+      command: 'claude',
+      baseUrl: 'http://127.0.0.1:4610',
+    });
+
+    // [] rather than undefined: a reader must not have to tell "nothing was
+    // dropped" apart from "this manifest predates the field".
+    expect(manifest.droppedSkills).toEqual([]);
+  });
+
   it('carries the persona, the resolved posture and the server-computed cwd', () => {
     const manifest = composeManifest({
       sessionId: 'sess-2',

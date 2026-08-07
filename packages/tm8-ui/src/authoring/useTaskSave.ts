@@ -38,6 +38,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { CommandResult, EntityDetail } from '@tm8/contract';
 import {
   classifyFailure,
+  entityPatchInput,
   taskPatchInput,
   type AuthoringCommands,
   type ConflictFailure,
@@ -87,6 +88,9 @@ export interface TaskSaveOptions {
   detail: EntityDetail | null;
   /** Null ⇒ no executor is wired, and every control says so. */
   commands: AuthoringCommands | null;
+  /** Registry-selected command family. Task content needs its typed RPC;
+   * plain entity titles use the universal patch command. */
+  editCommand?: 'typed' | 'entity';
   onSaved?(result: CommandResult): void;
   /** Handed the server's detail when the viewer chooses reload. */
   onReload?(current: EntityDetail): void;
@@ -109,7 +113,7 @@ const NO_DETAIL: UnavailableReason = {
 };
 
 export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
-  const { detail, commands, onSaved, onReload, editRefusal } = options;
+  const { detail, commands, editCommand = 'typed', onSaved, onReload, editRefusal } = options;
   const [state, setState] = useState<SavePhase>({ phase: 'clean' });
   const [edits, setEdits] = useState<TaskEdits>({});
   const [baseVersion, setBaseVersion] = useState<number | null>(null);
@@ -127,6 +131,8 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
   const unavailable =
     commands === null
       ? NO_EXECUTOR
+      : editCommand === 'entity' && commands.patchEntity === undefined
+        ? NO_EXECUTOR
       : detail === null
         ? NO_DETAIL
         : detail.capabilities.canEdit === false
@@ -163,7 +169,9 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
       if (Object.keys(patch).length === 0) return;
       setState({ phase: 'saving' });
       try {
-        const result = await commands.patchTask(detail.id, taskPatchInput(patch, expectedVersion));
+        const result = editCommand === 'entity'
+          ? await commands.patchEntity!(detail.id, entityPatchInput(patch, expectedVersion))
+          : await commands.patchTask(detail.id, taskPatchInput(patch, expectedVersion));
         settle();
         onSaved?.(result);
       } catch (error) {
@@ -178,7 +186,7 @@ export function useTaskSave(options: TaskSaveOptions): TaskSaveHandle {
         );
       }
     },
-    [commands, detail, onSaved, settle],
+    [commands, detail, editCommand, onSaved, settle],
   );
 
   const edit = useCallback(

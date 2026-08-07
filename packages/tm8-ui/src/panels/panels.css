@@ -74,7 +74,7 @@
   background: transparent;
   color: var(--pn-ink-3);
   font: 600 10px/1 var(--pn-mono);
-  letter-spacing: var(--pn-track-wide);
+  letter-spacing: var(--pn-track-mega);
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -228,7 +228,7 @@
   font-size: 9.5px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: var(--pn-track-wide);
+  letter-spacing: var(--pn-track-mega);
 }
 .cv2-root .pn-terminal-drawer__content {
   max-height: 224px;
@@ -2016,7 +2016,7 @@
   text-decoration: underline;
   cursor: pointer;
 }
-.cv2-root .lq__more:hover { color: var(--pn-ink-1); }
+.cv2-root .lq__more:hover { color: var(--pn-ink); }
 .cv2-root .lq__launch {
   appearance: none;
   font-family: var(--pn-ui);
@@ -2085,7 +2085,7 @@
   font-family: var(--pn-mono);
   font-size: 10px;
   line-height: 1.45;
-  color: var(--pn-ink-1);
+  color: var(--pn-ink);
 }
 .cv2-root .lq__refusal-label { font-weight: 600; color: var(--pn-block); }
 .cv2-root .lq__launch:disabled { opacity: 0.6; cursor: default; }

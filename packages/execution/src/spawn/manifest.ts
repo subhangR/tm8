@@ -922,6 +922,10 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     // context predating this (the test fake, an older caller) is "no skills",
     // not an error. This is the value change the shape was held stable for.
     skills: context.skills ?? [],
+    // Carried through rather than recomputed: the resolver already knows what
+    // it dropped, and the manifest is where that becomes visible to the agent
+    // rather than dying in the resolver's return value.
+    droppedSkills: context.droppedSkills ?? [],
     // Composed as null in G1A rather than omitted: the CLI reader is tolerant,
     // but a stable shape means adding them later is a value change, not a
     // schema change.

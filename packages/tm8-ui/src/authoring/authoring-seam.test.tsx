@@ -15,6 +15,7 @@ import {
   useNewTask,
   useTaskSave,
   type AuthoringCommands,
+  type CreateEntityCommands,
 } from './index';
 
 /**
@@ -41,10 +42,10 @@ afterEach(cleanup);
 
 const SPACE = FIXTURE_SPACE_ID as SpaceId;
 
-function seamOf(): { seam: Seam; commands: AuthoringCommands } {
+function seamOf(): { seam: Seam; commands: AuthoringCommands & CreateEntityCommands } {
   const seam = createFixtureSeam();
   // THE CROSSING, at the type level: no adapter, no cast, no optional chain.
-  const commands: AuthoringCommands = seam.commands;
+  const commands: AuthoringCommands & CreateEntityCommands = seam.commands;
   return { seam, commands };
 }
 
@@ -52,15 +53,17 @@ describe('the port is the real seam, structurally', () => {
   it('accepts seam.commands with neither adapter nor cast, and both members are live', () => {
     const { commands } = seamOf();
     expect(typeof commands.createTask).toBe('function');
+    expect(typeof commands.createEntity).toBe('function');
     expect(typeof commands.patchTask).toBe('function');
   });
 });
 
 describe('create → open → rename, end to end through the fixture seam', () => {
-  function Flow({ seam, commands }: { seam: Seam; commands: AuthoringCommands }) {
+  function Flow({ seam, commands }: { seam: Seam; commands: AuthoringCommands & CreateEntityCommands }) {
     const [detail, setDetail] = useState<EntityDetail | null>(null);
     const create = useNewTask({
       spaceId: SPACE,
+      kind: 'task',
       placeholderTitle: placeholderTitleFor('Task'),
       commands,
       onCreated: (id) => {

@@ -26,18 +26,29 @@
  * caller to remember.
  */
 import {
+  CreateEntityInputSchema,
   isCollabError,
   type CommandResult,
+  type CreateEntityInput,
   type CreateTaskInput,
   type EntityDetail,
   type EntityId,
+  type PatchEntityInput,
   type PatchTaskInput,
   type SpaceId,
 } from '@tm8/contract';
 
+/** The generic-create slice of the seam. Kept separate from task saving so a
+ * host cannot accidentally satisfy creation with only `createTask` again. */
+export interface CreateEntityCommands {
+  createEntity(input: CreateEntityInput): Promise<CommandResult>;
+}
+
 export interface AuthoringCommands {
   createTask(input: CreateTaskInput): Promise<CommandResult>;
   patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
+  /** Required only when registry data selects the generic entity edit path. */
+  patchEntity?(id: EntityId, input: PatchEntityInput): Promise<CommandResult>;
 }
 
 /**
@@ -79,8 +90,44 @@ export function newTaskInput(spaceId: SpaceId, title: string): CreateTaskInput {
   return { spaceId, title, clientMutationId: nextMutationId() };
 }
 
+export type CreateTitle = string | ((clientMutationId: string) => string);
+
+/**
+ * Build the one generic create envelope used by every list kind. The runtime
+ * schema is intentional: route/custom-kind values arrive as strings, and an
+ * invalid quick-create kind must become a visible refusal before any request
+ * is sent rather than being hidden behind a cast.
+ */
+export function newEntityInput(
+  spaceId: SpaceId,
+  kind: string,
+  title: CreateTitle,
+): CreateEntityInput {
+  const clientMutationId = nextMutationId();
+  return CreateEntityInputSchema.parse({
+    spaceId,
+    kind,
+    title: typeof title === 'function' ? title(clientMutationId) : title,
+    clientMutationId,
+  });
+}
+
 export function taskPatchInput(edits: TaskEdits, expectedVersion: number): PatchTaskInput {
   return { ...edits, expectedVersion, clientMutationId: nextMutationId() };
+}
+
+/** Generic inline edits preserve task-only fields as content rather than
+ * silently dropping them. In practice the generic header currently sends
+ * only `title`; keeping the builder total makes future registry-driven fields
+ * safe by construction. */
+export function entityPatchInput(edits: TaskEdits, expectedVersion: number): PatchEntityInput {
+  const { title, ...content } = edits;
+  return {
+    expectedVersion,
+    clientMutationId: nextMutationId(),
+    ...(title !== undefined ? { title } : {}),
+    ...(Object.keys(content).length > 0 ? { content } : {}),
+  };
 }
 
 /**
@@ -215,4 +262,3 @@ export function classifyFailure(error: unknown, verb: string): AuthoringFailure 
     retryable: false,
   };
 }
-

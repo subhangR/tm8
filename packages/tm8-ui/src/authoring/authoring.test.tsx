@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { CollabError, WorkStatusSchema } from '@tm8/contract';
-import type { CommandResult, EntityDetail, PatchTaskInput } from '@tm8/contract';
+import type { CommandResult, CreateEntityInput, EntityDetail, PatchTaskInput } from '@tm8/contract';
 import { fixtureDetails, taskUuidTitle } from '../fixtures';
 import {
   AuthoringHost,
@@ -18,6 +18,8 @@ import {
   useNewTask,
   useTaskSave,
   type AuthoringCommands,
+  type CreateEntityCommands,
+  type CreateTitle,
 } from './index';
 
 /**
@@ -50,19 +52,22 @@ function taskAt(version: number, over: Partial<EntityDetail> = {}): EntityDetail
 /** A scripted executor that records ARGUMENTS, so the assertions can be about
  *  what was sent rather than about the fact that something was called. */
 function scriptCommands(script: {
-  createTask?: (n: number) => Promise<CommandResult>;
+  createEntity?: (n: number, input: CreateEntityInput) => Promise<CommandResult>;
   patchTask?: (n: number, input: PatchTaskInput) => Promise<CommandResult>;
 }) {
-  const calls: { create: Record<string, unknown>[]; patch: { id: string; input: PatchTaskInput }[] } = {
+  const calls: { create: CreateEntityInput[]; patch: { id: string; input: PatchTaskInput }[] } = {
     create: [],
     patch: [],
   };
-  const commands: AuthoringCommands = {
-    async createTask(input) {
-      calls.create.push(input as unknown as Record<string, unknown>);
-      return script.createTask
-        ? script.createTask(calls.create.length)
+  const commands: AuthoringCommands & CreateEntityCommands = {
+    async createEntity(input) {
+      calls.create.push(input);
+      return script.createEntity
+        ? script.createEntity(calls.create.length, input)
         : ({ entity: taskAt(1), patches: [taskAt(1)] } as CommandResult);
+    },
+    async createTask(input) {
+      return { entity: taskAt(1, { title: input.title }), patches: [] } as CommandResult;
     },
     async patchTask(id, input) {
       calls.patch.push({ id: String(id), input });
@@ -143,13 +148,18 @@ describe('the authoring port', () => {
 function NewTaskHarness({
   commands,
   onCreated,
+  kind = TASK.kind,
+  placeholderTitle = placeholderTitleFor('Task'),
 }: {
-  commands: AuthoringCommands | null;
+  commands: CreateEntityCommands | null;
   onCreated?: (id: string) => void;
+  kind?: string;
+  placeholderTitle?: CreateTitle;
 }) {
   const flow = useNewTask({
     spaceId: TASK.spaceId,
-    placeholderTitle: placeholderTitleFor('Task'),
+    kind,
+    placeholderTitle,
     commands,
     onCreated: (id) => onCreated?.(String(id)),
   });
@@ -174,6 +184,7 @@ describe('the new-task flow', () => {
     expect(calls.create).toHaveLength(1);
     expect(calls.create[0].title).toBe('Untitled task');
     expect(calls.create[0].spaceId).toBe(TASK.spaceId);
+    expect(calls.create[0].kind).toBe(TASK.kind);
     expect(typeof calls.create[0].clientMutationId).toBe('string');
     expect(created).toHaveBeenCalledWith(TASK.id);
   });
@@ -181,7 +192,7 @@ describe('the new-task flow', () => {
   it('shows the promise while it is in flight and refuses a second press', async () => {
     let release!: (r: CommandResult) => void;
     const { commands, calls } = scriptCommands({
-      createTask: () => new Promise<CommandResult>((resolve) => { release = resolve; }),
+      createEntity: () => new Promise<CommandResult>((resolve) => { release = resolve; }),
     });
     render(<NewTaskHarness commands={commands} />);
     const button = screen.getByRole('button', { name: /new/i });
@@ -200,7 +211,7 @@ describe('the new-task flow', () => {
 
   it('renders a refusal in the designed card and creates nothing', async () => {
     const { commands } = scriptCommands({
-      createTask: () => Promise.reject(new CollabError('forbidden', 'read-only space')),
+      createEntity: () => Promise.reject(new CollabError('forbidden', 'read-only space')),
     });
     const created = vi.fn();
     render(<NewTaskHarness commands={commands} onCreated={created} />);
@@ -214,7 +225,7 @@ describe('the new-task flow', () => {
 
   it('states honestly when a create returned no id rather than inventing one', async () => {
     const { commands } = scriptCommands({
-      createTask: async () => ({ patches: [] }) as CommandResult,
+      createEntity: async () => ({ patches: [] }) as CommandResult,
     });
     const created = vi.fn();
     render(<NewTaskHarness commands={commands} onCreated={created} />);
@@ -241,6 +252,23 @@ describe('the new-task flow', () => {
     // D28: reachable, so the reason can actually be learned.
     expect(disabled.getAttribute('tabindex')).toBe('0');
     expect(document.body.textContent).toContain('not wired');
+  });
+
+  it('sends the selected kind through entities.create and supports a kind-safe unique title', async () => {
+    const { commands, calls } = scriptCommands({});
+    render(
+      <NewTaskHarness
+        commands={commands}
+        kind="channel"
+        placeholderTitle={(mutationId) => `untitled-channel-${mutationId}`}
+      />,
+    );
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /new/i })); });
+
+    expect(calls.create).toHaveLength(1);
+    expect(calls.create[0].kind).toBe('channel');
+    expect(calls.create[0].title).toMatch(/^untitled-channel-au-\d+$/);
   });
 });
 

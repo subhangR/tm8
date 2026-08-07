@@ -1,40 +1,101 @@
 /* ==========================================================================
-   COLLAB V2 — DESIGN TOKENS  ·  "ATELIER" (paper & ink), module-scoped.
-   Ported from `Modular Collab Workspace UI/_ds` (colors_and_type.css). All
-   tokens live under `.cv2-root` so the module never leaks styles into the
-   host app. Dark = warm graphite via [data-theme="dark"] on .cv2-root or any
-   ancestor. Status is ALWAYS color + word, never color alone.
+   COLLAB V2 — DESIGN TOKENS  ·  "OBSIDIAN & BRASS", module-scoped.
+   All tokens live under `.cv2-root` so the module never leaks styles into the
+   host app. Dark = obsidian graphite via [data-theme="dark"] on .cv2-root or
+   any ancestor. Status is ALWAYS color + word, never color alone.
+
+   SUCCEEDS "Atelier" (paper & ink). The token NAMES are unchanged on purpose —
+   3400+ `var(--pn-*)` references across 42 stylesheets resolve through this
+   file, so the direction changes by re-valuing names, never by renaming them.
+   Ground moved from cream to porcelain (light) and warm-brown to near-black
+   graphite (dark); the accent moved from terracotta #B26A2B to champagne
+   brass; depth is now shadow + a 1px inset top highlight (--pn-edge-hi)
+   rather than shadow alone.
+
+   NO `@media (prefers-color-scheme: dark)` BLOCK, DELIBERATELY. `useTheme`
+   already resolves the OS preference into an explicit `data-theme` at first
+   paint, so a media query would be redundant — and worse, it would repaint the
+   ALWAYS-LIGHT nested `.cv2-root` panels (D16/D24, EntityDetailPanel) dark for
+   every viewer on a dark-OS machine. Attribute-driven theming is the only
+   mechanism here.
+
+   EVERY colour pair below is measured against WCAG AA (4.5:1) on both the
+   canvas AND the card, and every one of them passes. Not "the text colours" —
+   every status colour too, because status here renders as colour + WORD and a
+   sub-AA status colour makes the word unreadable, defeating the rule it exists
+   to serve. --pn-ink-4 is the ONE deliberate exception: decorative-only
+   (hairline dividers, disabled glyphs), NEVER text.
+
+   THE SECOND PASS (the one that made it visible). The first re-value was
+   measured and correct and nobody could see it: canvas moved 11.7 in RGB
+   distance, cards 9.5 — below the threshold anyone notices without a
+   side-by-side, because Atelier was already warm, restrained and serif-titled.
+   A palette that is right and invisible has not shipped. What moved here is
+   SURFACE SEPARATION rather than hue: dark canvas->card went from 7.7 to 26.1,
+   light from 25.5 to 46.5, and the dark ground dropped to near-black to buy
+   that headroom. Depth you can see beats a hue you cannot.
    ========================================================================== */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* Self-hosted — see fonts.css. This used to be a fonts.googleapis.com @import,
+   which blocked first paint on a third-party round-trip and, offline, silently
+   dropped the whole type system to Georgia/system-ui. */
+@import './fonts.css';
 
 .cv2-root {
-  /* --- 1 · paper & ink ---------------------------------------------------- */
-  --pn-paper:    #F4F2EC;
-  --pn-surface:  #FBFAF6;
-  --pn-card:     #FFFFFF;
-  --pn-hover:    #F2EFE8;
-  --pn-active:   #ECE8DF;
+  /* --- 1 · porcelain & ink -------------------------------------------------
+     Porcelain, NOT cream: the warm bias is a few degrees of hue, not a wash of
+     yellow. --pn-paper is the canvas, --pn-surface/--pn-card the raised planes,
+     --pn-sunk the recessed well (search fields, code blocks, tracks). */
+  --pn-paper:    #E4E2DA;
+  --pn-surface:  #EFEDE6;
+  --pn-card:     #FCFBF9;
+  --pn-hover:    #DBD8CE;
+  --pn-active:   #D2CEC2;
+  --pn-sunk:     #DAD7CD;
 
-  --pn-line:     #E7E3D9;
-  --pn-line-2:   #D8D3C6;
+  --pn-line:     rgba(38, 32, 22, 0.14);
+  --pn-line-2:   rgba(38, 32, 22, 0.22);
+  /* The 1px inset top highlight that makes a card read milled rather than flat.
+     Paired with --pn-sh-* on every raised surface; never used alone. */
+  --pn-edge-hi:  rgba(255, 255, 255, 0.85);
+  --pn-scrim:    rgba(24, 20, 12, 0.40);
 
-  --pn-ink:      #23201B;
-  --pn-ink-2:    #5B564C;
-  --pn-ink-3:    #8E897B;
-  --pn-ink-4:    #B7B2A4;
+  --pn-ink:      #17150F;   /* 14.07:1 on paper · 17.65:1 on card */
+  --pn-ink-2:    #4A453B;   /*  7.34:1 · 9.21:1 */
+  --pn-ink-3:    #655F54;   /*  4.88:1 · 6.12:1 */
+  --pn-ink-4:    #A9A192;   /*  DECORATIVE ONLY, never text */
 
-  /* --- 2 · brass (the one restrained accent) ------------------------------ */
-  --pn-brand:      #B26A2B;
-  --pn-brand-2:    #9A581F;
-  --pn-brand-soft: rgba(178, 106, 43, 0.11);
-  --pn-brand-rgb:  178, 106, 43;
+  /* --- 2 · brass (the one restrained accent) ------------------------------
+     THE ROLE SPLIT, and the reason there are two brasses in light mode.
 
-  /* --- 3 · functional / status (desaturated, anti-neon) ------------------- */
-  --pn-run:    #3E8E5A;   --pn-run-soft:   rgba(62, 142, 90, 0.12);
-  --pn-wait:   #BD8A2A;   --pn-wait-soft:  rgba(189, 138, 42, 0.14);
-  --pn-block:  #BB4D3D;   --pn-block-soft: rgba(187, 77, 61, 0.12);
-  --pn-info:   #3F6C90;   --pn-info-soft:  rgba(63, 108, 144, 0.12);
-  --pn-idle:   #A29C8E;   --pn-idle-soft:  rgba(162, 156, 142, 0.16);
+     Gold light enough to still READ as gold cannot clear 4.5:1 as text on a
+     light ground — that is a property of the colour, not a tuning failure. So
+     the accent splits by role rather than compromising into a muddy middle:
+
+       --pn-brand      TEXT. Links, active-nav labels, .t-code. Deep olive-gold,
+                       5.43:1 on paper / 6.81:1 on card.
+       --pn-brand-lite FILL ONLY, never text. True champagne, carrying --pn-ink
+                       on top at 8.68:1. This is where the brass is actually
+                       SEEN: primary buttons, the active-nav tick, live dots.
+
+     Putting text on --pn-brand-lite, or a fill behind --pn-brand and calling it
+     a button, is how this system gets broken. Hue moved deliberately away from
+     Atelier's terracotta #B26A2B (RGB distance 74) so the change is legible as
+     a change, not read as the same palette slightly off. */
+  --pn-brand:      #6B5624;   /* 5.43:1 on paper · 6.81:1 on card — TEXT */
+  --pn-brand-2:    #55441B;   /* deeper end: hover, gradient bottom */
+  --pn-brand-lite: #D4AF37;   /* FILL ONLY — --pn-ink on it is 8.68:1 */
+  --pn-brand-soft: rgba(107, 86, 36, 0.14);
+  --pn-brand-rgb:  107, 86, 36;
+
+  /* --- 3 · functional / status (desaturated, anti-neon) -------------------
+     Each value clears 4.5:1 on BOTH paper and card, because the status word is
+     rendered in this colour — "colour + word" is worthless if the word is
+     unreadable. -soft is the chip fill only, never a text colour. */
+  --pn-run:    #1B6B44;   --pn-run-soft:   rgba(27, 107, 68, 0.13);
+  --pn-wait:   #7D570F;   --pn-wait-soft:  rgba(125, 87, 15, 0.14);
+  --pn-block:  #A3422D;   --pn-block-soft: rgba(163, 66, 45, 0.13);
+  --pn-info:   #255F9C;   --pn-info-soft:  rgba(37, 95, 156, 0.12);
+  --pn-idle:   #655F54;   --pn-idle-soft:  rgba(101, 95, 84, 0.15);
 
   /* Collab status semantics (pill tones map onto the functional ramp):
      working=green · blocked=red · in_review=blue · stale=amber · done=green ·
@@ -95,10 +156,14 @@
   --pn-r-lg: 14px;
   --pn-r-pill: 999px;
 
-  /* --- 7 · elevation (warm shadows; no glow) --------------------------------- */
-  --pn-sh-sm:  0 1px 2px rgba(40, 34, 24, 0.05);
-  --pn-sh-md:  0 2px 6px rgba(40, 34, 24, 0.06), 0 8px 24px rgba(40, 34, 24, 0.06);
-  --pn-sh-pop: 0 12px 34px rgba(40, 34, 24, 0.14);
+  /* --- 7 · elevation (warm layered shadow; no glow, no glass) ---------------
+     Two layers: a tight contact shadow that seats the element, and a wide
+     ambient one that gives it air. --pn-sh-hover is the hover partner of
+     --pn-sh-md and pairs with a 1px translateY lift, nothing more. */
+  --pn-sh-sm:    0 1px 2px rgba(28, 22, 12, 0.06);
+  --pn-sh-md:    inset 0 1px 0 var(--pn-edge-hi), 0 1px 2px rgba(28, 22, 12, 0.06), 0 10px 30px rgba(28, 22, 12, 0.07);
+  --pn-sh-hover: inset 0 1px 0 var(--pn-edge-hi), 0 2px 6px rgba(28, 22, 12, 0.08), 0 16px 40px rgba(28, 22, 12, 0.11);
+  --pn-sh-pop:   inset 0 1px 0 var(--pn-edge-hi), 0 12px 34px rgba(28, 22, 12, 0.14);
 
   /* --- 8 · motion (fast, mechanical, no bounce) ------------------------------ */
   --pn-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -115,49 +180,75 @@
   background: var(--pn-paper);
 }
 
-/* Dark: same editorial system inverted into warm graphite (token-only). */
+/* Dark — the hero. Obsidian graphite: near-black with a few degrees of warm
+   bias, so it reads chosen rather than a default #111. Token-only; no selector
+   below this line knows which theme it is in. Every value measured on #0B0B0A
+   canvas and #1C1A17 card. */
 .cv2-root[data-theme="dark"],
 [data-theme="dark"] .cv2-root {
-  --pn-paper:   #1D1912;
-  --pn-surface: #1B1810;
-  --pn-card:    #221E15;
-  --pn-hover:   #262117;
-  --pn-active:  #302A1D;
+  /* Layer SEPARATION is what makes a dark UI read as architecture rather than
+     a flat sheet, and it was the real defect in the previous ramp: canvas to
+     card measured 7.7 in RGB distance — below the threshold where an edge is
+     visible without a border doing all the work. It is 26.1 here. The canvas
+     going near-black is what buys that headroom. */
+  --pn-paper:   #0B0B0A;
+  --pn-surface: #141311;
+  --pn-card:    #1C1A17;
+  --pn-hover:   #24211B;
+  --pn-active:  #2C2820;
+  --pn-sunk:    #060605;
 
-  --pn-line:    #2C2719;
-  --pn-line-2:  #3B3524;
+  --pn-line:    rgba(226, 212, 178, 0.13);
+  --pn-line-2:  rgba(226, 212, 178, 0.22);
+  /* Far weaker than light mode: on a near-black ground a 0.70 white edge would
+     read as a hairline of light, not a milled edge. */
+  --pn-edge-hi: rgba(255, 248, 233, 0.055);
+  --pn-scrim:   rgba(0, 0, 0, 0.58);
 
-  --pn-ink:     #EFE9DB;
-  --pn-ink-2:   #BDB5A2;
-  --pn-ink-3:   #8C8470;
-  --pn-ink-4:   #665E4C;
+  --pn-ink:     #F5F0E4;   /* 17.32:1 on paper · 15.27:1 on card */
+  --pn-ink-2:   #C3B9A5;   /* 10.13:1 · 8.93:1 */
+  --pn-ink-3:   #8B8271;   /*  5.18:1 · 4.57:1 */
+  --pn-ink-4:   #554E42;   /*  DECORATIVE ONLY, never text */
 
-  --pn-brand:      #E0A45A;
-  --pn-brand-2:    #C98A3E;
-  --pn-brand-soft: rgba(224, 164, 90, 0.15);
-  --pn-brand-rgb:  224, 164, 90;
+  /* NO ROLE SPLIT HERE. On a near-black ground the champagne clears AA as text
+     outright (9.91:1), so one brass serves both roles and --pn-brand-lite is
+     simply an alias. Dark mode is where this direction gets its name. */
+  --pn-brand:      #D9B361;   /* 9.91:1 on paper · 8.74:1 on card */
+  --pn-brand-2:    #EBCF8C;
+  --pn-brand-lite: #D9B361;   /* fills carry --pn-paper on top at 9.19:1 */
+  --pn-brand-soft: rgba(217, 179, 97, 0.16);
+  --pn-brand-rgb:  217, 179, 97;
 
-  --pn-run:   #5CB381;  --pn-run-soft:   rgba(92, 179, 129, 0.17);
-  --pn-wait:  #D9AA49;  --pn-wait-soft:  rgba(217, 170, 73, 0.18);
-  --pn-block: #DA7D6A;  --pn-block-soft: rgba(218, 125, 106, 0.17);
-  --pn-info:  #6F9FC7;  --pn-info-soft:  rgba(111, 159, 199, 0.17);
-  --pn-idle:  #7A7360;  --pn-idle-soft:  rgba(122, 115, 96, 0.20);
+  --pn-run:   #63C08F;  --pn-run-soft:   rgba(99, 192, 143, 0.15);
+  --pn-wait:  #DDB055;  --pn-wait-soft:  rgba(221, 176, 85, 0.15);
+  --pn-block: #DA7F66;  --pn-block-soft: rgba(218, 127, 102, 0.15);
+  --pn-info:  #7DB4E3;  --pn-info-soft:  rgba(125, 180, 227, 0.14);
+  --pn-idle:  #8B8271;  --pn-idle-soft:  rgba(139, 130, 113, 0.16);
 
-  --pn-sh-sm:  0 1px 2px rgba(0, 0, 0, 0.45);
-  --pn-sh-md:  0 2px 8px rgba(0, 0, 0, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
-  --pn-sh-pop: 0 16px 44px rgba(0, 0, 0, 0.6);
+  --pn-sh-sm:    0 1px 2px rgba(0, 0, 0, 0.50);
+  --pn-sh-md:    inset 0 1px 0 var(--pn-edge-hi), 0 1px 2px rgba(0, 0, 0, 0.50), 0 12px 34px rgba(0, 0, 0, 0.44);
+  --pn-sh-hover: inset 0 1px 0 var(--pn-edge-hi), 0 2px 8px rgba(0, 0, 0, 0.55), 0 20px 48px rgba(0, 0, 0, 0.50);
+  --pn-sh-pop:   inset 0 1px 0 var(--pn-edge-hi), 0 16px 44px rgba(0, 0, 0, 0.60);
 }
 
 /* --- semantic type classes (scoped) ------------------------------------------ */
-.cv2-root .t-display { font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); color: var(--pn-ink); }
-.cv2-root .t-h1 { font-family: var(--pn-serif); font-weight: 500; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); color: var(--pn-ink); }
-.cv2-root .t-h2 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h2); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+/* Editorial serif carries IDENTITY (names, titles); sans carries the interface;
+   mono carries DATA. That three-way split is what reads premium — not effects.
+   `text-wrap: balance` stops a two-word orphan on the second line of a title. */
+.cv2-root .t-display { font-family: var(--pn-serif); font-weight: 600; font-size: var(--pn-fs-display); line-height: var(--pn-lh-tight); letter-spacing: var(--pn-track-tight); text-wrap: balance; color: var(--pn-ink); }
+.cv2-root .t-h1 { font-family: var(--pn-serif); font-weight: 600; font-size: var(--pn-fs-h1); line-height: var(--pn-lh-tight); text-wrap: balance; color: var(--pn-ink); }
+.cv2-root .t-h2 { font-family: var(--pn-serif); font-weight: 600; font-size: var(--pn-fs-h2); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
 .cv2-root .t-h3 { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-h3); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
-.cv2-root .t-title { font-family: var(--pn-ui); font-weight: 600; font-size: var(--pn-fs-title); line-height: var(--pn-lh-snug); letter-spacing: var(--pn-track-tight); color: var(--pn-ink); }
+/* Entity titles — the most repeated identity surface in the app, so this is
+   where the serif earns its keep. Bumped 15px -> 15.5px: Newsreader sits
+   optically smaller than Hanken Grotesk at the same nominal size. */
+.cv2-root .t-title { font-family: var(--pn-serif); font-weight: 600; font-size: 15.5px; line-height: var(--pn-lh-snug); letter-spacing: 0; color: var(--pn-ink); }
 .cv2-root .t-body { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-body); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
 .cv2-root .t-secondary { font-family: var(--pn-ui); font-weight: 400; font-size: var(--pn-fs-sm); line-height: var(--pn-lh-body); color: var(--pn-ink-3); }
 .cv2-root .t-label { font-family: var(--pn-ui); font-weight: 500; font-size: var(--pn-fs-label); color: var(--pn-ink-3); }
 .cv2-root .t-eyebrow { font-family: var(--pn-mono); font-weight: 600; font-size: var(--pn-fs-micro); text-transform: uppercase; letter-spacing: var(--pn-track-mega); color: var(--pn-ink-3); }
 .cv2-root .t-quote { font-family: var(--pn-serif); font-style: italic; font-weight: 400; font-size: var(--pn-fs-h3); line-height: 1.45; color: var(--pn-ink-2); }
-.cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); color: var(--pn-ink-2); }
+/* tabular-nums so ids, counts and durations align in a column instead of
+   jittering per-row — the single highest-value type fix in a data-dense UI. */
+.cv2-root .t-mono { font-family: var(--pn-mono); font-weight: 400; font-size: var(--pn-fs-mono); line-height: var(--pn-lh-body); font-variant-numeric: tabular-nums; color: var(--pn-ink-2); }
 .cv2-root .t-code { font-family: var(--pn-mono); font-weight: 500; font-size: var(--pn-fs-mono); color: var(--pn-brand); }

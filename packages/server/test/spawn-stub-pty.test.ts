@@ -1,10 +1,33 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerExecutionHandlers } from '../src/facade/execution-handlers.js';
 import { HandlerRegistry } from '../src/facade/registry.js';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
+
+/**
+ * A `codex` whose sandbox WORKS, put on PATH for the duration of this test.
+ *
+ * WHY IT IS NEEDED. The codex flags this file asserts are not decided by the
+ * launch config alone: SpawnService preflights the provider's own sandbox by
+ * RUNNING `codex sandbox -- <cmd>` (spawn/sandbox-probe.ts), and on a node that
+ * cannot confine — no codex installed, or AppArmor's unprivileged-userns
+ * restriction, which is the state of every Ubuntu 24.04 box — the launch
+ * degrades to `--dangerously-bypass-approvals-and-sandbox` and this expectation
+ * fails for a reason that has nothing to do with what it measures (that the
+ * project, tool and model reach the CLI builder through DbGraphPort).
+ *
+ * So the probe's answer is PINNED rather than inherited from whichever machine
+ * happens to run the suite. A REAL executable, not a mocked child_process, for
+ * the same reason `packages/execution/test/spawn-sandbox-preflight.test.ts`
+ * uses one: the probe's whole subject is what the provider does when actually
+ * run. The degraded shape is that file's subject and stays there.
+ */
+const CODEX_WITH_A_WORKING_SANDBOX = `#!/bin/sh
+if [ "$1" = "sandbox" ]; then shift; [ "$1" = "--" ] && shift; exec "$@"; fi
+exec /bin/true
+`;
 
 const SPACE = '11111111-1111-4111-8111-111111111111';
 const TEAMMATE = '22222222-2222-4222-8222-222222222222';
@@ -75,13 +98,34 @@ class SpawnDb implements Db {
 
 describe('server spawn integration with a stub PTY', () => {
   let dataDir: string | undefined;
+  let binDir: string | undefined;
+  let originalPath: string | undefined;
+  let originalAutoTrust: string | undefined;
+
   afterEach(async () => {
     vi.restoreAllMocks();
+    if (originalPath === undefined) delete process.env['PATH'];
+    else process.env['PATH'] = originalPath;
+    if (originalAutoTrust === undefined) delete process.env['TM8_AUTO_TRUST_WORKSPACE'];
+    else process.env['TM8_AUTO_TRUST_WORKSPACE'] = originalAutoTrust;
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
+    if (binDir) await rm(binDir, { recursive: true, force: true });
   });
 
   it('carries the project, provider tool, and concrete model through DbGraphPort into the CLI builder', async () => {
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-server-stub-pty-'));
+    // `registerExecutionHandlers` takes no env, so SpawnService reads
+    // `process.env` — which is also where the sandbox probe resolves `codex`.
+    binDir = await mkdtemp(join(tmpdir(), 'tm8-server-stub-pty-bin-'));
+    await writeFile(join(binDir, 'codex'), CODEX_WITH_A_WORKING_SANDBOX, 'utf8');
+    await chmod(join(binDir, 'codex'), 0o755);
+    originalPath = process.env['PATH'];
+    process.env['PATH'] = `${binDir}:${originalPath ?? ''}`;
+    // The launch seeds the CLI's per-workspace trust record before spawning, and
+    // this test's cwd is the repo — no unit test should be appending a project
+    // table to the developer's own ~/.codex/config.toml to prove a command line.
+    originalAutoTrust = process.env['TM8_AUTO_TRUST_WORKSPACE'];
+    process.env['TM8_AUTO_TRUST_WORKSPACE'] = 'false';
     const db = new SpawnDb();
     const spawnIfAbsent = vi.fn(() => ({ reused: false }));
     const pty = {

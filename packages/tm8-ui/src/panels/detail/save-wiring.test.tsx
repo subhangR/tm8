@@ -47,13 +47,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react';
-import { CollabError, type CommandResult, type EntityDetail, type EntityId, type PatchTaskInput } from '@tm8/contract';
+import { CollabError, type CommandResult, type EntityDetail, type EntityId, type PatchEntityInput, type PatchTaskInput } from '@tm8/contract';
 import { ALL_MODES, REASONS as DOMAIN_REASONS, getKind, type ActionContext } from '../../domain';
 import {
   FIXTURE_SPACE_ID,
   fixtureDetails,
   presenceHollowReason,
   taskUuidTitle,
+  channelDesign,
   commitFoundation,
 } from '../../fixtures';
 import { EntityDetailPanel, type DetailReasons } from '../index';
@@ -71,6 +72,7 @@ const REASONS: DetailReasons = {
 /** A fixture detail is used rather than a hand-built one so the capabilities,
     the version and the state shape are the ones the app actually renders. */
 const TASK: EntityDetail = fixtureDetails[taskUuidTitle.id]!;
+const CHANNEL: EntityDetail = fixtureDetails[channelDesign.id]!;
 
 /**
  * A REAL `CollabError`, not an error-shaped object.
@@ -171,6 +173,34 @@ describe('the panel mounts the real save path', () => {
     const [id, patch] = patchTask.mock.calls[0]!;
     expect(id).toBe(TASK.id);
     expect(patch).toMatchObject({ title: 'a name someone chose' });
+  });
+
+  it('routes a channel title edit through patchEntity, never patchTask', async () => {
+    const patchTask = patchSpy();
+    const patchEntity = vi.fn((_id: EntityId, _input: PatchEntityInput) => ok());
+    const { getByTestId, getByRole } = render(
+      <div className="cv2-root">
+        <EntityDetailPanel
+          detail={CHANNEL}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createTask: vi.fn(ok), patchTask, patchEntity }}
+        />
+      </div>,
+    );
+
+    fireEvent.click(getByTestId('authoring-title'));
+    const input = getByRole('textbox', { name: 'Title' });
+    fireEvent.change(input, { target: { value: 'product-updates' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(patchEntity).toHaveBeenCalledTimes(1));
+    expect(patchTask).not.toHaveBeenCalled();
+    expect(patchEntity.mock.calls[0]![0]).toBe(CHANNEL.id);
+    expect(patchEntity.mock.calls[0]![1]).toMatchObject({
+      title: 'product-updates',
+      expectedVersion: CHANNEL.version,
+    });
   });
 
   it('sends an expectedVersion at all — the write is version-checked, never blind', async () => {

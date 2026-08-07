@@ -122,6 +122,31 @@ describe.sequential('W3.XG02 clientMutationId harvestability through composed re
     //
     // The pin is the exact route SET that projects the message DTO — a sixth
     // exposure (or a lost one) is a surface change someone must look at.
+    //
+    // SIXTH EXPOSURE, LOOKED AT 2026-08-04: `GET /v2/entities/:anchorId` joined
+    // the set. Cause, traced to source and confirmed against a live probe:
+    // migration 065_derived_edges_phase1 (landed in 1ca938b, written up in
+    // docs/graph/03-FIX-MESSAGES-INVISIBLE.md) registered the `anchored_to`
+    // edge type and a trigger on public.messages that derives one edge per
+    // message from the NOT NULL `messages.anchor_id`. Messages used to be
+    // graph-invisible — a channel with 14 messages answered `nodes: 1,
+    // edges: 0` — and are now reachable by walking.
+    //
+    // `entities.get` composes `connections` by paging queryConnections over
+    // BOTH directions and embedding the full EdgeView, whose `source` is an
+    // ordinary EntitySummary (entities-commands-tracking.ts buildUniversalDetail).
+    // So the anchor detail now carries the message summary under
+    // `connections.incoming[type=anchored_to].edges[].source.state`, and that
+    // state is the same message DTO the five pinned routes already project —
+    // `messageBatchId` included.
+    //
+    // Disposition: this is REACH, not a new disclosure. No new field became
+    // published, no principal boundary moved, and the exposure is confined to
+    // `connections` (verified: it is the only top-level key of the anchor
+    // detail containing the marker). It does not change the §8.3 severity
+    // input this file exists to hold — that already flipped on 2026-07-31 —
+    // it only widens the route set by one composed read. `/children`,
+    // `/activity` and `/inbox` still do not project it.
     const exposedRoutes = exposures.map((label) =>
       label
         .replace(messageId, ':messageId')
@@ -129,6 +154,7 @@ describe.sequential('W3.XG02 clientMutationId harvestability through composed re
     expect(exposedRoutes).toEqual([
       'GET /v2/entities/:messageId',
       'GET /v2/entities/:anchorId/messages',
+      'GET /v2/entities/:anchorId',
       'GET /v2/entities/:anchorId/feed',
       'GET /v2/entities/:anchorId/context',
       'POST /v2/collections/query',

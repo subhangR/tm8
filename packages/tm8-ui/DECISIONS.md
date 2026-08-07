@@ -900,3 +900,80 @@ Source: the user's screenshot of the Sessions entity list, where an unwired **La
 Source: the user's screenshot of the workspace account/settings popover collapsed to a narrow vertical strip, plus the direct question whether light/dark mode is implemented.
 
 The anchored account menu is 280px at ordinary widths and capped against the **viewport**, not against its narrow trigger containing block. Identity text truncates on one line; menu labels and the sign-out explanation receive the intended reading width. Appearance is now controlled by `GateApp`'s persisted theme state: choosing Light or Dark updates the root `data-theme` immediately and persists through the existing `useTheme` storage path. Previously the menu created a second independent hook instance, so it wrote storage and updated only itself while the open workspace kept its old theme until reload.
+
+## D73 — The palette moves from "Atelier" to "Obsidian & Brass"; light-mode values are DARKENED from the design doc to clear WCAG AA (2026-08-05)
+
+Source: user program order — "TM8 PLATFORM UPDATE UI UX ONLY, a full intuitive understandable design". Direction taken from the "Obsidian & Brass" design-system document (§4 tokens, §5 component recipes), which itself supersedes three earlier directions (Atelier, Aurora Glass, engineering monochrome).
+
+Ruling: `src/styles/tokens.css` is re-VALUED, never re-NAMED. Every `--pn-*` and `--cv2-*` name survives, because 3400+ `var(--pn-*)` references across 42 stylesheets resolve through this one file; the direction changes by moving values under stable names. Ground: porcelain `#ECEBE7` (light, deliberately not cream) and obsidian `#100F0D` (dark, the hero). Accent: champagne brass. Depth: layered shadow PLUS a 1px inset top highlight (`--pn-edge-hi`), baked into `--pn-sh-md/-hover/-pop` so all consumers inherit the material without 42 file edits. New tokens: `--pn-edge-hi`, `--pn-sunk`, `--pn-scrim`, `--pn-sh-hover`.
+
+THREE DEVIATIONS FROM THE DOC, each measured rather than argued:
+
+1. The doc's LIGHT ramp does not clear AA and was darkened. Measured on the porcelain canvas: accent `#9A7B2E` 3.36:1, working `#1F7A4D` 4.46:1, stale `#9A6B12` 3.92:1, ink-3 `#837C6E` 3.47:1 — all below 4.5:1. Status is rendered as colour + WORD here, so a sub-AA status colour makes the word itself unreadable and defeats the rule it exists to serve. Shipped values (accent `#816726`, run `#1F784C`, wait `#8D6211`, idle/ink-3 `#6F695D`) clear 4.5:1 on BOTH canvas and card. Dark mode needed no correction (8.48:1 accent).
+
+2. NO `@media (prefers-color-scheme: dark)` block, against the doc's §4.2 theme rule. `useTheme` already resolves the OS preference into an explicit `data-theme` at first paint, so the query is redundant — and actively harmful: it would repaint the ALWAYS-LIGHT nested `.cv2-root` panels (D16/D24, EntityDetailPanel) dark for every viewer on a dark-OS machine. Attribute-driven theming stays the only mechanism.
+
+3. `--pn-ink-4` is knowingly sub-AA (2.05:1 light, 2.37:1 dark) and is DECORATIVE-ONLY — hairlines and disabled glyphs, never text. Recorded rather than silently shipped.
+
+Rationale: the doc's own anti-slop principle is "state colour is not the accent, and always carries a word". A palette whose words fail contrast is that principle written down and not implemented. Measuring before adopting is what separates a ruled change from a repaint.
+
+## D74 — Three undefined CSS custom properties were silently dropping styles; fixed (2026-08-05)
+
+Source: a static audit written for D73 — every `var(--pn-*)` reference in the package cross-checked against every definition, with comments stripped so documentation prose citing a token is not counted as a use.
+
+Ruling: three references resolved to NOTHING, in no file, and are repointed:
+- `--pn-surface-2` (graph.css:103) -> `--pn-sunk`. The `.gv-lens` segmented control's track had **no background at all** — an invalid `var()` makes the declaration invalid at computed-value time, so the pill rendered as a hollow outline instead of a filled track.
+- `--pn-track-wide` (panels.css:77, 231) -> `--pn-track-mega`. `letter-spacing` was dropped on 10px/9.5px uppercase mono labels, so they rendered cramped without the tracking uppercase micro-type requires.
+- `--pn-ink-1` (graph.css:123, panels.css:2019, 2088) -> `--pn-ink`. `color` is inherited, so an invalid value fell through to `.cv2-root`'s `--pn-ink` and landed NEAR the intent by accident. Correct by luck is not correct; made explicit.
+
+A fourth apparent hit, `var(--pn-x)` in auth.css:12, is inside a block comment describing the `color-mix` idiom. Not a defect; recorded so the next audit does not re-raise it.
+
+Rationale: this class of defect is invisible to both tsc and jsdom — the tests pass, the types check, and the surface renders wrong. It is exactly what pixel verification exists to catch, and the reason the audit was written as a static substitute while no browser is available on this host (see D75).
+
+## D75 — D73/D74 are NOT pixel-verified; the gate is recorded as owed (2026-08-05)
+
+Source: attempted browser verification during the D73 build.
+
+Ruling: every claim in D73 and D74 rests on the green suite (117 files, 1790 pass), a clean `tsc`, a clean production build, arithmetic contrast measurement, and bundle-content inspection confirming the new palette reached `dist/assets/index-*.css` and the Atelier values left it. NONE of it rests on looking at the UI, because no browser on this host can start: Playwright's cached Firefox (1509) and Chromium (1208) both fail to launch on missing system libraries (`libgtk-3.so.0`, `libatk-1.0.so.0`) and `sudo` requires a password. `playwright.config.ts` additionally pins `channel: 'chrome'`, which needs a system Chrome that is not installed — the e2e suite would not run as configured even with libs present.
+
+The owed checks are listed in PIXEL-VERIFICATION-OWED.md. The user was told the gate was blocked and chose "audit and build now, verify later" explicitly.
+
+Rationale: jsdom cannot see layout. 1790 passing tests say nothing about whether a surface renders at the right scale, in the right place, or at all — and this package has already been bitten by exactly that (the nested-`zoom` 1.21x terminal). Recording the gate as OWED rather than implying it was met is the whole point of the entry.
+
+## D76 — The self-hosted webfonts are NOT IN GIT; the type system exists only on this machine (2026-08-05)
+
+Source: `git status` while closing out D73. Not sought — found because D73 moved `.t-title` onto the serif and the dependency was worth confirming.
+
+Finding, not yet a ruling — this needs a repo-policy call the build could not make for itself:
+
+- `src/styles/fonts.css` is UNTRACKED. It has never been committed.
+- `public/fonts/` holds 20 `.woff2` files on disk and **0** are tracked.
+- Neither path is gitignored. They were simply never `git add`ed.
+
+`tokens.css` line 11 is `@import './fonts.css'`. On any clone but this one that import resolves to nothing, and the entire type ramp — Hanken Grotesk, Newsreader, JetBrains Mono — falls back to Georgia/system-ui. The docblock inside `fonts.css` describes precisely this failure ("the app silently stopped looking like itself") as the reason the families were pulled off `fonts.googleapis.com` and self-hosted. The remedy for that failure is therefore not committed, so it protects exactly one working copy.
+
+D73 raises the stakes: `.t-title` moved from Hanken Grotesk to Newsreader 15.5px, so every entity title in the package now depends on a font file that no other clone has. Georgia sets to different metrics and will re-wrap titles that fit here.
+
+Deliberately NOT fixed in this stroke: adding 20 binary assets is a repository-policy decision (LFS? vendored? a fetch step in `bun install`?), the working checkout is shared, and quietly committing binaries on someone else's behalf is not a call a UI change gets to make. Flagged for the owner.
+
+Cross-check when closing PIXEL-VERIFICATION-OWED.md §3: confirm via computed style that Newsreader is the font actually in use, not Georgia standing in for it.
+
+## D77 — The palette is re-cut a SECOND time, for visibility; separation over hue (2026-08-06)
+
+Source: the user, looking at staging after D73 shipped: "i dont see it on staging". Investigated rather than attributed to cache — nginx serves the vite path with `Cache-Control: no-cache` and `proxy_buffering off`, the ETag had moved, and the served bytes were confirmed to be the new palette. The deploy was correct. The change was simply not visible.
+
+MEASURED, because "looks the same" needed a number. RGB distance, old -> D73:
+canvas 11.7, card 9.5, dark canvas 17.1, dark card 5.1. All below the threshold at which anyone notices without a side-by-side. The accent moved 49.3 but one accent, spent sparingly by design, cannot carry a whole direction. The cause is structural: tm8-ui was ALREADY on Atelier — warm, restrained, one-accent, serif-titled. Obsidian & Brass is its near neighbour. The design doc read as a dramatic change because it was written against Aurora Glass and engineering-monochrome, neither of which this package ever had.
+
+Ruling: re-cut for SURFACE SEPARATION rather than hue. Dark canvas->card distance 7.7 -> 26.1; light 25.5 -> 46.5; dark ground to near-black #0B0B0A to buy the headroom; light canvas deepened to #E4E2DA so cards read as raised planes instead of tinted paper. Layer depth is visible at a glance in a way a hue shift on an already-warm system is not.
+
+THE ROLE SPLIT (new, and the one rule that can be broken by accident): light mode now carries TWO brasses.
+- `--pn-brand` #6B5624 is TEXT (links, active-nav labels, .t-code) — 5.43:1 paper, 6.81:1 card.
+- `--pn-brand-lite` #D4AF37 is FILL ONLY, never text, carrying `--pn-ink` at 8.68:1.
+Gold light enough to still read as gold cannot clear AA as text on a light ground; that is a property of the colour, not a tuning failure. Splitting by role beats compromising into a muddy middle, and it is what finally makes brass VISIBLE in light mode — a text colour is a few hundred pixels, a filled button is thousands. Dark mode needs no split (#D9B361 is 9.91:1 outright), so `--pn-brand-lite` is an alias there.
+
+Every value re-measured: 18 colour/ground pairs across both themes, all >= 4.5:1 on canvas AND card. `--pn-ink-4` remains the one decorative-only exception.
+
+Rationale: D73 was correct and invisible, which is a failure mode worth naming — a measured, documented, test-green change that does not survive contact with a human eye has not shipped. The lesson is that "is it right?" and "can it be seen?" are separate questions, and only the first one had been asked.
+
+Still NOT pixel-verified — D75 stands, and this second pass makes closing it more urgent, not less: surface separation is precisely the property arithmetic cannot judge.

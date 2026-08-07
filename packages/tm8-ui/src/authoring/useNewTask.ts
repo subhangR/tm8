@@ -1,5 +1,5 @@
 /**
- * THE NEW-TASK FLOW.
+ * THE GENERIC NEW-ENTITY FLOW.
  *
  * THE ORACLE, verbatim, because it decides the whole shape (T5-6 "Generic
  * create pattern", `data-screen-label` frame 3 of the authoring canvas):
@@ -9,11 +9,11 @@
  *   "created for real, instantly — the row is already in the list as
  *    'Untitled task'. Type the name, enter commits, esc keeps the placeholder."
  *
- * SO THERE IS NO CREATE FORM. There is no dialog, no field set, no wizard —
- * for a task there is nothing to fill in before committing. The create fires
- * with a placeholder title, the entity exists from that instant, and the SAVE
- * flow is what names it. That is why the two flows were assigned together:
- * they are one continuous flow with a seam-crossing in the middle.
+ * SO THERE IS NO CREATE FORM. There is no dialog, no field set, no wizard.
+ * The create fires with a registry-provided kind and placeholder title, the
+ * entity exists from that instant, and the SAVE flow is what names it. The
+ * historical `useNewTask` export remains because it is already a package
+ * surface; its executor is deliberately the generic `createEntity` command.
  *
  * The one designed exception in the same canvas is the teammate dialog (four
  * fields), and it is explicitly enumerated as an exception — "Exceptions are
@@ -25,8 +25,9 @@ import type { CommandResult, EntityId, SpaceId } from '@tm8/contract';
 import {
   classifyFailure,
   createdIdOf,
-  newTaskInput,
-  type AuthoringCommands,
+  newEntityInput,
+  type CreateEntityCommands,
+  type CreateTitle,
   type RefusedFailure,
 } from './commands';
 
@@ -49,10 +50,12 @@ export interface NewTaskHandle {
 
 export interface NewTaskOptions {
   spaceId: SpaceId;
-  /** From the kind registry's `label` via `placeholderTitleFor` — never a literal. */
-  placeholderTitle: string;
+  /** The selected route kind, passed through from registry-driven screen state. */
+  kind: string;
+  /** Registry override or the label-derived generic placeholder. */
+  placeholderTitle: CreateTitle;
   /** Null ⇒ no executor is wired, and the control says so. */
-  commands: AuthoringCommands | null;
+  commands: CreateEntityCommands | null;
   /** The coordinator's wiring: open the panel on the new id, title focused. */
   onCreated?(id: EntityId, result: CommandResult): void;
   /** Extra refusal supplied by the caller (a capability the server turned off). */
@@ -65,7 +68,7 @@ const NO_EXECUTOR = {
 } as const;
 
 export function useNewTask(options: NewTaskOptions): NewTaskHandle {
-  const { spaceId, placeholderTitle, commands, onCreated, refusal } = options;
+  const { spaceId, kind, placeholderTitle, commands, onCreated, refusal } = options;
   const [state, setState] = useState<NewTaskPhase>({ phase: 'idle' });
 
   const unavailable = commands === null ? NO_EXECUTOR : (refusal ?? null);
@@ -84,7 +87,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     if (state.phase === 'creating') return;
     setState({ phase: 'creating' });
     try {
-      const result = await commands.createTask(newTaskInput(spaceId, placeholderTitle));
+      const result = await commands.createEntity(newEntityInput(spaceId, kind, placeholderTitle));
       const id = createdIdOf(result);
       if (id === null) {
         /**
@@ -112,7 +115,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     } catch (error) {
       setState({ phase: 'refused', failure: asRefused(error) });
     }
-  }, [commands, onCreated, placeholderTitle, spaceId, state.phase]);
+  }, [commands, kind, onCreated, placeholderTitle, spaceId, state.phase]);
 
   const dismiss = useCallback(() => setState({ phase: 'idle' }), []);
 

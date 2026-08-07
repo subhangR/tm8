@@ -100,7 +100,7 @@
   align-items: center;
   gap: 1px;
   padding: 2px;
-  background: var(--pn-surface-2);
+  background: var(--pn-sunk);
   border: 1px solid var(--pn-line);
   border-radius: var(--pn-r-pill);
 }
@@ -120,7 +120,7 @@
     color var(--pn-dur-fast) var(--pn-ease-standard);
 }
 
-.gv-lens__opt:hover { color: var(--pn-ink-1); background: var(--pn-hover); }
+.gv-lens__opt:hover { color: var(--pn-ink); background: var(--pn-hover); }
 
 .gv-lens__opt--on,
 .gv-lens__opt--on:hover {

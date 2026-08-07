@@ -64,3 +64,40 @@ body {
 .cv2-root .cv2-root {
   zoom: 1;
 }
+
+/* ---------------------------------------------------------------------------
+   ACCESSIBILITY BASELINE — a floor, not a style.
+
+   Both rules below are FALLBACKS. 34 bespoke `:focus-visible` rules already
+   exist across the module and every one of them is more specific than this, so
+   they keep winning; this only catches the elements nobody wrote a rule for.
+   The gap was real — focus styling was per-component with no baseline, so any
+   new control shipped with the UA default (or, under a `outline:none` reset,
+   with nothing at all).
+
+   `:focus-visible` NOT `:focus`, deliberately: mouse users never see it, so it
+   costs the visual design nothing while keyboard navigation becomes traceable.
+   --------------------------------------------------------------------------- */
+.cv2-root :focus-visible {
+  outline: 2px solid var(--pn-brand);
+  outline-offset: 2px;
+  border-radius: var(--pn-r-xs);
+}
+
+/* Reduced motion was handled in 15 of 42 stylesheets — i.e. a viewer with
+   vestibular sensitivity still met movement on two thirds of the surfaces.
+   This collapses transitions and animations everywhere at once rather than
+   waiting for each file to remember. Kept at 0.01ms rather than 0 so
+   transitionend/animationend listeners still fire and no state machine that
+   waits on them can hang. `scroll-behavior: auto` matters as much as the rest:
+   a smooth-scrolled jump is exactly the motion being opted out of. */
+@media (prefers-reduced-motion: reduce) {
+  .cv2-root *,
+  .cv2-root *::before,
+  .cv2-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
