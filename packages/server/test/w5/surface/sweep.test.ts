@@ -398,7 +398,22 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 72 -> 73 on 2026-08-05: 077 (anchor-watcher notification fan-out). This
     // lane authored it as 076 in parallel with the reply-delivery lane; both
     // claimed the same free number, so it renumbered to 077 on landing.
-    expect(server.appliedMigrations.length).toBe(73);
+    // 73 -> 74 on 2026-08-07: 080 (channel members, `has_member`). The COUNT
+    // moves by one while the highest number moves by three, and that gap is
+    // deliberate: `public.applied_migrations` keys on FILENAME, so an unused
+    // number costs nothing, while renaming an already-applied file makes it
+    // re-apply — which is why the gap was taken rather than the next number.
+    // WHAT IS ACTUALLY KNOWN about 078/079, since this block is the ledger the
+    // next author will read as fact: nothing anywhere is at 078 or 079. Max
+    // applied across every tm8 database on :5442 is 077, and origin/main also
+    // tops at 077. The reservation is CLAIMED by an inherited task body; it
+    // may well hold on deployed prod, but it was not verifiable from the box
+    // this landed on, and it is recorded here as a claim rather than a fact
+    // precisely because carrying it forward unchecked is what cost the
+    // previous lanes a number.
+    // This assertion is on the LENGTH and not on the maximum, which is why a
+    // gap — reserved or merely skipped — cannot make it lie.
+    expect(server.appliedMigrations.length).toBe(74);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
