@@ -39,6 +39,7 @@
  * for arbitration rather than normalised away — see `refuseMentionEdit` and the
  * `--order` note on `messageList`.
  */
+import { plainExcerpt } from '@tm8/contract';
 import { readTextSource } from '../args.js';
 import { UnsettledDeliveryError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -525,11 +526,18 @@ function idOf(value: unknown): string {
   return String((value as { id?: unknown })?.id ?? '');
 }
 
+/**
+ * The one-line body preview `message list` shows per row.
+ *
+ * 72 chars, and they are spent on WORDS: `plainExcerpt` strips markdown before
+ * truncating. The server's 200-char `EntitySummary.excerpt` shares that helper.
+ * The two caps differ because the surfaces do; the stripping rule must not,
+ * which is why it lives in `@tm8/contract` rather than twice, here and there.
+ */
 function bodyExcerpt(value: unknown): string {
   const content = (value as { content?: { body?: unknown } })?.content;
   const body = typeof content?.body === 'string' ? content.body : '';
-  const oneLine = body.replace(/\s+/g, ' ').trim();
-  return oneLine.length > 72 ? `${oneLine.slice(0, 71)}…` : oneLine;
+  return plainExcerpt(body, 72);
 }
 
 function renderMessagePage(dto: unknown): string {
