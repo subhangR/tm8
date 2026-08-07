@@ -632,16 +632,26 @@ export function createSuperuserShapedDb(connectionString: string): TestDb {
   const pool = new Pool({ connectionString, max: 4 });
 
   const querier = (client: {
-    query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
+    query: (
+      sql: string,
+      params?: unknown[],
+    ) => Promise<{ rows: unknown[]; fields?: ReadonlyArray<{ name: string }> }>;
   }): { query: <R>(sql: string, params?: readonly unknown[]) => Promise<R[]>; rpc: <T>(fn: string, args?: readonly unknown[]) => Promise<T> } => ({
     async query<R>(sql: string, params: readonly unknown[] = []): Promise<R[]> {
       const res = await client.query(sql, [...params]);
       return res.rows as R[];
     },
+    // MIRRORS db/client.ts `makeQuerier` — see the note in events/pg-harness.ts.
+    // A `returns table(...)` RPC with zero rows made the old scalar shape throw.
     async rpc<T>(fn: string, args: readonly unknown[] = []): Promise<T> {
       const placeholders = args.map((_, i) => `$${String(i + 1)}`).join(', ');
-      const res = await client.query(`select ${fn}(${placeholders}) as result`, [...args]);
-      return (res.rows[0] as { result: T }).result;
+      const qualified = fn.includes('.') ? fn : `public.${fn}`;
+      const res = await client.query(`select * from ${qualified}(${placeholders})`, [...args]);
+      if (res.rows.length === 1 && res.fields?.length === 1) {
+        const field = res.fields[0];
+        return (field ? (res.rows[0] as Record<string, unknown>)[field.name] : undefined) as T;
+      }
+      return res.rows as unknown as T;
     },
   });
 

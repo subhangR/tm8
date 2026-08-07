@@ -301,11 +301,14 @@ describe('degradation policy — the never-fabricate rule', () => {
 
 describe('hollow-field register', () => {
   it('knows the present-but-permanently-zero fields', () => {
-    expect(isHollow('channel.state.unreadCount')).toBe(true);
     expect(isHollow('team_member.state.liveWork')).toBe(true);
     expect(hollowReason('member.state.taskDoneCount')).toMatch(/always 0/);
     // A real field must not be flagged hollow.
     expect(isHollow('task.state.workStatus')).toBe(false);
+    // Deliberately NOT hollow any more. The server resolves this from
+    // `public.unread_counts` on both the read path and the event feed; leaving
+    // it registered would keep advertising a working field as permanently 0.
+    expect(isHollow('channel.state.unreadCount')).toBe(false);
   });
 });
 
