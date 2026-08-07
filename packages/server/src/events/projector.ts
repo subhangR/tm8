@@ -29,6 +29,7 @@
  */
 import {
   EntityKindSchema,
+  plainExcerpt,
   type ActorSummary,
   type CustomEntityKind,
   type EntityCounters,
@@ -719,6 +720,12 @@ export class PgEntityProjector implements EntityProjector {
    *   something to be unsaid, and the event feed is the path a client is most
    *   likely to cache, so leaking it here defeats the request more thoroughly
    *   than leaking it on a read would.
+   *
+   * The 280-char cap is this surface's own and deliberately differs from the
+   * facade's 200; only the STRIPPING rule is shared, via `plainExcerpt`. Sharing
+   * it is not optional: `facade/entity-read.ts` strips, so leaving a raw
+   * `slice` here would not preserve an existing divergence, it would author a
+   * new one — the case `:644` rules against.
    */
   private excerptOf(r: SummaryRow): string | null {
     if (r.deleted_at !== null) return null;
@@ -732,7 +739,9 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'artifact' ? r.artifact_description
       : null;
     if (source === null || source === '') return null;
-    return source.slice(0, 280);
+    // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
+    // same case to `undefined`. A whitespace-only body reaches here as `''`.
+    return plainExcerpt(source, 280) || null;
   }
 
   /**

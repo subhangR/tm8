@@ -42,6 +42,7 @@ import type {
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
+import { plainExcerpt } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 
@@ -317,11 +318,20 @@ function isoFromProps(value: unknown, fallback: string): string {
 
 const EXCERPT_MAX = 200;
 
+/**
+ * The 200-char preview every list row, board card and notification shows — and,
+ * for a message, the title itself (`events/projector.ts`).
+ *
+ * The cap is spent on WORDS: `plainExcerpt` strips markdown before truncating,
+ * because agents write markdown and 53 of 55 sampled bodies overflow this cap,
+ * so raw `**` and `##` were displacing the prose they decorate. The CLI's
+ * 72-char `bodyExcerpt` shares that helper — the caps differ on purpose, the
+ * rule must not.
+ */
 function excerpt(body: string | null): string | undefined {
   if (!body) return undefined;
-  const flat = body.replace(/\s+/g, ' ').trim();
-  if (flat.length === 0) return undefined;
-  return flat.length <= EXCERPT_MAX ? flat : `${flat.slice(0, EXCERPT_MAX - 1)}…`;
+  const flat = plainExcerpt(body, EXCERPT_MAX);
+  return flat.length === 0 ? undefined : flat;
 }
 
 /**

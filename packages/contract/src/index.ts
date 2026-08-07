@@ -8,6 +8,7 @@ export const CONTRACT_VERSION = '0.1.0';
 export * from './contract.js';
 export * from './envelope.js';
 export * from './cursor.js';
+export * from './excerpt.js';
 export * from './catalog.js';
 export * from './schemas.js';
 export * from './launch-models.js';
