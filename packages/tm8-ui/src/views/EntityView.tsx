@@ -41,7 +41,7 @@ import {
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
-import type { ActionContext, CollectionMode } from '../domain/types';
+import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
@@ -176,10 +176,10 @@ export function EntityView(props: EntityViewProps) {
 
   /* The panel action bar's executor. Same hook the workspace uses, so the
      Terminate button behaves identically wherever a session panel is opened. */
-  const primaries = usePanelPrimaries({
-    seam: data.seam,
-    reconcileCommand: data.reconcileCommand,
-    onError: (_verb, _entityId, error) => {
+  /* A useCallback, not an inline arrow — see WorkspaceView for why an unstable
+     reporter churns the whole dispatcher's identity every render. */
+  const notifyCloseFailed = useCallback(
+    (_verb: ActionRef, _entityId: string, error: unknown) => {
       props.onNotice({
         id: 'session-close-failed',
         tone: 'error',
@@ -188,6 +188,12 @@ export function EntityView(props: EntityViewProps) {
         ttlMs: 6_000,
       });
     },
+    [props.onNotice],
+  );
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onError: notifyCloseFailed,
   });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor

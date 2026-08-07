@@ -17,6 +17,7 @@ import {
   newLaunchMutationId,
   type LaunchCapacity,
   type LaunchConfig,
+  type LaunchMode,
   type LaunchProjectOption,
   type ProfileResolution,
   type TeammateLaunchState,
@@ -109,6 +110,14 @@ export interface LaunchQuickConfigProps {
   newClientMutationId?: () => string;
   /** Compatibility injection for deterministic component tests. */
   clientMutationId?: string;
+  /**
+   * The session mode the OPENING VERB commits — `ActionDef.launchMode`.
+   *
+   * One config serves Run, Coordinate and Launch session. Absent ⇒ the
+   * config's own default (`worker`), which is Run's. Passing it is what stops
+   * Coordinate from opening this card and spawning a worker.
+   */
+  mode?: LaunchMode;
 }
 
 export function LaunchQuickConfig({
@@ -125,6 +134,7 @@ export function LaunchQuickConfig({
   boundsRef,
   clientMutationId,
   newClientMutationId,
+  mode,
 }: LaunchQuickConfigProps) {
   const ref = useRef<HTMLDivElement>(null);
   const noop = useCallback(() => {}, []);
@@ -132,9 +142,17 @@ export function LaunchQuickConfig({
 
   const first = teammates[0];
   const defaultProjectId = projects.find((project) => project.trusted)?.projectId ?? null;
-  const [config, setConfig] = useState<LaunchConfig>(() =>
-    first ? defaultConfigFor(first, defaultProjectId) : emptyConfig(defaultProjectId),
-  );
+  /*
+   * THE MODE COMES FROM THE VERB THAT OPENED THIS. One config serves every
+   * launch verb, and it seeded `worker` unconditionally — so Coordinate opened
+   * this card and spawned a worker, which is the button naming one act and
+   * performing another. The caller reads it off the action registry
+   * (`ActionDef.launchMode`), so nothing here has to know the verb's name.
+   */
+  const [config, setConfig] = useState<LaunchConfig>(() => {
+    const seed = first ? defaultConfigFor(first, defaultProjectId) : emptyConfig(defaultProjectId);
+    return mode ? { ...seed, mode } : seed;
+  });
 
   /**
    * RE-SEED WHEN THE SELECTION STOPS EXISTING.
@@ -156,7 +174,9 @@ export function LaunchQuickConfig({
     // Re-seed WHOLE, for the same reason the change handler does: a teammate's
     // recorded tool and model travel together, and patching one field would mix
     // two personas' settings.
-    setConfig(defaultConfigFor(first, defaultProjectId));
+    // `mode` survives the re-seed: it is the VERB's fact, not the persona's,
+    // so a teammate arriving late must not quietly demote Coordinate to worker.
+    setConfig({ ...defaultConfigFor(first, defaultProjectId), ...(mode ? { mode } : {}) });
   }, [first, teammates, config.teamMemberId, defaultProjectId]);
 
   /** The node's own words when it refuses. Null until it does. */

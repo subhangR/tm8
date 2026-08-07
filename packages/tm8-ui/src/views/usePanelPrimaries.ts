@@ -79,7 +79,21 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
    */
   const terminate = useCallback(
     (entityId: string) => {
-      if (!commands) return;
+      /*
+       * REVIEW (1/2) note — NOT a silent swallow. `forEntity` already answers
+       * `undefined` without a seam, so the panel renders the verb refused and
+       * this is unreachable from the action bar. It is reachable from a host
+       * that calls `primaries.terminate` DIRECTLY (the session tile's ✕), and
+       * a host doing that without a seam has wired a control it cannot
+       * perform — a defect that must not be absorbed as a no-op, exactly as
+       * `domain/actions.ts` throws for a missing dispatcher.
+       */
+      if (!commands) {
+        throw new Error(
+          'usePanelPrimaries.terminate was called with no seam: the host rendered a control it cannot perform. '
+            + 'Gate the affordance on `forEntity(...) != null`, which returns undefined precisely so this cannot happen.',
+        );
+      }
       void commands
         .terminate(entityId as EntityId, {
           clientMutationId: `terminate:${entityId}:${Date.now()}`,

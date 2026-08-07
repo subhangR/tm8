@@ -18,7 +18,7 @@ import type {
 } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
-import type { ActionContext } from '../domain/types';
+import type { ActionContext, ActionRef } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
   PanelStack,
@@ -157,10 +157,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
 
   /* The panel action bar's executor AND the session tile's ✕, from one hook —
      see `usePanelPrimaries` for why the wiring is not written inline here. */
-  const primaries = usePanelPrimaries({
-    seam: data.seam,
-    reconcileCommand: data.reconcileCommand,
-    onError: (_verb, _entityId, error) => {
+  /* REVIEW (2/2) #6 — the reporter is a useCallback, not an inline arrow. As
+     an arrow it was a fresh identity every render, so `terminate`, `forEntity`
+     and `primaries` all churned with it, and `handleSessionClose` — the
+     session tile's ✕, a stable `useCallback` before this PR — became unstable.
+     Nothing is memoised on it today; this keeps it that way by choice rather
+     than by luck. */
+  const notifyCloseFailed = useCallback(
+    (_verb: ActionRef, _entityId: string, error: unknown) => {
       props.onNotice({
         id: 'session-close-failed',
         tone: 'error',
@@ -169,6 +173,12 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         ttlMs: 6_000,
       });
     },
+    [props.onNotice],
+  );
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onError: notifyCloseFailed,
   });
   const handleSessionClose = primaries.terminate;
 

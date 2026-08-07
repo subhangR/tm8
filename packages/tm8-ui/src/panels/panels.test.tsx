@@ -1111,6 +1111,76 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     expect(queryByTestId('launch-quick-config')).toBeNull();
   });
 
+  it('REVIEW F1: switching entity closes the Run config — it never re-targets silently', () => {
+    /*
+     * PR #46 review, blocking finding. Only `PanelStack` keys its panels by
+     * id; EntityView, ChannelView and GraphScreen each mount ONE panel
+     * instance and change `selectedId` under it. So component state survives
+     * the switch — and `flowRef` is component state.
+     *
+     * The card dismisses on outside mousedown and on Escape. A BACK BUTTON
+     * fires neither. The config therefore stayed open across the navigation
+     * and `subject={detail}` silently re-pointed it at whatever entity had
+     * arrived: you would press Launch on a card that named one thing and
+     * spawned against another. Worse when the new kind has no Run at all —
+     * the trigger is gone and the card is orphaned with no way to close it.
+     */
+    const task = fixtureDetails[taskUuidTitle.id]!;
+    const session = fixtureDetails[sessionStale.id]!;
+    const view = render(
+      <EntityDetailPanel
+        detail={task}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: task.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    fireEvent.click(
+      within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
+    );
+    expect(view.getByTestId('launch-quick-config').textContent).toContain(task.title);
+
+    // The SAME instance, a different entity — exactly what a Back press does.
+    view.rerender(
+      <EntityDetailPanel
+        detail={session}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: session.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+
+    expect(view.queryByTestId('launch-quick-config')).toBeNull();
+    expect(view.queryByTestId('panel-action-flow')).toBeNull();
+  });
+
+  it('REVIEW F1: the same entity re-rendering does NOT close the config', () => {
+    // The other half: a reset keyed on anything but identity would slam the
+    // card shut on every unrelated re-render, which is a worse bug than the
+    // one it fixes.
+    const task = fixtureDetails[taskUuidTitle.id]!;
+    const view = render(
+      <EntityDetailPanel
+        detail={task}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: task.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    fireEvent.click(
+      within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
+    );
+    view.rerender(
+      <EntityDetailPanel
+        detail={{ ...task, counters: { ...task.counters, messages: task.counters.messages + 1 } }}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: task.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    expect(view.getByTestId('launch-quick-config')).toBeTruthy();
+  });
+
   it('wiredActions narrows the dispatcher: a verb it cannot perform stays refused', () => {
     // The regression this exists to stop: wiring `onAction` at the host turned
     // EVERY primary live, including a doc's `add-child`, which has no executor

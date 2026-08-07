@@ -23,6 +23,7 @@ import type {
 import type { SessionLiveness } from '../data/seam';
 import type { PillTone } from '../kit';
 import type { KindArt } from './kind-art';
+import type { LaunchMode } from './launch';
 
 // ---------------------------------------------------------------------------
 // Contract-derived vocabulary (cite the member, never an invented type)
@@ -355,6 +356,17 @@ export interface ActionDef {
    * spawn. A verb without `flow` dispatches immediately, as before.
    */
   flow?: 'launch';
+  /**
+   * The session mode this flow verb commits, when it is not the default.
+   *
+   * DATA, because the alternative is a surface asking `ref === 'coordinate'` —
+   * an action-id literal of exactly the kind §15.2 keeps out of components.
+   * Every launch verb shares ONE config, and before this existed the config
+   * seeded `mode: 'worker'` unconditionally: pressing **Coordinate** opened
+   * Run's card and spawned a WORKER. The button named one thing and did
+   * another. A verb that omits this gets the config's own default.
+   */
+  launchMode?: LaunchMode;
 }
 
 // ---------------------------------------------------------------------------

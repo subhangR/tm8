@@ -11,7 +11,7 @@ import type {
 import type { SessionLiveness } from '../data/seam';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
-import { getKind, newLaunchMutationId } from '../domain';
+import { getKind, newLaunchMutationId, resolveAction } from '../domain';
 import { LaunchQuickConfig } from './launch/LaunchQuickConfig';
 import type { LaunchSources } from './EntityListPanel';
 import {
@@ -354,6 +354,30 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    */
   const [flowRef, setFlowRef] = useState<ActionRef | null>(null);
   const actionBarRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * THE CONFIG BELONGS TO ONE ENTITY, AND ONLY `PanelStack` KEYS ITS PANELS.
+   *
+   * `EntityView`, `ChannelView` and `GraphScreen` each mount ONE panel and
+   * change `selectedId` underneath it, so this component's state survives the
+   * switch. The card dismisses on outside mousedown and on Escape; a BACK
+   * PRESS fires neither. So it stayed open across the navigation and
+   * `subject={detail}` silently re-pointed it at whatever entity arrived —
+   * press Launch and you spawn against something the card never named. When
+   * the new kind has no launch verb the trigger is gone too, leaving a config
+   * nothing owns.
+   *
+   * Adjusted DURING RENDER rather than in an effect, deliberately: an effect
+   * would paint one frame of the previous entity's config over the new
+   * entity first, which is the same lie for 16ms. Keyed on IDENTITY alone —
+   * anything broader (a counter tick, a streamed message) would slam the card
+   * shut mid-edit, which is a worse bug than the one it fixes.
+   */
+  const [flowSubjectId, setFlowSubjectId] = useState(detail?.id);
+  if (detail?.id !== flowSubjectId) {
+    setFlowSubjectId(detail?.id);
+    if (flowRef !== null) setFlowRef(null);
+  }
   const selectTab = (t: PanelTab) => {
     setUncontrolledTab(t);
     onTabChange?.(t);
@@ -571,6 +595,12 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
                 flowRef && props.launch ? (
                   <LaunchQuickConfig
                     subject={detail}
+                    /* The mode is the VERB's, read off the registry — so
+                       Coordinate commits a coordinator and not Run's worker,
+                       and no component here has to name either verb. */
+                    {...(resolveAction(flowRef).launchMode
+                      ? { mode: resolveAction(flowRef).launchMode }
+                      : {})}
                     spaceId={props.launch.spaceId || ctx.spaceId}
                     teammates={props.launch.teammates}
                     projects={props.launch.projects}

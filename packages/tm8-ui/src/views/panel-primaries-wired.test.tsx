@@ -45,18 +45,62 @@ function sourceFiles(dir: string): string[] {
  * text of the element's attribute list. Deliberately textual: the question is
  * "does this call site pass the prop", which is a fact about the source.
  */
-function panelMounts(): { file: string; props: string }[] {
-  const found: { file: string; props: string }[] = [];
+/**
+ * The end of the element's OWN opening tag — the first `/>` or `>` that is not
+ * nested inside a prop expression or a string.
+ *
+ * REVIEW F4, and the finding was BIGGER than reported. The first version cut
+ * at `text.indexOf('/>')`, which the review flagged as fragile for "a future
+ * mount with children". It was already wrong TODAY: `EntityView` passes
+ * `chatSurface={<LazySessionChatSurface … />}`, so the slice ended at that
+ * nested element's `/>` and silently dropped every prop after it. The wiring
+ * assertions passed only because `onAction` and `launch` happen to be written
+ * above `chatSurface` — luck, not coverage. A guard that fails OPEN is worse
+ * than no guard, because it is believed.
+ */
+function openingTagOf(text: string, at: number): { props: string; closed: boolean } {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let i = at + 1; i < text.length; i += 1) {
+    const ch = text[i]!;
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+    if (ch === '{') { depth += 1; continue; }
+    if (ch === '}') { depth -= 1; continue; }
+    if (depth > 0) continue;
+    if (ch === '/' && text[i + 1] === '>') return { props: text.slice(at, i), closed: true };
+    // A bare `>` at depth 0 ends a CHILDREN-form tag; the props are still
+    // everything before it, so the wiring checks stay correct either way.
+    if (ch === '>') return { props: text.slice(at, i), closed: true };
+  }
+  return { props: text.slice(at), closed: false };
+}
+
+/**
+ * Comments out, before any quote tracking runs.
+ *
+ * These files comment densely and in prose, so a prop list contains
+ * `tombstone's way back` and `` `restore` `` — an apostrophe and a backtick
+ * that are not string delimiters at all. Tracking quotes across them opened a
+ * string that never closed and the scan ran to EOF. Same strip the sibling
+ * §15.2 guards use, for the same reason.
+ */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+}
+
+function panelMounts(): { file: string; props: string; closed: boolean }[] {
+  const found: { file: string; props: string; closed: boolean }[] = [];
   for (const file of sourceFiles(SRC)) {
-    const text = readFileSync(file, 'utf8');
+    const text = stripComments(readFileSync(file, 'utf8'));
     let from = 0;
     for (;;) {
       const at = text.indexOf('<EntityDetailPanel', from);
       if (at === -1) break;
-      // To the element's own `/>` — the props are attribute text, and no
-      // nested element can appear before a self-closing tag's end.
-      const end = text.indexOf('/>', at);
-      found.push({ file: relative(SRC, file), props: text.slice(at, end === -1 ? text.length : end) });
+      found.push({ file: relative(SRC, file), ...openingTagOf(text, at) });
       from = at + 1;
     }
   }
@@ -69,6 +113,23 @@ describe('panel primaries are wired at every mount site', () => {
     // Five today: WorkspaceView, EntityView ×2, ChannelView, GraphScreen. The
     // floor is what matters; a sixth screen is expected to raise it.
     expect(mounts.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('REVIEW F4: the prop scan terminates on every mount, and reads the WHOLE list', () => {
+    const mounts = panelMounts();
+    // An unterminated tag means the parser ran to EOF and the assertions below
+    // would be reading half a file.
+    expect(mounts.filter((m) => !m.closed).map((m) => m.file)).toEqual([]);
+
+    // The regression that motivated the rewrite: EntityView passes a nested
+    // element inside `chatSurface`, and the old scan stopped there. Its props
+    // must reach the ones written AFTER it, or this guard proves nothing about
+    // the tail of any mount.
+    const nested = mounts.filter((m) => m.props.includes('chatSurface='));
+    expect(nested.length).toBeGreaterThan(0);
+    for (const mount of nested) {
+      expect(mount.props).toContain('onOpenEntity=');
+    }
   });
 
   it('R5 #9 AT THE HOST: every mount passes onAction, so Terminate can commit', () => {
@@ -104,6 +165,30 @@ describe('the dispatcher and the registry agree', () => {
     // coverage — the next person trusts the list rather than the registry.
     const dead = PANEL_PRIMARY_ACTIONS.filter((ref) => !declaredPrimaries.has(ref));
     expect(dead).toEqual([]);
+  });
+
+  it('REVIEW: every launch verb commits its OWN mode — Coordinate is not Run', () => {
+    /*
+     * One config serves all of them, and it seeded `worker` unconditionally.
+     * Making Coordinate live in the panel therefore gave a team_member a
+     * button labelled Coordinate that spawned a WORKER — the button naming
+     * one act and performing another, which is the same honesty failure as an
+     * enabled-inert control, only louder because it succeeds.
+     *
+     * Asserted as DATA off the registry rather than by rendering: the mapping
+     * is what has to be right, and a surface asking `ref === 'coordinate'`
+     * would be the action-id literal §15.2 keeps out of components.
+     */
+    const launchVerbs = [...declaredPrimaries].filter((ref) => resolveAction(ref).flow === 'launch');
+    expect(launchVerbs.length).toBeGreaterThan(0);
+
+    // Run is the default (`worker`) and says so by omission.
+    expect(resolveAction('run').launchMode).toBeUndefined();
+    // Coordinate is the whole reason the field exists.
+    expect(resolveAction('coordinate').launchMode).toBe('coordinator');
+    // No two launch verbs may be indistinguishable at commit time.
+    const modes = launchVerbs.map((ref) => resolveAction(ref).launchMode ?? 'worker');
+    expect(new Set(modes).size).toBe(modes.length);
   });
 
   it('the reported verbs are covered: Terminate dispatches, Run opens its flow', () => {

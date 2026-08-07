@@ -13,6 +13,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type {
+  CommandResult,
   EdgeView,
   EntityDetail,
   EntityId,
@@ -46,6 +47,18 @@ export interface GraphScreenData {
    *  (an `attached_to` edge). REQUIRED: a host without it draws an attachment
    *  control that changes nothing on screen. */
   refetchDetail(id: string): void;
+  /**
+   * Folds a command's own result back into the detail cache.
+   *
+   * REVIEW F3 — without it this screen sent Terminate and DROPPED the
+   * `CommandResult`, so the aside kept showing the old status until an
+   * unrelated live event happened along: the same verb, visibly slower here
+   * than at the other four mounts. Optional because the port is narrow by
+   * charter and a host may genuinely have no cache to reconcile; `GateData`
+   * supplies it, so the real caller gets the same behaviour as everywhere
+   * else without naming it.
+   */
+  reconcileCommand?(result: CommandResult): void;
 }
 
 export interface GraphScreenProps {
@@ -96,6 +109,7 @@ export function GraphScreen(props: GraphScreenProps) {
      drawing a button whose command could not be sent. */
   const primaries = usePanelPrimaries({
     ...(data.seam ? { seam: data.seam } : {}),
+    ...(data.reconcileCommand ? { reconcileCommand: data.reconcileCommand } : {}),
     ...(props.onNotice
       ? {
           onError: (_verb: ActionRef, _entityId: string, error: unknown) =>
