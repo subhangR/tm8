@@ -310,3 +310,173 @@
 .cv2-root .au-status__option--on {
   background: var(--pn-active);
 }
+
+/* ---------------------------------------------------------------------------
+   THE `editFields` DIALOG (`EditEntityDialog`).
+
+   MODAL BECAUSE THE EDIT IS ATOMIC. Everything else in this lane is inline and
+   commits per gesture; this one stages a whole form behind Cancel/Save, so the
+   surface underneath must not accept a competing edit while it is open. The
+   backdrop is what says so, and it is also what makes an outside click mean
+   "cancel" rather than "silently keep a draft you can no longer see".
+
+   TOKENS ONLY (§14). `--pn-card` over `--pn-surface` for the sheet itself: the
+   panel beneath is already `--pn-surface`, and a dialog the same colour as its
+   backdrop reads as a section rather than a layer. The elevation token does the
+   rest — D54 measured `--pn-sh-pop` as the thing that distinguishes an overlay
+   from a seated panel, which is exactly this component's claim.
+--------------------------------------------------------------------------- */
+.cv2-root .au-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pn-space-6);
+  /* The scrim is the ink token at low alpha rather than a black wash: it tints
+     with the theme, so the dark theme does not stack black on near-black. */
+  background: color-mix(in srgb, var(--pn-ink) 34%, transparent);
+}
+
+/* NOTE ON THE SPACE SCALE, because it reads like pixels and is not:
+   `--pn-space-N` is `N * 4px`, so `--pn-space-16` is SIXTY-FOUR pixels. This
+   block was first written with `--pn-space-16` padding on the reading of "16px"
+   and measured at 64px in Firefox — a 605px-wide sheet for two fields. Every
+   value below is the measured one. */
+.cv2-root .au-dialog {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  /* L4: a floor and a ceiling, never minmax(0,…). A dialog that can collapse
+     to nothing is a dialog whose fields silently vanish. */
+  width: min(380px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: var(--pn-space-4);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-lg);
+  box-shadow: var(--pn-sh-pop);
+}
+
+.cv2-root .au-dialog__title {
+  margin: 0 0 var(--pn-space-1);
+  font-size: var(--pn-fs-h3);
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .au-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .au-dialog__label {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* Not italic-for-decoration: `<em>` is the markup, and the lighter ink is what
+   keeps "· optional" from reading as part of the field's name. */
+.cv2-root .au-dialog__optional {
+  font-style: normal;
+  color: var(--pn-ink-4);
+}
+
+/* Geometry adapted from `.au-title-input`, the inline editor this dialog is the
+   staged counterpart of — same 8px inset and 6px radius, so the two ways of
+   renaming a channel do not look like two different apps. */
+.cv2-root .au-dialog__input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: var(--pn-lh-snug);
+  color: var(--pn-ink);
+  background: var(--pn-paper);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.cv2-root textarea.au-dialog__input {
+  min-height: 48px;
+}
+
+.cv2-root .au-dialog__input:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
+
+.cv2-root .au-dialog__missing,
+.cv2-root .au-dialog__unavailable {
+  margin: 0;
+  font-size: var(--pn-fs-micro);
+  line-height: var(--pn-lh-body);
+  text-wrap: pretty;
+}
+
+.cv2-root .au-dialog__missing {
+  color: var(--pn-block);
+}
+
+.cv2-root .au-dialog__unavailable {
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .au-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--pn-space-2);
+  margin-top: var(--pn-space-1);
+}
+
+.cv2-root .au-dialog__actions button {
+  flex: none;
+  appearance: none;
+  padding: 3px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--pn-ink-2);
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line-2);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.cv2-root .au-dialog__actions button:hover:not(:disabled) {
+  background: var(--pn-hover);
+}
+
+/* The INK chip, matching `.lp__new` (D58) — the create and the save of a thing
+   are the same weight of act, and giving them two different primaries would
+   make one of them look like the safer one.
+
+   THE SELECTOR CARRIES `.au-dialog__actions button` DELIBERATELY. Written as
+   `.cv2-root .au-dialog__primary` it LOSES to the rule above on specificity
+   (0,2,1 beats 0,2,0) and the Save button renders as a second Cancel — measured
+   in Firefox as `bg: rgb(255,255,255)` on both buttons, which is exactly the
+   "which one is the real action?" ambiguity the ink chip exists to remove. */
+.cv2-root .au-dialog__actions button.au-dialog__primary {
+  color: var(--pn-paper);
+  background: var(--pn-ink);
+  border-color: var(--pn-ink);
+}
+
+.cv2-root .au-dialog__actions button.au-dialog__primary:hover:not(:disabled) {
+  background: var(--pn-x-btn-ink-hover, var(--pn-ink));
+}
+
+.cv2-root .au-dialog__actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

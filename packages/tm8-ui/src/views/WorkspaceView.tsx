@@ -18,6 +18,7 @@ import type {
 } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
+import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
@@ -253,6 +254,18 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       } | undefined;
       const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
       return (
+        /* The action bar's executor — `edit` and `add-child` (a subchannel).
+           A COMPONENT and not a hook call, because this is a callback that
+           renders one panel per id and the workspace shows several at once;
+           see `EntityVerbs`. Each panel therefore holds its own draft. */
+        <EntityVerbs
+          detail={detail ?? null}
+          spaceId={data.spaceId}
+          commands={data.seam.commands}
+          onCreated={openEntity}
+          onSaved={(saved) => props.data.refetchDetail(saved)}
+        >
+          {(verbs) => (
         <EntityDetailPanel
           detail={detail ?? null}
           serverBaseUrl={props.serverBaseUrl}
@@ -328,7 +341,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onPromote={() => nav.promote(id)}
           onClose={() => nav.close(id)}
           onOpenEntity={openEntity}
+          onAction={verbs.onAction}
+          wiredActions={verbs.wiredActions}
         />
+          )}
+        </EntityVerbs>
       );
     },
     [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments],
