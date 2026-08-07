@@ -227,6 +227,80 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['whoami', 'session', 'token', 'me'],
   },
+  // ── credentials (Tier B per-member vendor credentials) ───────────────────
+  //
+  // ALL FOUR HAVE NO CLI COMMAND, AND THE REASON IS NOT THAT THEY ARE FORBIDDEN
+  // TO THE CLI. Read this before adding one.
+  //
+  // The Server refuses these to a caller whose `auth_sessions.kind` is `agent`
+  // (R2) — and `browser` AND `cli` both pass. A human at a terminal is exactly
+  // as entitled here as a human in the settings screen. So the door is left
+  // OPEN, not welded: a later lane can add commands with no security change at
+  // all. What stops it being done in THIS change is scope, not policy —
+  // `discovery-commands.test.ts` fails a published command path with no
+  // registry handler, so a `cmd` here obliges four command implementations in
+  // the same commit.
+  //
+  // Why an agent is refused even READ access, which is the surprising half:
+  // `TM8_AGENT_TOKEN` carries its owner's FULL identity rather than a reduced
+  // principal (review finding C7). `acting_as_team_member_id` constrains
+  // `internal.resolve_actor` alone, while `identity_id()`, `can_act_as`,
+  // `is_space_member` and `entity_readable` all key off identity. An agent
+  // calling `credentials.status` would therefore read its OWNER'S login
+  // metadata, and `credentials.delete` would revoke their token.
+  'credentials.status': {
+    cmd: null,
+    sum: 'Read which vendor accounts this member has connected — human sessions only',
+    authz: 'server',
+    input: 'none',
+    tags: ['credential', 'connection', 'vendor', 'anthropic', 'openai', 'github', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'refused to an agent session with `credentials_human_only`: an agent token carries its owner\'s full identity, so this would read their credentials, not its own',
+      'a `cli`-kind human session is admitted by the same guard, so a CLI form of this operation would need no security change',
+      'the github entry reports the string-shaped credential store as absent rather than claiming a connection it cannot see',
+    ],
+  },
+  'credentials.delete': {
+    cmd: null,
+    sum: 'Disconnect one vendor account, terminating the sessions that carry it — human sessions only',
+    authz: 'server',
+    input: 'bound',
+    side: 'execution',
+    tags: ['credential', 'disconnect', 'revoke', 'logout', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'revokes FIRST, then kills the login terminal for that provider, then the account\'s live agent sessions carrying it — so no spawn can pick the credential up mid-operation',
+      'best-effort and honest: a kill that fails is reported and never undoes the revoke',
+      'termination is containment, not revocation — a process that already read the secret still holds it, and only rotating at the vendor invalidates it',
+    ],
+  },
+  'credentials.loginSessions.start': {
+    cmd: null,
+    sum: 'Open a short-lived terminal in which this member completes a vendor login — human sessions only',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['credential', 'connect', 'login', 'oauth', 'terminal', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'the command it runs comes from a fixed server-side table keyed by provider; the request has no command, args or flags field, and that absence is the control',
+      'the terminal\'s time to live is deliberately shorter than the vendor\'s device-code lifetime, so an abandoned login dies before its code does',
+    ],
+  },
+  'credentials.loginSessions.finish': {
+    cmd: null,
+    sum: 'Close a login terminal and record what the verification probe established — human sessions only',
+    authz: 'session',
+    input: 'bound',
+    side: 'execution',
+    tags: ['credential', 'connect', 'verify', 'probe', 'settings'],
+    reason: 'human_settings_only',
+    notes: [
+      'success is never inferred from the terminal\'s exit code: a member who reads the device code and closes the tab exits 0 having captured nothing',
+      '`connected` and `stored` are separate answers — a verified GitHub login reports stored=false where its string-shaped store is not present',
+    ],
+  },
   'serverConnections.list': {
     cmd: ['server', 'list'],
     syn: 'tm8 server list',
@@ -1505,6 +1579,10 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   teamMembers: 'teammate',
   voice: 'voice',
   artifacts: 'artifact',
+  // Required even though all four `credentials.*` rows are `cmd: null`: the
+  // noun groups them in `tm8 help`, so they are DISCOVERABLE rather than
+  // hidden. Someone asking "can tm8 manage my vendor logins?" gets an answer.
+  credentials: 'credential',
 };
 
 function nounFor(operation: OperationName): string {
@@ -1555,7 +1633,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:448c1ad17325ba74dfb415d421c191335adb57330d999f3a968ad1c060e830eb';
 
 export const GRAMMAR_VERSION = '2';
 

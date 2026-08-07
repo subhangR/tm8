@@ -11,6 +11,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
@@ -243,12 +244,29 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         })
       : undefined;
 
+  /**
+   * Tier B credentials. Built HERE because it needs the PTY host, and the PTY
+   * host is a composition-root object: `createExecutionRuntime` owns it (it
+   * takes `onSessionStatus` only at construction), and `delivery` above is
+   * handed the very same instance. A second PtyHostService would be a second
+   * process registry, so a login terminal started through one would be
+   * invisible to the other's kill.
+   *
+   * Conditional on `execution` for the same reason `delivery` is: with no
+   * runtime there is no PTY, and these four operations start real processes.
+   * Absent, they are simply not mounted — the honest degraded mode.
+   */
+  const credentials = execution
+    ? { launcher: new CredentialSessionLauncher({ pty: execution.pty }), dataDir }
+    : undefined;
+
   if (db) {
     registerFacadeHandlers(registry, {
       db,
       config,
       owner,
       files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
+      ...(credentials ? { credentials } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       resolveAuthoredFromWorkSessionId: async (ctx) => {
         const claimed = commandEnvelope(ctx).workSessionId ?? null;

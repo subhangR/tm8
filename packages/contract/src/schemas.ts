@@ -30,6 +30,10 @@ import type {
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
+  CredentialConnectionView, CredentialProviderName, CredentialsDeleteInput,
+  CredentialsDeleteResult, CredentialsLoginSessionFinishInput,
+  CredentialsLoginSessionFinishResult, CredentialsLoginSessionStartInput,
+  CredentialsLoginSessionStartResult, CredentialsStatusView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
@@ -1076,6 +1080,108 @@ export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.obj
   account: AuthAccountViewSchema,
   session: AuthSessionViewSchema.nullable(),
 }).strict();
+
+// ---------------------------------------------------------------------------
+// credentials.* (Tier B, sub-doc 11 §D).
+//
+// NO `commandContextShape` ON ANY INPUT HERE, and unlike `auth.*` the reason is
+// a security property rather than a modelling one: `commandContextShape`
+// carries `actorId`, and `.strict()` without it makes an acting-as claim a
+// VALIDATION FAILURE instead of a field the server has to remember to ignore.
+// That is finding D2's third and outermost layer — the wire, the service
+// (`W2CredentialSessionsService.start` throws on a claims `actorId`) and the
+// SQL (`internal.current_member_id`, never `internal.resolve_actor`).
+//
+// `clientMutationId` IS admitted, because `commandAcceptsClientMutationId`
+// returns true for everything outside `auth.*`; refusing it here would make
+// every credential command fail with `Unrecognized key(s)` the moment the
+// ledger is enabled.
+// ---------------------------------------------------------------------------
+
+/** All three login-terminal providers. Wider than what 082 will STORE (R6). */
+export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
+  z.enum(['anthropic', 'openai', 'github']);
+
+/** Mirrors 082's `account_agent_credentials.status` CHECK exactly. */
+const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
+
+export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView> = z.object({
+  provider: CredentialProviderNameSchema,
+  connected: z.boolean(),
+  // Nullable rather than optional, and never absent: anthropic can NEVER
+  // populate it (R4), so a UI that treats "missing" and "null" differently
+  // would render two different cards for one permanent fact.
+  login: z.string().nullable(),
+  authMethod: z.string().nullable(),
+  status: CredentialStatusSchema.nullable(),
+  connectedAt: z.string().nullable(),
+  lastVerifiedAt: z.string().nullable(),
+}).strict();
+
+export const CredentialsStatusViewSchema: z.ZodType<CredentialsStatusView> = z.object({
+  providers: z.array(CredentialConnectionViewSchema),
+  // The honest-degradation field. `absent` means the github entry's `connected`
+  // is UNKNOWN, not measured false — 079 ships on the deployed staging line and
+  // is reachable from no local git object.
+  gitCredentialStore: z.enum(['present', 'absent']),
+}).strict();
+
+export const CredentialsDeleteInputSchema: z.ZodType<CredentialsDeleteInput> = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsDeleteResultSchema: z.ZodType<CredentialsDeleteResult> = z.object({
+  provider: CredentialProviderNameSchema,
+  revoked: z.boolean(),
+  terminatedCredentialSessionIds: z.array(z.string()),
+  terminatedAgentSessionIds: z.array(z.string()),
+  failures: z.array(z.object({
+    step: z.enum(['revoke', 'credentialSession', 'agentSession']),
+    sessionId: z.string().optional(),
+    reason: z.string(),
+  }).strict()),
+}).strict();
+
+export const CredentialsLoginSessionStartInputSchema:
+  z.ZodType<CredentialsLoginSessionStartInput> = z.object({
+    spaceId: EntityIdSchema,
+    provider: CredentialProviderNameSchema,
+    // Geometry is the ONLY client input this operation accepts, and it is
+    // bounded so a hostile value cannot reach `pty.spawn` as a resource claim.
+    // There is deliberately no command/args/flags field: see the DTO.
+    cols: z.number().int().min(1).max(1000).optional(),
+    rows: z.number().int().min(1).max(1000).optional(),
+    clientMutationId: z.string().min(1).optional(),
+  }).strict();
+
+export const CredentialsLoginSessionStartResultSchema:
+  z.ZodType<CredentialsLoginSessionStartResult> = z.object({
+    workSessionId: EntityIdSchema,
+    spaceId: EntityIdSchema,
+    provider: CredentialProviderNameSchema,
+    expiresAt: IsoTimestamp,
+    command: z.string().min(1),
+  }).strict();
+
+export const CredentialsLoginSessionFinishInputSchema:
+  z.ZodType<CredentialsLoginSessionFinishInput> = z.object({
+    clientMutationId: z.string().min(1).optional(),
+  }).strict();
+
+export const CredentialsLoginSessionFinishResultSchema:
+  z.ZodType<CredentialsLoginSessionFinishResult> = z.object({
+    workSessionId: EntityIdSchema,
+    provider: CredentialProviderNameSchema,
+    // `connected` and `stored` are separate on purpose: a verified GitHub login
+    // has nowhere to be written on this line, so `connected: true, stored:
+    // false` is a correct and expected answer.
+    connected: z.boolean(),
+    login: z.string().nullable(),
+    authMethod: z.string().nullable(),
+    status: CredentialStatusSchema,
+    stored: z.boolean(),
+    terminated: z.boolean(),
+  }).strict();
 
 export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({
   token: z.string(),
