@@ -110,7 +110,7 @@ function urlTransform(url: string, key: string, node: { tagName?: string }): str
  * constant below and is spread in — there is still one `code`, one `a`, one
  * `table`, and no chance of two tables drifting apart.
  */
-function componentsFor(fileHref?: MarkdownFileHref): Components {
+function componentsFor(fileHref?: MarkdownFileHref, extra?: Components): Components {
   return {
     ...COMPONENTS,
     /**
@@ -184,6 +184,7 @@ function componentsFor(fileHref?: MarkdownFileHref): Components {
         </a>
       );
     },
+    ...extra,
   };
 }
 
@@ -265,15 +266,25 @@ export interface MarkdownProps {
    * never loaded either way — see the `img` override.
    */
   fileHref?: MarkdownFileHref;
+  /**
+   * Per-surface element overrides, applied LAST so a host can replace one tag
+   * without restating the table. The chat feed uses it for a single tag —
+   * mentions arrive as links in the source and must come out as controls, and
+   * that is knowledge about messages which has no business in `kit`.
+   */
+  components?: MarkdownComponents;
 }
 
-export function Markdown({ source, className, testId = 'markdown', fileHref }: MarkdownProps) {
+/** `react-markdown`'s component table, re-exported so hosts need not import it. */
+export type MarkdownComponents = Components;
+
+export function Markdown({ source, className, testId = 'markdown', fileHref, components }: MarkdownProps) {
   if (source.trim() === '') return null;
   return (
     <div className={className ? `md-root ${className}` : 'md-root'} data-testid={testId}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        components={componentsFor(fileHref)}
+        components={componentsFor(fileHref, components)}
         urlTransform={urlTransform}
       >
         {source}

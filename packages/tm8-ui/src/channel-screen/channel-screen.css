@@ -183,16 +183,51 @@
 
 .chs-byline__gap { flex: 1; }
 
-.chs-text {
+/* The message body is a MARKDOWN root (kit/Markdown), not a paragraph.
+   `.md-root` is `.cv2-root .md-root` in markdown.css, so every rule here
+   qualifies with both classes to outrank it regardless of import order — the
+   doc surfaces read in a serif column at doc size, and a chat line must not.
+   No `white-space: pre-wrap`: line breaks are hard breaks in the source now,
+   and pre-wrap would double the spacing of every list and table. */
+.cv2-root .md-root.chs-text {
   margin: 0;
+  font-family: var(--pn-ui);
   font-size: 13px;
   line-height: 1.5;
   color: var(--pn-ink-2);
   text-wrap: pretty;
   user-select: text;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* A message is a chat line, so its blocks sit tight and its last one adds no
+   trailing gap above the delivery row. */
+.cv2-root .md-root.chs-text p,
+.cv2-root .md-root.chs-text ul,
+.cv2-root .md-root.chs-text ol,
+.cv2-root .md-root.chs-text blockquote,
+.cv2-root .md-root.chs-text .md-fence,
+.cv2-root .md-root.chs-text .md-tablewrap,
+.cv2-root .md-root.chs-text .md-mermaid { margin-bottom: 0.5em; }
+.cv2-root .md-root.chs-text > :last-child { margin-bottom: 0; }
+
+/* Headings inside a message are EMPHASIS, not chapters: the doc treatment
+   (serif h1 with a rule under it) would tower over the row it lives in. */
+.cv2-root .md-root.chs-text h1,
+.cv2-root .md-root.chs-text h2,
+.cv2-root .md-root.chs-text h3,
+.cv2-root .md-root.chs-text h4,
+.cv2-root .md-root.chs-text h5,
+.cv2-root .md-root.chs-text h6 {
+  font-family: var(--pn-ui);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0.7em 0 0.3em;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cv2-root .md-root.chs-text h1 { font-family: var(--pn-ui); font-size: 14px; }
 
 /* A canonical mention, in place in the sentence it was typed in. */
 .chs-mention-inline {
