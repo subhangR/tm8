@@ -2021,6 +2021,11 @@ function Tile({
           <div className="lp__flow lp__flow--control">
             <LaunchQuickConfig
               subject={row}
+              key={flowRef}
+            verbLabel={resolveAction(flowRef).label}
+              {...(resolveAction(flowRef).launchMode
+                ? { mode: resolveAction(flowRef).launchMode }
+                : {})}
               spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
               teammates={props.launch?.teammates ?? []}
               projects={props.launch?.projects ?? []}
@@ -2206,6 +2211,11 @@ function Tile({
         <div className="lp__flow" onClick={(e) => e.stopPropagation()}>
           <LaunchQuickConfig
             subject={row}
+            key={flowRef}
+            verbLabel={resolveAction(flowRef).label}
+            {...(resolveAction(flowRef).launchMode
+              ? { mode: resolveAction(flowRef).launchMode }
+              : {})}
             spaceId={props.launch?.spaceId ?? props.ctx.spaceId ?? ''}
             teammates={props.launch?.teammates ?? []}
             projects={props.launch?.projects ?? []}

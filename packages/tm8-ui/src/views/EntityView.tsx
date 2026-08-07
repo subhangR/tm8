@@ -41,7 +41,7 @@ import {
 } from '../panels';
 import { AttentionInbox } from '../attention/AttentionInbox';
 import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
-import type { ActionContext, CollectionMode } from '../domain/types';
+import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
@@ -52,6 +52,7 @@ import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
+import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
@@ -173,6 +174,28 @@ export function EntityView(props: EntityViewProps) {
      (`useLaunchPort`). Without this the expand rendered with `teammates ?? []`
      and the teammate and model selects were both empty. */
   const launchPort = useLaunchPort(data, props.onSpawn ? { onSpawn: props.onSpawn } : {});
+
+  /* The panel action bar's executor. Same hook the workspace uses, so the
+     Terminate button behaves identically wherever a session panel is opened. */
+  /* A useCallback, not an inline arrow — see WorkspaceView for why an unstable
+     reporter churns the whole dispatcher's identity every render. */
+  const notifyCloseFailed = useCallback(
+    (_verb: ActionRef, _entityId: string, error: unknown) => {
+      props.onNotice({
+        id: 'session-close-failed',
+        tone: 'error',
+        title: 'Session could not be closed',
+        body: String((error as { message?: string })?.message ?? error),
+        ttlMs: 6_000,
+      });
+    },
+    [props.onNotice],
+  );
+  const primaries = usePanelPrimaries({
+    seam: data.seam,
+    reconcileCommand: data.reconcileCommand,
+    onError: notifyCloseFailed,
+  });
 
   /* D67 — the expanded row's state dropdown and archive control. Same executor
      the workspace uses, so a task behaves identically in both surfaces. */
@@ -338,6 +361,11 @@ export function EntityView(props: EntityViewProps) {
     onSaved: (id) => props.data.refetchDetail(id),
   });
 
+  const panelActions = composePanelActions([
+    { onAction: selectedId ? primaries.forEntity(selectedId) : undefined, wiredActions: primaries.wiredActions },
+    { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
+  ]);
+
   const detailPanel = selectedId ? (
     <EntityDetailPanel
       detail={detail ?? null}
@@ -347,12 +375,15 @@ export function EntityView(props: EntityViewProps) {
       reasons={reasons}
       ctx={{ ...ctx, entityId: selectedId }}
       controls={controlHost}
+      /* Terminate comes from `primaries`, edit and add-child from `verbs` —
+         see `composePanelActions` for why neither can be passed alone. */
+      onAction={panelActions.onAction}
+      wiredActions={panelActions.wiredActions}
+      launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
          archive control flips to, through the same executor — so an archived
          task reopens from wherever the user meets it. */
       onRestore={() => rowLifecycle.archive('restore', selectedId)}
-      onAction={verbs.onAction}
-      wiredActions={verbs.wiredActions}
       pinned={false}
       // Pinning belongs to the workspace's stack economy; here the panel HAS
       // a permanent slot, so the verb is refused with the true reason rather
@@ -519,6 +550,9 @@ export function EntityView(props: EntityViewProps) {
                 reasons={reasons}
                 ctx={{ ...ctx, entityId: aux.id }}
                 controls={controlHost}
+                onAction={primaries.forEntity(aux.id)}
+                wiredActions={primaries.wiredActions}
+                launch={launchPort}
                 onRestore={() => rowLifecycle.archive('restore', aux.id)}
                 pinned={false}
                 pinRefusal="Pinning lives in the Workspace"

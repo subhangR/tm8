@@ -22,6 +22,7 @@ import type {
   ActionRef,
   IconRef,
 } from './types';
+import type { LaunchMode } from './launch';
 
 const AVAILABLE: ActionAvailability = { kind: 'available' };
 
@@ -158,9 +159,14 @@ function deferred(id: ActionRef, label: string, icon: IconRef, reason: string): 
   };
 }
 
-/** Mark a verb as opening the D44 launch configuration before dispatch. */
-function launching(action: ActionDef): ActionDef {
-  return { ...action, flow: 'launch' };
+/**
+ * Mark a verb as opening the D44 launch configuration before dispatch.
+ *
+ * `mode` is what the config COMMITS, carried as data so no surface has to ask
+ * which verb opened it. Omitted ⇒ the config's own default (`worker`).
+ */
+function launching(action: ActionDef, mode?: LaunchMode): ActionDef {
+  return mode ? { ...action, flow: 'launch', launchMode: mode } : { ...action, flow: 'launch' };
 }
 
 const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
@@ -289,6 +295,9 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
       '⛭',
       (ctx) => opGate(ctx, 'execution.spawn') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
     ),
+    // The whole difference between this verb and Run: it spawns something that
+    // directs its own workers. Without it the two are the same button.
+    'coordinator',
   ),
 
   'launch-session': launching(

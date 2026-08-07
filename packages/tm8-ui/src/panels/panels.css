@@ -569,6 +569,47 @@
   border-bottom: none;
   overflow: visible;
 }
+
+/*
+ * THE FLOW EXPAND — Run's configuration, hung off the action bar.
+ *
+ * ABSOLUTE, AND THAT IS THE POINT (user ruling 2026-08-07: "dont add any new
+ * rows … already the header is lot crammed"). The bar rides IN the tab-strip
+ * row; an expand that took layout height would grow the two-row chrome to
+ * three and push the terminal canvas down every time someone pressed Run. Out
+ * of flow it costs the header zero pixels, and the body under it never moves.
+ *
+ * Right-anchored because the bar sits at the END of the tab strip — dropping
+ * from the left would put a 300px card off the panel's right edge on a side
+ * panel at its width floor.
+ */
+.cv2-root .pn-actions__flow {
+  position: absolute;
+  /* Off `.pn-panelbar`, so `100%` is the PANEL's width — see that rule. */
+  top: calc(100% + var(--pn-space-1));
+  right: var(--pn-space-2);
+  z-index: 40;
+  /* BORDER-BOX, and it is load-bearing, not tidiness. Under the inherited
+     content-box the 12px padding and 1px border sat OUTSIDE both `width` and
+     `max-width`, so the clamp below could not actually clamp: measured 358px
+     against a 354px panel at the floor, still clipped. */
+  box-sizing: border-box;
+  width: 300px;
+  /* The 320px panel floor is LAW (L4), and the card has to survive it: at the
+     floor this clamps rather than overflowing into `.pn-panel`'s clip. */
+  max-width: calc(100% - var(--pn-space-4));
+  padding: var(--pn-space-3);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+  /* Normal weight: the bar sets 600 for its primary buttons and the card
+     inherits it otherwise, which made every label in the config read bold. */
+  font-weight: 400;
+  text-align: left;
+  cursor: default;
+}
+
 .cv2-root .pn-actions__verb {
   flex: none;
   appearance: none;
@@ -621,6 +662,14 @@
   align-items: center;
   border-bottom: 1px solid var(--pn-line);
   min-width: 0;
+  /* THE POSITIONING CONTEXT for the action bar's flow expand (`.pn-actions__flow`).
+     It is this row and NOT `.pn-actions--inline`, and that is the whole fix:
+     anchored to the action bar, the 300px card resolved its `max-width`
+     against a ~60px box and hung 10px past the panel's left edge, where
+     `.pn-panel { overflow: hidden }` sliced its border off. MEASURED in
+     Firefox at a 700px viewport — slot.left 277 vs panel.left 287. Anchored
+     here, `100%` IS the panel's width, so the card can be told to fit it. */
+  position: relative;
 }
 .cv2-root .pn-tabs {
   flex: 1 1 auto;

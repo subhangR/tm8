@@ -599,3 +599,113 @@ describe('the escape to the full sheet', () => {
     expect(onFullOptions).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * THE VERB'S MODE, ASSERTED ON WHAT IS ACTUALLY SPAWNED.
+ *
+ * One config serves Run, Coordinate and Launch session, and `defaultConfigFor`
+ * hard-codes `mode: 'worker'`. So Coordinate opened this card and spawned a
+ * WORKER — a button naming one act and performing another, which succeeds
+ * loudly rather than failing honestly.
+ *
+ * Every case below commits and reads `onSpawn`'s argument. A registry-level
+ * assertion (`resolveAction('coordinate').launchMode === 'coordinator'`) is
+ * necessary and NOT sufficient: it passed while the card still dropped the
+ * mode on the way to the spawn, which is exactly how the first fix shipped
+ * incomplete.
+ */
+describe('the launch mode belongs to the verb, all the way to the spawn', () => {
+  const coordinatorSources = { teammates: TEAMMATES, spaceId: FIXTURE_SPACE_ID };
+
+  it('seeds the opening verb’s mode', async () => {
+    const onSpawn = vi.fn();
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        mode="coordinator"
+        onSpawn={onSpawn}
+        clientMutationId="m:1"
+      />,
+    );
+    fireEvent.click(getByTestId('launch-commit'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    expect((onSpawn.mock.calls[0]![0] as ExecutionSpawnInput).mode).toBe('coordinator');
+  });
+
+  it('RE-REVIEW: changing the teammate does NOT demote it back to worker', async () => {
+    /*
+     * The path a user actually drives, and the one the first fix missed. The
+     * card opens on `teammates[0]`, so picking the persona you wanted is the
+     * FIRST thing anyone does — and that select re-seeds the config whole.
+     * Two of the three re-seed paths carried the mode; this one did not, so
+     * Coordinate spawned a worker through the card's own primary control.
+     */
+    const onSpawn = vi.fn();
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        mode="coordinator"
+        onSpawn={onSpawn}
+        clientMutationId="m:1"
+      />,
+    );
+    fireEvent.change(getByTestId('launch-teammate'), { target: { value: 'tm-scout' } });
+    fireEvent.click(getByTestId('launch-commit'));
+
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    const input = onSpawn.mock.calls[0]![0] as ExecutionSpawnInput;
+    expect(input.mode).toBe('coordinator');
+    // Both halves: the swap must still have taken the NEW persona's record,
+    // or "mode survives" would be satisfied by ignoring the change entirely.
+    expect(input.teamMemberId).toBe('tm-scout');
+  });
+
+  it('the card NAMES the verb that opened it', () => {
+    // It said "Run configuration" verbatim, so pressing Coordinate opened a
+    // card naming the other verb over a payload that really did coordinate —
+    // the same naming-one-act-performing-another failure as the mode bug,
+    // moved into the copy. The word comes from the caller's `ActionDef.label`,
+    // so it cannot drift from the button that was pressed.
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        mode="coordinator"
+        verbLabel={resolveAction('coordinate').label}
+        onSpawn={vi.fn()}
+        clientMutationId="m:1"
+      />,
+    );
+    expect(getByTestId('launch-heading').textContent).toBe('Coordinate configuration');
+  });
+
+  it('no verb label ⇒ Run, the verb this card was built for', () => {
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        onSpawn={vi.fn()}
+        clientMutationId="m:1"
+      />,
+    );
+    expect(getByTestId('launch-heading').textContent).toBe('Run configuration');
+  });
+
+  it('no mode prop ⇒ the config’s own default, which is Run’s', async () => {
+    const onSpawn = vi.fn();
+    const { getByTestId } = render(
+      <LaunchQuickConfig
+        {...coordinatorSources}
+        subject={subject}
+        onSpawn={onSpawn}
+        clientMutationId="m:1"
+      />,
+    );
+    fireEvent.change(getByTestId('launch-teammate'), { target: { value: 'tm-scout' } });
+    fireEvent.click(getByTestId('launch-commit'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    expect((onSpawn.mock.calls[0]![0] as ExecutionSpawnInput).mode).toBe('worker');
+  });
+});

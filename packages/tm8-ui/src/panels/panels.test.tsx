@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, within } from '@testing-library/react';
+import { fireEvent, render, waitFor, within } from '@testing-library/react';
 import type { EntityDetail, EntitySummary } from '@tm8/contract';
 import { ALL_MODES, allKinds, getKind, resolveAction, type ActionContext, type QueryFilter } from '../domain';
 import { REASONS as DOMAIN_REASONS } from '../domain';
@@ -17,6 +17,7 @@ import {
   taskGuideLines,
   taskTombstone,
   taskUuidTitle,
+  teamMemberForge,
   ada,
   noor,
 } from '../fixtures';
@@ -36,6 +37,20 @@ import type { DetailReasons } from './EntityDetailPanel';
 vi.setConfig({ testTimeout: 20_000 });
 
 const ctx: ActionContext = { spaceId: FIXTURE_SPACE_ID };
+
+/**
+ * The panel's Run expand takes the SAME `LaunchSources` the list panel does —
+ * one shape, so the two surfaces cannot drift into two different launches.
+ * `onSpawn` is present because a config that cannot commit refuses at its own
+ * Launch button, and these tests are about the verb ABOVE that.
+ */
+const LAUNCH_SOURCES = {
+  spaceId: FIXTURE_SPACE_ID,
+  teammates: [{ id: 'tm-forge', label: 'forge', agentTool: 'claude-code', model: 'claude-opus-5' }],
+  projects: [],
+  onSpawn: () => {},
+  mutationId: (entityId: string) => `launch:${entityId}`,
+};
 
 /**
  * The deferral copy comes from the ACTION REGISTRY, which owns it — not from a
@@ -975,6 +990,275 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     );
     const bar = getByTestId('panel-action-bar');
     expect(bar.querySelectorAll('button.pn-btn--primary').length).toBeGreaterThan(0);
+  });
+
+  /*
+   * THE REPORTED DEFECT, both halves (user report 2026-08-07): "in the session
+   * terminal view, there is a terminate button which is not enabled and
+   * working", and "there is a run button on the tasks, teammates, other
+   * entities, this also has not been enabled".
+   *
+   * Both verbs were declared by the registry and drawn by this bar for the
+   * whole of its life; neither had a handler at any of the five mount sites,
+   * so R5 #9 correctly rendered them dead. These assert the LIVE side.
+   */
+  it('DEFECT: Terminate on a live session panel commits, and names the session', () => {
+    // The VERDICT decides, not the record (R5 #4B) — this fixture's recorded
+    // status is stale, and a `live` seam verdict is what makes the verb legal.
+    const detail = fixtureDetails[sessionStale.id]!;
+    const fired: string[] = [];
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        liveness="live"
+        onAction={(ref) => fired.push(ref)}
+        wiredActions={['terminate']}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    // Not a DisabledIconControl any more — a real button carrying the word.
+    const button = within(bar).getByRole('button', { name: /terminate/i });
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]')).toHaveLength(0);
+    fireEvent.click(button);
+    expect(fired).toEqual(['terminate']);
+  });
+
+  it('an EXITED session still refuses Terminate, with the liveness reason', () => {
+    // Wiring the handler must not defeat the availability gate: there is no
+    // process to signal, and the honest control says so rather than sending a
+    // command the node would refuse.
+    const detail = fixtureDetails[sessionStale.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        liveness="exited"
+        onAction={() => {}}
+        wiredActions={['terminate']}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
+    expect(bar.textContent).toContain('Terminate');
+  });
+
+  it('DEFECT: Run on a task panel expands the SAME quick config the list rows open', () => {
+    const detail = fixtureDetails[taskUuidTitle.id]!;
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    const run = within(bar).getByRole('button', { name: /run/i });
+    // A flow verb is live WITHOUT `onAction`: it configures, it does not
+    // dispatch. Wiring it to the dispatcher would have been the wrong fix.
+    expect(run.getAttribute('aria-expanded')).toBe('false');
+    expect(queryByTestId('launch-quick-config')).toBeNull();
+
+    fireEvent.click(run);
+    expect(run.getAttribute('aria-expanded')).toBe('true');
+    expect(getByTestId('launch-quick-config')).toBeTruthy();
+
+    fireEvent.click(run);
+    expect(queryByTestId('launch-quick-config')).toBeNull();
+  });
+
+  it('USER RULING 2026-08-07: the Run config takes NO ROW — the header is already crammed', () => {
+    // "dont add any new rows or components, in the exisitng view only
+    // functionality should be added". The expand therefore hangs off the bar
+    // out of flow; a card that occupied layout height would push the terminal
+    // canvas down on every press of Run, which is the relayout the ruling
+    // exists to prevent. Structural: the card must be INSIDE the absolute
+    // slot, not a sibling of the bar.
+    const detail = fixtureDetails[taskUuidTitle.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    fireEvent.click(within(getByTestId('panel-action-bar')).getByRole('button', { name: /run/i }));
+    const slot = getByTestId('panel-action-flow');
+    expect(slot.className).toContain('pn-actions__flow');
+    expect(within(slot).getByTestId('launch-quick-config')).toBeTruthy();
+    // And it lives inside the bar, so the bar is still the only row.
+    expect(getByTestId('panel-action-bar').contains(slot)).toBe(true);
+  });
+
+  it('Run with NO launch sources keeps its refusal rather than opening an empty config', () => {
+    // A config with no teammates over an un-committable Launch is a worse
+    // answer than the honest "not wired here".
+    const detail = fixtureDetails[taskUuidTitle.id]!;
+    const { getByTestId, queryByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    expect(bar.querySelectorAll('button.pn-btn--primary')).toHaveLength(0);
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
+    expect(queryByTestId('panel-action-flow')).toBeNull();
+    expect(queryByTestId('launch-quick-config')).toBeNull();
+  });
+
+  it('REVIEW F1: switching entity closes the Run config — it never re-targets silently', () => {
+    /*
+     * PR #46 review, blocking finding. Only `PanelStack` keys its panels by
+     * id; EntityView, ChannelView and GraphScreen each mount ONE panel
+     * instance and change `selectedId` under it. So component state survives
+     * the switch — and `flowRef` is component state.
+     *
+     * The card dismisses on outside mousedown and on Escape. A BACK BUTTON
+     * fires neither. The config therefore stayed open across the navigation
+     * and `subject={detail}` silently re-pointed it at whatever entity had
+     * arrived: you would press Launch on a card that named one thing and
+     * spawned against another. Worse when the new kind has no Run at all —
+     * the trigger is gone and the card is orphaned with no way to close it.
+     */
+    const task = fixtureDetails[taskUuidTitle.id]!;
+    const session = fixtureDetails[sessionStale.id]!;
+    const view = render(
+      <EntityDetailPanel
+        detail={task}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: task.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    fireEvent.click(
+      within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
+    );
+    expect(view.getByTestId('launch-quick-config').textContent).toContain(task.title);
+
+    // The SAME instance, a different entity — exactly what a Back press does.
+    view.rerender(
+      <EntityDetailPanel
+        detail={session}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: session.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+
+    expect(view.queryByTestId('launch-quick-config')).toBeNull();
+    expect(view.queryByTestId('panel-action-flow')).toBeNull();
+  });
+
+  it('REVIEW F1: the same entity re-rendering does NOT close the config', () => {
+    // The other half: a reset keyed on anything but identity would slam the
+    // card shut on every unrelated re-render, which is a worse bug than the
+    // one it fixes.
+    const task = fixtureDetails[taskUuidTitle.id]!;
+    const view = render(
+      <EntityDetailPanel
+        detail={task}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: task.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    fireEvent.click(
+      within(view.getByTestId('panel-action-bar')).getByRole('button', { name: /^Run$/i }),
+    );
+    view.rerender(
+      <EntityDetailPanel
+        detail={{ ...task, counters: { ...task.counters, messages: task.counters.messages + 1 } }}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: task.capabilities }}
+        launch={LAUNCH_SOURCES}
+      />,
+    );
+    expect(view.getByTestId('launch-quick-config')).toBeTruthy();
+  });
+
+  it('REVIEW R3: switching verb with the card OPEN re-seeds it — Run cannot spawn a coordinator', async () => {
+    /*
+     * The team_member panel is the one surface carrying BOTH launch verbs
+     * (`['run','coordinate']`). The card is not remounted when the opening
+     * verb changes: same element type, same position, no key — so React reuses
+     * the instance. `mode` and `verbLabel` are props and re-render, but the
+     * config is STATE, seeded once. Press Coordinate then Run and the heading
+     * says "Run configuration" over `mode: 'coordinator'`.
+     *
+     * The dismissal does not save it either: the Run button lives inside
+     * `actionBarRef`, the same bounds that contain the card, so an outside
+     * click never fires.
+     *
+     * MY OWN BUG INVERTED, and worse for the heading fix: while the card
+     * always said "Run" the payload was at least the only thing lying.
+     */
+    const detail = fixtureDetails[teamMemberForge.id]!;
+    const onSpawn = vi.fn();
+    const view = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        launch={{ ...LAUNCH_SOURCES, onSpawn }}
+      />,
+    );
+    const bar = view.getByTestId('panel-action-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
+    expect(view.getByTestId('launch-heading').textContent).toBe('Coordinate configuration');
+
+    // Switch verbs WITHOUT closing the card — two clicks, no navigation.
+    fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
+    expect(view.getByTestId('launch-heading').textContent).toBe('Run configuration');
+
+    fireEvent.click(view.getByTestId('launch-commit'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    // The payload must agree with the button that was actually pressed.
+    expect(onSpawn.mock.calls[0]![0].mode).toBe('worker');
+  });
+
+  it('REVIEW R3: and the converse — Coordinate after Run commits a coordinator', async () => {
+    const detail = fixtureDetails[teamMemberForge.id]!;
+    const onSpawn = vi.fn();
+    const view = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        launch={{ ...LAUNCH_SOURCES, onSpawn }}
+      />,
+    );
+    const bar = view.getByTestId('panel-action-bar');
+    fireEvent.click(within(bar).getByRole('button', { name: /^Run$/i }));
+    fireEvent.click(within(bar).getByRole('button', { name: /^Coordinate$/i }));
+    fireEvent.click(view.getByTestId('launch-commit'));
+    await waitFor(() => expect(onSpawn).toHaveBeenCalled());
+    expect(onSpawn.mock.calls[0]![0].mode).toBe('coordinator');
+  });
+
+  it('wiredActions narrows the dispatcher: a verb it cannot perform stays refused', () => {
+    // The regression this exists to stop: wiring `onAction` at the host turned
+    // EVERY primary live, including a doc's `add-child`, which has no executor
+    // anywhere. That trades one enabled-inert button for another.
+    const detail = fixtureDetails[docLayoutSpec.id]!;
+    const { getByTestId } = render(
+      <EntityDetailPanel
+        detail={detail}
+        reasons={REASONS}
+        ctx={{ ...ctx, capabilities: detail.capabilities }}
+        onAction={() => {}}
+        wiredActions={['terminate']}
+      />,
+    );
+    const bar = getByTestId('panel-action-bar');
+    expect(bar.textContent).toContain('Add child');
+    expect(bar.querySelectorAll('button.pn-btn--primary')).toHaveLength(0);
+    expect(bar.querySelectorAll('[data-testid="disabled-with-reason"]').length).toBeGreaterThan(0);
   });
 
   it('keeps the task title row clear and puts Run + panel controls beside the tabs', () => {

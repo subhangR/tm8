@@ -17,6 +17,7 @@ import {
   newLaunchMutationId,
   type LaunchCapacity,
   type LaunchConfig,
+  type LaunchMode,
   type LaunchProjectOption,
   type ProfileResolution,
   type TeammateLaunchState,
@@ -109,6 +110,19 @@ export interface LaunchQuickConfigProps {
   newClientMutationId?: () => string;
   /** Compatibility injection for deterministic component tests. */
   clientMutationId?: string;
+  /**
+   * The session mode the OPENING VERB commits — `ActionDef.launchMode`.
+   *
+   * One config serves Run, Coordinate and Launch session. Absent ⇒ the
+   * config's own default (`worker`), which is Run's. Passing it is what stops
+   * Coordinate from opening this card and spawning a worker.
+   */
+  mode?: LaunchMode;
+  /**
+   * The opening verb's word — `ActionDef.label`. Absent ⇒ "Run", which is the
+   * verb this card was built for and still its only caller-less default.
+   */
+  verbLabel?: string;
 }
 
 export function LaunchQuickConfig({
@@ -125,6 +139,8 @@ export function LaunchQuickConfig({
   boundsRef,
   clientMutationId,
   newClientMutationId,
+  mode,
+  verbLabel,
 }: LaunchQuickConfigProps) {
   const ref = useRef<HTMLDivElement>(null);
   const noop = useCallback(() => {}, []);
@@ -132,9 +148,34 @@ export function LaunchQuickConfig({
 
   const first = teammates[0];
   const defaultProjectId = projects.find((project) => project.trusted)?.projectId ?? null;
-  const [config, setConfig] = useState<LaunchConfig>(() =>
-    first ? defaultConfigFor(first, defaultProjectId) : emptyConfig(defaultProjectId),
+  /**
+   * THE ONE PLACE A CONFIG IS SEEDED — and it exists because scattering that
+   * was already a bug twice over.
+   *
+   * The mode comes from the VERB that opened this card (`ActionDef.launchMode`),
+   * not from the persona: one config serves Run, Coordinate and Launch session,
+   * and `defaultConfigFor` hard-codes `mode: 'worker'`. There are THREE re-seed
+   * paths — the initializer, the late-teammate effect, and the teammate SELECT —
+   * and each one re-seeds WHOLE on purpose, because a teammate's recorded tool
+   * and model travel together and patching one field would mix two personas.
+   *
+   * Spreading the mode at each call site fixed two of the three and missed the
+   * one the USER drives: picking a teammate is the first thing anyone does, and
+   * it silently demoted Coordinate back to a worker. Routing every seed through
+   * here is what makes a fourth path impossible to get wrong, rather than
+   * merely unlikely.
+   */
+  const seedConfig = useCallback(
+    (teammate: LaunchTeammateOption | undefined): LaunchConfig => {
+      const base = teammate
+        ? defaultConfigFor(teammate, defaultProjectId)
+        : emptyConfig(defaultProjectId);
+      return mode ? { ...base, mode } : base;
+    },
+    [defaultProjectId, mode],
   );
+
+  const [config, setConfig] = useState<LaunchConfig>(() => seedConfig(first));
 
   /**
    * RE-SEED WHEN THE SELECTION STOPS EXISTING.
@@ -156,8 +197,12 @@ export function LaunchQuickConfig({
     // Re-seed WHOLE, for the same reason the change handler does: a teammate's
     // recorded tool and model travel together, and patching one field would mix
     // two personas' settings.
-    setConfig(defaultConfigFor(first, defaultProjectId));
-  }, [first, teammates, config.teamMemberId, defaultProjectId]);
+    setConfig(seedConfig(first));
+    // `seedConfig` belongs here: omitted, this effect closed over a stale
+    // `mode`. The mount key makes that unreachable in practice — a verb change
+    // remounts — but a dep list that is wrong only because something else
+    // prevents the call is a trap for whoever removes that something else.
+  }, [first, teammates, config.teamMemberId, defaultProjectId, seedConfig]);
 
   /** The node's own words when it refuses. Null until it does. */
   const [nodeRefusal, setNodeRefusal] = useState<string | null>(null);
@@ -172,7 +217,16 @@ export function LaunchQuickConfig({
   return (
     <div className="lq" ref={ref} data-testid="launch-quick-config">
       <div className="lq__head">
-        <span className="lq__heading">Run configuration</span>
+        {/* THE CARD NAMES THE VERB THAT OPENED IT. One config serves Run,
+            Coordinate and Launch session, and this said "Run configuration"
+            verbatim — so pressing Coordinate opened a card naming the OTHER
+            verb, over a payload that (once the mode fix landed) really did
+            coordinate. Same naming-one-act-performing-another class as the
+            mode bug, moved into the copy. The word comes from the caller's
+            own `ActionDef.label`, so it cannot drift from the button. */}
+        <span className="lq__heading" data-testid="launch-heading">
+          {`${verbLabel ?? 'Run'} configuration`}
+        </span>
         <span className="lq__subject" title={subject.title}>
           {subject.title}
         </span>
@@ -194,7 +248,10 @@ export function LaunchQuickConfig({
               // Re-seed from the NEW teammate's record rather than patching one
               // field: its recorded tool and model travel together, and a
               // half-updated config would silently mix two personas' settings.
-              if (next) setConfig(defaultConfigFor(next, defaultProjectId));
+              // Through `seedConfig`, so the VERB's mode survives the swap —
+              // this is the path that dropped it, and it is the one a user
+              // touches first.
+              if (next) setConfig(seedConfig(next));
             }}
           >
             {teammates.length === 0 ? <option value="">no teammates available</option> : null}

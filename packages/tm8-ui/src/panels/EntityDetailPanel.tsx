@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type {
   ActivityItem,
   CommandResult,
@@ -11,7 +11,9 @@ import type {
 import type { SessionLiveness } from '../data/seam';
 import type { ContentSurface } from '../routes';
 import type { ActionContext, ActionRef, ContentBlockRef, KindConfig } from '../domain';
-import { getKind } from '../domain';
+import { getKind, newLaunchMutationId, resolveAction } from '../domain';
+import { LaunchQuickConfig } from './launch/LaunchQuickConfig';
+import type { LaunchSources } from './EntityListPanel';
 import {
   AuthoringHost,
   SaveControls,
@@ -273,9 +275,35 @@ export interface EntityDetailPanelProps {
   onPin?: () => void;
   onPromote?: () => void;
   onClose?: () => void;
+  /**
+   * THE EXECUTOR FOR PANEL PRIMARIES — Terminate, and every other verb the
+   * registry names in `panel.primaries` that commits directly.
+   *
+   * Absent ⇒ the action bar renders those verbs DISABLED-WITH-REASON rather
+   * than enabled-inert (R5 #9). It was absent at EVERY one of this panel's
+   * five mounts for the whole of its life, which is the reported defect: the
+   * Terminate button above a live terminal, and Run on a task, were drawn and
+   * permanently greyed out. The verbs and their executors both existed; only
+   * this prop was missing.
+   */
   onAction?: (ref: ActionRef) => void;
-  /** The subset of `onAction` the host really handles — see `ActionBar`. */
+  /**
+   * Which primaries `onAction` can actually perform. Absent ⇒ all of them.
+   * A host that wires Terminate and has no `add-child` executor names the one
+   * it has, and the other keeps its honest refusal. See `ActionBar`.
+   */
   wiredActions?: readonly ActionRef[];
+  /**
+   * THE LAUNCH SOURCES for Run's inline configuration — the SAME `LaunchSources`
+   * the list panel takes, so the two surfaces cannot drift into two different
+   * spawn semantics.
+   *
+   * Run does not commit on click: it carries `flow: 'launch'` in registry data,
+   * so it expands the config and the config commits. That makes it independent
+   * of `onAction` — a host with launch sources and no dispatcher still has a
+   * working Run. Absent ⇒ Run falls back to the disabled-with-reason path.
+   */
+  launch?: LaunchSources | null;
   onOpenEntity?: (id: string) => void;
   onRetry?: () => void;
 }
@@ -313,6 +341,50 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
    * #310 the moment a permission-lost or detail-less panel rendered first.
    */
   const [surfaceSlot, setSurfaceSlot] = useState<HTMLDivElement | null>(null);
+
+  /**
+   * D44 — which flow verb's config is expanded on the action bar, if any.
+   *
+   * ABOVE EVERY EARLY RETURN for the same reason `surfaceSlot` is: hooks do.
+   *
+   * `actionBarRef` is the DISMISSAL BOUNDS, and it has to contain both the
+   * trigger and the card. The config dismisses on outside mousedown, so with
+   * bounds covering only the card, Run's own mousedown would dismiss it a
+   * moment before its click re-opened it — and the toggle could never close.
+   */
+  const [flowRef, setFlowRef] = useState<ActionRef | null>(null);
+  const actionBarRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * THE CONFIG BELONGS TO ONE ENTITY, AND ONLY `PanelStack` KEYS ITS PANELS.
+   *
+   * `EntityView`, `ChannelView` and `GraphScreen` each mount ONE panel and
+   * change `selectedId` underneath it, so this component's state survives the
+   * switch. The card dismisses on outside mousedown and on Escape; a BACK
+   * PRESS fires neither. So it stayed open across the navigation and
+   * `subject={detail}` silently re-pointed it at whatever entity arrived —
+   * press Launch and you spawn against something the card never named. When
+   * the new kind has no launch verb the trigger is gone too, leaving a config
+   * nothing owns.
+   *
+   * Adjusted DURING RENDER rather than in an effect, deliberately: an effect
+   * would paint one frame of the previous entity's config over the new
+   * entity first, which is the same lie for 16ms. Keyed on IDENTITY alone —
+   * anything broader (a counter tick, a streamed message) would slam the card
+   * shut mid-edit, which is a worse bug than the one it fixes.
+   *
+   * "Identity" INCLUDES absence: `detail` going momentarily undefined for the
+   * same entity — a cache refetch — also closes it. Stated because the rule
+   * above reads narrower than the code, and this is the honest description.
+   * Kept rather than special-cased: the config is a commitment surface, and
+   * leaving one open over a loading skeleton is the same claim-without-a-
+   * subject the reset exists to prevent.
+   */
+  const [flowSubjectId, setFlowSubjectId] = useState(detail?.id);
+  if (detail?.id !== flowSubjectId) {
+    setFlowSubjectId(detail?.id);
+    if (flowRef !== null) setFlowRef(null);
+  }
   const selectTab = (t: PanelTab) => {
     setUncontrolledTab(t);
     onTabChange?.(t);
@@ -509,6 +581,7 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               />
             ) : null}
             <ActionBar
+              barRef={actionBarRef}
               config={config}
               ctx={{
                 ...ctx,
@@ -519,6 +592,58 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
               }}
               onAction={props.onAction}
               wiredActions={props.wiredActions}
+              openFlow={flowRef}
+              /* Only when the host actually has launch sources. Without them
+                 the expand would render an empty teammate select over an
+                 un-committable Launch — a config that cannot configure is a
+                 worse answer than the honest "not wired here" refusal. */
+              onFlow={props.launch ? setFlowRef : undefined}
+              flowSurface={
+                flowRef && props.launch ? (
+                  <LaunchQuickConfig
+                    subject={detail}
+                    /* The mode is the VERB's, read off the registry — so
+                       Coordinate commits a coordinator and not Run's worker,
+                       and no component here has to name either verb. */
+                    /* THE CARD BELONGS TO ONE VERB, SO THE VERB IS ITS IDENTITY.
+                       `mode` and `verbLabel` are props, but the config is STATE
+                       seeded once. Without this key, pressing Coordinate then
+                       Run reused the instance: the heading re-rendered to "Run
+                       configuration" over a config still holding
+                       mode:'coordinator', and Launch spawned a coordinator
+                       under a button labelled Run. The dismissal cannot save it
+                       either — the other verb's button is inside the same
+                       `actionBarRef` bounds as the card. Remounting also clears
+                       the refusal, pending and access-mode state, all of which
+                       are equally stale across a verb switch. */
+                    key={flowRef}
+                    verbLabel={resolveAction(flowRef).label}
+                    {...(resolveAction(flowRef).launchMode
+                      ? { mode: resolveAction(flowRef).launchMode }
+                      : {})}
+                    spaceId={props.launch.spaceId || ctx.spaceId}
+                    teammates={props.launch.teammates}
+                    projects={props.launch.projects}
+                    loadFor={props.launch.loadFor}
+                    capacity={props.launch.capacity}
+                    profileFor={props.launch.profileFor}
+                    onSpawn={props.launch.onSpawn}
+                    onFullOptions={
+                      props.launch.onFullOptions
+                        ? () => {
+                            props.launch?.onFullOptions?.(detail.id);
+                            setFlowRef(null);
+                          }
+                        : undefined
+                    }
+                    onDismiss={() => setFlowRef(null)}
+                    boundsRef={actionBarRef}
+                    newClientMutationId={() =>
+                      props.launch?.mutationId(detail.id) ?? newLaunchMutationId()
+                    }
+                  />
+                ) : null
+              }
             />
             {config.list.inlineEdit?.title || config.list.inlineEdit?.status ? (
               <SaveControls save={save} />

@@ -41,11 +41,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { CommandResult, CreateEntityInput, EntityDetail, SpaceId } from '@tm8/contract';
-import { getKind, REASONS as DOMAIN_REASONS, type ActionContext } from '../domain';
+import { getKind, REASONS as DOMAIN_REASONS, type ActionContext, type ActionRef } from '../domain';
 import { FIXTURE_SPACE_ID, channelDesign, fixtureDetails, presenceHollowReason, taskUuidTitle } from '../fixtures';
 import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { AuthoringCommands } from '../authoring';
-import { useEntityVerbs } from './useEntityVerbs';
+import { ENTITY_VERB_ACTIONS, useEntityVerbs } from './useEntityVerbs';
 
 afterEach(cleanup);
 
@@ -186,5 +186,21 @@ describe('edit opens the dialog for the SUBJECT’s kind, not the list’s', () 
     expect(fields).toEqual(['Name', 'Topic']);
     // Built from the registry `label`, so a renamed kind renames the dialog.
     expect(title).toBe('Edit channel');
+  });
+});
+
+describe('ENTITY_VERB_ACTIONS is the handler map, not a second statement of it', () => {
+  it('a subject that can do everything wires exactly the advertised set', () => {
+    // `panel-primaries-wired.test.tsx` reads the constant to decide which
+    // primaries have NO executor anywhere. If the map grew a verb and the
+    // constant did not, that guard would go on calling a wired verb refused.
+    const { commands } = commandsSpy();
+    let wired: readonly ActionRef[] = [];
+    function Probe() {
+      wired = useEntityVerbs({ detail: CHANNEL, spaceId: FIXTURE_SPACE_ID as SpaceId, commands }).wiredActions;
+      return null;
+    }
+    render(<Probe />);
+    expect([...wired].sort()).toEqual([...ENTITY_VERB_ACTIONS].sort());
   });
 });

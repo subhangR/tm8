@@ -41,6 +41,15 @@ import {
 } from '../authoring';
 import { getKind, placeholderNameFor, titleNormalizerFor, type ActionRef, type KindConfig } from '../domain';
 
+/**
+ * EVERY VERB THIS HOOK CAN PERFORM — the second panel dispatcher's counterpart
+ * to `PANEL_PRIMARY_ACTIONS`, so a guard can ask "does any executor cover this
+ * primary?" without knowing which lane wrote it. The per-subject `wiredActions`
+ * below is a SUBSET of this: `edit` drops out on a kind with no `editFields`.
+ * Pinned to the handler map by `entity-verbs.test.tsx`, so the two cannot drift.
+ */
+export const ENTITY_VERB_ACTIONS: readonly ActionRef[] = ['edit', 'add-child'];
+
 export interface EntityVerbsHandle {
   /** Pass to `EntityDetailPanel.onAction`. */
   onAction(ref: ActionRef): void;
