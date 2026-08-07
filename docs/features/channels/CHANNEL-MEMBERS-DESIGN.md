@@ -1,8 +1,63 @@
 # Channel members
 
-**Status:** designed, not built. Deferred from task `019fd744` item 4 by user
-ruling 2026-08-07 ("for now ignore this, but create a design doc and tm8 task
-for this to pick up later").
+**Status: BUILT, 2026-08-07** (migration `080_channel_members.sql`). Originally
+deferred from task `019fd744` item 4 by user ruling 2026-08-07 ("for now ignore
+this, but create a design doc and tm8 task for this to pick up later"), then
+picked up and shipped.
+
+The body below is the design AS DESIGNED. It is left intact rather than
+rewritten, because the implementation departed from it in two places and
+retired one acceptance criterion, and a design doc quietly edited to match what
+was built stops being evidence of anything. What actually shipped:
+
+### Departure 1 — the edge points the other way, and is named `has_member`
+
+Designed: `member_of_channel`, member → channel. Shipped: **`has_member`,
+channel → member**, on user ruling.
+
+It is not a preference. `attachInitialConnections`
+(`packages/server/src/facade/services/w2/entities-commands-tracking.ts`) hard-codes
+`src_id` to the newly created entity. `CreateEntityInput.connections` is the only
+path that can add members *while creating a channel* — which is half of what the
+ticket asks — so an edge whose source is the member could never be written by it.
+Entity → person is also the house idiom (`assigned_to` is task → member).
+
+### Departure 2 — `role` is a plain string, not an enum
+
+Designed: `{"role":{"enum":["owner","member"]}}`. Shipped: `{"role":{"type":"string"}}`.
+
+`internal.validate_edge_props_schema` / `internal.edge_json_type_matches`
+(migration 001) understand exactly three keywords: `type`, `required`,
+`additionalProperties`. There is no `enum` branch. An `enum` key would have been
+stored, read, matched against nothing and **silently ignored** — a constraint
+that looks enforced in the catalog and enforces nothing. So `role` is advisory
+and is documented as advisory in the migration header. Constraining it is a
+later migration if it is ever wanted.
+
+### Retired — acceptance criterion 5 (idempotency)
+
+AC 5 asked for a unique index and a real-DB test proving a double-add is
+idempotent. No new index shipped, because migration 001 already declares
+`unique (src_id, dst_id, type)` on `public.edges` — the exact constraint AC 5
+asks for, covering every edge type including this one. `attachInitialConnections`
+additionally pre-checks. The DB test still exercises the double-add; what was
+retired is the redundant index, not the proof.
+
+### What shipped, by file
+
+- `db/migrations/080_channel_members.sql` — registers the edge type.
+- `db/test/channel_members.test.mjs` — 6 tests against a real DB.
+- `packages/contract` — `members: ActorSummary[]` on the channel state arm.
+- `packages/server` — `entity-read.ts` relation load + `projector.ts` projection.
+- `packages/tm8-ui` — one registry `assignControl`, plus fixtures and
+  `panels/detail/channel-members.test.tsx`.
+
+No new server operation and no new UI control component: add/remove is the
+existing generic `edges.create` / `edges.delete`, and the roster is the existing
+`AssignControl` pointed at a different `source` and `edgeType`.
+
+---
+
 
 > "Channel has members. Should be able to add members while creating or
 > updating a channel." — task `019fd744`, item 4
