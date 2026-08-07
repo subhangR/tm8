@@ -267,6 +267,13 @@ export type ActionRef =
   | 'restore'
   | 'pull'
   | 'link'
+  // Opens the kind's `editFields` dialog. A SEPARATE VERB from the inline
+  // title editor on purpose: inline edit reaches exactly one member (the
+  // title) with one gesture, and a kind whose shape needs more than that —
+  // a channel's optional topic, the members roster that lands next — has
+  // nowhere to put the rest. Rendered only where `editFields` is declared,
+  // so a kind that has nothing to edit does not grow an empty dialog.
+  | 'edit'
   | 'add-child'
   | 'react'
   | 'grant-points'
@@ -696,6 +703,36 @@ export type RouteStrategy = 'collection' | 'special' | 'anchored';
 export const CUSTOM_KIND_FALLBACK = 'c:*' as const;
 export type CustomKindFallback = typeof CUSTOM_KIND_FALLBACK;
 
+/**
+ * ONE FIELD IN THE `edit` DIALOG.
+ *
+ * The two targets are NOT interchangeable and the split is the contract's, not
+ * a style choice: `PatchEntityInput` carries `title` as its own member and
+ * everything else inside `content`, which the server then routes to the kind's
+ * update RPC (`update_channel(p_name, p_topic)`, entities-commands-tracking.ts
+ * :1114). A field that named `content.title` would be silently dropped.
+ *
+ * `required` is about the SERVER'S constraint, not about taste. A channel's
+ * name is its `channels.name` column — `not null`, check-constrained, unique
+ * per space — so an empty one is a refusal, and the dialog says so before
+ * spending a round trip. `topic` is `not null default ''`, which is exactly
+ * what makes it OPTIONAL here: omitting it is a real, storable value.
+ */
+export interface EditFieldSpec {
+  /** `'title'` patches `PatchEntityInput.title`; `'content'` patches `content[source]`. */
+  target: 'title' | 'content';
+  /** The member name inside `content`. Required when `target` is `'content'`. */
+  source?: string;
+  label: string;
+  /** Empty is refused in the dialog rather than at the server. */
+  required?: boolean;
+  /** Coerce every keystroke through `titleNormalizerFor`'s grammar. */
+  grammar?: 'slug';
+  placeholder?: string;
+  /** Draw a textarea rather than an input. */
+  multiline?: boolean;
+}
+
 export interface KindConfig {
   kind: CoreEntityKind | CustomKindFallback;
   label: string;
@@ -732,6 +769,21 @@ export interface KindConfig {
    * editor show the real name while it is being typed instead.
    */
   titleGrammar?: 'slug';
+  /**
+   * The fields the `edit` verb's dialog offers, in the order it draws them.
+   *
+   * REGISTRY DATA, and it has to be. The dialog is ONE component serving every
+   * kind — `src/authoring/` is scanned by `no-kind-literals.test.ts`, which
+   * fails the build on the string `'channel'` appearing anywhere in that lane,
+   * so a hand-written per-kind form cannot live where the save flow lives. The
+   * kind declares its shape here and the component renders whatever it is
+   * handed, exactly as `list` and `panel` already work.
+   *
+   * ABSENT MEANS NO DIALOG, not an empty one: `edit` is filtered out of the
+   * action bar for a kind that declares nothing, so no kind grows a verb that
+   * opens onto nothing.
+   */
+  editFields?: readonly EditFieldSpec[];
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

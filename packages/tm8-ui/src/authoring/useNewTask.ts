@@ -56,6 +56,16 @@ export interface NewTaskOptions {
    * channel list could not show.
    */
   kind: EntityKind;
+  /**
+   * The entity the new one hangs under, when this control is a CHILD-create
+   * rather than a root-create. The `add-child` verb on an open entity passes
+   * that entity's id; a list header's `＋ New` passes nothing.
+   *
+   * The graph makes no distinction — `parentId` is kind-agnostic — so one
+   * flow serves both, and a channel created under a channel is a subchannel
+   * with no second code path to keep in step with this one.
+   */
+  parentId?: EntityId | null;
   /** From the kind registry's `label` via `placeholderTitleFor` — never a literal. */
   placeholderTitle: string;
   /** Null ⇒ no executor is wired, and the control says so. */
@@ -82,7 +92,7 @@ const NOT_CREATABLE = {
 } as const;
 
 export function useNewTask(options: NewTaskOptions): NewTaskHandle {
-  const { spaceId, kind, placeholderTitle, commands, onCreated, refusal } = options;
+  const { spaceId, kind, parentId, placeholderTitle, commands, onCreated, refusal } = options;
   const [state, setState] = useState<NewTaskPhase>({ phase: 'idle' });
 
   const creatable = creatableKind(kind);
@@ -105,7 +115,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     setState({ phase: 'creating' });
     try {
       const result = await commands.createEntity(
-        newEntityInput(spaceId, creatable, placeholderTitle),
+        newEntityInput(spaceId, creatable, placeholderTitle, parentId),
       );
       const id = createdIdOf(result);
       if (id === null) {
@@ -134,7 +144,7 @@ export function useNewTask(options: NewTaskOptions): NewTaskHandle {
     } catch (error) {
       setState({ phase: 'refused', failure: asRefused(error) });
     }
-  }, [commands, creatable, onCreated, placeholderTitle, spaceId, state.phase]);
+  }, [commands, creatable, onCreated, parentId, placeholderTitle, spaceId, state.phase]);
 
   const dismiss = useCallback(() => setState({ phase: 'idle' }), []);
 

@@ -15,6 +15,7 @@ export {
   classifyFailure,
   creatableKind,
   createdIdOf,
+  entityPatchInput,
   newEntityInput,
   nextMutationId,
   placeholderTitleFor,
@@ -22,11 +23,18 @@ export {
   type AuthoringCommands,
   type AuthoringFailure,
   type ConflictFailure,
+  type EntityEdits,
   type RefusedFailure,
   type TaskEdits,
 } from './commands';
 
 export { useNewTask, type NewTaskHandle, type NewTaskOptions, type NewTaskPhase } from './useNewTask';
+export {
+  useEntityEdit,
+  type EntityEditHandle,
+  type EntityEditOptions,
+  type EntityEditPhase,
+} from './useEntityEdit';
 export {
   useTaskSave,
   type SavePhase,
@@ -35,6 +43,13 @@ export {
   type UnavailableReason,
 } from './useTaskSave';
 
+export {
+  EditEntityDialog,
+  editsFrom,
+  fieldKey,
+  missingRequired,
+  type DialogField,
+} from './EditEntityDialog';
 export { InlineTitleEditor } from './InlineTitleEditor';
 export { NewTaskControl } from './NewTaskControl';
 export { RefusalCard, type RefusalMove } from './RefusalCard';

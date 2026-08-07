@@ -244,16 +244,39 @@ export function ActionBar({
   config,
   ctx,
   onAction,
+  wiredActions,
 }: {
   config: KindConfig;
   ctx: ActionContext;
   onAction?: (ref: ActionRef) => void;
+  /**
+   * WHICH VERBS THE HOST ACTUALLY HANDLES. Omitted ⇒ "all of them", which is
+   * exactly the behaviour before this prop existed, so no existing caller
+   * changes meaning.
+   *
+   * IT EXISTS BECAUSE `onAction` IS ALL-OR-NOTHING AND THE HOSTS ARE NOT.
+   * The structural check below reads a MISSING handler as "nothing here is
+   * wired" — correct while no host passed one at all, and a lie the moment one
+   * does: wiring `edit` would have lit up `add-child` beside it as a live
+   * button that dispatched into a switch with no arm for it. That is the
+   * enabled-and-inert regression R5 #9 names, arrived at from the other
+   * direction. The set is derived from the host's own handler map, not typed
+   * out twice, so a verb cannot be advertised here and unhandled there.
+   */
+  wiredActions?: readonly ActionRef[];
 }) {
   const primaries = config.panel.primaries ?? [];
   return (
     <div className="pn-actions pn-actions--inline" data-testid="panel-action-bar">
       {primaries.map((ref) => (
-        <ActionButton key={ref} ref_={ref} ctx={ctx} onAction={onAction} primary />
+        <ActionButton
+          key={ref}
+          ref_={ref}
+          ctx={ctx}
+          onAction={onAction}
+          wiredActions={wiredActions}
+          primary
+        />
       ))}
     </div>
   );
@@ -263,11 +286,13 @@ function ActionButton({
   ref_,
   ctx,
   onAction,
+  wiredActions,
   primary = false,
 }: {
   ref_: ActionRef;
   ctx: ActionContext;
   onAction?: (ref: ActionRef) => void;
+  wiredActions?: readonly ActionRef[];
   primary?: boolean;
 }) {
   const def = resolveAction(ref_);
@@ -279,7 +304,7 @@ function ActionButton({
    * that did nothing when clicked — the user cannot distinguish that from a
    * broken app. Structural check, so it cannot drift from what is wired.
    */
-  if (!onAction) {
+  if (!onAction || (wiredActions !== undefined && !wiredActions.includes(ref_))) {
     return (
       <DisabledIconControl label={def.label} glyph={def.icon} reason={NOT_WIRED_REASON}>
         {primary ? def.label : null}

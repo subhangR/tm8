@@ -925,3 +925,66 @@ describe('the ActionRef registry (§2.5)', () => {
     expect(calls).toEqual([{ action: 'terminate', entityId: 'sess-1' }]);
   });
 });
+
+/**
+ * §15.1 — THE `edit` VERB AND ITS FIELDS ARE ONE DECLARATION.
+ *
+ * The dialog is generic: it draws whatever `editFields` names and nothing else.
+ * That makes two half-declarations possible, and both are silent failures
+ * rather than crashes, which is why they are asserted here rather than left to
+ * a reviewer:
+ *
+ *   · `edit` in `primaries` with no `editFields` — a live button that opens a
+ *     dialog with no inputs. `EditEntityDialog` renders null on an empty array,
+ *     so the verb would simply do nothing when pressed. That is the
+ *     enabled-and-inert shape R5 #9 names, and this is the only control that
+ *     would ever see it.
+ *   · `editFields` with no `edit` verb — fields declared and unreachable, so a
+ *     kind's topic becomes uneditable again exactly as it was before this work,
+ *     and every test of the dialog stays green while the app loses the feature.
+ *
+ * Driven off `allKinds()` so a kind added tomorrow is covered without anyone
+ * remembering to add it here.
+ */
+describe('§15.1 — edit declares its fields, and fields declare their verb', () => {
+  it('every kind offering `edit` declares the fields the dialog will draw', () => {
+    const offenders = allKinds()
+      .filter((k) => (k.panel.primaries ?? []).includes('edit'))
+      .filter((k) => (k.editFields?.length ?? 0) === 0)
+      .map((k) => k.kind);
+    expect(offenders, `edit opens an empty dialog on: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('every kind declaring fields offers the verb that reaches them', () => {
+    const offenders = allKinds()
+      .filter((k) => (k.editFields?.length ?? 0) > 0)
+      .filter((k) => !(k.panel.primaries ?? []).includes('edit'))
+      .map((k) => k.kind);
+    expect(offenders, `fields are unreachable on: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('a content field names the member it patches; a title field does not need one', () => {
+    // `PatchEntityInput` carries `title` at the top level and everything else
+    // inside `content` — a content field with no `source` would serialize as
+    // `content[''] = value` and be dropped by the server's kind dispatch.
+    const offenders: string[] = [];
+    for (const kind of allKinds()) {
+      for (const field of kind.editFields ?? []) {
+        if (field.target === 'content' && !field.source) offenders.push(`${kind.kind} → ${field.label}`);
+      }
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  it('the channel offers exactly Name and an OPTIONAL Topic (user ruling 2026-08-07)', () => {
+    const fields = getKind('channel').editFields ?? [];
+    expect(fields.map((f) => [f.label, Boolean(f.required)])).toEqual([
+      ['Name', true],
+      // `channels.topic` is `not null default ''` — an omitted topic is a value
+      // the database already stores, which is what makes optional honest here.
+      ['Topic', false],
+    ]);
+    // The name IS `channels.name`, so it carries that column's grammar.
+    expect(fields[0]?.grammar).toBe('slug');
+  });
+});

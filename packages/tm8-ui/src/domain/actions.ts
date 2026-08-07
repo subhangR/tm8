@@ -233,6 +233,20 @@ const ACTIONS: Readonly<Record<ActionRef, ActionDef>> = {
     (ctx) => opGate(ctx, 'edges.create') ?? capabilityGate(ctx, 'canLink', REASONS.cannotLink) ?? AVAILABLE,
   ),
 
+  /**
+   * Opens the kind's `editFields` dialog.
+   *
+   * GATED ON `entities.patch`, the operation the dialog actually dispatches —
+   * not on `entities.commands.work`, which is the task-state verb and would
+   * have let the button light up on a node that refuses the write it makes.
+   */
+  edit: define(
+    'edit',
+    'Edit',
+    '✎',
+    (ctx) => opGate(ctx, 'entities.patch') ?? capabilityGate(ctx, 'canEdit', REASONS.cannotEdit) ?? AVAILABLE,
+  ),
+
   'add-child': define(
     'add-child',
     'Add child',

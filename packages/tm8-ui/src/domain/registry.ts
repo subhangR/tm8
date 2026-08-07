@@ -564,6 +564,45 @@ const ROWS: readonly KindConfig[] = [
     icon: '#',
     iconArt: KIND_ART.channel,
     titleGrammar: 'slug',
+    /**
+     * NAME AND TOPIC, AND DELIBERATELY NOTHING ELSE (user ruling 2026-08-07,
+     * task 019fd744 "feature/Channels" items 1/3/5/6).
+     *
+     * The ticket is a list of things a channel is NOT: not stateful, not
+     * assigned, not prioritised, no acceptance criteria, no subtree, no runs,
+     * no attachments. Those were never channel fields — `＋ New channel`
+     * created a TASK until #42, and a task panel is what the reporter was
+     * looking at. What was missing once that was fixed is the other half:
+     * `channels.topic` has been readable in the hub body since the archetype
+     * landed and writable from nowhere in the app.
+     *
+     * TOPIC IS OPTIONAL because the column is `not null default ''` (001:504)
+     * — an omitted topic is a value the database already stores, not a hole.
+     * `update_channel` COALESCEs a null topic to the existing one (007:1095),
+     * so clearing it sends `''` and not `null`.
+     *
+     * MEMBERS ARE NOT HERE YET, and their absence is a filed decision rather
+     * than an oversight: no membership edge exists (`member_of` is
+     * team_member→team_member, 001:922) so there is nothing to render. They
+     * become one more entry in this array once the edge lands — which is the
+     * point of the field being data.
+     */
+    editFields: [
+      {
+        target: 'title',
+        label: 'Name',
+        required: true,
+        grammar: 'slug',
+        placeholder: 'design-review',
+      },
+      {
+        target: 'content',
+        source: 'topic',
+        label: 'Topic',
+        placeholder: 'What is this channel about?',
+        multiline: true,
+      },
+    ],
     slug: 'channels',
     strategy: 'collection',
     routeBuilder: (spaceId, id) => `#/s/${spaceId}/channel/${id}`,
@@ -579,7 +618,15 @@ const ROWS: readonly KindConfig[] = [
     // composition:'chat' — the hub body is a conversation ending at its
     // composer: no AttachmentStrip (the composer's + owns attach) and no
     // PanelFooter below it.
-    panel: { archetype: 'hub', composition: 'chat', primaries: ['add-child'] },
+    /**
+     * `add-child` IS THE SUBCHANNEL VERB (user ruling 2026-08-07). The graph
+     * has always allowed it — `entities.parentId` is kind-agnostic and this
+     * row's `tree: { by: 'hierarchy' }` already draws the nesting — but the
+     * verb rendered disabled-with-reason on every panel in the app because no
+     * host ever passed an `onAction`. It is wired now (`views/useEntityVerbs`),
+     * so the channel that is open is the parent of what it creates.
+     */
+    panel: { archetype: 'hub', composition: 'chat', primaries: ['edit', 'add-child'] },
     palette: { createLabel: 'New channel' },
   },
 
