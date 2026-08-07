@@ -78,6 +78,39 @@ export interface AgentCredentialPort {
   revoke(auth: GraphAuth, workSessionId: string): Promise<void>;
 }
 
+/**
+ * A third-party git credential belonging to the human who launched a session.
+ *
+ * Plaintext, and the only plaintext secret this package ever holds. It exists
+ * for exactly as long as it takes `composeEnv` to place it in a child's
+ * environment: nothing in the spawn flow stores it, records it, or logs it, and
+ * the manifest written to disk is composed BEFORE it is read.
+ */
+export interface GitCredential {
+  readonly provider: 'github';
+  /** Display name on the provider. May be null on a row stored without one. */
+  readonly login: string | null;
+  readonly token: string;
+}
+
+/**
+ * Server-owned credential lookup, mirroring `AgentCredentialPort`: execution
+ * asks, the server decrypts. Implemented over `Db` in
+ * `packages/server/src/facade/services/w2/git-credentials-port.ts`.
+ *
+ * `forSpawner` takes the SPAWNER's claims and answers with THEIR credential —
+ * there is no parameter naming an account, a persona or a session, because
+ * asking for someone else's credential must not be expressible.
+ *
+ * It resolves `null` rather than rejecting when there is nothing to inject. An
+ * account that has not connected GitHub is the normal case, not an error, and
+ * a launch that failed because of it would be a regression for every session
+ * that never needed git at all.
+ */
+export interface GitCredentialPort {
+  forSpawner(auth: GraphAuth): Promise<GitCredential | null>;
+}
+
 // --- what the graph must be able to do for us --------------------------------
 
 export interface LoadSpawnContextInput {

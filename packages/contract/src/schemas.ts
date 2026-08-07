@@ -39,6 +39,7 @@ import type {
   ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
+  GitCredentialDeleteResult, GitCredentialSetInput, GitCredentialStatus,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
@@ -52,6 +53,7 @@ import type {
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
+  ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing, ProjectShareMode,
   ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
@@ -1077,6 +1079,47 @@ export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.obj
   session: AuthSessionViewSchema.nullable(),
 }).strict();
 
+// ---------------------------------------------------------------------------
+// gitCredentials.* — the caller's own third-party git identity (081).
+//
+// The token schema is the LAST place a malformed credential can be stopped
+// cheaply, and it is doing two different jobs. The length bound keeps a
+// mis-paste (a whole key file) from reaching the encrypt path. The character
+// class is the load-bearing one: this value becomes an ENVIRONMENT VARIABLE in
+// a spawned PTY, so a newline or a NUL in it is not a typo — it is a way to
+// inject a second variable, or to break the shell quoting of anything that
+// later interpolates it. Providers issue tokens from a printable ASCII
+// alphabet; anything else is refused rather than sanitised, because silently
+// rewriting a credential produces one that does not authenticate and a user who
+// cannot see why.
+// ---------------------------------------------------------------------------
+const GitCredentialProviderSchema = z.enum(['github']);
+
+export const GitCredentialSetInputSchema: z.ZodType<GitCredentialSetInput> = z.object({
+  provider: GitCredentialProviderSchema,
+  login: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9-]*$/, {
+    message: 'login must be a provider account name',
+  }),
+  // `!` through `~` — every printable ASCII character except space. Written as
+  // a literal range rather than a hex escape so the intent survives a reader.
+  token: z.string().min(8).max(1024).regex(/^[!-~]+$/, {
+    message: 'token must contain only printable non-space ASCII',
+  }),
+}).strict();
+
+export const GitCredentialStatusSchema: z.ZodType<GitCredentialStatus> = z.object({
+  connected: z.boolean(),
+  provider: GitCredentialProviderSchema,
+  login: z.string().nullable(),
+  updatedAt: IsoTimestamp.nullable(),
+}).strict();
+
+export const GitCredentialDeleteResultSchema: z.ZodType<GitCredentialDeleteResult> = z.object({
+  connected: z.literal(false),
+  provider: GitCredentialProviderSchema,
+  deleted: z.boolean(),
+}).strict();
+
 export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({
   token: z.string(),
   label: z.string(),
@@ -1533,12 +1576,16 @@ export const ProjectDefaultsSchema: z.ZodType<ProjectDefaults> = z.object({
   mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).nullable().optional(),
 }).strict();
 
+export const ProjectShareModeSchema: z.ZodType<ProjectShareMode> = z.enum(['private', 'space']);
+
 export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
   id: ProjectIdSchema,
   name: z.string(),
   repoUrl: z.string().nullable().optional(),
   workingDir: z.string(),
   trust: ProjectTrustLevelSchema,
+  shareMode: ProjectShareModeSchema,
+  ownerAccountId: z.string().min(1).nullable(),
   defaults: ProjectDefaultsSchema,
   linkFrozen: z.boolean().optional(),
   activeLinkCount: z.number().int().nonnegative().optional(),
@@ -1554,6 +1601,8 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
   ensureWorkingDir: z.boolean().optional(),
+  shareMode: ProjectShareModeSchema.optional(),
+  spaceId: SpaceIdSchema.optional(),
 }).strict();
 
 export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({
@@ -1570,12 +1619,44 @@ export const ProjectDirectoryListingSchema: z.ZodType<ProjectDirectoryListing> =
   truncated: z.boolean(),
 }).strict();
 
+export const ProjectFileEntrySchema: z.ZodType<ProjectFileEntry> = z.object({
+  name: z.string().min(1),
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  modifiedAt: IsoTimestamp,
+  mime: z.string().min(1),
+  attachable: z.boolean(),
+}).strict();
+
+export const ProjectFileListingSchema: z.ZodType<ProjectFileListing> = z.object({
+  projectId: z.string().min(1),
+  workingDir: z.string().min(1),
+  path: z.string().min(1),
+  parentPath: z.string().min(1).nullable(),
+  separator: z.enum(['/', '\\']),
+  directories: z.array(ProjectDirectoryEntrySchema),
+  files: z.array(ProjectFileEntrySchema),
+  truncated: z.boolean(),
+  maxSizeBytes: z.number().int().positive(),
+}).strict();
+
+export const ProjectFileAttachInputSchema: z.ZodType<ProjectFileAttachInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpaceIdSchema,
+  path: z.string().min(1),
+  name: z.string().min(1).optional(),
+  mime: z.string().min(1).optional(),
+  targets: uniqueArray(EntityIdSchema, 0, 16).optional(),
+}).strict();
+
 export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1).optional(),
   workingDir: z.string().min(1).optional(),
   repoUrl: z.string().nullable().optional(),
   trust: ProjectTrustLevelSchema.optional(),
+  shareMode: ProjectShareModeSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
 }).strict();
 

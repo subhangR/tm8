@@ -16,10 +16,19 @@ type ReadMarkResult = { anchorId: string; lastReadAt: string };
 describe("W3.G08 agentic generated-discovery inbox/read-mark gate", () => {
   let harness: Awaited<ReturnType<typeof startW3PublicServer>> | undefined;
 
+  // Teardown drops the scratch database and removes the data dir. Under a
+  // loaded box that has run past Vitest's default 10s `hookTimeout`, so it is
+  // pinned explicitly rather than left to the default.
   afterEach(async () => {
     await harness?.close();
-  });
+  }, 60_000);
 
+  // See the note on g03-agentic-retest: `startW3PublicServer` runs inside the
+  // test body and costs ~4.5s (scratch database + all migrations + a real
+  // server bootstrap) against Vitest's default 5000ms `testTimeout`, which is
+  // what this package gets since it ships no vitest config. The case passed
+  // solo at ~4.68s purely by margin and failed the moment anything else ran
+  // beside it. Raising the budget changes no assertion.
   it("keeps personal and Teammate notification/read state separate across replay-safe mutations", async () => {
     harness = await startW3PublicServer("agentic_g08");
     const run = `g08-${Date.now()}`;
@@ -176,5 +185,5 @@ describe("W3.G08 agentic generated-discovery inbox/read-mark gate", () => {
       ]),
     });
     console.log("G08 bounded database outcome", JSON.stringify(databaseOutcome));
-  });
+  }, 120_000);
 });

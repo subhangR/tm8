@@ -4,6 +4,13 @@ import { startW3PublicServer, successData } from "../public-harness.js";
 import { observeG05DatabaseOutcome } from "../agentic-observer.js";
 
 describe("W3 G05 agentic public discovery workflow", () => {
+  // See the note on g03-agentic-retest: `startW3PublicServer` runs inside the
+  // test body and costs ~4.5s (scratch database + all migrations + a real
+  // server bootstrap) against Vitest's default 5000ms `testTimeout`, which is
+  // what this package gets since it ships no vitest config. The case was
+  // dying on the clock with every assertion already satisfied — the evidence
+  // line it prints at the end was reaching stdout on the same run that
+  // "failed". Raising the budget weakens nothing.
   it("discovers and runs a collection, graph, and undo workflow", async () => {
     const harness = await startW3PublicServer("agentic_g05");
 
@@ -154,5 +161,5 @@ describe("W3 G05 agentic public discovery workflow", () => {
     } finally {
       await harness.close();
     }
-  });
+  }, 120_000);
 });

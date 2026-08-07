@@ -13,12 +13,15 @@ import {
   type ProjectUpdateInput,
 } from '@tm8/contract';
 
+import { resolve } from 'node:path';
+
 import type { Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, optionalUuid, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
 import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+import { requireInScope, workspaceScopeFor } from './workspace-scope.js';
 
 export interface ProjectRow {
   id: string;
@@ -26,6 +29,8 @@ export interface ProjectRow {
   repo_url: string | null;
   working_dir: string;
   trust: string;
+  share_mode: string;
+  owner_account_id: string | null;
   defaults: Record<string, unknown> | null;
   link_frozen: boolean;
   active_link_count: number;
@@ -107,7 +112,7 @@ interface CorrectionEdgeRow {
 }
 
 const PROJECT_SELECT = `
-  select id, name, repo_url, working_dir, trust, defaults,
+  select id, name, repo_url, working_dir, trust, share_mode, owner_account_id, defaults,
          link_frozen, active_link_count, created_at, updated_at
     from public.projects`;
 
@@ -118,6 +123,8 @@ export function toProjectResource(row: ProjectRow): ProjectResource {
     repoUrl: row.repo_url,
     workingDir: row.working_dir,
     trust: row.trust as ProjectResource['trust'],
+    shareMode: row.share_mode as ProjectResource['shareMode'],
+    ownerAccountId: row.owner_account_id,
     defaults: (row.defaults ?? {}) as ProjectResource['defaults'],
     linkFrozen: row.link_frozen,
     activeLinkCount: Number(row.active_link_count),
@@ -301,6 +308,7 @@ function updatePatch(input: ProjectUpdateInput): Record<string, unknown> {
   if (input.workingDir !== undefined) patch.workingDir = input.workingDir;
   if (input.repoUrl !== undefined) patch.repoUrl = input.repoUrl;
   if (input.trust !== undefined) patch.trust = input.trust;
+  if (input.shareMode !== undefined) patch.shareMode = input.shareMode;
   if (input.defaults !== undefined) patch.defaults = input.defaults;
   return patch;
 }
@@ -308,12 +316,22 @@ function updatePatch(input: ProjectUpdateInput): Record<string, unknown> {
 export class W2ProjectsAssociationsService {
   constructor(private readonly deps: FacadeDeps) {}
 
+  /**
+   * Browse the caller's OWN workspace, and — for a node admin only — the wider
+   * `TM8_PROJECT_ROOTS` view they always had.
+   *
+   * This used to demand node-admin outright, which made it unreachable: the
+   * only node-admin account on a deployed node is the passwordless loopback
+   * `owner`, so no browser session could ever satisfy it. See
+   * `workspace-scope.ts` for the confinement model that replaced it, including
+   * what it does NOT protect against.
+   */
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
-    if (claimsFor(owner, ctx).nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to browse project directories');
-    }
-    return listProjectDirectories(ctx.query.get('path') ?? undefined);
+    const scope = await workspaceScopeFor(this.deps.db, claimsFor(owner, ctx));
+    const requested = ctx.query.get('path') ?? undefined;
+    if (requested) requireInScope(scope, resolve(requested));
+    return listProjectDirectories(requested ?? scope.home, scope.roots);
   };
 
   readonly listProjects = async (ctx: RequestContext): Promise<ProjectResource[]> => {
@@ -353,21 +371,44 @@ export class W2ProjectsAssociationsService {
     const input = ctx.body as ProjectCreateInput;
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    if (input.ensureWorkingDir && claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to create a project directory');
-    }
+    // Creating a project is no longer node-admin-only: a member connecting
+    // their own folder is the ordinary case this flow exists for, and
+    // confinement is a tighter answer than a privilege check.
+    //
+    // A NODE ADMIN IS DELIBERATELY NOT CONFINED HERE. Registering an arbitrary
+    // absolute path is existing behaviour that CLI and bootstrap callers rely
+    // on — /opt/tm8/staging is itself registered that way — and narrowing it
+    // would be a silent breaking change wearing a security badge. What is new
+    // is that an ordinary member may now create one AT ALL, and they get only
+    // their own workspace.
+    const scope = await workspaceScopeFor(this.deps.db, claims);
+    if (!scope.nodeAdmin) requireInScope(scope, resolve(input.workingDir));
     const workingDir = input.ensureWorkingDir
-      ? await ensureProjectWorkingDirectory(input.workingDir)
+      ? await ensureProjectWorkingDirectory(input.workingDir, scope.roots)
       : input.workingDir;
+    // `create_owned_project`, not `create_project`: the older RPC is
+    // node-admin-only, which is what made this flow unusable for the people it
+    // exists for. The newer one authorizes BOTH — a node admin keeps the
+    // unrestricted path, a member may create only a private project in their
+    // own name — so there is no branch here and no way for the two paths to
+    // drift apart.
+    //
+    // A member's project defaults to PRIVATE. Defaulting a personal workspace
+    // to Space-visible would publish someone's working directory the first
+    // time they forgot to say otherwise, and that is not a mistake they can
+    // take back once other people have seen it.
     const raw = await this.deps.db.rpc<ProjectMutationResult>(
       claims,
-      'create_project',
+      'create_owned_project',
       [
         input.name,
         workingDir,
         input.repoUrl ?? null,
         input.trust ?? 'untrusted',
         JSON.stringify(input.defaults ?? {}),
+        input.shareMode ?? (scope.nodeAdmin ? 'space' : 'private'),
+        null,
+        input.spaceId ?? null,
         envelope.clientMutationId ?? null,
       ],
     );
@@ -382,7 +423,7 @@ export class W2ProjectsAssociationsService {
     try {
       const raw = await this.deps.db.rpc<ProjectMutationResult>(
         claimsFor(owner, ctx, envelope),
-        'update_project_w2',
+        'update_owned_project',
         [projectId, JSON.stringify(updatePatch(input)), envelope.clientMutationId ?? null],
       );
       return toProjectResource(raw.project);

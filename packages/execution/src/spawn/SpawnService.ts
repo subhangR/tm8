@@ -34,6 +34,8 @@ import {
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import type {
+  GitCredential,
+  GitCredentialPort,
   GraphAuth,
   GraphPort,
   InteractionProfilePinContext,
@@ -62,6 +64,15 @@ export interface SpawnServiceOptions {
   bootSettlementMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
+  /**
+   * The launching human's git credential, if this node stores one for them.
+   *
+   * OPTIONAL, and its absence is a real deployment: a node built before 081, or
+   * one wired without the port, spawns agents with no GitHub identity at all —
+   * exactly the behaviour every session had before this existed. Nothing in the
+   * spawn flow branches on whether it is present beyond adding env vars.
+   */
+  gitCredentials?: GitCredentialPort;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -158,6 +169,7 @@ export class SpawnService {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  private readonly gitCredentials: GitCredentialPort | undefined;
   /** One fail-closed remediation pass per service lifetime. */
   private privateDataLayoutReady: Promise<void> | undefined;
 
@@ -188,6 +200,28 @@ export class SpawnService {
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+    this.gitCredentials = options.gitCredentials;
+  }
+
+  /**
+   * The spawner's git credential, or null — NEVER a rejection.
+   *
+   * Wrapped rather than awaited bare because a credential is an enhancement,
+   * not a precondition: a node whose credential key file is unreadable, or
+   * whose database hiccups on this one read, must still launch agents. The
+   * failure is logged with the port's own message and nothing else — no
+   * ciphertext, no token, no account id.
+   */
+  private async resolveGitCredential(auth: GraphAuth): Promise<GitCredential | null> {
+    if (!this.gitCredentials) return null;
+    try {
+      return await this.gitCredentials.forSpawner(auth);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: git credential lookup failed; launching without one', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /**
@@ -508,6 +542,10 @@ export class SpawnService {
         this.env,
       );
 
+      // Read AFTER the manifest is composed, so the plaintext cannot reach it
+      // even by accident: `composeManifest` has already run and its output is
+      // what gets written to disk and recorded in the graph.
+      const gitCredential = await this.resolveGitCredential(auth);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -515,7 +553,11 @@ export class SpawnService {
         this.env,
         this.journalPathFor(sessionId),
         agentToken,
+        gitCredential,
       );
+      // NAMES, sorted — the same derivation as before. `GH_TOKEN` appearing
+      // here is the record that a credential was injected; its VALUE has no
+      // path into this array.
       const envVarNames = Object.keys(env).sort();
 
       // Refuse BEFORE spawning if the agent CLI cannot be found, so the caller
@@ -841,6 +883,10 @@ export class SpawnService {
         this.env,
       );
 
+      // Re-read on every resume rather than reusing whatever the original
+      // launch had: a member who rotated or disconnected their token between
+      // runs gets the current answer, including "no credential at all".
+      const gitCredential = await this.resolveGitCredential(auth);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -848,6 +894,7 @@ export class SpawnService {
         this.env,
         this.journalPathFor(sessionId),
         agentToken,
+        gitCredential,
       );
       const envVarNames = Object.keys(env).sort();
 

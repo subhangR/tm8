@@ -236,6 +236,17 @@ const IDENTITY_V2_NET_NEW_OPERATIONS = [
 
 const ONBOARDING_NET_NEW_OPERATIONS = [
   'projects.directories.list',
+  // 2026-08-04: reading and attaching files out of the folder the row above
+  // connects. Both mount only where the node has file storage.
+  'projects.files.list',
+  'projects.files.attach',
+] as const;
+
+/** Per-user git credentials (081). Net-new, mounted unconditionally. */
+const GIT_CREDENTIAL_NET_NEW_OPERATIONS = [
+  'gitCredentials.set',
+  'gitCredentials.status',
+  'gitCredentials.delete',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -244,6 +255,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...CONSOLIDATION_NET_NEW_OPERATIONS,
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...ONBOARDING_NET_NEW_OPERATIONS,
+  ...GIT_CREDENTIAL_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -365,14 +377,15 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 107 -> 108 on 2026-08-01: `spaces.counts` joined the facade tranche.
     // 108 -> 109: `identity.profile.update` (Identity v2 Stage 0).
     // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
-    expect(registry.size).toBe(114);
+    expect(registry.size).toBe(119);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
         + TRANCHE_V3_NET_NEW_OPERATIONS.length
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
-        + ONBOARDING_NET_NEW_OPERATIONS.length,
+        + ONBOARDING_NET_NEW_OPERATIONS.length
+        + GIT_CREDENTIAL_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -518,7 +531,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 65 -> 66: identity.profile.update (Identity v2 Stage 0).
     // 66 -> 69 (2026-08-02): auth.signup/login/logout (Identity v2 Stage 1);
     // auth.session.get is a GET and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(69);
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(72);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -630,7 +643,11 @@ describe.sequential('W2.I02 real production public surface', () => {
 
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+    // 30_000 was not enough. Teardown drops a scratch database and removes a
+    // data dir; that was measured at 14.4s in isolation and scales with
+    // concurrent DB churn, so under a full-suite run this hook — not the test —
+    // was the thing that timed out. Matched to the beforeAll that built it.
+  }, 120_000);
 
   it('reports the exact 99-handler production composition and preserves 501/404 honesty', async () => {
     const healthResponse = await fetch(`${harness.baseUrl}/health`);
@@ -657,10 +674,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     // a red pin) and `identity.profile.update` (which reconciled it).
     // 120/118 -> 126/122 (2026-08-02): the four auth.* rows, all implemented.
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 126, implemented: 124 });
+    expect(health).toMatchObject({ ok: true, operations: 131, implemented: 129 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(harness.production.server.registry.size).toBe(124);
+    expect(harness.production.server.registry.size).toBe(129);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -675,7 +692,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(registered.size + residual.length).toBe(124);
+    expect(registered.size + residual.length).toBe(129);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

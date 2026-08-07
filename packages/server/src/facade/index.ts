@@ -42,7 +42,7 @@ export { loadActivity } from './handlers/activity.js';
 
 import { HandlerRegistry } from './registry.js';
 import type { Db } from '../db/types.js';
-import type { ServerConfig } from '../http/config.js';
+import { resolveServerDataDir, type ServerConfig } from '../http/config.js';
 import { createLoopbackOwnerResolver } from '../identity/loopback.js';
 import type { FacadeDeps } from './deps.js';
 import type { W2FilesServiceOptions } from './services/w2/files.js';
@@ -53,6 +53,7 @@ import { registerW2EntitiesCommandsTrackingHandlers } from './handlers/w2/entiti
 import { registerW2EntityKindsProfileHandlers } from './handlers/w2/entity-kinds-profiles.js';
 import { registerW2FeedContextHandlers } from './handlers/w2/feed-context.js';
 import { registerW2FileHandlers } from './handlers/w2/files.js';
+import { registerW2GitCredentialHandlers } from './handlers/w2/git-credentials.js';
 import { registerW2ArtifactHandlers } from './handlers/w2/artifacts.js';
 import { registerW2CollectionsGraphUndoHandlers } from './handlers/w2/graph-undo.js';
 import { registerW2IdentitySpacesHandlers } from './handlers/w2/identity-spaces.js';
@@ -62,6 +63,7 @@ import {
   registerW2MessagesHandoffsHandlers,
   type W2MessagesHandoffsServiceOptions,
 } from './handlers/w2/messages-handoffs.js';
+import { registerW2ProjectFilesHandlers } from './handlers/w2/project-files.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
@@ -134,6 +136,13 @@ export function registerFacadeHandlers(
   // auth.* (Identity v2 Stage 1): local accounts over the 007 RPC surface.
   registerW2AuthHandlers(registry, facade);
   registerW2ServerConnectionHandlers(registry, facade);
+  // gitCredentials.* (081): the caller's own GitHub identity, so their agent
+  // sessions push as them. `dataDir` is where the encryption key lives, and it
+  // is passed rather than resolved in the service for the same reason nothing
+  // else in this tree resolves configuration for itself.
+  registerW2GitCredentialHandlers(registry, facade, {
+    dataDir: deps.config.dataDir ?? resolveServerDataDir(),
+  });
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
@@ -141,6 +150,7 @@ export function registerFacadeHandlers(
   // than the environment: one place decides what this node is pointed at.
   registerVoiceHandlers(registry, facade, deps.config.livekit);
   if (deps.files) registerW2FileHandlers(registry, facade, deps.files);
+  if (deps.files) registerW2ProjectFilesHandlers(registry, facade, deps.files);
   if (deps.files) registerW2ArtifactHandlers(registry, facade, { blobStore: deps.files.blobStore });
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);

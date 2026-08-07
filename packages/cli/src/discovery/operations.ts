@@ -161,6 +161,59 @@ export const UNBOUND_NOTE =
  * target, and a `server`-targeted one is about the caller themself.
  */
 const ROWS: Record<OperationName, Row> = {
+  // ── git credentials (081) ────────────────────────────────────────────────
+  //
+  // ALL THREE HAVE NO CLI COMMAND, and the reason is the same one that made
+  // the feature necessary. A `tm8 git-credential set --token ghp_...` writes a
+  // live GitHub token into the shell history and the process table of a machine
+  // that is, by design, running other people's agents — and an agent session's
+  // every `tm8` invocation is appended verbatim to its command journal
+  // (TM8_JOURNAL_PATH), so the token would land in a file on disk as well. The
+  // credential is entered once, in the browser, over the same transport that
+  // already carries a password on `auth.login`.
+  //
+  // `status` and `delete` could safely be commands and are still withheld:
+  // shipping two thirds of a noun invites `tm8 git-credential set` to be
+  // guessed, and a noun that exists for reads but refuses its write reads as
+  // broken rather than as deliberate. Both remain fully discoverable here.
+  'gitCredentials.set': {
+    cmd: null,
+    sum: 'Store your own GitHub credential so your agent sessions act as you on GitHub',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['git', 'github', 'credential', 'token', 'push', 'clone', 'identity'],
+    reason: 'secret_entry_ui_only',
+    notes: [
+      'the token is encrypted with a node-local key before storage and is never returned by any operation',
+      'a spawned session receives it as GH_TOKEN/GITHUB_TOKEN in its process environment, never in a file',
+    ],
+  },
+  'gitCredentials.status': {
+    cmd: null,
+    sum: 'Report whether your GitHub credential is connected, and under which login',
+    authz: 'server',
+    input: 'none',
+    tags: ['git', 'github', 'credential', 'connected', 'status', 'identity'],
+    reason: 'secret_entry_ui_only',
+    notes: [
+      'answers with the login and a timestamp; there is no operation that returns the token',
+    ],
+  },
+  'gitCredentials.delete': {
+    cmd: null,
+    sum: 'Forget the GitHub credential this Server stores for you',
+    authz: 'server',
+    input: 'bound',
+    side: 'durable',
+    tags: ['git', 'github', 'credential', 'disconnect', 'forget', 'revoke'],
+    reason: 'secret_entry_ui_only',
+    notes: [
+      'idempotent: forgetting a credential that is not stored is not an error',
+      'stops future injection only — a token already exported by a running agent must be revoked at GitHub',
+    ],
+  },
+
   // ── identity & spaces ────────────────────────────────────────────────────
   'identity.get': {
     cmd: ['identity', 'get'],
@@ -848,6 +901,30 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'space',
     input: 'unbound',
   },
+  'projects.files.list': {
+    cmd: null,
+    sum: 'Browse files and folders inside one connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'folder', 'browse', 'local', 'attach'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'confined to the project working directory AND to TM8_PROJECT_ROOTS; symlink rows are omitted rather than followed',
+      'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
+  'projects.files.attach': {
+    cmd: null,
+    sum: 'Attach one file read from a connected project folder, without a browser byte transfer',
+    authz: 'project',
+    input: 'bound',
+    tags: ['file', 'attach', 'local', 'folder'],
+    reason: 'use_file_upload',
+    notes: [
+      'the browser cannot name an absolute node path, so a connected folder is readable only by the node holding it',
+      '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
+    ],
+  },
 
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
@@ -1476,6 +1553,7 @@ const ROWS: Record<OperationName, Row> = {
 const NOUN_BY_FAMILY: Record<string, string> = {
   identity: 'identity',
   auth: 'auth',
+  gitCredentials: 'git-credential',
   serverConnections: 'server',
   spaces: 'space',
   entities: 'entity',
@@ -1555,7 +1633,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:f243aaaff567f9d3e2a1080fbf713488e004eda2ecb7509220eeb4247baa5420';
 
 export const GRAMMAR_VERSION = '2';
 

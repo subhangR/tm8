@@ -47,6 +47,7 @@ import {
   FileUploadAbortInputSchema,
   FileUploadCompleteInputSchema,
   FileUploadInitInputSchema,
+  GitCredentialSetInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
   IdentityProfileUpdateInputSchema,
@@ -60,6 +61,7 @@ import {
   PlacementInputSchema,
   PostMessageInputSchema,
   ProjectCreateInputSchema,
+  ProjectFileAttachInputSchema,
   ProjectLinkInputSchema,
   ProjectUpdateInputSchema,
   PullInputSchema,
@@ -116,6 +118,21 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
   'auth.logout': AuthLogoutInputSchema,
+
+  // gitCredentials (081). `set` is the only one with a body, and its binding
+  // is a security control, not hygiene: the token it carries becomes an
+  // environment variable in a spawned PTY, so the character class in
+  // `GitCredentialSetInputSchema` is what keeps a newline out of a child's
+  // environment. `delete` takes no body at all — the provider is fixed and the
+  // subject is always the caller.
+  'gitCredentials.set': GitCredentialSetInputSchema,
+  // RequiredCommandContextSchema, not a fully-optional body: this is a durable
+  // command, and a durable command carries a mutation id so a retry replays
+  // instead of acting twice. A schema that accepts `undefined` would also make
+  // the binding pointless — the no-body probe would already reach the handler —
+  // which is exactly what W5.C's generator proof refuses. Same shape as
+  // `projects.unlink` and `spaces.invites.revoke`.
+  'gitCredentials.delete': RequiredCommandContextSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,
@@ -187,6 +204,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'projects.link': ProjectLinkInputSchema,
   'projects.unlink': RequiredCommandContextSchema,
   'projects.associations.correct': CorrectProjectAssociationInputSchema,
+  'projects.files.attach': ProjectFileAttachInputSchema,
 
   // artifacts (TM8-ARTIFACTS-DESIGN §8.1). Reads (revisions.list, export) are
   // path-addressed GETs and carry no body to bind.

@@ -33,6 +33,11 @@ type G01DatabaseOutcome = {
 };
 
 describe("W3.G01 agentic discovery workflow", () => {
+  // See the note on g03-agentic-retest: `startW3PublicServer` runs inside the
+  // test body and costs ~4.5s (scratch database + all migrations + a real
+  // server bootstrap) against Vitest's default 5000ms `testTimeout`, which is
+  // what this package gets since it ships no vitest config. Raising the budget
+  // changes no assertion.
   it("uses only discovered public operations for identity, Space, and task-axis work", async () => {
     const harness = await startW3PublicServer("agentic_g01");
     console.info(`G01 production public URL: ${harness.baseUrl}`);
@@ -150,5 +155,5 @@ describe("W3.G01 agentic discovery workflow", () => {
     } finally {
       await harness.close();
     }
-  });
+  }, 120_000);
 });

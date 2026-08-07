@@ -251,7 +251,7 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+    expect(health.operations).toBe(131); // 128 -> 131 (2026-08-05): per-user git credentials.
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

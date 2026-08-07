@@ -62,7 +62,6 @@ let server: RealServer;
 const measured: Record<string, unknown> = {};
 
 const SPACE = '00000000-0000-7000-8000-0000000000a1';
-const ENTITY = '00000000-0000-7000-8000-0000000000b2';
 
 beforeAll(async () => {
   await assertBuilt();
@@ -151,7 +150,7 @@ describe('the node, measured rather than reported', () => {
     expect(health.ok).toBe(true);
     // 121 catalog rows = 120 HTTP + the single WS row, which is served by the
     // upgrade path and is not a mounted HTTP route.
-    expect(health.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+    expect(health.operations).toBe(131); // 128 -> 131 (2026-08-05): per-user git credentials.
     // `implemented` is `registry.size` — REGISTERED handlers, not behaviourally
     // implemented ones. No expected number is asserted here on purpose: it moves
     // as composition tranches land, and pinning it would turn another wave's
@@ -381,14 +380,65 @@ describe('events.poll paging — exactly-once, not merely duplicate-free', () =>
 
 // ── presence.get: the last observed-501 witness in the CLI ─────────────────
 
+/**
+ * Seed a REAL Space and a REAL entity on this node, and return the entity id.
+ *
+ * WHY THE SEED IS LOAD-BEARING AND A FABRICATED UUID IS NOT. Both presence
+ * assertions below read what the CALL taught the availability ledger, and
+ * `observedInvoke` learns from an outcome only when that outcome is unambiguous
+ * about pipeline order (see `PROVES_A_HANDLER_RAN` in `src/discovery/observe.ts`).
+ * `not_found` is emitted on BOTH sides of the handler lookup — at
+ * `http/server.ts:159` for an unmatched route AND from a live handler that found
+ * no row — so it teaches NOTHING, deliberately. Driving `presence get` at an
+ * invented id therefore produced a 404, recorded nothing, and left the ledger
+ * honestly `unknown` while the independent probe said `available`: the two
+ * vantages disagreed for a reason that was entirely this fixture's fault.
+ *
+ * That is not a case for relaxing `ledgerVerdictFor` — the disagreement it
+ * reports is real. It is a case for asking the question the suite means to ask.
+ * A real entity makes `presence.get` SUCCEED, and a success is decided at
+ * `http/server.ts:180`, long past the lookup and unambiguous. The claim gets
+ * STRONGER: the ledger now reaches its verdict from an observation, not from
+ * the contract fallback that a 404 leaves it sitting on.
+ */
+async function seedRealEntity(): Promise<string> {
+  // Seeded over raw HTTP so this suite is not hostage to another slot's
+  // registry wiring — see the paging test above for the same reasoning.
+  const mk = await cli(['space', 'create', 'G8 presence', '--format', 'json'], server);
+  expect(mk.code, mk.stderr).toBe(0);
+  const created = JSON.parse(mk.stdout) as { id?: string; space?: { id?: string } };
+  const spaceId = created.space?.id ?? created.id;
+  expect(spaceId, `no space id in ${mk.stdout}`).toBeTruthy();
+
+  const res = await fetch(new URL(bindPath('entities.create', { spaceId: spaceId! }), server.baseUrl), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ spaceId, kind: 'task', title: 'presence target', clientMutationId: randomUUID() }),
+  });
+  expect(res.status).toBe(201);
+  const createdBody = (await res.json()) as { data?: Record<string, unknown> };
+  measured['entities.create.dtoKeys'] = Object.keys(createdBody.data ?? {});
+  // The DTO shape is READ, not assumed — an earlier guess at `data.id` was
+  // wrong and produced a `no entity undefined` refusal that looked like a
+  // server defect and was entirely this fixture's fault.
+  const d = createdBody.data ?? {};
+  const entityId = (typeof d['id'] === 'string' ? d['id'] : undefined)
+    ?? (typeof (d['entity'] as { id?: string })?.id === 'string'
+      ? (d['entity'] as { id: string }).id
+      : undefined);
+  expect(entityId, `no entity id in ${JSON.stringify(createdBody).slice(0, 300)}`).toBeTruthy();
+  return entityId!;
+}
+
 describe('presence.get — the observed-501 → `unavailable` path, end to end', () => {
   it('is probed independently, and the CLI derives the same verdict', async () => {
     ledger.clear();
     const probe = await server.observe('presence.get');
     measured['presence.get.probe'] = probe;
 
+    const entityId = await seedRealEntity();
     const { PRESENCE_COMMANDS } = await import('../../src/commands/presence.js');
-    const r = await drive(PRESENCE_COMMANDS, ['presence', 'get', ENTITY]);
+    const r = await drive(PRESENCE_COMMANDS, ['presence', 'get', entityId]);
     measured['presence.get.cliExit'] = r.code;
     measured['presence.get.cliStderr'] = r.stderr.trim().slice(0, 300);
 
@@ -419,33 +469,9 @@ describe('presence.get — the observed-501 → `unavailable` path, end to end',
   });
 
   it('answers for a REAL entity through the built binary', async () => {
-    // Seeded over raw HTTP so this suite is not hostage to another slot's
-    // registry wiring — see the paging test above for the same reasoning.
-    const mk = await cli(['space', 'create', 'G8 presence', '--format', 'json'], server);
-    expect(mk.code, mk.stderr).toBe(0);
-    const created = JSON.parse(mk.stdout) as { id?: string; space?: { id?: string } };
-    const spaceId = created.space?.id ?? created.id;
-    expect(spaceId, `no space id in ${mk.stdout}`).toBeTruthy();
+    const entityId = await seedRealEntity();
 
-    const res = await fetch(new URL(bindPath('entities.create', { spaceId: spaceId! }), server.baseUrl), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ spaceId, kind: 'task', title: 'presence target', clientMutationId: randomUUID() }),
-    });
-    expect(res.status).toBe(201);
-    const createdBody = (await res.json()) as { data?: Record<string, unknown> };
-    measured['entities.create.dtoKeys'] = Object.keys(createdBody.data ?? {});
-    // The DTO shape is READ, not assumed — an earlier guess at `data.id` was
-    // wrong and produced a `no entity undefined` refusal that looked like a
-    // server defect and was entirely this fixture's fault.
-    const d = createdBody.data ?? {};
-    const entityId = (typeof d['id'] === 'string' ? d['id'] : undefined)
-      ?? (typeof (d['entity'] as { id?: string })?.id === 'string'
-        ? (d['entity'] as { id: string }).id
-        : undefined);
-    expect(entityId, `no entity id in ${JSON.stringify(createdBody).slice(0, 300)}`).toBeTruthy();
-
-    const r = await cli(["presence", "get", entityId!, "--format", "json"], server);
+    const r = await cli(["presence", "get", entityId, "--format", "json"], server);
     measured['presence.get.realEntityExit'] = r.code;
     measured['presence.get.realEntityStdout'] = r.stdout.trim().slice(0, 200);
     measured['presence.get.realEntityStderr'] = r.stderr.trim().slice(0, 200);

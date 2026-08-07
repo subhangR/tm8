@@ -111,6 +111,8 @@ export const OPERATIONS = [
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
+  { name: 'projects.files.list',     method: 'GET',    path: '/v2/projects/:projectId/files',               kind: 'read',    status: 'v1' },
+  { name: 'projects.files.attach',   method: 'POST',   path: '/v2/projects/:projectId/files/attach',        kind: 'command', status: 'v1' },
 
   // files.* blob lifecycle (AM-2 §2, 03 §6); download returns bytes, not the JSON envelope
   { name: 'files.uploadInit',        method: 'POST',   path: '/v2/files/uploads',                           kind: 'command', status: 'v1' },
@@ -219,6 +221,19 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+
+  // gitCredentials.* — the caller's OWN third-party git identity, so their
+  // agent sessions push as them and not as whatever machine-wide login the
+  // operator left in `~/.gitconfig` (db/migrations/081).
+  //
+  // Bound under `/v2/identity` rather than a family of its own because the
+  // subject is the caller themself: there is no id in any path, and no
+  // parameter anywhere names another account. `status` is the ONLY read, and
+  // it answers with a login and a timestamp — never the token, which after
+  // `set` exists on this node solely as ciphertext plus a 0600 key file.
+  { name: 'gitCredentials.set',                          method: 'POST',   path: '/v2/identity/git-credentials',                                       kind: 'command', status: 'v1' },
+  { name: 'gitCredentials.status',                       method: 'GET',    path: '/v2/identity/git-credentials',                                       kind: 'read',    status: 'v1' },
+  { name: 'gitCredentials.delete',                       method: 'DELETE', path: '/v2/identity/git-credentials',                                       kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];

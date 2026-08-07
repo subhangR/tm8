@@ -69,6 +69,7 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
+import { createGitCredentialPort } from './services/w2/git-credentials-port.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
   resolveInteractionProfileForLaunch,
@@ -708,6 +709,19 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
+    // 081: the launching human's own GitHub credential, decrypted at spawn and
+    // placed in the child's environment. Wired only when a data directory is
+    // known, because that is where the encryption key lives — a node without
+    // one spawns agents with no git identity, exactly as before this existed.
+    ...(deps.dataDir
+      ? {
+          gitCredentials: createGitCredentialPort({
+            db: deps.db,
+            dataDir: deps.dataDir,
+            ...(deps.logger ? { logger: deps.logger } : {}),
+          }),
+        }
+      : {}),
   });
 
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
@@ -779,6 +793,16 @@ export function registerExecutionHandlers(
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
+    // Same wiring as createExecutionRuntime — see the note there.
+    ...(deps.dataDir
+      ? {
+          gitCredentials: createGitCredentialPort({
+            db: deps.db,
+            dataDir: deps.dataDir,
+            ...(deps.logger ? { logger: deps.logger } : {}),
+          }),
+        }
+      : {}),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
   registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);

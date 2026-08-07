@@ -943,6 +943,56 @@ export interface AuthSessionGetResult {
   session: AuthSessionView | null;
 }
 
+/**
+ * The providers a tm8 node can hold a git credential for. One member today,
+ * and a union rather than a bare string so adding a second one is a typed
+ * change that visits every switch instead of a string that silently spreads.
+ */
+export type GitCredentialProvider = 'github';
+
+/**
+ * `gitCredentials.set` — hand this node YOUR git credential.
+ *
+ * The token travels in the request body, which makes TLS a hard prerequisite
+ * for any deployment that is not loopback-only — the same caveat `auth.signup`
+ * carries for passwords, and for the same reason. Once stored it is encrypted
+ * at rest and is never returned by any operation, including this one: the
+ * result is a status, so a client that wants to display the credential can
+ * display only that it exists.
+ */
+export interface GitCredentialSetInput {
+  provider: GitCredentialProvider;
+  /** The account name on the provider — display only, never used to authenticate. */
+  login: string;
+  /** A personal access token. Write-only from the client's perspective, forever. */
+  token: string;
+}
+
+/**
+ * What every git-credential operation answers with. There is deliberately no
+ * field that could carry the token, so no future handler can leak one by
+ * populating an existing shape.
+ */
+export interface GitCredentialStatus {
+  connected: boolean;
+  provider: GitCredentialProvider;
+  /** null when nothing is connected. */
+  login: string | null;
+  /** null when nothing is connected. */
+  updatedAt: string | null;
+}
+
+/**
+ * `gitCredentials.delete` — idempotent. `deleted` distinguishes "there was one
+ * and it is gone" from "there was nothing", without either answer being an
+ * error: a 404 here would leak whether a credential existed.
+ */
+export interface GitCredentialDeleteResult {
+  connected: false;
+  provider: GitCredentialProvider;
+  deleted: boolean;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;
@@ -1447,6 +1497,9 @@ export interface ProjectResource {
   /** Absolute path on the owning node; path-traversal/symlink-guarded (10-SECURITY-MODEL). */
   workingDir: string;
   trust: ProjectTrustLevel;
+  shareMode: ProjectShareMode;
+  /** The owning account of a private Project; null for a shared, node-owned one. */
+  ownerAccountId: string | null;
   defaults: ProjectDefaults;
   /** Migration/remediation state for the 16-active-link cap. */
   linkFrozen?: boolean;
@@ -1470,7 +1523,29 @@ export interface ProjectCreateInput extends CommandContext {
    * projects.create contract for CLI and migration callers.
    */
   ensureWorkingDir?: boolean;
+  /** Defaults to `private` for an ordinary member, `space` for a node admin. */
+  shareMode?: ProjectShareMode;
+  /**
+   * Link into this Space in the same transaction.
+   *
+   * `projects.link` requires a SPACE ADMIN, so without this an ordinary member
+   * could create a private Project and then be unable to publish it to
+   * themselves — needing an administrator in order to see your own private
+   * thing would defeat the feature.
+   */
+  spaceId?: SpaceId;
 }
+
+/**
+ * Who may see a Project and its per-Space projections.
+ *
+ * `private` is not an "unlisted" hint — it is the answer to "may other people
+ * in this Space see the path I work out of, the repo I have checked out, and
+ * the sessions I spawn there". It hides the Project from every other member,
+ * Space admins included; see db/migrations/080 for why admin-over-a-container
+ * does not imply read-over-its-members' private things.
+ */
+export type ProjectShareMode = 'private' | 'space';
 
 /** One selectable child in the node-local project directory browser. */
 export interface ProjectDirectoryEntry {
@@ -1492,6 +1567,59 @@ export interface ProjectDirectoryListing {
   truncated: boolean;
 }
 
+/** One readable regular file inside a connected project's working directory. */
+export interface ProjectFileEntry {
+  name: string;
+  path: string;
+  sizeBytes: number;
+  modifiedAt: string;
+  /** Extension-derived; `application/octet-stream` when nothing is recognised. */
+  mime: string;
+  /** False when the file exceeds the deployment's per-blob ceiling. */
+  attachable: boolean;
+}
+
+/**
+ * GET /v2/projects/:projectId/files — a bounded view of ONE directory inside a
+ * connected project's working directory. Unlike `projects.directories.list`
+ * this is confined to a single project rather than to `TM8_PROJECT_ROOTS` at
+ * large, and it does list files, because attaching one is the point.
+ */
+export interface ProjectFileListing {
+  projectId: string;
+  workingDir: string;
+  path: string;
+  /** Null at the working directory itself — the browser cannot walk above it. */
+  parentPath: string | null;
+  separator: '/' | '\\';
+  directories: ProjectDirectoryEntry[];
+  files: ProjectFileEntry[];
+  truncated: boolean;
+  /** The effective per-blob ceiling, so a picker can explain a refusal. */
+  maxSizeBytes: number;
+}
+
+/**
+ * POST /v2/projects/:projectId/files/attach — read one node-local file out of
+ * a connected project folder and record it as a `file` entity, optionally
+ * attached to targets. The bytes never travel through the browser: a browser
+ * file input cannot name an absolute path, so a connected folder can only be
+ * read by the node that holds it. The result is the same `CommandResult` as
+ * `files.uploadComplete`, because this drives that same upload ledger.
+ */
+export interface ProjectFileAttachInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: SpaceId;
+  /** Absolute path of a regular file inside the project's working directory. */
+  path: string;
+  /** Overrides the on-disk basename as the file entity's name. */
+  name?: string;
+  /** Overrides the extension-derived MIME type. */
+  mime?: string;
+  /** Finalized `file -> attached_to -> target` edges, as in files.uploadComplete. */
+  targets?: EntityId[];
+}
+
 /** The wrapper returned by spaces.create after its default member/channel saga. */
 export interface CreateSpaceResult {
   space: SpaceSummary;
@@ -1505,6 +1633,7 @@ export interface ProjectUpdateInput extends CommandContext {
   workingDir?: string;
   repoUrl?: string | null;
   trust?: ProjectTrustLevel;
+  shareMode?: ProjectShareMode;
   defaults?: ProjectDefaults;
 }
 
