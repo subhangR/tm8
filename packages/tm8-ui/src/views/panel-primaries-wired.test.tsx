@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { allKinds, resolveAction } from '../domain';
 import { PANEL_PRIMARY_ACTIONS } from './usePanelPrimaries';
+import { ENTITY_VERB_ACTIONS } from './useEntityVerbs';
 
 /**
  * THE MOUNT-SITE GUARD — every `EntityDetailPanel` must be handed its verbs.
@@ -209,10 +210,16 @@ describe('the dispatcher and the registry agree', () => {
    */
   it('records which primaries survive only on the wiredActions refusal', () => {
     const refusedByNarrowing = [...declaredPrimaries].filter(
-      (ref) => !PANEL_PRIMARY_ACTIONS.includes(ref) && resolveAction(ref).flow !== 'launch',
+      (ref) =>
+        !PANEL_PRIMARY_ACTIONS.includes(ref)
+        && !ENTITY_VERB_ACTIONS.includes(ref)
+        && resolveAction(ref).flow !== 'launch',
     );
-    // `add-child` on a doc and a channel: drawn by the registry, no executor
-    // at any host. It renders disabled-with-reason, which is the honest state.
-    expect(refusedByNarrowing).toEqual(['add-child']);
+    // EMPTY TODAY, and it took two dispatchers to get here: `terminate` from
+    // `usePanelPrimaries`, `edit` and `add-child` from `useEntityVerbs`, the
+    // launch verbs from their own flow. `add-child` was the last one relying on
+    // the refusal — it is a subchannel now. A primary added without an executor
+    // reappears here, which is the whole point of recording the set.
+    expect(refusedByNarrowing).toEqual([]);
   });
 });

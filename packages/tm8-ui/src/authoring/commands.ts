@@ -38,6 +38,7 @@ import {
   type EntityDetail,
   type EntityId,
   type EntityKind,
+  type PatchEntityInput,
   type PatchTaskInput,
   type SpaceId,
 } from '@tm8/contract';
@@ -45,6 +46,20 @@ import {
 export interface AuthoringCommands {
   createEntity(input: CreateEntityInput): Promise<CommandResult>;
   patchTask(id: EntityId, input: PatchTaskInput): Promise<CommandResult>;
+  /**
+   * THE GENERIC CONTENT PATCH, and it is not a duplicate of `patchTask`.
+   *
+   * `ops.patchTask` builds its `content` from a CLOSED list of task members
+   * (description, axes, workStatus, priority, acceptanceCriteria,
+   * pointsEstimate, dueDate — `data/real/ops.ts:394`) and drops everything
+   * else on the floor. A channel's `topic` is not on that list, so routing the
+   * edit dialog through `patchTask` would have sent the title, silently
+   * discarded the topic, and reported success. The server's `entities.patch`
+   * already dispatches on the entity's real kind (`update_channel` for a
+   * channel), so the only thing missing was a caller that does not pre-filter
+   * the payload.
+   */
+  patchEntity(id: EntityId, input: PatchEntityInput): Promise<CommandResult>;
 }
 
 /**
@@ -98,8 +113,25 @@ export function newEntityInput(
   spaceId: SpaceId,
   kind: CreatableEntityKind,
   title: string,
+  /**
+   * The parent this create hangs under, or null for a root of the kind.
+   *
+   * `entities.parentId` is kind-agnostic in the graph, so this is the WHOLE
+   * subchannel mechanism — a channel created with another channel's id here is
+   * a subchannel, and the registry's `tree: { by: 'hierarchy' }` draws it
+   * without any further wiring. Omitted (not `null`) when there is no parent,
+   * because the contract member is optional and a `null` is a different
+   * statement from an absence to a `.strict()` schema.
+   */
+  parentId?: EntityId | null,
 ): CreateEntityInput {
-  return { spaceId, kind, title, clientMutationId: nextMutationId() };
+  return {
+    spaceId,
+    kind,
+    title,
+    ...(parentId ? { parentId } : {}),
+    clientMutationId: nextMutationId(),
+  };
 }
 
 /**
@@ -118,6 +150,31 @@ export function creatableKind(kind: EntityKind): CreatableEntityKind | null {
 
 export function taskPatchInput(edits: TaskEdits, expectedVersion: number): PatchTaskInput {
   return { ...edits, expectedVersion, clientMutationId: nextMutationId() };
+}
+
+/** The staged draft of an `editFields` dialog: title, plus arbitrary content. */
+export interface EntityEdits {
+  title?: string;
+  content?: Record<string, unknown>;
+}
+
+/**
+ * `title` IS OMITTED WHEN UNTOUCHED, never sent as `undefined` or `''`.
+ *
+ * The server COALESCEs a null title to the existing one, so an omitted title
+ * is a no-op and an empty one is a constraint violation — `channels.name` is
+ * `not null` and check-constrained to at least one character. Spreading a
+ * `{ title: undefined }` into the body would serialize the key away anyway,
+ * but only by accident of JSON; this makes the intent explicit at the one
+ * place that builds the payload.
+ */
+export function entityPatchInput(edits: EntityEdits, expectedVersion: number): PatchEntityInput {
+  return {
+    ...(edits.title === undefined ? {} : { title: edits.title }),
+    ...(edits.content === undefined ? {} : { content: edits.content }),
+    expectedVersion,
+    clientMutationId: nextMutationId(),
+  };
 }
 
 /**

@@ -131,3 +131,29 @@ export function usePanelPrimaries(host: PanelPrimariesHost): PanelPrimaries {
     [forEntity, terminate],
   );
 }
+
+/**
+ * TWO DISPATCHERS, ONE ACTION BAR.
+ *
+ * `usePanelPrimaries` performs `terminate`; `useEntityVerbs` performs `edit`
+ * and `add-child`. They were written in separate lanes and each hands the panel
+ * its own `onAction`/`wiredActions` pair, so a host that wants both cannot pass
+ * either one alone — the other lane's verbs would drop back to
+ * disabled-with-reason, which is the very defect both lanes set out to fix.
+ *
+ * Routing is by `wiredActions`, which each hook already derives from its own
+ * handler set. A verb no part claims stays unclaimed and the bar keeps drawing
+ * it refused; a verb two parts claim goes to the first, so the order here is
+ * the precedence and there is no silent merge of two behaviours.
+ */
+export function composePanelActions(
+  parts: readonly { onAction?: ((ref: ActionRef) => void) | undefined; wiredActions: readonly ActionRef[] }[],
+): { onAction: (ref: ActionRef) => void; wiredActions: readonly ActionRef[] } {
+  const live = parts.filter((part) => part.onAction);
+  return {
+    onAction: (ref) => {
+      live.find((part) => part.wiredActions.includes(ref))?.onAction?.(ref);
+    },
+    wiredActions: live.flatMap((part) => [...part.wiredActions]),
+  };
+}

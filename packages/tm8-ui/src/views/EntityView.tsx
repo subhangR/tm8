@@ -44,14 +44,15 @@ import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
 import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
-import { usePanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
@@ -341,6 +342,30 @@ export function EntityView(props: EntityViewProps) {
   const auxDetail = auxId ? data.detailOf(auxId) : null;
   if (auxId && !auxDetail) props.data.pull?.(auxId);
 
+  /**
+   * The panel action bar's executor — `edit` (the `editFields` dialog) and
+   * `add-child` (a subchannel, when the open entity is a channel).
+   *
+   * SUBJECT-DRIVEN, NOT LIST-DRIVEN: it reads `detail`, so drilling from a task
+   * list into a channel offers the channel's verbs and the channel's fields.
+   * The created child opens exactly as `＋ New` opens a new root, so the two
+   * creates land the user in the same place.
+   */
+  const verbs = useEntityVerbs({
+    detail,
+    spaceId: data.spaceId,
+    commands: data.seam.commands,
+    onCreated: (id) => setSelectedId(id),
+    /* The topic lives in the DETAIL and the echo carries only the summary —
+       without this the header renames and the hub body keeps the old topic. */
+    onSaved: (id) => props.data.refetchDetail(id),
+  });
+
+  const panelActions = composePanelActions([
+    { onAction: selectedId ? primaries.forEntity(selectedId) : undefined, wiredActions: primaries.wiredActions },
+    { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
+  ]);
+
   const detailPanel = selectedId ? (
     <EntityDetailPanel
       detail={detail ?? null}
@@ -350,8 +375,10 @@ export function EntityView(props: EntityViewProps) {
       reasons={reasons}
       ctx={{ ...ctx, entityId: selectedId }}
       controls={controlHost}
-      onAction={primaries.forEntity(selectedId)}
-      wiredActions={primaries.wiredActions}
+      /* Terminate comes from `primaries`, edit and add-child from `verbs` —
+         see `composePanelActions` for why neither can be passed alone. */
+      onAction={panelActions.onAction}
+      wiredActions={panelActions.wiredActions}
       launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
          archive control flips to, through the same executor — so an archived
@@ -435,6 +462,14 @@ export function EntityView(props: EntityViewProps) {
       data-mode={selectedId ? 'detail' : 'list'}
       data-aux={aux ? aux.sort : 'none'}
     >
+      {/* AT THE VIEW ROOT, NOT INSIDE THE PANEL. The dialog is `position:
+          fixed` over a scrim, so nesting it in the panel's own overflow
+          context would clip it against a column it is supposed to cover. */}
+      <EditEntityDialog
+        flow={verbs.edit}
+        fields={verbs.editFields}
+        title={verbs.editTitle}
+      />
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}

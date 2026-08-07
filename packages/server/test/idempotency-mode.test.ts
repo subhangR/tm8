@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import {
+  AuthLoginInputSchema,
+  AuthLogoutInputSchema,
+  AuthSignupInputSchema,
+  OPERATIONS,
+  type OperationBinding,
+} from '@tm8/contract';
+
 import { ConfigError, loadConfig } from '../src/http/config.js';
 import { normalizeCommandInputForIdempotencyMode } from '../src/http/idempotency.js';
 
@@ -10,6 +18,12 @@ const command = {
 const read = {
   name: 'entities.get', method: 'GET', path: '/v2/entities/:id', kind: 'read', status: 'v1',
 } as const;
+
+const binding = (name: string): OperationBinding => {
+  const op = (OPERATIONS as readonly OperationBinding[]).find((o) => o.name === name);
+  if (!op) throw new Error(`no such operation: ${name}`);
+  return op;
+};
 
 describe('idempotency test mode', () => {
   it('is strict by default and only disables for an explicit false value', () => {
@@ -23,7 +37,26 @@ describe('idempotency test mode', () => {
     expect(normalizeCommandInputForIdempotencyMode(command, body, true)).toBe(body);
   });
 
-  it('gives every command a fresh id while idempotency is disabled', () => {
+  /**
+   * THE ONE THAT SHIPPED THE BUG. The assertion is made against the REAL strict
+   * DTO rather than against a hand-written expectation of what the normalizer
+   * produces, because the defect was precisely a disagreement between the two:
+   * the injector supplied `clientMutationId` to schemas that `.strict()`ly
+   * forbid it, so with the ledger disabled — the DEFAULT — every signup, login
+   * and logout answered `invalid_input: Unrecognized key(s)` and no account
+   * could be created or used on any such server.
+   */
+  it.each([
+    ['auth.signup', AuthSignupInputSchema, { username: 'someone', password: 'a-long-enough-password' }],
+    ['auth.login', AuthLoginInputSchema, { username: 'someone', password: 'a-long-enough-password' }],
+    ['auth.logout', AuthLogoutInputSchema, {}],
+  ] as const)('leaves %s parseable by its own strict schema', (name, schema, body) => {
+    const normalized = normalizeCommandInputForIdempotencyMode(binding(name), body, false);
+    const parsed = schema.safeParse(normalized);
+    expect(parsed.success, JSON.stringify(parsed.success ? {} : parsed.error.issues)).toBe(true);
+  });
+
+  it('gives every other command a fresh id while idempotency is disabled', () => {
     const first = normalizeCommandInputForIdempotencyMode(
       command,
       { clientMutationId: 'reused' },

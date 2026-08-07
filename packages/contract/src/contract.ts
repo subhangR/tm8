@@ -843,6 +843,20 @@ export interface IdentityProfileView {
 // Strict schemas therefore refuse `actorId`/`clientMutationId` on the wire.
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether a command operation's DTO accepts `clientMutationId` at all.
+ *
+ * The paragraph above is the rule; this is the rule stated once so a caller can
+ * ask instead of assuming. It exists because a transport that supplies an id
+ * for the DTOs that require one must not supply it to the DTOs that forbid it —
+ * doing so made every `auth.signup`/`auth.login`/`auth.logout` fail contract
+ * validation with `Unrecognized key(s): 'clientMutationId'` whenever the
+ * command ledger was disabled, which is the default.
+ */
+export function commandAcceptsClientMutationId(opName: string): boolean {
+  return !opName.startsWith('auth.');
+}
+
 /** How a session authenticates thereafter. `agent` sessions are minted at spawn, never by `auth.login`. */
 export type AuthSessionKindView = 'browser' | 'cli' | 'agent';
 

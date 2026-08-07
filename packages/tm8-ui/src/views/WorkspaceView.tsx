@@ -18,6 +18,7 @@ import type {
 } from '@tm8/contract';
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
+import { EntityVerbs } from './EntityVerbs';
 import type { ActionContext, ActionRef } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
@@ -37,7 +38,7 @@ import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
-import { usePanelPrimaries } from './usePanelPrimaries';
+import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { EmptyCenter } from './EmptyCenter';
 import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
@@ -281,6 +282,23 @@ export function WorkspaceView(props: WorkspaceViewProps) {
       } | undefined;
       const recordedStatus = (detail?.state as unknown as { status?: string } | undefined)?.status;
       return (
+        /* The action bar's executor — `edit` and `add-child` (a subchannel).
+           A COMPONENT and not a hook call, because this is a callback that
+           renders one panel per id and the workspace shows several at once;
+           see `EntityVerbs`. Each panel therefore holds its own draft. */
+        <EntityVerbs
+          detail={detail ?? null}
+          spaceId={data.spaceId}
+          commands={data.seam.commands}
+          onCreated={openEntity}
+          onSaved={(saved) => props.data.refetchDetail(saved)}
+        >
+          {(verbs) => {
+            const panelActions = composePanelActions([
+              { onAction: primaries.forEntity(id), wiredActions: primaries.wiredActions },
+              { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
+            ]);
+            return (
         <EntityDetailPanel
           detail={detail ?? null}
           serverBaseUrl={props.serverBaseUrl}
@@ -290,9 +308,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           ctx={{ ...ctx, entityId: id }}
           controls={{ ...controlHostBase, kind: detail?.kind ?? '', ctx: { ...ctx, entityId: id } }}
           /* The panel primaries, finally executable: Terminate commits here,
-             and Run expands the same launch config the list rows open. */
-          onAction={primaries.forEntity(id)}
-          wiredActions={primaries.wiredActions}
+             Run expands the same launch config the list rows open, and edit /
+             add-child come from `EntityVerbs` — see `composePanelActions`. */
+          onAction={panelActions.onAction}
+          wiredActions={panelActions.wiredActions}
           launch={launchPort}
           onRestore={() => rowLifecycle.archive('restore', id)}
           pinned={nav.pinned.includes(id)}
@@ -362,6 +381,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           onClose={() => nav.close(id)}
           onOpenEntity={openEntity}
         />
+            );
+          }}
+        </EntityVerbs>
       );
     },
     [data, engine, nav, ctx, reasons, props, openEntity, channelFeedPort, attachments, primaries, launchPort],
