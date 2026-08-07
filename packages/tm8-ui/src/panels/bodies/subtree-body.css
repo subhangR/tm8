@@ -104,6 +104,14 @@
   flex-direction: column;
   gap: 5px;
 }
+/* The label keeps its own line; the stance verb sits at its far end, which is
+   where T0-4 puts a section's action. */
+.cv2-root .sb-description__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .cv2-root .sb-description__label {
   font-family: var(--pn-mono);
   font-size: 10px;
@@ -142,6 +150,32 @@
 .cv2-root .sb-description__input:read-only {
   background: var(--pn-surface);
   cursor: default;
+}
+/* Reads as the eyebrow's quiet sibling — it must not compete with the region
+   it labels. Same brass hover every other panel verb uses. */
+.cv2-root .sb-description__stance {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  color: var(--pn-ink-4);
+  cursor: pointer;
+}
+.cv2-root .sb-description__stance:hover {
+  color: var(--pn-brand-2);
+}
+.cv2-root .sb-description__head .hon-disabled {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-mega);
+  text-transform: uppercase;
+  padding: 0;
 }
 
 /* --- ACCEPTANCE rows ------------------------------------------------------
