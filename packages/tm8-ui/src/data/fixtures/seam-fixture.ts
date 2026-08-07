@@ -633,10 +633,9 @@ export function createFixtureSeam(): FixtureSeam {
    * the read the UI already uses, rather than through a second parallel store
    * that could disagree with the edges.
    */
-  function projectAssignees(s: EntitySummary): void {
-    if (s.state.kind !== 'task') return;
-    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
-    s.state.assignees = (group?.edges ?? []).flatMap((edge) => {
+  function projectActorEdges(s: EntitySummary, type: string): ActorSummary[] {
+    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === type);
+    return (group?.edges ?? []).flatMap((edge) => {
       const target = summaries.get(edge.target.id);
       if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
       return [{
@@ -647,6 +646,18 @@ export function createFixtureSeam(): FixtureSeam {
         isAgent: target.kind === 'team_member',
       } satisfies ActorSummary];
     });
+  }
+
+  /**
+   * Both actor rosters, recomputed from the edges that ARE them: a task's
+   * `assigned_to` and a channel's `has_member` (migration 080). Two arms of one
+   * function because the projection is identical and the meaning is not — the
+   * server keeps them apart for the same reason (`entity-read.ts`
+   * `relations.assignees` / `relations.members`).
+   */
+  function projectAssignees(s: EntitySummary): void {
+    if (s.state.kind === 'task') s.state.assignees = projectActorEdges(s, 'assigned_to');
+    else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -662,7 +673,12 @@ export function createFixtureSeam(): FixtureSeam {
           dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
         };
       case 'channel':
-        return { kind: 'channel', topic: (c.topic as string) ?? '', unreadCount: 0, workingAgentCount: 0 };
+        // `members: []` and not a read of `input.connections`: the roster is a
+        // PROJECTION of `has_member` edges, and those edges are written by the
+        // create path itself. `projectAssignees` fills this in from them, so
+        // seeding it here from the input would be a second source free to
+        // disagree with the first.
+        return { kind: 'channel', topic: (c.topic as string) ?? '', members: [], unreadCount: 0, workingAgentCount: 0 };
       // A freshly created voice room is EMPTY. `participantCount` is the whole
       // state arm — there is no topic and no unread axis to seed. Nothing here
       // reads the create input, because the content arm carries no field.

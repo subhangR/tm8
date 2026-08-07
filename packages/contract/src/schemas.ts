@@ -172,6 +172,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('channel'),
     topic: z.string(),
+    members: z.array(ActorSummarySchema),
     unreadCount: z.number().int().nonnegative(),
     workingAgentCount: z.number().int().nonnegative(),
   }).strict(),

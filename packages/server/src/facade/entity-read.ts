@@ -502,6 +502,15 @@ export interface EntityRelations {
   attention: Map<string, EntityAttentionSummary>;
   /** `assigned_to` targets, per task. */
   assignees: Map<string, string[]>;
+  /**
+   * `has_member` targets, per channel — the roster (080).
+   *
+   * Deliberately a SECOND map rather than a reuse of `assignees`. The two carry
+   * the same shape and mean different things: an assignee is accountable for a
+   * task, a member simply belongs to a channel. Folding them would make
+   * `state.assignees` on a channel read as an assignment the node never made.
+   */
+  members: Map<string, string[]>;
   /** Live child count, per entity. */
   childCounts: Map<string, number>;
   /** Unresolved HARD `depends_on` targets, per entity — the blocked badge. */
@@ -541,6 +550,7 @@ export interface EntityMarks {
 const EMPTY_RELATIONS: EntityRelations = {
   attention: new Map(),
   assignees: new Map(),
+  members: new Map(),
   childCounts: new Map(),
   blockedBy: new Map(),
   pulls: new Map(),
@@ -567,6 +577,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   const relations: EntityRelations = {
     attention: new Map(),
     assignees: new Map(),
+    members: new Map(),
     childCounts: new Map(),
     blockedBy: new Map(),
     pulls: new Map(),
@@ -586,7 +597,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   }>(
     `select id, src_id, dst_id, type, props, created_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
          or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on', 'supersedes', 'disputes', 'verifies'))`,
     [unique],
   );
@@ -638,6 +649,9 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     switch (edge.type) {
       case 'assigned_to':
         if (wanted.has(edge.src_id)) push(relations.assignees, edge.src_id, edge.dst_id);
+        break;
+      case 'has_member':
+        if (wanted.has(edge.src_id)) push(relations.members, edge.src_id, edge.dst_id);
         break;
       case 'completed_by': {
         // Latest wins: completion writes one edge per completer, and the
@@ -1077,6 +1091,9 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       return {
         kind: 'channel',
         topic: row.channel_topic ?? '',
+        // The roster, from `has_member` (080). Batched with every other
+        // relation, so a channel list costs no extra query per row.
+        members: (ctx.relations.members.get(row.id) ?? []).map((id) => actorOf(ctx.actors, id)),
         // Real, per-viewer, from `public.unread_counts` (016:47) — see
         // loadUnreadCounts. A missing key is a genuine zero (the RPC groups,
         // so it only returns anchors that HAVE unread), not the "not built"
@@ -1582,6 +1599,7 @@ export async function assembleSummaries(
     r.team_member_owner_id ?? '',
   ]);
   for (const list of relations.assignees.values()) actorIds.push(...list);
+  for (const list of relations.members.values()) actorIds.push(...list);
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));
   for (const completion of relations.completedBy.values()) actorIds.push(completion.actorId);

@@ -106,7 +106,8 @@ export type CoreEntityState =
   | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
       acceptance: { total: number; completed: number } }
-  | { kind: 'channel'; topic: string; unreadCount: number; workingAgentCount: number }
+  | { kind: 'channel'; topic: string; members: ActorSummary[]; unreadCount: number;
+      workingAgentCount: number }
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
       messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
