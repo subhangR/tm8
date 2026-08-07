@@ -168,7 +168,7 @@ describe('W2.G06 projects and association correction facade', () => {
     }
   });
 
-  it('requires node-admin claims before browsing or creating local directories', async () => {
+  it('allows authenticated non-admin users to browse, but not create, local directories', async () => {
     const registry = registered(new FakeDb());
     const identity = {
       kind: 'bearer' as const,
@@ -176,9 +176,11 @@ describe('W2.G06 projects and association correction facade', () => {
       token: 'test-token',
       nodeAdmin: false,
     };
-    await expect(handler(registry, 'projects.directories.list')(
+    const listing = await handler(registry, 'projects.directories.list')(
       request('projects.directories.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+    );
+    expect(ProjectDirectoryListingSchema.safeParse(listing).success).toBe(true);
+
     await expect(handler(registry, 'projects.create')(
       request('projects.create', {
         identity,
@@ -190,6 +192,12 @@ describe('W2.G06 projects and association correction facade', () => {
         },
       }),
     )).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('still requires authentication before exposing local directory names', async () => {
+    await expect(handler(registered(new FakeDb()), 'projects.directories.list')(
+      request('projects.directories.list', { identity: { kind: 'anonymous' } }),
+    )).rejects.toMatchObject({ code: 'unauthenticated' });
   });
 
   it('returns complete ProjectResource shapes and narrows list by a validated active Space link', async () => {
