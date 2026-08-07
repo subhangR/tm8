@@ -639,7 +639,16 @@ export class WorkspaceEventMapper {
           readAt: iso(p['read_at']),
           createdAt: iso(p['created_at']) ?? new Date(0).toISOString(),
         };
-        const message = str(record(p['payload'])['message']);
+        // `payload.message` has never had a writer. Every producer that carries
+        // a preview stores it under `excerpt` (003:155 mention, 019:267 mention,
+        // 077:156 anchor_message), so reading only `message` meant the preview
+        // line rendered for nothing, ever. `message` is still preferred so a
+        // future producer can override; `excerpt` is the fallback that is
+        // actually populated today. MUST stay in step with the facade reader in
+        // `facade/services/w2/inbox-read-marks.ts` — same two assemblers, same
+        // NotificationItem.
+        const payload = record(p['payload']);
+        const message = str(payload['message']) ?? str(payload['excerpt']);
         return {
           type: row.event_type,
           notification: message === null ? notification : { ...notification, message },

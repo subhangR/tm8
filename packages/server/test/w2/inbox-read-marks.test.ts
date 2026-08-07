@@ -301,6 +301,85 @@ describe('W2.G08 inbox and read-mark handlers', () => {
     )).rejects.toMatchObject({ code: 'invalid_cursor' });
   });
 
+  /**
+   * The inbox preview line, from the facade side.
+   *
+   * `hydrateNotifications` read `payload.message`, which NO producer has ever
+   * written. Every producer that carries a preview writes `payload.excerpt`:
+   * `003_read_model.sql:155` and `019_w2_messages_handoffs.sql:267` for
+   * `mention`, `077_notify_anchor_watchers.sql:156` for `anchor_message`. So
+   * `NotificationItem.message` was permanently absent and the preview line
+   * rendered for nothing, ever.
+   *
+   * `PERSONAL_ROW` above did not catch it because its payload is hand-written
+   * `{ message: ... }` on a `message_reply` — a shape the trigger at 019:486
+   * does not build. The fixture asserted the reader's assumption rather than
+   * the writer's output. This block uses the payloads production actually
+   * stores, and must stay in step with the mapper's copy of the same rule
+   * (`test/events/mapper.test.ts`).
+   */
+  describe('notification preview (payload.excerpt)', () => {
+    const mentionRow: NotificationRow = {
+      ...PERSONAL_ROW,
+      kind: 'mention',
+      // Verbatim shape of jsonb_build_object at 003_read_model.sql:154-155.
+      payload: {
+        messageId: IDS.secondNotification,
+        anchorId: IDS.target,
+        excerpt: 'unread state is read_marks, not attention',
+      },
+    };
+
+    async function listOne(row: NotificationRow): Promise<Record<string, unknown>> {
+      const db = new FakeDb();
+      db.queryImpl = hydratedQuery([row]);
+      const result = await handler(registryFor(db), 'inbox.list')(
+        request('inbox.list', { query: listQuery({ limit: 10 }) }),
+      ) as { items: unknown[] };
+      return NotificationItemSchema.parse(result.items[0]) as Record<string, unknown>;
+    }
+
+    it('renders the excerpt the mention trigger actually writes', async () => {
+      expect(await listOne(mentionRow)).toMatchObject({
+        kind: 'mention',
+        message: 'unread state is read_marks, not attention',
+      });
+    });
+
+    it('renders the excerpt the anchor_message watcher trigger writes', async () => {
+      // 077_notify_anchor_watchers.sql:151-156 — extra keys, same preview slot.
+      const item = await listOne({
+        ...mentionRow,
+        kind: 'anchor_message',
+        payload: {
+          messageId: IDS.secondNotification,
+          anchorId: IDS.target,
+          anchorKind: 'task',
+          watchReason: ['assignee'],
+          excerpt: 'a courtesy row must never refuse the message it is about',
+        },
+      });
+      expect(item['message']).toBe('a courtesy row must never refuse the message it is about');
+    });
+
+    /**
+     * `message_reply` (019:486) and the edge/award/join producers write no
+     * preview. Absent must stay ABSENT rather than become an empty line —
+     * `NotificationItem.message` is optional and the schemas are `.strict()`.
+     */
+    it('omits the field entirely when no producer wrote a preview', async () => {
+      const item = await listOne({
+        ...PERSONAL_ROW,
+        payload: {
+          messageId: IDS.secondNotification,
+          parentMessageId: IDS.target,
+          anchorId: IDS.target,
+        },
+      });
+      expect('message' in item).toBe(false);
+    });
+  });
+
   it('uses acting-as RLS for a Teammate but the named read-only RPC for owner inspection', async () => {
     const actingDb = new FakeDb();
     actingDb.queryImpl = hydratedQuery([TEAMMATE_ROW]);

@@ -321,7 +321,14 @@ async function hydrateNotifications(
   return rows.map((row) => {
     const recipientId = row.recipient_team_member_id ?? row.recipient_member_id;
     const recipient: ActorSummary = actorOf(actors, recipientId);
-    const rawMessage = row.payload?.message;
+    // `payload.message` has never had a writer. Every producer that carries a
+    // preview stores it under `excerpt` (003:155 mention, 019:267 mention,
+    // 077:156 anchor_message), so reading only `message` meant the inbox
+    // preview line rendered for nothing, ever. `message` stays preferred so a
+    // future producer can override it. MUST stay in step with the event mapper
+    // (`events/mapper.ts`, notification.created/read) — the two assemblers
+    // produce the same NotificationItem and a divergence here is intermittent.
+    const rawMessage = row.payload?.message ?? row.payload?.excerpt;
     return {
       id: row.id,
       spaceId: row.space_id,
