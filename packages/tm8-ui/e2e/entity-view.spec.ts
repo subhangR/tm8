@@ -263,6 +263,57 @@ test('switching to the board gives it the WHOLE screen, rail width and all', asy
   expect(await columns.count()).toBeGreaterThan(3);
 });
 
+/**
+ * THE BOARD SCROLLS, THE COLUMNS DO NOT.
+ *
+ * Each column used to carry its own `overflow-y` and was locked to the
+ * viewport height, so a long column became a short well you scrolled inside
+ * while the board around it never moved — six independent scrollbars, and no
+ * way to read two columns at the same offset. This is a pure geometry claim,
+ * so the cards are INJECTED: what is under test is which box overflows, not
+ * where the rows came from.
+ */
+test('a long column scrolls the BOARD, not a well inside the column', async ({ page }) => {
+  await boot(page, 'task');
+  await page.getByRole('button', { name: 'board layout' }).click();
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  // Fill the tallest column well past the viewport.
+  await page.evaluate(() => {
+    const cards = document.querySelector('.lp__board-cards');
+    if (!cards) throw new Error('no card area');
+    const seed = cards.querySelector('*');
+    if (!seed) throw new Error('no card to clone');
+    for (let i = 0; i < 40; i += 1) cards.appendChild(seed.cloneNode(true));
+  });
+
+  const metrics = await page.evaluate(() => {
+    const cols = document.querySelector('.lp__board-cols')!;
+    const cards = document.querySelector('.lp__board-cards')!;
+    return {
+      boardScroll: cols.scrollHeight - cols.clientHeight,
+      cardsScroll: cards.scrollHeight - cards.clientHeight,
+      cardsOverflowY: getComputedStyle(cards).overflowY,
+    };
+  });
+
+  // The board is what overflows...
+  expect(metrics.boardScroll).toBeGreaterThan(200);
+  // ...and the column is NOT a scroller. `visible` is the proof the well is
+  // gone; a leftover `auto` would still trap the cards even at this height.
+  expect(metrics.cardsOverflowY).toBe('visible');
+  expect(metrics.cardsScroll).toBe(0);
+
+  // It really scrolls, and the header stays pinned so the column you are
+  // reading is still named after you have scrolled away from the top.
+  const HEAD = '.lp__board-col:first-child .lp__board-head';
+  const headTopBefore = (await box(page, HEAD)).y;
+  await page.locator('.lp__board-cols').evaluate((el) => el.scrollBy(0, 400));
+  await expect(page.locator('.lp__board-cols')).not.toHaveJSProperty('scrollTop', 0);
+  const headTopAfter = (await box(page, HEAD)).y;
+  expect(Math.abs(headTopAfter - headTopBefore)).toBeLessThan(2);
+});
+
 test('a card on the board opens BESIDE it — the board keeps its width', async ({ page }) => {
   await boot(page, 'task');
   await page.getByRole('button', { name: 'board layout' }).click();
