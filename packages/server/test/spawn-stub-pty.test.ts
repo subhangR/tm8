@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -81,14 +81,46 @@ class SpawnDb implements Db {
   async end(): Promise<void> {}
 }
 
+/**
+ * A `codex` on PATH that answers the two questions the spawn gate asks, and
+ * nothing else.
+ *
+ * `SpawnService.assertAgentRuntime` resolves the agent binary on PATH and then,
+ * for codex outside bypassPermissions, EXECUTES it twice —
+ * `preflightCodexNetworkPolicy` runs `features list` and `--version` and fails
+ * closed on either. This suite's subject is what reaches the CLI builder, not
+ * Codex's runtime, and it was passing only on machines with a real Codex
+ * installed; a bare runner answered `agent CLI 'codex' was not found`. An empty
+ * file would not do: `existsSync` would accept it and the preflight would then
+ * fail on the exec.
+ */
+async function stubCodexOnPath(): Promise<string> {
+  const binDir = await mkdtemp(join(tmpdir(), 'tm8-stub-bin-'));
+  await writeFile(
+    join(binDir, 'codex'),
+    '#!/bin/sh\n'
+      + 'case "$*" in\n'
+      + '  *--version*) echo "codex-cli 999.0.0" ;;\n'
+      + '  *) echo "network_proxy   stable   true" ;;\n'
+      + 'esac\n',
+    { mode: 0o755 },
+  );
+  vi.stubEnv('PATH', `${binDir}:${process.env['PATH'] ?? ''}`);
+  return binDir;
+}
+
 describe('server spawn integration with a stub PTY', () => {
   let dataDir: string | undefined;
+  let binDir: string | undefined;
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
+    if (binDir) await rm(binDir, { recursive: true, force: true });
   });
 
   it('carries the project, provider tool, and concrete model through DbGraphPort into the CLI builder', async () => {
+    binDir = await stubCodexOnPath();
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-server-stub-pty-'));
     const db = new SpawnDb();
     const spawnIfAbsent = vi.fn(() => ({ reused: false }));

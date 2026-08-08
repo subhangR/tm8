@@ -92,6 +92,35 @@ jobs:
           git config --global user.email "ci@tm8.invalid"
           git config --global user.name "tm8 CI"
 
+      # ONCE, SINGLE-THREADED, BEFORE ANY SUITE RUNS. Roles are CLUSTER-global
+      # while scratch databases are per-suite, and `001_core_graph.sql:37` guards
+      # its `create role` with `if not exists` — which is check-then-act, not
+      # atomic. A dozen vitest workers applying 001 at the same moment on a FRESH
+      # cluster all pass the check and one loses the insert:
+      #   ERROR: duplicate key value violates unique constraint "pg_authid_rolname_index"
+      # It cannot be fixed in 001: that file is applied on every existing database
+      # and `db/migrate.mjs` refuses a checksum that moved after it was applied.
+      # Creating the roles up front satisfies the `if not exists` guard for every
+      # worker, which is exactly the state a developer's long-lived cluster is
+      # already in — and why this never reproduced off a fresh one.
+      - name: Pre-create cluster-global roles (001/015) to de-race parallel suites
+        run: |
+          psql "postgres://tm8@127.0.0.1:5442/postgres" -v ON_ERROR_STOP=1 -c "
+            do \$\$
+            begin
+              if not exists (select 1 from pg_roles where rolname = 'tm8_graph_owner') then
+                create role tm8_graph_owner nologin noinherit;
+              end if;
+              if not exists (select 1 from pg_roles where rolname = 'tm8_app') then
+                create role tm8_app login;
+              end if;
+              if not exists (select 1 from pg_roles where rolname = 'tm8_delivery_worker') then
+                create role tm8_delivery_worker login noinherit nosuperuser nocreatedb
+                  nocreaterole noreplication nobypassrls;
+              end if;
+            end
+            \$\$;"
+
       - name: Cache bun install
         uses: actions/cache@v4
         with:
