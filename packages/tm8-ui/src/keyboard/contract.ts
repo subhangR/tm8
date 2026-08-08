@@ -133,6 +133,35 @@ export function isTerminalBlurChord(input: KeyInput): boolean {
   return input.code === 'Backquote' && input.ctrlKey;
 }
 
+/**
+ * The terminal PASTE chord — `Ctrl+V` / `Cmd+V`, plus the terminal-native
+ * `Ctrl+Shift+V`.
+ *
+ * This one is NOT handled by us and NOT sent to the PTY: the caller returns
+ * `false` from xterm's `attachCustomKeyEventHandler`, which bails out of
+ * `_keyDown` BEFORE xterm calls `preventDefault`, so the BROWSER performs its
+ * own paste and the resulting `paste` event reaches the terminal's existing
+ * clipboard handler.
+ *
+ * Why it must work this way, and not via `navigator.clipboard.readText()`:
+ * without this, xterm's default keymap turns `Ctrl+V` into `^H`-style control
+ * output (`0x16`) and cancels the event, so no `paste` event is ever emitted.
+ * The obvious repair — read the clipboard ourselves — fails in exactly the
+ * situation that reported this bug: the UI is served over plain HTTP on a
+ * LAN/tailnet address, which is NOT a secure context, so the async Clipboard
+ * API is `undefined` there. Letting the browser's native paste through needs
+ * no Clipboard API and therefore works on http:// as well as https://.
+ *
+ * `Alt` is excluded so `Ctrl+Alt+V` still reaches the PTY. The cost is that a
+ * literal `^V` (readline quoted-insert) can no longer be typed with `Ctrl+V`;
+ * that is the same trade every browser terminal makes, and `Ctrl+Q` remains.
+ */
+export function isTerminalPasteChord(input: KeyInput): boolean {
+  if (input.altKey) return false;
+  if (input.key.toLowerCase() !== 'v') return false;
+  return input.ctrlKey || input.metaKey;
+}
+
 /** The `g` chord lead. */
 export const CHORD_LEAD = 'g';
 

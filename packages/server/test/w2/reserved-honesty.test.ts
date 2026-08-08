@@ -132,9 +132,14 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
+    // 123 -> 124 (2026-08-02): execution.launch again. It is the same +1 as the
+    // 126 -> 127 above, and this pin was the one line of the four that did not get
+    // bumped with it. The three assertions above FORCE this number: 125 v1 rows
+    // minus the single v1 WS row (events.subscribe, asserted immediately above)
+    // is 124 — a 123 here contradicts them rather than measuring anything.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(123);
+    )).toHaveLength(124);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

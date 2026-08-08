@@ -14,12 +14,16 @@
     "strict": true,
     "types": ["vite/client"],
     "paths": {
-      "react": ["./node_modules/@types/react"],
-      "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
+      "react": ["./node_modules/@types/react", "../../node_modules/@types/react"],
+      "react/jsx-runtime": [
+        "./node_modules/@types/react/jsx-runtime",
+        "../../node_modules/@types/react/jsx-runtime"
+      ]
     },
     "baseUrl": "."
   },
   "//react-types-pin": "@types/react-mentions declares a floating `@types/react: \"*\"`, which bun resolved to 19.x nested beside it while this app is React 18. That made MentionsInput/Mention typecheck as React-19 components and fail at their JSX use sites in Composer.tsx — the giveaway being 'bigint is not assignable to ReactNode', a React-19-only widening. It is types-only: esbuild strips types, so the runtime was never affected. The `paths` pin above fixes it WITHOUT editing Composer.tsx, which this lane does not own, and without another install cycle.",
+  "//react-types-pin-both-layouts": "TWO candidates per key, and the second is the load-bearing one. A `paths` entry that resolves to nothing is silently ignored, and `./node_modules/@types/react` exists only under a per-package install. A workspace-wide `bun install --frozen-lockfile`, which is exactly what CI runs, HOISTS @types/react to the repo root and creates no packages/ui/node_modules/@types/react at all — so this pin resolved to nothing there and the four TS2786/TS2322 errors it was written to fix were red on every CI run while passing locally. Reproduced by rebuilding the hoisted layout and re-running `tsc -b packages/ui`: red before this line, clean after, and still clean in the per-package layout.",
   "include": ["src"],
   "//tests": "Tests are compiled and run by Vitest, not by tsc — same rationale as the source repo: test-only imports of node builtins (node:fs/path/url, used by the purity tests to walk the source tree) must not break the browser build, and app code stays guarded against accidental node imports because `types` omits @types/node.",
   "exclude": [
