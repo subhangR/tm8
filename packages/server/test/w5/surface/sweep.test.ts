@@ -74,6 +74,7 @@ import {
   type OperationBinding,
   type OperationName,
 } from '@tm8/contract';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 
@@ -286,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 123 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 124 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -294,9 +295,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    expect(SURFACE).toHaveLength(123);
-    expect(rows).toHaveLength(123);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
+    // 123 -> 124: projects.directories.list, the onboarding GET.
+    expect(SURFACE).toHaveLength(124);
+    expect(rows).toHaveLength(124);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(124);
   });
 
   /**
@@ -339,9 +341,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // frames live under `node_modules/.bun/@vitest+runner/dist/`, so the
     // unscoped form went red on the test harness while the thing it was
     // actually asserting about was already correct.
+    //
+    // DERIVED from this file's own location, never a literal. The scope used to
+    // read `/Projects/tm8/packages/`, which is one developer's macOS checkout
+    // path: anywhere else it matched zero frames, so `tm8Frames.length` was 0
+    // and the assertion below failed for a reason that has nothing to do with
+    // src-vs-dist. `node_modules` is excluded explicitly because a checkout
+    // could legitimately sit under a path containing the repo name twice.
+    const packagesDir = fileURLToPath(new URL('../../../../', import.meta.url));
     const tm8Frames = stack
       .split('\n')
-      .filter((line) => line.includes('/Projects/tm8/packages/'));
+      .filter((line) => line.includes(packagesDir) && !line.includes('/node_modules/'));
     expect(tm8Frames.length).toBeGreaterThan(0);
     expect(tm8Frames.filter((line) => line.includes('/dist/'))).toEqual([]);
   });
@@ -398,7 +408,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 72 -> 73 on 2026-08-05: 077 (anchor-watcher notification fan-out). This
     // lane authored it as 076 in parallel with the reply-delivery lane; both
     // claimed the same free number, so it renumbered to 077 on landing.
-    expect(server.appliedMigrations.length).toBe(73);
+    // 73 -> 75 on 2026-08-08: 078 (derived_from props_schema) and 079 (core-draft
+    // promptPolicy repair), the two defects the CI gate was hiding for as long as
+    // it had no database to run these suites against.
+    expect(server.appliedMigrations.length).toBe(75);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

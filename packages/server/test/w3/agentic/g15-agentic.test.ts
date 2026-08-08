@@ -100,7 +100,8 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // execution.journal, identity.profile.update.
     // 121 -> 125 (2026-08-02): auth.signup/login/logout/session.get.
     // 125 -> 126 (2026-08-02): execution.launch.
-    expect(root.catalog.total).toBe(126);
+    // 126 -> 127: projects.directories.list, the onboarding GET.
+    expect(root.catalog.total).toBe(127);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

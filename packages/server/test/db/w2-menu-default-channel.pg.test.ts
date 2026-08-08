@@ -762,10 +762,17 @@ describe.sequential('W2.G14 menu/default-channel PostgreSQL semantics', () => {
       await client.query('set local role tm8_graph_owner');
       await client.query(`update public.entities set deleted_at = now() where id = $1`, [fixture.channelA1]);
     })).rejects.toMatchObject({ code: '23514' });
+    // 23503 (foreign_key_violation), NOT 23001 (restrict_violation). The refusal
+    // comes from `spaces_default_channel_id_fkey ... on delete restrict`
+    // (029:546-548), and PostgreSQL reports a RESTRICT violation through
+    // ri_ReportViolation as a plain foreign_key_violation — 23001 is not a code
+    // this schema can produce, so the old pin could never go green. The
+    // constraint is named as well as the code: that is what makes this assert
+    // "the default channel is what protects it", not merely "something failed".
     await expect(database.transaction(async (client) => {
       await client.query('set local role tm8_graph_owner');
       await client.query(`delete from public.channels where entity_id = $1`, [fixture.channelA1]);
-    })).rejects.toMatchObject({ code: '23001' });
+    })).rejects.toMatchObject({ code: '23503', constraint: 'spaces_default_channel_id_fkey' });
 
     const noFeed = frozenSettingsView(
       await asApp(database, fixture.ownerIdentity, async (client) => (
