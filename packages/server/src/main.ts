@@ -53,7 +53,12 @@ import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
-import { createPtyWsServer, isPtyUpgrade, type PtyAttachAuthorizer } from './pty/index.js';
+import {
+  createPtyAttachAuthorizer,
+  createPtyWsServer,
+  isPtyUpgrade,
+  type PtyAttachAuthorizer,
+} from './pty/index.js';
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
@@ -371,35 +376,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * non-browser clients; no credential resolves to the loopback auto-owner,
    * exactly like every HTTP request (T-L7 — one resolver, one arm).
    *
-   * Authorization: the caller must be able to SEE the work_session entity —
-   * one RLS-governed read under their own claims as `tm8_app`. Membership of
-   * the owning space is precisely what `entity_readable` encodes, so there
-   * is no second authorization vocabulary here. Not-visible and nonexistent
-   * are both 404: an outsider learns nothing about which ids are real.
+   * Authorization lives in pty/attach-authz.ts, and the policy is not restated
+   * here or anywhere else in TypeScript: it CALLS `public.grant_stream_attach`,
+   * the same function `execution.streams.attach` goes through, and enforces the
+   * view-versus-drive answer it gives. Being able to SEE the entity is only the
+   * first of the three tests — it was, wrongly, the only one until this lane.
    */
-  const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const ptyAuthorize: PtyAttachAuthorizer | undefined = db
-    ? async (req, sessionId) => {
-        if (!UUID_SHAPE.test(sessionId)) {
-          return { ok: false, status: 404, message: 'no such session' };
-        }
-        let identity: RequestIdentity;
-        try {
-          identity = await resolveSocketIdentity(req);
-        } catch {
-          return { ok: false, status: 401, message: 'authentication required' };
-        }
-        if (!identity.identityId) {
-          return { ok: false, status: 401, message: 'authentication required' };
-        }
-        const visible = await db.query(
-          { identityId: identity.identityId },
-          'select 1 from public.entities where id = $1 and deleted_at is null',
-          [sessionId],
-        );
-        if (visible.length === 0) return { ok: false, status: 404, message: 'no such session' };
-        return { ok: true };
-      }
+    ? createPtyAttachAuthorizer({
+        db,
+        resolveIdentityId: async (req) => (await resolveSocketIdentity(req)).identityId,
+      })
     : undefined;
 
   const ptyWs = execution
