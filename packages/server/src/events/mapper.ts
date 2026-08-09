@@ -98,6 +98,14 @@ export const WORKSPACE_EVENT_COLUMNS =
  *    {type, channelId|null, settingsRevision, clientMutationId?}. Space-level
  *    setting; mutation table public.spaces is not trigger-covered. Space-wide
  *    safe.
+ *  - 'git.commit_recorded' / 'git.pr_state_changed' /
+ *    'git.worktree_status_changed' (authors: 082's capture triggers on
+ *    public.commits / public.pull_requests / public.worktrees): payloads are
+ *    built contract-shaped in the trigger, `type` included. The facts tables
+ *    are NOT 003-trigger-covered (only the entities-row version bump is, which
+ *    is a different mutation on a different table — no double delivery of THIS
+ *    payload). Space-wide safe: repo/sha/PR state are the same facts every
+ *    member reads via the entity views; recipient_member_id is NULL.
  *
  * NOT members (verified against every insert site, 2026-07-28 — do not add
  * without a write-side fix): handoff.*, message.delivery_reserved/_settled,
@@ -109,6 +117,9 @@ export const WORKSPACE_EVENT_COLUMNS =
 export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
   'menu.updated',
   'space.default_channel.updated',
+  'git.commit_recorded',
+  'git.pr_state_changed',
+  'git.worktree_status_changed',
 ]);
 
 function str(v: unknown): string | null {
@@ -199,6 +210,11 @@ function referencedEntityIds(row: WorkspaceEventRow): string[] {
         str(p['actor_id']),
         str(p['recipient_team_member_id']),
         str(p['recipient_member_id']),
+        // The message the notification is ABOUT. `target_entity_id` is the
+        // ANCHOR (003:152 passes `new.anchor_id`), so the target's excerpt is
+        // the channel topic or task description — not the body that mentioned
+        // you. The preview has to come from the message entity itself.
+        str(record(p['payload'])['messageId']),
       ].filter((v): v is string => v !== null);
     default:
       return [];
@@ -639,7 +655,31 @@ export class WorkspaceEventMapper {
           readAt: iso(p['read_at']),
           createdAt: iso(p['created_at']) ?? new Date(0).toISOString(),
         };
-        const message = str(record(p['payload'])['message']);
+        // The inbox preview line.
+        //
+        // This read `payload.message`, a key NO producer has ever written, so
+        // the preview rendered for no notification of any kind, ever. The
+        // payload DOES carry `excerpt` (003:155, 019:267, 077:156) but wiring
+        // that to a renderer is forbidden: it is a raw `left(body, 280)` cut in
+        // plpgsql with no markdown strip and no whitespace flatten, and a
+        // fourth independent excerpt cap is exactly what the one-helper rule
+        // exists to prevent (Messaging Format §3.5.1).
+        //
+        // So the preview is derived from the MESSAGE entity's own summary,
+        // which comes from `entity-read.ts`'s single `excerpt()` helper and
+        // therefore inherits its markdown handling for free. `messageId` is
+        // requested in `referencedEntityIds` above; NOT `target_entity_id`,
+        // which is the anchor, not the message.
+        //
+        // A message the viewer cannot read is absent from `entities`, so it
+        // yields no preview — strictly better than the payload copy, which
+        // would have handed out the body regardless of readability.
+        //
+        // MUST stay in step with the facade reader in
+        // `facade/services/w2/inbox-read-marks.ts` — same two assemblers, same
+        // NotificationItem.
+        const messageId = str(record(p['payload'])['messageId']);
+        const message = messageId === null ? null : entities.get(messageId)?.excerpt ?? null;
         return {
           type: row.event_type,
           notification: message === null ? notification : { ...notification, message },

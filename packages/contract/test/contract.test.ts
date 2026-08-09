@@ -305,7 +305,22 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
       ...ok, projectId: '44444444-4444-4444-8444-444444444444', workdir: { mode: 'project' },
     }).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'scratch' } }).success).toBe(true);
-    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'worktree', baseRef: 'main' } }).success).toBe(false);
+    // The worktree gate is OPEN. It stayed shut while this schema was the only
+    // thing holding the line (the RPC would have accepted the mode), and it
+    // opened in the same change as the manager, the saga and the reconciler —
+    // which is the condition §7.4 sets for advertising the capability at all.
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'worktree' } }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'worktree', baseRef: 'main' } }).success).toBe(true);
+    // Intent in, never paths (§7.1). `.strict()` is what makes this a refusal
+    // rather than a field the server silently drops.
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, workdir: { mode: 'worktree', path: '/etc' },
+    }).success).toBe(false);
+    // And a client cannot pin a commit the server never validated.
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok, workdir: { mode: 'worktree', baseCommitOid: 'a'.repeat(40) },
+    }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'worktree', baseRef: '' } }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, workdir: { mode: 'yolo' } }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, spaceId: 'fixture-space' }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, interactionProfileId: 'fixture-profile' }).success).toBe(false);

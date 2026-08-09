@@ -118,6 +118,7 @@ function context(
     params?: Record<string, string>;
     body?: unknown;
     query?: Record<string, string>;
+    identity?: RequestContext['identity'];
   } = {},
 ): RequestContext {
   return {
@@ -127,7 +128,7 @@ function context(
     query: new URLSearchParams(options.query),
     body: options.body,
     requestId: 'req-g01',
-    identity: { kind: 'auto-owner', identityId: 'identity-owner' },
+    identity: options.identity ?? { kind: 'auto-owner', identityId: 'identity-owner' },
     headers: {},
     method: 'GET',
     path: '/test',
@@ -144,6 +145,36 @@ describe('W2.G01 identity and Spaces handler seam', () => {
   it('registers the complete frozen 21-operation group and nothing else', () => {
     const registry = registryFor(new FakeDb());
     expect(registry.implemented()).toEqual([...G01_OPERATIONS].sort());
+  });
+
+  it('opens navigation as the authenticated bearer who created the space, not the node owner', async () => {
+    const bearerIdentity = 'identity-bhargav';
+    const db = new FakeDb(
+      async (sql, params) => {
+        if (sql.includes('from public.members where space_id')) {
+          return params[1] === bearerIdentity ? [{ entity_id: MEMBER_ID }] : [];
+        }
+        return [];
+      },
+      async (fn) => fn === 'unread_counts' ? [] : {},
+    );
+    const handler = registryFor(db).get('spaces.navigation')!;
+
+    const navigation = await handler(context('spaces.navigation', {
+      params: { spaceId: SPACE_ID },
+      identity: {
+        kind: 'bearer',
+        identityId: bearerIdentity,
+        token: 'tm8s_bhargav.secret',
+        nodeAdmin: true,
+      },
+    }));
+
+    expect(db.queryCalls[0]?.params).toEqual([SPACE_ID, bearerIdentity]);
+    expect(navigation).toMatchObject({
+      spaceId: SPACE_ID,
+      viewer: { id: MEMBER_ID },
+    });
   });
 
   it('requires clientMutationId before every G01 command reaches an RPC', async () => {

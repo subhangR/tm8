@@ -205,10 +205,10 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
-    // it its behaviour. Debug is the always-present third chip (it does not
-    // depend on the chat pin), so a chat-enabled session shows all three.
+    // it its behaviour. Debug and Graph are always present (neither depends on
+    // the chat pin), so a chat-enabled session shows all four.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug']);
+    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug', 'Graph']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {
@@ -1303,6 +1303,17 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         reasons={REASONS}
         ctx={{ ...ctx, capabilities: detail.capabilities, liveness: 'stale' }}
         liveness="stale"
+        /*
+         * WIRED, and that is what the `Save` assertion below now measures.
+         * A session title became editable (085), so this panel mounts the save
+         * flow exactly as a task's does — and `SaveControls` renders NOTHING
+         * while the draft is clean. Mounted WITHOUT an executor it renders a
+         * permanent disabled-with-reason instead, which is the state that
+         * squeezed Discussion/Connections/Activity out of this row and the
+         * reason the registry flag was false. Both halves are real; the
+         * unwired one stays pinned for tasks in save-wiring.test.tsx.
+         */
+        commands={{ createEntity: vi.fn(), patchTask: vi.fn() }}
         onAction={() => {}}
         onPromote={() => {}}
         onClose={() => {}}

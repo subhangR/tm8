@@ -4,6 +4,7 @@ import type {
   SessionJournalPage,
   SessionJournalRecord,
   SessionLaunchRecord,
+  SessionTranscriptPage,
 } from '@tm8/contract';
 import type { Seam } from '../../data/seam';
 import { describeLaunchManifest } from '../../domain';
@@ -11,16 +12,21 @@ import { DisabledAction } from '../honesty/DisabledWithReason';
 import './session-debug.css';
 
 /**
- * THE DEBUG SURFACE — what this session was TOLD, and what it then DID.
+ * THE DEBUG SURFACE — what this session was TOLD, what it SAID, and what it DID.
  *
- * Two reads, deliberately not one. `launch` answers "what was this agent given
+ * Three reads, deliberately not one. `launch` answers "what was this agent given
  * at spawn" — the composed manifest, the environment variable names, and the
- * two prompt channels as the bytes actually sent. `journal` answers "what has
- * this agent run since". They have opposite lifetimes: the launch record is
- * written once and can never change, the journal grows every few seconds. So
- * the launch record is read ONCE per mount and the journal is the only thing
- * polled; shipping a whole manifest every 5s to learn nothing would be waste
- * dressed as freshness.
+ * two prompt channels as the bytes actually sent. `transcript` answers "what has
+ * this agent said" — its own native JSONL, the only place its prose survives the
+ * process. `journal` answers "what has this agent run since". They have
+ * different lifetimes: the launch record is written once and can never change,
+ * while the transcript and the journal both grow every few seconds. So the
+ * launch record is read ONCE per mount and the other two are polled; shipping a
+ * whole manifest every 5s to learn nothing would be waste dressed as freshness.
+ *
+ * The transcript is NOT the terminal and NOT the journal, and the surface says
+ * so: PTY bytes are ANSI repaints nobody can read back, and the journal records
+ * `tm8` CLI calls and carries no model output at all.
  *
  * SELF-FETCHING (like LazySessionChatSurface): it receives the seam and does
  * its own reads, rather than threading through the gate's data lens. The switch
@@ -66,11 +72,19 @@ type LaunchState =
   | { phase: 'error'; message: string }
   | { phase: 'ready'; record: SessionLaunchRecord };
 
+/** Independent of both the others for the same reason: three reads, three fates. */
+type TranscriptState =
+  | { phase: 'loading' }
+  | { phase: 'error'; message: string }
+  | { phase: 'ready'; page: SessionTranscriptPage };
+
 export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProps) {
   const [state, setState] = useState<LoadState>({ phase: 'loading' });
   const [launch, setLaunch] = useState<LaunchState>({ phase: 'loading' });
+  const [transcript, setTranscript] = useState<TranscriptState>({ phase: 'loading' });
   // Kept across polls so a refresh does not throw the surface back to a spinner.
   const hasLoaded = useRef(false);
+  const hasLoadedTranscript = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -86,9 +100,28 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
     }
   }, [seam, sessionId]);
 
+  const loadTranscript = useCallback(async () => {
+    try {
+      const page = await seam.transcript(sessionId);
+      hasLoadedTranscript.current = true;
+      setTranscript({ phase: 'ready', page });
+    } catch (err) {
+      if (!hasLoadedTranscript.current) {
+        setTranscript({
+          phase: 'error',
+          message: err instanceof Error ? err.message : 'Transcript read failed',
+        });
+      }
+    }
+  }, [seam, sessionId]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadTranscript();
+  }, [loadTranscript]);
 
   // ONE read, no poll: a launch record is written at spawn and is immutable.
   useEffect(() => {
@@ -109,9 +142,12 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
 
   useEffect(() => {
     if (!live) return;
-    const timer = setInterval(() => void load(), POLL_MS);
+    const timer = setInterval(() => {
+      void load();
+      void loadTranscript();
+    }, POLL_MS);
     return () => clearInterval(timer);
-  }, [live, load]);
+  }, [live, load, loadTranscript]);
 
   if (state.phase === 'loading') {
     return (
@@ -125,6 +161,7 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
     return (
       <div className="pn-debug" data-testid="session-debug-body">
         <LaunchSection state={launch} />
+        <TranscriptSection state={transcript} />
         <div className="pn-debug__empty" data-testid="session-debug-error">
           <DisabledAction
             label="Session journal"
@@ -141,6 +178,7 @@ export function SessionDebugBody({ seam, sessionId, live }: SessionDebugBodyProp
   return (
     <div className="pn-debug" data-testid="session-debug-body">
       <LaunchSection state={launch} />
+      <TranscriptSection state={transcript} />
       <DebugHeader page={page} />
       {page.available ? (
         <DebugTable records={page.records} hasMore={page.hasMore} />
@@ -378,6 +416,183 @@ function formatStamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString();
+}
+
+/**
+ * WHAT THIS SESSION SAID — the agent's own words, read from the transcript the
+ * agent itself writes (`~/.claude/projects/**`, `~/.codex/sessions/**`).
+ *
+ * Three honesty rules govern this section and none of them are cosmetic:
+ *
+ *  1. The stats describe the RETURNED WINDOW, never the session's lifetime. The
+ *     server tails a bounded slice of a file that can reach tens of megabytes,
+ *     so `partial` is stated in the label — presenting a tail's token count as a
+ *     session's spend is the exact dishonesty the flag exists to prevent.
+ *  2. `stuck` is a HEURISTIC (many tool calls, no prose, for a long time), so it
+ *     ships with its two raw numbers and points at `session liveness` for the
+ *     actual verdict. A badge that read as "this agent is broken" would be a
+ *     claim this data cannot support.
+ *  3. Tool ARGUMENTS and tool OUTPUT are structurally absent — only that a tool
+ *     ran, and its name. Saying so here stops their absence from reading as a
+ *     display choice someone could ask to have turned on.
+ */
+function TranscriptSection({ state }: { state: TranscriptState }) {
+  if (state.phase === 'loading') {
+    return (
+      <section className="pn-debug__launch" data-testid="session-debug-transcript">
+        <p className="pn-debug__loading" role="status">Reading the agent transcript…</p>
+      </section>
+    );
+  }
+
+  if (state.phase === 'error') {
+    return (
+      <section className="pn-debug__launch" data-testid="session-debug-transcript">
+        <div className="pn-debug__empty" data-testid="session-debug-transcript-error">
+          <DisabledAction
+            label="Agent transcript"
+            reason={{ cause: 'The transcript could not be read', remedy: state.message }}
+          >
+            Transcript unavailable
+          </DisabledAction>
+        </div>
+      </section>
+    );
+  }
+
+  const { page } = state;
+  if (!page.available) {
+    return (
+      <section className="pn-debug__launch" data-testid="session-debug-transcript">
+        <div className="pn-debug__empty" data-testid="session-debug-transcript-empty">
+          <DisabledAction label="Agent transcript" reason={transcriptUnavailableReason(page)}>
+            No transcript for this session
+          </DisabledAction>
+        </div>
+      </section>
+    );
+  }
+
+  const s = page.stats;
+  return (
+    <section className="pn-debug__launch" data-testid="session-debug-transcript">
+      <details className="pn-debug__launch-root" open>
+        <summary className="pn-debug__launch-summary">
+          What this agent said
+          <span className="pn-debug__launch-when">
+            {page.agentTool === null ? '' : ` · ${page.agentTool}`}
+            {page.lastActivityAt === null ? '' : ` · last turn ${formatStamp(page.lastActivityAt)}`}
+          </span>
+        </summary>
+
+        {s === null ? null : (
+          <>
+            <div className="pn-debug__stats">
+              {/* Turns spoken, not records written: a tool result is a `user`
+                  record in claude's JSONL and is not a turn anybody took, so
+                  these are the same turns the list below is drawn from. */}
+              <Stat label="Turns by agent" value={String(s.assistantMessages)} />
+              <Stat label="Turns by user" value={String(s.userMessages)} />
+              <Stat label="Tool calls" value={String(s.toolCalls)} />
+              {/* No `~`, unlike the journal's byte-derived estimates: these are
+                  the PROVIDER's own reported usage, copied through unchanged.
+                  A null means the tool did not report it — never a zero. */}
+              <Stat label="Input tokens (reported)" value={s.inputTokens === null ? 'not reported' : abbrev(s.inputTokens)} />
+              <Stat label="Output tokens (reported)" value={s.outputTokens === null ? 'not reported' : abbrev(s.outputTokens)} />
+              {page.malformed > 0 ? (
+                <Stat label="Unparsable lines" value={String(page.malformed)} tone="bad" />
+              ) : null}
+            </div>
+            <p className="pn-debug__boundary" data-testid="session-debug-transcript-boundary">
+              {s.partial
+                ? 'These counts describe only the newest part of the transcript that was read, not the whole session — the transcript is read as a tail.'
+                : 'The whole transcript fit in one read, so these counts cover the entire session.'}
+              {' '}Tool arguments and tool output are never returned — only that a tool ran, and its name.
+            </p>
+          </>
+        )}
+
+        {page.stuck === null ? null : (
+          <p className="pn-debug__boundary" data-tone="bad" data-testid="session-debug-transcript-stuck">
+            Possibly stuck: {page.stuck.toolCallsSinceText} tool calls and no prose for{' '}
+            {Math.round(page.stuck.silentMs / 1000)}s. This is a heuristic over the transcript, not a
+            liveness signal — the session’s own liveness is the authority on whether anything is running.
+          </p>
+        )}
+
+        {s === null || s.models.length === 0 ? null : (
+          <div className="pn-debug__fields">
+            <Field label="Models seen" value={s.models.join(', ')} mono />
+          </div>
+        )}
+
+        {s === null || s.tools.length === 0 ? null : (
+          <LaunchBlock label={`Tools used · ${String(s.tools.length)}`}>
+            <ul className="pn-debug__envs">
+              {s.tools.map((tool) => (
+                <li key={tool.name}><code>{tool.name}</code> × {tool.count}</li>
+              ))}
+            </ul>
+          </LaunchBlock>
+        )}
+
+        {page.entries.length === 0 ? (
+          <p className="pn-debug__note">
+            The transcript exists but carries no prose turns yet — the agent has only run tools.
+          </p>
+        ) : (
+          <div className="pn-debug__turns" data-testid="session-debug-turns">
+            {/* Oldest-first, as the server sends it: a tail read backwards is
+                unreadable, and reversing here would fight the contract. */}
+            {page.entries.map((entry, i) => (
+              <div
+                key={`${entry.at ?? 'no-time'}-${String(i)}`}
+                className="pn-debug__turn"
+                data-source={entry.source}
+              >
+                <span className="pn-debug__turn-head">
+                  {entry.source === 'assistant' ? 'agent' : 'user'}
+                  {entry.at === null ? '' : ` · ${formatTime(entry.at)}`}
+                  {entry.truncated ? ' · truncated' : ''}
+                </span>
+                <pre className="pn-debug__pre">{entry.text}</pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </details>
+    </section>
+  );
+}
+
+function transcriptUnavailableReason(page: SessionTranscriptPage) {
+  switch (page.unavailableReason) {
+    case 'no_native_session_id':
+      return {
+        cause: 'This session’s agent transcript cannot be identified',
+        remedy: 'it was spawned before tm8 recorded the agent’s own session id — unrecoverable, not an error',
+      };
+    case 'unsupported_agent_tool':
+      return {
+        cause: 'This agent writes no transcript tm8 can read',
+        remedy: 'only Claude Code and Codex keep a native transcript; other tools leave nothing behind',
+      };
+    case 'no_transcript_file':
+      return {
+        cause: 'No transcript file exists for this session',
+        remedy: 'the agent has not written its first turn yet, or the file has since been cleaned up',
+      };
+    case 'unreadable':
+      return {
+        cause: 'The transcript file could not be read',
+        remedy: 'the file exists but the node could not open it',
+      };
+    default:
+      return {
+        cause: 'No transcript is available for this session',
+        remedy: 'the node reported no reason',
+      };
+  }
 }
 
 function DebugHeader({ page }: { page: SessionJournalPage }) {

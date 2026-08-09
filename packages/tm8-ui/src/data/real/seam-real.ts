@@ -52,15 +52,17 @@ import {
   type MessageView,
   type NotificationItem,
   type Page,
+  type ProjectBranchTopology,
   type ProjectResource,
   type SessionJournalPage,
   type SessionLaunchRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, Unsubscribe } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -266,6 +268,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     graph: (input: GraphQuery): Promise<GraphResult> => ops.graph(input),
     entityKinds: (spaceId: SpaceId): Promise<EntityKindDef[]> => ops.entityKinds(spaceId),
     projects: (spaceId: SpaceId): Promise<ProjectResource[]> => ops.projects(spaceId),
+    projectBranches: (projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology> =>
+      ops.projectBranches(projectId, opts),
     projectSetup: {
       directories: (path) => ops.projectDirectories(path),
       createSpace: (input) => ops.createSpace(input),
@@ -286,6 +290,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
       ops.journal(workSessionId, opts),
     launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
+    transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
+      ops.transcript(workSessionId, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),
@@ -335,6 +341,15 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
       resume: (id, input) => ops.resume(id, input),
+    },
+
+    // -- credentials ---------------------------------------------------------
+
+    credentials: {
+      status: () => ops.credentialsStatus(),
+      disconnect: (provider) => ops.credentialsDisconnect(provider),
+      startLogin: (spaceId, provider) => ops.credentialsStartLogin(spaceId, provider),
+      finishLogin: (workSessionId) => ops.credentialsFinishLogin(workSessionId),
     },
 
     // -- liveness ------------------------------------------------------------

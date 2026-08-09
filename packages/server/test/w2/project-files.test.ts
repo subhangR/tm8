@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -39,7 +39,7 @@ let scratch: string;
 let workingDir: string;
 
 beforeEach(async () => {
-  scratch = await mkdtemp(join(tmpdir(), 'tm8-project-files-'));
+  scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-project-files-')));
   workingDir = join(scratch, 'project');
   await mkdir(workingDir);
 });

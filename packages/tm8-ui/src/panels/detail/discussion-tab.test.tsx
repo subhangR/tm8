@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import type { MessageView } from '@tm8/contract';
 import { DiscussionTab } from './tabs';
@@ -131,7 +131,7 @@ describe('a discussion message body is markdown', () => {
     expect(container.textContent).toContain('onerror');
   });
 
-  it('a mention is marked-up TEXT here, never a control — this tab opens nothing', () => {
+  it('a mention with NO handler is marked-up text — never a control that opens nothing', () => {
     const container = bodyOf('ping @Haiku 4.5 now', [
       { entityId: 'ent-haiku', kind: 'team_member', display: 'Haiku 4.5' },
     ]);
@@ -139,6 +139,39 @@ describe('a discussion message body is markdown', () => {
     // No button, and no dead anchor pointing at the mention's own href.
     expect(container.querySelector('.pn-msg__body button')).toBeNull();
     expect(container.querySelector('a[href^="#tm8-mention-"]')).toBeNull();
+  });
+
+  it('a mention WITH a handler opens the entity it names', () => {
+    const onOpenEntity = vi.fn();
+    const root = message('root-1', 'ping @Haiku 4.5 now');
+    (root.content as { mentions: unknown }).mentions = [
+      { entityId: 'ent-haiku', kind: 'team_member', display: 'Haiku 4.5' },
+    ];
+    render(
+      <DiscussionTab
+        messages={[root]}
+        provenanceHollowReason="Not recorded"
+        onOpenEntity={onOpenEntity}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Open mention Haiku 4.5' });
+    button.click();
+    expect(onOpenEntity).toHaveBeenCalledWith('ent-haiku');
+  });
+
+  it('an href NOBODY vouched for stays text — a look-alike is not a mention', () => {
+    // The mention list is the authority; a body may contain a hand-written
+    // `#tm8-mention-…` link, and it must never become a live control.
+    const root = message('root-1', '[@ghost](#tm8-mention-ent-nobody)');
+    const { container } = render(
+      <DiscussionTab
+        messages={[root]}
+        provenanceHollowReason="Not recorded"
+        onOpenEntity={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('.pn-msg__body button')).toBeNull();
+    expect(container.querySelector('.pn-msg__mention')?.textContent).toBe('@ghost');
   });
 
   it('the reply-context excerpt stays FLAT — a body cut mid-fence would swallow the row', () => {

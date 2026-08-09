@@ -15,7 +15,7 @@
  * So the handler's whole job is to bind the input and let the database be the
  * authority. Any validation added here would be a second, weaker copy.
  */
-import type { CompleteTaskInput, WorkInput } from '@tm8/contract';
+import type { CompleteTaskInput, GateTaskInput, WorkInput } from '@tm8/contract';
 import type { OperationHandler } from '../../http/types.js';
 import type { FacadeDeps } from '../deps.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../context.js';
@@ -89,6 +89,40 @@ export function commandsComplete(deps: FacadeDeps): OperationHandler {
     } catch (err) {
       // complete_task asserts the version too, so it conflicts the same way a
       // patch does and owes the client the same `current`.
+      throw await enrichVersionConflict(deps, ctx, id, err);
+    }
+  };
+}
+
+/**
+ * `entities.commands.gate` — 082's opt-in completion gate. The rule lives in
+ * the RPC pair (set_task_gate stores the flag; complete_task enforces it), so
+ * this handler only binds the input, exactly like `commandsComplete` above.
+ */
+export function commandsGate(deps: FacadeDeps): OperationHandler {
+  return async (ctx) => {
+    const owner = await deps.owner();
+    const envelope = commandEnvelope(ctx);
+    const id = requireUuidParam(ctx, 'id');
+    const input = ctx.body as GateTaskInput;
+
+    const run = (): Promise<unknown> =>
+      deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
+        const raw = await q.rpc<RpcCommandResult>('set_task_gate', [
+          id,
+          input.expectedVersion,
+          input.gate,
+          envelope.actorId ?? null,
+          envelope.clientMutationId ?? null,
+        ]);
+        return toCommandResult(q, raw, owner.identityId);
+      });
+
+    try {
+      return await run();
+    } catch (err) {
+      // set_task_gate asserts the version, so it owes the same `current` a
+      // patch conflict does.
       throw await enrichVersionConflict(deps, ctx, id, err);
     }
   };

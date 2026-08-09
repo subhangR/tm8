@@ -42,6 +42,7 @@ import type {
   Visibility,
   WorkStatus,
 } from '@tm8/contract';
+import { plainExcerpt } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
 
@@ -79,7 +80,7 @@ export const ENTITY_COLUMNS = `
   ws.title as ws_title, ws.status as ws_status, ws.agent_tool as ws_agent_tool,
   ws.model as ws_model, ws.share_mode as ws_share_mode, ws.started_at as ws_started_at,
   ws.exited_at as ws_exited_at, ws.node_id as ws_node_id, ws.project_id as ws_project_id,
-  ws.transcript_doc_id as ws_transcript_doc_id,
+  ws.transcript_doc_id as ws_transcript_doc_id, ws.session_kind as ws_session_kind,
   wsp.pin_revision as ws_pin_revision, wsp.template_key as ws_pin_template_key,
   wsp.template_version as ws_pin_template_version,
   wsp.resolved_snapshot as ws_pin_resolved_snapshot,
@@ -205,6 +206,7 @@ export interface EntityRow {
   ws_node_id: string | null;
   ws_project_id: string | null;
   ws_transcript_doc_id: string | null;
+  ws_session_kind: string | null;
   ws_pin_revision: number | null;
   ws_pin_template_key: string | null;
   ws_pin_template_version: number | null;
@@ -317,11 +319,20 @@ function isoFromProps(value: unknown, fallback: string): string {
 
 const EXCERPT_MAX = 200;
 
+/**
+ * The 200-char preview every list row, board card and notification shows — and,
+ * for a message, the title itself (`events/projector.ts`).
+ *
+ * The cap is spent on WORDS: `plainExcerpt` strips markdown before truncating,
+ * because agents write markdown and 53 of 55 sampled bodies overflow this cap,
+ * so raw `**` and `##` were displacing the prose they decorate. The CLI's
+ * 72-char `bodyExcerpt` shares that helper — the caps differ on purpose, the
+ * rule must not.
+ */
 function excerpt(body: string | null): string | undefined {
   if (!body) return undefined;
-  const flat = body.replace(/\s+/g, ' ').trim();
-  if (flat.length === 0) return undefined;
-  return flat.length <= EXCERPT_MAX ? flat : `${flat.slice(0, EXCERPT_MAX - 1)}…`;
+  const flat = plainExcerpt(body, EXCERPT_MAX);
+  return flat.length === 0 ? undefined : flat;
 }
 
 /**
@@ -492,6 +503,15 @@ export interface EntityRelations {
   attention: Map<string, EntityAttentionSummary>;
   /** `assigned_to` targets, per task. */
   assignees: Map<string, string[]>;
+  /**
+   * `has_member` targets, per channel — the roster (080).
+   *
+   * Deliberately a SECOND map rather than a reuse of `assignees`. The two carry
+   * the same shape and mean different things: an assignee is accountable for a
+   * task, a member simply belongs to a channel. Folding them would make
+   * `state.assignees` on a channel read as an assignment the node never made.
+   */
+  members: Map<string, string[]>;
   /** Live child count, per entity. */
   childCounts: Map<string, number>;
   /** Unresolved HARD `depends_on` targets, per entity — the blocked badge. */
@@ -531,6 +551,7 @@ export interface EntityMarks {
 const EMPTY_RELATIONS: EntityRelations = {
   attention: new Map(),
   assignees: new Map(),
+  members: new Map(),
   childCounts: new Map(),
   blockedBy: new Map(),
   pulls: new Map(),
@@ -557,6 +578,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   const relations: EntityRelations = {
     attention: new Map(),
     assignees: new Map(),
+    members: new Map(),
     childCounts: new Map(),
     blockedBy: new Map(),
     pulls: new Map(),
@@ -576,7 +598,7 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
   }>(
     `select id, src_id, dst_id, type, props, created_at
        from public.edges
-      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
+      where (src_id = any($1::uuid[]) and type in ('assigned_to', 'has_member', 'depends_on', 'contains', 'based_on', 'copy_of', 'completed_by'))
          or (dst_id = any($1::uuid[]) and type in ('pulled', 'working_on', 'supersedes', 'disputes', 'verifies'))`,
     [unique],
   );
@@ -628,6 +650,9 @@ export async function loadRelations(q: Querier, ids: readonly string[]): Promise
     switch (edge.type) {
       case 'assigned_to':
         if (wanted.has(edge.src_id)) push(relations.assignees, edge.src_id, edge.dst_id);
+        break;
+      case 'has_member':
+        if (wanted.has(edge.src_id)) push(relations.members, edge.src_id, edge.dst_id);
         break;
       case 'completed_by': {
         // Latest wins: completion writes one edge per completer, and the
@@ -876,6 +901,52 @@ export async function loadViewerReactions(
   return out;
 }
 
+/**
+ * Per-viewer unread message counts, per anchor.
+ *
+ * Delegates to `public.unread_counts` (016:47) rather than re-deriving the
+ * predicate here, because "unread" must have exactly ONE definition: this is
+ * the same function `spaces.navigation` already calls for the channel tree
+ * (handlers/spaces.ts), and a second implementation would let the nav badge and
+ * the channel itself disagree about the same number. Re-deriving it locally is
+ * also not available: the predicate compares `entity_id` against
+ * `internal.uuid_at(last_read_at)`, and `internal` functions are granted to
+ * `tm8_app` one at a time (047, 070) — `uuid_at` is not among them.
+ *
+ * The function is SECURITY DEFINER and resolves the viewer from the
+ * TRANSACTION CLAIMS (`internal.current_member_id` → `internal.identity_id`),
+ * not from a parameter, so it reports the caller's own unread on both the
+ * facade and the projector path. It already excludes the viewer's own messages
+ * and re-checks `entity_readable` on both the message and its anchor.
+ *
+ * Only anchors WITH unread appear in the result (it is a `group by`), so a
+ * missing key means zero — which is a true zero, unlike the hardcoded one this
+ * replaced.
+ */
+export async function loadUnreadCounts(
+  q: Querier,
+  // Structural, not `EntityRow`: the projector assembles from its own row type
+  // and must resolve this from the same place, or the two paths diverge.
+  rows: readonly { kind: string; space_id: string }[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  // Scoped to channels: they are the only kind whose state carries a count, and
+  // this keeps the extra round-trip off every read that renders no channel.
+  const spaceIds = [
+    ...new Set(rows.filter((r) => r.kind === 'channel').map((r) => r.space_id).filter(Boolean)),
+  ];
+  if (spaceIds.length === 0) return out;
+
+  for (const spaceId of spaceIds) {
+    // Sequential for the same reason the assembler is: one pooled client.
+    const unreadRows = await q.rpc<Array<{ anchor_id: string; unread: number }>>('unread_counts', [
+      spaceId,
+    ]);
+    for (const row of unreadRows) out.set(row.anchor_id, Number(row.unread));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Assembly
 // ---------------------------------------------------------------------------
@@ -978,6 +1049,8 @@ export interface AssemblyContext {
   actors: Map<string, ActorSummary>;
   relations: EntityRelations;
   viewerReactions: Map<string, EntityCounters['viewerReaction']>;
+  /** Per-viewer unread message counts, per anchor. Absent key means zero. */
+  unreadCounts?: Map<string, number>;
   /** Summaries of related entities (dependency targets, working-on tasks). */
   related?: Map<string, EntitySummary>;
 }
@@ -1019,10 +1092,15 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       return {
         kind: 'channel',
         topic: row.channel_topic ?? '',
-        // Per-member unread counts are `unread_counts` (007:1986) and are not
-        // on the G1A loop. Reported as 0 rather than omitted, because the field
-        // is required and a wrong-but-typed 0 beats a crash in the renderer.
-        unreadCount: 0,
+        // The roster, from `has_member` (080). Batched with every other
+        // relation, so a channel list costs no extra query per row.
+        members: (ctx.relations.members.get(row.id) ?? []).map((id) => actorOf(ctx.actors, id)),
+        // Real, per-viewer, from `public.unread_counts` (016:47) — see
+        // loadUnreadCounts. A missing key is a genuine zero (the RPC groups,
+        // so it only returns anchors that HAVE unread), not the "not built"
+        // zero this used to report. MIRRORED by the projector twin so the read
+        // path and the event feed agree.
+        unreadCount: ctx.unreadCounts?.get(row.id) ?? 0,
         workingAgentCount: (ctx.relations.workingOn.get(row.id) ?? []).length,
       };
     case 'voice_channel':
@@ -1078,6 +1156,12 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         shareMode: (row.ws_share_mode ?? 'none') as 'none' | 'space' | 'explicit',
         startedAt: isoOrNull(row.ws_started_at),
         exitedAt: isoOrNull(row.ws_exited_at),
+        // OMITTED, never defaulted, when the column has no value: the DTO
+        // makes absence mean `agent`, so a node whose rows predate 082 keeps
+        // the pre-082 behaviour instead of being told they are all agents by
+        // a server that never looked. `.strict()` refuses an explicit
+        // `undefined` key, hence the spread rather than a ternary value.
+        ...(row.ws_session_kind ? { sessionKind: row.ws_session_kind as 'agent' | 'credential' } : {}),
       };
     case 'collection':
       return {
@@ -1306,7 +1390,10 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Worktree "edit" is exactly one thing — the status transition through
   // update_worktree; every other field is immutable. canEdit mirrors that the
   // patch door will accept SOMETHING, which is the contract of this flag.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree']);
+  // Work-session "edit" is likewise exactly one thing: the display title, via
+  // rename_work_session (085). Everything else on that row belongs to the
+  // execution block, which is why it is still not deletable or hierarchical.
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 
@@ -1500,6 +1587,7 @@ export async function assembleSummaries(
   // nothing and breaks at pg 9.
   const relations = await loadRelations(q, ids);
   const viewerReactions = await loadViewerReactions(q, ids, viewerIdentityId);
+  const unreadCounts = await loadUnreadCounts(q, rows);
 
   // Dependency targets are referenced by the blocked badge and are usually NOT
   // in the page being rendered, so they are fetched explicitly.
@@ -1521,6 +1609,7 @@ export async function assembleSummaries(
     r.team_member_owner_id ?? '',
   ]);
   for (const list of relations.assignees.values()) actorIds.push(...list);
+  for (const list of relations.members.values()) actorIds.push(...list);
   for (const list of relations.pulls.values()) actorIds.push(...list.map((p) => p.actorId));
   for (const list of relations.workingOn.values()) actorIds.push(...list.map((w) => w.actorId));
   for (const completion of relations.completedBy.values()) actorIds.push(completion.actorId);
@@ -1538,7 +1627,7 @@ export async function assembleSummaries(
   );
 
   // Pass 2: the real thing, with relations and the summaries the badges need.
-  const ctx: AssemblyContext = { actors, relations, viewerReactions, related };
+  const ctx: AssemblyContext = { actors, relations, viewerReactions, unreadCounts, related };
   return rows.map((r) => toEntitySummary(r, ctx));
 }
 

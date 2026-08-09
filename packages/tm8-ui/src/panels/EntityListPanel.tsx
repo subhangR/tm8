@@ -17,6 +17,8 @@ import type {
   LaunchCapacity,
   LaunchProjectOption,
   LifecycleTier,
+  ListPageState,
+  ListRowFacts,
   LiveTreatment,
   ProfileResolution,
   QueryFilter,
@@ -33,10 +35,13 @@ import {
   ALL_MODES,
   KindIcon,
   REASONS,
-  collectionKinds,
-  getKind,
-  resolveAction,
   toRowFacts,
+  VIEWER_ACTOR,
+  collectionKinds,
+  countLabel,
+  getKind,
+  needsViewer,
+  resolveAction,
 } from '../domain';
 import { Avatar, type PillTone } from '../kit';
 import {
@@ -84,17 +89,37 @@ const EMPTY_MEMBERS: readonly ActorSummary[] = Object.freeze([]);
  *      may refine a live row into "streaming"; it may never make a non-live
  *      row look alive.
  *
- * WHERE ROWS COME FROM. `rowsFor(filter)` is injected — the shell backs it
- * with seam-hydrated, domain-store-selected data per (kind, filter) query key.
- * The panel therefore never issues a query itself, which is also what keeps
- * it free of kind literals.
+ * WHERE ROWS COME FROM. `rowsFor(filter, sort)` is injected — the shell backs
+ * it with seam-hydrated, domain-store-selected data per (kind, filter, sort)
+ * query key. The panel therefore never issues a query itself, which is also
+ * what keeps it free of kind literals.
+ *
+ * AND THE SORT GOES WITH IT. The chip used to set local state that reached
+ * nothing: `rowsFor` took a filter only, so every list on every kind was
+ * permanently `activityAt_desc` while the chip cheerfully read `↓ priority`.
+ * Order is decided by Postgres and arrives as the ORDER OF THE PAGE — so the
+ * only way to change it is to ask a different question, and the only place to
+ * ask is here.
  */
 
 export interface EntityListPanelProps {
   /** Which registry row drives this panel. A miss lands on the `c:*` row. */
   kind: string;
-  /** Rows for a filter — seam-hydrated and store-selected by the shell. */
-  rowsFor: (filter: QueryFilter) => readonly EntitySummary[];
+  /**
+   * Rows for a (filter, sort) pair — seam-hydrated and store-selected by the
+   * shell. `sort` absent ⇒ the server's own default.
+   */
+  rowsFor: (filter: QueryFilter, sort?: SortKey) => readonly EntitySummary[];
+  /**
+   * Paging truth for the SAME (filter, sort) the rows came from.
+   *
+   * Absent ⇒ this host has not wired paging, and the panel says `N` rather
+   * than `N+` and mounts no scroll sentinel. That is the honest reading: with
+   * no `hasMore` there is no evidence of a truncation to disclose.
+   */
+  pageStateOf?: (filter: QueryFilter, sort?: SortKey) => ListPageState;
+  /** Append the next page for that read. Absent ⇒ no infinite scroll. */
+  loadMore?: (filter: QueryFilter, sort?: SortKey) => void;
   /** Real active-space membership. The people filter exists only at 2+. */
   members?: readonly ActorSummary[];
   ctx: ActionContext;
@@ -311,6 +336,19 @@ export function EntityListPanel(props: EntityListPanelProps) {
     });
   }, [members]);
 
+  /**
+   * Every tier's count, computed ONCE per render and shared by the three
+   * surfaces that show it (tabs, footer, selector total). They were three
+   * calls to the same function; with paging state joined in it is now enough
+   * work to be worth not tripling, and sharing also makes it structurally
+   * impossible for the tab and the footer to disagree.
+   */
+  const tierCounts = (list.lifecycle ?? []).map((tier) => ({
+    tier,
+    ...tierCount(props, config, tier),
+  }));
+  const anyTierTruncated = tierCounts.some((c) => c.label.endsWith('+'));
+
   return (
     <section
       className={props.compact ? 'lp lp--compact' : 'lp'}
@@ -322,7 +360,7 @@ export function EntityListPanel(props: EntityListPanelProps) {
         config={config}
         total={
           list.lifecycle
-            ? list.lifecycle.reduce((n, tier) => n + tierCount(props, config, tier), 0)
+            ? `${tierCounts.reduce((n, c) => n + c.n, 0)}${anyTierTruncated ? '+' : ''}`
             : undefined
         }
         liveCount={liveCountFor(props, config)}
@@ -344,7 +382,9 @@ export function EntityListPanel(props: EntityListPanelProps) {
         tiers={list.lifecycle}
         activeTierId={tierId}
         onTier={setTierId}
-        tierCount={(tier: LifecycleTier) => tierCount(props, config, tier)}
+        tierLabel={(tier: LifecycleTier) =>
+          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
+        }
       />
 
       <FilterRow
@@ -364,10 +404,13 @@ export function EntityListPanel(props: EntityListPanelProps) {
         }
         sortKey={sortKey}
         onSort={setSortKey}
+        viewerActorId={props.ctx.viewerActorId}
         tiers={list.lifecycle}
         activeTierId={tierId}
         onTier={setTierId}
-        tierCount={(tier: LifecycleTier) => tierCount(props, config, tier)}
+        tierLabel={(tier: LifecycleTier) =>
+          tierCounts.find((c) => c.tier.id === tier.id)?.label ?? '0'
+        }
         compact={props.compact}
         people={members.length > 1 ? members : []}
         selectedPeople={selectedPeople}
@@ -387,11 +430,16 @@ export function EntityListPanel(props: EntityListPanelProps) {
             config={config}
             tier={activeTier}
             onTier={setTierId}
-            filter={{
-              ...(scopeToTier(activeTier?.filter ?? {}, activeTier) ?? {}),
-              ...mergeSelectedFilters(config, selected),
-              ...(selectedPeople.length > 0 ? { createdByIds: selectedPeople } : {}),
-            }}
+            filter={
+              bandFilter(
+                activeTier?.filter ?? {},
+                activeTier,
+                selected,
+                config,
+                props.ctx,
+                selectedPeople,
+              ) ?? {}
+            }
             query={query}
           />
         ) : list.sections && list.sections.length > 0 ? (
@@ -400,12 +448,20 @@ export function EntityListPanel(props: EntityListPanelProps) {
              "COMPLETED · 0" inside the Open tier states something false about
              the tier rather than about the data. */
           list.sections
-            .filter((section) => scopeToTier(section.filter, activeTier) !== null)
+            .filter((section) => narrow(section.filter, activeTier?.filter) !== null)
             .map((section) => (
             <Band
               key={section.id}
               label={section.label}
-              rows={matching(rowsForBand(props, section.filter, activeTier, selected, config, selectedPeople), query)}
+              filter={bandFilter(
+                section.filter,
+                activeTier,
+                selected,
+                config,
+                props.ctx,
+                selectedPeople,
+              )}
+              sort={sortKey}
               collapsed={collapsed.has(section.id)}
               onToggle={() =>
                 setCollapsed((prev) => {
@@ -423,7 +479,15 @@ export function EntityListPanel(props: EntityListPanelProps) {
         ) : (
           <Band
             label={null}
-            rows={matching(rowsForBand(props, activeTier?.filter ?? {}, activeTier, selected, config, selectedPeople), query)}
+            filter={bandFilter(
+              activeTier?.filter ?? {},
+              activeTier,
+              selected,
+              config,
+              props.ctx,
+              selectedPeople,
+            )}
+            sort={sortKey}
             props={props}
             config={config}
             query={query}
@@ -434,11 +498,9 @@ export function EntityListPanel(props: EntityListPanelProps) {
       {/* T0-1 draws a footer count line on every kind: "9 open · 601 done ·
           33 archived". Same per-tier counts as the tabs above — one source,
           three surfaces (tabs, footer, selector total). */}
-      {list.lifecycle && list.lifecycle.length > 0 ? (
+      {tierCounts.length > 0 ? (
         <div className="lp__foot" data-testid="list-footer">
-          {list.lifecycle
-            .map((tier) => `${tierCount(props, config, tier)} ${tier.id}`)
-            .join(' · ')}
+          {tierCounts.map((c) => `${c.label} ${c.tier.id}`).join(' · ')}
         </div>
       ) : null}
     </section>
@@ -460,6 +522,107 @@ export function EntityListPanel(props: EntityListPanelProps) {
  * inside the no-branching law. When the contract gains the member, the
  * partition retires and no call site changes.
  */
+/**
+ * THE THREE AXES MUST NARROW, NOT OVERWRITE.
+ *
+ * A visible list is the intersection of three independently-chosen
+ * constraints: the SECTION band, the lifecycle TIER, and the filter CHIPS.
+ * This used to be `{...section, ...tier, ...chips}`, and object spread is the
+ * wrong operator for every one of them:
+ *
+ *   - ARRAYS. `{workStatus:['open','pulled','working']}` spread under
+ *     `{workStatus:['done']}` yields `['done']` — the Open tab showing done
+ *     rows. Two lists of allowed values compose by INTERSECTION; each one
+ *     says "only these", and both are still true.
+ *     Concretely: on the Open tier the band headed "Completed" was queried
+ *     with the OPEN statuses, so it rendered open tasks under a "Completed"
+ *     heading and was an exact duplicate of the "Current" band above it. A
+ *     user who marked a task done watched it stay put in a band labelled
+ *     Completed, which reads as "done did not work".
+ *   - SCALARS take the LATER value, because a scalar has no intersection.
+ *     Argument order is therefore load-bearing: section, then tier, then
+ *     chips. `deleted` is the case that matters — it is the outer lifecycle
+ *     scope, and a section's `deleted:'exclude'` restates the common case
+ *     rather than constraining anything, so THE TIER WINS. Reading that pair
+ *     as a contradiction does not reveal a bug, it empties the Archived tier
+ *     ('only') against every section ('exclude') — the one tier whose
+ *     partition already worked.
+ *   - EMPTY. An empty intersection is not `[]`. `workStatus: []` means NO
+ *     CONSTRAINT — client-side and server-side both — so emitting it would
+ *     turn "nothing can satisfy this" into "show me everything", which is the
+ *     loudest possible wrong answer.
+ *
+ * So: `null` means the constraints cannot be satisfied together, and only an
+ * ARRAY can produce it. The caller must render that as a stated empty state
+ * and issue NO query — asking the server a question you already know is
+ * unsatisfiable wastes a round trip and gets back a `[]` indistinguishable
+ * from a genuinely empty collection.
+ *
+ * This subsumes `scopeToTier`, which composed the section/tier pair under
+ * exactly these rules. Two functions for one law is one too many, and the
+ * chips need the same treatment the tier got.
+ */
+export function narrow(...parts: readonly (QueryFilter | undefined | null)[]): QueryFilter | null {
+  const out: Record<string, unknown> = {};
+  for (const part of parts) {
+    if (!part) continue;
+    for (const [key, value] of Object.entries(part as Record<string, unknown>)) {
+      if (!(key in out)) {
+        out[key] = value;
+        continue;
+      }
+      const prior = out[key];
+      if (Array.isArray(prior) && Array.isArray(value)) {
+        const both = prior.filter((v) => value.includes(v));
+        if (both.length === 0) return null;
+        out[key] = both;
+        continue;
+      }
+      // Scalar: the later part wins. Only an ARRAY intersection can be empty,
+      // so only an array can make a band unsatisfiable.
+      out[key] = value;
+    }
+  }
+  return out as QueryFilter;
+}
+
+/**
+ * D20 RETIRED (D56). The client-side status partition that used to run here is
+ * DELETED, not translated: the contract gained
+ * `CollectionQuery.filters.sessionStatus`, so the tier's own `filter` is an
+ * ordinary filter the SEAM executes, exactly like the task tiers beside it.
+ *
+ * Deliberately not re-implemented against `filter.sessionStatus` — that would
+ * put server-side filtering on the client as well, and the two would disagree
+ * the moment a status is added. One filter, executed once, at the seam.
+ */
+function bandFilter(
+  filter: QueryFilter,
+  tier: LifecycleTier | null,
+  selected: Readonly<Record<string, readonly string[]>>,
+  config: KindConfig,
+  ctx: ActionContext,
+  selectedPeople: readonly string[] = [],
+): QueryFilter | null {
+  return narrow(
+    filter,
+    tier?.filter,
+    mergeSelectedFilters(config, selected, ctx),
+    /* `createdByIds` IS NOT A MEMBER OF `CollectionQuery.filters` — it belongs
+       to `EntityConnectionsQuery`. This is carried through unchanged because
+       it is what the people chip already did, but it only ever type-checked
+       because it was written as a SPREAD, and excess-property checking does
+       not look inside one. Passed as an argument the compiler objects, hence
+       the cast, which is here to keep the gap visible rather than to close it.
+       The people filter is therefore very likely inert at the seam; giving it
+       a real member is a contract amendment and a separate task. */
+    selectedPeople.length > 0 ? ({ createdByIds: [...selectedPeople] } as QueryFilter) : undefined,
+  );
+}
+
+/** Frozen so an unsatisfiable band keeps referential identity across renders. */
+const NO_ROWS: readonly EntitySummary[] = Object.freeze([]);
+
 function rowsForBand(
   props: EntityListPanelProps,
   filter: QueryFilter,
@@ -467,6 +630,7 @@ function rowsForBand(
   selected: Readonly<Record<string, readonly string[]>>,
   config: KindConfig,
   selectedPeople: readonly string[] = [],
+  sort?: SortKey,
 ): readonly EntitySummary[] {
   /**
    * D20 RETIRED (D56). The client-side status partition that used to run here
@@ -479,58 +643,10 @@ function rowsForBand(
    * disagree the moment a status is added. One filter, executed once, at the
    * seam.
    */
-  const scoped = scopeToTier(filter, tier);
+  const merged = bandFilter(filter, tier, selected, config, props.ctx, selectedPeople);
   // Disjoint band: the section asks for statuses this tier excludes, so it can
   // hold nothing. Its caller skips the heading entirely — see `sectionsFor`.
-  if (scoped === null) return [];
-
-  return props.rowsFor({
-    ...scoped,
-    ...mergeSelectedFilters(config, selected),
-    ...(selectedPeople.length > 0 ? { createdByIds: selectedPeople } : {}),
-  });
-}
-
-/**
- * Compose a SECTION's filter with the active TIER's — and the two compose
- * differently per axis, which is the whole of this function.
- *
- * THE BUG THIS REPLACES. The tier's filter used to be spread AFTER the
- * section's, so it silently overwrote it. Task lists declare both: tiers
- * (Open · Done · Archived) and sections (Current · Completed). On the Open
- * tier, the band headed "Completed" was therefore queried with the OPEN
- * statuses — it rendered open tasks under a "Completed" heading and was an
- * exact duplicate of the "Current" band above it. A user who marked a task
- * done watched it stay put in a band labelled Completed that had been showing
- * open tasks all along, which reads as "done did not work".
- *
- *   `workStatus` INTERSECTS. Both axes name a set of statuses and the band is
- *   the overlap. An EMPTY overlap is a real answer (`null`): the Completed
- *   band cannot exist inside the Open tier, and the honest rendering is no
- *   band rather than an empty one under a heading that promises rows.
- *
- *   `deleted` — THE TIER WINS. It is the outer lifecycle scope, and the
- *   sections' `deleted: 'exclude'` is a restatement of the common case, not a
- *   constraint of their own. Intersecting it would make the Archived tier
- *   ('only') disjoint with every section ('exclude') and empty the one tier
- *   whose partition already worked.
- *
- * Anything else the tier names still wins, as before.
- */
-function scopeToTier(section: QueryFilter, tier: LifecycleTier | null): QueryFilter | null {
-  const tierFilter = tier?.filter;
-  if (!tierFilter) return section;
-
-  const merged: QueryFilter = { ...section, ...tierFilter };
-
-  if (section.workStatus && tierFilter.workStatus) {
-    const allowed = new Set(tierFilter.workStatus);
-    const overlap = section.workStatus.filter((status) => allowed.has(status));
-    if (overlap.length === 0) return null;
-    merged.workStatus = overlap;
-  }
-
-  return merged;
+  return merged === null ? NO_ROWS : props.rowsFor(merged, sort);
 }
 
 /**
@@ -539,12 +655,28 @@ function scopeToTier(section: QueryFilter, tier: LifecycleTier | null): QueryFil
  * would be a second source that could disagree with the query it claims to
  * summarise (A1a's design note, and it is the right one).
  *
+ * COUNTED UNDER NO SORT, DELIBERATELY. A count is order-independent, and the
+ * read key includes the sort — so counting under the active sort would fire a
+ * fresh query per tier every time the user changes the order, to learn a
+ * number that cannot have changed.
+ *
+ * `more` is the honesty half. The count is `rows.length`, and rows stop at the
+ * page the server served, so a saturated first page makes 601 read as 50. The
+ * caller renders `50+` while the server still holds a cursor.
+ *
  * An `unsupported` tier counts ZERO honestly: the kind has no state that can
  * land there, so the tab renders with its reason rather than being dropped.
  */
-function tierCount(props: EntityListPanelProps, config: KindConfig, tier: LifecycleTier): number {
-  if (tier.unsupported) return 0;
-  return rowsForBand(props, tier.filter, tier, {}, config).length;
+function tierCount(
+  props: EntityListPanelProps,
+  config: KindConfig,
+  tier: LifecycleTier,
+): { n: number; label: string } {
+  if (tier.unsupported) return { n: 0, label: '0' };
+  const merged = bandFilter(tier.filter, tier, {}, config, props.ctx);
+  if (merged === null) return { n: 0, label: '0' };
+  const n = props.rowsFor(merged).length;
+  return { n, label: countLabel(n, props.pageStateOf?.(merged)) };
 }
 
 /**
@@ -573,8 +705,15 @@ function KindSelector({
   onMode,
 }: {
   config: KindConfig;
-  /** Sum of the lifecycle tiers — T0-1 draws it beside the kind name. */
-  total?: number;
+  /**
+   * Sum of the lifecycle tiers — T0-1 draws it beside the kind name.
+   *
+   * A STRING, because the honest value may be `601+`. Summing three tier
+   * counts each capped at a page produced `150` for a 700-row space and said
+   * it with a number's confidence; carrying the `+` up from whichever tier is
+   * truncated keeps the total as honest as its worst input.
+   */
+  total?: string;
   liveCount: string | null;
   onKindChange?: (kind: string) => void;
   mode: CollectionMode;
@@ -595,7 +734,7 @@ function KindSelector({
         </span>
       </button>
       <span className="lp__spacer" />
-      {typeof total === 'number' ? (
+      {total !== undefined ? (
         <span className="lp__total" data-testid="kind-total">
           {total}
         </span>
@@ -853,12 +992,13 @@ function TierTabs({
   tiers,
   activeTierId,
   onTier,
-  tierCount,
+  tierLabel,
 }: {
   tiers?: readonly LifecycleTier[];
   activeTierId: string | null;
   onTier: (id: string) => void;
-  tierCount: (tier: LifecycleTier) => number;
+  /** Already rendered — `50+` when the page is saturated, `50` when it is all. */
+  tierLabel: (tier: LifecycleTier) => string;
 }) {
   if (!tiers || tiers.length === 0) return null;
   return (
@@ -878,7 +1018,7 @@ function TierTabs({
           title={tier.unsupported}
           data-unsupported={tier.unsupported ? 'true' : undefined}
         >
-          {`${tier.label} ${tierCount(tier)}`}
+          {`${tier.label} ${tierLabel(tier)}`}
         </button>
       ))}
     </div>
@@ -894,11 +1034,12 @@ function FilterRow({
   tiers,
   activeTierId,
   onTier,
-  tierCount,
+  tierLabel,
   compact,
   people,
   selectedPeople,
   onTogglePerson,
+  viewerActorId,
 }: {
   config: KindConfig;
   selected: Readonly<Record<string, readonly string[]>>;
@@ -909,13 +1050,17 @@ function FilterRow({
   activeTierId: string | null;
   onTier: (id: string) => void;
   /** Each tier's own query size — the one source the tabs, footer and total share. */
-  tierCount: (tier: LifecycleTier) => number;
+  tierLabel: (tier: LifecycleTier) => string;
   compact?: boolean;
   people: readonly ActorSummary[];
   selectedPeople: readonly string[];
   onTogglePerson: (actorId: string) => void;
+  /** Absent ⇒ the viewer-scoped options render disabled with their reason. */
+  viewerActorId?: string;
 }) {
-  const [picker, setPicker] = useState<'filters' | 'people' | null>(null);
+  // One popover at a time, sort included. Two independent booleans would let
+  // the sort menu and a filter picker sit open over each other.
+  const [picker, setPicker] = useState<'filters' | 'people' | 'sort' | null>(null);
   const barRef = useRef<HTMLDivElement>(null);
   useDismissable(picker !== null, barRef, useCallback(() => setPicker(null), []));
   const sort = config.list.sort;
@@ -996,16 +1141,20 @@ function FilterRow({
 
       <span className="lp__spacer" />
 
+      {/* A MENU, NOT A CYCLE. The chip used to advance to the next entry on
+          each click, which is a fine affordance for two options and unusable
+          for six: choosing `priority` from a list of six meant clicking
+          through up to five orders the user did not want, each one a real
+          query. It also never showed what the alternatives WERE. */}
       {current ? (
         <button
           type="button"
           className="lp__chip"
-          onClick={() => {
-            const i = sort.findIndex((s) => s.key === current.key);
-            const next = sort[(i + 1) % sort.length];
-            if (next) onSort(next.key);
-          }}
-          title={`Sort by ${current.label}`}
+          onClick={() => setPicker((p) => (p === 'sort' ? null : 'sort'))}
+          aria-expanded={picker === 'sort'}
+          aria-haspopup="menu"
+          title={`Sorted by ${current.label}`}
+          data-testid="sort-trigger"
         >
           {/* At the floor the sort chip collapses to its glyph — T0-3 frame 4
               draws exactly `↓`. The chip never disappears. */}
@@ -1014,6 +1163,29 @@ function FilterRow({
       ) : null}
 
     </div>
+      {picker === 'sort' ? (
+        <div className="lp__filtermenu lp__filtermenu--sort" role="menu" data-testid="sort-menu">
+          <div className="lp__filtergroup">SORT BY</div>
+          {sort.map((spec) => (
+            <button
+              key={spec.key}
+              type="button"
+              role="menuitemradio"
+              aria-checked={spec.key === current?.key}
+              className={
+                spec.key === current?.key ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'
+              }
+              onClick={() => {
+                onSort(spec.key);
+                setPicker(null);
+              }}
+            >
+              {spec.label}
+              {spec.key === current?.key ? <span className="lp__filtercheck">✓</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {/* Rendered OUTSIDE the clipping row, inside the positioned bar: the row
           keeps `overflow: hidden` as its floor guard, and the picker is still
           free to overflow it. No hardcoded offset — `top: 100%` of the bar
@@ -1025,12 +1197,23 @@ function FilterRow({
               <div className="lp__filtergroup">{spec.label.toUpperCase()}</div>
               {spec.options.map((option) => {
                 const on = (selected[spec.id] ?? []).includes(option.id);
+                // OFFERED AND REFUSED, never offered and inert. An option
+                // naming the viewer with no viewer resolved would query
+                // nobody and answer "you have nothing", which is a claim
+                // about the data made out of ignorance about the identity.
+                const blocked = needsViewer(option.filter) && !viewerActorId;
                 return (
                   <button
                     key={option.id}
                     type="button"
                     role="menuitemcheckbox"
                     aria-checked={on}
+                    disabled={blocked}
+                    title={
+                      blocked
+                        ? 'Not available: this workspace has not resolved who you are, so “me” has no id to match.'
+                        : undefined
+                    }
                     className={on ? 'lp__kindopt lp__kindopt--current' : 'lp__kindopt'}
                     onClick={() => onToggleOption(spec.id, option.id, spec.multi ?? false)}
                   >
@@ -1079,22 +1262,50 @@ function FilterRow({
  * Merge every selected option's contract-shaped filter. Array members UNION
  * (several `status` options combine into one `workStatus` list) rather than
  * overwrite, which is what `multi` means in the data.
+ *
+ * UNION HERE, INTERSECTION IN `narrow`, AND BOTH ARE RIGHT. Two options of the
+ * SAME chip are alternatives the user ticked together — Open *or* Blocked —
+ * so they widen. Two different AXES each say "only these", so they narrow.
+ * Collapsing the two operators into one is how "Open ✓ Blocked ✓" came to
+ * show only blocked rows.
  */
 function mergeSelectedFilters(
   config: KindConfig,
   selected: Readonly<Record<string, readonly string[]>>,
+  ctx: ActionContext,
 ): QueryFilter {
   const out: Record<string, unknown> = {};
   for (const spec of config.list.filters) {
     for (const optionId of selected[spec.id] ?? []) {
       const option = spec.options.find((o) => o.id === optionId);
-      if (!option) continue;
-      for (const [key, value] of Object.entries(option.filter as Record<string, unknown>)) {
+      // A viewer-scoped option with no viewer is DROPPED, never sent. The
+      // picker already renders it disabled with its reason, so this is the
+      // second half of the same refusal — and it matters, because the server
+      // `assertUuid`s these members and `'@me'` would come back as a 400 that
+      // reads like a broken list rather than an unknown identity.
+      if (!option || (needsViewer(option.filter) && !ctx.viewerActorId)) continue;
+      for (const [key, value] of Object.entries(
+        resolveViewer(option.filter, ctx.viewerActorId) as Record<string, unknown>,
+      )) {
         const prior = out[key];
         out[key] =
           Array.isArray(prior) && Array.isArray(value) ? [...prior, ...value] : value;
       }
     }
+  }
+  return out as QueryFilter;
+}
+
+/** Substitute the real actor id wherever the registry wrote `VIEWER_ACTOR`. */
+function resolveViewer(filter: QueryFilter, viewerActorId: string | undefined): QueryFilter {
+  if (!viewerActorId || !needsViewer(filter)) return filter;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(filter as Record<string, unknown>)) {
+    out[key] = Array.isArray(value)
+      ? value.map((v) => (v === VIEWER_ACTOR ? viewerActorId : v))
+      : value === VIEWER_ACTOR
+        ? viewerActorId
+        : value;
   }
   return out as QueryFilter;
 }
@@ -1514,7 +1725,8 @@ function BoardColumn({
 
 function Band({
   label,
-  rows,
+  filter,
+  sort,
   collapsed,
   onToggle,
   props,
@@ -1522,7 +1734,14 @@ function Band({
   query,
 }: {
   label: string | null;
-  rows: readonly EntitySummary[];
+  /**
+   * The band's own already-narrowed query, or `null` when the section, the
+   * tier and the chips cannot all hold at once. The band OWNS the read: it is
+   * the only place that knows which question these rows answer, and paging
+   * needs that question back to ask for the next page.
+   */
+  filter: QueryFilter | null;
+  sort?: SortKey;
   collapsed?: boolean;
   onToggle?: () => void;
   props: EntityListPanelProps;
@@ -1530,7 +1749,9 @@ function Band({
   /** Present ⇒ an empty band means "no matches", not "nothing here". */
   query?: string;
 }) {
-  const { attention, rest } = splitAttention(rows, props, config);
+  const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
+  const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
+  const { attention, rest } = splitAttention(matching(rows, query ?? ''), props, config);
 
   if (label && collapsed) {
     // A collapsed section reduces to ONE clickable line pinned at the bottom —
@@ -1572,11 +1793,17 @@ function Band({
       {rest.length === 0 && attention.length === 0 ? (
         /*
          * A filter that hides every row and says nothing looks identical to a
-         * list that failed to load (A1a's ask). The two states get different
-         * sentences: one names the query and offers the way back, the other
-         * teaches the gesture that fills the list.
+         * list that failed to load (A1a's ask). The states get different
+         * sentences: one names the CONTRADICTION and where it came from, one
+         * names the search and offers the way back, the last teaches the
+         * gesture that fills the list.
          */
-        query && query.trim().length > 0 ? (
+        filter === null ? (
+          <EmptyBody
+            glyph={config.chip.glyph}
+            sentence={`No rows: the filters you have picked contradict this tab, so nothing could satisfy both. Clear a filter chip or switch tabs.`}
+          />
+        ) : query && query.trim().length > 0 ? (
           <EmptyBody
             glyph={<KindIcon kind={config.kind} size={22} />}
             sentence={`No ${config.labelPlural.toLowerCase()} match “${query.trim()}”. Clear the search to see them all.`}
@@ -1590,7 +1817,65 @@ function Band({
       ) : (
         <TreeRows rows={rest} props={props} config={config} />
       )}
+
+      {/* PAGING IS THE BAND'S, because the query is the band's. Rendered after
+          the rows so the observer sits at the true bottom of this band's
+          content, and only when the server actually left a cursor. */}
+      {filter !== null && page?.hasMore && props.loadMore ? (
+        <LoadMoreSentinel
+          loading={page.loading}
+          onReach={() => props.loadMore?.(filter, sort)}
+        />
+      ) : null}
     </>
+  );
+}
+
+/**
+ * INFINITE SCROLL, WITH A BUTTON UNDER IT.
+ *
+ * An IntersectionObserver on a zero-height marker: when the bottom of the list
+ * scrolls into view, ask for the next keyset page. `root: null` watches the
+ * viewport AND any scrolling ancestor's clipping, which is what a panel inside
+ * the rail needs.
+ *
+ * The BUTTON is not a fallback for old browsers, it is the honest surface for
+ * the cases the observer cannot cover: a list shorter than its container never
+ * scrolls, so the sentinel is permanently visible and firing is the right
+ * behaviour; and jsdom has no observer at all, so without it the paging path
+ * would be untestable except in a real browser. It also gives a keyboard user
+ * a way to reach row 51.
+ */
+function LoadMoreSentinel({ loading, onReach }: { loading: boolean; onReach: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Held in a ref so the observer is created ONCE. Passing the callback as an
+  // effect dependency would tear down and rebuild the observer on every
+  // render — and a fresh observer fires immediately for an already-visible
+  // target, which is a request loop, not a subscription.
+  const reach = useRef(onReach);
+  reach.current = onReach;
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) reach.current();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div className="lp__more" ref={ref} data-testid="list-load-more">
+      <button
+        type="button"
+        className="lp__morebtn"
+        onClick={() => reach.current()}
+        disabled={loading}
+      >
+        {loading ? 'Loading…' : 'Load more'}
+      </button>
+    </div>
   );
 }
 
@@ -1992,6 +2277,7 @@ function Tile({
             props={props}
             openFlow={flowRef}
             onFlow={setFlowRef}
+            onOpenLaunch={props.launch?.onFullOptions}
           />
         ))}
         detailsExpanded={controlExpanded}
@@ -2171,6 +2457,7 @@ function Tile({
                 props={props}
                 openFlow={flowRef}
                 onFlow={setFlowRef}
+                onOpenLaunch={props.launch?.onFullOptions}
               />
             ))}
             {/* D67 — the details disclosure, on EVERY standard tile.

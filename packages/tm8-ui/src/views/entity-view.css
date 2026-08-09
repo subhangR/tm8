@@ -43,6 +43,22 @@
   min-height: 0;
 }
 
+/* --- BOARD LAYOUT: one region, not three ----------------------------------
+   The list rail is a NAVIGATOR and 320px is the right width for one. A board
+   is not a navigator — its unit is a column with a 236px floor, so two of them
+   do not fit in the rail and the surface reads as a cramped strip. In board
+   mode the panel takes the whole screen and the centre is not rendered at all
+   (EntityView returns null for it); a card opens the aux column instead, which
+   is why the board keeps its width even with something open beside it. */
+.cv2-root .ev-root[data-layout='board'] .ev-list {
+  flex: 1;
+  width: auto;
+  /* The aux column draws its own border-left; keeping this one too would put
+     two rules between the board and the panel beside it. */
+  border-right: none;
+  background: var(--pn-paper);
+}
+
 /* --- CENTRE: the complete entity ------------------------------------------
    No measure cap here. The panel keeps its OWN internal reading measures, and
    capping at this level would also shrink a terminal body — which inverts D63
@@ -145,5 +161,8 @@
 }
 @media (max-width: 1040px) {
   .cv2-root .ev-root[data-aux='none'] .ev-list { width: 260px; }
-  .cv2-root .ev-root:not([data-aux='none']) .ev-list { display: none; }
+  /* Scoped to the three-column layout: on the board the list is the SUBJECT,
+     so yielding it to the aux column would leave the screen with nothing the
+     user came for. There the aux column is the one that gets narrow. */
+  .cv2-root .ev-root[data-layout='columns']:not([data-aux='none']) .ev-list { display: none; }
 }

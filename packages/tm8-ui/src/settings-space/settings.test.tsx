@@ -81,6 +81,14 @@ const LIVE_VERBS = [
   /^Linked projects$/,
   /^Menu$/,
   /^Custom kinds$/,
+  // Agent credentials: the NAV ROW only. Live for the `Your profile` reason,
+  // not the `Models` one — the four `credentials.*` operations are real
+  // executors on the seam, so every control the injected section draws
+  // performs its act completely. The section body itself is owned by
+  // `settings-credentials/` and is not injected in this file's renders, so the
+  // shell shows its honest not-mounted state here and this sweep sees no
+  // control from it.
+  /^Agent credentials$/,
   /^Danger zone$/,
   /^＋ Invite$/,
   /^discard$/,

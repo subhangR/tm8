@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,7 +31,7 @@ describe('W3 connected project folder — read and attach over the public surfac
 
   beforeAll(async () => {
     harness = await startW3PublicServer('agentic_project_files');
-    scratch = await mkdtemp(join(tmpdir(), 'tm8-pf-agentic-'));
+    scratch = await realpath(await mkdtemp(join(tmpdir(), 'tm8-pf-agentic-')));
     workingDir = join(scratch, 'website');
     await mkdir(join(workingDir, 'docs'), { recursive: true });
     // `configuredRoots()` reads the environment per request, so the allow-list

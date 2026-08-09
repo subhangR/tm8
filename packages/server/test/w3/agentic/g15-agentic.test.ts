@@ -27,11 +27,11 @@ import {
 // Re-pinned 2026-07-31 (was sha256:df96ff5a…): the consolidation wave landed
 // voice, artifacts, attention, memories and worktrees operations, moving the
 // catalog to 117 rows. The digest is sha256(JSON.stringify(OPERATIONS)).
-// Frozen digest of the current 128-row catalog. This literal had gone stale
-// again on the tree — it still described the 121-row catalog while five
-// further amendments had landed — and was re-derived 2026-08-04 alongside
-// projects.files.list / projects.files.attach.
-const CATALOG_DIGEST = 'sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24';
+// Frozen digest of the current 121-row catalog. The previous literal had
+// already gone stale on the tree (several amendments landed without moving
+// it); re-derived 2026-08-01 alongside identity.profile.update.
+// Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
+const CATALOG_DIGEST = 'sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -98,9 +98,12 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // attention, memories, worktrees) grew the catalog.
     // 117 -> 121 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
-    // 121 -> 128 (2026-08-04): this pin had gone stale across five amendments
-    // and is re-derived alongside projects.files.list / projects.files.attach.
-    expect(root.catalog.total).toBe(128);
+    // 121 -> 125 (2026-08-02): auth.signup/login/logout/session.get.
+    // 125 -> 126 (2026-08-02): execution.launch.
+    // The 126 literal was ALREADY red at 127 when this lane arrived (the
+    // onboarding read landed without moving it); 128 adds execution.transcript.
+    // 129 adds projects.branches.list.
+    expect(root.catalog.total).toBe(137);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

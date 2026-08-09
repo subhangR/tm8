@@ -538,6 +538,140 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
     });
   });
 
+  // SENDER ATTRIBUTION — the `attribution=` label in the delivered
+  // `<trusted_control>` envelope. It was a hardcoded `'verified'` literal, so
+  // every PTY-delivered message claimed the protocol's highest trust label
+  // whether or not anything had been verified. These tests pin the label to its
+  // one piece of evidence — the `authored_from` provenance the server resolver
+  // produces and SQL writes (076:41-56, 019:433-474) — and pin the direction of
+  // the default: absence of evidence is `recorded_only`, never `verified`.
+  describe('sender attribution is evidence, not a literal', () => {
+    function attributionSetup(options: {
+      resolveAuthoredFromWorkSessionId?: (ctx: RequestContext) => Promise<string | null>;
+    }) {
+      const db = new FakeDb();
+      db.rpcImpl = async <T>(name) => {
+        if (name === 'w2_post_message_batch') {
+          return { messageBatchId: 'batch-1', messageIds: [IDS.message] } as T;
+        }
+        expect(name).toBe('w2_record_session_message_routes');
+        return [{
+          targetMessageId: IDS.message,
+          targetWorkSessionId: IDS.targetSession,
+          messageBatchId: 'batch-1',
+          senderActorId: IDS.author,
+          senderActorKind: 'member',
+          sourceAnchorId: IDS.anchor,
+          sourceAnchorKind: 'channel',
+          sourceMessageId: IDS.message,
+          threadParentMessageId: null,
+          threadRootMessageId: IDS.message,
+          body: 'stored body',
+          addressingKind: 'channel_mention',
+          contextAnchors: [],
+          rollingControlMaxBytes: 16_384,
+          sessionInputAllowed: true,
+        }] as T;
+      };
+      const contents: string[] = [];
+      const registry = new HandlerRegistry();
+      registerW2MessagesHandoffsHandlers(registry, deps(db), {
+        ...(options.resolveAuthoredFromWorkSessionId
+          ? { resolveAuthoredFromWorkSessionId: options.resolveAuthoredFromWorkSessionId }
+          : {}),
+        messageDelivery: {
+          reserve: async (intent) => {
+            contents.push(String(intent.content));
+            return {
+              deliveryId: IDS.delivery,
+              messageId: IDS.message,
+              targetWorkSessionId: IDS.targetSession,
+              reservationVersion: 3,
+              expiresAt: '2026-07-26T12:15:00.000Z',
+              content: String(intent.content),
+              mode: 'send',
+            };
+          },
+          principalFor: (reservation) => ({ reserved: reservation.deliveryId }),
+          adapter: { dispatch: async () => ({ outcome: 'delivered' }) },
+        },
+      });
+      return { db, registry, contents };
+    }
+
+    function post(registry: HandlerRegistry) {
+      return handler(registry, 'messages.post')(request('messages.post', {
+        body: {
+          clientMutationId: 'batch-1',
+          actorId: IDS.author,
+          anchorIds: [IDS.anchor],
+          body: 'stored body',
+        },
+      }));
+    }
+
+    it('renders attribution="verified" only when the message carries session provenance', async () => {
+      const { registry, contents } = attributionSetup({
+        resolveAuthoredFromWorkSessionId: async () => IDS.sourceSession,
+      });
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).toContain('attribution="verified"');
+      // The label and the session it is a claim ABOUT must agree; the envelope
+      // never asserts a verified sender with no session to point at.
+      expect(contents[0]).toContain(`source_session_id="${IDS.sourceSession}"`);
+    });
+
+    it('renders attribution="recorded_only" for a message with no session provenance', async () => {
+      const { registry, contents } = attributionSetup({
+        resolveAuthoredFromWorkSessionId: async () => null,
+      });
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).toContain('attribution="recorded_only"');
+      expect(contents[0]).not.toContain('attribution="verified"');
+      // This is the human-on-a-bearer-token case measured in 076: 541 messages,
+      // zero `authored_from` edges. It was previously stamped `verified`.
+      expect(contents[0]).not.toContain(IDS.sourceSession);
+    });
+
+    it('renders attribution="recorded_only" when no provenance resolver is configured at all', async () => {
+      const { registry, contents } = attributionSetup({});
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).toContain('attribution="recorded_only"');
+      expect(contents[0]).not.toContain('attribution="verified"');
+    });
+
+    it('treats a blank session id as no evidence rather than as provenance', async () => {
+      const { registry, contents } = attributionSetup({
+        resolveAuthoredFromWorkSessionId: async () => '',
+      });
+      await post(registry);
+      expect(contents).toHaveLength(1);
+      expect(contents[0]).toContain('attribution="recorded_only"');
+      expect(contents[0]).not.toContain('attribution="verified"');
+    });
+
+    // FAIL CLOSED WHEN THE LOOKUP ITSELF FAILS. The resolver is not caught, and
+    // deliberately so: the shipped resolver's only throw is a `forbidden`
+    // refusal for a work-session identity mismatch, and swallowing that to
+    // `null` would convert a security refusal into an accepted, unattributed
+    // post. So the honest guarantee is stated as the boundary property rather
+    // than as a label — a failed provenance lookup delivers NOTHING, and in
+    // particular can never emit `verified`.
+    it('emits no delivery at all — and never a verified label — when provenance lookup throws', async () => {
+      const { registry, contents } = attributionSetup({
+        resolveAuthoredFromWorkSessionId: async () => {
+          throw new CollabError('forbidden', 'workSessionId does not match the authenticated agent session');
+        },
+      });
+      await expect(post(registry)).rejects.toMatchObject({ code: 'forbidden' });
+      expect(contents).toEqual([]);
+      expect(contents.some((content) => content.includes('attribution="verified"'))).toBe(false);
+    });
+  });
+
   it('maps frozen PostgreSQL detail strings to the contract details.reason field', async () => {
     const db = new FakeDb();
     db.rpcImpl = async () => {

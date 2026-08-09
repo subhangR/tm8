@@ -61,6 +61,7 @@ import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
@@ -156,7 +157,10 @@ export function EntityView(props: EntityViewProps) {
     data.ensureKind(kind);
   }, [data, kind]);
 
-  const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+  const ctx = useMemo<ActionContext>(
+    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActor?.id }),
+    [data.spaceId, data.viewerActor],
+  );
 
   /*
    * ATTACHMENTS, one port for the whole view. Memoized on the seam+space so
@@ -168,6 +172,27 @@ export function EntityView(props: EntityViewProps) {
     [data.seam, data.spaceId],
   );
   const config = getKind(kind);
+  /**
+   * THE LAYOUT MODE IS RESOLVED HERE, not twice.
+   *
+   * The panel carries the same controlled/uncontrolled pair, and if the screen
+   * read `props.mode` while the panel fell back to its OWN local state the two
+   * would disagree the moment a host mounts this view without `onMode` — the
+   * switcher would draw a board inside a rail sized for a list. Resolving once
+   * and passing the pair down leaves the panel's fallback unreachable.
+   */
+  const [uncontrolledMode, setUncontrolledMode] = useState<CollectionMode>(config.defaultMode);
+  const mode = props.mode ?? uncontrolledMode;
+  const setMode = props.onMode ?? setUncontrolledMode;
+  /**
+   * THE BOARD IS THE WHOLE SCREEN, not a body inside the 320px rail.
+   *
+   * A board's unit is a COLUMN and a column has a floor width, so the three
+   * regions below reduce to one: the list panel takes the full width and the
+   * centre is not rendered. Gated on `list.board` for the same reason the
+   * panel's body is — without a board spec the mode has nothing to draw.
+   */
+  const boardMode = mode === 'board' && config.list.board != null;
   /* Stable identity so the feed hook's effects do not re-run every render. */
   const channelFeedPort = useMemo(() => channelFeedPortFromGateData(data), [data]);
 
@@ -277,14 +302,14 @@ export function EntityView(props: EntityViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, aux, kind]);
 
-  const openEntity = useCallback((id: EntityId) => {
+  const openEntity = useCallback((id: EntityId, open: (id: EntityId) => void) => {
     const summary = data.detailOf(id)
       ?? data.rowsFor(kind)(undefined).find((row) => row.id === id)
       ?? data.graph.nodes.find((row) => row.id === id);
     openEntityAndResolve({
       entityId: id,
       needsAttention: summary?.badges.attention != null,
-      open: setSelectedId,
+      open,
       commands: data.seam.commands,
       reconcile: data.reconcileCommand,
       resolving: resolvingAttention.current,
@@ -304,12 +329,20 @@ export function EntityView(props: EntityViewProps) {
    * A row in the LEFT list replaces the subject of the whole screen, so the
    * aux column — which is always ABOUT the old subject — must go with it.
    * Leaving it would put one entity's backlinks beside another's body.
+   *
+   * ON THE BOARD there is no centre to replace: the board IS the screen, so a
+   * card opens the aux column instead. Routing it to the centre would set a
+   * subject nothing renders — a click into a black hole.
    */
   const selectFromList = useCallback((id: string) => {
+    if (boardMode) {
+      openEntity(id as EntityId, (opened) => setAux({ sort: 'entity', id: opened }));
+      return;
+    }
     setAux(null);
     setDetailTab('content');
-    openEntity(id as EntityId);
-  }, [openEntity]);
+    openEntity(id as EntityId, setSelectedId);
+  }, [openEntity, boardMode, setSelectedId]);
 
   /**
    * Titles for the attention list. Attention spans every kind, so the left
@@ -437,6 +470,13 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      graphSurface={
+        detail
+          ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
+              setAux({ sort: 'entity', id: id as EntityId }),
+            )
+          : undefined
+      }
       messages={messages}
       connections={data.connectionsOf(selectedId)}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
@@ -470,6 +510,7 @@ export function EntityView(props: EntityViewProps) {
       data-kind={kind}
       data-mode={selectedId ? 'detail' : 'list'}
       data-aux={aux ? aux.sort : 'none'}
+      data-layout={boardMode ? 'board' : 'columns'}
     >
       {/* AT THE VIEW ROOT, NOT INSIDE THE PANEL. The dialog is `position:
           fixed` over a scrim, so nesting it in the panel's own overflow
@@ -482,10 +523,12 @@ export function EntityView(props: EntityViewProps) {
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
-          rowsFor={data.rowsFor(kind) as never}
+          rowsFor={data.rowsFor(kind)}
+          pageStateOf={data.pageStateOf(kind)}
+          loadMore={data.loadMore(kind)}
           boardFor={data.boardFor(kind) as never}
-          {...(props.mode !== undefined ? { mode: props.mode } : {})}
-          {...(props.onMode ? { onMode: props.onMode } : {})}
+          mode={mode}
+          onMode={setMode}
           members={data.members}
           ctx={ctx}
           createSlot={
@@ -518,20 +561,25 @@ export function EntityView(props: EntityViewProps) {
         />
       </section>
 
-      <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
-        {/* The blank centre is the space-wide triage list, not a placeholder:
-            every entity waiting on a human, its requests combined into one row.
-            Deliberately NOT filtered to `kind` — attention lives on entities,
-            so a doc waiting on you must show while the Tasks list is open. */}
-        {detailPanel ?? (
-          <AttentionInbox
-            seam={data.seam}
-            spaceId={data.spaceId}
-            nameOf={nameOf}
-            onOpenEntity={selectFromList}
-          />
-        )}
-      </main>
+      {/* NOT RENDERED ON THE BOARD. The board took this width; a centre that
+          is only display:none would still mount the open entity's panel — its
+          chat surface, its terminal, its polling — behind an invisible region. */}
+      {boardMode ? null : (
+        <main className="ev-detail" aria-label={`${config.label} detail`} data-testid="entity-view-detail">
+          {/* The blank centre is the space-wide triage list, not a placeholder:
+              every entity waiting on a human, its requests combined into one row.
+              Deliberately NOT filtered to `kind` — attention lives on entities,
+              so a doc waiting on you must show while the Tasks list is open. */}
+          {detailPanel ?? (
+            <AttentionInbox
+              seam={data.seam}
+              spaceId={data.spaceId}
+              nameOf={nameOf}
+              onOpenEntity={selectFromList}
+            />
+          )}
+        </main>
+      )}
 
       {aux ? (
         <aside className="ev-aux" aria-label="Related" data-testid="entity-view-aux">
@@ -567,6 +615,9 @@ export function EntityView(props: EntityViewProps) {
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
+                  setAux({ sort: 'entity', id: id as EntityId }),
+                )}
                 livenessOf={data.livenessOf}
                 attachments={attachments}
                 onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}

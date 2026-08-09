@@ -233,3 +233,109 @@ test('the layout holds for a non-doc kind — it is generic, not doc-special', a
   expect(list.x).toBeLessThan(detail.x);
   expect(detail.width).toBeGreaterThan(list.width * 3);
 });
+
+/**
+ * THE BOARD IS THE EXCEPTION TO THE RAIL, and this is the only place the claim
+ * is checkable. The unit test can say the centre is unmounted; it cannot say
+ * the board actually got the width, because jsdom has no layout engine and a
+ * board still trapped in a 320px rail passes every structural assertion there.
+ */
+test('switching to the board gives it the WHOLE screen, rail width and all', async ({ page }) => {
+  await boot(page, 'task');
+
+  const railWidth = (await box(page, LIST)).width;
+  const screen = await box(page, '[data-testid="entity-view"]');
+
+  await page.getByRole('button', { name: 'board layout' }).click();
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  // The centre is GONE, not merely covered.
+  await expect(page.locator(DETAIL)).toHaveCount(0);
+
+  const board = await box(page, LIST);
+  expect(board.width).toBeGreaterThan(railWidth * 3);
+  // "The entire thing" — the region spans the screen, give or take a border.
+  expect(screen.width - board.width).toBeLessThan(2);
+
+  // And the width buys what it was for: more than the one-and-a-bit columns
+  // that fitted in the rail. 236px floor each, so a rail could never do this.
+  const columns = page.locator('.lp__board-col');
+  expect(await columns.count()).toBeGreaterThan(3);
+});
+
+/**
+ * THE BOARD SCROLLS, THE COLUMNS DO NOT.
+ *
+ * Each column used to carry its own `overflow-y` and was locked to the
+ * viewport height, so a long column became a short well you scrolled inside
+ * while the board around it never moved — six independent scrollbars, and no
+ * way to read two columns at the same offset. This is a pure geometry claim,
+ * so the cards are INJECTED: what is under test is which box overflows, not
+ * where the rows came from.
+ */
+test('a long column scrolls the BOARD, not a well inside the column', async ({ page }) => {
+  await boot(page, 'task');
+  await page.getByRole('button', { name: 'board layout' }).click();
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  // Fill the tallest column well past the viewport.
+  await page.evaluate(() => {
+    const cards = document.querySelector('.lp__board-cards');
+    if (!cards) throw new Error('no card area');
+    const seed = cards.querySelector('*');
+    if (!seed) throw new Error('no card to clone');
+    for (let i = 0; i < 40; i += 1) cards.appendChild(seed.cloneNode(true));
+  });
+
+  const metrics = await page.evaluate(() => {
+    const cols = document.querySelector('.lp__board-cols')!;
+    const cards = document.querySelector('.lp__board-cards')!;
+    return {
+      boardScroll: cols.scrollHeight - cols.clientHeight,
+      cardsScroll: cards.scrollHeight - cards.clientHeight,
+      cardsOverflowY: getComputedStyle(cards).overflowY,
+    };
+  });
+
+  // The board is what overflows...
+  expect(metrics.boardScroll).toBeGreaterThan(200);
+  // ...and the column is NOT a scroller. `visible` is the proof the well is
+  // gone; a leftover `auto` would still trap the cards even at this height.
+  expect(metrics.cardsOverflowY).toBe('visible');
+  expect(metrics.cardsScroll).toBe(0);
+
+  // It really scrolls, and the header stays pinned so the column you are
+  // reading is still named after you have scrolled away from the top.
+  const HEAD = '.lp__board-col:first-child .lp__board-head';
+  const headTopBefore = (await box(page, HEAD)).y;
+  await page.locator('.lp__board-cols').evaluate((el) => el.scrollBy(0, 400));
+  await expect(page.locator('.lp__board-cols')).not.toHaveJSProperty('scrollTop', 0);
+  const headTopAfter = (await box(page, HEAD)).y;
+  expect(Math.abs(headTopAfter - headTopBefore)).toBeLessThan(2);
+});
+
+test('a card on the board opens BESIDE it — the board keeps its width', async ({ page }) => {
+  await boot(page, 'task');
+  await page.getByRole('button', { name: 'board layout' }).click();
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  const before = await box(page, LIST);
+  await page.locator('.lp__board-col [data-testid="list-tile"]').first().click();
+
+  // The aux column, not the centre: there is no centre in this layout, so
+  // routing the click there would have opened nothing at all.
+  await expect(page.locator(AUX)).toBeVisible();
+  await expect(page.locator(DETAIL)).toHaveCount(0);
+  await expect(page.getByTestId('board-body')).toBeVisible();
+
+  const after = await box(page, LIST);
+  const aux = await box(page, AUX);
+  expect(after.x).toBeLessThan(aux.x);
+  // The board yields the aux column's width and no more — it is still the
+  // subject of the screen, not a rail again.
+  expect(after.width).toBeGreaterThan(before.width - aux.width - 2);
+
+  // Esc walks down the same rung it does everywhere else.
+  await page.keyboard.press('Escape');
+  await expect(page.locator(AUX)).toHaveCount(0);
+});

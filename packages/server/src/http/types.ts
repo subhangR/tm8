@@ -39,6 +39,19 @@ export interface RequestIdentity {
   sessionId?: string;
   /** Exact work session bound to an agent bearer credential. */
   workSessionId?: string;
+  /**
+   * The verified `auth_sessions.kind` — `browser` / `cli` / `agent` — for a
+   * `bearer` caller, and `browser` for `auto-owner` (the person sitting at the
+   * node's own UI is a human; the auto-owner path's own exposure is gated by
+   * `TM8_DISABLE_AUTO_OWNER`, and duplicating that control here would break
+   * local development while adding nothing).
+   *
+   * SERVER-RESOLVED, never client-asserted: it comes out of the session row
+   * `resolveBearerIdentity` looked up by token hash. Becomes
+   * `SET LOCAL tm8.auth_kind` (083, R11), which `credentials.*` reads to refuse
+   * an agent holding its owner's credential. Absent ⇒ refused.
+   */
+  authKind?: 'browser' | 'cli' | 'agent';
 }
 
 /** Everything a handler is allowed to know about one request. */

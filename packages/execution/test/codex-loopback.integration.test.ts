@@ -62,7 +62,20 @@ function execText(binary: string, args: readonly string[], env: NodeJS.ProcessEn
 
 const cliPath = fileURLToPath(new URL('../../cli/dist/index.js', import.meta.url));
 const curlPath = '/usr/bin/curl';
-const hasFixtures = existsSync(cliPath) && existsSync(curlPath);
+
+/**
+ * The same resolution `PtyHostService` uses to pick the shell it runs the
+ * rendered command line under (`PtyHostService.ts:408`): `$SHELL`, then
+ * `/bin/bash`. This file used to hard-code `/bin/zsh`, which is the macOS
+ * default and is simply absent on a Linux CI runner — so the suite died with
+ * `spawn /bin/zsh ENOENT` on every commit, testing nothing. The command lines
+ * under test are POSIX `sh -c` words (see `shellQuote` in manifest.ts), so the
+ * shell identity was never load-bearing here; matching production is.
+ */
+const shellPath = [process.env.SHELL, '/bin/bash', '/bin/sh']
+  .find((candidate): candidate is string => typeof candidate === 'string' && existsSync(candidate));
+
+const hasFixtures = existsSync(cliPath) && existsSync(curlPath) && shellPath !== undefined;
 const describeWithFixtures = hasFixtures ? describe : describe.skip;
 
 describeWithFixtures('Codex loopback command-network integration', () => {
@@ -243,7 +256,7 @@ process.stdout.write(JSON.stringify({
     ];
 
     for (const invocation of invocations) {
-      const output = await execText('/bin/zsh', ['-c', invocation.command], env);
+      const output = await execText(shellPath ?? '/bin/bash', ['-c', invocation.command], env);
       const result = JSON.parse(output) as {
         phase: string;
         loopback: string;

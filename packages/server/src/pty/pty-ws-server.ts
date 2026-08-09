@@ -68,9 +68,18 @@ const NOOP_LOGGER: PtyWsLogger = {
  * refuses BEFORE the 101, over plain HTTP — a caller who may not attach never
  * gets a socket, and never learns whether the session id was real (the
  * not-visible and not-found cases share a 404 on purpose).
+ *
+ * `canDrive` exists because view and drive are DIFFERENT answers in
+ * `public.grant_stream_attach`: it refuses view iff `share_mode='none'` and the
+ * creator is neither the caller nor someone the caller may act as, but refuses
+ * drive on the `can_act_as` test alone. So a caller may legitimately be allowed
+ * to WATCH a terminal and not to TYPE into it, and an `ok: true` that could not
+ * express that gap is why every authorized attach used to be interactive.
+ * Carrying the bit on the verdict — rather than recomputing it later — keeps
+ * one decision in one place.
  */
 export type PtyAttachVerdict =
-  | { ok: true }
+  | { ok: true; canDrive: boolean }
   | { ok: false; status: 401 | 403 | 404; message: string };
 
 export type PtyAttachAuthorizer = (
@@ -159,7 +168,12 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
   const connections = new Set<PtyWsConnection>();
   const connectionsBySession = new Map<string, Set<PtyWsConnection>>();
 
-  function handleControl(sessionId: string, origin: PtyWsConnection, text: string): void {
+  function handleControl(
+    sessionId: string,
+    origin: PtyWsConnection,
+    text: string,
+    canDrive: boolean,
+  ): void {
     let msg: unknown;
     try {
       msg = JSON.parse(text);
@@ -169,6 +183,13 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     if (typeof msg !== 'object' || msg === null) return;
     const frame = msg as { type?: unknown; cols?: unknown; rows?: unknown };
     if (frame.type !== 'resize') return;
+    // A resize is a PTY MUTATION, not a rendering hint: pty.resize issues
+    // TIOCSWINSZ and the child gets SIGWINCH, which reflows the driver's live
+    // terminal and can corrupt whatever full-screen program is running in it.
+    // So 'view' means zero writes to the PTY, not 'only the harmless ones'. A
+    // view-only client that needs different geometry solves that client-side
+    // in its own rendering.
+    if (!canDrive) return;
     const cols = Number(frame.cols);
     const rows = Number(frame.rows);
     if (Number.isFinite(cols) && Number.isFinite(rows)) {
@@ -265,6 +286,10 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     // wrote the 101 first, which (a) let anyone drive any terminal they could
     // name and (b) oracled session ids by answering "no live PTY" only over
     // an established socket. Refusals here are plain HTTP on the raw socket.
+    // No authorizer means the composition root supplied none (tests), which is
+    // only sound behind the loopback bind — that case stays fully interactive.
+    // With an authorizer, drive is whatever it says and nothing else.
+    let canDrive = true;
     if (opts.authorize) {
       const verdict = await opts.authorize(req, sessionId);
       if (!verdict.ok) {
@@ -278,6 +303,7 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
         refuse(socket, verdict.status, statusText, verdict.message);
         return;
       }
+      canDrive = verdict.canDrive;
     }
     // Existence check for the authorized caller. The replay computed here is
     // discarded — the authoritative getReplay below must stay synchronous with
@@ -300,8 +326,15 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     const conn = new PtyWsConnection(
       socket as WsSocket,
       {
-        onInput: (data) => pty.write(sessionId, data),
-        onControl: (text) => handleControl(sessionId, conn, text),
+        // THE DRIVE GATE. This used to be an unconditional pty.write, so every
+        // caller who got past authorize could type into the shell. Dropping the
+        // bytes here rather than refusing the socket is deliberate: a view-only
+        // attach is legitimate and must still render output.
+        onInput: (data) => {
+          if (!canDrive) return;
+          pty.write(sessionId, data);
+        },
+        onControl: (text) => handleControl(sessionId, conn, text, canDrive),
         onClose: () => {
           connections.delete(conn);
           const peers = connectionsBySession.get(sessionId);

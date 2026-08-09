@@ -93,7 +93,13 @@ export const channelDesign = summary({
   kind: 'channel',
   title: 'design',
   excerpt: 'Where the tm8-ui build coordinates.',
-  state: { kind: 'channel', topic: 'tm8-ui build', unreadCount: 12, workingAgentCount: 2 },
+  // A HUMAN AND AN AGENT, deliberately. `has_member` (migration 080) admits
+  // both, and a roster fixture with only people would let a members row that
+  // silently drops agents look correct here.
+  state: {
+    kind: 'channel', topic: 'tm8-ui build', members: [ada, forge],
+    unreadCount: 12, workingAgentCount: 2,
+  },
   counters: counters({ messages: 148 }),
 });
 
@@ -299,6 +305,42 @@ export const sessionExited = summary({
     shareMode: 'none',
     startedAt: T.older,
     exitedAt: T.old,
+  },
+});
+
+/**
+ * A CREDENTIAL LOGIN TERMINAL — the session that must never appear in a
+ * session list (082, architect Ruling 16).
+ *
+ * It is in `fixtureSummaries` ON PURPOSE, and that placement is the test. Every
+ * surface that lists work sessions draws from this roster, so if any of them
+ * stops filtering, this row appears and that surface's own count assertion goes
+ * red — including surfaces written by lanes that never heard of credentials.
+ * A fixture kept out of the roster would have proven only that a helper works.
+ *
+ * Its neighbours above deliberately carry NO `sessionKind` at all: they are the
+ * pre-082 shape, and their continued visibility is what proves absence means
+ * `agent` rather than "not an agent".
+ */
+export const sessionCredentialLogin = summary({
+  id: 'ws-credential-login',
+  kind: 'work_session',
+  title: 'anthropic · login',
+  activityAt: T.recent,
+  updatedAt: T.recent,
+  // `ada` the ACTOR, not `memberAda` the entity — the latter is declared far
+  // below and reaching it from here is a temporal dead zone, which fails as a
+  // module-load error across ~50 unrelated files rather than as a bad fixture.
+  createdBy: ada,
+  state: {
+    kind: 'work_session',
+    status: 'running',
+    agentTool: 'claude-code',
+    model: null,
+    shareMode: 'none',
+    startedAt: T.recent,
+    exitedAt: null,
+    sessionKind: 'credential',
   },
 });
 
@@ -570,7 +612,7 @@ export const customRitual = summary({
 export const fixtureSummaries: EntitySummary[] = [
   channelDesign, voiceStandup, voiceLounge,
   taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
-  sessionLive, sessionStale, sessionExited, sessionFailed,
+  sessionLive, sessionStale, sessionExited, sessionFailed, sessionCredentialLogin,
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
   messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
   teamMemberScout,

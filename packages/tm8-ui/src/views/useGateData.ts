@@ -24,11 +24,13 @@ import type {
   AttentionRequestMutationResult,
   CollectionQuery,
   CommandResult,
+  Cursor,
   EdgeView,
   ExecutionSpawnInput,
   EntityDetail,
   EntityId,
   MessageView,
+  Page,
   PostMessageInput,
   EntitySummary,
   MenuConfig,
@@ -187,6 +189,78 @@ function stableKey(value: unknown): string {
 }
 
 /**
+ * One read's worth of list: the ids the server returned, IN ITS ORDER, plus
+ * the two facts that make paging expressible.
+ *
+ * `nextCursor: null` is the server saying "that was all". It is deliberately
+ * NOT the same as the key being absent, which means "nobody has asked yet" —
+ * conflating the two is what let a saturated 50-row first page report itself
+ * as the whole collection.
+ */
+interface RowPage {
+  ids: readonly EntityId[];
+  nextCursor: Cursor | null;
+  loading: boolean;
+  /**
+   * The server's count of the WHOLE match, when it volunteers one.
+   * `Page.total` is optional in the contract and the facade does not populate
+   * it today, so this is almost always `undefined` and callers must fall back
+   * to "at least this many". Read through `pageStateOf`, never guessed at.
+   */
+  total?: number;
+}
+
+/** A kind that answered with nothing, or refused. Frozen: an empty result must
+    keep referential identity or every consumer's memo churns. */
+const EMPTY_PAGE: RowPage = Object.freeze({
+  ids: Object.freeze([]) as readonly EntityId[],
+  nextCursor: null,
+  loading: false,
+});
+
+/**
+ * The three coordinates that identify a list read, carried STRUCTURALLY.
+ *
+ * The previous code round-tripped them through the cache key and parsed them
+ * back out with `key.split('::')` + `JSON.parse`, which is wrong the moment a
+ * filter value contains `::` and gets worse with every coordinate added.
+ * Keeping the record means the key can stay a pure identity function.
+ */
+interface PendingRead {
+  kind: string;
+  filter: unknown;
+  sort?: CollectionQuery['sort'];
+}
+
+/** What a list needs to render its footer and decide whether to fetch more. */
+export interface ListPageState {
+  hasMore: boolean;
+  loading: boolean;
+  /** Exact size of the match, when the server volunteered it; else absent and
+      the caller must say "N+" rather than invent a number. */
+  total?: number;
+}
+
+/**
+ * IDENTITY OF A READ. Two requests share rows exactly when all three
+ * coordinates agree — which is also precisely when the server would answer
+ * them identically, cursors included (a keyset cursor is bound to its query's
+ * fingerprint, so a cursor from one sort is refused by another).
+ */
+const rowsKey = (kind: string, filter: unknown, sort: CollectionQuery['sort']): string =>
+  `${kind}::${filter === undefined ? '*' : stableKey(filter)}::${sort ?? '*'}`;
+
+/** The one place a list read is turned into a wire query. */
+const queryFor = (space: SpaceId, read: PendingRead, cursor?: Cursor): CollectionQuery =>
+  ({
+    spaceId: space,
+    kinds: [read.kind],
+    ...(read.filter ? { filters: read.filter } : {}),
+    ...(read.sort ? { sort: read.sort } : {}),
+    ...(cursor ? { cursor } : {}),
+  }) as unknown as CollectionQuery;
+
+/**
  * Did the node ANSWER this failure, and was the answer "I am overloaded"?
  *
  * The distinction the boot retry runs on. `CollabError.status` cannot carry
@@ -287,8 +361,24 @@ export interface GateData {
   liveIds: readonly string[];
   /** THE verdict. Never computed in the UI. */
   livenessOf: (id: string) => SessionLiveness;
-  /** Rows for a (kind, filter) pair — hydrated once, then served from memory. */
-  rowsFor: (kind: string) => (filter?: unknown) => readonly EntitySummary[];
+  /**
+   * Rows for a (kind, filter, sort) triple — hydrated once, then served from
+   * memory and kept current by the event stream.
+   *
+   * `sort` is a coordinate of the READ, not a post-hoc arrangement: the order
+   * is Postgres's (`collections.ts` SORTS) and reaches the client only as the
+   * order of the page. A caller that wants a different order must ask for it
+   * here; there is no client-side re-sort of a server-ordered page.
+   */
+  rowsFor: (
+    kind: string,
+  ) => (filter?: unknown, sort?: CollectionQuery['sort']) => readonly EntitySummary[];
+  /** Is there another page for this exact read, and is one in flight? */
+  pageStateOf: (
+    kind: string,
+  ) => (filter?: unknown, sort?: CollectionQuery['sort']) => ListPageState;
+  /** Append the next keyset page for this exact read. Idempotent while in flight. */
+  loadMore: (kind: string) => (filter?: unknown, sort?: CollectionQuery['sort']) => void;
   /**
    * The BOARD's grouped read for a (kind, filter, groupBy) triple (A2).
    *
@@ -452,6 +542,10 @@ export function useGateData(options: GateOptions): GateData {
   const [menu, setMenu] = useState<ResolvedMenu>(() => resolveMenu(null));
   const [connection, setConnection] = useState<ConnectionState>(() => seam.getConnection());
   const [liveIds, setLiveIds] = useState<readonly string[]>([]);
+  // WHO "ME" IS comes from `viewerActor` above, which `hydrate` already
+  // resolves as the membership matching THIS space. The viewer-scoped filter
+  // chips read `viewerActor?.id`; a second identity read here would be a
+  // second source of the same truth, free to disagree with the first.
   // Undefined until the first successful read, and again for a node that
   // cannot serve them — DISTINCT from `{}` (a space that genuinely has no
   // entities). The rail draws no number in the first case and a real zero in
@@ -482,7 +576,7 @@ export function useGateData(options: GateOptions): GateData {
    * is. `projectRows` joins them on every render, so an event that changes an
    * entity changes the list, with no read and nothing to invalidate.
    */
-  const [rows, setRows] = useState<Record<string, readonly EntityId[]>>({});
+  const [rows, setRows] = useState<Record<string, RowPage>>({});
   const activity = useTerminalActivityMap(terminalActivitySource);
   const messagePulses = useMessagePulses(seam);
 
@@ -511,11 +605,31 @@ export function useGateData(options: GateOptions): GateData {
 
   /** Every read lands in the store FIRST, then leaves its ordering here. Both
       halves matter: skipping the ingest would leave `projectRows` joining ids
-      against entities it has never seen, and the list would render empty. */
+      against entities it has never seen, and the list would render empty.
+
+      `append` is what makes a second page a CONTINUATION rather than a
+      replacement: the keyset cursor already excludes everything on page 1, so
+      absorbing a page 2 non-appending would leave the list showing rows 51-100
+      and nothing before them. */
   const absorb = useCallback(
-    (key: string, items: readonly EntitySummary[]) => {
-      domain.store.getState().ingestSummaries([...items]);
-      setRows((current) => ({ ...current, [key]: items.map((item) => item.id) }));
+    (key: string, page: Page<EntitySummary>, append = false) => {
+      domain.store.getState().ingestSummaries([...page.items]);
+      setRows((current) => {
+        const prior = append ? current[key]?.ids : undefined;
+        const ids = page.items.map((item) => item.id);
+        return {
+          ...current,
+          [key]: {
+            // De-duplicated on append: a row that changed between two page
+            // reads can legitimately appear in both, and a duplicate id
+            // renders the same row twice with a colliding React key.
+            ids: prior ? [...prior, ...ids.filter((id) => !prior.includes(id))] : ids,
+            nextCursor: page.nextCursor ?? null,
+            loading: false,
+            ...(page.total === undefined ? {} : { total: page.total }),
+          },
+        };
+      });
     },
     [domain],
   );
@@ -593,8 +707,9 @@ export function useGateData(options: GateOptions): GateData {
       const load = async (kind: string, limit?: number) => {
         const query = { spaceId: space, kinds: [kind], ...(limit ? { limit } : {}) } as unknown as CollectionQuery;
         const result = await seam.query(query);
-        // Same key shape rowsFor reads: an unfiltered read is the '*' key.
-        absorb(`${kind}::*`, result.page.items);
+        // Same key shape rowsFor reads: an unfiltered, unsorted read is the
+        // all-defaults key.
+        absorb(rowsKey(kind, undefined, undefined), result.page);
         return result.page.items;
       };
       // BOUNDED, not `Promise.all`: these are the collections.query calls that
@@ -1071,16 +1186,17 @@ export function useGateData(options: GateOptions): GateData {
   rowsRef.current = rows;
   const ensureKind = useCallback(
     (kind: string) => {
-      if (!spaceId || rowsRef.current[`${kind}::*`] || inFlight.current.has(kind)) return;
+      const key = rowsKey(kind, undefined, undefined);
+      if (!spaceId || rowsRef.current[key] || inFlight.current.has(kind)) return;
       inFlight.current.add(kind);
       const query = { spaceId, kinds: [kind] } as unknown as CollectionQuery;
       void seam
         .query(query)
-        .then((result) => absorb(`${kind}::*`, result.page.items))
+        .then((result) => absorb(key, result.page))
         .catch(() => {
           // A kind that will not load renders as an honestly empty panel
           // rather than a spinner that never resolves.
-          setRows((current) => ({ ...current, [`${kind}::*`]: [] }));
+          setRows((current) => ({ ...current, [key]: EMPTY_PAGE }));
         })
         .finally(() => inFlight.current.delete(kind));
     },
@@ -1210,20 +1326,27 @@ export function useGateData(options: GateOptions): GateData {
    * executor tests call the seam directly. The gap sat exactly between two
    * suites that were both green.
    *
-   * Now keyed per (kind, filter) — the hydration key LLD §3.1 specifies — and
-   * an unseen key hydrates on demand. It returns [] until that resolves, which
-   * is honest: not-yet-loaded is a real state and it is not the same as empty.
+   * Now keyed per (kind, filter, SORT) — the hydration key LLD §3.1 specifies
+   * — and an unseen key hydrates on demand. It returns [] until that resolves,
+   * which is honest: not-yet-loaded is a real state and it is not the same as
+   * empty.
+   *
+   * THE SORT IS PART OF THE KEY, AND THAT IS THE WHOLE OF WHY IT WORKS. The
+   * order is decided by Postgres (`collections.ts` SORTS) and arrives as the
+   * ORDER OF `page.items`; there is nowhere else for it to live. Keying on the
+   * filter alone would have made "Priority" and "Due date" the same cache
+   * entry, so the second one asked for would silently serve the first one's
+   * rows — the same class of defect as `rowsFor` ignoring its filter, one
+   * argument later.
    *
    * AND IT IS LIVE. The key still decides WHICH read answered; `projectRows`
-   * decides what those rows currently say and whether the stream has added
-   * one. An unread key is still `[]` and still schedules its read — the
-   * projection augments the read path, it never stands in for it, or a kind
-   * nobody has asked for would render as confidently empty.
+   * decides what those rows currently say, whether the stream has added one,
+   * and — under the same sort — WHERE the arrival belongs. An unread key is
+   * still `[]` and still schedules its read; the projection augments the read
+   * path, it never stands in for it, or a kind nobody has asked for would
+   * render as confidently empty.
    */
-  const cacheKey = (kind: string, filter: unknown): string =>
-    `${kind}::${filter === undefined ? '*' : stableKey(filter)}`;
-
-  const pending = useRef(new Set<string>());
+  const pending = useRef(new Map<string, PendingRead>());
   const [pendingTick, setPendingTick] = useState(0);
 
   /**
@@ -1242,44 +1365,102 @@ export function useGateData(options: GateOptions): GateData {
 
   const rowsFor = useCallback(
     (kind: string) =>
-      (filter?: unknown): readonly EntitySummary[] => {
-        const key = cacheKey(kind, filter);
-        const ordered = rows[key];
-        if (ordered === undefined) {
+      (filter?: unknown, sort?: CollectionQuery['sort']): readonly EntitySummary[] => {
+        const key = rowsKey(kind, filter, sort);
+        const page = rows[key];
+        if (page === undefined) {
           // Record the miss; the effect below performs the read. Requesting
           // from inside render must never dispatch, so this only marks intent.
           if (!pending.current.has(key)) {
-            pending.current.add(key);
+            pending.current.set(key, { kind, filter, sort });
             queueMicrotask(() => setPendingTick((n) => n + 1));
           }
           return EMPTY_ROWS;
         }
         const hit = projected.get(key);
         if (hit) return hit;
-        const out = projectRows({ ordered, entities, kind, spaceId, filter });
+        const out = projectRows({ ordered: page.ids, entities, kind, spaceId, filter, sort });
         projected.set(key, out);
         return out;
       },
     [rows, entities, spaceId, projected],
   );
 
-  // Drains the misses recorded during render. Each (kind, filter) key is read
-  // once and cached; `onResync` clearing `rows` re-arms every key naturally.
+  /**
+   * WHETHER THERE IS MORE, AND WHETHER IT IS COMING — the two facts a list
+   * needs to say `50+` honestly instead of `50`.
+   *
+   * A key nobody has read yet reports `loading`, never `hasMore: false`: the
+   * difference between "there is no more" and "we have not asked" is exactly
+   * the distinction a saturated first page erased, and reporting the first
+   * while meaning the second is how a 182-row list came to call itself 50.
+   */
+  const pageStateOf = useCallback(
+    (kind: string) =>
+      (filter?: unknown, sort?: CollectionQuery['sort']): ListPageState => {
+        const page = rows[rowsKey(kind, filter, sort)];
+        if (page === undefined) return { hasMore: false, loading: true };
+        return {
+          hasMore: page.nextCursor !== null,
+          loading: page.loading,
+          ...(page.total === undefined ? {} : { total: page.total }),
+        };
+      },
+    [rows],
+  );
+
+  /**
+   * Fetch the next keyset page for a (kind, filter, sort) and APPEND it.
+   *
+   * Guarded on a ref, not on `rows`: a scroll sentinel fires several times
+   * inside one frame, and state written by the first call is not visible to
+   * the second. Each of them would spend the SAME cursor, fetch the same page
+   * and append nothing — the list stops growing while looking busy.
+   */
+  const pagesInFlight = useRef(new Set<string>());
+  const loadMore = useCallback(
+    (kind: string) =>
+      (filter?: unknown, sort?: CollectionQuery['sort']): void => {
+        if (!spaceId) return;
+        const key = rowsKey(kind, filter, sort);
+        const page = rowsRef.current[key];
+        if (!page || page.nextCursor === null || pagesInFlight.current.has(key)) return;
+        pagesInFlight.current.add(key);
+        const cursor = page.nextCursor;
+        setRows((current) => {
+          const live = current[key];
+          return live ? { ...current, [key]: { ...live, loading: true } } : current;
+        });
+        void seam
+          .query(queryFor(spaceId, { kind, filter, sort }, cursor))
+          .then((result) => absorb(key, result.page, true))
+          // The rows already fetched stay; only the attempt to extend them
+          // failed. Clearing `nextCursor` stops an endless retry at the
+          // sentinel and lets the count stop claiming there is more.
+          .catch(() =>
+            setRows((current) => {
+              const live = current[key];
+              return live
+                ? { ...current, [key]: { ...live, loading: false, nextCursor: null } }
+                : current;
+            }),
+          )
+          .finally(() => pagesInFlight.current.delete(key));
+      },
+    [seam, spaceId, absorb],
+  );
+
+  // Drains the misses recorded during render. Each (kind, filter, sort) key is
+  // read once and cached; `onResync` clearing `rows` re-arms every key.
   useEffect(() => {
     if (!ready || !spaceId || pending.current.size === 0) return;
-    const keys = [...pending.current];
+    const reads = [...pending.current.entries()];
     pending.current.clear();
-    for (const key of keys) {
-      const [kind, filterPart] = key.split('::');
-      const query = {
-        spaceId,
-        kinds: [kind],
-        ...(filterPart && filterPart !== '*' ? { filters: JSON.parse(filterPart) } : {}),
-      } as unknown as CollectionQuery;
+    for (const [key, read] of reads) {
       void seam
-        .query(query)
-        .then((result) => absorb(key, result.page.items))
-        .catch(() => setRows((current) => ({ ...current, [key]: [] })));
+        .query(queryFor(spaceId, read))
+        .then((result) => absorb(key, result.page))
+        .catch(() => setRows((current) => ({ ...current, [key]: EMPTY_PAGE })));
     }
   }, [ready, spaceId, seam, pendingTick, absorb]);
 
@@ -1609,6 +1790,8 @@ export function useGateData(options: GateOptions): GateData {
       livenessOf,
       rowsFor,
       boardFor,
+      pageStateOf,
+      loadMore,
       countsFor,
       refreshCounts,
       detailOf,
@@ -1629,7 +1812,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, authRequired, liveIds, livenessOf, rowsFor, boardFor, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

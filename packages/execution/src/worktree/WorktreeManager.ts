@@ -106,13 +106,19 @@ export class WorktreeManager {
     const previous = this.projectLocks.get(projectId) ?? Promise.resolve();
     let release!: () => void;
     const tail = new Promise<void>((r) => { release = r; });
-    this.projectLocks.set(projectId, previous.then(() => tail));
+    // Hold a reference to the value ACTUALLY stored, not to `tail`. The map
+    // stores `previous.then(() => tail)`, so an identity check against `tail`
+    // in the finally block can never match — which is how the original of this
+    // function retained one promise per project for the lifetime of the
+    // process while claiming, in a comment, to clean up after itself.
+    const entry = previous.then(() => tail);
+    this.projectLocks.set(projectId, entry);
     await previous;
     try {
       return await fn();
     } finally {
       release();
-      if (this.projectLocks.get(projectId) === tail) this.projectLocks.delete(projectId);
+      if (this.projectLocks.get(projectId) === entry) this.projectLocks.delete(projectId);
     }
   }
 

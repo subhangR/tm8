@@ -52,9 +52,15 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
-import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
+import {
+  NewSpaceProjectDialog,
+  ProjectBranchesSection,
+  type ProjectBranchesPort,
+  type ProjectOnboardingPort,
+} from '../projects';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -363,6 +369,31 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  // The credentials section's own adapter, built the same way and on the same
+  // pair. It is a SECOND port rather than four more methods on the settings
+  // one because `settings-credentials/` is a separate module meeting the shell
+  // at its `sections` slot — the seam that lets two lanes mount into one screen
+  // without editing each other's files.
+  const credentialsPort = useMemo(
+    () => (data.spaceId ? credentialsPortFromSeam(data.seam, data.spaceId) : null),
+    [data.seam, data.spaceId],
+  );
+
+  // The branch-topology section for the shell's externally-owned `projects`
+  // slot (seam Amendment 5). The spaceId is closed over HERE so the section's
+  // port stays two reads and nothing else — the same host-wires-the-seam rule
+  // the settings port follows.
+  const branchesPort = useMemo<ProjectBranchesPort | null>(
+    () =>
+      data.spaceId
+        ? {
+            projects: () => data.seam.projects(data.spaceId!),
+            branches: (projectId) => data.seam.projectBranches(projectId),
+          }
+         : null,
+    [data.seam, data.spaceId],
+  );
+
   const reasons = useMemo<DetailReasons>(
     () => ({
       presenceHollow: presenceHollowReason,
@@ -588,7 +619,29 @@ export function GateApp(props: GateAppProps = {}) {
                the whole module sat built and unmounted in settings-space/.
                Sections another module owns (projects/kinds) keep their honest
                not-mounted state inside the shell itself. */
-            <SettingsShell port={settingsPort} nodeKey={nodeKeyOf(activeServer.routeBaseUrl)} />
+            <SettingsShell
+              port={settingsPort}
+              nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+              sections={
+                credentialsPort || branchesPort
+                  ? {
+                      ...(branchesPort
+                        ? { projects: <ProjectBranchesSection port={branchesPort} /> }
+                        : {}),
+                      ...(credentialsPort
+                        ? {
+                            credentials: (
+                              <CredentialsSection
+                                port={credentialsPort}
+                                serverBaseUrl={activeServer.routeBaseUrl}
+                              />
+                            ),
+                          }
+                        : {}),
+                    }
+                  : undefined
+              }
+            />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (

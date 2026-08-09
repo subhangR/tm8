@@ -97,6 +97,10 @@ describe('codex sandbox preflight', () => {
       dataDir,
       env: { HOME: process.env.HOME, ...env, PATH: `${binDir}:${process.env.PATH ?? ''}` },
       bootSettlementMs: 25,
+      // This suite isolates sandbox delivery. The independent command-network
+      // preflight has its own tests and would reject these deliberately tiny
+      // Codex shell stubs before the sandbox seam is reached.
+      codexNetworkPreflight: async () => {},
     });
     return { service, graph };
   }

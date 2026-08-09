@@ -20,7 +20,7 @@ import {
   type SendHandoffInput,
   type WithdrawHandoffInput,
 } from '@tm8/contract';
-import { incomingMessageInjection, utf8Bytes } from '@tm8/prompt';
+import { incomingMessageInjection, utf8Bytes, type IncomingMessageFacts } from '@tm8/prompt';
 
 import { MICROS } from '../../entity-read.js';
 import type { DbClaims, Querier } from '../../../db/types.js';
@@ -322,6 +322,48 @@ function deliveryRecord(row: DeliveryRow): MessageDeliveryRecord {
   };
 }
 
+/**
+ * The `attribution=` label on a delivered message's `<trusted_control>` envelope.
+ *
+ * THIS USED TO BE THE LITERAL `'verified'`, written inline at the call site.
+ * Every PTY-delivered message therefore claimed the highest trust label this
+ * protocol has, unconditionally — a fail-OPEN default, and the one shape that
+ * must never survive review in a trust boundary. It is spelled as a function
+ * here so the label has exactly one origin and that origin is evidence.
+ *
+ * WHAT `verified` MEANS. Not "the author is who they say" and not "a human sent
+ * it" — it means A SESSION-BOUND CREDENTIAL AUTHORED THIS, which is precisely
+ * what the `authored_from` edge (message -> work_session) records. 076:41-56
+ * states the rule and its measurement: over the whole message table, members
+ * (humans on a bearer token) hold 541 messages and ZERO `authored_from` edges,
+ * while team members hold 129 and 127. The two exceptions are `--as`
+ * impersonation from a human's token, which sharpens the rule rather than
+ * weakening it: the discriminator is the CREDENTIAL, not the author's kind.
+ * `edges_authored_from_source_idx` is UNIQUE on `src_id`, so the edge is
+ * single-valued and cannot resolve to one of several sessions.
+ *
+ * WHY THE TS-SIDE VALUE IS EXACT AND NOT A GUESS. `w2_post_message_batch`
+ * (019:433-443, 468-474) admits no third outcome for a non-null source session:
+ * it authorizes the session against the resolved actor — same space, live, and
+ * `participates_in` — and RAISES 42501 when that fails, otherwise it writes
+ * `authored_from` for EVERY message in the batch. There is no path on which a
+ * non-null session is silently dropped and no path on which the edge is written
+ * without one. So "the server resolver produced a session id and the batch
+ * committed" and "this message carries `authored_from`" are the same fact, and
+ * the routes being rendered are always messages of that just-committed batch.
+ *
+ * FAIL CLOSED. Every other input — no resolver configured, a resolver that
+ * returned null, a blank id — is `recorded_only`. The label is raised only by
+ * positive evidence, never by the absence of contrary evidence.
+ */
+function senderAttributionFor(
+  authoredFromWorkSessionId: string | null | undefined,
+): IncomingMessageFacts['senderAttribution'] {
+  return typeof authoredFromWorkSessionId === 'string' && authoredFromWorkSessionId.length > 0
+    ? 'verified'
+    : 'recorded_only';
+}
+
 export class W2MessagesHandoffsService {
   private readonly pendingHandoffs = new Map<string, PendingHandoff>();
 
@@ -409,6 +451,11 @@ export class W2MessagesHandoffsService {
     // and still calls settle exactly once; this request's response just no
     // longer blocks on watching it do so.
     if (this.options.messageDelivery) {
+      // One derivation for the whole batch, because the fact is batch-scoped:
+      // 019:468-474 writes `authored_from` for every message id it minted, or
+      // for none of them, and every route below targets a message of this batch
+      // (`w2_record_session_message_routes` selects only from `p_message_ids`).
+      const senderAttribution = senderAttributionFor(sourceWorkSessionId);
       for (const route of stored.routes) {
         if (!route.sessionInputAllowed || route.targetWorkSessionId === sourceWorkSessionId) continue;
         const parent = route.threadParentMessageId
@@ -422,7 +469,12 @@ export class W2MessagesHandoffsService {
           deliveryAttemptNo: 1,
           senderActorId: route.senderActorId,
           senderActorKind: route.senderActorKind,
-          senderAttribution: 'verified',
+          senderAttribution,
+          // NOT "the session that called post" — `sourceWorkSessionId` is the
+          // output of `resolveAuthoredFromWorkSessionId`, the same value handed
+          // to `w2_post_message_batch` as its authored_from provenance, so it is
+          // the AUTHORING session and is null exactly when attribution is
+          // `recorded_only`. The two fields cannot disagree.
           sourceSessionId: sourceWorkSessionId,
           destinationSessionId: route.targetWorkSessionId,
           sourceAnchorId: route.sourceAnchorId,

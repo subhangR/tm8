@@ -30,6 +30,10 @@ import type {
   CommandContext, CommandErrorCode, CommandResult, CompleteTaskInput,
   ComposerInteractionPolicy, Connections, CorrectProjectAssociationInput,
   CreateEdgeInput, CreateEntityInput, CreateSpaceInput, CreateTaskInput, CreateVoiceTokenInput,
+  CredentialConnectionView, CredentialProviderName, CredentialsDeleteInput,
+  CredentialsDeleteResult, CredentialsLoginSessionFinishInput,
+  CredentialsLoginSessionFinishResult, CredentialsLoginSessionStartInput,
+  CredentialsLoginSessionStartResult, CredentialsStatusView,
   CustomEntityKind, CustomFieldDef, CustomFieldValue, DeleteMessageInput,
   DeliverySummary, EdgeCorrectionResult, EdgeGroup, EdgeView,
   EntityBadges, EntityCapabilities, EntityConnectionsQuery, EntityContent,
@@ -39,6 +43,7 @@ import type {
   ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
+  GateTaskInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
@@ -51,6 +56,7 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
+  ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
   ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing,
   ProjectLinkInput, ProjectResource,
@@ -66,11 +72,13 @@ import type {
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
+  SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
+  SessionTranscriptStuck,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
   UpdateSpaceInput, ValidateInteractionProfileInput, VoiceParticipant, VoiceTokenGrant, WithdrawHandoffInput,
-  WorkInput, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
+  WorkInput, WorkSessionKind, WorkSessionShareMode, WorkSessionStatus, WorktreeStatus, WorkspaceControlAck, WorkspaceControlFrame,
   WorkspaceEvent,
 } from './contract.js';
 import type { WireErrorBody } from './envelope.js';
@@ -118,6 +126,9 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
+/** Mirrors 083's `work_sessions.session_kind` CHECK exactly. */
+export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
+  z.enum(['agent', 'credential']);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
   z.enum(['active', 'merged', 'abandoned', 'deleted']);
 
@@ -173,6 +184,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('channel'),
     topic: z.string(),
+    members: z.array(ActorSummarySchema),
     unreadCount: z.number().int().nonnegative(),
     workingAgentCount: z.number().int().nonnegative(),
   }).strict(),
@@ -238,6 +250,10 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     shareMode: WorkSessionShareModeSchema,
     startedAt: z.string().nullable(),
     exitedAt: z.string().nullable(),
+    // OPTIONAL, not nullable: a pre-083 node omits it entirely, and callers
+    // read that absence as `agent` so a frozen server keeps today's behaviour.
+    // Clients filter with `!== 'credential'`; see the DTO note in contract.ts.
+    sessionKind: WorkSessionKindSchema.optional(),
   }).strict(),
   z.object({
     kind: z.literal('collection'),
@@ -799,6 +815,39 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     settingsRevision: z.number().int().positive(),
     clientMutationId: z.string().optional(),
   }).strict(),
+  // Git facts (Tier 4 git×graph): RPC-authored passthrough — SQL authors in
+  // db/migrations/083 build these payloads contract-shaped. STRICT, like every
+  // passthrough arm, so an off-contract stored row fails the tripwire.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.commit_recorded'),
+    commitEntityId: EntityIdSchema,
+    repo: z.string(),
+    sha: z.string(),
+    provider: z.string(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.pr_state_changed'),
+    prEntityId: EntityIdSchema,
+    repo: z.string(),
+    number: z.number().int().positive(),
+    previousState: z.enum(['open', 'merged', 'closed', 'draft']),
+    state: z.enum(['open', 'merged', 'closed', 'draft']),
+    headSha: z.string().nullable().optional(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.worktree_status_changed'),
+    worktreeEntityId: EntityIdSchema,
+    projectId: z.string(),
+    branch: z.string(),
+    previousStatus: z.enum(['active', 'merged', 'abandoned', 'deleted']),
+    status: z.enum(['active', 'merged', 'abandoned', 'deleted']),
+    clientMutationId: z.string().optional(),
+  }).strict(),
   z.object({
     ...workspaceEventEnvelopeShape,
     type: z.literal('project.association.corrected'),
@@ -1077,6 +1126,108 @@ export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.obj
   account: AuthAccountViewSchema,
   session: AuthSessionViewSchema.nullable(),
 }).strict();
+
+// ---------------------------------------------------------------------------
+// credentials.* (Tier B, sub-doc 11 §D).
+//
+// NO `commandContextShape` ON ANY INPUT HERE, and unlike `auth.*` the reason is
+// a security property rather than a modelling one: `commandContextShape`
+// carries `actorId`, and `.strict()` without it makes an acting-as claim a
+// VALIDATION FAILURE instead of a field the server has to remember to ignore.
+// That is finding D2's third and outermost layer — the wire, the service
+// (`W2CredentialSessionsService.start` throws on a claims `actorId`) and the
+// SQL (`internal.current_member_id`, never `internal.resolve_actor`).
+//
+// `clientMutationId` IS admitted, because `commandAcceptsClientMutationId`
+// returns true for everything outside `auth.*`; refusing it here would make
+// every credential command fail with `Unrecognized key(s)` the moment the
+// ledger is enabled.
+// ---------------------------------------------------------------------------
+
+/** All three login-terminal providers. Wider than what 083 will STORE (R6). */
+export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
+  z.enum(['anthropic', 'openai', 'github']);
+
+/** Mirrors 083's `account_agent_credentials.status` CHECK exactly. */
+const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
+
+export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView> = z.object({
+  provider: CredentialProviderNameSchema,
+  connected: z.boolean(),
+  // Nullable rather than optional, and never absent: anthropic can NEVER
+  // populate it (R4), so a UI that treats "missing" and "null" differently
+  // would render two different cards for one permanent fact.
+  login: z.string().nullable(),
+  authMethod: z.string().nullable(),
+  status: CredentialStatusSchema.nullable(),
+  connectedAt: z.string().nullable(),
+  lastVerifiedAt: z.string().nullable(),
+}).strict();
+
+export const CredentialsStatusViewSchema: z.ZodType<CredentialsStatusView> = z.object({
+  providers: z.array(CredentialConnectionViewSchema),
+  // The honest-degradation field. `absent` means the github entry's `connected`
+  // is UNKNOWN, not measured false — 079 ships on the deployed staging line and
+  // is reachable from no local git object.
+  gitCredentialStore: z.enum(['present', 'absent']),
+}).strict();
+
+export const CredentialsDeleteInputSchema: z.ZodType<CredentialsDeleteInput> = z.object({
+  clientMutationId: z.string().min(1).optional(),
+}).strict();
+
+export const CredentialsDeleteResultSchema: z.ZodType<CredentialsDeleteResult> = z.object({
+  provider: CredentialProviderNameSchema,
+  revoked: z.boolean(),
+  terminatedCredentialSessionIds: z.array(z.string()),
+  terminatedAgentSessionIds: z.array(z.string()),
+  failures: z.array(z.object({
+    step: z.enum(['revoke', 'credentialSession', 'agentSession']),
+    sessionId: z.string().optional(),
+    reason: z.string(),
+  }).strict()),
+}).strict();
+
+export const CredentialsLoginSessionStartInputSchema:
+  z.ZodType<CredentialsLoginSessionStartInput> = z.object({
+    spaceId: EntityIdSchema,
+    provider: CredentialProviderNameSchema,
+    // Geometry is the ONLY client input this operation accepts, and it is
+    // bounded so a hostile value cannot reach `pty.spawn` as a resource claim.
+    // There is deliberately no command/args/flags field: see the DTO.
+    cols: z.number().int().min(1).max(1000).optional(),
+    rows: z.number().int().min(1).max(1000).optional(),
+    clientMutationId: z.string().min(1).optional(),
+  }).strict();
+
+export const CredentialsLoginSessionStartResultSchema:
+  z.ZodType<CredentialsLoginSessionStartResult> = z.object({
+    workSessionId: EntityIdSchema,
+    spaceId: EntityIdSchema,
+    provider: CredentialProviderNameSchema,
+    expiresAt: IsoTimestamp,
+    command: z.string().min(1),
+  }).strict();
+
+export const CredentialsLoginSessionFinishInputSchema:
+  z.ZodType<CredentialsLoginSessionFinishInput> = z.object({
+    clientMutationId: z.string().min(1).optional(),
+  }).strict();
+
+export const CredentialsLoginSessionFinishResultSchema:
+  z.ZodType<CredentialsLoginSessionFinishResult> = z.object({
+    workSessionId: EntityIdSchema,
+    provider: CredentialProviderNameSchema,
+    // `connected` and `stored` are separate on purpose: a verified GitHub login
+    // has nowhere to be written on this line, so `connected: true, stored:
+    // false` is a correct and expected answer.
+    connected: z.boolean(),
+    login: z.string().nullable(),
+    authMethod: z.string().nullable(),
+    status: CredentialStatusSchema,
+    stored: z.boolean(),
+    terminated: z.boolean(),
+  }).strict();
 
 export const UndoTokenSchema: z.ZodType<UndoToken> = z.object({
   token: z.string(),
@@ -1414,6 +1565,12 @@ export const LinkCommitInputSchema: z.ZodType<LinkCommitInput> = z.object({
   projectId: z.string().min(1).optional(),
 }).strict();
 
+export const GateTaskInputSchema: z.ZodType<GateTaskInput> = z.object({
+  ...commandContextShape,
+  expectedVersion: z.number().finite(),
+  gate: z.enum(['none', 'pr_merged']),
+}).strict();
+
 export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1),
@@ -1557,6 +1714,30 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   ensureWorkingDir: z.boolean().optional(),
 }).strict();
 
+export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
+  name: z.string().min(1),
+  head: z.string(),
+  lastCommitAt: z.string().min(1),
+  subject: z.string(),
+  upstream: z.string().nullable(),
+  ahead: z.number().int().nonnegative(),
+  behind: z.number().int().nonnegative(),
+  isDefault: z.boolean(),
+  isCurrent: z.boolean(),
+  merged: z.boolean(),
+  stale: z.boolean(),
+}).strict();
+
+export const ProjectBranchTopologySchema: z.ZodType<ProjectBranchTopology> = z.object({
+  projectId: ProjectIdSchema,
+  workingDir: z.string().min(1),
+  defaultBranch: z.string().min(1),
+  defaultBranchSource: z.enum(['origin_head', 'local_conventional', 'current_branch']),
+  branches: z.array(ProjectBranchSchema),
+  truncated: z.boolean(),
+  staleAfterDays: z.number().int().positive(),
+}).strict();
+
 export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({
   name: z.string().min(1),
   path: z.string().min(1),
@@ -1665,9 +1846,19 @@ export const FileUploadAbortInputSchema = CommandContextSchema;
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
 
+/**
+ * `.strict()` on every member is the load-bearing part: it is what makes
+ * `{ mode: 'worktree', path: '/etc' }` a parse failure rather than a field the
+ * server quietly ignores. "Intent in, never paths" is structural here.
+ *
+ * The `baseRef` bound is politeness; the security control is that it reaches
+ * Git as an element of an argv array, never a shell string, and is shape-checked
+ * by `assertSafeRefName` on the way.
+ */
 export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('project') }).strict(),
   z.object({ mode: z.literal('scratch') }).strict(),
+  z.object({ mode: z.literal('worktree'), baseRef: z.string().min(1).max(255).optional() }).strict(),
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
@@ -1828,6 +2019,64 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unavailableReason: z.enum(['not_recorded']).nullable(),
   }).strict(),
   recordedAt: z.string().nullable(),
+}).strict();
+
+/**
+ * execution.transcript. Strict everywhere, unlike the journal above: nothing in
+ * this page is a foreign record passed through — every field is computed by the
+ * server from the native JSONL, so an unknown key here is a tm8 bug, not an
+ * older CLI. The native records' own shape drift is absorbed in the reader,
+ * which counts what it cannot parse as `malformed` and keeps going.
+ */
+export const SessionTranscriptEntrySchema: z.ZodType<SessionTranscriptEntry> = z.object({
+  at: IsoTimestamp.nullable(),
+  source: z.enum(['user', 'assistant']),
+  text: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
+export const SessionTranscriptStatsSchema: z.ZodType<SessionTranscriptStats> = z.object({
+  partial: z.boolean(),
+  userMessages: z.number().int().nonnegative(),
+  assistantMessages: z.number().int().nonnegative(),
+  toolCalls: z.number().int().nonnegative(),
+  // Nullable, not zero-defaulted: an agent that has not reported usage yet is
+  // not an agent that used no tokens, and a debug surface must show the
+  // difference.
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable(),
+  cacheReadTokens: z.number().int().nonnegative().nullable(),
+  cacheCreationTokens: z.number().int().nonnegative().nullable(),
+  tools: z.array(z.object({
+    name: z.string(),
+    count: z.number().int().positive(),
+  }).strict()),
+  models: z.array(z.string()),
+}).strict();
+
+export const SessionTranscriptStuckSchema: z.ZodType<SessionTranscriptStuck> = z.object({
+  silentMs: z.number().int().nonnegative(),
+  toolCallsSinceText: z.number().int().nonnegative(),
+}).strict();
+
+export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum([
+    'no_native_session_id',
+    'unsupported_agent_tool',
+    'no_transcript_file',
+    'unreadable',
+  ]).nullable(),
+  agentTool: z.enum(['claude-code', 'codex']).nullable(),
+  entries: z.array(SessionTranscriptEntrySchema),
+  // Nullable for the same reason `entries` is empty on an unavailable page:
+  // there are no statistics about a transcript that was never found, and a
+  // zeroed object would read as "this agent did nothing".
+  stats: SessionTranscriptStatsSchema.nullable(),
+  stuck: SessionTranscriptStuckSchema.nullable(),
+  lastActivityAt: IsoTimestamp.nullable(),
+  malformed: z.number().int().nonnegative(),
 }).strict();
 
 // ---------------------------------------------------------------------------

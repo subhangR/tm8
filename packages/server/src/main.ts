@@ -11,6 +11,7 @@
  */
 import type { IncomingMessage } from 'node:http';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
+import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
 
 import { createDb } from './db/index.js';
@@ -35,6 +36,9 @@ import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
+import { Scheduler } from './scheduler/scheduler.js';
+import { createTrackingObserverJob } from './tracking/observer.js';
+import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
 import { resolveBearerIdentity } from './identity/pg-auth.js';
 import {
@@ -53,10 +57,30 @@ import { createW2FileUploadRoute } from './http/w2-file-upload.js';
 import { createClipboardUploadRoute } from './http/clipboard-upload.js';
 import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
-import { createPtyWsServer, isPtyUpgrade, type PtyAttachAuthorizer } from './pty/index.js';
+import {
+  createPtyAttachAuthorizer,
+  createPtyWsServer,
+  isPtyUpgrade,
+  type PtyAttachAuthorizer,
+} from './pty/index.js';
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
+  /**
+   * Start the R26 scheduler and its periodic jobs.
+   *
+   * DEFAULT FALSE, and that default is the point. `bootstrap()` is called by
+   * every production-parity test harness in the suite, each of which creates a
+   * server against a scratch database and then drops it. A scheduler started
+   * there is never stopped by anyone — it keeps polling a database that no
+   * longer exists, for the lifetime of the test PROCESS, interfering with every
+   * later test in the same worker. (Measured: four `w3/agentic` files started
+   * failing when the observer was started unconditionally.)
+   *
+   * Background work belongs to a process that owns its own lifetime and can
+   * shut it down. That is `main()`, which passes true and stops it on signal.
+   */
+  readonly startBackgroundJobs?: boolean;
   /**
    * Handlers to mount. Empty by default — see facade/registry.ts for why an
    * empty registry is the current acceptance criterion rather than a gap.
@@ -66,6 +90,12 @@ export interface BootstrapOptions {
 
 export interface BootstrappedServer {
   readonly server: FacadeServer;
+  /**
+   * Present only when `startBackgroundJobs` was set. Whoever asked for it owns
+   * stopping it — a started scheduler with no owner is the defect the option's
+   * own docblock describes.
+   */
+  readonly scheduler?: Scheduler | undefined;
   readonly subscriptions: SubscriptionRegistry;
   readonly events: WorkspaceEventPublisher;
   readonly url: string;
@@ -156,13 +186,25 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
             token: raw,
             ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
+            // 082 / R11. Taken straight off the verified session row, which
+            // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
+            // server fact, not a client assertion. This is the only thing that
+            // distinguishes a human from an agent carrying that human's full
+            // identity (sub-doc 14, channel C7).
+            authKind: session.kind,
           };
         }
 
         const fallback = await autoOwnerResolver(headers, context);
         if (fallback.kind === 'anonymous') return fallback;
         const resolved = await owner!();
-        return { kind: 'auto-owner', identityId: resolved.identityId };
+        // The auto-owner is the person at the node's own UI — a browser session
+        // in everything but the token. It is never an agent: an agent always
+        // arrives with a bearer credential on the branch above. The auto-owner
+        // path's own exposure is gated by TM8_DISABLE_AUTO_OWNER; refusing it a
+        // kind here would duplicate that control in the wrong file and break
+        // local development for no gain.
+        return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
       }
     : undefined;
 
@@ -231,12 +273,29 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         })
       : undefined;
 
+  /**
+   * Tier B credentials. Built HERE because it needs the PTY host, and the PTY
+   * host is a composition-root object: `createExecutionRuntime` owns it (it
+   * takes `onSessionStatus` only at construction), and `delivery` above is
+   * handed the very same instance. A second PtyHostService would be a second
+   * process registry, so a login terminal started through one would be
+   * invisible to the other's kill.
+   *
+   * Conditional on `execution` for the same reason `delivery` is: with no
+   * runtime there is no PTY, and these four operations start real processes.
+   * Absent, they are simply not mounted — the honest degraded mode.
+   */
+  const credentials = execution
+    ? { launcher: new CredentialSessionLauncher({ pty: execution.pty }), dataDir }
+    : undefined;
+
   if (db) {
     registerFacadeHandlers(registry, {
       db,
       config,
       owner,
       files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
+      ...(credentials ? { credentials } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       resolveAuthoredFromWorkSessionId: async (ctx) => {
         const claimed = commandEnvelope(ctx).workSessionId ?? null;
@@ -371,35 +430,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * non-browser clients; no credential resolves to the loopback auto-owner,
    * exactly like every HTTP request (T-L7 — one resolver, one arm).
    *
-   * Authorization: the caller must be able to SEE the work_session entity —
-   * one RLS-governed read under their own claims as `tm8_app`. Membership of
-   * the owning space is precisely what `entity_readable` encodes, so there
-   * is no second authorization vocabulary here. Not-visible and nonexistent
-   * are both 404: an outsider learns nothing about which ids are real.
+   * Authorization lives in pty/attach-authz.ts, and the policy is not restated
+   * here or anywhere else in TypeScript: it CALLS `public.grant_stream_attach`,
+   * the same function `execution.streams.attach` goes through, and enforces the
+   * view-versus-drive answer it gives. Being able to SEE the entity is only the
+   * first of the three tests — it was, wrongly, the only one until this lane.
    */
-  const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const ptyAuthorize: PtyAttachAuthorizer | undefined = db
-    ? async (req, sessionId) => {
-        if (!UUID_SHAPE.test(sessionId)) {
-          return { ok: false, status: 404, message: 'no such session' };
-        }
-        let identity: RequestIdentity;
-        try {
-          identity = await resolveSocketIdentity(req);
-        } catch {
-          return { ok: false, status: 401, message: 'authentication required' };
-        }
-        if (!identity.identityId) {
-          return { ok: false, status: 401, message: 'authentication required' };
-        }
-        const visible = await db.query(
-          { identityId: identity.identityId },
-          'select 1 from public.entities where id = $1 and deleted_at is null',
-          [sessionId],
-        );
-        if (visible.length === 0) return { ok: false, status: 404, message: 'no such session' };
-        return { ok: true };
-      }
+    ? createPtyAttachAuthorizer({
+        db,
+        resolveIdentityId: async (req) => (await resolveSocketIdentity(req)).identityId,
+      })
     : undefined;
 
   const ptyWs = execution
@@ -566,20 +607,99 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * AFTER listen(), deliberately: this is cleanup, not a precondition, and it
    * must never be able to delay or prevent the node accepting connections. It
    * never rejects, so there is nothing to catch.
+   *
+   * (The tracking observer below it is started first only because it is a
+   * timer, not a sweep — nothing in either depends on the other.)
    */
+
+  /**
+   * The tracking observer — 006's queue finally gets its worker.
+   *
+   * Started AFTER listen() and on the R26 runner every future periodic job
+   * belongs on; a second timer subsystem is the thing `scheduler.ts` exists to
+   * prevent. Only this job is registered — backup and retention have their own
+   * wiring decisions and are not this change's business.
+   *
+   * The scheduler's timers are `unref`'d, so it cannot by itself keep the
+   * process alive and shutdown needs no new coordination.
+   */
+  let scheduler: Scheduler | undefined;
+  if (db && owner && opts.startBackgroundJobs === true) {
+    scheduler = new Scheduler();
+    scheduler.register(
+      createTrackingObserverJob({
+        db,
+        claims: async () => {
+          // The doors go through `require_space_member`, which has no
+          // node-admin bypass, so bare `{ nodeAdmin: true }` would raise 42501
+          // on every write. The node's own owner is the honest actor here.
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'tracking-observer',
+          };
+        },
+      }),
+    );
+    // Tier 4 git×graph: session→commit provenance from local worktrees, same
+    // claims posture as the observer above.
+    scheduler.register(
+      createCommitRecorderJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'commit-recorder',
+          };
+        },
+      }),
+    );
+    scheduler.start();
+    console.log('  tracking: observer draining the refresh queue every 60s');
+    console.log('  tracking: commit recorder walking active worktrees every 60s');
+  }
+
   if (execution) {
     const retired = await execution.reconcileGhosts();
     if (retired > 0) {
       console.log(`  reconciled: retired ${retired} ghost session(s) left by a previous run`);
     }
+    // Worktree allocations, same posture, same place in the sequence. Kept
+    // separate from the ghost sweep because they answer different questions: a
+    // ghost is a stuck row, a stranded allocation is a leaked Git checkout —
+    // and the second one costs disk and can be hiding someone's uncommitted
+    // work.
+    const worktrees = await execution.reconcileWorktrees();
+    if (worktrees.repaired.length > 0) {
+      console.log(`  reconciled: repaired ${worktrees.repaired.length} worktree allocation(s)`);
+      for (const repair of worktrees.repaired) {
+        console.log(`    ${repair.worktreeId}: ${repair.observed} → ${repair.action}`);
+      }
+    }
+    // Quarantine is reported LOUDLY and acted on NEVER: these are Git worktrees
+    // inside the node's own area that it does not recognise, and the repository
+    // may be shared with a human's own (§6.3).
+    for (const foreign of worktrees.quarantined) {
+      console.log(`  quarantined worktree (untouched): ${foreign.path} — ${foreign.reason}`);
+    }
+    for (const problem of worktrees.errors) {
+      console.log(`  worktree reconciliation could not finish: ${problem.message}`);
+    }
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler };
 }
 
 export async function main(): Promise<void> {
   try {
-    const { server, url, db, delivery, preview } = await bootstrap();
+    // TRUE only here: this is the one caller that owns the process lifetime and
+    // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
+    const { server, url, db, delivery, preview, scheduler } = await bootstrap({
+      startBackgroundJobs: true,
+    });
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
     console.log(
@@ -598,8 +718,9 @@ export async function main(): Promise<void> {
     // as a hang rather than as the clean exit it nearly was.
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
-      void server
-        .close()
+      void Promise.resolve(scheduler?.stop(2_000))
+        .catch(() => undefined)
+        .then(() => server.close())
         .then(() => preview?.close())
         .then(() => delivery?.close())
         .then(() => db?.end())

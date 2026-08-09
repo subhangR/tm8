@@ -7,18 +7,38 @@ import {
   type EdgeView,
   type EntityCounters,
   type EntitySummary,
+  type ProjectBranchTopology,
   type ProjectCreateInput,
   type ProjectLinkInput,
   type ProjectResource,
   type ProjectUpdateInput,
 } from '@tm8/contract';
 
+import { readBranchTopology } from '@tm8/execution';
+
 import type { Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
-import { claimsFor, commandEnvelope, optionalUuid, requireUuidParam } from '../../context.js';
+import {
+  MAX_LIMIT,
+  claimsFor,
+  commandEnvelope,
+  limitOf,
+  optionalUuid,
+  requireUuidParam,
+} from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
 import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+
+/** `?staleAfterDays=` — absent means "use the module's own default". */
+function positiveInt(raw: string | null, field: string): number | undefined {
+  if (raw === null || raw === '') return undefined;
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new CollabError('invalid_input', `${field} must be a positive integer, got ${raw}`);
+  }
+  return value;
+}
 
 export interface ProjectRow {
   id: string;
@@ -310,9 +330,11 @@ export class W2ProjectsAssociationsService {
 
   readonly listProjectDirectories = async (ctx: RequestContext) => {
     const owner = await this.deps.owner();
-    if (claimsFor(owner, ctx).nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to browse project directories');
-    }
+    // Browsing is available to every authenticated local user. Filesystem
+    // exposure is bounded by TM8_PROJECT_ROOTS (the OS user's home by default),
+    // canonical-path containment, symlink exclusion, and OS read permissions.
+    // Node-admin remains required for creating a missing directory below.
+    claimsFor(owner, ctx);
     return listProjectDirectories(ctx.query.get('path') ?? undefined);
   };
 
@@ -346,6 +368,47 @@ export class W2ProjectsAssociationsService {
     const row = rows[0];
     if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
     return toProjectResource(row);
+  };
+
+  /**
+   * Branch topology for the project's working directory.
+   *
+   * THE PATH COMES FROM THE ROW, NEVER FROM THE REQUEST. This read runs git in
+   * a directory on the node, so a caller-supplied `workingDir` would be an
+   * arbitrary-directory read wearing a project id. Authorization is therefore
+   * exactly `getProject`'s: if you cannot read the project, you cannot learn
+   * anything about its checkout.
+   */
+  readonly listBranches = async (ctx: RequestContext): Promise<ProjectBranchTopology> => {
+    const owner = await this.deps.owner();
+    const projectId = requireUuidParam(ctx, 'projectId');
+    const rows = await this.deps.db.query<ProjectRow>(
+      claimsFor(owner, ctx),
+      `${PROJECT_SELECT} where id = $1`,
+      [projectId],
+    );
+    const row = rows[0];
+    if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
+
+    try {
+      const topology = await readBranchTopology(row.working_dir, {
+        staleAfterDays: positiveInt(ctx.query.get('staleAfterDays'), 'staleAfterDays'),
+        maxBranches: limitOf(ctx.query.get('limit'), MAX_LIMIT),
+      });
+      return { projectId: row.id, workingDir: row.working_dir, ...topology };
+    } catch (error) {
+      // A working directory that is not a repository is a CONFIGURATION fact
+      // about the project, not a server fault. Saying `internal` here would
+      // send the user looking for a bug in tm8 instead of at their own path.
+      const reason = (error as { reason?: string }).reason;
+      if (reason === 'not_a_git_repository' || reason === 'no_default_branch') {
+        throw new CollabError(
+          'invalid_input',
+          `project ${projectId} working directory ${row.working_dir}: ${reason}`,
+        );
+      }
+      throw error;
+    }
   };
 
   readonly createProject = async (ctx: RequestContext): Promise<ProjectResource> => {

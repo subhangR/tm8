@@ -87,12 +87,38 @@ function claimValue(value: string | undefined): string {
  * transaction may ever observe superuser reads with caller claims bound —
  * that combination is the entire defect this line removes.
  */
+/**
+ * `tm8.auth_kind` — the FIFTH claim, added by 082 (architect ruling R11).
+ *
+ * It carries the SERVER-RESOLVED kind of the auth session — `browser`, `cli` or
+ * `agent` — read out of `auth_sessions` by token hash in `resolveBearerIdentity`
+ * and never asserted by the client.
+ *
+ * WHY WIDENING THE TRUSTED SURFACE IS LEGITIMATE HERE, AND ONLY HERE. The
+ * standing rule above ("RLS resolves membership and can_act_as from TABLES, so
+ * there is no fifth") exists to keep STALE authorization out of claims: every
+ * path that changes membership opens a window where the claim disagrees with
+ * the rows, and RLS answers from the claim. That objection does not apply to
+ * `kind`. An auth session's kind is fixed when the session is issued and is
+ * IMMUTABLE for its whole life — there is no verb anywhere that changes one, so
+ * there is no window in which the claim can disagree with the row.
+ *
+ * WHAT READS IT: `internal.require_human_auth_kind()` (082), which gates all
+ * four `credentials.*` RPCs. It FAILS CLOSED — null, empty and unrecognised all
+ * refuse — which is why an omitted claim binds as `''` below rather than being
+ * skipped, and why no caller that forgets to supply a kind can accidentally be
+ * treated as human. The reason this matters is measured (sub-doc 14, C7): an
+ * agent's `TM8_AGENT_TOKEN` carries its owner's FULL identity, not a reduced
+ * principal, so `identity_id()`, `can_act_as` and `is_space_member` all answer
+ * as the human. `kind` is the ONLY thing that distinguishes them.
+ */
 const BIND_CLAIMS_SQL = `select
   set_config('tm8.identity_id', $1, true),
   set_config('tm8.actor_id',    $2, true),
   set_config('tm8.node_admin',  $3, true),
   set_config('tm8.request_id',  $4, true),
-  set_config('role',            $5, true)`;
+  set_config('tm8.auth_kind',   $5, true),
+  set_config('role',            $6, true)`;
 
 /**
  * An RPC name must be a bare (optionally schema-qualified) identifier. `fn` is
@@ -258,6 +284,10 @@ export class PgDb implements Db {
         claimValue(claims.actorId),
         nodeAdminClaim(claims.nodeAdmin),
         claimValue(claims.requestId),
+        // Absent binds as `''`, which `internal.claim_text` normalises to NULL
+        // and `require_human_auth_kind` refuses. Fail-closed by construction:
+        // every caller that does not know its own kind is not human.
+        claimValue(claims.authKind),
         this.role,
       ]);
 

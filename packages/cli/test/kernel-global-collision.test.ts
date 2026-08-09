@@ -291,10 +291,14 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
   }));
 
   it('sweeps the whole projection, not a subset', () => {
-    // Vacuity guards. The catalog is 129 rows, 127 of which publish syntax.
+    // Vacuity guards. The catalog is 128 rows, 126 of which publish syntax.
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-    expect(rows.length).toBe(129);
+    // 127 -> 128 (2026-08-07): execution.transcript (public, with a command).
+    // 128 -> 129 (2026-08-09): projects.branches.list.
+    // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
+    // 131 -> 135: credentials.* Tier B.
+    expect(rows.length).toBe(137);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

@@ -40,9 +40,35 @@ export {
 export {
   extractCodexRolloutIdentity,
   resolveCodexNativeSessionId,
+  resolveCodexRollout,
+  type CodexRollout,
   type CodexRolloutIdentity,
 } from './native-session.js';
+export {
+  AGENT_CREDENTIAL_CONFIG_DIR_VAR,
+  AGENT_CREDENTIAL_SUPPRESSED_ENV_KEYS,
+  AGENT_TOOL_CREDENTIAL_PROVIDER,
+  agentCredentialEnv,
+  agentCredentialProviderFor,
+  agentCredentialXdgConfigHome,
+  type AgentCredentialHome,
+  type AgentCredentialHomePort,
+  type AgentCredentialProvider,
+} from './agent-credentials.js';
 export { SpawnError } from './types.js';
+export {
+  branchNameFor,
+  provisionWorktree,
+  type ProvisionedWorktree,
+  type ProvisionWorktreeParams,
+} from './worktree-provisioning.js';
+export {
+  reconcileNodeWorktrees,
+  type ReconcileParams,
+  type WorktreeQuarantine,
+  type WorktreeReconcileReport,
+  type WorktreeRepair,
+} from './worktree-reconcile.js';
 export type {
   AgentMode,
   CommandNetworkPolicy,
@@ -70,4 +96,6 @@ export type {
   WorkdirMode,
   WorkSessionResumeInfo,
   WorkSessionStatus,
+  WorktreeAllocationRow,
+  WorktreeAllocationState,
 } from './types.js';

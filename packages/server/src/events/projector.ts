@@ -29,6 +29,7 @@
  */
 import {
   EntityKindSchema,
+  plainExcerpt,
   type ActorSummary,
   type CustomEntityKind,
   type EntityCounters,
@@ -40,6 +41,10 @@ import {
 } from '@tm8/contract';
 
 import type { Querier } from '../db/types.js';
+// The ONE unread definition, shared with the facade assembler on purpose — see
+// the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
+// so this direction adds no cycle.
+import { loadUnreadCounts } from '../facade/entity-read.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -370,11 +375,18 @@ left join public.custom_entities cev on cev.entity_id = e.id
 where e.id = any($1::uuid[])
 `;
 
-/** Reaction/assignment edges, batched for the whole page. */
+/**
+ * Reaction/assignment/membership edges, batched for the whole page.
+ *
+ * `has_member` rides along rather than becoming a KNOWN_GAP: this query is
+ * already running, already resolves its `dst_id`s into actors below, and a
+ * channel's roster is small. An empty `members` would be the projector saying
+ * a channel has nobody when the graph says otherwise.
+ */
 const EDGE_SQL = `
 select src_id, dst_id, type
   from public.edges
- where type in ('likes','dislikes','stars','assigned_to')
+ where type in ('likes','dislikes','stars','assigned_to','has_member')
    and (dst_id = any($1::uuid[]) or src_id = any($1::uuid[]))
 `;
 
@@ -457,12 +469,19 @@ export class PgEntityProjector implements EntityProjector {
         oldestRequestedAt: isoRequired(row.oldest_requested_at),
       });
     }
+    // Two maps, not one. `assigned_to` and `has_member` are disjoint by
+    // construction — `internal.validate_edge` pins the first to src kind task
+    // and the second to src kind channel (080) — but keeping them apart means
+    // this code says which relation it is holding instead of relying on that.
     const assigneeIds = new Map<string, string[]>();
+    const memberIds = new Map<string, string[]>();
     for (const edge of edges) {
-      if (edge.type !== 'assigned_to') continue;
-      const list = assigneeIds.get(edge.src_id) ?? [];
+      const target =
+        edge.type === 'assigned_to' ? assigneeIds : edge.type === 'has_member' ? memberIds : null;
+      if (!target) continue;
+      const list = target.get(edge.src_id) ?? [];
       list.push(edge.dst_id);
-      assigneeIds.set(edge.src_id, list);
+      target.set(edge.src_id, list);
       actorIds.add(edge.dst_id);
     }
 
@@ -488,11 +507,16 @@ export class PgEntityProjector implements EntityProjector {
       else if (edge.type === 'stars') viewerReactions.set(edge.dst_id, 'star');
     }
 
+    // Viewer-scoped, and the SAME source the facade assembler uses, so a
+    // channel's unread badge is identical whether it arrived over the event
+    // feed or over a read. Skipped entirely when no channel is in the batch.
+    const unreadCounts = await loadUnreadCounts(q, rows);
+
     for (const r of rows) {
       out.set(
         r.id,
-        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], viewerReactions.get(r.id) ?? null,
-          attention.get(r.id)),
+        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
+          viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts),
       );
     }
     return out;
@@ -559,8 +583,10 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    members: readonly string[],
     viewerReaction: EntityCounters['viewerReaction'],
     attention: EntityAttentionSummary | undefined,
+    unreadCounts: ReadonlyMap<string, number>,
   ): EntitySummary {
     const counters: EntityCounters = {
       likes: r.likes ?? 0,
@@ -586,7 +612,7 @@ export class PgEntityProjector implements EntityProjector {
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
       counters,
-      state: this.stateOf(r, actors, assignees),
+      state: this.stateOf(r, actors, assignees, members, unreadCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -719,6 +745,12 @@ export class PgEntityProjector implements EntityProjector {
    *   something to be unsaid, and the event feed is the path a client is most
    *   likely to cache, so leaking it here defeats the request more thoroughly
    *   than leaking it on a read would.
+   *
+   * The 280-char cap is this surface's own and deliberately differs from the
+   * facade's 200; only the STRIPPING rule is shared, via `plainExcerpt`. Sharing
+   * it is not optional: `facade/entity-read.ts` strips, so leaving a raw
+   * `slice` here would not preserve an existing divergence, it would author a
+   * new one — the case `:644` rules against.
    */
   private excerptOf(r: SummaryRow): string | null {
     if (r.deleted_at !== null) return null;
@@ -732,7 +764,9 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'artifact' ? r.artifact_description
       : null;
     if (source === null || source === '') return null;
-    return source.slice(0, 280);
+    // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
+    // same case to `undefined`. A whitespace-only body reaches here as `''`.
+    return plainExcerpt(source, 280) || null;
   }
 
   /**
@@ -745,6 +779,8 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    members: readonly string[],
+    unreadCounts: ReadonlyMap<string, number>,
   ): EntityState {
     switch (r.kind) {
       case 'task': {
@@ -774,7 +810,13 @@ export class PgEntityProjector implements EntityProjector {
         return {
           kind: 'channel',
           topic: r.channel_topic ?? '',
-          unreadCount: 0,
+          members: members.map((id) => actors.get(id) ?? this.unknownActor(id)),
+          // MIRRORS entity-read.ts stateOf, deliberately: this query runs under
+          // the caller's claims, so `public.unread_counts` resolves the same
+          // viewer it does on the read path. If this stayed 0 while the facade
+          // reported the truth, every `entity.upsert` for a channel would
+          // overwrite a correct badge with a false zero.
+          unreadCount: unreadCounts.get(r.id) ?? 0,
           workingAgentCount: 0,
         };
       case 'voice_channel':
@@ -970,8 +1012,6 @@ export class PgEntityProjector implements EntityProjector {
  *
  * - `badges.blocked` / `badges.pulls` / `badges.workingActors` — omitted (all
  *   optional; `{}` is contract-valid). Each needs an edge traversal per entity.
- * - `state.channel.unreadCount` — 0. Viewer-scoped: needs `read_marks` for the
- *   caller's member.
  * - `state.channel.workingAgentCount` — 0. Needs live `working_on` edges.
  * - `state.doc.childCount` — 0. Needs a child count per doc.
  * - `state.member.taskDoneCount` — 0. Needs a completed-task aggregate.
@@ -986,7 +1026,8 @@ export const KNOWN_GAPS = Object.freeze([
   // per-entity graph work as blocked/pulls. A feed-driven UI sees a staleness
   // change on re-read, not live (consistent with the two badges above).
   'badges.staleness',
-  'state.channel.unreadCount',
+  // `state.channel.unreadCount` used to be here. It is now computed, from the
+  // same `public.unread_counts` the facade assembler uses.
   'state.channel.workingAgentCount',
   'state.doc.childCount',
   'state.member.taskDoneCount',

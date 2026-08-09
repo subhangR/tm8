@@ -106,7 +106,8 @@ export type CoreEntityState =
   | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
       acceptance: { total: number; completed: number } }
-  | { kind: 'channel'; topic: string; unreadCount: number; workingAgentCount: number }
+  | { kind: 'channel'; topic: string; members: ActorSummary[]; unreadCount: number;
+      workingAgentCount: number }
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }
   | { kind: 'message'; anchorId: EntityId; rootMessageId: EntityId | null; author: ActorSummary;
       messageBatchId: string | null; editedAt?: string | null; redactedAt?: string | null }
@@ -121,7 +122,26 @@ export type CoreEntityState =
   // tm8 additions (03 §1) — see §2 for the enums.
   | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;
-      startedAt: string | null; exitedAt: string | null }
+      startedAt: string | null; exitedAt: string | null;
+      /**
+       * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
+       * tell a private credential login terminal from ordinary work (083).
+       *
+       * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. A node that predates 083,
+       * or a row hydrated from a payload cached before the column shipped,
+       * carries no value here. Absence therefore means `agent` — the pre-083
+       * behaviour — so a frozen server degrades to showing everything rather
+       * than to showing nothing.
+       *
+       * WRITE EVERY CLIENT FILTER AS `sessionKind !== 'credential'`, NEVER AS
+       * `=== 'agent'`. SQL surfaces test the positive (`session_kind =
+       * 'agent'`, credential-catalog.ts:506) because the database column is
+       * NOT NULL; TypeScript surfaces must test the INVERSE, because here the
+       * field can be missing. `=== 'agent'` passes every test written against
+       * fresh data and silently blanks the session list for anyone holding an
+       * older payload.
+       */
+      sessionKind?: WorkSessionKind }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
@@ -504,6 +524,18 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'menu.updated'; menu: MenuConfig; clientMutationId?: string }
  | { type: 'space.default_channel.updated'; channelId: EntityId | null;
      settingsRevision: number; clientMutationId?: string }
+ // Git facts on the durable stream (Tier 4 git×graph). RPC-authored
+ // passthrough rows: the SQL authors (db/migrations/083) build these payloads
+ // contract-shaped, discriminant included — see mapper.ts
+ // RPC_AUTHORED_PASSTHROUGH for the membership rules they satisfy.
+ | { type: 'git.commit_recorded'; commitEntityId: EntityId; repo: string; sha: string;
+     provider: string; clientMutationId?: string }
+ | { type: 'git.pr_state_changed'; prEntityId: EntityId; repo: string; number: number;
+     previousState: 'open'|'merged'|'closed'|'draft'; state: 'open'|'merged'|'closed'|'draft';
+     headSha?: string | null; clientMutationId?: string }
+ | { type: 'git.worktree_status_changed'; worktreeEntityId: EntityId; projectId: string;
+     branch: string; previousStatus: 'active'|'merged'|'abandoned'|'deleted';
+     status: 'active'|'merged'|'abandoned'|'deleted'; clientMutationId?: string }
  | { type: 'project.association.corrected'; result: EdgeCorrectionResult; clientMutationId?: string }
  | { type: 'handoff.prepared'|'handoff.delivery_settled'|'handoff.recorded'|'handoff.withdrawn';
      handoff: HandoffView; clientMutationId?: string }
@@ -943,6 +975,180 @@ export interface AuthSessionGetResult {
   session: AuthSessionView | null;
 }
 
+// ---------------------------------------------------------------------------
+// credentials.* — Tier B per-member vendor credentials (sub-doc 11 §D).
+//
+// NONE of these extend `CommandContext`, and the omission is the point rather
+// than an oversight. `CommandContext` carries `actorId`, which exists so a
+// caller can act AS a teammate — and a credential operation is the one thing
+// that must never be performed on someone else's behalf (finding D2). The
+// defence is now stated three times, in three layers that fail independently:
+// `start_credential_session` builds its envelope from
+// `internal.current_member_id` and never `internal.resolve_actor` (083);
+// `W2CredentialSessionsService.start` throws if the claims envelope carries an
+// `actorId` at all; and the strict schemas over these DTOs REFUSE `actorId` on
+// the wire rather than ignoring it, so the field cannot even arrive.
+//
+// They DO accept `clientMutationId`, because `commandAcceptsClientMutationId`
+// admits everything outside `auth.*` and a transport that supplies one to a
+// schema that forbids it fails validation — the exact bug that paragraph
+// documents.
+// ---------------------------------------------------------------------------
+
+/**
+ * The three providers a login terminal can run.
+ *
+ * Wider than what `account_agent_credentials` will store, and DELIBERATELY so
+ * (R6): that table's CHECK admits only the two FILE-shaped providers, while a
+ * GitHub token is string-shaped and belongs in 079's `account_git_credentials`.
+ * `credential_sessions.provider` carries all three because the terminal can run
+ * `gh auth login` regardless of where its output lands. A provider is admitted
+ * by measuring its login flow, never by widening a constraint.
+ */
+export type CredentialProviderName = 'anthropic' | 'openai' | 'github';
+
+/** One provider's card on the Connections screen. */
+export interface CredentialConnectionView {
+  provider: CredentialProviderName;
+  /** The only field the UI may branch a "Connected" badge on. */
+  connected: boolean;
+  /**
+   * The vendor-side account name, when the login verb can learn one.
+   *
+   * NULL FOREVER for anthropic (R4): tm8 runs `claude setup-token`, whose
+   * scopes are `user:inference` only and therefore exclude `user:profile`. The
+   * UI must branch on presence and render "Connected — inference access", never
+   * "Connected as null" — and must NOT "fix" it by switching to the wider login
+   * verb, which requests `org:create_api_key` and is materially worse on a node
+   * with no cross-user isolation.
+   */
+  login: string | null;
+  authMethod: string | null;
+  status: 'active' | 'stale' | 'revoked' | null;
+  connectedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
+/**
+ * `credentials.status` — the merged view, and an honest account of its own
+ * completeness.
+ *
+ * The two credential stores are split by SHAPE, so this reads two tables and
+ * one of them MAY NOT EXIST: `account_git_credentials` ships in migration 079
+ * on the deployed staging line and is reachable from no local git object.
+ * `gitCredentialStore` therefore reports what actually happened rather than
+ * letting an absent table read as "not connected" — a missing table and a
+ * member who has not connected GitHub are different facts, and collapsing them
+ * would put a confident "Not connected" in front of someone who IS connected on
+ * a node where the table exists.
+ */
+export interface CredentialsStatusView {
+  /** One entry per provider in `CredentialProviderName`, always all three. */
+  providers: CredentialConnectionView[];
+  /**
+   * `present` — the table exists and was read.
+   * `absent`  — the table does not exist on this node; the github entry's
+   *             `connected` is false because it is UNKNOWN, not because it was
+   *             measured false.
+   */
+  gitCredentialStore: 'present' | 'absent';
+}
+
+/**
+ * `credentials.delete` — Disconnect, which TERMINATES (R3).
+ *
+ * The provider travels in the PATH, not the body: it is the resource being
+ * addressed. There is no field naming whose credential to delete — the subject
+ * is always the bound identity's own account, which the RPC derives itself.
+ */
+export interface CredentialsDeleteInput {
+  clientMutationId?: string;
+}
+
+/**
+ * What Disconnect actually managed to do, stated per step.
+ *
+ * Best-effort by ruling: a kill that fails is REPORTED and never undoes the
+ * revoke. Callers must render both truths R3 requires — "this stops N running
+ * sessions" AND "to fully revoke, rotate the credential at the vendor" —
+ * because a process that already read the secret still holds it in memory.
+ * `revoked` being true while `failures` is non-empty is the normal, correct
+ * outcome of a partial disconnect, not a contradiction.
+ */
+export interface CredentialsDeleteResult {
+  provider: CredentialProviderName;
+  /** Step 1. True when the index row was removed (or was already absent). */
+  revoked: boolean;
+  /** Step 2 — the login terminal for this (account, provider), if one was live. */
+  terminatedCredentialSessionIds: string[];
+  /** Step 3 — the account's live agent sessions that carried this provider. */
+  terminatedAgentSessionIds: string[];
+  /** Non-fatal failures, in the order they happened. Never empties the above. */
+  failures: Array<{ step: 'revoke' | 'credentialSession' | 'agentSession'; sessionId?: string; reason: string }>;
+}
+
+/**
+ * `credentials.loginSessions.start` — open the login terminal.
+ *
+ * NO COMMAND FIELD, NO ARGS FIELD, NO FLAGS FIELD, and that absence is the
+ * security control. This starts a PTY running as the tm8 OS user from a
+ * settings form in a browser; a client-supplied command there is remote code
+ * execution with a pleasant user interface. argv comes from
+ * `CREDENTIAL_LOGIN_COMMANDS`, a fixed server-side table keyed by provider. A
+ * field that does not exist cannot be forwarded by a later refactor, which is a
+ * stronger guarantee than any assertion about a value.
+ */
+export interface CredentialsLoginSessionStartInput {
+  spaceId: SpaceId;
+  provider: CredentialProviderName;
+  /** Terminal geometry only — the one client input, and it cannot reach argv. */
+  cols?: number;
+  rows?: number;
+  clientMutationId?: string;
+}
+
+export interface CredentialsLoginSessionStartResult {
+  workSessionId: EntityId;
+  spaceId: SpaceId;
+  provider: CredentialProviderName;
+  /** Shorter than the vendor's device-code lifetime, so the terminal dies first. */
+  expiresAt: string;
+  /** The exact table entry that WAS launched. Recorded so a caller can assert it. */
+  command: string;
+}
+
+/**
+ * `credentials.loginSessions.finish` — close the terminal and record what the
+ * PROBE established. The work session id travels in the path.
+ */
+export interface CredentialsLoginSessionFinishInput {
+  clientMutationId?: string;
+}
+
+/**
+ * NOTHING HERE IS DERIVED FROM AN EXIT CODE. A member who opens the terminal,
+ * reads the device code and closes the tab exits 0 with nothing captured —
+ * indistinguishable at the process level from one who completed the flow. So
+ * `connected` is the probe's answer, and `stored` is a SEPARATE fact.
+ *
+ * `stored: false` with `connected: true` is a real and expected state on this
+ * line: a verified GitHub login has nowhere to go, because its string-shaped
+ * store (079) is not present here. Reporting it plainly is the whole reason the
+ * two fields are not collapsed into one.
+ */
+export interface CredentialsLoginSessionFinishResult {
+  workSessionId: EntityId;
+  provider: CredentialProviderName;
+  connected: boolean;
+  login: string | null;
+  authMethod: string | null;
+  status: 'active' | 'stale' | 'revoked';
+  /** True only when a metadata row was actually written. */
+  stored: boolean;
+  /** Whether this node's PTY was killed, as the PTY itself reported it. */
+  terminated: boolean;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;
@@ -1127,6 +1333,9 @@ export interface LinkPrInput extends CommandContext { clientMutationId: string; 
 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
 export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
+
+/** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
+export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 
 export interface TaskAxisInput extends CommandContext {
   name: string;
@@ -1415,6 +1624,17 @@ export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
 /** Graph-side announce/authorize state for live terminal sharing (T-L10). */
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
 
+/**
+ * What a work_session IS, mirroring 083's `work_sessions.session_kind`.
+ *
+ * `agent` is ordinary work. `credential` is a private login terminal minted by
+ * `credentials.loginSessions.start` so a member can authenticate an agent tool
+ * against their own account — it is not work, and it must not sit in session
+ * lists pretending to be. See the note on `EntityState`'s work_session arm for
+ * why every client filter must be written as the INVERSE of the SQL one.
+ */
+export type WorkSessionKind = 'agent' | 'credential';
+
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 
 /**
@@ -1470,6 +1690,50 @@ export interface ProjectCreateInput extends CommandContext {
    * projects.create contract for CLI and migration callers.
    */
   ensureWorkingDir?: boolean;
+}
+
+/** One local branch in a project's working directory. */
+export interface ProjectBranch {
+  name: string;
+  /** Tip commit oid. */
+  head: string;
+  /** Tip commit date, ISO-8601. */
+  lastCommitAt: string;
+  subject: string;
+  /** Configured upstream (`origin/feat/x`), or null when there is none. */
+  upstream: string | null;
+  /** Commits on this branch that the default branch does not have. */
+  ahead: number;
+  /** Commits on the default branch that this branch does not have. */
+  behind: number;
+  isDefault: boolean;
+  /** Checked out in the project's working directory right now. */
+  isCurrent: boolean;
+  /** `ahead === 0` — the default branch already contains all of it. */
+  merged: boolean;
+  /** No commit newer than `staleAfterDays`. */
+  stale: boolean;
+}
+
+/**
+ * GET /v2/projects/:projectId/branches — branch topology for a project's
+ * working directory, read with argv-only git. A READ: nothing here checks
+ * anything out or writes a ref.
+ *
+ * `defaultBranchSource` ships WITH `defaultBranch` because `main` is a
+ * convention, not a rule. A consumer rendering "12 behind main" needs to know
+ * whether the trunk came from the remote's own HEAD or was guessed from
+ * whatever happened to be checked out.
+ */
+export interface ProjectBranchTopology {
+  projectId: ProjectId;
+  workingDir: string;
+  defaultBranch: string;
+  defaultBranchSource: 'origin_head' | 'local_conventional' | 'current_branch';
+  branches: ProjectBranch[];
+  /** True when the branch cap cut the list short — the read is bounded. */
+  truncated: boolean;
+  staleAfterDays: number;
 }
 
 /** One selectable child in the node-local project directory browser. */
@@ -1579,11 +1843,24 @@ export interface EdgeCorrectionResult {
   edge: EdgeView | null;
 }
 
-/** Publicly supported spawn targets. Worktree remains a future execution
- * capability and is intentionally absent until the node can create one. */
+/**
+ * Publicly supported spawn targets.
+ *
+ * Intent in, never paths (worktree design §7.1): no variant carries a `path`,
+ * and `baseRef` is a SYMBOLIC ref the server resolves and validates. A client
+ * cannot supply a commit OID either — that would let it pin a commit the server
+ * never checked against the repository.
+ *
+ * `worktree` was absent from this union for as long as the node could not
+ * create one, and this type was the only thing holding that line (§7.4's third
+ * prohibition: the database would have accepted it). It is present now because
+ * the manager, the provisioning saga and the reconciler landed together, which
+ * is the condition §7.4 names.
+ */
 export type SpawnWorkdir =
   | { mode: 'project' }
-  | { mode: 'scratch' };
+  | { mode: 'scratch' }
+  | { mode: 'worktree'; baseRef?: string };
 
 /** Provider-neutral launch controls. The execution layer maps these to each
  * agent CLI's native flags; keeping them typed here prevents a UI choice from
@@ -1914,6 +2191,133 @@ export interface SessionLaunchRecord {
   };
   /** When the manifest row was written — i.e. when the session was launched. */
   recordedAt: string | null;
+}
+
+/**
+ * ONE turn of an agent's conversation, read back out of the agent CLI's OWN
+ * transcript and normalised across tools.
+ *
+ * WHY THIS IS NOT THE PTY. The terminal ring (`OutputBuffer`) holds ANSI frames
+ * — repaints, cursor moves, spinners — capped at 1 MiB and discarded when the
+ * process exits or the node restarts. It answers "what does the screen look
+ * like". This answers "what did the agent SAY", survives exit, and is written
+ * by the agent itself at no cost to us. A coordinator needs the second one.
+ *
+ * `source` is deliberately only user/assistant. Tool CALLS are counted (see
+ * `SessionTranscriptStats.toolCalls`) but their arguments and output are NOT
+ * carried: they are the bulk of a transcript by volume, they are the most
+ * likely place for a secret to sit, and a coordinator reads this to decide
+ * whether a worker is on track — a job the prose answers and the tool spam
+ * does not.
+ */
+export interface SessionTranscriptEntry {
+  /** ISO 8601. Null when the underlying record carried no timestamp. */
+  at: string | null;
+  source: 'user' | 'assistant';
+  text: string;
+  /** True when `text` was cut to the caller's `maxChars` budget. */
+  truncated: boolean;
+}
+
+/**
+ * Aggregates over the WINDOW THAT WAS READ, never over the whole conversation.
+ *
+ * The reader deliberately tails a bounded slice of a file that can reach tens
+ * of megabytes, so these are honest counts of what was parsed and NOT the
+ * session's lifetime totals. `partial` says which of the two you are holding.
+ * Presenting a tail's token count as a session's spend is the exact dishonesty
+ * this field exists to prevent.
+ */
+export interface SessionTranscriptStats {
+  /** False only when the whole file fit inside the read budget. */
+  partial: boolean;
+  /**
+   * SPEECH turns in the parsed window, counted on the same rule in both
+   * dialects: exactly the `entries` this window produced, before the caller's
+   * `last` slice. So `userMessages + assistantMessages` is the number of turns
+   * the window held, and never disagrees with the list rendered beside it.
+   *
+   * NOT a count of native records. A claude tool result is a `type:'user'`
+   * record and a claude tool call is a `type:'assistant'` record with no text
+   * block; counting records reported 32/52 for a window holding 2 human turns
+   * and 12 prose replies, and meant something different again on the codex
+   * side, where tool traffic is `function_call` rather than a message.
+   */
+  userMessages: number;
+  assistantMessages: number;
+  /** Tool invocations in the window. These are NOT turns — see above. */
+  toolCalls: number;
+  /**
+   * Provider-reported usage summed over the parsed window, when the transcript
+   * carries it. Claude records it per assistant turn; Codex reports it as a
+   * running total, so these can be null for a tool that does not say.
+   */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  /** Descending by count. Names as the agent wrote them. */
+  tools: { name: string; count: number }[];
+  /** Distinct model ids seen, in first-seen order. */
+  models: string[];
+}
+
+/**
+ * The "is this worker stuck" signal, ported from maestro's LogDigestService
+ * because it is the single thing that made an unattended fleet supervisable.
+ *
+ * A working agent alternates prose and tool calls. An agent that has made many
+ * tool calls and said NOTHING for a long time is usually looping — retrying a
+ * failing command, or grinding a search that will not converge. Neither the PTY
+ * (still emitting bytes) nor the process table (still alive) can see it.
+ *
+ * This is a HEURISTIC and is reported as evidence, not as a verdict: the two
+ * raw numbers travel with it so a reader can disagree.
+ */
+export interface SessionTranscriptStuck {
+  /** Since the last assistant prose, not since the last byte of any kind. */
+  silentMs: number;
+  toolCallsSinceText: number;
+}
+
+/**
+ * A bounded window over one session's agent transcript.
+ *
+ * Same honesty contract as `SessionJournalPage`: a session with no readable
+ * transcript is a REAL and common state (it predates this feature, it ran a
+ * tool with no transcript format, or it died before its first turn) and must
+ * render as an explained empty rather than as a zero.
+ */
+export interface SessionTranscriptPage {
+  sessionId: EntityId;
+  available: boolean;
+  /**
+   * Present only when `available` is false.
+   * - `no_native_session_id` — the session predates native-id capture, so its
+   *   transcript cannot be identified. Unrecoverable, not an error.
+   * - `unsupported_agent_tool` — the tool has no transcript format tm8 reads
+   *   (an operator `TM8_AGENT_CMD` wrapper, echo-agent).
+   * - `no_transcript_file` — the id is known but no file exists: the agent
+   *   never wrote a turn, or its transcript has been cleaned up.
+   * - `unreadable` — the file exists and could not be read (permissions, I/O).
+   */
+  unavailableReason:
+    | 'no_native_session_id'
+    | 'unsupported_agent_tool'
+    | 'no_transcript_file'
+    | 'unreadable'
+    | null;
+  /** Which transcript dialect was parsed. Null when unavailable. */
+  agentTool: 'claude-code' | 'codex' | null;
+  /** Oldest-first. The NEWEST `last` entries, so a tail reads in order. */
+  entries: SessionTranscriptEntry[];
+  stats: SessionTranscriptStats | null;
+  /** Null when the heuristic does not fire — never a zeroed object. */
+  stuck: SessionTranscriptStuck | null;
+  /** Newest turn of any kind, including ones not carried in `entries`. */
+  lastActivityAt: string | null;
+  /** Lines the reader could not parse — surfaced, never silently dropped. */
+  malformed: number;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

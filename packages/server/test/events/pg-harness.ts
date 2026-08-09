@@ -46,16 +46,30 @@ export function createTestDb(connectionString: string): TestDb {
   const pool = new Pool({ connectionString, max: 8 });
 
   const querier = (client: {
-    query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }>;
+    query: (
+      sql: string,
+      params?: unknown[],
+    ) => Promise<{ rows: unknown[]; fields?: ReadonlyArray<{ name: string }> }>;
   }): Querier => ({
     async query<R>(sql: string, params: readonly unknown[] = []): Promise<R[]> {
       const res = await client.query(sql, [...params]);
       return res.rows as R[];
     },
+    // MIRRORS db/client.ts `makeQuerier`. The older shape here was
+    // `select fn(...) as result`, which silently assumed every RPC returns a
+    // single scalar; a `returns table(...)` function returning zero rows made
+    // `rows[0]` undefined and threw. Production discriminates STRUCTURALLY on
+    // 1x1, so this must too, or the harness disagrees with the server about
+    // what an RPC returns.
     async rpc<T>(fn: string, args: readonly unknown[] = []): Promise<T> {
       const placeholders = args.map((_, i) => `$${String(i + 1)}`).join(', ');
-      const res = await client.query(`select ${fn}(${placeholders}) as result`, [...args]);
-      return (res.rows[0] as { result: T }).result;
+      const qualified = fn.includes('.') ? fn : `public.${fn}`;
+      const res = await client.query(`select * from ${qualified}(${placeholders})`, [...args]);
+      if (res.rows.length === 1 && res.fields?.length === 1) {
+        const field = res.fields[0];
+        return (field ? (res.rows[0] as Record<string, unknown>)[field.name] : undefined) as T;
+      }
+      return res.rows as unknown as T;
     },
   });
 

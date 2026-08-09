@@ -49,6 +49,8 @@ import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
 import { HANDOFF_COMMANDS } from './handoff.js';
 import { SESSION_COMMANDS } from './session.js';
+import { SESSION_GIT_COMMANDS } from './session-git.js';
+import { WORKTREE_GIT_COMMANDS } from './worktree-git.js';
 import { INTERACTION_PROFILE_COMMANDS } from './interaction-profile.js';
 import { PROFILE_DEFAULT_COMMANDS } from './teammate.js';
 import { ENTITY_COMMANDS } from './entity.js';
@@ -56,6 +58,7 @@ import { ATTENTION_COMMANDS } from './attention.js';
 import { TASK_COMMANDS } from './task.js';
 import { TRACKING_COMMANDS } from './tracking.js';
 import { GRAPH_COMMANDS } from './graph.js';
+import { WORKTREE_COMMANDS } from './worktree.js';
 import { UNDO_COMMANDS } from './undo.js';
 import { SERVER_COMMANDS } from './server.js';
 import { ARTIFACT_COMMANDS } from './artifact.js';
@@ -117,6 +120,8 @@ export const COMMANDS: CommandModule[] = [
   ...MESSAGE_COMMANDS,
   ...HANDOFF_COMMANDS,
   ...SESSION_COMMANDS,
+  ...SESSION_GIT_COMMANDS,
+  ...WORKTREE_GIT_COMMANDS,
   ...INTERACTION_PROFILE_COMMANDS,
   ...PROFILE_DEFAULT_COMMANDS,
   ...ENTITY_COMMANDS,
@@ -124,6 +129,7 @@ export const COMMANDS: CommandModule[] = [
   ...TASK_COMMANDS,
   ...TRACKING_COMMANDS,
   ...GRAPH_COMMANDS,
+  ...WORKTREE_COMMANDS,
   ...UNDO_COMMANDS,
   ...ARTIFACT_COMMANDS,
   ...VOICE_COMMANDS,

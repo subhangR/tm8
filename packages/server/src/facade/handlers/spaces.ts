@@ -196,10 +196,13 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
     const owner = await deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
 
-    return deps.db.tx(claimsFor(owner, ctx), async (q) => {
+    const claims = claimsFor(owner, ctx);
+    const viewerIdentity = claims.identityId;
+    if (!viewerIdentity) throw new CollabError('unauthenticated', 'authentication is required');
+    return deps.db.tx(claims, async (q) => {
       const memberRows = await q.query<{ entity_id: string }>(
         `select entity_id from public.members where space_id = $1 and identity_id = $2`,
-        [spaceId, owner.identityId],
+        [spaceId, viewerIdentity],
       );
       const viewerId = memberRows[0]?.entity_id;
       // Membership is what `spaces.navigation` is FOR, so its absence is a
@@ -216,24 +219,19 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
           order by e.position asc, e.id asc`,
         [spaceId],
       );
-      const summaries = await assembleSummaries(q, rows, owner.identityId);
+      // Per-channel `unreadCount` is no longer patched in here: the assembler
+      // resolves it from the same `public.unread_counts`, so the nav tree and a
+      // directly-fetched channel cannot disagree.
+      const navigableSummaries = await assembleSummaries(q, rows, viewerIdentity);
+
+      // The space-wide total still needs its own call, and it is NOT the sum of
+      // the channel counts above: `unread_counts` reports every anchor kind, so
+      // unread messages on a task or a doc belong in this total and have no
+      // channel row to be summed from.
       const unreadRows = await q.rpc<Array<{ anchor_id: string; unread: number }>>(
         'unread_counts',
         [spaceId],
       );
-      const unreadByAnchor = new Map(
-        unreadRows.map((row) => [row.anchor_id, Number(row.unread)]),
-      );
-      const navigableSummaries = summaries.map((summary) => {
-        if (summary.state.kind !== 'channel') return summary;
-        return {
-          ...summary,
-          state: {
-            ...summary.state,
-            unreadCount: unreadByAnchor.get(summary.id) ?? 0,
-          },
-        };
-      });
 
       // Build the tree in one pass, then attach. A channel whose parent is
       // outside this result set (deleted, or not readable) is surfaced at the
@@ -258,7 +256,7 @@ export function spacesNavigation(deps: FacadeDeps): OperationHandler {
       const navigation: SpaceNavigation = {
         spaceId,
         viewer,
-        unreadTotal: [...unreadByAnchor.values()].reduce((total, unread) => total + unread, 0),
+        unreadTotal: unreadRows.reduce((total, row) => total + Number(row.unread), 0),
         channels: roots,
       };
       return navigation;
@@ -280,11 +278,13 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
     const owner = await deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const claims = claimsFor(owner, ctx);
+    const viewerIdentity = claims.identityId;
+    if (!viewerIdentity) throw new CollabError('unauthenticated', 'authentication is required');
 
     return deps.db.tx(claims, async (q) => {
       const memberRows = await q.query<{ entity_id: string }>(
         `select entity_id from public.members where space_id = $1 and identity_id = $2`,
-        [spaceId, owner.identityId],
+        [spaceId, viewerIdentity],
       );
       const actorId = memberRows[0]?.entity_id;
       if (!actorId) throw new CollabError('forbidden', 'not a member of this space');
@@ -296,17 +296,17 @@ export function spacesHome(deps: FacadeDeps): OperationHandler {
       const readyToPull = await queryCollection(
         q,
         { spaceId, kinds: ['task'], filters: { readyToPull: true } },
-        owner.identityId,
+        viewerIdentity,
       );
       const inFlight = await queryCollection(
         q,
         { spaceId, kinds: ['task'], filters: { inFlightForActorId: actorId } },
-        owner.identityId,
+        viewerIdentity,
       );
       const needsMe = await queryCollection(
         q,
         { spaceId, kinds: ['task'], filters: { needsActorId: actorId } },
-        owner.identityId,
+        viewerIdentity,
       );
       const activityPage = await loadActivity(q, { spaceId, limit: 20 });
 

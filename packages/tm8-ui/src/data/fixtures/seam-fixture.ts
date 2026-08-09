@@ -31,6 +31,7 @@ import {
   type ActorSummary,
   type AttentionRequest,
   type AttentionRequestPage,
+  type CollectionGroup,
   type CollectionQuery,
   type CollectionResult,
   type CommandContext,
@@ -74,11 +75,14 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type CredentialsStatusView,
+  type ProjectBranchTopology,
   type ProjectResource,
   type ReactionInput,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionJournalRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -97,13 +101,16 @@ import type {
   Unsubscribe,
 } from '../seam';
 import {
+  FIXTURE_BRANCH_TOPOLOGY,
   FIXTURE_NOW,
   FIXTURE_SPACE_ID,
   ada,
   fixtureDetails,
   fixtureHandoffsBySession,
   fixtureSummaries,
+  sessionCredentialLogin,
   sessionLive,
+  sessionStale,
 } from '../../fixtures';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
@@ -431,6 +438,49 @@ export function createFixtureSeam(): FixtureSeam {
   let idN = 0;
   const nextId = (kind: string): string => `fx-${kind.replace(/^c:/, 'c-')}-${++idN}`;
 
+  /**
+   * The three providers, drawn so that ALL THREE honest-degradation states are
+   * on screen at once and a screen cannot pass by collapsing two of them.
+   * Mutable, because `disconnect` writes to it.
+   */
+  const credentialsState: CredentialsStatusView = {
+    providers: [
+      // Connected, and its login is null FOREVER — not pending, not unknown.
+      {
+        provider: 'anthropic',
+        connected: true,
+        login: null,
+        authMethod: 'oauth',
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
+      },
+      // The one true negative — so "not connected" has something real to mean.
+      {
+        provider: 'openai',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+      },
+      // `connected: false` here is UNKNOWN, not measured — see gitCredentialStore.
+      {
+        provider: 'github',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+      },
+    ],
+    // 'absent' is the fixture's default deliberately: it is the state of the
+    // deployed staging line, and the one a screen gets wrong silently.
+    gitCredentialStore: 'absent',
+  };
+
   // Out-of-the-box liveness truth (C-5): sessionLive is the ONLY live PTY;
   // sessionStale stays running-per-record but absent from the live set.
   const livenessBySpace = new Map<SpaceId, LivenessSnapshot>([
@@ -579,6 +629,32 @@ export function createFixtureSeam(): FixtureSeam {
     return { items: all.slice(start, end), nextCursor: end < all.length ? String(end) : null, total: all.length };
   }
 
+  /**
+   * `groupBy` answered for real, PAGE-SCOPED like the node's own.
+   *
+   * The fixture used to drop the member silently, so every board mounted over
+   * it drew its columns and reported "0 shown" in all of them — indistinguish-
+   * able from a genuinely empty tier, which is the one thing the board's
+   * honesty rules exist to prevent. A query the fixture cannot group returns
+   * NO `groups` member rather than an empty array, so the board's "no source
+   * wired" path stays reachable and true.
+   */
+  function groupsFor(rows: EntitySummary[], input: CollectionQuery): { groups?: CollectionGroup[] } {
+    const groupBy = input.groupBy;
+    if (groupBy !== 'workStatus') return {};
+    const byKey = new Map<string, EntitySummary[]>();
+    for (const row of pageOf(rows, input).items) {
+      if (row.state.kind !== 'task') continue;
+      const key = row.state.workStatus;
+      const bucket = byKey.get(key);
+      if (bucket) bucket.push(row);
+      else byKey.set(key, [row]);
+    }
+    return {
+      groups: [...byKey].map(([key, items]) => ({ key, label: key, items })),
+    };
+  }
+
   function subtreeIds(rootId: EntityId): Set<EntityId> {
     const ids = new Set<EntityId>([rootId]);
     let grew = true;
@@ -606,10 +682,9 @@ export function createFixtureSeam(): FixtureSeam {
    * the read the UI already uses, rather than through a second parallel store
    * that could disagree with the edges.
    */
-  function projectAssignees(s: EntitySummary): void {
-    if (s.state.kind !== 'task') return;
-    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
-    s.state.assignees = (group?.edges ?? []).flatMap((edge) => {
+  function projectActorEdges(s: EntitySummary, type: string): ActorSummary[] {
+    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === type);
+    return (group?.edges ?? []).flatMap((edge) => {
       const target = summaries.get(edge.target.id);
       if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
       return [{
@@ -620,6 +695,18 @@ export function createFixtureSeam(): FixtureSeam {
         isAgent: target.kind === 'team_member',
       } satisfies ActorSummary];
     });
+  }
+
+  /**
+   * Both actor rosters, recomputed from the edges that ARE them: a task's
+   * `assigned_to` and a channel's `has_member` (migration 080). Two arms of one
+   * function because the projection is identical and the meaning is not — the
+   * server keeps them apart for the same reason (`entity-read.ts`
+   * `relations.assignees` / `relations.members`).
+   */
+  function projectAssignees(s: EntitySummary): void {
+    if (s.state.kind === 'task') s.state.assignees = projectActorEdges(s, 'assigned_to');
+    else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -635,7 +722,12 @@ export function createFixtureSeam(): FixtureSeam {
           dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
         };
       case 'channel':
-        return { kind: 'channel', topic: (c.topic as string) ?? '', unreadCount: 0, workingAgentCount: 0 };
+        // `members: []` and not a read of `input.connections`: the roster is a
+        // PROJECTION of `has_member` edges, and those edges are written by the
+        // create path itself. `projectAssignees` fills this in from them, so
+        // seeding it here from the input would be a second source free to
+        // disagree with the first.
+        return { kind: 'channel', topic: (c.topic as string) ?? '', members: [], unreadCount: 0, workingAgentCount: 0 };
       // A freshly created voice room is EMPTY. `participantCount` is the whole
       // state arm — there is no topic and no unread axis to seed. Nothing here
       // reads the create input, because the content arm carries no field.
@@ -839,7 +931,7 @@ export function createFixtureSeam(): FixtureSeam {
           default: return b.activityAt.localeCompare(a.activityAt);
         }
       });
-      return clone({ query: input, page: pageOf(rows, input) });
+      return clone({ query: input, page: pageOf(rows, input), ...groupsFor(rows, input) });
     },
     async graph(input: GraphQuery): Promise<GraphResult> {
       const collection = await seam.query({ ...input, limit: input.limit ?? 150 });
@@ -907,6 +999,29 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async projects(): Promise<ProjectResource[]> {
       return clone([...FIXTURE_PROJECTS]);
+    },
+    /**
+     * Amendment 6. `opts` are honoured HERE too, not only on the wire — a
+     * fixture that ignored `limit` would let a caller's bound go unexercised
+     * and still pass. `staleAfterDays` re-derives `stale` from the fixed
+     * fixture dates (never Date.now()), so a caller's threshold visibly
+     * changes the answer the way the server's would.
+     */
+    async projectBranches(projectId, opts): Promise<ProjectBranchTopology> {
+      if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
+        throw new CollabError('not_found', `project ${projectId} not found`);
+      }
+      const t = clone(FIXTURE_BRANCH_TOPOLOGY);
+      if (opts?.staleAfterDays !== undefined) {
+        t.staleAfterDays = opts.staleAfterDays;
+        const cutoff = FIXTURE_BASE_MS - opts.staleAfterDays * 86_400_000;
+        for (const b of t.branches) b.stale = Date.parse(b.lastCommitAt) < cutoff;
+      }
+      if (opts?.limit !== undefined && opts.limit < t.branches.length) {
+        t.branches = t.branches.slice(0, opts.limit);
+        t.truncated = true;
+      }
+      return t;
     },
     async entity(id) {
       return clone(detailOf(id));
@@ -1022,6 +1137,81 @@ export function createFixtureSeam(): FixtureSeam {
         });
       }
       return clone(fixtureLaunchRecord(workSessionId));
+    },
+    async transcript(workSessionId, opts): Promise<SessionTranscriptPage> {
+      requireSummary(workSessionId);
+      // Third face of the DEBUG surface, and the same honesty contract as the
+      // two above: only the live PTY (C-5) has an agent that has written a
+      // native transcript, so every other session renders the explained empty.
+      // `stats: null` rather than a zeroed object — there are no statistics
+      // about a file that was never found, and zeros read as "did nothing".
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_transcript_file',
+          agentTool: null,
+          entries: [],
+          stats: null,
+          stuck: null,
+          lastActivityAt: null,
+          malformed: 0,
+        });
+      }
+      // Oldest-first, as the contract requires of a tail, and short enough that
+      // the default window (20) never trims it — a fixture that silently paged
+      // would hide the renderer's ordering bug rather than expose it.
+      const entries = [
+        {
+          at: '2026-01-04T09:15:02.000Z',
+          source: 'user' as const,
+          text: 'Take the failing spawn test and find why the PTY never emits.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:15:44.000Z',
+          source: 'assistant' as const,
+          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:18:10.000Z',
+          source: 'assistant' as const,
+          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
+          truncated: false,
+        },
+      ];
+      const last = opts?.last ?? 20;
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        agentTool: 'claude-code',
+        entries: entries.slice(-last),
+        stats: {
+          // True on purpose: the reader tails a bounded slice, so the honest
+          // default state of this surface is "you are looking at a window".
+          partial: true,
+          userMessages: 1,
+          assistantMessages: 2,
+          toolCalls: 6,
+          inputTokens: 4820,
+          outputTokens: 640,
+          cacheReadTokens: 18200,
+          cacheCreationTokens: 1100,
+          tools: [
+            { name: 'Read', count: 3 },
+            { name: 'Grep', count: 2 },
+            { name: 'Bash', count: 1 },
+          ],
+          models: ['claude-opus-4-6'],
+        },
+        // Null, not a zeroed object: the heuristic does not fire on this
+        // session, and a `{ silentMs: 0 }` would render as a stuck badge.
+        stuck: null,
+        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        malformed: 0,
+      });
     },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.
@@ -1283,6 +1473,28 @@ export function createFixtureSeam(): FixtureSeam {
       },
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);
+        // A work session is a title-ONLY door here, mirroring what the node
+        // does (085 / rename_work_session): every other member belongs to the
+        // execution block, so accepting one would let a fixture-backed screen
+        // pass where the real node refuses.
+        if (s.state.kind === 'work_session') {
+          const envelope = new Set(['expectedVersion', 'actorId', 'clientMutationId', 'title']);
+          const rejected = Object.entries(input)
+            .filter(([member, value]) => !envelope.has(member) && value !== undefined)
+            .map(([member]) => member);
+          if (rejected.length > 0) {
+            throw new CollabError('invalid_input',
+              `work_session patch accepts title only, not: ${rejected.join(', ')}`);
+          }
+          if (input.title === undefined) {
+            throw new CollabError('invalid_input', 'work_session patch requires title');
+          }
+          requireVersion(s, input.expectedVersion);
+          s.title = input.title;
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+          return commandResult(s);
+        }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
         if (input.title !== undefined) s.title = input.title;
@@ -1589,6 +1801,79 @@ export function createFixtureSeam(): FixtureSeam {
         }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+    },
+
+    /**
+     * CREDENTIALS — the fixture's answer models the HONEST-DEGRADATION
+     * contract, not a happy path, because those states are the ones a careless
+     * screen collapses:
+     *
+     *  - `gitCredentialStore: 'absent'` — 079 ships on the deployed staging
+     *    line and is reachable from no local git object, so the github entry's
+     *    `connected` is UNKNOWN here, not measured false. A fixture reporting
+     *    'present' would let a screen that renders "Not connected" look right.
+     *  - anthropic is connected with `login: null` FOREVER (R4) — `claude
+     *    setup-token`'s scopes exclude `user:profile`, so there is no name to
+     *    learn, ever.
+     *  - openai is genuinely not connected: the one true negative, so a screen
+     *    that draws all three the same way has something to be wrong about.
+     */
+    credentials: {
+      async status() {
+        return clone(credentialsState);
+      },
+
+      async disconnect(provider) {
+        const entry = credentialsState.providers.find((p) => p.provider === provider);
+        if (entry) {
+          entry.connected = false;
+          entry.login = null;
+          entry.authMethod = null;
+          entry.status = 'revoked';
+          entry.connectedAt = null;
+          entry.lastVerifiedAt = null;
+        }
+        // A PARTIAL disconnect is the fixture's default for anthropic, because
+        // it is the NORMAL outcome (R3) and the one a screen is most likely to
+        // render as either a clean tick or a red error. `revoked: true` stands
+        // alongside a non-empty `failures` and neither cancels the other.
+        return {
+          provider,
+          revoked: true,
+          terminatedCredentialSessionIds: [],
+          terminatedAgentSessionIds: provider === 'anthropic' ? [sessionLive.id] : [],
+          failures:
+            provider === 'anthropic'
+              ? [{ step: 'agentSession' as const, sessionId: sessionStale.id, reason: 'session did not acknowledge terminate' }]
+              : [],
+        };
+      },
+
+      async startLogin(spaceId, provider) {
+        return {
+          workSessionId: sessionCredentialLogin.id,
+          spaceId,
+          provider,
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          command: `${provider} login`,
+        };
+      },
+
+      async finishLogin(workSessionId) {
+        return {
+          workSessionId,
+          provider: 'github' as const,
+          // The correct-and-expected split (R5): a verified GitHub login has
+          // nowhere to be written on a line without 079, so `connected: true`
+          // with `stored: false` is a right answer, not a failure.
+          connected: true,
+          login: 'ada',
+          authMethod: 'oauth',
+          status: 'active' as const,
+          stored: false,
+          terminated: true,
+        };
       },
     },
 

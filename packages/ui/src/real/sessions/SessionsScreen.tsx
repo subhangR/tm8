@@ -26,6 +26,12 @@ import type { ShellViewProps } from '../../collab-v2/shell';
 import type { RealFacade } from '../RealFacade';
 import { SessionTerminal } from '../SessionTerminal';
 import { SessionStatusPill } from '../tm8Kinds';
+// The credential-login predicate is IMPORTED, not re-declared, even though
+// this screen deliberately keeps its own copy of the query and the live/
+// finished split. Those were duplicated before this screen had a sibling; a
+// second copy of THIS one would be a second chance to get the inversion
+// backwards, and the whole hazard is that the wrong polarity looks fine.
+import { isWork } from '../workspace/useSessions';
 import './sessions.css';
 
 /** How often the list re-reads. Sessions change state without a graph event. */
@@ -66,7 +72,10 @@ function useSessions(facade: RealFacade, spaceId: string) {
     facade
       .queryCollection({ spaceId, kinds: WORK_SESSION_KINDS, limit: 100, sort: 'activityAt_desc' })
       .then(
-        (result) => { setSessions(result.page.items); setError(null); },
+        // Credential login terminals are dropped here, at the read, so every
+        // consumer below (the row list AND the counts beside it) sees one
+        // already-filtered set and cannot disagree with itself.
+        (result) => { setSessions(result.page.items.filter(isWork)); setError(null); },
         (err) => setError(String((err as Error)?.message ?? err)),
       );
   }, [facade, spaceId]);

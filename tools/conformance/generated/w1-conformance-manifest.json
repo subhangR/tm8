@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:b9abc2a239a113a15f4b9529f4127263e68cf34f7f1bae88ceae4c49d80deb24",
+  "catalogDigest": "sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe",
   "catalog": {
-    "total": 129,
-    "v1": 127,
+    "total": 137,
+    "v1": 135,
     "reserved": 2,
-    "http": 128,
+    "http": 136,
     "ws": 1,
-    "registerableV1Http": 126,
+    "registerableV1Http": 134,
     "methods": {
-      "GET": 48,
-      "POST": 55,
+      "GET": 52,
+      "POST": 58,
       "PATCH": 10,
-      "DELETE": 8,
+      "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 51,
-      "command": 77,
+      "read": 55,
+      "command": 81,
       "stream": 1
     },
-    "uniqueNames": 129,
-    "uniqueBindings": 129
+    "uniqueNames": 137,
+    "uniqueBindings": 137
   },
   "reservedOperations": [
     "search.query",
@@ -523,6 +523,13 @@
         "source": "server-router"
       },
       {
+        "operation": "entities.commands.gate",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/gate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "tracking.refresh",
         "method": "POST",
         "path": "/v2/tracking/refresh",
@@ -652,6 +659,20 @@
         "operation": "projects.get",
         "method": "GET",
         "path": "/v2/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.contention",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/contention",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.branches.list",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/branches",
         "status": "registered",
         "source": "server-router"
       },
@@ -1095,6 +1116,41 @@
         "path": "/v2/auth/session",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "credentials.status",
+        "method": "GET",
+        "path": "/v2/identity/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.delete",
+        "method": "DELETE",
+        "path": "/v2/identity/credentials/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.loginSessions.start",
+        "method": "POST",
+        "path": "/v2/identity/credentials/login-sessions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.loginSessions.finish",
+        "method": "POST",
+        "path": "/v2/identity/credentials/login-sessions/:id/finish",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.transcript",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/transcript",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1307,7 +1363,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 98
+    "unimplementedV1Http": 106
   },
   "schemas": {
     "additive": {
@@ -2240,6 +2296,23 @@
         "publicComposite": null
       },
       {
+        "operation": "entities.commands.gate",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.gate",
+        "intentTags": [
+          "entities",
+          "commands",
+          "gate"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "tracking.refresh",
         "noun": "tracking",
         "exposure": "public",
@@ -2537,6 +2610,39 @@
         "intentTags": [
           "projects",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.contention",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.contention",
+        "intentTags": [
+          "projects",
+          "contention"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.branches.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.branches.list",
+        "intentTags": [
+          "projects",
+          "branches",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -3604,6 +3710,90 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.status",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.status",
+        "intentTags": [
+          "credentials",
+          "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.delete",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.delete",
+        "intentTags": [
+          "credentials",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.loginSessions.start",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.loginSessions.start",
+        "intentTags": [
+          "credentials",
+          "login",
+          "sessions",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.loginSessions.finish",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.loginSessions.finish",
+        "intentTags": [
+          "credentials",
+          "login",
+          "sessions",
+          "finish"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.transcript",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.transcript",
+        "intentTags": [
+          "execution",
+          "transcript"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

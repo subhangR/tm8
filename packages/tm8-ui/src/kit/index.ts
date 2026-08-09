@@ -5,6 +5,18 @@ export { IconBtn } from './IconBtn';
 export { VectorIcon } from './VectorIcon';
 export { Kbd } from './Kbd';
 export { Avatar, type AvatarProvenance, type AvatarSize } from './Avatar';
+export { DiffView, type DiffViewProps } from './DiffView';
+export {
+  fileRowCount,
+  parseUnifiedDiff,
+  type DiffFile,
+  type DiffFileStatus,
+  type DiffHunk,
+  type DiffLine,
+  type DiffLineKind,
+  type ParsedDiff,
+  type ParseUnifiedDiffOptions,
+} from './diff-parse';
 export { ActorRef } from './ActorRef';
 export { AvatarStack } from './AvatarStack';
 export { VRule, HRule } from './Hairline';

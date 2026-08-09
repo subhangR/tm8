@@ -16,16 +16,21 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // execution.journal, identity.profile.update).
         // -> {127/124/126/122} (2026-08-02: the four auth.* rows, Stage 1).
         // -> {127/125/126/124} (2026-08-02: execution.launch + onboarding read).
-        total: 129,
-        v1: 127,
+        // -> {128/126/127/125} (2026-08-07: execution.transcript).
+        // -> {129/127/128/126} (2026-08-09: projects.branches.list).
+        // -> {131/129/130/128} (2026-08-09: projects.contention + entities.commands.gate).
+        // -> {135/133/134/132}: the four credentials.* rows.
+        // -> {137/135/136/134}: projects.files.list/attach.
+        total: 137,
+        v1: 135,
         reserved: 2,
-        http: 128,
+        http: 136,
         ws: 1,
-        registerableV1Http: 126,
+        registerableV1Http: 134,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },
-        { noun: 'project', operationCount: 10 },
+        { noun: 'project', operationCount: 12 },
         { noun: 'space', operationCount: 23 },
       ]),
     });

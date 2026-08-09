@@ -45,6 +45,11 @@ import {
   type CreateSpaceInput,
   type CreateSpaceResult,
   type CreateTaskInput,
+  type CredentialProviderName,
+  type CredentialsDeleteResult,
+  type CredentialsLoginSessionFinishResult,
+  type CredentialsLoginSessionStartResult,
+  type CredentialsStatusView,
   type DurableWorkspaceEvent,
   type EdgeView,
   type EntityDetail,
@@ -76,6 +81,7 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectBranchTopology,
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
@@ -87,6 +93,7 @@ import {
   type ResolveEntityAttentionInput,
   type SessionJournalPage,
   type SessionLaunchRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -94,7 +101,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -185,6 +192,56 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<IdentityProfileView>('identity.profile.update', { body: input });
     },
 
+    /**
+     * `credentials.status` — the viewer's own agent credentials.
+     *
+     * No params: like `identity.get`, the route names no subject and the
+     * server derives the account from the bound identity claim. It is a READ
+     * that is nonetheless HUMAN-ONLY (R2) — the server refuses any caller
+     * whose `authKind` is not `browser`/`cli`, so an agent asking this gets a
+     * refusal, which is the intended answer and not something to work around.
+     */
+    credentialsStatus(): Promise<CredentialsStatusView> {
+      return http.call<CredentialsStatusView>('credentials.status');
+    },
+
+    /**
+     * `credentials.delete` — Disconnect. The provider is the RESOURCE and
+     * travels in the path; the body carries only the mutation id, because the
+     * subject is always the caller's own account.
+     */
+    credentialsDisconnect(provider: CredentialProviderName): Promise<CredentialsDeleteResult> {
+      return http.call<CredentialsDeleteResult>('credentials.delete', {
+        params: { provider },
+        body: { clientMutationId: newId('creddisc') },
+      });
+    },
+
+    /**
+     * `credentials.loginSessions.start` — opens the login terminal.
+     *
+     * Geometry is deliberately NOT sent: the contract bounds `cols`/`rows` as
+     * the only client input this op accepts, and the terminal we host fits
+     * itself on mount, so sending a guess here would just be a second, wrong
+     * answer to a question the PTY resize already settles.
+     */
+    credentialsStartLogin(
+      spaceId: SpaceId,
+      provider: CredentialProviderName,
+    ): Promise<CredentialsLoginSessionStartResult> {
+      return http.call<CredentialsLoginSessionStartResult>('credentials.loginSessions.start', {
+        body: { spaceId, provider, clientMutationId: newId('credlogin') },
+      });
+    },
+
+    /** `credentials.loginSessions.finish` — the session id is the path resource. */
+    credentialsFinishLogin(workSessionId: EntityId): Promise<CredentialsLoginSessionFinishResult> {
+      return http.call<CredentialsLoginSessionFinishResult>('credentials.loginSessions.finish', {
+        params: { id: workSessionId },
+        body: { clientMutationId: newId('credfin') },
+      });
+    },
+
     /** Bare array, not a Page — `spaces.list` accepts no pagination at all. */
     spaces(): Promise<SpaceSummary[]> {
       return http.call<SpaceSummary[]>('spaces.list');
@@ -234,6 +291,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
       return http.call<CommandResult>('projects.files.attach', { params: { projectId }, body: input });
+    },
+
+    /** Branch topology for a project's working directory — seam Amendment 5. */
+    projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology> {
+      return http.call<ProjectBranchTopology>('projects.branches.list', {
+        params: { projectId },
+        query: { staleAfterDays: opts?.staleAfterDays, limit: opts?.limit },
+      });
     },
 
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult> {
@@ -298,6 +363,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     launch(workSessionId: EntityId): Promise<SessionLaunchRecord> {
       // No query at all: the launch record is a whole document, not a window.
       return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
+    },
+    transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> {
+      // One optional key; http.ts drops `undefined`, so the default read sends
+      // a bare path and lets the server own the window size.
+      return http.call<SessionTranscriptPage>('execution.transcript', {
+        params: { workSessionId },
+        query: { last: opts?.last },
+      });
     },
 
     inbox(opts?: PageOpts): Promise<Page<NotificationItem>> {
