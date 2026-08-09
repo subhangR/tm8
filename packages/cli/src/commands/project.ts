@@ -270,6 +270,47 @@ async function projectBranches(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `project file-history` — the revisions of one path, newest first, each with
+ * its `created_in` session attribution when the graph recorded one. A READ,
+ * argv-only git server-side; the path travels as a `?path=` pathspec and the
+ * directory always comes from the project row.
+ */
+async function projectFileHistory(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project file-history', cmd.options.value('mutation-id'));
+  const projectId = requireArg(cmd.args[0], 'project file-history', '<project-resource-id>');
+  const path = requireArg(cmd.args[1], 'project file-history', '<path>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.file.history', {
+    params: { projectId },
+    query: {
+      path,
+      maxRevisions: cmd.options.value('max-revisions'),
+    },
+  });
+  cmd.out.data(data, renderFileHistory);
+  return EXIT_OK;
+}
+
+/**
+ * `project blame` — working-tree blame of one path, hunks with commit oid and
+ * the SESSION that produced the commit. Absent facts are absent claims: a
+ * commit with no `created_in` edge renders "no tm8 session recorded".
+ */
+async function projectBlame(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project blame', cmd.options.value('mutation-id'));
+  const projectId = requireArg(cmd.args[0], 'project blame', '<project-resource-id>');
+  const path = requireArg(cmd.args[1], 'project blame', '<path>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.file.blame', {
+    params: { projectId },
+    query: {
+      path,
+      maxLines: cmd.options.value('max-lines'),
+    },
+  });
+  cmd.out.data(data, renderBlame);
+  return EXIT_OK;
+}
+
 async function projectCreate(cmd: CommandContext): Promise<ExitCode> {
   const name = requireArg(cmd.args[0], 'project create', '<name>');
   const workingDir = workingDirOf(cmd.options.require('working-dir'));
@@ -521,6 +562,75 @@ function renderBranches(dto: unknown): string {
   return lines.join('\n');
 }
 
+interface AttributionShape {
+  sessionId?: unknown;
+  sessionTitle?: unknown;
+  teamMemberName?: unknown;
+}
+
+/**
+ * The attribution suffix, one honesty rule wearing three lines: a joined
+ * session names itself, and NO join says "no tm8 session recorded" — never a
+ * blank column that reads as "nothing to say".
+ */
+function attributionLabel(session: unknown): string {
+  const s = session as AttributionShape | null;
+  if (s === null || s === undefined || typeof s.sessionId !== 'string') {
+    return 'no tm8 session recorded';
+  }
+  const title = typeof s.sessionTitle === 'string' && s.sessionTitle !== '' ? ` "${s.sessionTitle}"` : '';
+  const who = typeof s.teamMemberName === 'string' && s.teamMemberName !== '' ? ` (${s.teamMemberName})` : '';
+  return `session ${s.sessionId}${title}${who}`;
+}
+
+function renderFileHistory(dto: unknown): string {
+  const t = (dto ?? {}) as { path?: unknown; revisions?: unknown; truncated?: unknown };
+  const revisions = Array.isArray(t.revisions) ? (t.revisions as Record<string, unknown>[]) : [];
+  const lines = [`history of ${String(t.path)}: ${String(revisions.length)} revision(s)`];
+  for (const r of revisions) {
+    const add = r.additions === null ? '-' : String(r.additions);
+    const del = r.deletions === null ? '-' : String(r.deletions);
+    lines.push(
+      '',
+      `${String(r.oid).slice(0, 12)}  +${add}/-${del}  ${String(r.committedAt ?? '')}  ${String(r.author ?? '')}`,
+      `  ${String(r.subject ?? '')}`,
+      `  ${attributionLabel(r.session)}`,
+    );
+    if (typeof r.path === 'string' && r.path !== t.path) lines.push(`  as: ${r.path}`);
+  }
+  if (revisions.length === 0) lines.push('no revisions — the path has never been committed on this branch');
+  if (t.truncated === true) lines.push('', 'truncated: older revisions exist beyond --max-revisions');
+  return lines.join('\n');
+}
+
+function renderBlame(dto: unknown): string {
+  const t = (dto ?? {}) as {
+    path?: unknown;
+    hunks?: unknown;
+    blamedLines?: unknown;
+    totalLines?: unknown;
+    truncated?: unknown;
+  };
+  const hunks = Array.isArray(t.hunks) ? (t.hunks as Record<string, unknown>[]) : [];
+  const lines = [`blame of ${String(t.path)}: ${String(t.blamedLines)} of ${String(t.totalLines)} line(s)`];
+  for (const h of hunks) {
+    const start = Number(h.startLine);
+    const count = Number(h.lineCount);
+    const range = count > 1 ? `${String(start)}-${String(start + count - 1)}` : String(start);
+    const who = h.uncommitted === true ? 'not yet committed' : attributionLabel(h.session);
+    lines.push(
+      `L${range.padEnd(11)} ${String(h.oid).slice(0, 12)}  ${String(h.author ?? '')}  ${String(h.summary ?? '')}`,
+      `  ${who}`,
+    );
+  }
+  if (hunks.length === 0) lines.push('no lines to blame');
+  if (t.truncated === true) {
+    const held = Number(t.totalLines) - Number(t.blamedLines);
+    lines.push('', `truncated: ${String(held)} more line(s) beyond --max-lines`);
+  }
+  return lines.join('\n');
+}
+
 function projectionIdOf(dto: unknown): string | undefined {
   const raw = (dto as { projectEntityId?: unknown } | null | undefined)?.projectEntityId;
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
@@ -565,6 +675,8 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'get'], run: projectGet },
   { path: ['project', 'contention'], run: projectContention },
   { path: ['project', 'branches'], run: projectBranches },
+  { path: ['project', 'file-history'], run: projectFileHistory },
+  { path: ['project', 'blame'], run: projectBlame },
   { path: ['project', 'update'], run: projectUpdate },
   { path: ['project', 'link'], run: projectLink },
   { path: ['project', 'unlink'], run: projectUnlink },
