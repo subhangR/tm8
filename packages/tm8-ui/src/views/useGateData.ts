@@ -904,6 +904,11 @@ export function useGateData(options: GateOptions): GateData {
 
     setReady(false);
     setBootError(null);
+    // Row claims and row cache have the same lifetime. Keeping a claim across
+    // this reset would make the new space render an unhydrated key forever;
+    // clearing only the claim would reintroduce duplicate in-flight reads.
+    claimedReads.current.clear();
+    pending.current.clear();
     setRows({});
     // A space switch or resync invalidates every grouped read with the rows.
     setBoards({});
@@ -1347,6 +1352,24 @@ export function useGateData(options: GateOptions): GateData {
    * render as confidently empty.
    */
   const pending = useRef(new Map<string, PendingRead>());
+  /**
+   * A missing read stays claimed until its cache entry exists.
+   *
+   * `pending` is only the queue waiting for the effect below. The effect has
+   * to clear that queue before it starts the requests, otherwise a later tick
+   * would dispatch the same batch again. But clearing the queue used to make
+   * every request look UNCLAIMED while it was in flight. Each response first
+   * updates the shared entity store, which re-renders the screen; during that
+   * render the sibling reads still had no cache entry and were queued again.
+   * With several bands in flight their responses continually re-armed one
+   * another — the production shape was hundreds of successful identical
+   * `collections.query` calls until Chrome exhausted its own request budget.
+   *
+   * This set is the lifetime claim. A success or terminal empty result writes
+   * the cache, so the claim can remain until the cache itself is reset. A
+   * space switch clears both together below.
+   */
+  const claimedReads = useRef(new Set<string>());
   const [pendingTick, setPendingTick] = useState(0);
 
   /**
@@ -1371,7 +1394,8 @@ export function useGateData(options: GateOptions): GateData {
         if (page === undefined) {
           // Record the miss; the effect below performs the read. Requesting
           // from inside render must never dispatch, so this only marks intent.
-          if (!pending.current.has(key)) {
+          if (!claimedReads.current.has(key)) {
+            claimedReads.current.add(key);
             pending.current.set(key, { kind, filter, sort });
             queueMicrotask(() => setPendingTick((n) => n + 1));
           }

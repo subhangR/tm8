@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   AGENT_MODES,
+  BYTE_BUDGETS,
   commandSurface,
   composePrompt,
   instructionFor,
+  utf8Bytes,
   type AgentMode,
   type PromptManifest,
 } from '../src/index.js';
@@ -106,6 +108,30 @@ describe('composePrompt', () => {
     expect(task).toContain('- xterm renders live output');
     expect(task).toContain('- no poll requests');
     expect(task).toContain('attribution="recorded_only"');
+  });
+
+  it('references an oversized task explicitly instead of failing or truncating it', () => {
+    const oversizedMarker = 'authoritative-body-marker';
+    const oversized = `${oversizedMarker}\n${'x'.repeat(60_688)}`;
+    const { system, task, metadata } = composePrompt({
+      ...manifest,
+      tasks: [{
+        id: 'task-oversized',
+        version: 17,
+        title: 'Large specification',
+        description: oversized,
+        acceptanceCriteria: ['read the authoritative task before acting'],
+      }],
+    });
+
+    expect(metadata.taskCount).toBe(1);
+    expect(task).toContain('<tm8_task_prompt count="1" delivery="reference">');
+    expect(task).toContain('<task id="task-oversized" version="17" />');
+    expect(task).toContain('tm8 entity context &lt;task-id&gt; --format json');
+    expect(task).not.toContain(oversizedMarker);
+    expect(utf8Bytes(`${system}\n\n${task}`)).toBeLessThanOrEqual(
+      BYTE_BUDGETS.combinedInitialInjection,
+    );
   });
 
   it('ignores non-string criteria and memory rather than rendering [object Object]', () => {
