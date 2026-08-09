@@ -156,6 +156,20 @@ function authSessionGet(deps: FacadeDeps): OperationHandler {
           expiresAt: session.expiresAt,
         },
       };
+      // Browser passes issued before cookie-backed WebSockets shipped still
+      // live in the per-origin pass store and authenticate every HTTP read,
+      // but native WebSocket constructors cannot attach their Authorization
+      // header. Refresh the same verified browser session into its Secure,
+      // HttpOnly carrier during the gate's normal reload check. CLI and agent
+      // sessions must never be upgraded into ambient browser authority.
+      if (session.kind === 'browser') {
+        return json(result, {
+          headers: {
+            'cache-control': 'no-store',
+            'set-cookie': sessionCookie(ctx.identity.token, session.expiresAt),
+          },
+        });
+      }
       return result;
     }
 
