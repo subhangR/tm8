@@ -54,7 +54,12 @@ import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
-import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
+import {
+  NewSpaceProjectDialog,
+  ProjectBranchesSection,
+  type ProjectBranchesPort,
+  type ProjectOnboardingPort,
+} from '../projects';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -363,6 +368,21 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  // The branch-topology section for the shell's externally-owned `projects`
+  // slot (seam Amendment 5). The spaceId is closed over HERE so the section's
+  // port stays two reads and nothing else — the same host-wires-the-seam rule
+  // the settings port follows.
+  const branchesPort = useMemo<ProjectBranchesPort | null>(
+    () =>
+      data.spaceId
+        ? {
+            projects: () => data.seam.projects(data.spaceId!),
+            branches: (projectId) => data.seam.projectBranches(projectId),
+          }
+        : null,
+    [data.seam, data.spaceId],
+  );
+
   const reasons = useMemo<DetailReasons>(
     () => ({
       presenceHollow: presenceHollowReason,
@@ -588,7 +608,14 @@ export function GateApp(props: GateAppProps = {}) {
                the whole module sat built and unmounted in settings-space/.
                Sections another module owns (projects/kinds) keep their honest
                not-mounted state inside the shell itself. */
-            <SettingsShell port={settingsPort} nodeKey={nodeKeyOf(activeServer.routeBaseUrl)} />
+            <SettingsShell
+              port={settingsPort}
+              nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+              /* The `projects` slot stops rendering not-mounted: the branch-
+                 topology section fills it (git-features Tier 1 follow-up).
+                 `kinds` stays honestly absent — its module has not landed. */
+              sections={branchesPort ? { projects: <ProjectBranchesSection port={branchesPort} /> } : undefined}
+            />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (
