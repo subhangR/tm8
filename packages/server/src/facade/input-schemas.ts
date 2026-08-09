@@ -66,6 +66,9 @@ import {
   PostMessageInputSchema,
   ProjectCreateInputSchema,
   ProjectFileAttachInputSchema,
+  ProjectFolderUploadAbortInputSchema,
+  ProjectFolderUploadCompleteInputSchema,
+  ProjectFolderUploadInitInputSchema,
   ProjectLinkInputSchema,
   ProjectUpdateInputSchema,
   PullInputSchema,
@@ -205,6 +208,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'projects.unlink': RequiredCommandContextSchema,
   'projects.associations.correct': CorrectProjectAssociationInputSchema,
   'projects.files.attach': ProjectFileAttachInputSchema,
+  'projects.folderUploads.init': ProjectFolderUploadInitInputSchema,
+  'projects.folderUploads.complete': ProjectFolderUploadCompleteInputSchema,
+  'projects.folderUploads.abort': ProjectFolderUploadAbortInputSchema,
 
   // artifacts (TM8-ARTIFACTS-DESIGN §8.1). Reads (revisions.list, export) are
   // path-addressed GETs and carry no body to bind.

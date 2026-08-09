@@ -10,6 +10,7 @@
  * about the frame moves.
  */
 import type { IncomingMessage } from 'node:http';
+import { resolve as pathResolve } from 'node:path';
 import { CollabError, FILE_MAX_SIZE_BYTES_DEFAULT } from '@tm8/contract';
 import { CredentialSessionLauncher } from '@tm8/execution';
 import { ensureLaunchResources } from './bootstrap/launch-resources.js';
@@ -309,6 +310,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       config,
       owner,
       files: { blobStore: blobStore!, maxSizeBytes: fileMaxSizeBytes },
+      folderUploads: {
+        blobStore: blobStore!,
+        maxSizeBytes: fileMaxSizeBytes,
+        // Node-local by construction, like the clipboard directory.
+        stateDir: pathResolve(dataDir, 'folder-uploads'),
+      },
       ...(credentials ? { credentials } : {}),
       ...(delivery ? { messageDelivery: delivery.messageDelivery } : {}),
       resolveAuthoredFromWorkSessionId: async (ctx) => {
