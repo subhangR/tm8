@@ -363,6 +363,9 @@ describe('W2.C01 current mounted registry inventory', () => {
       'interactionProfiles.retire',
       'teamMembers.interactionProfile.setDefault',
       'spaces.interactionProfile.setDefault',
+      'projects.folderUploads.init',
+      'projects.folderUploads.complete',
+      'projects.folderUploads.abort',
     ]);
 
     const mounted = new Set(handlers.all);

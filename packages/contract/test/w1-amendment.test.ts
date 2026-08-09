@@ -69,9 +69,12 @@ describe('W1 adopted catalog target', () => {
     // 137 -> 138 (2026-08-09, merge): execution.dispatch (POST command) — the
     // dispatcher's one new catalog row, joining from feat/dispatcher-loops.
     expect(OPERATIONS).toHaveLength(142);
-    expect(V1_OPERATIONS).toHaveLength(140);
+    expect(V1_OPERATIONS).toHaveLength(137);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
+      'projects.folderUploads.init',
+      'projects.folderUploads.complete',
+      'projects.folderUploads.abort',
       'bridge.fetchBlob',
     ]);
 

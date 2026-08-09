@@ -118,9 +118,9 @@ describe('operation catalog', () => {
     expect(bindPath('projects.unlink', { spaceId: 's1', projectId: 'p1' })).toBe('/v2/spaces/s1/projects/p1');
   });
 
-  it('search + bridge.fetchBlob are the only reserved slots (DEV-13, AM-2 §2)', () => {
-    expect(RESERVED_OPERATIONS.map((o) => o.name)).toEqual(['search.query', 'bridge.fetchBlob']);
-    expect(V1_OPERATIONS.length).toBe(OPERATIONS.length - 2);
+  it('reserved slots: search, bridge.fetchBlob, and the held-back folderUploads lifecycle', () => {
+    expect(RESERVED_OPERATIONS.map((o) => o.name)).toEqual(['search.query', 'projects.folderUploads.init', 'projects.folderUploads.complete', 'projects.folderUploads.abort', 'bridge.fetchBlob']);
+    expect(V1_OPERATIONS.length).toBe(OPERATIONS.length - 5);
   });
 
   it('bindPath substitutes params and refuses missing ones', () => {

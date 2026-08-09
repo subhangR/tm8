@@ -20,7 +20,9 @@ describe('client-machine project folder upload contract', () => {
       method: 'POST',
       path: '/v2/spaces/:spaceId/project-folder-uploads',
       kind: 'command',
-      status: 'v1',
+      // reserved until the server-side upload lifecycle lands; the contract
+      // rows and DTOs are stable and the CLI/UI may compile against them.
+      status: 'reserved',
     });
     expect(bindPath('projects.folderUploads.complete', { folderUploadId: 'folder-1' }))
       .toBe('/v2/project-folder-uploads/folder-1/complete');
