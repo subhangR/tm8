@@ -4,6 +4,7 @@ import {
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   type ProjectFileAttachInput,
+  type ProjectFileContent,
   type ProjectFileListing,
 } from '@tm8/contract';
 
@@ -13,7 +14,12 @@ import type { W2BlobStore } from '../../../files/w2-blob-store.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { toCommandResult, type RpcCommandResult } from '../../handlers/entities.js';
-import { listProjectFiles, projectFileStream, resolveProjectFile } from './project-files.js';
+import {
+  listProjectFiles,
+  projectFileStream,
+  readProjectFile,
+  resolveProjectFile,
+} from './project-files.js';
 
 /** Matches files.uploadInit — the slot this service opens is the same slot. */
 const UPLOAD_TTL_MS = 15 * 60 * 1_000;
@@ -132,6 +138,24 @@ export class W2ProjectFilesService {
       this.maxSizeBytes,
     );
     return { projectId, ...listing } satisfies ProjectFileListing;
+  };
+
+  /**
+   * The VIEWER half of `listFiles`. Shares its authorization (`this.project`)
+   * and its containment, and mints nothing — reading a file creates no entity.
+   *
+   * A withholding rides IN the DTO as a named `refusal`, not as an HTTP error:
+   * the caller asked a legitimate question and deserves a named answer rather
+   * than a 4xx an offline client cannot tell from a network fault.
+   */
+  readonly readFile: OperationHandler = async (ctx) => {
+    const projectId = requireUuidParam(ctx, 'projectId');
+    const path = ctx.query.get('path');
+    if (!path) {
+      throw new CollabError('invalid_input', 'path is required');
+    }
+    const { workingDir } = await this.project(ctx, projectId);
+    return { projectId, ...(await readProjectFile(workingDir, path)) } satisfies ProjectFileContent;
   };
 
   readonly attachFile: OperationHandler = async (ctx) => {

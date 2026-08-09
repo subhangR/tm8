@@ -301,9 +301,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(134);
-    expect(rows).toHaveLength(134);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(134);
+    // 134 -> 135 (2026-08-09): projects.files.read.
+    expect(SURFACE).toHaveLength(135);
+    expect(rows).toHaveLength(135);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(135);
   });
 
   /**
@@ -685,6 +686,11 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  // 2026-08-09: projects.files.read requires `?path=`, which the sweep does not
+  // supply — a GET carries no body, so there is no :166 gate to reject it and
+  // the handler's own invalid_input is what answers. Requiring the parameter is
+  // the point: guessing a default would silently read the wrong file.
+  'projects.files.read',
   'savedViews.create',
   'savedViews.update',
   'spaces.create',
