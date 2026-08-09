@@ -485,13 +485,41 @@ test('session_manifests store env var NAMES, never values (S15)', () => {
        array['sk-ant-not-a-name'])`,
     { claims: w.claimsA, expect: '22023' },
   );
-  // The earlier good manifest survived every refusal.
+  // 086 regression — the word "task" ends in "sk"; before the left token
+  // boundary, any ordinary slug like a branch name or task id matched the
+  // bare `sk-` arm and made the session unspawnable (measured on prod:
+  // `fix/task-acceptance-criteria`, and prose containing "task-bodies…").
+  // Benign hyphenated text must record cleanly…
+  ok(
+    `select public.record_session_manifest(${uuid(session)},
+       '{"prompt":"work the fix/task-acceptance-criteria-cleanup branch and the task-0123456789abcdef slug"}'::jsonb,
+       array[]::text[],
+       'the disk-usage-monitoring-alerts dashboard is described in task-bodies-and-content',
+       'resume agent/task-tile-row-controls-extra where it left off')`,
+    { claims: w.claimsA },
+  );
+  // …while a real-shaped token is still refused wherever it sits, including
+  // the prompt columns 073 added (both fail with the S15 errcode).
+  denied(
+    'guard_manifest_secrets: an sk-ant-oat OAuth-shaped value in the manifest',
+    `select public.record_session_manifest(${uuid(session)},
+       '{"tasks":[{"description":"key: sk-ant-oat01-${'A'.repeat(80)}"}]}'::jsonb)`,
+    { claims: w.claimsA, expect: '23514' },
+  );
+  denied(
+    'guard_manifest_secrets: a github_pat_ token in the task prompt',
+    `select public.record_session_manifest(${uuid(session)}, '{}'::jsonb,
+       array[]::text[], null, 'use github_pat_${'z'.repeat(60)} to push')`,
+    { claims: w.claimsA, expect: '23514' },
+  );
+  // The LAST good manifest (the upsert is per session, so the benign 086 text
+  // replaced "hello") survived every refusal.
   assert.equal(
     scalar(
       `select manifest ->> 'prompt' from public.session_manifests where work_session_id = ${uuid(session)}`,
       { claims: w.claimsA },
     ),
-    'hello',
+    'work the fix/task-acceptance-criteria-cleanup branch and the task-0123456789abcdef slug',
   );
 });
 

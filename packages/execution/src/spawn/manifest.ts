@@ -37,6 +37,7 @@ import {
   agentCredentialEnv,
   type AgentCredentialHome,
 } from './agent-credentials.js';
+import { redactSecretsDeep } from './secret-redaction.js';
 
 /** Fallback when neither the request nor the persona names a model. */
 export const DEFAULT_MODEL = 'sonnet';
@@ -1055,7 +1056,18 @@ export interface ComposeManifestInput {
   now?: Date;
 }
 
-/** Assemble the manifest. Pure — every input is already resolved. */
+/** Assemble the manifest. Pure — every input is already resolved.
+ *
+ * The composed object is passed through {@link redactSecretsDeep} before it is
+ * returned, so every downstream artifact — the manifest file, the
+ * `record_session_manifest` row, the prompts composed FROM the manifest, and
+ * the argv they end up on — carries `[credential-redacted]` where a
+ * credential-shaped token sat in member-controlled text (a task description,
+ * a persona, promptExtra). Without this, one pasted API key makes the S15
+ * guard trigger kill every launch of that task with `manifest appears to
+ * contain a credential value` — and the alternative to refusing would have
+ * been persisting the key. See secret-redaction.ts for the measured incident.
+ */
 export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   const { sessionId, request, context, launch, workdir, command, baseUrl } = input;
   const interactionProfile = input.interactionProfile ?? {
@@ -1070,7 +1082,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
   };
   const member = context.teamMember;
 
-  return {
+  return redactSecretsDeep({
     manifestVersion: '1',
     sessionId,
     spaceId: context.spaceId,
@@ -1126,7 +1138,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
     coordinator: null,
     directive: null,
     promptExtra: request.promptExtra?.trim() || null,
-  };
+  });
 }
 
 /**
