@@ -184,6 +184,16 @@ describe('terminal host', () => {
     const hint = document.getElementById(describedBy!);
     expect(hint?.textContent).toMatch(/Control and backtick/);
   });
+
+  it('forwards a pointer press so an interactive xterm can reclaim keyboard focus', () => {
+    const onPointerDown = vi.fn();
+    const { getByTestId } = render(
+      <TerminalHost placeholder="x" onPointerDown={onPointerDown} />,
+    );
+
+    fireEvent.pointerDown(getByTestId('terminal-host'));
+    expect(onPointerDown).toHaveBeenCalledOnce();
+  });
 });
 
 describe('fallbacks — each verdict states what is actually known', () => {

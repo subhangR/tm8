@@ -1,4 +1,4 @@
--- 093 — Loops take the eighth and final Workspace caret slot.
+-- 094 — Loops take the eighth and final Workspace caret slot.
 --
 -- The `loop` core kind shipped in 091 with a collection route and registry
 -- row, but neither twin of the default Space menu names it. A finished feature

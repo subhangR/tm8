@@ -47,6 +47,16 @@
 // refuses to start, believing it is running inside itself. Building from
 // scratch makes them ABSENT rather than empty, which is strictly stronger, so
 // there is nothing to blank here.
+//
+// THE ONE PROVIDER-SPECIFIC BEHAVIOUR FLAG. Utho's installed gh 2.62.0 asks
+// `Authenticate Git with your GitHub credentials? (Y/n)` even when `--web`,
+// `--git-protocol https` and `--skip-ssh-key` already make the answer
+// unambiguous. In the browser PTY that leaves `gh` blocked in read(0) before it
+// emits the device code, while Claude and Codex proceed immediately. The gh
+// CLI's own `GH_PROMPT_DISABLED=1` skips that redundant question; measured on
+// the deployed binary, it emits the one-time code and device URL immediately
+// and waits for browser completion. It is set ONLY for GitHub below so the
+// other vendors retain their interactive OAuth input paths.
 
 import { withAgentBinDirs } from '../spawn/manifest.js';
 
@@ -94,7 +104,11 @@ export const CREDENTIAL_ENV_BASE_KEYS = [
 
 /** The complete, exact key set for a given provider's login terminal. */
 export function credentialEnvKeys(provider: CredentialProvider): string[] {
-  return [...CREDENTIAL_ENV_BASE_KEYS, CREDENTIAL_CONFIG_DIR_VAR[provider]].sort();
+  return [
+    ...CREDENTIAL_ENV_BASE_KEYS,
+    CREDENTIAL_CONFIG_DIR_VAR[provider],
+    ...(provider === 'github' ? ['GH_PROMPT_DISABLED'] : []),
+  ].sort();
 }
 
 /**
@@ -161,6 +175,12 @@ export function composeCredentialEnv(input: ComposeCredentialEnvInput): Record<s
     // Exactly one, chosen by table. See CREDENTIAL_CONFIG_DIR_VAR.
     [CREDENTIAL_CONFIG_DIR_VAR[provider]]: configDir,
   };
+
+  // GitHub's fixed command already chooses HTTPS credentials, so its extra
+  // confirmation prompt has no remaining decision to collect. Disabling gh's
+  // prompting starts the headless device flow directly; it does not disable
+  // the browser authorization or the subsequent credential write.
+  if (provider === 'github') env['GH_PROMPT_DISABLED'] = '1';
 
   return env;
 }

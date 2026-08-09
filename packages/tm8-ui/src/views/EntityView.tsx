@@ -635,6 +635,7 @@ export function EntityView(props: EntityViewProps) {
           profiles={data.launch.profiles}
           memories={data.launch.memories}
           capacity={data.launch.capacity}
+          loadCredentialStatus={data.seam.credentials.status}
           onCancel={() => props.onLaunchCancel?.()}
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
           onDispatch={props.onLaunchDispatch}
