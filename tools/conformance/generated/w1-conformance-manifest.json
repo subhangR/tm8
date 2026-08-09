@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:122353f9e53c3f22e05c4c0666e07c5df13d309190ef0131f0f89a054a167abb",
+  "catalogDigest": "sha256:9e8b10c9ab00863ae61643747f91d491cff84fa1cfb76e454407e1a775d32c65",
   "catalog": {
-    "total": 129,
-    "v1": 127,
+    "total": 131,
+    "v1": 129,
     "reserved": 2,
-    "http": 128,
+    "http": 130,
     "ws": 1,
-    "registerableV1Http": 126,
+    "registerableV1Http": 128,
     "methods": {
-      "GET": 48,
+      "GET": 50,
       "POST": 55,
       "PATCH": 10,
       "DELETE": 8,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 51,
+      "read": 53,
       "command": 77,
       "stream": 1
     },
-    "uniqueNames": 129,
-    "uniqueBindings": 129
+    "uniqueNames": 131,
+    "uniqueBindings": 131
   },
   "reservedOperations": [
     "search.query",
@@ -670,6 +670,13 @@
         "source": "server-router"
       },
       {
+        "operation": "projects.branches.list",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/branches",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "projects.update",
         "method": "PATCH",
         "path": "/v2/projects/:projectId",
@@ -1095,6 +1102,13 @@
         "path": "/v2/auth/session",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "execution.transcript",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/transcript",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1307,7 +1321,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 98
+    "unimplementedV1Http": 100
   },
   "schemas": {
     "additive": {
@@ -2579,6 +2593,23 @@
         "publicComposite": null
       },
       {
+        "operation": "projects.branches.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.branches.list",
+        "intentTags": [
+          "projects",
+          "branches",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "projects.update",
         "noun": "project",
         "exposure": "public",
@@ -3603,6 +3634,22 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.transcript",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.transcript",
+        "intentTags": [
+          "execution",
+          "transcript"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

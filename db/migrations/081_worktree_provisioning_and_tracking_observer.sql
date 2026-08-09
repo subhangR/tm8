@@ -1,5 +1,5 @@
 -- =============================================================================
--- 078 — Two write surfaces 057 and 006 deliberately left for the phase that is
+-- 081 — Two write surfaces 057 and 006 deliberately left for the phase that is
 -- now happening:
 --
 --   A. The worktree PROVISIONING and RECONCILIATION surface. 057 shipped
@@ -47,8 +47,8 @@ set role tm8_graph_owner;
 -- name the directory the reconciler is supposed to remove.
 --
 -- Nullable, deliberately: 057's own proof driver (db/test/worktrees.mjs) inserts
--- allocation rows with three columns, and a NOT NULL here would break 31 green
--- assertions to buy nothing. The saga always populates them.
+-- allocation rows with three columns, and a NOT NULL here would break its 30
+-- green assertions to buy nothing. The saga always populates them.
 -- -----------------------------------------------------------------------------
 alter table public.worktree_allocations
   add column if not exists project_id uuid,
@@ -141,8 +141,18 @@ $$;
 -- `p_cap` is the worktree cap of design §5.2 — separate from the session cap
 -- because it bounds a different scarce resource (disk and .git/worktrees
 -- metadata) and a worktree outlives the sessions that use it. 0 means no cap.
--- Counted over allocations that still hold disk: preparing/ready/
--- cleanup_pending/missing. `failed` rows hold nothing and are evidence only.
+--
+-- Counted over allocations that still HOLD DISK: preparing/ready/
+-- cleanup_pending. `failed` holds nothing and is evidence only — and neither
+-- does `missing`, which is precisely the state meaning "the directory is gone".
+-- Counting `missing` would make every vanished checkout consume a cap slot
+-- forever with no route back, since reconciliation treats `missing` as
+-- terminal and nothing deletes allocation rows: a node with a cap set would
+-- eventually refuse every spawn and need a manual SQL fix.
+--
+-- An exhausted `cleanup_pending` DOES still count, and should: that directory
+-- is still on disk. Reconciliation reports it for an operator rather than
+-- retrying forever.
 -- -----------------------------------------------------------------------------
 create or replace function public.reserve_worktree_allocation(
   p_worktree_entity_id uuid, p_space_id uuid, p_project_id uuid,
@@ -162,7 +172,7 @@ begin
   if coalesce(p_cap, 0) > 0 then
     select count(*) into live from public.worktree_allocations
      where project_id = p_project_id
-       and state in ('preparing','ready','cleanup_pending','missing');
+       and state in ('preparing','ready','cleanup_pending');
     if live >= p_cap then
       raise exception 'worktree cap reached for this project' using errcode = '53400',
         detail = 'worktree_cap';
@@ -230,11 +240,31 @@ $$;
 --     worktree, enforced by 057's partial unique index — so contention is a
 --     23505 here, which the node maps to `limit_exceeded`, never a queue and
 --     never a hang.
+--
+-- ⚠ BOTH DOORS TAKE A SPACE CHECK, unconditionally.
+--
+-- A4's `require_identity()`-only gate is defensible only for the pre-entity
+-- reservation window, where there is nothing yet to be entitled to. These two
+-- doors have no such window: they operate on allocations whose entity exists
+-- and whose lease is live. `release_worktree_lease` is the sharp one — the
+-- single-writer invariant of §3.4 is enforced by a partial unique index over
+-- `lease_session_id`, so clearing the lease is exactly what frees that index to
+-- admit a SECOND session into the same working tree. Two agents writing one
+-- checkout is real corruption, and "the worktree uuid is unguessable" is not an
+-- authorization mechanism.
+--
+-- The space is one join away through `public.entities`; A1 denormalised
+-- `project_id` onto the allocation, which makes it cheaper still.
 -- -----------------------------------------------------------------------------
+create or replace function internal.worktree_allocation_space(p_worktree_entity_id uuid)
+returns uuid language sql stable set search_path = public, internal, pg_temp as $$
+  select e.space_id from public.entities e where e.id = p_worktree_entity_id
+$$;
+
 create or replace function public.acquire_worktree_lease(
   p_worktree_entity_id uuid, p_session_id uuid
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare held uuid;
+declare held uuid; alloc_space uuid;
 begin
   perform internal.require_identity();
   select lease_session_id into held from public.worktree_allocations
@@ -242,6 +272,13 @@ begin
   if not found then
     raise exception 'no worktree allocation %', p_worktree_entity_id using errcode = 'P0002';
   end if;
+  alloc_space := internal.worktree_allocation_space(p_worktree_entity_id);
+  if alloc_space is null then
+    -- Leasing something with no entity would be leasing a reservation, which
+    -- no caller has a reason to do and the saga never does.
+    raise exception 'worktree % has no entity to lease', p_worktree_entity_id using errcode = 'P0002';
+  end if;
+  perform internal.require_space_member(alloc_space);
   if held is not null and held <> p_session_id then
     raise exception 'worktree is already leased' using errcode = '53400', detail = 'worktree_leased';
   end if;
@@ -255,8 +292,17 @@ $$;
 create or replace function public.release_worktree_lease(
   p_worktree_entity_id uuid
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare alloc_space uuid;
 begin
   perform internal.require_identity();
+  if not exists (select 1 from public.worktree_allocations
+                  where worktree_entity_id = p_worktree_entity_id) then
+    -- Reported rather than silently succeeding: a release that names nothing is
+    -- a caller bug, and answering 'released: true' would hide it.
+    raise exception 'no worktree allocation %', p_worktree_entity_id using errcode = 'P0002';
+  end if;
+  alloc_space := internal.worktree_allocation_space(p_worktree_entity_id);
+  if alloc_space is not null then perform internal.require_space_member(alloc_space); end if;
   update public.worktree_allocations
      set lease_session_id = null, lease_acquired_at = null
    where worktree_entity_id = p_worktree_entity_id;
@@ -270,15 +316,32 @@ $$;
 --     `update_worktree` then refuses a delete whose token is absent, mismatched
 --     or older than its 60-second TTL. This function is the write half of a
 --     gate 057 already enforces.
+--
+-- ⚠ THIS DOOR HAS NO CALLER YET, AND THAT IS THE POINT OF THIS PARAGRAPH.
+-- The node half of §5.4 — the `entities.patch` worktree arm that runs the Git
+-- probes and mints the digest — is NOT in this change, so a `ready` worktree
+-- cannot currently be deleted through `update_worktree` at all. That is a
+-- deliberate scoping decision (see the PR), not an oversight.
+--
+-- What must NOT happen when someone wires it: this token is server-computed
+-- from a real Git observation, or the gate it exists to close is defeated by
+-- the caller it exists to constrain. A caller who can pass an arbitrary string
+-- here and then present the same string to `update_worktree` has bypassed the
+-- dirty/unpushed refusal entirely. The space check below bounds WHO can reach
+-- the door; it does not and cannot make the token honest. Whoever lands the
+-- patch arm owns that, and should read §5.4 before changing this function.
 -- -----------------------------------------------------------------------------
 create or replace function public.record_worktree_preflight(
   p_worktree_entity_id uuid, p_token text
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare alloc_space uuid;
 begin
   perform internal.require_identity();
   if p_token is null or btrim(p_token) = '' then
     raise exception 'preflight token is required' using errcode = '22023';
   end if;
+  alloc_space := internal.worktree_allocation_space(p_worktree_entity_id);
+  if alloc_space is not null then perform internal.require_space_member(alloc_space); end if;
   update public.worktree_allocations
      set preflight_token = p_token, preflight_at = now()
    where worktree_entity_id = p_worktree_entity_id;
@@ -413,6 +476,25 @@ alter table public.tracking_refresh_requests
 -- So: the snapshot triggers are narrowed to the columns that carry meaning. A
 -- state change still versions. A refresh that changed nothing does not. This
 -- replaces 017's triggers by name; the function they call is untouched.
+--
+-- (`internal.snapshot_entity_version` already short-circuits on
+-- `to_jsonb(new) - 'updated_at' = to_jsonb(old) - 'updated_at'` at 001:1138 —
+-- it subtracts `updated_at` but NOT `fetched_at`, which is exactly why that
+-- guard does not save us here and this narrowing is load-bearing rather than
+-- decorative.)
+--
+-- ⚠ INVARIANT, AND NOTHING BUT THIS COMMENT AND ONE TEST ENFORCES IT:
+--
+--   each WHEN list below must equal its table's CONTENT columns —
+--   every column except entity_id, space_id, created_at, updated_at, fetched_at.
+--
+-- Add a column to `pull_requests` or `commits` and forget this file, and that
+-- column never bumps `entities.version` again, for the life of the schema. No
+-- migration errors, no test fails, and every staleness signal for that field is
+-- silently dead. `db/test/worktree-provisioning.mjs` diffs these lists against
+-- `information_schema.columns` for exactly that reason — if you are here
+-- because that test went red, it is telling you to add your column to the WHEN
+-- list, not to relax the test.
 -- -----------------------------------------------------------------------------
 drop trigger if exists pull_requests_w2_snapshot_version on public.pull_requests;
 create trigger pull_requests_w2_snapshot_version after update on public.pull_requests
@@ -442,9 +524,24 @@ for each row when (
 --
 -- security definer, and READ-ONLY of nothing: 008 grants tm8_app select on this
 -- table but no update, which is correct — the queue is not a client surface.
+--
+-- ⚠ THE CLAIM PREDICATE MUST MATCH THE APPLY DOORS' PREDICATE.
+--
+-- `apply_pull_request_facts` and `apply_commit_facts` call
+-- `require_space_member(row.space_id)`, which has no node-admin bypass. If this
+-- door claimed rows for spaces the caller is not in, every such row would be
+-- claimed, fail 42501 on apply, and — being oldest by `created_at` — be
+-- reclaimed and fail identically on every subsequent tick. One unreachable row
+-- would wedge the whole queue permanently. So the claim is scoped to the
+-- caller's memberships, and the two doors now agree about who may act.
+--
+-- `p_max_attempts` is the second half of that guarantee: a row that keeps
+-- failing is retired rather than retried forever. The `attempts` column existed
+-- and was incremented but read by nobody, which made it decoration.
 -- -----------------------------------------------------------------------------
 create or replace function public.claim_tracking_refresh(
-  p_limit integer default 10, p_stale_after_seconds integer default 600
+  p_limit integer default 10, p_stale_after_seconds integer default 600,
+  p_max_attempts integer default 5
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
 declare claimed jsonb;
 begin
@@ -456,10 +553,25 @@ begin
      and started_at is not null
      and started_at < now() - make_interval(secs => greatest(p_stale_after_seconds, 1));
 
+  -- Retire the rows that have burned their budget. Recorded as `failed` with a
+  -- reason rather than left queued, so an operator sees a terminal row instead
+  -- of a tick that mysteriously never finishes.
+  update public.tracking_refresh_requests
+     set status = 'failed',
+         error = coalesce(error, '') ||
+                 case when coalesce(error, '') = '' then '' else '; ' end ||
+                 'retired after ' || attempts || ' attempts',
+         completed_at = now()
+   where status = 'queued'
+     and attempts >= greatest(coalesce(p_max_attempts, 5), 1);
+
   with picked as (
-    select id from public.tracking_refresh_requests
-     where status = 'queued'
-     order by created_at
+    select id from public.tracking_refresh_requests r
+     where r.status = 'queued'
+       -- Same entitlement the apply doors enforce. Claiming what we could never
+       -- apply is what turns one bad row into a permanent wedge.
+       and internal.is_space_member(r.space_id)
+     order by r.created_at
      limit greatest(coalesce(p_limit, 10), 1)
      for update skip locked
   ), taken as (
@@ -496,21 +608,35 @@ begin
 end
 $$;
 
+-- `p_status` exists so PARTIAL SUCCESS CAN BE TOLD THE TRUTH.
+--
+-- Deriving the status from `p_error` alone forces a lie in the common case: a
+-- request naming ten PRs where one 404s has persisted nine real facts, and
+-- recording it as `failed` says the opposite. The observer decides — `failed`
+-- only when nothing was learned — and `error` carries the per-target problems
+-- eitherway, so a partial result is visible rather than averaged away.
+-- (`006:165`'s CHECK has no `partial`, and widening a shipped constraint to
+-- gain a fourth word is not worth it when `completed` + a populated `error`
+-- already says it.)
 create or replace function public.complete_tracking_refresh(
-  p_request_id uuid, p_error text default null
+  p_request_id uuid, p_error text default null, p_status text default null
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare final_status text;
 begin
   perform internal.require_identity();
+  final_status := coalesce(p_status, case when p_error is null then 'completed' else 'failed' end);
+  if final_status not in ('completed','failed') then
+    raise exception 'invalid tracking refresh status: %', final_status using errcode = '22023';
+  end if;
   update public.tracking_refresh_requests
-     set status = case when p_error is null then 'completed' else 'failed' end,
+     set status = final_status,
          error = p_error,
          completed_at = now()
    where id = p_request_id;
   if not found then
     raise exception 'no tracking refresh request %', p_request_id using errcode = 'P0002';
   end if;
-  return jsonb_build_object('requestId', p_request_id,
-                            'status', case when p_error is null then 'completed' else 'failed' end);
+  return jsonb_build_object('requestId', p_request_id, 'status', final_status);
 end
 $$;
 
@@ -582,10 +708,10 @@ begin
 end
 $$;
 
-revoke all on function public.claim_tracking_refresh(integer,integer) from public;
-grant execute on function public.claim_tracking_refresh(integer,integer) to tm8_app;
-revoke all on function public.complete_tracking_refresh(uuid,text) from public;
-grant execute on function public.complete_tracking_refresh(uuid,text) to tm8_app;
+revoke all on function public.claim_tracking_refresh(integer,integer,integer) from public;
+grant execute on function public.claim_tracking_refresh(integer,integer,integer) to tm8_app;
+revoke all on function public.complete_tracking_refresh(uuid,text,text) from public;
+grant execute on function public.complete_tracking_refresh(uuid,text,text) to tm8_app;
 revoke all on function public.apply_pull_request_facts(uuid,text,text,text) from public;
 grant execute on function public.apply_pull_request_facts(uuid,text,text,text) to tm8_app;
 revoke all on function public.apply_commit_facts(uuid,text,text,timestamptz,text) from public;

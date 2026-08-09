@@ -19,7 +19,7 @@
 //     silently downgrading isolation is the single failure this whole feature
 //     is an argument against (§7.4, prohibition 1).
 
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { stat } from 'node:fs/promises';
 
 import { WorktreeError } from '../worktree/git-invoker.js';
@@ -53,6 +53,35 @@ export interface ProvisionWorktreeParams {
   cap: number;
   clientMutationId: string | null;
   logger?: Logger | undefined;
+}
+
+/**
+ * A UUIDv7, matching `internal.new_id()`.
+ *
+ * `randomUUID()` would be a v4, and `001:112-114` calls `internal.new_id()`
+ * "the single id source for the whole schema" — every other entity id in the
+ * system is time-ordered. This is the one id the NODE has to mint rather than
+ * the database (§4.4 needs it before any write), so it has to hold up its end
+ * of that invariant itself. Nothing reads the timestamp out of a worktree id
+ * today; the failure if this stayed v4 would be the quiet kind — an index or a
+ * cursor that assumes ordering, silently degrading for exactly one kind.
+ *
+ * Layout per RFC 9562 §5.7: 48-bit big-endian ms timestamp, version 7, 74 bits
+ * of randomness, variant 10.
+ */
+function uuidv7(): string {
+  const bytes = randomBytes(16);
+  const ms = Date.now();
+  bytes[0] = (ms / 2 ** 40) & 0xff;
+  bytes[1] = (ms / 2 ** 32) & 0xff;
+  bytes[2] = (ms / 2 ** 24) & 0xff;
+  bytes[3] = (ms / 2 ** 16) & 0xff;
+  bytes[4] = (ms / 2 ** 8) & 0xff;
+  bytes[5] = ms & 0xff;
+  bytes[6] = 0x70 | ((bytes[6] as number) & 0x0f); // version 7
+  bytes[8] = 0x80 | ((bytes[8] as number) & 0x3f); // variant 10
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 /**
@@ -117,7 +146,7 @@ export async function provisionWorktree(
   // not exist yet is what lets the reservation and the entity be the same row's
   // two halves — and is why `worktree_allocations` can have no foreign key
   // without that being an accident.
-  const worktreeId = randomUUID();
+  const worktreeId = uuidv7();
   const branch = branchNameFor(worktreeId);
   const path = await manager.computeWorktreePath(params.projectId, worktreeId);
 

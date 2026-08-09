@@ -185,7 +185,11 @@ describe('the WLT §3 survival list ↔ ListConfig field matrix (LLD §15.1)', (
     expect(task.rowActions).toContain('run');
 
     const session = getKind('work_session').list;
-    expect(session.inlineEdit).toBeUndefined();
+    // A session's TITLE is editable and nothing else about it is: status is
+    // the PTY's, and the node's patch door (085) accepts a title alone. So the
+    // shape here is asymmetric with the task's on purpose — `status: true`
+    // would mount a picker over a value no client may write.
+    expect(session.inlineEdit).toEqual({ title: true });
     expect(session.rowActions).toEqual(['complete', 'terminate']);
   });
 

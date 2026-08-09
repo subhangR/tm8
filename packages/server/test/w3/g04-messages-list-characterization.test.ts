@@ -101,9 +101,16 @@ describe.sequential('W3.G04-CHAR messages.list behavioural characterization', ()
     rootIds.push(...stored.map((row) => row.entity_id));
   }, 180_000);
 
+  // 30s -> 120s. `harness.close()` ends with `database.destroy()`, which DROPS a
+  // scratch database, and a drop is exactly the operation that slows down under
+  // the parallel load this suite runs in — w2-execution.pg.test.ts measured the
+  // same thing and raised its own teardown budget for it. All twenty w3 suites
+  // shared this 30s, so whichever one lost the race reported `Hook timed out in
+  // 30000ms` and the identity of the loser rotated between runs. A larger budget
+  // costs nothing when teardown is fast.
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+  }, 120_000);
 
   it('records the fixture route and the thread it actually built', async () => {
     // NON-VACUOUSNESS. Every branch below reads a thread; if the fixture never

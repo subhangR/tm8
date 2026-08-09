@@ -251,7 +251,7 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(128); // 126 -> 128 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
+    expect(health.operations).toBe(129); // 127 -> 129 (2026-08-09): projects.contention + entities.commands.gate.
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

@@ -76,7 +76,7 @@ export class ContentionService {
     if (exists.length === 0) throw new CollabError('not_found', `no such project: ${projectId}`);
 
     // The lane's session is the newest `in_worktree` edge pointing at it —
-    // 078's link_session_worktree writes session -> worktree.
+    // 081's link_session_worktree writes session -> worktree.
     const rows = await this.deps.db.query<WorktreeRow>(
       claims,
       `select w.entity_id, w.path, w.branch, w.base_commit_oid,

@@ -155,7 +155,7 @@ describe('what this node is, measured rather than assumed', () => {
       `[g06] ${server.baseUrl} operations=${h.operations} registered=${h.implemented} ` +
         `bind-start ${server.bindStart.files}/${server.bindStart.digest}`,
     );
-    expect(h.operations).toBe(128); // 126 -> 128 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
+    expect(h.operations).toBe(129); // 127 -> 129 (2026-08-09): projects.contention + entities.commands.gate.
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

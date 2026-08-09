@@ -841,6 +841,18 @@ const ROWS: Record<OperationName, Row> = {
     input: 'none',
     tags: ['worktree', 'conflict', 'overlap', 'git'],
   },
+  'projects.branches.list': {
+    cmd: ['project', 'branches'],
+    syn: 'tm8 project branches <project-resource-id> [--stale-after-days <days>] [--limit <count>]',
+    sum: 'List local branches in a project working directory with ahead/behind and stale',
+    authz: 'project',
+    input: 'none',
+    tags: ['git', 'branch', 'repo', 'workdir', 'stale', 'ahead', 'behind'],
+    notes: [
+      'a READ — git is invoked argv-only and nothing is checked out, fetched or written',
+      'ahead/behind are measured against the default branch, whose SOURCE travels with the answer: main is a convention, not a rule',
+    ],
+  },
   'projects.update': {
     cmd: ['project', 'update'],
     syn: 'tm8 project update <project-resource-id> [--name <name>] [--working-dir <absolute-path>] [--trust trusted|untrusted] [--yes] [--mutation-id <id>]',
@@ -1132,6 +1144,21 @@ const ROWS: Record<OperationName, Row> = {
       'environment variable NAMES are recorded; VALUES are structurally absent and cannot be recovered here',
       'a session launched before prompt capture answers `prompts.unavailableReason: not_recorded` rather than an empty prompt',
       'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
+    ],
+  },
+  'execution.transcript': {
+    cmd: ['session', 'transcript'],
+    syn: 'tm8 session transcript <work-session-id> [--last <count>]',
+    sum: "Read what a session's agent SAID: the newest turns of its own native transcript, plus tool and token totals",
+    authz: 'entity',
+    input: 'none',
+    tags: ['transcript', 'history', 'output', 'agent', 'debug', 'stuck', 'tokens'],
+    notes: [
+      'these are the agent’s OWN turns, read from the transcript the agent itself writes — not the terminal, whose bytes are ANSI repaints, and not the CLI journal, which holds no model output at all',
+      'the tail of the transcript is read, so `stats` describes the RETURNED WINDOW and not the session’s lifetime; `stats.partial` says which one you are looking at',
+      'tool ARGUMENTS and tool OUTPUT are never returned — only that a tool was called and its name — because tool bodies are where file contents and secrets travel',
+      'a session whose agent has not written a transcript yet answers `available: false` with a reason, never an empty conversation',
+      '`stuck` is a HEURISTIC over tool calls without prose, not a liveness signal; `session liveness` is the authority on whether anything is running',
     ],
   },
   'execution.liveness': {
@@ -1572,7 +1599,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:122353f9e53c3f22e05c4c0666e07c5df13d309190ef0131f0f89a054a167abb';
+  'sha256:9e8b10c9ab00863ae61643747f91d491cff84fa1cfb76e454407e1a775d32c65';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -1762,6 +1789,60 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 worktree status <worktree-id>'],
   }],
+  // The Tier 2 mutating git verbs are ALIASES for the same reason `worktree
+  // list|status` are: every graph touch is an operation that already exists
+  // (entities.get + edges.list resolve, messages.post writes the receipt,
+  // attentionRequests.create raises a conflict), and the git mutation itself
+  // is local argv-only execution, which the catalog does not model. A
+  // `worktrees.checkpoint` row would have opened the catalog for a command
+  // whose graph writes are all existing doors.
+  ['session checkpoint', {
+    path: ['session', 'checkpoint'],
+    syntax: 'tm8 session checkpoint <session-id|worktree-id> [--message <text>] [--mutation-id <id>]',
+    summary: "Commit the session worktree's entire WIP to its branch and return the checkpoint ref",
+    notes: [
+      'a clean tree is a success that creates nothing — the ref is HEAD itself',
+      'writes a durable receipt on the session anchor via messages.post; git runs argv-only on this host at the graph-recorded path',
+    ],
+    examples: ['tm8 session checkpoint <session-id>'],
+  }],
+  ['session rollback', {
+    path: ['session', 'rollback'],
+    syntax: 'tm8 session rollback <session-id|worktree-id> --to <checkpoint-ref> [--force] [--mutation-id <id>]',
+    summary: 'Restore the session worktree to a checkpoint; untracked files refuse without --force',
+    notes: [
+      'tracked WIP is what a rollback discards; rolled-over commits stay reflog-reachable, so a rollback is reversible',
+      'untracked files may exist in NO commit — deleting them is the one unrecoverable act, hence the --force gate',
+    ],
+    examples: ['tm8 session rollback <session-id> --to <oid>'],
+  }],
+  ['worktree stage', {
+    path: ['worktree', 'stage'],
+    syntax: 'tm8 worktree stage <session-id|worktree-id> [<pathspec>...]',
+    summary: 'List changed files (no pathspecs), or stage the named pathspecs ("." for all)',
+    notes: [
+      'with no pathspecs it lists and stages NOTHING — the read-first half of the commit rail',
+      'pathspecs ride behind a literal `--`; options, absolute paths and ".." traversal are refused locally',
+    ],
+    examples: ['tm8 worktree stage <session-id>', 'tm8 worktree stage <session-id> src/a.ts'],
+  }],
+  ['worktree commit', {
+    path: ['worktree', 'commit'],
+    syntax: 'tm8 worktree commit <session-id|worktree-id> --message <text> [--mutation-id <id>]',
+    summary: 'Commit exactly what is staged in the session worktree, with a durable receipt',
+    notes: ['an empty index is a refusal, never an empty commit'],
+    examples: ["tm8 worktree commit <session-id> --message 'feat: …'"],
+  }],
+  ['worktree merge', {
+    path: ['worktree', 'merge'],
+    syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
+    summary: 'Merge a ref into the session branch; a conflict aborts cleanly and is surfaced durably',
+    notes: [
+      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionRequests.create — never silent, never mid-merge',
+      'merging the session branch INTO base is refused by design: base is checked out in the user’s tree or nowhere',
+    ],
+    examples: ['tm8 worktree merge <session-id> --from main'],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -1769,6 +1850,14 @@ COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIn
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');
+// Tier 2 git verbs: availability = the weakest of the operations each one
+// actually invokes on the wire (resolution reads + the durable writes).
+COMMAND_OPS.set('session checkpoint', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
+COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that

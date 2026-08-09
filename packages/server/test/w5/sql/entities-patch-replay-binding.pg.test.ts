@@ -83,6 +83,18 @@ const PATCH_DOORS = [
   // and 057 (worktrees) added `update_memory` and `update_worktree`, both
   // carrying 038's replay binding from birth — the detector fired, and the
   // list moved to the new exact literals (never to a pattern).
+  //
+  // 2026-08-09: fourteen. Migration 085 added `rename_work_session`, the first
+  // door onto a kind the generic patch handler still refuses for every other
+  // verb — a session's TITLE is a human label, so a rename is not lifecycle.
+  // BEFORE (13): update_channel, update_collection, update_commit_entity,
+  //   update_custom_entity, update_document, update_file_entity, update_memory,
+  //   update_pull_request_entity, update_skill_entity, update_spell_entity,
+  //   update_task_content, update_team_member, update_worktree.
+  // AFTER (14): the same thirteen, plus `rename_work_session`.
+  // The detector fired on the independent catalog enumeration, exactly as this
+  // file's header says a twelfth door should be noticed.
+  'rename_work_session',
   'update_channel',
   'update_collection',
   'update_commit_entity',
@@ -136,9 +148,9 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
     await database?.destroy();
   }, 120_000);
 
-  it('the frozen list is exactly thirteen and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(13);
-    expect(new Set(PATCH_DOORS).size).toBe(13);
+  it('the frozen list is exactly fourteen and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(14);
+    expect(new Set(PATCH_DOORS).size).toBe(14);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }

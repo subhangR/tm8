@@ -165,6 +165,12 @@ export function GraphScreen(props: GraphScreenProps) {
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       messages={messages}
+      // The executor the other three panel hosts pass. Without it every
+      // title-editable kind selected here dresses its title as locked and
+      // mounts a permanently-disabled Save — a refusal about THIS MOUNT, not
+      // about the entity, in front of a user who can edit the same thing one
+      // screen over.
+      commands={data.seam?.commands}
       onPostMessage={(body) => data.postMessage({
         clientMutationId: `graph-post:${selectedId}:${Date.now()}`,
         anchorIds: [selectedId],

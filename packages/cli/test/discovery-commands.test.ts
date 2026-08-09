@@ -108,20 +108,26 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 127 command paths; the registry is an honest subset of them', () => {
+  it('the projection holds 134 command paths; the registry is an honest subset of them', () => {
     // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
+    // 127 -> 128 (2026-08-07): execution.transcript (public, with a command).
     // = 116 rows that have one; `files.uploadInit` + `files.uploadComplete` share
     // `file upload` and `artifacts.create` + `artifacts.publish` share
     // `artifact publish` ⇒ 113 DISTINCT paths.
-    // 123 -> 125 (worktrees): `worktree list` and `worktree status` are ALIASES
+    // 124 -> 126 (worktrees): `worktree list` and `worktree status` are ALIASES
     // over collections.query and entities.get. The count of command PATHS grows
     // and the CATALOG does not — which is the distinction this pin exists to
     // keep visible, and the reason the worktree read surface was written as
     // sugar rather than as two new operations.
-    // 125 -> 127 (2026-08-09): project contention + task gate (Tier 4 git x graph).
-    expect(COMMAND_PATHS).toHaveLength(127);
+    // 126 -> 127: projects.branches.list adds `project branches`.
+    // 127 -> 132 (2026-08-09): Tier 2 git verbs as ALIASES over existing
+    // operations (session checkpoint|rollback, worktree stage|commit|merge) —
+    // five command paths, ZERO new catalog rows. Value MEASURED on the merged
+    // tree per the merge-train pin rule, not computed.
+    // 132 -> 134 (2026-08-09): project contention + task gate (Tier 4 git x graph).
+    expect(COMMAND_PATHS).toHaveLength(134);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

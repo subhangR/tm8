@@ -61,6 +61,21 @@ import { createPtyWsServer, isPtyUpgrade, type PtyAttachAuthorizer } from './pty
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
   /**
+   * Start the R26 scheduler and its periodic jobs.
+   *
+   * DEFAULT FALSE, and that default is the point. `bootstrap()` is called by
+   * every production-parity test harness in the suite, each of which creates a
+   * server against a scratch database and then drops it. A scheduler started
+   * there is never stopped by anyone — it keeps polling a database that no
+   * longer exists, for the lifetime of the test PROCESS, interfering with every
+   * later test in the same worker. (Measured: four `w3/agentic` files started
+   * failing when the observer was started unconditionally.)
+   *
+   * Background work belongs to a process that owns its own lifetime and can
+   * shut it down. That is `main()`, which passes true and stops it on signal.
+   */
+  readonly startBackgroundJobs?: boolean;
+  /**
    * Handlers to mount. Empty by default — see facade/registry.ts for why an
    * empty registry is the current acceptance criterion rather than a gap.
    */
@@ -69,6 +84,12 @@ export interface BootstrapOptions {
 
 export interface BootstrappedServer {
   readonly server: FacadeServer;
+  /**
+   * Present only when `startBackgroundJobs` was set. Whoever asked for it owns
+   * stopping it — a started scheduler with no owner is the defect the option's
+   * own docblock describes.
+   */
+  readonly scheduler?: Scheduler | undefined;
   readonly subscriptions: SubscriptionRegistry;
   readonly events: WorkspaceEventPublisher;
   readonly url: string;
@@ -585,8 +606,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * The scheduler's timers are `unref`'d, so it cannot by itself keep the
    * process alive and shutdown needs no new coordination.
    */
-  if (db && owner) {
-    const scheduler = new Scheduler();
+  let scheduler: Scheduler | undefined;
+  if (db && owner && opts.startBackgroundJobs === true) {
+    scheduler = new Scheduler();
     scheduler.register(
       createTrackingObserverJob({
         db,
@@ -651,12 +673,16 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler };
 }
 
 export async function main(): Promise<void> {
   try {
-    const { server, url, db, delivery, preview } = await bootstrap();
+    // TRUE only here: this is the one caller that owns the process lifetime and
+    // can therefore stop what it starts (see BootstrapOptions.startBackgroundJobs).
+    const { server, url, db, delivery, preview, scheduler } = await bootstrap({
+      startBackgroundJobs: true,
+    });
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
     console.log(
@@ -675,8 +701,9 @@ export async function main(): Promise<void> {
     // as a hang rather than as the clean exit it nearly was.
     const shutdown = (signal: string): void => {
       console.log(`\n${signal} — shutting down`);
-      void server
-        .close()
+      void Promise.resolve(scheduler?.stop(2_000))
+        .catch(() => undefined)
+        .then(() => server.close())
         .then(() => preview?.close())
         .then(() => delivery?.close())
         .then(() => db?.end())

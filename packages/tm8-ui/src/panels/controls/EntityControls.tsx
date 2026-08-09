@@ -667,6 +667,7 @@ export function RowAction({
   openFlow,
   onFlow,
   onRun,
+  onOpenLaunch,
   variant = 'icon',
   glyph,
 }: {
@@ -681,6 +682,14 @@ export function RowAction({
    * disabled → enabled) for every row verb rather than a second copy beside it.
    */
   onRun?: (ref: ActionRef, entityId: string) => void;
+  /**
+   * Opens the FULL launch sheet for a `flow: 'launch'` verb. When wired, Run
+   * goes STRAIGHT to the sheet — no inline expand in between (user ruling:
+   * the two-step tile expand made the important configuration a second click
+   * away). The inline quick config remains the fallback for hosts that mount
+   * no sheet (kind screens), so Run never silently does nothing.
+   */
+  onOpenLaunch?: (entityId: string) => void;
   /**
    * `wide` carries the LABEL beside the glyph. The hover-revealed row cluster
    * is a fixed-width icon strip; inside an expanded detail strip there is room
@@ -713,8 +722,13 @@ export function RowAction({
    * enabled-inert without `onAction`: clicking genuinely does something, and
    * the config states for itself whether it can commit. Asking the resolved
    * def for `flow` keeps this free of both kind and action-id literals.
+   *
+   * The sheet OUTRANKS the inline expand: where the host mounted the full
+   * launch sheet, one click on Run opens it directly and the tile never
+   * expands. The inline quick config only serves hosts without a sheet.
    */
-  const opensFlow = def.flow === 'launch' && onFlow != null;
+  const opensSheet = def.flow === 'launch' && onOpenLaunch != null;
+  const opensFlow = def.flow === 'launch' && !opensSheet && onFlow != null;
 
   /**
    * A `wide` control refuses in the WIDE vocabulary too.
@@ -740,7 +754,7 @@ export function RowAction({
     );
 
   const run = onRun ?? props.onAction;
-  if (!run && !opensFlow) {
+  if (!run && !opensFlow && !opensSheet) {
     return refuse(NOT_WIRED_REASON);
   }
 
@@ -776,6 +790,10 @@ export function RowAction({
       aria-expanded={opensFlow ? expanded : undefined}
       onClick={(e) => {
         e.stopPropagation();
+        if (opensSheet) {
+          onOpenLaunch?.(row.id);
+          return;
+        }
         if (opensFlow) {
           onFlow?.(expanded ? null : ref_);
           return;

@@ -1488,6 +1488,50 @@ export interface ProjectCreateInput extends CommandContext {
   ensureWorkingDir?: boolean;
 }
 
+/** One local branch in a project's working directory. */
+export interface ProjectBranch {
+  name: string;
+  /** Tip commit oid. */
+  head: string;
+  /** Tip commit date, ISO-8601. */
+  lastCommitAt: string;
+  subject: string;
+  /** Configured upstream (`origin/feat/x`), or null when there is none. */
+  upstream: string | null;
+  /** Commits on this branch that the default branch does not have. */
+  ahead: number;
+  /** Commits on the default branch that this branch does not have. */
+  behind: number;
+  isDefault: boolean;
+  /** Checked out in the project's working directory right now. */
+  isCurrent: boolean;
+  /** `ahead === 0` — the default branch already contains all of it. */
+  merged: boolean;
+  /** No commit newer than `staleAfterDays`. */
+  stale: boolean;
+}
+
+/**
+ * GET /v2/projects/:projectId/branches — branch topology for a project's
+ * working directory, read with argv-only git. A READ: nothing here checks
+ * anything out or writes a ref.
+ *
+ * `defaultBranchSource` ships WITH `defaultBranch` because `main` is a
+ * convention, not a rule. A consumer rendering "12 behind main" needs to know
+ * whether the trunk came from the remote's own HEAD or was guessed from
+ * whatever happened to be checked out.
+ */
+export interface ProjectBranchTopology {
+  projectId: ProjectId;
+  workingDir: string;
+  defaultBranch: string;
+  defaultBranchSource: 'origin_head' | 'local_conventional' | 'current_branch';
+  branches: ProjectBranch[];
+  /** True when the branch cap cut the list short — the read is bounded. */
+  truncated: boolean;
+  staleAfterDays: number;
+}
+
 /** One selectable child in the node-local project directory browser. */
 export interface ProjectDirectoryEntry {
   name: string;
@@ -1890,6 +1934,133 @@ export interface SessionLaunchRecord {
   };
   /** When the manifest row was written — i.e. when the session was launched. */
   recordedAt: string | null;
+}
+
+/**
+ * ONE turn of an agent's conversation, read back out of the agent CLI's OWN
+ * transcript and normalised across tools.
+ *
+ * WHY THIS IS NOT THE PTY. The terminal ring (`OutputBuffer`) holds ANSI frames
+ * — repaints, cursor moves, spinners — capped at 1 MiB and discarded when the
+ * process exits or the node restarts. It answers "what does the screen look
+ * like". This answers "what did the agent SAY", survives exit, and is written
+ * by the agent itself at no cost to us. A coordinator needs the second one.
+ *
+ * `source` is deliberately only user/assistant. Tool CALLS are counted (see
+ * `SessionTranscriptStats.toolCalls`) but their arguments and output are NOT
+ * carried: they are the bulk of a transcript by volume, they are the most
+ * likely place for a secret to sit, and a coordinator reads this to decide
+ * whether a worker is on track — a job the prose answers and the tool spam
+ * does not.
+ */
+export interface SessionTranscriptEntry {
+  /** ISO 8601. Null when the underlying record carried no timestamp. */
+  at: string | null;
+  source: 'user' | 'assistant';
+  text: string;
+  /** True when `text` was cut to the caller's `maxChars` budget. */
+  truncated: boolean;
+}
+
+/**
+ * Aggregates over the WINDOW THAT WAS READ, never over the whole conversation.
+ *
+ * The reader deliberately tails a bounded slice of a file that can reach tens
+ * of megabytes, so these are honest counts of what was parsed and NOT the
+ * session's lifetime totals. `partial` says which of the two you are holding.
+ * Presenting a tail's token count as a session's spend is the exact dishonesty
+ * this field exists to prevent.
+ */
+export interface SessionTranscriptStats {
+  /** False only when the whole file fit inside the read budget. */
+  partial: boolean;
+  /**
+   * SPEECH turns in the parsed window, counted on the same rule in both
+   * dialects: exactly the `entries` this window produced, before the caller's
+   * `last` slice. So `userMessages + assistantMessages` is the number of turns
+   * the window held, and never disagrees with the list rendered beside it.
+   *
+   * NOT a count of native records. A claude tool result is a `type:'user'`
+   * record and a claude tool call is a `type:'assistant'` record with no text
+   * block; counting records reported 32/52 for a window holding 2 human turns
+   * and 12 prose replies, and meant something different again on the codex
+   * side, where tool traffic is `function_call` rather than a message.
+   */
+  userMessages: number;
+  assistantMessages: number;
+  /** Tool invocations in the window. These are NOT turns — see above. */
+  toolCalls: number;
+  /**
+   * Provider-reported usage summed over the parsed window, when the transcript
+   * carries it. Claude records it per assistant turn; Codex reports it as a
+   * running total, so these can be null for a tool that does not say.
+   */
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  /** Descending by count. Names as the agent wrote them. */
+  tools: { name: string; count: number }[];
+  /** Distinct model ids seen, in first-seen order. */
+  models: string[];
+}
+
+/**
+ * The "is this worker stuck" signal, ported from maestro's LogDigestService
+ * because it is the single thing that made an unattended fleet supervisable.
+ *
+ * A working agent alternates prose and tool calls. An agent that has made many
+ * tool calls and said NOTHING for a long time is usually looping — retrying a
+ * failing command, or grinding a search that will not converge. Neither the PTY
+ * (still emitting bytes) nor the process table (still alive) can see it.
+ *
+ * This is a HEURISTIC and is reported as evidence, not as a verdict: the two
+ * raw numbers travel with it so a reader can disagree.
+ */
+export interface SessionTranscriptStuck {
+  /** Since the last assistant prose, not since the last byte of any kind. */
+  silentMs: number;
+  toolCallsSinceText: number;
+}
+
+/**
+ * A bounded window over one session's agent transcript.
+ *
+ * Same honesty contract as `SessionJournalPage`: a session with no readable
+ * transcript is a REAL and common state (it predates this feature, it ran a
+ * tool with no transcript format, or it died before its first turn) and must
+ * render as an explained empty rather than as a zero.
+ */
+export interface SessionTranscriptPage {
+  sessionId: EntityId;
+  available: boolean;
+  /**
+   * Present only when `available` is false.
+   * - `no_native_session_id` — the session predates native-id capture, so its
+   *   transcript cannot be identified. Unrecoverable, not an error.
+   * - `unsupported_agent_tool` — the tool has no transcript format tm8 reads
+   *   (an operator `TM8_AGENT_CMD` wrapper, echo-agent).
+   * - `no_transcript_file` — the id is known but no file exists: the agent
+   *   never wrote a turn, or its transcript has been cleaned up.
+   * - `unreadable` — the file exists and could not be read (permissions, I/O).
+   */
+  unavailableReason:
+    | 'no_native_session_id'
+    | 'unsupported_agent_tool'
+    | 'no_transcript_file'
+    | 'unreadable'
+    | null;
+  /** Which transcript dialect was parsed. Null when unavailable. */
+  agentTool: 'claude-code' | 'codex' | null;
+  /** Oldest-first. The NEWEST `last` entries, so a tail reads in order. */
+  entries: SessionTranscriptEntry[];
+  stats: SessionTranscriptStats | null;
+  /** Null when the heuristic does not fire — never a zeroed object. */
+  stuck: SessionTranscriptStuck | null;
+  /** Newest turn of any kind, including ones not carried in `entries`. */
+  lastActivityAt: string | null;
+  /** Lines the reader could not parse — surfaced, never silently dropped. */
+  malformed: number;
 }
 
 // --- files.* blob lifecycle (AM-2 §2, 03 §6) --------------------------------

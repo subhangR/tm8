@@ -14,6 +14,7 @@ export {
   isAdvertised,
   isBrowserReserved,
   isTerminalBlurChord,
+  isTerminalPasteChord,
 } from './contract';
 
 export type { Binding, KeyCommand, KeyInput, KeyLayer, KeyMatcher, Platform } from './contract';

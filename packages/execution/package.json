@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./worktree": {
+      "types": "./dist/worktree/index.d.ts",
+      "default": "./dist/worktree/index.js"
     }
   },
   "scripts": {

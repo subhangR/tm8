@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EntityDetailSchema,
   EntitySummarySchema,
+  ProjectBranchTopologySchema,
   GraphResultSchema,
   HandoffViewSchema,
   WORKSPACE_EVENT_SCHEMA_VERSION,
@@ -169,6 +170,38 @@ describe('fixture seam — reads', () => {
     for (const p of [seam.entity('nope'), seam.children('nope'), seam.messages('nope')]) {
       await expect(p).rejects.toSatisfy((e: unknown) => isCollabError(e) && e.code === 'not_found');
     }
+  });
+});
+
+describe('fixture seam — projectBranches (seam Amendment 6)', () => {
+  it('answers schema-valid topology for the fixture project and not_found for others', async () => {
+    const seam = await openSeam();
+
+    const topology = await seam.projectBranches('proj-tm8ui');
+    expect(ProjectBranchTopologySchema.safeParse(topology).success).toBe(true);
+    expect(topology.defaultBranch).toBe('main');
+    expect(topology.branches.some((b) => b.isCurrent)).toBe(true);
+
+    await expect(seam.projectBranches('proj-nope')).rejects.toSatisfy(
+      (e: unknown) => isCollabError(e) && e.code === 'not_found',
+    );
+  });
+
+  it('honours limit (truncated flips) and staleAfterDays (stale re-derived from fixed dates)', async () => {
+    const seam = await openSeam();
+
+    const capped = await seam.projectBranches('proj-tm8ui', { limit: 2 });
+    expect(capped.branches).toHaveLength(2);
+    expect(capped.truncated).toBe(true);
+
+    // At the default 30 days exactly one fixture branch is stale; at a huge
+    // threshold none are. The option changes the ANSWER, not just the echo.
+    const relaxed = await seam.projectBranches('proj-tm8ui', { staleAfterDays: 3650 });
+    expect(relaxed.staleAfterDays).toBe(3650);
+    expect(relaxed.branches.every((b) => !b.stale)).toBe(true);
+
+    const strict = await seam.projectBranches('proj-tm8ui', { staleAfterDays: 1 });
+    expect(strict.branches.filter((b) => b.stale).length).toBeGreaterThan(1);
   });
 });
 

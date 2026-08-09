@@ -125,12 +125,19 @@ function row(overrides: Partial<EntityRow>): EntityRow {
 
 const assembly: AssemblyContext = {
   actors: new Map([[MEMBER, member]]),
+  // Every field of EntityRelations, empty. badgesOf reads these maps directly
+  // (`ctx.relations.completedBy.get(...)`, not `?.get`), so a field omitted here
+  // is a TypeError at read time rather than a missing badge — which is exactly
+  // how `completedBy` and `attention` took this fixture down when they landed.
+  // Test files are outside the scoped `tsc -b`, so nothing catches it earlier.
   relations: {
+    attention: new Map(),
     assignees: new Map(),
     childCounts: new Map(),
     blockedBy: new Map(),
     pulls: new Map(),
     workingOn: new Map(),
+    completedBy: new Map(),
     itemCounts: new Map(),
     marks: new Map(),
   },

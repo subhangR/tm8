@@ -1,7 +1,7 @@
 /**
  * The commit recorder — session → commit provenance, observed locally.
  *
- * The 078 observer answers "what does GitHub say about artifacts someone
+ * The 081 observer answers "what does GitHub say about artifacts someone
  * already linked". This job answers the question nobody was answering: WHICH
  * SESSION PRODUCED WHICH COMMIT, before anything is pushed or linked. It
  * walks every ACTIVE worktree that has a session (`in_worktree` edge), lists

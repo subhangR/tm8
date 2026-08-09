@@ -68,6 +68,20 @@ describe('ops: launch resources', () => {
     expect(f.last().url).toBe('/v2/spaces/space-1/settings');
   });
 
+  it('loads branch topology through the catalog operation, params bound and opts as query', async () => {
+    const topology = { projectId: 'project-1', branches: [] };
+    const { ops, f } = harness(topology);
+
+    // No opts: the query string is ABSENT, not `?staleAfterDays=undefined` —
+    // several server query parsers 400 on garbage keys.
+    await expect(ops.projectBranches('project-1')).resolves.toEqual(topology);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/projects/project-1/branches');
+
+    await ops.projectBranches('project-1', { staleAfterDays: 14, limit: 50 });
+    expect(f.last().url).toBe('/v2/projects/project-1/branches?staleAfterDays=14&limit=50');
+  });
+
   it('uses catalog bindings for node-local onboarding reads and commands', async () => {
     const listing = {
       roots: ['/srv/projects'],

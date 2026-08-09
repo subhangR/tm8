@@ -58,5 +58,22 @@ export type {
 
 export * from './spawn/index.js';
 export * from './worktree/index.js';
+export {
+  readBranchTopology,
+  type BranchTopology,
+  type BranchTopologyEntry,
+  type BranchTopologyOptions,
+} from './git/branch-topology.js';
+
+// Agent transcript digest — reads the agent's OWN native JSONL (claude
+// ~/.claude/projects, codex ~/.codex/sessions) and normalizes both dialects to
+// one shape. This is the "what the agent SAID" surface; it is deliberately NOT
+// the PTY ring (ANSI repaints a coordinator cannot read) and NOT the CLI
+// journal (which holds no model output at all).
+export {
+  encodeClaudeProjectDir,
+  readSessionTranscript,
+  type ReadTranscriptOptions,
+} from './transcript/read-transcript.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';

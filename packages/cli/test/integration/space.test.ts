@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(128); // 126 -> 128 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
+    expect(health.operations).toBe(129); // 127 -> 129 (2026-08-09): projects.contention + entities.commands.gate.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

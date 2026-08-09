@@ -75,11 +75,13 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectBranchTopology,
   type ProjectResource,
   type ReactionInput,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionJournalRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -98,6 +100,7 @@ import type {
   Unsubscribe,
 } from '../seam';
 import {
+  FIXTURE_BRANCH_TOPOLOGY,
   FIXTURE_NOW,
   FIXTURE_SPACE_ID,
   ada,
@@ -951,6 +954,29 @@ export function createFixtureSeam(): FixtureSeam {
     async projects(): Promise<ProjectResource[]> {
       return clone([...FIXTURE_PROJECTS]);
     },
+    /**
+     * Amendment 6. `opts` are honoured HERE too, not only on the wire — a
+     * fixture that ignored `limit` would let a caller's bound go unexercised
+     * and still pass. `staleAfterDays` re-derives `stale` from the fixed
+     * fixture dates (never Date.now()), so a caller's threshold visibly
+     * changes the answer the way the server's would.
+     */
+    async projectBranches(projectId, opts): Promise<ProjectBranchTopology> {
+      if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
+        throw new CollabError('not_found', `project ${projectId} not found`);
+      }
+      const t = clone(FIXTURE_BRANCH_TOPOLOGY);
+      if (opts?.staleAfterDays !== undefined) {
+        t.staleAfterDays = opts.staleAfterDays;
+        const cutoff = FIXTURE_BASE_MS - opts.staleAfterDays * 86_400_000;
+        for (const b of t.branches) b.stale = Date.parse(b.lastCommitAt) < cutoff;
+      }
+      if (opts?.limit !== undefined && opts.limit < t.branches.length) {
+        t.branches = t.branches.slice(0, opts.limit);
+        t.truncated = true;
+      }
+      return t;
+    },
     async entity(id) {
       return clone(detailOf(id));
     },
@@ -1065,6 +1091,81 @@ export function createFixtureSeam(): FixtureSeam {
         });
       }
       return clone(fixtureLaunchRecord(workSessionId));
+    },
+    async transcript(workSessionId, opts): Promise<SessionTranscriptPage> {
+      requireSummary(workSessionId);
+      // Third face of the DEBUG surface, and the same honesty contract as the
+      // two above: only the live PTY (C-5) has an agent that has written a
+      // native transcript, so every other session renders the explained empty.
+      // `stats: null` rather than a zeroed object — there are no statistics
+      // about a file that was never found, and zeros read as "did nothing".
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_transcript_file',
+          agentTool: null,
+          entries: [],
+          stats: null,
+          stuck: null,
+          lastActivityAt: null,
+          malformed: 0,
+        });
+      }
+      // Oldest-first, as the contract requires of a tail, and short enough that
+      // the default window (20) never trims it — a fixture that silently paged
+      // would hide the renderer's ordering bug rather than expose it.
+      const entries = [
+        {
+          at: '2026-01-04T09:15:02.000Z',
+          source: 'user' as const,
+          text: 'Take the failing spawn test and find why the PTY never emits.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:15:44.000Z',
+          source: 'assistant' as const,
+          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:18:10.000Z',
+          source: 'assistant' as const,
+          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
+          truncated: false,
+        },
+      ];
+      const last = opts?.last ?? 20;
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        agentTool: 'claude-code',
+        entries: entries.slice(-last),
+        stats: {
+          // True on purpose: the reader tails a bounded slice, so the honest
+          // default state of this surface is "you are looking at a window".
+          partial: true,
+          userMessages: 1,
+          assistantMessages: 2,
+          toolCalls: 6,
+          inputTokens: 4820,
+          outputTokens: 640,
+          cacheReadTokens: 18200,
+          cacheCreationTokens: 1100,
+          tools: [
+            { name: 'Read', count: 3 },
+            { name: 'Grep', count: 2 },
+            { name: 'Bash', count: 1 },
+          ],
+          models: ['claude-opus-4-6'],
+        },
+        // Null, not a zeroed object: the heuristic does not fire on this
+        // session, and a `{ silentMs: 0 }` would render as a stuck badge.
+        stuck: null,
+        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        malformed: 0,
+      });
     },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.
@@ -1326,6 +1427,28 @@ export function createFixtureSeam(): FixtureSeam {
       },
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);
+        // A work session is a title-ONLY door here, mirroring what the node
+        // does (085 / rename_work_session): every other member belongs to the
+        // execution block, so accepting one would let a fixture-backed screen
+        // pass where the real node refuses.
+        if (s.state.kind === 'work_session') {
+          const envelope = new Set(['expectedVersion', 'actorId', 'clientMutationId', 'title']);
+          const rejected = Object.entries(input)
+            .filter(([member, value]) => !envelope.has(member) && value !== undefined)
+            .map(([member]) => member);
+          if (rejected.length > 0) {
+            throw new CollabError('invalid_input',
+              `work_session patch accepts title only, not: ${rejected.join(', ')}`);
+          }
+          if (input.title === undefined) {
+            throw new CollabError('invalid_input', 'work_session patch requires title');
+          }
+          requireVersion(s, input.expectedVersion);
+          s.title = input.title;
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+          return commandResult(s);
+        }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
         if (input.title !== undefined) s.title = input.title;

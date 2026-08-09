@@ -240,11 +240,12 @@ const ONBOARDING_NET_NEW_OPERATIONS = [
 
 /**
  * Tier 4 git x graph (2026-08-09): the opt-in completion gate joined the G02
- * entities seam; the contention read registered as its own seam. Net-new.
+ * entities seam; contention and branch topology are project reads. Net-new.
  */
-const GIT_GRAPH_NET_NEW_OPERATIONS = [
+const GIT_NET_NEW_OPERATIONS = [
   'entities.commands.gate',
   'projects.contention',
+  'projects.branches.list',
 ] as const;
 
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
@@ -253,7 +254,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...CONSOLIDATION_NET_NEW_OPERATIONS,
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...ONBOARDING_NET_NEW_OPERATIONS,
-  ...GIT_GRAPH_NET_NEW_OPERATIONS,
+  ...GIT_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -375,8 +376,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 107 -> 108 on 2026-08-01: `spaces.counts` joined the facade tranche.
     // 108 -> 109: `identity.profile.update` (Identity v2 Stage 0).
     // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
-    // 114 -> 116 (2026-08-09): entities.commands.gate + projects.contention (Tier 4 git x graph).
-    expect(registry.size).toBe(116);
+    // 114 -> 115 (2026-08-09): projects.branches.list.
+    // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
+    expect(registry.size).toBe(117);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -384,7 +386,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
         + ONBOARDING_NET_NEW_OPERATIONS.length
-        + GIT_GRAPH_NET_NEW_OPERATIONS.length,
+        + GIT_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -670,11 +672,15 @@ describe.sequential('W2.I02 real production public surface', () => {
     // a red pin) and `identity.profile.update` (which reconciled it).
     // 120/118 -> 126/122 (2026-08-02): the four auth.* rows, all implemented.
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 128, implemented: 126 });
+    // 127/124 -> 128/125 (2026-08-07): `execution.transcript`, mounted.
+    // 128/125 -> 129/126 (2026-08-09): `projects.branches.list`, mounted.
+    // 129/126 -> 131/128: entities.commands.gate + projects.contention.
+    expect(health).toMatchObject({ ok: true, operations: 130, implemented: 128 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
-    // 122 -> 124 (2026-08-02): `execution.launch`.
-    // 124 -> 126 (2026-08-09): entities.commands.gate + projects.contention (Tier 4 git x graph).
-    expect(harness.production.server.registry.size).toBe(126);
+    // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
+    // 125 -> 126 (2026-08-09): `projects.branches.list`.
+    // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
+    expect(harness.production.server.registry.size).toBe(128);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -688,9 +694,10 @@ describe.sequential('W2.I02 real production public surface', () => {
     expect(residual).toEqual([]);
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
-    // 122 -> 124 (2026-08-02): `execution.launch`.
-    // 124 -> 126 (2026-08-09): entities.commands.gate + projects.contention (Tier 4 git x graph).
-    expect(registered.size + residual.length).toBe(126);
+    // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
+    // 125 -> 126 (2026-08-09): `projects.branches.list`.
+    // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
+    expect(registered.size + residual.length).toBe(128);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

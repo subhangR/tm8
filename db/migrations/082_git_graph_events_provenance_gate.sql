@@ -2,7 +2,7 @@
 -- 082 — Git facts become first-class graph citizens (Tier 4 git×graph).
 --
 --   A. Git EVENTS on the durable ledger. The facts tables 001/057 created and
---      078's observer writes (`pull_requests`, `commits`, `worktrees`) are not
+--      081's observer writes (`pull_requests`, `commits`, `worktrees`) are not
 --      covered by 003's capture trigger — deliberately, because their raw rows
 --      are not contract event bodies. This section adds narrow capture
 --      triggers that author RPC-authored-passthrough payloads (mapper.ts
@@ -12,7 +12,7 @@
 --      it reacts to any other durable event.
 --
 --      Why triggers and not the writing RPCs: `pull_requests.state` is written
---      by `apply_pull_request_facts` (the 078 observer), but also by any
+--      by `apply_pull_request_facts` (the 081 observer), but also by any
 --      future writer. An event authored in the trigger fires for every door,
 --      known and future — the same argument 003 makes for its own coverage.
 --
@@ -69,7 +69,7 @@ for each row execute function internal.capture_git_commit();
 -- A2. git.pr_state_changed — the transition the whole tier exists for
 --     (open → merged is what acceptance gating and derived status feed on).
 --     Fires only when `state` actually changes, so the observer's "I looked
---     and learned nothing" refresh (078 §B2) emits nothing.
+--     and learned nothing" refresh (081 §B2) emits nothing.
 -- -----------------------------------------------------------------------------
 create or replace function internal.capture_git_pr_state() returns trigger
 language plpgsql set search_path = public, internal, pg_temp as $$
@@ -145,7 +145,7 @@ execute function internal.capture_git_worktree_status();
 -- (066's partial unique index on src). A commit observed twice — two ticks of
 -- a recorder, or a rebase re-listing it — converges: `on conflict do nothing`.
 --
--- UNLEDGERED, like 078's fact doors: observation churn is operational truth,
+-- UNLEDGERED, like 081's fact doors: observation churn is operational truth,
 -- not a semantic command.
 -- -----------------------------------------------------------------------------
 create or replace function public.record_session_commit(
@@ -227,7 +227,7 @@ alter table public.pull_requests
   add column if not exists ci_status text
     constraint pull_requests_ci_status_check check (ci_status in ('passing', 'failing', 'pending'));
 
--- 078 §B2 narrowed version-bumping to columns that carry meaning; ci_status
+-- 081 §B2 narrowed version-bumping to columns that carry meaning; ci_status
 -- now carries meaning, so it joins the list. Same name, same function —
 -- replacement by name, one column added to the when-clause.
 drop trigger if exists pull_requests_w2_snapshot_version on public.pull_requests;
@@ -242,7 +242,7 @@ for each row when (
 
 -- -----------------------------------------------------------------------------
 -- C2. apply_pull_request_facts learns to carry the CI fact. Dropped and
---     recreated because the argument list changes; the 078 observer's 4-value
+--     recreated because the argument list changes; the 081 observer's 4-value
 --     call binds to the defaulted 5th argument unchanged.
 -- -----------------------------------------------------------------------------
 drop function if exists public.apply_pull_request_facts(uuid, text, text, text);

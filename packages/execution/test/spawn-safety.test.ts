@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtyHostService } from '../src/pty/PtyHostService.js';
+import { ECHO_AGENT_CMD } from '../src/spawn/manifest.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
 import { SpawnError } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
@@ -36,7 +37,15 @@ describe('SpawnService spawn acknowledgement safety', () => {
       pty,
       baseUrl: 'http://127.0.0.1:4610',
       dataDir,
-      env: { PATH: process.env.PATH, HOME: process.env.HOME },
+      // `assertAgentRuntime` resolves the agent binary on PATH before anything
+      // this suite mocks gets a chance to run. Without an override that binary is
+      // the real `claude`, so on a machine that has not installed it every spawn
+      // died as `not_found` and the boot-settlement assertions below were never
+      // reached — the suite passed only on a developer laptop. ECHO_AGENT_CMD is
+      // the built-in smoke agent: it renders as `node <script>`, so the preflight
+      // resolves against the node already running the test, and the suite keeps
+      // its header promise that no child process is started.
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, TM8_AGENT_CMD: ECHO_AGENT_CMD },
       bootSettlementMs: 25,
     });
   });

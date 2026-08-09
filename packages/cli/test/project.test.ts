@@ -158,9 +158,10 @@ const RESOURCE = {
 };
 
 describe('the project module registers exactly its projected paths', () => {
-  it('claims the eight project rows and nothing else', () => {
+  it('claims the nine project rows and nothing else', () => {
     expect(PROJECT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
       'project association correct',
+      'project branches',
       'project contention',
       'project create',
       'project get',
@@ -350,6 +351,71 @@ describe('tm8 project create', () => {
     const r = await invoke(['project', 'create', 'tm8']);
     expect(r.code).toBe(2);
     expect(requests).toEqual([]);
+  });
+});
+
+describe('tm8 project branches', () => {
+  const TOPOLOGY = {
+    projectId: PROJECT,
+    workingDir: '/Users/agent/tm8',
+    defaultBranch: 'main',
+    defaultBranchSource: 'origin_head',
+    staleAfterDays: 30,
+    truncated: true,
+    branches: [
+      {
+        name: 'main', head: 'a'.repeat(40), lastCommitAt: '2026-08-09T00:00:00.000Z',
+        subject: 'trunk', upstream: 'origin/main', ahead: 0, behind: 0,
+        isDefault: true, isCurrent: true, merged: false, stale: false,
+      },
+      {
+        name: 'feat/one', head: 'b'.repeat(40), lastCommitAt: '2026-05-01T00:00:00.000Z',
+        subject: 'work', upstream: null, ahead: 3, behind: 1,
+        isDefault: false, isCurrent: false, merged: false, stale: true,
+      },
+    ],
+  };
+
+  it('binds :projectId, is a GET, and refuses --mutation-id', async () => {
+    respond = () => ({ body: TOPOLOGY });
+    const ok = await invoke(['project', 'branches', PROJECT]);
+    expect(ok.code).toBe(0);
+    expect(requests[0]?.method).toBe('GET');
+    expect(requests[0]?.path).toBe(bindPath('projects.branches.list', { projectId: PROJECT }));
+    requests = [];
+    // A read that accepts a mutation id invites callers to believe it writes.
+    const bad = await invoke(['project', 'branches', PROJECT, '--mutation-id', 'x']);
+    expect(bad.code).toBe(2);
+    expect(requests).toEqual([]);
+  });
+
+  it('passes the bounding flags through as query, not as a body', async () => {
+    respond = () => ({ body: TOPOLOGY });
+    await invoke(['project', 'branches', PROJECT, '--stale-after-days', '7', '--limit', '5']);
+    expect(requests[0]?.query).toContain('staleAfterDays=7');
+    expect(requests[0]?.query).toContain('limit=5');
+    expect(requests[0]?.body).toBeUndefined();
+  });
+
+  it('renders drift with SIGNS and states which trunk it measured against', async () => {
+    respond = () => ({ body: TOPOLOGY });
+    const r = await invoke(['project', 'branches', PROJECT]);
+    // The source travels with the trunk: "1 behind main" is a different claim
+    // when `main` was guessed than when the remote's own HEAD said so.
+    expect(r.stdout).toContain('default: main (source: origin_head)');
+    // Signs, not colour — this output lands in pipes and CI logs.
+    expect(r.stdout).toContain('+3/-1');
+    expect(r.stdout).toContain('feat/one');
+    expect(r.stdout).toContain('[stale]');
+    expect(r.stdout).toContain('[current default]');
+    // A bounded read must say when it bounded.
+    expect(r.stdout).toContain('truncated');
+  });
+
+  it('keeps the machine shape intact under --format json', async () => {
+    respond = () => ({ body: TOPOLOGY });
+    const r = await invoke(['project', 'branches', PROJECT, '--format', 'json']);
+    expect(JSON.parse(r.stdout)).toMatchObject({ defaultBranch: 'main', truncated: true });
   });
 });
 
