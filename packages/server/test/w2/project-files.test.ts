@@ -240,7 +240,11 @@ describe('resolving one file for attachment', () => {
 describe('W2 connected project folder facade', () => {
   it('exports one registration seam for exactly the two project-file operations', async () => {
     const { registry } = await registered(new FakeDb());
-    expect(registry.implemented()).toEqual(['projects.files.attach', 'projects.files.list']);
+    // 2 -> 3 (2026-08-09): `projects.files.read`, the viewer half — same jail,
+    // same authorization, and it mints nothing.
+    expect(registry.implemented()).toEqual([
+      'projects.files.attach', 'projects.files.list', 'projects.files.read',
+    ]);
   });
 
   it('requires node-admin claims to read or attach node-local files', async () => {

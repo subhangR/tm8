@@ -74,8 +74,11 @@ describe('the shipped default menu', () => {
       expect(presentation.label.length, ref).toBeGreaterThan(0);
       expect(presentation.icon.length, ref).toBeGreaterThan(0);
     }
+    // 'files' added 2026-08-09 with the MenuViewRef widening (FILES-DESIGN
+    // §5.3). The union is closed, so this list is how a widening announces
+    // itself rather than silently shipping a ref with no glyph.
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'graph', 'inbox', 'settings', 'workspace'].sort(),
+      ['channels', 'dashboard', 'feed', 'files', 'graph', 'inbox', 'settings', 'workspace'].sort(),
     );
   });
 });
