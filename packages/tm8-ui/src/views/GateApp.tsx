@@ -63,6 +63,7 @@ import {
   type ProjectBranchesPort,
   type ProjectOnboardingPort,
 } from '../projects';
+import { readSpaceFoldersPort } from '../space-folder/port';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -196,6 +197,10 @@ export function GateApp(props: GateAppProps = {}) {
     return {
       ...setup,
       createMemory: (input) => data.seam.commands.createEntity(input),
+      // Lane B's Space-folder storage. `readSpaceFoldersPort` returns null on a
+      // node that does not offer it, and the optional upload step renders
+      // disabled-with-reason rather than pretending to be available.
+      spaceFolders: readSpaceFoldersPort(data.seam) ?? undefined,
     };
   }, [data.seam]);
 
@@ -841,6 +846,12 @@ export function GateApp(props: GateAppProps = {}) {
             open={newSpaceOpen}
             nodeLabel={activeServer.label}
             port={projectOnboardingPort}
+            /* Lane C owns the one store-only ZIP encoder; this lane does not
+               ship a second one. Until that commit lands there is nothing to
+               pass, and the optional folder step renders disabled-with-reason
+               rather than offering an upload it cannot package. Adopting the
+               encoder is this one prop and nothing else. */
+            packArchive={undefined}
             onDismiss={() => setNewSpaceOpen(false)}
             onCreated={(space) => {
               navStore.getState().applyNormalization({ stack: [], pinned: [] });

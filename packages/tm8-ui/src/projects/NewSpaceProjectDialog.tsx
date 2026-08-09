@@ -12,9 +12,29 @@ import type {
   SpaceSummary,
 } from '@tm8/contract';
 
+import {
+  SPACE_FOLDER_PACKER_UNAVAILABLE_REASON,
+  type ZipPacker,
+} from '../space-folder/archive';
+import {
+  SPACE_FOLDER_ROOT_DEST,
+  SPACE_FOLDER_UNAVAILABLE_REASON,
+  type SpaceFolderSkipped,
+  type SpaceFolderSummary,
+  type SpaceFoldersPort,
+} from '../space-folder/port';
+import {
+  SpaceFolderStep,
+  type SpaceFolderOutcome,
+  type SpaceFolderProgress,
+  type SpaceFolderSelection,
+} from '../space-folder/SpaceFolderStep';
+
 import './projects.css';
 
-export type OnboardingStage = 'space' | 'project' | 'link' | 'memory';
+export type OnboardingStage =
+  | 'space' | 'project' | 'link' | 'memory'
+  | 'pack' | 'folder' | 'upload';
 
 export interface ProjectOnboardingPort {
   directories(path?: string): Promise<ProjectDirectoryListing>;
@@ -22,6 +42,12 @@ export interface ProjectOnboardingPort {
   createProject(input: ProjectCreateInput): Promise<ProjectResource>;
   linkProject(spaceId: SpaceId, input: ProjectLinkInput): Promise<void>;
   createMemory(input: CreateEntityInput): Promise<CommandResult>;
+  /**
+   * Lane B's Space-folder storage. Optional for the same reason `projectSetup`
+   * is: a node that does not offer it must leave the step disabled-with-reason
+   * rather than offer an upload that cannot happen.
+   */
+  spaceFolders?: SpaceFoldersPort;
 }
 
 export interface ProjectOnboardingInput {
@@ -30,6 +56,33 @@ export interface ProjectOnboardingInput {
   workingDir: string;
   ensureWorkingDir: boolean;
   trusted: boolean;
+  /** Absent, or null, when the optional folder step was skipped. */
+  folder?: SpaceFolderSelection | null;
+}
+
+export interface OnboardingFolderOutcome {
+  readonly folder: SpaceFolderSummary;
+  readonly added: number;
+  readonly replaced: number;
+  readonly directories: number;
+  /** Client-side refusals and server-side skips, merged, never swallowed. */
+  readonly skipped: readonly SpaceFolderSkipped[];
+}
+
+export interface OnboardingHooks {
+  signal?: AbortSignal;
+  /** Lane C's store-only ZIP encoder. Absent means the step cannot run. */
+  packArchive?: ZipPacker;
+  onPack?(packedMembers: number, totalMembers: number): void;
+  onSend?(sentBytes: number, totalBytes: number): void;
+  /**
+   * A Space folder created by an EARLIER attempt. `spaceFolders.create` takes no
+   * client mutation id, so it is not idempotent: replaying it after a failed
+   * upload would create a second folder with the same name. The caller retains
+   * what was created and hands it back, and `create` is then skipped.
+   */
+  retainedFolder?: SpaceFolderSummary | null;
+  onFolderCreated?(folder: SpaceFolderSummary): void;
 }
 
 export interface OnboardingMutationIds {
@@ -77,13 +130,29 @@ async function stage<T>(
   }
 }
 
-/** The retry-safe four-command saga, kept separate from rendering for tests. */
+/**
+ * The retry-safe saga, kept separate from rendering for tests.
+ *
+ * FOUR stages when no folder was picked — unchanged, byte for byte, from before
+ * this lane. SIX when one was: the folder is created and uploaded LAST, after
+ * the Space is complete and durable.
+ *
+ * That ordering is forced by a measurement, not a preference. There is NO
+ * `spaces.delete` operation in the catalog at all (packages/contract/src/
+ * catalog.ts exposes spaces.list/create/get/update/… and no delete), so
+ * "roll back the Space" is not a thing this client can do. Uploading first, or
+ * in the middle, would therefore be the one sequence that CAN strand a user:
+ * a Space they can neither see finished nor remove. Uploading last means the
+ * worst outcome is a complete, visible, usable Space whose folder is empty or
+ * partial, said out loud, with Retry replaying the same locked mutation ids.
+ */
 export async function onboardSpaceProject(
   port: ProjectOnboardingPort,
   input: ProjectOnboardingInput,
   ids: OnboardingMutationIds,
   onStage?: (stage: OnboardingStage) => void,
-): Promise<{ space: SpaceSummary; project: ProjectResource }> {
+  hooks?: OnboardingHooks,
+): Promise<{ space: SpaceSummary; project: ProjectResource; folder?: OnboardingFolderOutcome }> {
   const createdSpace = await stage('space', onStage, () => port.createSpace({
     name: input.spaceName.trim(),
     visibility: 'private',
@@ -113,7 +182,52 @@ export async function onboardSpaceProject(
       measuredAt: ids.measuredAt,
     },
   }));
-  return { space: createdSpace.space, project };
+
+  const selection = input.folder;
+  const folders = port.spaceFolders;
+  const pack = hooks?.packArchive;
+  if (!selection || !folders || !pack) {
+    return { space: createdSpace.space, project };
+  }
+
+  // PACK FIRST, CREATE SECOND. Packing is client-side and is the stage a user
+  // is most likely to cancel; doing it before `create` means a cancelled or
+  // failed pack leaves no empty folder sitting on the server at all.
+  const archive = await stage('pack', onStage, () => pack(
+    { files: selection.files, directories: selection.directories },
+    { signal: hooks?.signal, onProgress: hooks?.onPack },
+  ));
+
+  // `spaceFolders.create` carries no client mutation id, so it is NOT
+  // idempotent. A retry after a failed upload must reuse the folder the first
+  // attempt made, or the user gets two folders with one name.
+  let created = hooks?.retainedFolder ?? null;
+  if (!created) {
+    created = await stage('folder', onStage, () => folders.create(
+      createdSpace.space.id,
+      selection.name.trim(),
+    ));
+    hooks?.onFolderCreated?.(created);
+  }
+  const folderRef = created;
+
+  const folder = await stage('upload', onStage, async () => {
+    const result = await folders.upload(folderRef.id, SPACE_FOLDER_ROOT_DEST, archive.blob, {
+      signal: hooks?.signal,
+      onProgress: hooks?.onSend,
+    });
+    return {
+      folder: result.folder,
+      added: result.added,
+      replaced: result.replaced,
+      directories: result.directories,
+      // The packer's refusals and the server's skips are DIFFERENT facts about
+      // the same upload. Reporting only one of them would let a file vanish
+      // between two lanes that each believe the other surfaced it.
+      skipped: [...archive.skipped, ...result.skipped],
+    } satisfies OnboardingFolderOutcome;
+  });
+  return { space: createdSpace.space, project, folder };
 }
 
 const STAGE_LABEL: Record<OnboardingStage, string> = {
@@ -121,12 +235,40 @@ const STAGE_LABEL: Record<OnboardingStage, string> = {
   project: 'Creating project folder',
   link: 'Connecting project',
   memory: 'Recording memory',
+  pack: 'Packaging folder',
+  folder: 'Creating Space folder',
+  upload: 'Uploading folder',
 };
+
+/**
+ * What is already real when a stage fails. A folder-stage failure is NOT a
+ * failed Space, and saying only "Uploading folder failed" would leave a user
+ * believing nothing was created — then starting again, with no `spaces.delete`
+ * on the wire to undo the first one.
+ */
+function alreadyMade(failed: OnboardingStage | null, folderName: string): string {
+  switch (failed) {
+    case 'pack':
+      return ' The Space and its project were created and are ready. Nothing was sent and no Space folder was created.';
+    case 'folder':
+      return ' The Space and its project were created and are ready. The Space folder was not created, so nothing was uploaded.';
+    case 'upload':
+      return ` The Space and its project were created and are ready. The Space folder “${folderName}” EXISTS and is empty or partial until you retry.`;
+    default:
+      return '';
+  }
+}
 
 export interface NewSpaceProjectDialogProps {
   open: boolean;
   nodeLabel: string;
   port: ProjectOnboardingPort;
+  /**
+   * Lane C's store-only ZIP encoder. Absent until that commit lands, and the
+   * optional folder step then renders disabled-with-reason — this lane does not
+   * ship a second encoder for the same format.
+   */
+  packArchive?: ZipPacker;
   onDismiss(): void;
   onCreated(space: SpaceSummary): void;
 }
@@ -145,7 +287,18 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
   const [busy, setBusy] = useState(false);
   const [currentStage, setCurrentStage] = useState<OnboardingStage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [folderSelection, setFolderSelection] = useState<SpaceFolderSelection | null>(null);
+  const [folderProgress, setFolderProgress] = useState<SpaceFolderProgress | null>(null);
+  const [folderOutcome, setFolderOutcome] = useState<SpaceFolderOutcome | null>(null);
+  // Set only when the saga SUCCEEDED but something did not arrive. The dialog
+  // then stays open: closing it would be the moment the skipped files are lost.
+  const [settled, setSettled] = useState<SpaceSummary | null>(null);
   const ids = useRef<OnboardingMutationIds | null>(null);
+  const abort = useRef<AbortController | null>(null);
+  // `spaceFolders.create` has no client mutation id and is therefore not
+  // idempotent. Retaining what a failed attempt already created is the only way
+  // Retry avoids making a second folder with the same name.
+  const createdFolder = useRef<SpaceFolderSummary | null>(null);
 
   const lockedForRetry = ids.current !== null && !busy;
 
@@ -198,8 +351,18 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
     if (!spaceName.trim() || !projectName.trim() || !workingDir) return;
     const stableIds = ids.current ?? newOnboardingMutationIds();
     ids.current = stableIds;
+    const controller = new AbortController();
+    abort.current = controller;
     setBusy(true);
     setError(null);
+    setFolderOutcome(null);
+    setFolderProgress(folderSelection ? {
+      phase: 'packing',
+      packedFiles: 0,
+      totalFiles: folderSelection.files.length,
+      sentBytes: 0,
+      totalBytes: folderSelection.files.reduce((sum, file) => sum + file.size, 0),
+    } : null);
     try {
       const result = await onboardSpaceProject(props.port, {
         spaceName,
@@ -207,9 +370,48 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
         workingDir,
         ensureWorkingDir,
         trusted,
-      }, stableIds, setCurrentStage);
+        folder: folderSelection,
+      }, stableIds, setCurrentStage, {
+        signal: controller.signal,
+        packArchive: props.packArchive,
+        retainedFolder: createdFolder.current,
+        onFolderCreated: (folder) => { createdFolder.current = folder; },
+        onPack: (packedFiles, totalFiles) => setFolderProgress((previous) => ({
+          phase: 'packing',
+          packedFiles,
+          totalFiles,
+          sentBytes: 0,
+          totalBytes: previous?.totalBytes ?? 0,
+        })),
+        onSend: (sentBytes, totalBytes) => setFolderProgress((previous) => ({
+          phase: 'sending',
+          packedFiles: previous?.packedFiles ?? 0,
+          totalFiles: previous?.totalFiles ?? 0,
+          sentBytes,
+          totalBytes,
+        })),
+      });
       ids.current = null;
+      createdFolder.current = null;
       setCurrentStage(null);
+      setFolderProgress(null);
+
+      if (result.folder && result.folder.skipped.length > 0) {
+        // Hold the dialog open. `onCreated` navigates into the new Space, and a
+        // list of files that never arrived is not something to flash past.
+        setFolderOutcome({
+          name: result.folder.folder.name,
+          added: result.folder.added,
+          replaced: result.folder.replaced,
+          directories: result.folder.directories,
+          entryCount: result.folder.folder.entryCount,
+          totalSizeBytes: result.folder.folder.totalSizeBytes,
+          skipped: result.folder.skipped,
+        });
+        setSettled(result.space);
+        return;
+      }
+
       setSpaceName('');
       setProjectName('');
       setWorkingDir('');
@@ -217,12 +419,16 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
       setTrusted(false);
       setListing(null);
       setNewFolderName('');
+      setFolderSelection(null);
       props.onCreated(result.space);
     } catch (cause) {
       const failed = cause instanceof OnboardingStageError ? cause.stage : currentStage;
       const label = failed ? STAGE_LABEL[failed] : 'Onboarding';
-      setError(`${label} failed: ${String((cause as { message?: unknown } | null)?.message ?? cause)} Retry resumes safely with the same mutation ids.`);
+      setFolderProgress(null);
+      const made = alreadyMade(failed, createdFolder.current?.name ?? folderSelection?.name ?? '');
+      setError(`${label} failed: ${String((cause as { message?: unknown } | null)?.message ?? cause)}${made} Retry resumes safely with the same mutation ids.`);
     } finally {
+      abort.current = null;
       setBusy(false);
     }
   };
@@ -314,17 +520,41 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
                 <small>Off by default. Trusted projects allow agents to run with this folder as their working directory.</small>
               </span>
             </label>
+            <SpaceFolderStep
+              unavailableReason={
+                !props.port.spaceFolders
+                  ? SPACE_FOLDER_UNAVAILABLE_REASON
+                  : !props.packArchive ? SPACE_FOLDER_PACKER_UNAVAILABLE_REASON : null
+              }
+              disabled={busy || lockedForRetry || settled !== null}
+              onChange={setFolderSelection}
+              progress={folderProgress}
+              outcome={folderOutcome}
+              onCancel={() => abort.current?.abort(new Error('Upload cancelled.'))}
+            />
             {lockedForRetry ? <p className="project-onboard__note">Values are locked so Retry replays the same safe saga.</p> : null}
             {error ? <p className="project-onboard__error" role="alert">{error}</p> : null}
             <footer className="project-onboard__footer">
-              <button type="button" className="project-onboard__button" onClick={props.onDismiss} disabled={busy}>Cancel</button>
-              <button
-                type="submit"
-                className="project-onboard__button project-onboard__button--primary"
-                disabled={busy || !spaceName.trim() || !projectName.trim() || !workingDir}
-              >
-                {busy && currentStage ? `${STAGE_LABEL[currentStage]}…` : lockedForRetry ? 'Retry' : 'Create Space & add project'}
-              </button>
+              {settled ? (
+                <button
+                  type="button"
+                  className="project-onboard__button project-onboard__button--primary"
+                  onClick={() => props.onCreated(settled)}
+                >
+                  Open the Space
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="project-onboard__button" onClick={props.onDismiss} disabled={busy}>Cancel</button>
+                  <button
+                    type="submit"
+                    className="project-onboard__button project-onboard__button--primary"
+                    disabled={busy || !spaceName.trim() || !projectName.trim() || !workingDir}
+                  >
+                    {busy && currentStage ? `${STAGE_LABEL[currentStage]}…` : lockedForRetry ? 'Retry' : 'Create Space & add project'}
+                  </button>
+                </>
+              )}
             </footer>
           </form>
         )}

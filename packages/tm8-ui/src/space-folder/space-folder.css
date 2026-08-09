@@ -1,0 +1,131 @@
+/* The optional Space-folder step, rendered inside the Space-creation dialog.
+   It reuses the dialog's tokens so the step never reads as a bolted-on panel. */
+
+.space-folder {
+  display: grid;
+  gap: var(--pn-space-2);
+  padding: 12px 0 0;
+  border-top: 1px solid var(--pn-line);
+}
+
+.space-folder__toggle,
+.space-folder__rules label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--pn-space-2);
+}
+
+.space-folder__toggle span,
+.space-folder__name {
+  display: grid;
+  gap: 2px;
+}
+
+.space-folder__toggle small,
+.space-folder__note {
+  color: var(--pn-ink-3);
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+}
+
+.space-folder__body {
+  display: grid;
+  gap: var(--pn-space-2);
+}
+
+.space-folder__drop {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px dashed var(--pn-line-2);
+  border-radius: var(--pn-r-md);
+  background: var(--pn-surface);
+}
+
+.space-folder__drop--over {
+  border-color: var(--pn-brand);
+  background: color-mix(in srgb, var(--pn-brand) 8%, var(--pn-surface));
+}
+
+.space-folder__rules {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+}
+
+.space-folder__rules legend {
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+
+.space-folder__rules em {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+  white-space: nowrap;
+}
+
+.space-folder__preflight {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--pn-line);
+  border-radius: var(--pn-r-md);
+  font-size: 13px;
+}
+
+.space-folder__preflight > div {
+  display: flex;
+  gap: var(--pn-space-2);
+  align-items: baseline;
+}
+
+.space-folder__preflight dt {
+  flex: 0 0 110px;
+  color: var(--pn-ink-3);
+}
+
+.space-folder__preflight dd {
+  margin: 0;
+}
+
+.space-folder__progress {
+  display: grid;
+  gap: 6px;
+}
+
+.space-folder__progress progress {
+  width: 100%;
+}
+
+.space-folder__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.space-folder__refused ul,
+.space-folder__outcome ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.space-folder__outcome {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.space-folder__clear {
+  justify-self: start;
+}
