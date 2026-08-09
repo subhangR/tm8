@@ -1527,11 +1527,24 @@ export interface EdgeCorrectionResult {
   edge: EdgeView | null;
 }
 
-/** Publicly supported spawn targets. Worktree remains a future execution
- * capability and is intentionally absent until the node can create one. */
+/**
+ * Publicly supported spawn targets.
+ *
+ * Intent in, never paths (worktree design §7.1): no variant carries a `path`,
+ * and `baseRef` is a SYMBOLIC ref the server resolves and validates. A client
+ * cannot supply a commit OID either — that would let it pin a commit the server
+ * never checked against the repository.
+ *
+ * `worktree` was absent from this union for as long as the node could not
+ * create one, and this type was the only thing holding that line (§7.4's third
+ * prohibition: the database would have accepted it). It is present now because
+ * the manager, the provisioning saga and the reconciler landed together, which
+ * is the condition §7.4 names.
+ */
 export type SpawnWorkdir =
   | { mode: 'project' }
-  | { mode: 'scratch' };
+  | { mode: 'scratch' }
+  | { mode: 'worktree'; baseRef?: string };
 
 /** Provider-neutral launch controls. The execution layer maps these to each
  * agent CLI's native flags; keeping them typed here prevents a UI choice from

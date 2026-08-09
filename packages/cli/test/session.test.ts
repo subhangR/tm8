@@ -346,17 +346,43 @@ describe('session spawn', () => {
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--workdir', 'home',
     ]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('project|scratch');
+    expect(r.stderr).toContain('project|scratch|worktree');
     expect(seen).toEqual([]);
   });
 
-  it('does not advertise or send worktree until it has a safe implementation', async () => {
+  // The closed set gained `worktree` when the node gained the manager, the
+  // provisioning saga and the reconciler — which is the condition the design
+  // sets for advertising the mode at all. The discipline it asks for is that a
+  // mode is not offered BEFORE it can be serviced; keeping a shipped capability
+  // hidden is not the same virtue.
+  it('sends worktree, now that the node can service it', async () => {
     const r = await drive([
       'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE, '--workdir', 'worktree',
     ]);
-    expect(seen).toEqual([]);
+    expect(r.code).toBe(0);
+    expect(body().workdir).toEqual({ mode: 'worktree' });
+  });
+
+  it('carries --base-ref as the worktree variant, never a bare string', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE,
+      '--workdir', 'worktree', '--base-ref', 'main',
+    ]);
+    expect(r.code).toBe(0);
+    expect(body().workdir).toEqual({ mode: 'worktree', baseRef: 'main' });
+  });
+
+  // `SpawnWorkdir`'s members are `.strict()`, so a baseRef on a project or
+  // scratch workdir is a parse failure at the facade. Refusing it here with the
+  // reason spelled out beats sending it to earn a 400 the caller has to decode.
+  it('refuses --base-ref on a workdir that has no base ref, locally', async () => {
+    const r = await drive([
+      'session', 'spawn', '--space', SPACE, '--teammate', TEAMMATE,
+      '--workdir', 'scratch', '--base-ref', 'main',
+    ]);
     expect(r.code).toBe(2);
-    expect(r.stderr).toContain('project|scratch');
+    expect(r.stderr).toContain('--base-ref applies only to --workdir worktree');
+    expect(seen).toEqual([]);
   });
 
   it('refuses a mode outside the closed set', async () => {

@@ -443,7 +443,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 75 -> 77 on 2026-08-09: 078 (derived_from props_schema) and 079
     // (core-draft promptPolicy repair), the two defects the CI gate had hidden
     // while the check job ran without a database.
-    expect(server.appliedMigrations.length).toBe(77);
+    // 77 -> 78 on 2026-08-09: 081 (worktree provisioning + tracking observer).
+    // Authored as 078, then renumbered on merge because #71 had landed 078/079.
+    expect(server.appliedMigrations.length).toBe(78);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

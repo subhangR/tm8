@@ -1027,7 +1027,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -1734,10 +1734,39 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
   }],
+  // `worktree list|status` are SUGAR over operations that already exist, which
+  // is what keeps the catalog closed while the grammar grows. They are aliases
+  // for exactly that reason: an alias declares a second spelling of an existing
+  // operation, and a new catalog row would have been a second way to ask a
+  // question `collections.query` already answers.
+  ['worktree list', {
+    path: ['worktree', 'list'],
+    syntax: 'tm8 worktree list [--space <space-id>] [--status active|merged|abandoned|deleted] [--limit <count>] [--cursor <cursor>]',
+    summary: 'Isolated Git checkouts in this Space, with branch, status, and the base commit',
+    notes: [
+      'sugar over collections.query with kinds:[worktree] — it adds no catalog operation',
+      '--status narrows the returned page CLIENT-SIDE (CollectionQuery names no worktree status filter), so a page can come back emptier than --limit',
+      'the checkout path is not in the collection projection; read it with `tm8 worktree status <id>`',
+    ],
+    examples: ['tm8 worktree list --space <space-id> --status active'],
+  }],
+  ['worktree status', {
+    path: ['worktree', 'status'],
+    syntax: 'tm8 worktree status <worktree-id> [--space <space-id>]',
+    summary: 'One worktree in full — status, branch, resolved base commit, and its path on disk',
+    notes: [
+      'sugar over entities.get; the path lives in the hydrated detail row, which entities.context only excerpts',
+      'the base COMMIT is shown beside the ref because refs move and the ref alone is not what the session got',
+    ],
+    examples: ['tm8 worktree status <worktree-id>'],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
 COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+COMMAND_OPS.set('worktree list', ['collections.query']);
+COMMAND_OPS.set('worktree status', ['entities.get']);
+COMMAND_ORDER.push('worktree list', 'worktree status');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that

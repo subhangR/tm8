@@ -37,6 +37,19 @@ export {
   type CodexRolloutIdentity,
 } from './native-session.js';
 export { SpawnError } from './types.js';
+export {
+  branchNameFor,
+  provisionWorktree,
+  type ProvisionedWorktree,
+  type ProvisionWorktreeParams,
+} from './worktree-provisioning.js';
+export {
+  reconcileNodeWorktrees,
+  type ReconcileParams,
+  type WorktreeQuarantine,
+  type WorktreeReconcileReport,
+  type WorktreeRepair,
+} from './worktree-reconcile.js';
 export type {
   AgentMode,
   CommandNetworkPolicy,
@@ -63,4 +76,6 @@ export type {
   WorkdirMode,
   WorkSessionResumeInfo,
   WorkSessionStatus,
+  WorktreeAllocationRow,
+  WorktreeAllocationState,
 } from './types.js';
