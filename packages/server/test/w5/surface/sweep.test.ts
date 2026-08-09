@@ -74,6 +74,7 @@ import {
   type OperationBinding,
   type OperationName,
 } from '@tm8/contract';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 
@@ -341,9 +342,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // frames live under `node_modules/.bun/@vitest+runner/dist/`, so the
     // unscoped form went red on the test harness while the thing it was
     // actually asserting about was already correct.
+    //
+    // DERIVED from this file's own location, never a literal. The scope used to
+    // read `/Projects/tm8/packages/`, which is one developer's macOS checkout
+    // path: anywhere else it matched zero frames, so `tm8Frames.length` was 0
+    // and the assertion below failed for a reason that has nothing to do with
+    // src-vs-dist. `node_modules` is excluded explicitly because a checkout
+    // could legitimately sit under a path containing the repo name twice.
+    const packagesDir = fileURLToPath(new URL('../../../../', import.meta.url));
     const tm8Frames = stack
       .split('\n')
-      .filter((line) => line.includes('/Projects/tm8/packages/'));
+      .filter((line) => line.includes(packagesDir) && !line.includes('/node_modules/'));
     expect(tm8Frames.length).toBeGreaterThan(0);
     expect(tm8Frames.filter((line) => line.includes('/dist/'))).toEqual([]);
   });
@@ -431,7 +440,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // out at 080 and 081-084 are claimed by unmerged branches. Same reasoning
     // as the 078/079 gap above, and the same caveat — that is a dated
     // measurement, not a standing fact.
-    expect(server.appliedMigrations.length).toBe(75);
+    // 75 -> 77 on 2026-08-09: 078 (derived_from props_schema) and 079
+    // (core-draft promptPolicy repair), the two defects the CI gate had hidden
+    // while the check job ran without a database.
+    expect(server.appliedMigrations.length).toBe(77);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

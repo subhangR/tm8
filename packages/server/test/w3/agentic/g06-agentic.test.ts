@@ -190,5 +190,8 @@ describe('W3.G06 agentic generated-discovery workflow', () => {
         (m: { clientMutationId: string }) => m.clientMutationId === 'g06-agentic-project-create',
       ),
     ).toHaveLength(1);
-  });
+    // Same 120s budget and the same reason as its siblings: this `it` boots the
+    // DB-backed harness itself. It currently lands just inside vitest's 5s
+    // default, which is not a margin — it is a coin flip on a loaded runner.
+  }, 120_000);
 });

@@ -46,6 +46,13 @@ beforeAll(async () => {
   worktreeRoot = join(base, 'worktrees');
   await mkdir(repoRoot, { recursive: true });
   await git(['init', '-b', 'main'], repoRoot);
+  // Repo-LOCAL identity, not the `-c` flags the commits below use. The merge
+  // verification exercises production code (`WorktreeManager` runs `git merge`
+  // itself), so there is nowhere to thread `-c` through — and a machine with no
+  // global identity, which is every fresh CI runner, fails that merge with
+  // "empty ident name" before it can answer merged/not-merged.
+  await git(['config', 'user.email', 't@t'], repoRoot);
+  await git(['config', 'user.name', 't'], repoRoot);
   await writeFile(join(repoRoot, 'README.md'), 'hello\n');
   await git(['add', '.'], repoRoot);
   await git(
