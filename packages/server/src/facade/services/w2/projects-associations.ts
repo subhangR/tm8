@@ -12,12 +12,13 @@ import {
   type ProjectCreateInput,
   type ProjectFileBlame,
   type ProjectFileHistory,
+  type ProjectRevisionDiff,
   type ProjectLinkInput,
   type ProjectResource,
   type ProjectUpdateInput,
 } from '@tm8/contract';
 
-import { UNCOMMITTED_OID, readBranchTopology, readFileBlame, readFileHistory } from '@tm8/execution';
+import { UNCOMMITTED_OID, readBranchTopology, readFileBlame, readFileHistory, readFileRevisionDiff } from '@tm8/execution';
 
 import type { Querier } from '../../../db/types.js';
 import type { RequestContext } from '../../../http/types.js';
@@ -535,6 +536,21 @@ export class W2ProjectsAssociationsService {
       W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
     }
     const attribution = await this.attributionFor(ctx, history.revisions.map((r) => r.oid));
+
+    // `?diffOid=` — the patch ONE selected revision applied to the path, so
+    // the history browser can render a diff without a third operation. Asked
+    // with the path AT that revision (rename-follow), read from the window.
+    const diffOid = ctx.query.get('diffOid');
+    let diff: ProjectRevisionDiff | null = null;
+    if (diffOid !== null && diffOid !== '') {
+      const revision = history.revisions.find((r) => r.oid === diffOid.toLowerCase());
+      try {
+        diff = await readFileRevisionDiff(row.working_dir, revision?.path ?? path, diffOid.toLowerCase());
+      } catch (error) {
+        W2ProjectsAssociationsService.liftFileReadError(error, row.id, row.working_dir);
+      }
+    }
+
     return {
       projectId: row.id,
       workingDir: row.working_dir,
@@ -544,6 +560,7 @@ export class W2ProjectsAssociationsService {
         session: attribution.get(r.oid.toLowerCase()) ?? null,
       })),
       truncated: history.truncated,
+      diff,
     };
   };
 

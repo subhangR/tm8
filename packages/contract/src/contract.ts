@@ -1996,6 +1996,13 @@ export interface ProjectFileRevision {
  * in the project's working directory, argv-only git, path from the QUERY but
  * the directory always from the project row (the branches read's law).
  */
+/** The patch one selected revision applied to the path, byte-capped honestly. */
+export interface ProjectRevisionDiff {
+  oid: string;
+  diff: string;
+  truncated: boolean;
+}
+
 export interface ProjectFileHistory {
   projectId: ProjectId;
   workingDir: string;
@@ -2003,6 +2010,8 @@ export interface ProjectFileHistory {
   revisions: ProjectFileRevision[];
   /** True when the revision cap cut the walk short — the read is bounded. */
   truncated: boolean;
+  /** Present only when the request named a `?diffOid=`; null otherwise. */
+  diff: ProjectRevisionDiff | null;
 }
 
 /** A contiguous run of lines last touched by one commit. */

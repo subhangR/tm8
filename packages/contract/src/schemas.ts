@@ -70,7 +70,7 @@ import type {
   ProjectBlameHunk, ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
   ProjectFileAttachInput, ProjectFileBlame, ProjectFileEntry, ProjectFileHistory,
-  ProjectFileListing, ProjectFileReadResult, ProjectFileRevision,
+  ProjectFileListing, ProjectFileReadResult, ProjectFileRevision, ProjectRevisionDiff,
   ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
@@ -1908,12 +1908,19 @@ export const ProjectFileRevisionSchema: z.ZodType<ProjectFileRevision> = z.objec
   session: CommitSessionAttributionSchema.nullable(),
 }).strict();
 
+export const ProjectRevisionDiffSchema: z.ZodType<ProjectRevisionDiff> = z.object({
+  oid: z.string().min(1),
+  diff: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
 export const ProjectFileHistorySchema: z.ZodType<ProjectFileHistory> = z.object({
   projectId: ProjectIdSchema,
   workingDir: z.string().min(1),
   path: z.string().min(1),
   revisions: z.array(ProjectFileRevisionSchema),
   truncated: z.boolean(),
+  diff: ProjectRevisionDiffSchema.nullable(),
 }).strict();
 
 export const ProjectBlameHunkSchema: z.ZodType<ProjectBlameHunk> = z.object({

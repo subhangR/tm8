@@ -184,6 +184,57 @@ export async function readFileHistory(
   };
 }
 
+export interface RevisionDiffResult {
+  oid: string;
+  /** Unified diff of this commit FOR THIS PATH, byte-capped honestly. */
+  diff: string;
+  truncated: boolean;
+}
+
+const DIFF_BYTES_DEFAULT = 256 * 1024;
+
+/**
+ * The patch one revision applied to one path — what a history browser renders
+ * when a revision is selected. `git diff-tree` against the commit's own
+ * parents, path behind `--`; the byte cap bounds RENDERING, never disclosure,
+ * and travels back as `truncated`.
+ */
+export async function readFileRevisionDiff(
+  workingDir: string,
+  path: string,
+  oid: string,
+  options: { maxBytes?: number; run?: (args: readonly string[], cwd: string) => Promise<GitResult> } = {},
+): Promise<RevisionDiffResult> {
+  assertSafePathspec(path);
+  if (!/^[0-9a-f]{40}$/.test(oid)) {
+    fail(`not a full commit oid: ${JSON.stringify(oid)}`, 'invalid_oid');
+  }
+  const maxBytes = options.maxBytes ?? DIFF_BYTES_DEFAULT;
+  const run =
+    options.run ??
+    ((args: readonly string[], cwd: string) => runGit(args, { cwd, maxBufferBytes: maxBytes + 1024 * 1024 }));
+  await assertRepository(run, workingDir);
+  // -m so a merge commit still answers against its first parent lineage;
+  // --root so the initial commit diffs against the empty tree; --follow needs
+  // log, so a pre-rename oid is asked with the path AT that revision (the
+  // history read supplies it per revision).
+  const result = await run(
+    ['diff-tree', '-p', '-m', '--root', '--first-parent', oid, '--', path],
+    workingDir,
+  );
+  if (result.code !== 0) {
+    fail(`git diff-tree failed for ${JSON.stringify(oid)}: ${result.stderr.trim()}`, 'revision_diff_failed');
+  }
+  // diff-tree's first line echoes the commit id; the patch follows.
+  const text = result.stdout.startsWith(oid) ? result.stdout.slice(oid.length).replace(/^\n/, '') : result.stdout;
+  const truncated = Buffer.byteLength(text, 'utf8') > maxBytes;
+  return {
+    oid,
+    diff: truncated ? Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8') : text,
+    truncated,
+  };
+}
+
 /** Count `\n` in the working-tree file by streaming — never the file in memory. */
 function countFileLines(absolutePath: string): Promise<number> {
   return new Promise((resolve, reject) => {
