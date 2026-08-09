@@ -116,26 +116,97 @@ const MAX_COMMENT_BODY = 1500;
 const MAX_MESSAGE_BODY = 9500;
 
 /**
- * Trim to fit by dropping LINES FROM THE TOP.
+ * ⚠ THE TRIM HAPPENS BEFORE THE FENCE, AND THAT ORDER IS A SECURITY PROPERTY.
  *
- * The end of a failing build is where the error is; the top is setup noise. A
- * tail-truncation would cut off the one thing the agent needs and leave the
- * dependency install it does not. The cut is announced in the text, because a
- * silently shortened log invites the reader to conclude the build stopped where
- * the text stops.
+ * The first version of this capped the COMPOSED body from the top. That reads
+ * as reasonable and is exactly wrong: the banner and the OPENING fence are at
+ * the top, so the trim deleted them first and left attacker-controlled log text
+ * unfenced and unlabelled in a live agent's context, with an orphan closing
+ * fence after it. Both defences this module claims were defeated precisely and
+ * only in the case they exist for — a job that prints more than the budget in
+ * its last hundred lines, which anyone who can edit a workflow can arrange.
+ *
+ * So untrusted content is budgeted and trimmed FIRST, and fenced afterwards.
+ * The banner and the fences are never inside the trimmable region, because they
+ * are not added until after the trimming is done.
+ */
+const TRIM_NOTICE = '… earlier lines trimmed to fit the message limit; the END of the log is kept.\n';
+
+/**
+ * Fence `content` so the WHOLE block — banner, fences, notice and all — fits in
+ * `budget`, dropping lines from the top of the content until it does.
+ *
+ * Every probe MEASURES the real fenced block rather than estimating overhead
+ * once: the fence length depends on the longest backtick run in what REMAINS,
+ * so trimming can change it. Dropping content never grows the block, which
+ * makes "fits" monotone and both cuts binary-searchable — a tail of thousands
+ * of lines costs a handful of probes, not one per line.
+ */
+function fencedWithin(content: string, budget: number): string {
+  const whole = fenced(content);
+  if (whole.length <= budget) return whole;
+
+  const lines = content.split('\n');
+  const fromLine = (start: number): string => fenced(TRIM_NOTICE + lines.slice(start).join('\n'));
+  if (lines.length > 1 && fromLine(lines.length - 1).length <= budget) {
+    // Smallest start whose block fits — i.e. keep as many trailing lines as
+    // the budget allows.
+    let lo = 1;
+    let hi = lines.length - 1;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (fromLine(mid).length <= budget) hi = mid;
+      else lo = mid + 1;
+    }
+    return fromLine(lo);
+  }
+
+  // The last line ALONE is over budget — a minified stack trace, say. Cut
+  // INSIDE the fence, never around it, and keep the end for the same reason the
+  // line trim keeps the end. Measuring each probe matters most here: a line of
+  // mostly backticks makes the fence pay for the kept content all over again,
+  // and a slice sized by `budget - fixed overhead` would hand back a block far
+  // past the budget — which capBody would then drop whole, silencing the log.
+  const last = lines[lines.length - 1] ?? '';
+  const fromSuffix = (keep: number): string =>
+    fenced(TRIM_NOTICE + (keep === 0 ? '' : last.slice(-keep)));
+  // Longest suffix whose block fits. If even the empty suffix is over budget
+  // (a degenerate caller floor), the notice-only block is still returned —
+  // fenced, labelled, and as small as this function can make it.
+  let lo = 0;
+  let hi = last.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fromSuffix(mid).length <= budget) lo = mid;
+    else hi = mid - 1;
+  }
+  return fromSuffix(lo);
+}
+
+/**
+ * The last line of defence, and it must never make things WORSE.
+ *
+ * Every body is pre-budgeted above, so this should not fire. If it ever does —
+ * a header longer than the limit, a future caller that skipped the budget — it
+ * refuses to slice, because slicing a fenced body is how the unfenced-content
+ * hole gets reintroduced. It drops from the first fence onward instead and says
+ * that it did: no log is strictly better than a log the agent might read as
+ * instructions.
  */
 export function capBody(body: string, limit = MAX_MESSAGE_BODY): string {
   if (body.length <= limit) return body;
-  const notice = '… earlier lines trimmed to fit the message limit; the END of the log is kept.\n';
-  const lines = body.split('\n');
-  let kept = lines;
-  while (kept.length > 1 && notice.length + kept.join('\n').length > limit) {
-    kept = kept.slice(1);
-  }
-  const joined = notice + kept.join('\n');
-  // A single line longer than the limit is still possible (a minified stack
-  // trace on one line), so the hard cut stays as the floor under the loop.
-  return joined.length <= limit ? joined : joined.slice(0, limit);
+  // A fence at position 0 has no newline in front of it; miss it and the slice
+  // below cuts straight THROUGH the fence.
+  const fenceStart = body.startsWith('```') ? 0 : body.indexOf('\n```');
+  if (fenceStart === -1) return body.slice(0, limit);
+  const note = '\n\n(Inlined GitHub content omitted: it did not fit the message limit.)';
+  // The note is what makes the omission legible, so the HEAD gives way to it
+  // rather than the other way round.
+  const head = body.slice(0, Math.max(0, Math.min(fenceStart, limit - note.length)));
+  const capped = head + note;
+  // A limit smaller than the note is nonsense from a real caller, but the cap
+  // stays truthful even then: the note is OURS, so slicing it is safe.
+  return capped.length <= limit ? capped : capped.slice(0, limit);
 }
 
 /**
@@ -264,9 +335,13 @@ function ciFailureBody(
     // Said explicitly. A CI nudge with no log and no explanation reads like the
     // job produced no output, which is a different and much less alarming fact.
     lines.push('Log tail unavailable (the job log could not be read).');
-  } else {
-    lines.push('Last lines of the failing job log:', fenced(tail));
+    return lines.join('\n');
   }
+  lines.push('Last lines of the failing job log:');
+  // The budget is what is LEFT after the fixed parts, measured rather than
+  // guessed — see fencedWithin for why this cannot be done after composing.
+  const fixed = lines.join('\n').length + 1;
+  lines.push(fencedWithin(tail, Math.max(MAX_MESSAGE_BODY - fixed, 200)));
   return lines.join('\n');
 }
 
@@ -336,11 +411,23 @@ function reviewThreadBody(target: WatchTarget, where: string, thread: ReviewThre
   ];
   if (target.taskId) lines.push(`Task: ${target.taskId}`);
   lines.push('');
+  // Split what is left between the comments, so a thread with several long
+  // ones cannot push the body past 019's limit and get the whole nudge refused.
+  const fixed = lines.join('\n').length + 80;
+  const share = Math.max(
+    Math.floor((MAX_MESSAGE_BODY - fixed) / Math.max(thread.comments.length, 1)),
+    200,
+  );
   for (const comment of thread.comments) {
     // Author login and body are both attacker-controlled — anyone who can
     // comment on the PR writes them — so both go inside the fence with the
     // banner rather than into the message's own prose.
-    lines.push(fenced(`${comment.author ?? 'reviewer'} wrote:\n${truncate(comment.body, MAX_COMMENT_BODY)}`));
+    lines.push(
+      fencedWithin(
+        `${comment.author ?? 'reviewer'} wrote:\n${truncate(comment.body, MAX_COMMENT_BODY)}`,
+        share,
+      ),
+    );
     lines.push('');
   }
   lines.push('Reply on the thread, or resolve it once addressed.');
