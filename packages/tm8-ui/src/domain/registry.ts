@@ -38,7 +38,7 @@ import type {
   StateControl,
   ValueControl,
 } from './types';
-import { CUSTOM_KIND_FALLBACK } from './types';
+import { CUSTOM_KIND_FALLBACK, VIEWER_ACTOR } from './types';
 import { KIND_ART } from './kind-art';
 import type { SessionLiveness } from '../data/seam';
 
@@ -211,12 +211,61 @@ const readyToPullFilter: FilterSpec = {
   options: [{ id: 'ready', label: 'Ready to pull', filter: { readyToPull: true } }],
 };
 
-const deletedFilter: FilterSpec = {
-  id: 'deleted',
-  label: 'Deleted',
+/**
+ * THE `deleted` CHIP IS GONE, AND ITS ABSENCE IS THE FIX.
+ *
+ * It offered `Hide deleted` / `Deleted only` — the two values the lifecycle
+ * TABS already are: Open and Done both carry `deleted: 'exclude'`, Archived
+ * carries `deleted: 'only'`. `deleted` is a scalar, so a chip and a tab naming
+ * it could only ever CONTRADICT each other, and the merge resolved that by
+ * letting whichever applied last win. Choosing `Deleted only` on the Open tab
+ * silently showed archived rows under a tab labelled Open; choosing
+ * `Hide deleted` on the Archived tab emptied it with no explanation.
+ *
+ * A chip that can only agree with the tab or overrule it is not a filter, it
+ * is a second control for the same axis. Deleting it leaves one control per
+ * axis, which is also what makes `narrow`'s contradiction rule safe to apply
+ * strictly below.
+ */
+
+/**
+ * VIEWER-SCOPED CHIPS, on every collection kind.
+ *
+ * `assigneeIds` is an `assigned_to` EDGE server-side, not a task column, so
+ * "Assigned to me" is meaningful for anything that can be assigned. Likewise
+ * `needsActorId` is the union of "awaiting my review" and "mentions me", and
+ * the mention half applies to every kind that can anchor a message.
+ *
+ * Both carry `VIEWER_ACTOR` where an id belongs; the panel substitutes the
+ * real one and refuses the option when it has none. The sentinel never reaches
+ * the wire — the server `assertUuid`s these members, so a leak would surface
+ * as a loud `invalid_input`, not as a quiet empty list.
+ */
+const assigneeFilter: FilterSpec = {
+  id: 'assignee',
+  label: 'Assignee',
+  options: [{ id: 'mine', label: 'Assigned to me', filter: { assigneeIds: [VIEWER_ACTOR] } }],
+};
+
+const attentionFilter: FilterSpec = {
+  id: 'attention',
+  label: 'Needs me',
+  options: [{ id: 'needs-me', label: 'Needs me', filter: { needsActorId: VIEWER_ACTOR } }],
+};
+
+/**
+ * Tasks get the sharper second option too. `inReviewForActorId` adds
+ * `t.work_status = 'in_review'` to the predicate, so it is genuinely
+ * task-only: offering it on docs would render a control that can never match.
+ * Not `multi` — the two options are nested senses of the same question, and
+ * unioning them would just restate `Needs me`.
+ */
+const taskAttentionFilter: FilterSpec = {
+  id: 'attention',
+  label: 'Needs me',
   options: [
-    { id: 'exclude', label: 'Hide deleted', filter: { deleted: 'exclude' } },
-    { id: 'only', label: 'Deleted only', filter: { deleted: 'only' } },
+    ...attentionFilter.options,
+    { id: 'in-review', label: 'In review for me', filter: { inReviewForActorId: VIEWER_ACTOR } },
   ],
 };
 
@@ -227,13 +276,30 @@ const BY_POSITION: SortSpec = { key: 'position', label: 'Manual order' };
 const BY_DUE: SortSpec = { key: 'dueDate', label: 'Due date' };
 const BY_PRIORITY: SortSpec = { key: 'priority', label: 'Priority' };
 
-const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, BY_CREATED];
+/**
+ * Offering a sort BESIDE the default one. Exactly one entry per kind may carry
+ * `default` (§15.1, pinned by `registry.test.ts`), and both `BY_ACTIVITY` and
+ * `BY_UPDATED` declare it so that either can be a kind's default — so any list
+ * offering both must demote one HERE rather than at the pin.
+ */
+const also = (spec: SortSpec): SortSpec => ({ ...spec, default: false });
+
+/**
+ * THE FOUR SORTS EVERY ENTITY CAN ANSWER.
+ *
+ * `dueDate` and `priority` are missing on purpose: server-side both coalesce
+ * absent values to a sentinel (`9999-12-31`, rank 3), so on a kind with no due
+ * date every row ties and the list falls through to its id tiebreak. That
+ * renders as "sorted" and is shuffled — the same class of lie as a saturated
+ * page calling itself complete. A kind opts INTO those two by having them.
+ */
+const DEFAULT_SORT: readonly SortSpec[] = [BY_ACTIVITY, also(BY_UPDATED), BY_CREATED, BY_POSITION];
 
 /** The shape every kind gets before its own divergence is layered on. */
 function baseList(overrides: Partial<ListConfig> & Pick<ListConfig, 'tile'>): ListConfig {
   return {
     quickCreate: true,
-    filters: [deletedFilter],
+    filters: [assigneeFilter, attentionFilter],
     sort: DEFAULT_SORT,
     // Universal by DEFAULT (D41): a kind opts into a richer partition, never
     // out of having tiers at all. A row that forgot them would silently lose
@@ -422,8 +488,8 @@ const ROWS: readonly KindConfig[] = [
       },
       lifecycle: TASK_TIERS,
       primaryActions: ['run', 'coordinate'],
-      filters: [statusFilter, readyToPullFilter, deletedFilter],
-      sort: [BY_ACTIVITY, BY_PRIORITY, BY_DUE, BY_POSITION, BY_CREATED],
+      filters: [assigneeFilter, taskAttentionFilter, statusFilter, readyToPullFilter],
+      sort: [...DEFAULT_SORT, BY_DUE, BY_PRIORITY],
       inlineEdit: { status: true, title: true },
       stateControl: TASK_STATE_CONTROL,
       valueControls: [TASK_PRIORITY_CONTROL],
@@ -506,8 +572,8 @@ const ROWS: readonly KindConfig[] = [
       // row" — ruled once already; a refused control is not a control.
       quickCreate: false,
       quickLaunch: 'launch-session',
-      filters: [deletedFilter],
-      sort: [BY_ACTIVITY, BY_CREATED],
+      filters: [assigneeFilter, attentionFilter],
+      sort: DEFAULT_SORT,
       needsAttentionGroup: sessionNeedsAttention,
       liveTreatment: sessionLiveTreatment,
       // A session title IS an authoring surface, as of 085 — the spawn-time
@@ -565,7 +631,9 @@ const ROWS: readonly KindConfig[] = [
     list: baseList({
       tree: { by: 'hierarchy', guideLines: true },
       tile: { badges: [{ source: 'docFormat' }, { source: 'childCount' }, { source: 'messages' }] },
-      sort: [BY_UPDATED, { ...BY_ACTIVITY, default: false }, BY_POSITION, BY_CREATED],
+      // A doc's default is when it was last EDITED, not last touched — the
+      // only kind that inverts the pair, which is why it lists them itself.
+      sort: [BY_UPDATED, also(BY_ACTIVITY), BY_CREATED, BY_POSITION],
       inlineEdit: { title: true },
     }),
     panel: { archetype: 'reader', primaries: ['add-child'] },

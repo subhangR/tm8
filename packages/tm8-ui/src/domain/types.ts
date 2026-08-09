@@ -187,11 +187,67 @@ export interface FilterOption {
   filter: QueryFilter;
 }
 
+/**
+ * THE VIEWER, WRITTEN AS DATA.
+ *
+ * "Assigned to me" and "Needs me" are the two filters the user asked for, and
+ * both name a person the registry cannot know: the registry is a static module
+ * evaluated once at import, and the viewer is a per-session fact. Writing them
+ * as a `kind === … ? myId : …` branch is exactly what §15.2 forbids, and
+ * passing the id into the registry would make it a function of the session.
+ *
+ * So the option's filter carries this SENTINEL where an actor id goes, and the
+ * panel substitutes the real id at merge time. The vocabulary stays data, the
+ * identity stays runtime, and neither one learns about the other.
+ *
+ * UNRESOLVED IS REFUSED, NEVER SILENT. A viewer-scoped option offered with no
+ * id to put in it would query `assigneeIds: ['@me']` and return zero rows —
+ * "you have nothing assigned" instead of "I do not know who you are". The
+ * panel disables the option and says so.
+ */
+export const VIEWER_ACTOR = '@me';
+
+/** Does this option's filter name the viewer, and so need an id to be usable? */
+export function needsViewer(filter: QueryFilter): boolean {
+  return Object.values(filter as Record<string, unknown>).some((value) =>
+    Array.isArray(value) ? value.includes(VIEWER_ACTOR) : value === VIEWER_ACTOR,
+  );
+}
+
 export interface SortSpec {
   key: SortKey;
   label: string;
   /** Exactly one entry per kind carries this (asserted by §15.1). */
   default?: boolean;
+}
+
+/**
+ * Paging truth for ONE (filter, sort) read, supplied by the shell.
+ *
+ * Declared here rather than beside the hook that produces it because both the
+ * producer (`useGateData`) and the consumer (`EntityListPanel`) need it, and
+ * the panel must not import from `views/` — the dependency runs the other way.
+ */
+export interface ListPageState {
+  /** The server left a cursor: there are rows beyond the ones delivered. */
+  hasMore: boolean;
+  /** A page is in flight (including the first, before anything has arrived). */
+  loading: boolean;
+  /**
+   * Exact size of the whole match, when the server volunteered one.
+   *
+   * Absent is the normal case today — the facade does not populate
+   * `Page.total` — and absent MUST render as `N+` while `hasMore`, never as
+   * `N`. That conflation is the defect: a 601-row Done tab reported `50`
+   * because the first page was full and nobody asked what full meant.
+   */
+  total?: number;
+}
+
+/** How many rows a list is showing, said honestly. */
+export function countLabel(shown: number, page?: ListPageState): string {
+  if (page?.total !== undefined) return String(page.total);
+  return page?.hasMore ? `${shown}+` : String(shown);
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +388,16 @@ export interface ActionContext {
   capabilities?: EntityCapabilities | null;
   /** Seam verdict for work_session targets. Never computed here. */
   liveness?: SessionLiveness;
+  /**
+   * WHO IS LOOKING — the viewer's own actor id in this space, resolved by the
+   * shell from the identity read.
+   *
+   * The one input the viewer-scoped filters (`VIEWER_ACTOR`) need. Optional
+   * because it genuinely can be unknown (identity not read yet, or a fixture
+   * seam with no memberships), and those filters then refuse rather than
+   * quietly matching nobody.
+   */
+  viewerActorId?: EntityId;
   /**
    * Ops the facade has already refused this session (LLD §10.3 gate 2):
    * catalog op name → the honest reason. One probe per op, cached by the shell.

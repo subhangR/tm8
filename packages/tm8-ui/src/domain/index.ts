@@ -34,6 +34,7 @@ export type {
   KindConfig,
   LifecycleTier,
   ListConfig,
+  ListPageState,
   ListRowFacts,
   ListSection,
   LiveTreatment,
@@ -54,7 +55,13 @@ export type {
   ValueOption,
 } from './types';
 
-export { CUSTOM_KIND_FALLBACK, customKindSlug } from './types';
+export {
+  CUSTOM_KIND_FALLBACK,
+  VIEWER_ACTOR,
+  countLabel,
+  customKindSlug,
+  needsViewer,
+} from './types';
 
 export {
   ALL_MODES,

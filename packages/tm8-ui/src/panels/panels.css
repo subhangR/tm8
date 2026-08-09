@@ -1936,6 +1936,34 @@
   border-radius: 8px;
   box-shadow: var(--pn-sh-pop);
 }
+/* The sort menu hangs off the RIGHT end of the bar, under its own chip —
+   inheriting `left: 8px` would drop it under the filter trigger at the far
+   other end of the row. */
+.cv2-root .lp__filtermenu--sort {
+  left: auto;
+  right: 8px;
+}
+/* The infinite-scroll sentinel. A real height, so an IntersectionObserver has
+   something to observe and a keyboard user has something to reach. */
+.cv2-root .lp__more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 10px 12px;
+}
+.cv2-root .lp__morebtn {
+  padding: 4px 12px;
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  color: var(--pn-ink-3);
+  background: transparent;
+  border: 1px solid var(--pn-line-2);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.cv2-root .lp__morebtn:disabled {
+  cursor: default;
+  color: var(--pn-ink-4);
+}
 .cv2-root .lp__filtergroup {
   font-family: var(--pn-mono);
   font-size: 9px;

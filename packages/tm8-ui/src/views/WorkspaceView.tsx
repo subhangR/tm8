@@ -150,7 +150,10 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     ],
   );
 
-  const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+  const ctx = useMemo<ActionContext>(
+    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActorId }),
+    [data.spaceId, data.viewerActorId],
+  );
   /* Memoized on `data` so the port identity is stable — the feed hook's effects
      key on it, and a fresh object each render would re-read on every keystroke
      anywhere in the workspace. */
@@ -458,7 +461,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               />
             ) : undefined
           }
-          rowsFor={data.rowsFor(leftKind) as never}
+          /* NO `as never` on the row seam. The cast was load-bearing
+             camouflage: it made the panel's row seam unable to reject a
+             mismatched shape, which is the same blindness that let `rowsFor`
+             ignore its filter for so long. The signatures line up on their
+             own now. */
+          rowsFor={data.rowsFor(leftKind)}
+          pageStateOf={data.pageStateOf(leftKind)}
+          loadMore={data.loadMore(leftKind)}
           boardFor={data.boardFor(leftKind) as never}
           members={data.members}
           ctx={ctx}
@@ -548,7 +558,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               />
             ) : undefined
           }
-          rowsFor={data.rowsFor(rightKind) as never}
+          rowsFor={data.rowsFor(rightKind)}
+          pageStateOf={data.pageStateOf(rightKind)}
+          loadMore={data.loadMore(rightKind)}
           boardFor={data.boardFor(rightKind) as never}
           members={data.members}
           ctx={ctx}

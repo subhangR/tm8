@@ -17,6 +17,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type {
   ActivityItem,
+  CollectionQuery,
   Connections,
   DurableWorkspaceEvent,
   EdgeGroup,
@@ -285,6 +286,78 @@ export interface RowProjection {
   kind: string;
   spaceId: SpaceId;
   filter: unknown;
+  /**
+   * The sort the READ was issued under. Absent ⇒ the server's own default,
+   * which is what an unsorted request receives.
+   */
+  sort?: CollectionQuery['sort'];
+}
+
+// ---------------------------------------------------------------------------
+// Ordering — a mirror of the server's, not an invention
+// ---------------------------------------------------------------------------
+
+/** The server's default when a query carries no sort (`collections.ts`). */
+const DEFAULT_SORT: NonNullable<CollectionQuery['sort']> = 'activityAt_desc';
+
+/** `coalesce(t.due_date, '9999-12-31')` — the sentinel that sorts nulls last. */
+const NO_DUE_DATE = '9999-12-31';
+
+/** `case t.priority when 'urgent' then 0 … else 3 end`, verbatim. */
+const PRIORITY_RANK: Readonly<Record<string, number>> = {
+  urgent: 0, high: 1, medium: 2,
+};
+
+/**
+ * The value each sort orders by, and its direction — one entry per member of
+ * `CollectionQuery['sort']`, each mirroring that sort's SQL expression in
+ * `handlers/collections.ts`. A row's state field is read structurally, exactly
+ * as `membershipOf` does: `priority`/`dueDate` are NULL for every non-task row
+ * server-side, and `undefined` here lands on the same sentinel.
+ */
+const ORDERINGS: Record<
+  NonNullable<CollectionQuery['sort']>,
+  { readonly of: (row: EntitySummary) => string | number; readonly dir: 1 | -1 }
+> = {
+  activityAt_desc: { of: (r) => r.activityAt, dir: -1 },
+  updatedAt_desc: { of: (r) => r.updatedAt, dir: -1 },
+  createdAt_desc: { of: (r) => r.createdAt, dir: -1 },
+  position: { of: (r) => r.position, dir: 1 },
+  dueDate: {
+    of: (r) => {
+      const due = (r.state as unknown as Record<string, unknown>).dueDate;
+      return typeof due === 'string' ? due : NO_DUE_DATE;
+    },
+    dir: 1,
+  },
+  priority: {
+    of: (r) => {
+      const value = (r.state as unknown as Record<string, unknown>).priority;
+      return (typeof value === 'string' ? PRIORITY_RANK[value] : undefined) ?? 3;
+    },
+    dir: 1,
+  },
+};
+
+/**
+ * The comparator the server paged by, including its tiebreak.
+ *
+ * The tiebreak is `e.id ${dir}` — the SAME direction as the sort, because the
+ * keyset comparison is a row comparison `(sortValue, id) < (…)`. Breaking ties
+ * ascending under a descending sort would put two rows sharing a timestamp in
+ * an order no page boundary agrees with.
+ */
+export function compareBySort(
+  sort: CollectionQuery['sort'],
+): (a: EntitySummary, b: EntitySummary) => number {
+  const ordering = ORDERINGS[sort ?? DEFAULT_SORT] ?? ORDERINGS[DEFAULT_SORT];
+  return (a, b) => {
+    const left = ordering.of(a);
+    const right = ordering.of(b);
+    if (left < right) return -ordering.dir;
+    if (left > right) return ordering.dir;
+    return a.id < b.id ? -ordering.dir : a.id > b.id ? ordering.dir : 0;
+  };
 }
 
 /**
@@ -303,20 +376,21 @@ export interface RowProjection {
  *     Open by itself. Only an evaluable 'out' removes anything: 'unknown'
  *     keeps the server's answer, so a filter this module cannot read can never
  *     silently empty a panel.
- *  3. **Rows the store knows and the read never saw ARRIVE, at the head.**
- *     That is the created task appearing without a refresh. Head, not tail,
- *     because `activityAt_desc` is the server's DEFAULT sort
- *     (`collections.ts:98`) and nothing in this app passes a `sort` — so the
- *     position is the server's own rule applied locally, not a preference. If
- *     a caller ever passes a sort, this becomes a guess and this paragraph
- *     becomes false, which is why it cites the line.
+ *  3. **Rows the store knows and the read never saw ARRIVE, IN SORT ORDER.**
+ *     That is the created task appearing without a refresh. Its position is
+ *     the READ'S OWN SORT applied locally (`compareBySort`, a mirror of the
+ *     server's `SORTS` table) — not a preference, and no longer the fixed
+ *     head-insert that was only correct while `activityAt_desc` was the only
+ *     order this app could ask for. Under `dueDate` a new task with no due
+ *     date now lands where the server would have put it: last.
  *
- * PAGINATION IS AN HONEST HOLE: `ordered` is one page. An arrival that the
- * server would have placed on page 2 is shown here on page 1. Stated rather
- * than fixed — the lists this app draws are not paged yet.
+ * PAGINATION IS A NARROWER HOLE THAN IT WAS: `ordered` may be several pages,
+ * but it is still a PREFIX of the full result. An arrival that belongs after
+ * everything loaded is shown at the tail, which is where it belongs among the
+ * rows on screen — it is only wrong relative to rows nobody has fetched.
  */
 export function projectRows(input: RowProjection): EntitySummary[] {
-  const { ordered, entities, kind, spaceId, filter } = input;
+  const { ordered, entities, kind, spaceId, filter, sort } = input;
 
   const seen = new Set<EntityId>(ordered);
   const base: EntitySummary[] = [];
@@ -330,6 +404,7 @@ export function projectRows(input: RowProjection): EntitySummary[] {
     base.push(row);
   }
 
+  const compare = compareBySort(sort);
   const arrived = Object.values(entities)
     .filter(
       (e) =>
@@ -338,9 +413,21 @@ export function projectRows(input: RowProjection): EntitySummary[] {
         e.spaceId === spaceId &&
         membershipOf(filter, e) === 'in',
     )
-    .sort((a, b) => (a.activityAt < b.activityAt ? 1 : a.activityAt > b.activityAt ? -1 : 0));
+    .sort(compare);
 
-  return arrived.length === 0 ? base : [...arrived, ...base];
+  if (arrived.length === 0) return base;
+
+  // A merge, not a concat: `base` is already in this order (the server sorted
+  // it), so each arrival slots in at its own place rather than displacing the
+  // whole page. Stable on ties — `compare`'s id tiebreak decides those.
+  const out: EntitySummary[] = [];
+  let i = 0;
+  for (const row of base) {
+    while (i < arrived.length && compare(arrived[i]!, row) <= 0) out.push(arrived[i++]!);
+    out.push(row);
+  }
+  while (i < arrived.length) out.push(arrived[i++]!);
+  return out;
 }
 
 // --- narrow selector helpers (mirroring collab-v2 graph.ts) -----------------
