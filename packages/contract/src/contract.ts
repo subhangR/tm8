@@ -115,8 +115,15 @@ export type CoreEntityState =
   | { kind: 'member'; role: 'owner'|'admin'|'member'; score: number; taskDoneCount: number }
   | { kind: 'team_member'; owner: ActorSummary; model?: string | null; agentTool?: string | null;
       liveWork?: LiveWork | null }
+  // `ciStatus`/`mergeState` are ADDITIVE and OPTIONAL (forge observer).
+  // `null` means this node has no verdict — nothing has observed the pull
+  // request yet, or the observer runs unauthenticated — and a consumer renders
+  // NOTHING for it. `mergeState: 'unknown'` is the DIFFERENT claim that GitHub
+  // said it was still computing the merge. Absence is not a verdict.
   | { kind: 'pull_request'; repository: string; number: number; state: string;
-      url?: string; fetchedAt?: string | null; stale: boolean }
+      url?: string; fetchedAt?: string | null; stale: boolean;
+      ciStatus?: 'passing' | 'failing' | 'pending' | null;
+      mergeState?: 'clean' | 'conflicted' | 'unknown' | null }
   | { kind: 'commit'; repository: string; sha: string; message: string; committedAt?: string | null }
   | { kind: 'file'; name: string; mimeType: string; sizeBytes: number }
   | { kind: 'spell' | 'skill'; description?: string; equipped: boolean }

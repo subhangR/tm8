@@ -45,6 +45,7 @@ import type {
 import { plainExcerpt } from '@tm8/contract';
 import type { Querier } from '../db/types.js';
 import { projectInteractionProfileForBrowser } from '../profiles/browser-projection.js';
+import { projectForgeFacts } from '../tracking/pr-projection.js';
 
 // ---------------------------------------------------------------------------
 // Row shape
@@ -108,6 +109,13 @@ export const ENTITY_COLUMNS = `
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
+  pr.title as pr_title, pr.repo as pr_repo, pr.number as pr_number,
+  pr.state as pr_state, pr.ci_status as pr_ci_status,
+  -- pull_requests.mergeable_state arrives with the forge-observer migration
+  -- (unlanded); until then the fact is ABSENT, and absence is not a verdict:
+  -- projectForgeFacts projects null as "no claim", never as clean.
+  null::text as pr_mergeable_state, pr.url as pr_url,
+  pr.fetched_at as pr_fetched_at,
   art.name as artifact_name, art.description as artifact_description,
   arev.revision_number as artifact_revision_number,
   arev.entrypoint_path as artifact_entrypoint,
@@ -150,6 +158,7 @@ export const ENTITY_FROM = `
   left join public.memories memo         on memo.entity_id = e.id
   left join public.worktrees wt          on wt.entity_id = e.id
   left join public.loops lp              on lp.entity_id = e.id
+  left join public.pull_requests pr      on pr.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
   left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 `;
@@ -262,6 +271,15 @@ export interface EntityRow {
   wt_base_commit_oid: string | null;
   wt_status: string | null;
   wt_status_changed_at: Date | string | null;
+  /** pull_requests mirror columns; optional keeps legacy row fixtures source-compatible. */
+  pr_title?: string | null;
+  pr_repo?: string | null;
+  pr_number?: number | null;
+  pr_state?: string | null;
+  pr_ci_status?: string | null;
+  pr_mergeable_state?: string | null;
+  pr_url?: string | null;
+  pr_fetched_at?: Date | string | null;
   artifact_name: string | null;
   artifact_description: string | null;
   artifact_revision_number: number | null;
@@ -1034,6 +1052,13 @@ export function titleOf(row: EntityRow): string {
       // written atomically with the first revision (055), so the fallback only
       // covers a hypothetical stray envelope.
       return row.artifact_name ?? 'Artifact';
+    case 'pull_request': {
+      // MIRRORS the projector twin: the PR's own title, else the repo#number
+      // slug — never the raw kind string this arm used to fall through to
+      // (frozen legacy gap, healed by the 084 forge observer wave).
+      const repo = row.pr_repo ?? null;
+      return row.pr_title ?? (repo !== null ? `${repo}#${String(row.pr_number ?? 0)}` : '');
+    }
     default:
       return row.kind;
   }
@@ -1273,6 +1298,26 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
       // keeps a hypothetical stray envelope (no revision joined) readable
       // instead of failing the strict schema on a null.
       return { kind: 'artifact', revisionNumber: row.artifact_revision_number ?? 1 };
+    case 'pull_request': {
+      // MIRRORS the projector twin and the connections read
+      // (`projects-associations.ts` artifactSummary) FIELD FOR FIELD, through
+      // the ONE shared mapper — graph.query, the event feed and the
+      // connections door must serve the same forge facts under the same
+      // names, or chips render from whichever door happened to answer.
+      const fetched = row.pr_fetched_at ?? null;
+      return {
+        kind: 'pull_request',
+        repository: row.pr_repo ?? '',
+        number: Number(row.pr_number ?? 0),
+        state: row.pr_state ?? 'open',
+        ...(row.pr_url ? { url: row.pr_url } : {}),
+        fetchedAt: isoOrNull(fetched),
+        // `stale` is "the mirror is older than the upstream". Never fetched ⇒
+        // definitionally stale — same ruling as the projector twin.
+        stale: fetched === null,
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
+      };
+    }
     default:
       // A custom `c:*` kind. Its scalar fields live in `custom_entities` and
       // are out of the G1A slice, so the shape is honest and empty rather than
@@ -1621,6 +1666,22 @@ export function contentOf(row: EntityRow): EntityContent {
         fileCount: row.artifact_file_count ?? 0,
         totalSizeBytes: Number(row.artifact_total_size_bytes ?? 0),
       };
+    case 'pull_request': {
+      // The contract's content arm for tracking mirrors is an open bag; carry
+      // the same projected facts as `stateOf` so a detail read never knows
+      // less than a list row. Same shared mapper, same field names.
+      const fetched = row.pr_fetched_at ?? null;
+      return {
+        kind: 'pull_request',
+        repository: row.pr_repo ?? '',
+        number: Number(row.pr_number ?? 0),
+        state: row.pr_state ?? 'open',
+        ...(row.pr_url ? { url: row.pr_url } : {}),
+        fetchedAt: isoOrNull(fetched),
+        stale: fetched === null,
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
+      };
+    }
     default:
       return { kind: row.kind as `c:${string}`, fields: {} };
   }
