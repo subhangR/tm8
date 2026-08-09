@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(135); // +2: connected project folder file routes.
+    expect(health.operations).toBe(138); // measured off /health 2026-08-10 (was 3 behind; +1: projects.files.read).
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

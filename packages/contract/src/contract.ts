@@ -1844,6 +1844,32 @@ export interface ProjectFileAttachInput extends CommandContext {
   targets?: EntityId[];
 }
 
+/**
+ * GET /v2/projects/:projectId/files/content?path=… — one file out of a
+ * connected project folder, inline. This is a READ for a viewer, distinct from
+ * `projects.files.attach`: nothing is copied into the Space and no entity is
+ * minted. The inline ceiling is deliberately smaller than the attach ceiling —
+ * a viewer never needs a whole blob buffered into a JSON body.
+ */
+export interface ProjectFileReadResult {
+  projectId: string;
+  /** Canonical path — what was actually opened, after symlink resolution. */
+  path: string;
+  name: string;
+  /**
+   * Extension-derived, with `text/html` and `image/svg+xml` reported as
+   * `text/plain`: an inline read must never hand a UI a type it would render
+   * as active content.
+   */
+  mime: string;
+  sizeBytes: number;
+  /** `utf8` when the bytes decode cleanly as text; `base64` otherwise. */
+  encoding: 'utf8' | 'base64';
+  content: string;
+  /** True when `sizeBytes` exceeded the inline ceiling and `content` is a prefix. */
+  truncated: boolean;
+}
+
 /** The wrapper returned by spaces.create after its default member/channel saga. */
 export interface CreateSpaceResult {
   space: SpaceSummary;

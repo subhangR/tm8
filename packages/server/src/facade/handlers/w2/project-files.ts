@@ -20,6 +20,7 @@ export function registerW2ProjectFilesHandlers(
   const service = new W2ProjectFilesService(deps, options);
   registry.registerAll({
     'projects.files.list': service.listFiles,
+    'projects.files.read': service.readFile,
     'projects.files.attach': service.attachFile,
   });
 }

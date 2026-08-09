@@ -246,6 +246,8 @@ const PROJECT_FOLDER_NET_NEW_OPERATIONS = [
   'projects.directories.list',
   'projects.files.list',
   'projects.files.attach',
+  // 2026-08-10: the inline viewer read beside list — same jail + secret policy.
+  'projects.files.read',
 ] as const;
 
 /**
@@ -389,7 +391,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 114 -> 115 (2026-08-09): projects.branches.list.
     // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
     // 117 -> 119: projects.files.list + projects.files.attach.
-    expect(registry.size).toBe(119);
+    // 119 -> 120 (2026-08-10): projects.files.read.
+    expect(registry.size).toBe(120);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -694,8 +697,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 137, implemented: 135 });
-    expect(harness.production.server.registry.size).toBe(135);
+    expect(health).toMatchObject({ ok: true, operations: 138, implemented: 136 });
+    expect(harness.production.server.registry.size).toBe(136);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -713,7 +716,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(135);
+    expect(registered.size + residual.length).toBe(136);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

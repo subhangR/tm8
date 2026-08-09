@@ -238,28 +238,43 @@ describe('resolving one file for attachment', () => {
 });
 
 describe('W2 connected project folder facade', () => {
-  it('exports one registration seam for exactly the two project-file operations', async () => {
+  it('exports one registration seam for exactly the three project-file operations', async () => {
     const { registry } = await registered(new FakeDb());
-    expect(registry.implemented()).toEqual(['projects.files.attach', 'projects.files.list']);
+    expect(registry.implemented()).toEqual([
+      'projects.files.attach',
+      'projects.files.list',
+      'projects.files.read',
+    ]);
   });
 
-  it('requires node-admin claims to read or attach node-local files', async () => {
-    const { registry } = await registered(new FakeDb());
-    const identity = {
-      kind: 'bearer' as const,
-      identityId: 'ordinary-user',
-      token: 'test-token',
-      nodeAdmin: false,
-    };
-    await expect(handler(registry, 'projects.files.list')(
-      request('projects.files.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
-    await expect(handler(registry, 'projects.files.attach')(
-      request('projects.files.attach', {
-        identity,
-        body: { clientMutationId: 'm-1', spaceId: IDS.space, path: join(workingDir, 'notes.md') },
-      }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+  // LIST and READ follow project-link visibility (RLS `projects_select`
+  // already scopes the row to linked-space members), because a member who can
+  // see a project can already spawn a shell in it. ATTACH copies node-local
+  // bytes into a Space and keeps requiring node-admin on top.
+  it('requires node-admin claims to attach, but not to list, node-local files', async () => {
+    await writeFile(join(workingDir, 'notes.md'), 'hello');
+    process.env.TM8_PROJECT_ROOTS = scratch;
+    try {
+      const { registry } = await registered(new FakeDb());
+      const identity = {
+        kind: 'bearer' as const,
+        identityId: 'ordinary-user',
+        token: 'test-token',
+        nodeAdmin: false,
+      };
+      const listing = await handler(registry, 'projects.files.list')(
+        request('projects.files.list', { identity }),
+      ) as { files: Array<{ name: string }> };
+      expect(listing.files.map((entry) => entry.name)).toEqual(['notes.md']);
+      await expect(handler(registry, 'projects.files.attach')(
+        request('projects.files.attach', {
+          identity,
+          body: { clientMutationId: 'm-1', spaceId: IDS.space, path: join(workingDir, 'notes.md') },
+        }),
+      )).rejects.toMatchObject({ code: 'forbidden' });
+    } finally {
+      delete process.env.TM8_PROJECT_ROOTS;
+    }
   });
 
   it('answers the listing for the project the path parameter names', async () => {

@@ -963,6 +963,18 @@ const ROWS: Record<OperationName, Row> = {
       'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
     ],
   },
+  'projects.files.read': {
+    cmd: null,
+    sum: 'Read one file inline out of a connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'read', 'view', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'confined to the project working directory; the secret policy withholds .env, key material, .git/config and the tm8 data directory even inside it',
+      'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
   'projects.files.attach': {
     cmd: null,
     sum: 'Attach one file read from a connected project folder, without a browser byte transfer',
@@ -1719,7 +1731,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
+  'sha256:df7537589e91f2a61128ea5770db721c80ad155d5ad7a4b9705e7a553e845384';
 
 export const GRAMMAR_VERSION = '2';
 

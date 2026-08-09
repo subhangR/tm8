@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 135 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 136 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -301,9 +301,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(135);
-    expect(rows).toHaveLength(135);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(135);
+    expect(SURFACE).toHaveLength(136);
+    expect(rows).toHaveLength(136);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(136);
   });
 
   /**
@@ -687,6 +687,7 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  'projects.files.read',
   'spaces.defaultChannel.set',
   'spaces.interactionProfile.setDefault',
   'spaces.menu.update',
