@@ -234,6 +234,7 @@ describe('the CLI command projection', () => {
     expect(commandsForNoun('task').map((c) => c.command).sort()).toEqual([
       'task complete',
       'task gate',
+      'task import-issue',
       'task link-commit',
       'task link-pr',
       'task transition',

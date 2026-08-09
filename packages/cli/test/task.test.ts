@@ -171,9 +171,9 @@ async function drive(argv: readonly string[]): Promise<Ran> {
 // ── registration ────────────────────────────────────────────────────────────
 
 describe('the five rows this slot owns here', () => {
-  it('task.ts registers exactly the five task commands', async () => {
+  it('task.ts registers exactly the six task commands', async () => {
     const paths = (await taskCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['task complete', 'task gate', 'task link-commit', 'task link-pr', 'task transition']);
+    expect(paths).toEqual(['task complete', 'task gate', 'task import-issue', 'task link-commit', 'task link-pr', 'task transition']);
   });
 
   it('tracking.ts registers exactly `tracking refresh`', async () => {
@@ -422,5 +422,117 @@ describe('output law', () => {
     };
     const r = await drive(['task', 'transition', TASK, 'working']);
     expect(r.stdout).toContain(TASK);
+  });
+});
+
+// ── task import-issue ───────────────────────────────────────────────────────
+//
+// The GitHub read is a LOCAL network act; the only wire operation is the
+// `entities.create` the command performs. `TM8_GITHUB_API_BASE` points the
+// read at a mock here — the variable exists for exactly this test.
+
+describe('`task import-issue` — one-way import over entities.create', () => {
+  let github: Server;
+  let githubReply: { status: number; body: unknown } = { status: 200, body: {} };
+  let githubSeen: { pathname: string; auth: string | null }[] = [];
+
+  beforeAll(async () => {
+    github = createServer((req: IncomingMessage, res: ServerResponse) => {
+      const url = new URL(req.url ?? '/', 'http://x');
+      githubSeen.push({
+        pathname: url.pathname,
+        auth: req.headers.authorization ?? null,
+      });
+      res.setHeader('content-type', 'application/json');
+      res.statusCode = githubReply.status;
+      res.end(JSON.stringify(githubReply.body));
+    });
+    await new Promise<void>((resolve) => github.listen(0, '127.0.0.1', resolve));
+    const addr = github.address();
+    if (addr === null || typeof addr === 'string') throw new Error('no address');
+    process.env.TM8_GITHUB_API_BASE = `http://127.0.0.1:${addr.port}`;
+  });
+
+  afterAll(async () => {
+    delete process.env.TM8_GITHUB_API_BASE;
+    await new Promise<void>((resolve, reject) => github.close((e) => (e ? reject(e) : resolve())));
+  });
+
+  beforeEach(() => {
+    githubSeen = [];
+    githubReply = { status: 200, body: { title: 'Fix the flange', body: 'It rattles.', state: 'open' } };
+    delete process.env.TM8_GITHUB_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    delete process.env.GH_TOKEN;
+  });
+
+  it('refuses a URL that is not a GitHub issue URL, before any network', async () => {
+    const r = await drive(['task', 'import-issue', 'https://gitlab.com/o/r/-/issues/3']);
+    expect(r.code).toBe(2);
+    expect(githubSeen).toHaveLength(0);
+    expect(seen).toHaveLength(0);
+  });
+
+  it('refuses a pull-request URL by shape, and names `task link-pr`', async () => {
+    const r = await drive(['task', 'import-issue', 'https://github.com/o/r/pull/7']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('link-pr');
+    expect(githubSeen).toHaveLength(0);
+  });
+
+  it('refuses a PR that hides under an /issues/ path — the payload knows', async () => {
+    githubReply = {
+      status: 200,
+      body: { title: 'sneaky', state: 'open', pull_request: { url: 'x' } },
+    };
+    const r = await drive(['task', 'import-issue', 'https://github.com/o/r/issues/7']);
+    expect(r.code).toBe(2);
+    expect(r.stderr).toContain('pull request');
+    expect(seen).toHaveLength(0);
+  });
+
+  it('a 404 is `not_found`, with the private-repo hint', async () => {
+    githubReply = { status: 404, body: { message: 'Not Found' } };
+    const r = await drive(['task', 'import-issue', 'https://github.com/o/r/issues/9']);
+    expect(r.code).toBe(5);
+    expect(r.stderr).toContain('TM8_GITHUB_TOKEN');
+    expect(seen).toHaveLength(0);
+  });
+
+  it('imports: one entities.create with the origin link in the description footer', async () => {
+    reply = {
+      status: 201,
+      body: { data: { entity: { id: OTHER, kind: 'task', title: 'Fix the flange', version: 1 } }, requestId: 'req_t' },
+    };
+    const r = await drive([
+      'task', 'import-issue', 'https://github.com/octo/widgets/issues/42', '--parent', TASK,
+    ]);
+    expect(r.code).toBe(0);
+    expect(githubSeen).toEqual([{ pathname: '/repos/octo/widgets/issues/42', auth: null }]);
+    expect(seen).toHaveLength(1);
+    const first = seen[0] as Seen;
+    expect(first.pathname).toBe(bindPath('entities.create', {}));
+    const body = first.body as Record<string, unknown>;
+    expect(body.kind).toBe('task');
+    expect(body.title).toBe('Fix the flange');
+    expect(body.parentId).toBe(TASK);
+    expect(body.spaceId).toBe(SPACE);
+    const content = body.content as { description: string; acceptanceCriteria: unknown[] };
+    expect(content.description).toContain('It rattles.');
+    expect(content.description).toContain('Imported from https://github.com/octo/widgets/issues/42');
+    expect(content.description).toContain('github octo/widgets#42');
+    expect(content.acceptanceCriteria).toEqual([]);
+  });
+
+  it('sends the env token as a bearer, and an untitled issue falls back to repo#number', async () => {
+    process.env.TM8_GITHUB_TOKEN = 'tok_test';
+    githubReply = { status: 200, body: { body: null, state: 'closed' } };
+    reply = { status: 201, body: { data: {}, requestId: 'req_t' } };
+    const r = await drive(['task', 'import-issue', 'https://github.com/o/r/issues/8']);
+    expect(r.code).toBe(0);
+    expect(githubSeen[0]?.auth).toBe('Bearer tok_test');
+    const body = (seen[0] as Seen).body as Record<string, unknown>;
+    expect(body.title).toBe('o/r#8');
+    expect((body.content as { description: string }).description).toContain('closed at import');
   });
 });
