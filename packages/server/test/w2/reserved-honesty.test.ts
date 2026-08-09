@@ -125,13 +125,14 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 127 -> 128 (2026-08-07): execution.transcript, one GET read.
     // 128 -> 129 (2026-08-09): projects.branches.list, one GET read.
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
-    expect(OPERATIONS).toHaveLength(137);
-    expect(V1_OPERATIONS).toHaveLength(135);
+    // 137 -> 138 (2026-08-09): projects.files.read, one GET read.
+    expect(OPERATIONS).toHaveLength(138);
+    expect(V1_OPERATIONS).toHaveLength(136);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(136);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(137);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
@@ -143,7 +144,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(134);
+    )).toHaveLength(135);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

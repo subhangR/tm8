@@ -963,6 +963,19 @@ const ROWS: Record<OperationName, Row> = {
       'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
     ],
   },
+  'projects.files.read': {
+    cmd: null,
+    sum: 'Read one file content inside a connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'view', 'read', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'the VIEWER half of `projects.files.list`, which lists a directory but never reads one',
+      'same posture as that row: a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+      'answers a structured view with a NAMED refusal (secret-pattern, too-large, binary-not-previewable, outside-root), never raw bytes and never a silent empty body',
+    ],
+  },
   'projects.files.attach': {
     cmd: null,
     sum: 'Attach one file read from a connected project folder, without a browser byte transfer',
@@ -1701,7 +1714,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe';
+  'sha256:79ba655ef4e5f5395d5366d4604df07835d469e09688095cfe78bdfd40208b90';
 
 export const GRAMMAR_VERSION = '2';
 
