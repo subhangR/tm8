@@ -68,7 +68,9 @@ import type {
   AttentionRequest, AttentionRequestListQuery, AttentionRequestMutationResult,
   CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
   KindCounts, SpaceKindCounts,
-  SetTeammateProfileDefaultInput, ShareProjectionEnvelope, SpaceNavigation,
+  SetTeammateProfileDefaultInput, ShareProjectionEnvelope,
+  SpaceFolderCreateInput, SpaceFolderIngestInput,
+  SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
@@ -1781,6 +1783,42 @@ export const ProjectFileAttachInputSchema: z.ZodType<ProjectFileAttachInput> = z
   name: z.string().min(1).optional(),
   mime: z.string().min(1).optional(),
   targets: uniqueArray(EntityIdSchema, 0, 16).optional(),
+}).strict();
+
+// --- space folders (uploaded trees) ----------------------------------------
+
+/**
+ * A path RELATIVE to a Space folder's root: '/'-separated, no leading or
+ * trailing slash, no '.' or '..' segment, no empty segment, no backslash and no
+ * control character. '' means the folder root and is allowed only where a root
+ * is meaningful, so each use below picks `min(0)` or `min(1)` deliberately.
+ *
+ * This mirrors the CHECK constraints on `space_folder_entries.path` (migration
+ * 088). It is a SHAPE gate at the wire, not the ingest validator — the ingest
+ * validator reports each refused member BY NAME in `skipped[]` rather than
+ * failing the whole request, which a schema cannot do.
+ */
+const spaceFolderRelativePath = z.string().max(1024).refine(
+  (value) => value === '' || (
+    !value.startsWith('/') && !value.endsWith('/')
+    && !value.includes('//') && !value.includes('\\')
+    // eslint-disable-next-line no-control-regex
+    && !/[\u0000-\u001f]/.test(value)
+    && !value.split('/').some((segment) => segment === '' || segment === '.' || segment === '..')
+  ),
+  { message: 'must be a normalised relative path inside the folder' },
+);
+
+export const SpaceFolderCreateInputSchema: z.ZodType<SpaceFolderCreateInput> = z.object({
+  ...commandContextShape,
+  name: z.string().trim().min(1).max(200),
+}).strict();
+
+export const SpaceFolderIngestInputSchema: z.ZodType<SpaceFolderIngestInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  uploadId: z.string().uuid(),
+  destPath: spaceFolderRelativePath.optional(),
 }).strict();
 
 export const ProjectUpdateInputSchema: z.ZodType<ProjectUpdateInput> = z.object({
