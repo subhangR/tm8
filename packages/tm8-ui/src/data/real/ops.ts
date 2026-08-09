@@ -53,6 +53,8 @@ import {
   type EntityKindDef,
   type EntitySummary,
   type ExecutionPromptInput,
+  type ExecutionDispatchInput,
+  type ExecutionDispatchResult,
   type ExecutionSpawnInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
@@ -519,6 +521,17 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     spawn(input: ExecutionSpawnInput): Promise<CommandResult> {
       return http.call<CommandResult>('execution.spawn', { body: input });
+    },
+
+    /**
+     * Note the RESULT TYPE: `ExecutionDispatchResult`, not `CommandResult`.
+     * Dispatch does not create the session it is asking for — it derives the
+     * task, finds or spawns the dispatcher, and delivers a request — so there
+     * are no patches to reconcile and nothing for a store to journal
+     * optimistically. Typing it as a command result would invite exactly that.
+     */
+    dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult> {
+      return http.call<ExecutionDispatchResult>('execution.dispatch', { body: input });
     },
 
     /**

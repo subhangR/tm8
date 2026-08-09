@@ -644,6 +644,52 @@ export function GateApp(props: GateAppProps = {}) {
               // itself after a click — the same misleading-glance shape as a
               // transient refusal wearing the permanent form. The honest fix
               // is to wire it, not to grey it out.
+              /*
+               * DISPATCH (D5). Deliberately shaped UNLIKE the launch below it.
+               *
+               * There is no session to open and no terminal to push: the
+               * dispatcher decides later, in another session. So this closes
+               * the sheet and reports the DELIVERY VERDICT rather than
+               * navigating anywhere — treating dispatch like a launch is the
+               * mistake the seam docblock warns about, and a caller that waits
+               * for a terminal here waits forever.
+               *
+               * `undelivered` is reported as a WARNING — neither error nor
+               * success. The request is durably stored and a dispatcher may
+               * still read it, so claiming failure would be as wrong as
+               * claiming the work started.
+               */
+              onLaunchDispatch={(request) => {
+                setLaunchRefusal(null);
+                void data.seam.commands
+                  .dispatch({
+                    clientMutationId: newLaunchMutationId(),
+                    spaceId: data.spaceId,
+                    subjectId: request.subjectId,
+                  })
+                  .then((result) => {
+                    launch.close();
+                    notices.push({
+                      id: 'dispatch-done',
+                      tone: result.delivery === 'delivered' ? 'info' : 'warn',
+                      title: result.delivery === 'delivered'
+                        ? 'Handed to the dispatcher'
+                        : 'Dispatch request stored, not delivered',
+                      body: result.delivery === 'delivered'
+                        ? `${result.dispatcherSpawned ? 'Spawned the dispatcher and sent' : 'Sent'} the request. It picks the teammate and the memories, then replies on the task.`
+                        : 'The dispatcher session did not receive it. The request is stored on the task and is not lost, but nothing is running yet.',
+                      ttlMs: 8000,
+                    });
+                  })
+                  .catch((error: unknown) =>
+                    // Same law as launch: the refusal renders IN the sheet,
+                    // beside the subject that provoked it. Never a toast.
+                    setLaunchRefusal({
+                      cause: 'Dispatch refused',
+                      detail: String((error as { message?: string })?.message ?? error),
+                    }),
+                  );
+              }}
               onLaunchSubmit={(config) => {
                 setLaunchRefusal(null);
                 void data

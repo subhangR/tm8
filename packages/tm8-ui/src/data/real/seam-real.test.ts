@@ -266,6 +266,16 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // ONE Amendment 5, not two. Sorts around `createEntity` / `deleteEntity`,
       // beside the entity verbs they mirror.
       'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
+      // 2026-08-09: `dispatch` — `execution.dispatch` (Dreamer & Dispatcher
+      // D5). It sorts next to `deleteEntity` and reads nothing like it, which
+      // is precisely why this list is hand-maintained: the seam cannot gain a
+      // command without someone writing the line.
+      //
+      // It is NOT a variant of `spawn`, and its RETURN TYPE is where that is
+      // enforced — it answers `ExecutionDispatchResult`, a delivery verdict,
+      // not a `CommandResult`. It creates no session and leaves no patches to
+      // reconcile, so nothing may journal it optimistically.
+      'dispatch',
       'editMessage', 'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were

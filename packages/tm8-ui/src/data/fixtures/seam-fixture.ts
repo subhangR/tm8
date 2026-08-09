@@ -52,6 +52,8 @@ import {
   type EntityState,
   type EntitySummary,
   type ExecutionPromptInput,
+  type ExecutionDispatchInput,
+  type ExecutionDispatchResult,
   type ExecutionSpawnInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
@@ -1622,6 +1624,78 @@ export function createFixtureSeam(): FixtureSeam {
         setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), s.id], snap?.nodeBootId);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      /**
+       * `execution.dispatch` — the fixture mirror of the resident-dispatcher
+       * saga (DESIGN §4.3).
+       *
+       * IT MODELS THE PARTS A UI CAN GET WRONG, and no more:
+       *   · a dispatcher session may have to be SPAWNED first, so
+       *     `dispatcherSpawned` is sometimes true and a surface that ignores it
+       *     cannot claim "reused the existing dispatcher";
+       *   · the answer is a DELIVERY VERDICT, not a session — dispatch is
+       *     asynchronous by construction and there is nothing to open;
+       *   · `undelivered` is a real, non-exceptional outcome that still leaves
+       *     a durable message, so it is reachable here rather than being a
+       *     failure path only a broken node could produce.
+       *
+       * It deliberately does NOT invent the dispatcher's decision: no teammate
+       * is chosen and no session is spawned for the work, because on a real
+       * node that happens later, in another agent, and a fixture that faked it
+       * would let a surface render a launch that never happened.
+       */
+      async dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult> {
+        const subject = requireSummary(input.subjectId);
+        // 064 derives a task for any launchable subject before dispatch; a
+        // subject that IS a task is its own derivation.
+        const task = subject.state.kind === 'task'
+          ? subject
+          : insertSummary({
+              id: nextId('task'),
+              kind: 'task',
+              title: subject.title,
+              spaceId: subject.spaceId,
+              parentId: subject.id,
+              state: {
+                kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+                dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
+              },
+            });
+        const existing = [...summaries.values()].find(
+          (row) => row.spaceId === input.spaceId
+            && row.state.kind === 'work_session'
+            && row.title.startsWith('dispatcher'),
+        );
+        const dispatcher = existing ?? insertSummary({
+          id: nextId('ws'),
+          kind: 'work_session',
+          title: 'dispatcher',
+          spaceId: input.spaceId,
+          state: {
+            kind: 'work_session', status: 'running', agentTool: 'claude-code',
+            model: null, shareMode: 'space', startedAt: tick(), exitedAt: null,
+          },
+        });
+        if (!existing) {
+          extras.set(dispatcher.id, {
+            content: {
+              kind: 'work_session', nodeId: 'node-fixture', launchProjectId: null,
+              workingOn: [], transcriptDoc: null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+          const snap = livenessBySpace.get(input.spaceId);
+          setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), dispatcher.id], snap?.nodeBootId);
+          emit(dispatcher.spaceId, { type: 'entity.upsert', entity: clone(dispatcher) }, input);
+        }
+        return {
+          taskId: task.id,
+          dispatcherSessionId: dispatcher.id,
+          dispatcherSpawned: existing === undefined,
+          requestMessageId: nextId('msg'),
+          delivery: 'delivered',
+        };
       },
       async prompt(id, _input: ExecutionPromptInput) {
         const s = requireSummary(id);

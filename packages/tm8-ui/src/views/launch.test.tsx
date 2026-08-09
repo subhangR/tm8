@@ -16,6 +16,7 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
 import type { NavPort } from '../shell/nav-port';
 import { teamMemberForge } from '../fixtures';
+import { createFixtureSeam } from '../data/fixtures/seam-fixture';
 import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) =>
@@ -387,5 +388,111 @@ describe('the memory picker hands ids to spawn without becoming a manager', () =
     expect(queryByTestId('memory-add')).toBeNull();
     expect(queryByTestId('memory-forget')).toBeNull();
     expect(queryByText(/remember something/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * DISPATCH (D5) — the option beside the manual flow.
+ *
+ * THE PROPERTY THAT MATTERS is what it does NOT carry. `ExecutionDispatchInput`
+ * has no launch configuration at all, because — in the contract's own words —
+ * "the moment a caller can name the teammate, it is spawning, not dispatching".
+ * So the risk here is not a broken button; it is a button that quietly appears
+ * to honour a form it structurally cannot use. These tests hold that line from
+ * both sides: the payload is one field, and the sheet says so.
+ */
+describe('Dispatch hands off the subject and cannot smuggle a configuration', () => {
+  it('sends ONLY the subject, whatever the sheet was configured to', () => {
+    const dispatched: Array<Record<string, unknown>> = [];
+    const { getByTestId, getByText, getByLabelText } = renderSheet({
+      memories: LAUNCH_MEMORIES,
+      onDispatch: (r) => dispatched.push(r as unknown as Record<string, unknown>),
+    });
+
+    // Configure the sheet as fully as the surface allows first — a teammate
+    // other than the default, a model, and a picked memory.
+    fireEvent.click(getByText('scout'));
+    fireEvent.change(getByTestId('launch-model'), { target: { value: 'claude-opus-5' } });
+    fireEvent.click(getByLabelText('Change picked memories'));
+    fireEvent.click(getByText('tokens.css is verbatim — a byte-equality test guards it'));
+
+    fireEvent.click(getByTestId('launch-dispatch'));
+
+    expect(dispatched).toHaveLength(1);
+    // ONE key. Not "teamMemberId is undefined" — the key is absent, so no
+    // future edit can start populating it without this failing.
+    expect(Object.keys(dispatched[0] ?? {})).toEqual(['subjectId']);
+    expect(dispatched[0]?.subjectId).toBe('task-1');
+  });
+
+  it('says out loud that the settings above are not used', () => {
+    // A control that silently discards a form the viewer just filled in is the
+    // worst class of surprise: everything looks like it was honoured.
+    const { getByTestId } = renderSheet({ onDispatch: () => {} });
+    const title = getByTestId('launch-dispatch').getAttribute('title') ?? '';
+    expect(title).toContain('picks the teammate');
+    expect(title).toMatch(/settings above are NOT used/i);
+  });
+
+  it('does not launch, and Launch does not dispatch', () => {
+    // The two commits are different actions; neither may stand in for the other.
+    const launched: unknown[] = [];
+    const dispatched: unknown[] = [];
+    const { getByTestId, getByRole } = renderSheet({
+      onLaunch: (c) => launched.push(c),
+      onDispatch: (r) => dispatched.push(r),
+    });
+    fireEvent.click(getByTestId('launch-dispatch'));
+    expect(launched).toHaveLength(0);
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect(dispatched).toHaveLength(1);
+    expect(launched).toHaveLength(1);
+  });
+
+  it('refuses WITH A REASON when unwired, rather than hiding the button', () => {
+    // A missing button would claim this node cannot dispatch at all.
+    const { getByTestId } = renderSheet();
+    const button = getByTestId('launch-dispatch');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('title')).toContain('not wired');
+    expect(button.tagName).toBe('BUTTON');
+  });
+});
+
+/**
+ * THE SEAM SIDE of dispatch. The fixture seam is where a UI meets the resident
+ * dispatcher saga in jsdom, and the two facts it must not flatten are that a
+ * dispatcher can have to be SPAWNED, and that the answer is a delivery verdict
+ * rather than a session.
+ */
+describe('the fixture seam models the dispatcher saga rather than stubbing it', () => {
+  const firstSpaceId = async (seam: ReturnType<typeof createFixtureSeam>) => {
+    const spaces = await seam.spaces();
+    expect(spaces.length, 'the fixture seam must expose at least one space').toBeGreaterThan(0);
+    return spaces[0]!.id;
+  };
+
+  it('spawns the dispatcher once, then reuses it', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const subject = (await seam.query({ spaceId })).page.items[0];
+    if (!subject) throw new Error('fixture must supply a subject');
+
+    const first = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d1', spaceId, subjectId: subject.id,
+    });
+    expect(first.dispatcherSpawned).toBe(true);
+    expect(first.delivery).toBe('delivered');
+    // A task is always derived — dispatch anchors on a task, never the subject.
+    expect(first.taskId).toBeTruthy();
+
+    const second = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d2', spaceId, subjectId: subject.id,
+    });
+    // RESIDENT, not per-request: a second dispatcher would be a real defect.
+    expect(second.dispatcherSpawned).toBe(false);
+    expect(second.dispatcherSessionId).toBe(first.dispatcherSessionId);
   });
 });

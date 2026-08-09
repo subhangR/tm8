@@ -62,7 +62,21 @@ export interface LaunchSheetProps {
   /** A refusal renders IN the sheet, never as a toast (T5-5 annotation 6). */
   refusal?: { cause: string; detail: string } | null;
   onLaunch(config: LaunchSelection): void;
+  /**
+   * D5 — route the subject through the space's resident dispatcher instead of
+   * configuring the launch here. Takes ONLY the subject, mirroring
+   * `ExecutionDispatchInput`, so this prop cannot grow into a second spawn
+   * path: there is nowhere to put a teammate.
+   *
+   * Absent ⇒ the button renders refused-with-reason, never hidden.
+   */
+  onDispatch?(request: DispatchSelection): void;
   onCancel(): void;
+}
+
+/** Everything dispatch is allowed to know. Deliberately one field. */
+export interface DispatchSelection {
+  subjectId: EntityId;
 }
 
 export interface LaunchSelection extends LaunchConfig {
@@ -600,6 +614,42 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <div className="ls__spacer" />
         <button type="button" className="ls__cancel" onClick={props.onCancel}>
           Cancel
+        </button>
+        {/*
+          * DISPATCH — D5, beside the manual flow rather than inside it.
+          *
+          * IT IGNORES EVERY CONTROL ABOVE IT, and that is the point rather than
+          * an oversight. `ExecutionDispatchInput` carries no launch
+          * configuration at all — the contract's own comment is that "the
+          * moment a caller can name the teammate, it is spawning, not
+          * dispatching" — so the dispatcher chooses the teammate AND the
+          * memories itself. Forwarding the sheet's picks would be impossible
+          * and pretending to would be a lie in the direction users most want to
+          * believe.
+          *
+          * WHICH IS WHY THE TITLE SAYS SO. A control that silently discards a
+          * form the viewer has just filled in is the worst class of surprise:
+          * everything looks like it was honoured.
+          *
+          * DISABLED-WITH-REASON when no handler is wired, never hidden — a
+          * missing button would claim this node cannot dispatch.
+          */}
+        <button
+          type="button"
+          className="ls__dispatch"
+          data-testid="launch-dispatch"
+          aria-disabled={props.onDispatch ? undefined : true}
+          title={
+            props.onDispatch
+              ? 'Hand this subject to the space\u2019s dispatcher. It picks the teammate and the memories — the settings above are NOT used.'
+              : 'Dispatch is not wired on this surface, so nothing would be routed.'
+          }
+          onClick={(event) => {
+            if (!props.onDispatch) return event.preventDefault();
+            props.onDispatch({ subjectId: props.subjectId });
+          }}
+        >
+          Dispatch ⇥
         </button>
         <button
           type="button"
