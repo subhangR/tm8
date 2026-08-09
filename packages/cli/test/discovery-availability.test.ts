@@ -35,9 +35,10 @@ describe('the default is unknown, and unknown is never upgraded', () => {
     const unavailable = rows.filter((r) => r.availability === 'unavailable');
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-    expect(rows).toHaveLength(127);
+    // 127 -> 128 (2026-08-09): execution.transcript (public, with a command).
+    expect(rows).toHaveLength(128);
     expect(unavailable.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
-    expect(unknown).toHaveLength(125);
+    expect(unknown).toHaveLength(126);
     // The point of the field: NOTHING is optimistically available.
     expect(rows.filter((r) => r.availability === 'available')).toHaveLength(0);
   });
@@ -159,7 +160,7 @@ describe('/health is a cache-invalidation EPOCH, never a per-operation claim', (
     const rows = discovery(l).filter((r) => r.availability !== 'unavailable');
     // Knowing 28 handlers exist tells you nothing about WHICH 28.
     expect(rows.every((r) => r.availability === 'unknown')).toBe(true);
-    expect(rows).toHaveLength(125);
+    expect(rows).toHaveLength(126);
   });
 
   it('the implementation epoch key is distinctly prefixed and cannot read as a capabilityEpoch', () => {

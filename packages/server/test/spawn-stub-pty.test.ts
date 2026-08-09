@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -11,6 +11,7 @@ const TEAMMATE = '22222222-2222-4222-8222-222222222222';
 const PROJECT = '33333333-3333-4333-8333-333333333333';
 const SESSION = '44444444-4444-4444-8444-444444444444';
 const PARENT_SESSION = '55555555-5555-4555-8555-555555555555';
+const AUTH_SESSION = '66666666-6666-4666-8666-666666666666';
 
 class SpawnDb implements Db {
   readonly rpcCalls: Array<{ fn: string; args: readonly unknown[] }> = [];
@@ -53,6 +54,13 @@ class SpawnDb implements Db {
         snapshot: { profile: { source: 'core_default' } },
       } as T;
     }
+    if (fn === 'public.issue_work_session_agent_session') {
+      // The real function returns the inserted auth_sessions row as jsonb minus
+      // token_hash (072_session_io_routes.sql); the mint only reads `.id`, and
+      // refuses with upstream_unavailable when it is absent. The catch-all `{}`
+      // below is that refusal, so this stub has to answer explicitly.
+      return { id: AUTH_SESSION } as T;
+    }
     if (fn === 'internal.w2_record_interaction_profile_pin') {
       return {
         workSessionId: SESSION,
@@ -73,14 +81,46 @@ class SpawnDb implements Db {
   async end(): Promise<void> {}
 }
 
+/**
+ * A `codex` on PATH that answers the two questions the spawn gate asks, and
+ * nothing else.
+ *
+ * `SpawnService.assertAgentRuntime` resolves the agent binary on PATH and then,
+ * for codex outside bypassPermissions, EXECUTES it twice —
+ * `preflightCodexNetworkPolicy` runs `features list` and `--version` and fails
+ * closed on either. This suite's subject is what reaches the CLI builder, not
+ * Codex's runtime, and it was passing only on machines with a real Codex
+ * installed; a bare runner answered `agent CLI 'codex' was not found`. An empty
+ * file would not do: `existsSync` would accept it and the preflight would then
+ * fail on the exec.
+ */
+async function stubCodexOnPath(): Promise<string> {
+  const binDir = await mkdtemp(join(tmpdir(), 'tm8-stub-bin-'));
+  await writeFile(
+    join(binDir, 'codex'),
+    '#!/bin/sh\n'
+      + 'case "$*" in\n'
+      + '  *--version*) echo "codex-cli 999.0.0" ;;\n'
+      + '  *) echo "network_proxy   stable   true" ;;\n'
+      + 'esac\n',
+    { mode: 0o755 },
+  );
+  vi.stubEnv('PATH', `${binDir}:${process.env['PATH'] ?? ''}`);
+  return binDir;
+}
+
 describe('server spawn integration with a stub PTY', () => {
   let dataDir: string | undefined;
+  let binDir: string | undefined;
   afterEach(async () => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     if (dataDir) await rm(dataDir, { recursive: true, force: true });
+    if (binDir) await rm(binDir, { recursive: true, force: true });
   });
 
   it('carries the project, provider tool, and concrete model through DbGraphPort into the CLI builder', async () => {
+    binDir = await stubCodexOnPath();
     dataDir = await mkdtemp(join(tmpdir(), 'tm8-server-stub-pty-'));
     const db = new SpawnDb();
     const spawnIfAbsent = vi.fn(() => ({ reused: false }));
@@ -121,8 +161,15 @@ describe('server spawn integration with a stub PTY', () => {
     expect(spawnIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: SESSION,
       cwd: process.cwd(),
+      // The `.*` is the codex loopback network policy, not slack: for
+      // agentTool 'codex' outside bypassPermissions, `resolveCommandNetworkPolicy`
+      // renders CODEX_LOOPBACK_CONFIG_OVERRIDES between `--sandbox
+      // workspace-write` and `--no-alt-screen`. This pattern predates that and
+      // matched nothing once it landed. The overrides are asserted by name just
+      // below so the wildcard cannot swallow their disappearance; their contents
+      // are owned by test/codex-loopback.integration.test.ts in packages/execution.
       command: expect.stringMatching(
-        /^codex --model 'gpt-5\.6-sol' --ask-for-approval never --sandbox workspace-write --no-alt-screen -c /,
+        /^codex --model 'gpt-5\.6-sol' --ask-for-approval never --sandbox workspace-write .*--no-alt-screen -c /,
       ),
       env: expect.objectContaining({
         TM8_MODEL: 'gpt-5.6-sol',
@@ -130,6 +177,10 @@ describe('server spawn integration with a stub PTY', () => {
         TM8_PROJECT_ID: PROJECT,
       }),
     }));
+    // Names the wildcard's contents, so the pattern above cannot pass on a
+    // command that lost the loopback policy entirely.
+    const rendered = spawnIfAbsent.mock.calls[0]?.[0] as unknown as { command: string };
+    expect(rendered.command).toContain("features.network_proxy.enabled=true");
     expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args)
       .toEqual(expect.arrayContaining([PROJECT, 'project', 'gpt-5.6-sol', 'codex']));
     expect(db.rpcCalls.find(({ fn }) => fn === 'public.execution_spawn')?.args.at(-1))

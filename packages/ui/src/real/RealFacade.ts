@@ -613,7 +613,10 @@ export class RealFacade implements CollabFacade, ConnectionControl, ExecutionCon
 
   /** `spaces.create` keeps its wrapper — the subject is not an entity. */
   createSpace(name: string): Promise<{ space: SpaceSummary; memberId?: EntityId }> {
-    return this.client.post<{ space: SpaceSummary; memberId?: EntityId }>('/v2/spaces', { name });
+    return this.client.post<{ space: SpaceSummary; memberId?: EntityId }>('/v2/spaces', {
+      name,
+      clientMutationId: mutationRoot('space-create'),
+    });
   }
 
   // =========================================================================

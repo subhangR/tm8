@@ -219,6 +219,16 @@ export const OPERATIONS = [
   { name: 'auth.login',                                  method: 'POST',   path: '/v2/auth/login',                                                     kind: 'command', status: 'v1' },
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
+
+  // What the agent SAID — the third face of a session, after `execution.launch`
+  // (told) and `execution.journal` (did). The bytes are the agent's OWN native
+  // transcript on the node's disk (`~/.claude/projects/**`, `~/.codex/sessions/**`),
+  // NOT the database and NOT the PTY ring: PTY bytes are ANSI repaints a
+  // coordinator cannot read, and the journal records tm8 CLI calls and holds no
+  // model output at all. Keyed by work_session id for the same reason
+  // `execution.journal` is — every path component is derived from that row's own
+  // columns, so no request can ever name a file.
+  { name: 'execution.transcript',                        method: 'GET',    path: '/v2/work-sessions/:workSessionId/transcript',                        kind: 'read',    status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];

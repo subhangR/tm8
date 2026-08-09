@@ -54,9 +54,16 @@ describe.sequential('W3.G06 projects and associations through the production Ser
     ownerMemberA = first.memberId;
   }, 120_000);
 
+  // 30s -> 120s. `harness.close()` ends with `database.destroy()`, which DROPS a
+  // scratch database, and a drop is exactly the operation that slows down under
+  // the parallel load this suite runs in — w2-execution.pg.test.ts measured the
+  // same thing and raised its own teardown budget for it. All twenty w3 suites
+  // shared this 30s, so whichever one lost the race reported `Hook timed out in
+  // 30000ms` and the identity of the loser rotated between runs. A larger budget
+  // costs nothing when teardown is fast.
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+  }, 120_000);
 
   it('creates and replays one node project, then exposes complete global/get shapes', async () => {
     const body = {

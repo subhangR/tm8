@@ -155,5 +155,8 @@ describe("W3.G07 agentic file lifecycle (generated discovery, real HTTP + raw by
       "g07-complete-1": "files.uploadComplete",
       "g07-edge-1": "edges.create",
     });
-  });
+    // Same 120s budget and the same reason as its siblings: this `it` boots the
+    // DB-backed harness itself. It currently lands just inside vitest's 5s
+    // default, which is not a margin — it is a coin flip on a loaded runner.
+  }, 120_000);
 });

@@ -13,9 +13,16 @@ describe.sequential('W3 production-Server public harness', () => {
     harness = await startW3PublicServer('harness');
   }, 120_000);
 
+  // 30s -> 120s. `harness.close()` ends with `database.destroy()`, which DROPS a
+  // scratch database, and a drop is exactly the operation that slows down under
+  // the parallel load this suite runs in — w2-execution.pg.test.ts measured the
+  // same thing and raised its own teardown budget for it. All twenty w3 suites
+  // shared this 30s, so whichever one lost the race reported `Hook timed out in
+  // 30000ms` and the identity of the loser rotated between runs. A larger budget
+  // costs nothing when teardown is fast.
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+  }, 120_000);
 
   it('starts the real database-backed production composition', async () => {
     const response = await fetch(`${harness.baseUrl}/health`);
@@ -30,9 +37,10 @@ describe.sequential('W3 production-Server public harness', () => {
     expect(body).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      // The pin was ALREADY red at 124 when this lane arrived (the four auth.*
-      // rows landed without moving it); 125 adds `execution.launch`.
-      operations: 125,
+      // The pin was ALREADY red at 124 when this lane arrived: the four auth.*
+      // rows and `execution.launch` landed without moving it, so main MEASURED
+      // 126 against a pin of 124. `execution.transcript` makes it 127.
+      operations: 127,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -44,8 +52,10 @@ describe.sequential('W3 production-Server public harness', () => {
     // number about a configuration production does not use.
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
-    // Already red at 122 when this lane arrived (auth.*); 123 adds execution.launch.
-    expect(body.implemented).toBe(123);
+    // Already red at 122 when this lane arrived: auth.* and execution.launch
+    // landed without moving it, so main MEASURED 124 against a pin of 122.
+    // `execution.transcript` makes it 125.
+    expect(body.implemented).toBe(125);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

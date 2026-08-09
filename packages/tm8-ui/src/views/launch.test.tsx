@@ -164,15 +164,76 @@ describe('ESC — both halves, which is the point', () => {
   });
 });
 
+describe('the teammate picker scales to an UNBOUNDED roster', () => {
+  const manyTeammates = Array.from({ length: 8 }, (_, i) => ({
+    id: `ent-tm-${i}`,
+    name: ['forge', 'scout', 'lint', 'probe', 'draft', 'zeta', 'quill', 'sable'][i] ?? `tm-${i}`,
+    initial: 'T',
+    model: 'claude-sonnet-5',
+    agentTool: 'claude-code',
+    owner: '@ada',
+  }));
+
+  it('hides the filter while the roster fits on screen whole', () => {
+    // Two teammates: a search box would be pure friction.
+    const { queryByTestId } = renderSheet();
+    expect(queryByTestId('launch-teammate-search')).toBeNull();
+  });
+
+  it('filters the roster by name', () => {
+    const { getByTestId, container } = renderSheet({ teammates: manyTeammates });
+    const search = getByTestId('launch-teammate-search');
+    expect(container.querySelectorAll('.ls__roster [role="radio"]')).toHaveLength(8);
+
+    fireEvent.change(search, { target: { value: 'zeta' } });
+    const rows = [...container.querySelectorAll('.ls__roster [role="radio"]')];
+    // zeta plus the SELECTED teammate (forge), which is never hidden — the
+    // persona a launch will run as must stay visible at commit time.
+    expect(rows.map((r) => r.textContent)).toEqual([
+      expect.stringContaining('forge'),
+      expect.stringContaining('zeta'),
+    ]);
+    expect(rows[0]?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('states that a non-matching filter KEEPS the selection', () => {
+    const { getByTestId, getByRole, container } = renderSheet({ teammates: manyTeammates });
+    fireEvent.change(getByTestId('launch-teammate-search'), { target: { value: 'nobody-here' } });
+    expect(getByRole('status').textContent).toContain('the current selection is kept');
+    // The selected row itself is still drawn, so the empty state never reads
+    // as "nothing is selected".
+    const rows = [...container.querySelectorAll('.ls__roster [role="radio"]')];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('a pick made through the filter reaches the submitted config', () => {
+    const onLaunch = vi.fn();
+    const { getByTestId, getByText, container } = renderSheet({ teammates: manyTeammates, onLaunch });
+    fireEvent.change(getByTestId('launch-teammate-search'), { target: { value: 'quill' } });
+    const quill = [...container.querySelectorAll('.ls__roster [role="radio"]')].find((r) =>
+      r.textContent?.includes('quill'),
+    ) as HTMLElement;
+    fireEvent.click(quill);
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({ teamMemberId: 'ent-tm-6' }));
+  });
+});
+
 describe('the sheet anatomy (T5-5 / D51)', () => {
   it('renders the complete launch configuration with an explicit model control', () => {
     const { container, getByTestId } = renderSheet();
-    const eyebrows = [...container.querySelectorAll('.ls__eyebrow')].map((n) => n.textContent);
-    expect(eyebrows).toContain('TEAMMATE');
-    expect(eyebrows).toContain('WORKING DIRECTORY');
-    expect(eyebrows).toContain('INTERACTION PROFILE');
-    // Model stays within the teammate section, but is a real selectable input.
-    expect(eyebrows).not.toContain('MODEL');
+    const eyebrows = [...container.querySelectorAll('.ls__body .ls__eyebrow')].map((n) => n.textContent);
+    // ORDER IS THE ASSERTION (user ruling 2026-08-09): the important
+    // configuration — teammate, then model / reasoning effort / permission
+    // mode — sits at the TOP; directory, session mode and profile follow.
+    expect(eyebrows).toEqual([
+      'TEAMMATE',
+      'CONFIGURATION',
+      'WORKING DIRECTORY',
+      'SESSION MODE',
+      'INTERACTION PROFILE',
+    ]);
     expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');
     expect(getByTestId('launch-model')).toBeInstanceOf(HTMLSelectElement);
   });
@@ -292,6 +353,23 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       model: 'claude-opus-5',
       target: { kind: 'project', projectId: 'pj-tm8ui' },
     }));
+  });
+
+  it('keeps model, reasoning effort and permission mode ABOVE the fold sections', () => {
+    // DOM order is the guarantee, as in the pinned-caption test: the three
+    // controls the user reaches for most precede the directory picker, the
+    // session-mode row and the profile section.
+    const { container, getByTestId } = renderSheet();
+    const directory = [...container.querySelectorAll('.ls__eyebrow')].find(
+      (n) => n.textContent === 'WORKING DIRECTORY',
+    ) as HTMLElement;
+    for (const id of ['launch-model', 'launch-reasoning-effort', 'launch-access-mode']) {
+      const control = getByTestId(id);
+      expect(control.compareDocumentPosition(directory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    // Session mode moved DOWN — a topology choice most launches never touch.
+    const mode = getByTestId('launch-mode');
+    expect(directory.compareDocumentPosition(mode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('sends only an explicit active profile selection', () => {

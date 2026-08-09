@@ -209,8 +209,16 @@ function capabilitiesFor(row: EntityRow, summary: EntitySummary): EntityCapabili
       canComplete: false,
     };
   }
-  if (summary.kind === 'message' || summary.kind === 'work_session') {
+  if (summary.kind === 'message') {
     return { ...base, canEdit: false, canDelete: false, canAddChild: false };
+  }
+  // A session is still not deletable and has no children — it is born from a
+  // spawn and it exits. But its canEdit is now left as `capabilitiesOf`
+  // computed it, which since 085 is true for a live session and means exactly
+  // one thing: the display title. Forcing it false here would leave the panel
+  // dressing the title as locked while the patch door accepts the rename.
+  if (summary.kind === 'work_session') {
+    return { ...base, canDelete: false, canAddChild: false };
   }
   if (summary.kind === 'pull_request' || summary.kind === 'commit' || summary.kind === 'file') {
     return { ...base, canEdit: summary.deletedAt === null };
@@ -1094,7 +1102,12 @@ export class W2EntitiesCommandsTrackingService {
     try {
       return await this.deps.db.tx(claimsFor(owner, ctx, envelope), async (q) => {
         const kind = await kindFor(q, id);
-        assertGenericLifecycle(kind, 'entities.patch');
+        // `work_session` stays in RESTRICTED_LIFECYCLE_KINDS — create, move,
+        // delete and restore are owned by the execution block and must keep
+        // refusing. A rename is not lifecycle: it renames the LABEL a person
+        // reads in a list of live agents, so this one door is opened by name
+        // rather than by taking the kind out of the set (085).
+        if (kind !== 'work_session') assertGenericLifecycle(kind, 'entities.patch');
         let raw: RpcCommandResult;
         switch (kind) {
           case 'task':
@@ -1164,6 +1177,24 @@ export class W2EntitiesCommandsTrackingService {
               content.measuredAt ?? null, content.measuredAt === null,
               envelope.clientMutationId ?? null]);
             break;
+          case 'work_session': {
+            // The door accepts EXACTLY a title. Every other column on the row
+            // — status, model, node, workdir, the exit evidence — has a writer
+            // in the execution block, and a content member silently dropped
+            // here would read to the caller as a patch that worked. Refused BY
+            // NAME, the same rule the worktree arm below states.
+            const rejected = Object.keys(content);
+            if (rejected.length > 0) {
+              throw new CollabError('invalid_input',
+                `work_session patch accepts title only, not: ${rejected.join(', ')}`);
+            }
+            if (typeof input.title !== 'string') {
+              throw new CollabError('invalid_input', 'work_session patch requires title');
+            }
+            raw = await q.rpc('rename_work_session', [id, input.expectedVersion,
+              envelope.actorId ?? null, input.title, envelope.clientMutationId ?? null]);
+            break;
+          }
           case 'worktree': {
             // The door accepts EXACTLY a status transition (+ an optional
             // preflight token). Everything else is refused BY NAME with

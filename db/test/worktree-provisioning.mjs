@@ -1,5 +1,5 @@
 // =============================================================================
-// 078 — the provisioning, reconciliation and tracking-observer doors, driven as
+// 081 — the provisioning, reconciliation and tracking-observer doors, driven as
 // tm8_app through the real functions against a live scratch chain.
 //
 // 057's driver proves the SEMANTIC lifecycle. This proves the OPERATIONAL one
@@ -17,7 +17,7 @@
 //   P6  node_worktree_allocations answers the questions §6.1 asks of SQL
 //   P7  claim_tracking_refresh: skip-locked, stale reclaim, targets resolved
 //   P8  apply_*_facts stamps fetched_at, and a refresh that learned NOTHING
-//       does not bump entities.version — the whole reason 078 narrowed those
+//       does not bump entities.version — the whole reason 081 narrowed those
 //       snapshot triggers
 //
 //   TM8_DATABASE_URL=postgres://tm8@127.0.0.1:5442/tm8_worktree_verify \
@@ -223,7 +223,7 @@ const prId = scalar(
   check('a second claim takes nothing — no double delivery', claim2.claimed.length, 0);
 
   // A refresh that learns NOTHING NEW must not bump the version. This is the
-  // whole reason 078 narrowed the 017:54 snapshot triggers: without it a poller
+  // whole reason 081 narrowed the 017:54 snapshot triggers: without it a poller
   // doing its job would fire every staleness signal in the system, forever.
   json(`select public.apply_pull_request_facts(${uuid(prId)}, null, null, null)`, appA);
   check('a no-op refresh stamps fetched_at', scalar(
@@ -293,7 +293,7 @@ check('a missing allocation does not hold a cap slot', (() => {
   return res.ok || res.sqlstate;
 })(), true);
 
-// THE TRIGGER-DRIFT GUARD. 078 narrows two shipped snapshot triggers to a
+// THE TRIGGER-DRIFT GUARD. 081 narrows two shipped snapshot triggers to a
 // hand-maintained column list. Nothing but this assertion stops the next person
 // who adds a column to `pull_requests` from silently losing versioning for it
 // forever — no migration error, no other failing test.

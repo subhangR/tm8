@@ -80,6 +80,7 @@ import {
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionJournalRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -633,10 +634,9 @@ export function createFixtureSeam(): FixtureSeam {
    * the read the UI already uses, rather than through a second parallel store
    * that could disagree with the edges.
    */
-  function projectAssignees(s: EntitySummary): void {
-    if (s.state.kind !== 'task') return;
-    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === 'assigned_to');
-    s.state.assignees = (group?.edges ?? []).flatMap((edge) => {
+  function projectActorEdges(s: EntitySummary, type: string): ActorSummary[] {
+    const group = extrasOf(s.id).connections.outgoing.find((g) => g.type === type);
+    return (group?.edges ?? []).flatMap((edge) => {
       const target = summaries.get(edge.target.id);
       if (!target || (target.kind !== 'member' && target.kind !== 'team_member')) return [];
       return [{
@@ -647,6 +647,18 @@ export function createFixtureSeam(): FixtureSeam {
         isAgent: target.kind === 'team_member',
       } satisfies ActorSummary];
     });
+  }
+
+  /**
+   * Both actor rosters, recomputed from the edges that ARE them: a task's
+   * `assigned_to` and a channel's `has_member` (migration 080). Two arms of one
+   * function because the projection is identical and the meaning is not — the
+   * server keeps them apart for the same reason (`entity-read.ts`
+   * `relations.assignees` / `relations.members`).
+   */
+  function projectAssignees(s: EntitySummary): void {
+    if (s.state.kind === 'task') s.state.assignees = projectActorEdges(s, 'assigned_to');
+    else if (s.state.kind === 'channel') s.state.members = projectActorEdges(s, 'has_member');
   }
 
   function defaultStateFor(input: CreateEntityInput): EntityState {
@@ -662,7 +674,12 @@ export function createFixtureSeam(): FixtureSeam {
           dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
         };
       case 'channel':
-        return { kind: 'channel', topic: (c.topic as string) ?? '', unreadCount: 0, workingAgentCount: 0 };
+        // `members: []` and not a read of `input.connections`: the roster is a
+        // PROJECTION of `has_member` edges, and those edges are written by the
+        // create path itself. `projectAssignees` fills this in from them, so
+        // seeding it here from the input would be a second source free to
+        // disagree with the first.
+        return { kind: 'channel', topic: (c.topic as string) ?? '', members: [], unreadCount: 0, workingAgentCount: 0 };
       // A freshly created voice room is EMPTY. `participantCount` is the whole
       // state arm — there is no topic and no unread axis to seed. Nothing here
       // reads the create input, because the content arm carries no field.
@@ -1050,6 +1067,81 @@ export function createFixtureSeam(): FixtureSeam {
       }
       return clone(fixtureLaunchRecord(workSessionId));
     },
+    async transcript(workSessionId, opts): Promise<SessionTranscriptPage> {
+      requireSummary(workSessionId);
+      // Third face of the DEBUG surface, and the same honesty contract as the
+      // two above: only the live PTY (C-5) has an agent that has written a
+      // native transcript, so every other session renders the explained empty.
+      // `stats: null` rather than a zeroed object — there are no statistics
+      // about a file that was never found, and zeros read as "did nothing".
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_transcript_file',
+          agentTool: null,
+          entries: [],
+          stats: null,
+          stuck: null,
+          lastActivityAt: null,
+          malformed: 0,
+        });
+      }
+      // Oldest-first, as the contract requires of a tail, and short enough that
+      // the default window (20) never trims it — a fixture that silently paged
+      // would hide the renderer's ordering bug rather than expose it.
+      const entries = [
+        {
+          at: '2026-01-04T09:15:02.000Z',
+          source: 'user' as const,
+          text: 'Take the failing spawn test and find why the PTY never emits.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:15:44.000Z',
+          source: 'assistant' as const,
+          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:18:10.000Z',
+          source: 'assistant' as const,
+          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
+          truncated: false,
+        },
+      ];
+      const last = opts?.last ?? 20;
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        agentTool: 'claude-code',
+        entries: entries.slice(-last),
+        stats: {
+          // True on purpose: the reader tails a bounded slice, so the honest
+          // default state of this surface is "you are looking at a window".
+          partial: true,
+          userMessages: 1,
+          assistantMessages: 2,
+          toolCalls: 6,
+          inputTokens: 4820,
+          outputTokens: 640,
+          cacheReadTokens: 18200,
+          cacheCreationTokens: 1100,
+          tools: [
+            { name: 'Read', count: 3 },
+            { name: 'Grep', count: 2 },
+            { name: 'Bash', count: 1 },
+          ],
+          models: ['claude-opus-4-6'],
+        },
+        // Null, not a zeroed object: the heuristic does not fire on this
+        // session, and a `{ silentMs: 0 }` would render as a stuck badge.
+        stuck: null,
+        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        malformed: 0,
+      });
+    },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.
       return clone(pageOf<NotificationItem>([], opts));
@@ -1310,6 +1402,28 @@ export function createFixtureSeam(): FixtureSeam {
       },
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);
+        // A work session is a title-ONLY door here, mirroring what the node
+        // does (085 / rename_work_session): every other member belongs to the
+        // execution block, so accepting one would let a fixture-backed screen
+        // pass where the real node refuses.
+        if (s.state.kind === 'work_session') {
+          const envelope = new Set(['expectedVersion', 'actorId', 'clientMutationId', 'title']);
+          const rejected = Object.entries(input)
+            .filter(([member, value]) => !envelope.has(member) && value !== undefined)
+            .map(([member]) => member);
+          if (rejected.length > 0) {
+            throw new CollabError('invalid_input',
+              `work_session patch accepts title only, not: ${rejected.join(', ')}`);
+          }
+          if (input.title === undefined) {
+            throw new CollabError('invalid_input', 'work_session patch requires title');
+          }
+          requireVersion(s, input.expectedVersion);
+          s.title = input.title;
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+          return commandResult(s);
+        }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
         if (input.title !== undefined) s.title = input.title;

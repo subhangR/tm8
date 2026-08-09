@@ -94,6 +94,23 @@ export interface WsE2eNode {
  * scratch database. Mirrors test/w3/public-harness.ts, plus `rpcDb` and the
  * ws URL, minus the W3-specific envelope assertions.
  */
+/**
+ * `TM8_AGENT_CMD` has to be on `process.env`, not merely in the config below.
+ *
+ * `loadConfig` does not carry it — it is documented as an OPERATOR OVERRIDE read
+ * from the environment, and `SpawnService` reads it from `options.env ?? process.env`
+ * (`SpawnService.ts:188`), which `registerExecutionHandlers` never populates. So
+ * the `TM8_AGENT_CMD: 'echo-agent'` handed to `loadConfig` below was inert, and
+ * A6c's "REAL echo-agent PTY attach" was in fact spawning `claude` and passing
+ * only on a machine that happened to have it installed. On a bare runner the same
+ * spawn answered 404 `agent CLI 'claude' was not found`.
+ *
+ * Set at module scope and never restored: every consumer of this harness exists to
+ * exercise PTY plumbing without a model or a key, which is precisely what
+ * echo-agent is for.
+ */
+process.env['TM8_AGENT_CMD'] = 'echo-agent';
+
 export async function startWsE2eNode(label: string): Promise<WsE2eNode> {
   const database = await createW1ScratchDatabase(`wse2e_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-wse2e-'));

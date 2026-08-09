@@ -162,9 +162,9 @@ const body = (): Record<string, unknown> => (seen[0]?.body ?? {}) as Record<stri
 // ── registration and the anti-drift binding ─────────────────────────────────
 
 describe('registration', () => {
-  it('registers exactly the seven caller-facing execution rows', async () => {
+  it('registers exactly the eight caller-facing execution rows', async () => {
     const paths = (await sessionCommands()).map((m) => m.path.join(' ')).sort();
-    expect(paths).toEqual(['session attach', 'session journal', 'session launch', 'session liveness', 'session resume', 'session spawn', 'session terminate']);
+    expect(paths).toEqual(['session attach', 'session journal', 'session launch', 'session liveness', 'session resume', 'session spawn', 'session terminate', 'session transcript']);
   });
 
   it('every registered path is in the frozen projection', async () => {

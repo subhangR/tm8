@@ -105,7 +105,7 @@ export async function runTrackingObserverTick(
   let abandoned = 0;
   // Targets, not requests. `batchSize` bounds how many REQUESTS are claimed, and
   // a single request with absent entityIds means "every tracked entity in this
-  // space" (078's claim door, matching what 034:145 enqueues) — so a space with
+  // space" (081's claim door, matching what 034:145 enqueues) — so a space with
   // a few hundred PRs blows the job timeout on one request. This is the bound
   // that actually corresponds to wall-clock.
   const targetBudget = options.targetBudget ?? 100;
@@ -162,7 +162,7 @@ export async function runTrackingObserverTick(
     if (stoppedEarly) {
       // LEAVE IT CLAIMED AND UNFINISHED — do not complete it.
       //
-      // `started_at` is set, so 078's stale window returns it to the queue and a
+      // `started_at` is set, so 081's stale window returns it to the queue and a
       // later tick resumes it. Completing here is what would write a success
       // receipt for work no process did; the abort signal fires on every
       // shutdown and every job timeout, so this is an ordinary path, not an

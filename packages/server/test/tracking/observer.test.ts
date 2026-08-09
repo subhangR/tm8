@@ -108,7 +108,7 @@ describe('an aborted tick never writes a receipt it did not earn', () => {
 
     expect(completions(calls)).toEqual([]);
     expect(outcome.detail?.abandoned).toBe(1);
-    // Left `running`, so 078's stale window hands it back. That machinery
+    // Left `running`, so 081's stale window hands it back. That machinery
     // already existed; the bug was simply never reaching it.
   });
 
@@ -120,7 +120,7 @@ describe('an aborted tick never writes a receipt it did not earn', () => {
   });
 
   it('the target budget stops a tick the same way an abort does — unfinished, not completed', async () => {
-    // One request can name every tracked entity in a space (078's claim door,
+    // One request can name every tracked entity in a space (081's claim door,
     // matching what 034 enqueues), so `batchSize` — which counts REQUESTS —
     // does not keep a tick inside its timeout. Overrunning must abandon, not
     // complete.
