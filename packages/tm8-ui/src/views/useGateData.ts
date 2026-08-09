@@ -72,9 +72,14 @@ import {
 } from '../domain/launch';
 import { memoryEpistemics, memoryScopeOf } from '../domain/memory';
 import { representedThreadMessageCount } from './message-thread';
+import {
+  indexLinkedPullRequests,
+  type LinkedPullRequestFacts,
+} from '../pull-requests';
 
 /** Frozen so an empty result keeps referential identity across renders. */
 const EMPTY_ROWS: readonly EntitySummary[] = Object.freeze([]);
+const EMPTY_LINKED_PULL_REQUESTS: readonly LinkedPullRequestFacts[] = Object.freeze([]);
 
 /**
  * How long the rail's counters wait out an event burst before re-reading.
@@ -450,6 +455,8 @@ export interface GateData {
   messagePulses: readonly MessagePulse[];
   /** Server-hydrated graph lens, projected live through entity/edge events. */
   graph: GateGraphData;
+  /** Live task → tracked-PR facts projected from graph nodes and edges. */
+  linkedPullRequestsOf?: (id: string) => readonly LinkedPullRequestFacts[];
   /** Launch resources from the active seam; never presentation fixtures. */
   launch: {
     teammates: readonly LaunchTeammate[];
@@ -1844,6 +1851,19 @@ export function useGateData(options: GateOptions): GateData {
       (edge) => nodeIds.has(edge.source.id) && nodeIds.has(edge.target.id),
     );
   }, [graphLoad.phase, graphNodes, edgeProjection]);
+  const linkedPullRequests = useMemo(
+    // Use the normalized edge family, not the graph screen's endpoint filter.
+    // A freshly opened detail may hydrate a tracks edge whose PR endpoint did
+    // not fit in the bounded graph page; the edge snapshot is still a valid
+    // enriched read and the index deliberately falls back to it.
+    () => indexLinkedPullRequests(graphNodes, Object.values(edgeProjection)),
+    [graphNodes, edgeProjection],
+  );
+  const linkedPullRequestsOf = useCallback(
+    (id: string): readonly LinkedPullRequestFacts[] =>
+      linkedPullRequests.get(id) ?? EMPTY_LINKED_PULL_REQUESTS,
+    [linkedPullRequests],
+  );
   const refreshGraph = useCallback(() => {
     if (spaceId) void loadGraph(spaceId);
   }, [spaceId, loadGraph]);
@@ -1900,6 +1920,7 @@ export function useGateData(options: GateOptions): GateData {
       activity,
       messagePulses,
       graph,
+      linkedPullRequestsOf,
       launch,
       ensureKind,
       selectSpace,
@@ -1912,7 +1933,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, linkedPullRequestsOf, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

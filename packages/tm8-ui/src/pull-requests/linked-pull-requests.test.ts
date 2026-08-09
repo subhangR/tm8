@@ -1,0 +1,143 @@
+import { describe, expect, it } from 'vitest';
+import type { EdgeView, EntitySummary } from '@tm8/contract';
+import {
+  chipsForPullRequest,
+  indexLinkedPullRequests,
+  pullRequestFactsOf,
+} from './linked-pull-requests';
+
+const ACTOR = {
+  id: 'member-1',
+  kind: 'member' as const,
+  displayName: 'Ada',
+  avatar: null,
+  isAgent: false,
+};
+
+function summary(
+  id: string,
+  state: Record<string, unknown>,
+  title = id,
+): EntitySummary {
+  return {
+    id,
+    spaceId: 'space-1',
+    kind: state.kind as EntitySummary['kind'],
+    title,
+    parentId: null,
+    position: 0,
+    visibility: 'space',
+    version: 1,
+    activityAt: '2026-08-09T00:00:00.000Z',
+    createdAt: '2026-08-09T00:00:00.000Z',
+    updatedAt: '2026-08-09T00:00:00.000Z',
+    deletedAt: null,
+    createdBy: ACTOR,
+    counters: { likes: 0, dislikes: 0, stars: 0, points: 0, messages: 0, viewerReaction: null },
+    state: state as EntitySummary['state'],
+    badges: {},
+  };
+}
+
+const task = summary('task-1', {
+  kind: 'task',
+  workStatus: 'working',
+  priority: 'medium',
+  axes: {},
+  assignees: [],
+  acceptance: { total: 0, completed: 0 },
+});
+
+function pullRequest(overrides: Record<string, unknown> = {}): EntitySummary {
+  return summary('pr-1', {
+    kind: 'pull_request',
+    repository: 'acme/tm8',
+    number: 42,
+    state: 'open',
+    stale: false,
+    ciStatus: null,
+    mergeState: null,
+    ...overrides,
+  }, 'Ship linked PR chips');
+}
+
+function tracks(source: EntitySummary, target: EntitySummary): EdgeView {
+  return {
+    id: 'edge-1',
+    type: 'tracks',
+    source,
+    target,
+    props: {},
+    createdBy: ACTOR,
+    createdAt: '2026-08-09T00:00:00.000Z',
+    updatedAt: '2026-08-09T00:00:00.000Z',
+  };
+}
+
+describe('linked pull request facts', () => {
+  it.each(['open', 'draft', 'merged', 'closed'] as const)(
+    'renders the %s lifecycle chip',
+    (lifecycle) => {
+      const facts = pullRequestFactsOf(pullRequest({ state: lifecycle }));
+      expect(chipsForPullRequest(facts!).map((chip) => chip.state)).toEqual([lifecycle]);
+    },
+  );
+
+  it('maps the exact observer vocabulary and makes no claim for absent facts', () => {
+    const oldNode = pullRequestFactsOf(pullRequest());
+    expect(oldNode).toMatchObject({ lifecycle: 'open', ciStatus: null, mergeState: null });
+    expect(chipsForPullRequest(oldNode!).map((chip) => chip.state)).toEqual(['open']);
+
+    const observed = pullRequestFactsOf(pullRequest({
+      state: 'draft',
+      ciStatus: 'failing',
+      mergeState: 'conflicted',
+    }));
+    expect(chipsForPullRequest(observed!).map((chip) => chip.state)).toEqual([
+      'draft',
+      'conflict',
+      'ci-red',
+    ]);
+  });
+
+  it('renders passing as CI-green and ignores pending/unknown rather than styling them as success', () => {
+    const passing = pullRequestFactsOf(pullRequest({ ciStatus: 'passing', mergeState: 'clean' }));
+    expect(chipsForPullRequest(passing!).map((chip) => chip.state)).toEqual(['open', 'ci-green']);
+
+    const unknown = pullRequestFactsOf(pullRequest({ ciStatus: 'pending', mergeState: 'unknown' }));
+    expect(chipsForPullRequest(unknown!).map((chip) => chip.state)).toEqual(['open']);
+  });
+
+  it('indexes the tracks edge and resolves a later observer summary over its stale endpoint snapshot', () => {
+    const bootSnapshot = pullRequest({ state: 'open', ciStatus: null, mergeState: null });
+    const observerUpdate = pullRequest({
+      state: 'merged',
+      ciStatus: 'passing',
+      mergeState: 'clean',
+    });
+
+    const index = indexLinkedPullRequests(
+      [task, observerUpdate],
+      [tracks(task, bootSnapshot)],
+    );
+
+    expect(index.get(task.id)).toEqual([
+      expect.objectContaining({
+        id: 'pr-1',
+        lifecycle: 'merged',
+        ciStatus: 'passing',
+        mergeState: 'clean',
+      }),
+    ]);
+  });
+
+  it('does not mistake a tracked commit for a pull request', () => {
+    const commit = summary('commit-1', {
+      kind: 'commit',
+      repository: 'acme/tm8',
+      sha: 'abc1234',
+      message: 'Ship it',
+    });
+    expect(indexLinkedPullRequests([task, commit], [tracks(task, commit)]).get(task.id)).toBeUndefined();
+  });
+});

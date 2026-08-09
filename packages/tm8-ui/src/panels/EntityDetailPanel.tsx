@@ -55,6 +55,7 @@ import { WorkSessionContent } from './bodies/WorkSessionContent';
 import { AttachmentStrip } from '../files/AttachmentStrip';
 import { attachedFiles } from '../files/model';
 import type { AttachmentsPort } from '../files/port';
+import { LinkedPullRequestChips, type LinkedPullRequestFacts } from '../pull-requests';
 
 /**
  * EntityDetailPanel — one of the two universal primitives (L3).
@@ -168,6 +169,8 @@ export interface EntityDetailPanelProps {
   activity?: readonly ActivityItem[];
   connections?: Connections;
   authoredFrom?: Readonly<Record<string, string | null>>;
+  /** Observer-backed PR facts linked to this subject by tracking edges. */
+  linkedPullRequests?: readonly LinkedPullRequestFacts[];
 
   /** work_session inputs — ignored by every other archetype. */
   handoffs?: readonly HandoffView[];
@@ -581,6 +584,14 @@ export function EntityDetailPanel(props: EntityDetailPanelProps) {
         titleEditable={(config.list.inlineEdit?.title ?? false) && save.unavailable === null}
         titleLockReason={config.list.inlineEdit?.title ? saveRefusal : undefined}
         autoFocusTitle={props.justCreated}
+        supplemental={
+          (props.linkedPullRequests?.length ?? 0) > 0 ? (
+            <LinkedPullRequestChips
+              pullRequests={props.linkedPullRequests ?? []}
+              placement="detail"
+            />
+          ) : undefined
+        }
         onCommitTitle={(title) => void save.commitNow({ title })}
       />
 
