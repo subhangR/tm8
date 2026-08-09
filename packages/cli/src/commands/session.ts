@@ -432,6 +432,10 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   // appended to the composed manifest at spawn and never delivered to a
   // running session — that path is a message.
   if (contextSource !== undefined) body.promptExtra = await readTextSource(contextSource);
+  // `--memory` names memory ENTITIES (056) to append to the persona's working
+  // set for this session only — a spawn-time hand-off, never a graph write.
+  const memoryIds = cmd.options.values('memory');
+  if (memoryIds.length > 0) body.memoryIds = memoryIds;
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.spawn', { body });

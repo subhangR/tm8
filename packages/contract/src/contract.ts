@@ -1936,6 +1936,13 @@ export interface ExecutionSpawnInput extends CommandContext {
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;
+  /**
+   * Memory entities (kind `memory`, same space) appended to the persona's
+   * working set for THIS session only — a spawn-time memory hand-off. They are
+   * rendered into the manifest's `agent.memory` alongside the teammate's own
+   * `remembers` set; nothing is written to the graph.
+   */
+  memoryIds?: EntityId[];
 }
 
 /**

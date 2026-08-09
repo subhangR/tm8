@@ -1882,6 +1882,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   credentialSource: z.enum(['member', 'node']).optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
+  memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
 }).strict();
 
 export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.object({

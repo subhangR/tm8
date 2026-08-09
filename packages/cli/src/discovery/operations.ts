@@ -1154,7 +1154,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -1163,6 +1163,8 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
       '`--context` is launch-manifest context, NOT a runtime prompt',
+      '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
+      'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
       'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
       'worktree is not advertised until the node can create and clean one up safely',
     ],
