@@ -1,8 +1,8 @@
 /**
- * Migration 090 — the `loop` core kind (Dreamer/Dispatcher P4, design §4.4).
+ * Migration 091 — the `loop` core kind (Dreamer/Dispatcher P4, design §4.4).
  *
- * Applied as an UPGRADE, not a fresh install: everything before 090 first, then
- * 090 on top. A migration that only ever runs as part of a from-scratch chain
+ * Applied as an UPGRADE, not a fresh install: everything before 091 first, then
+ * 091 on top. A migration that only ever runs as part of a from-scratch chain
  * has not been tested against the database anyone actually has.
  *
  * The assertions that matter here are the ones a "did it return without
@@ -35,7 +35,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
  * Resolved by SUFFIX, not by number.
  *
  * This wave's chain gets renumbered at integration (origin/main independently
- * took 085–087), and a hard-coded `'090_loops.sql'` would turn a mechanical
+ * took 085–088), and a hard-coded `'091_loops.sql'` would turn a mechanical
  * rename into a test failure someone has to debug during a merge — the worst
  * possible moment to be reading an unrelated suite. The number is the one part
  * of a migration's name that is NOT stable; `_loops.sql` is.
@@ -65,7 +65,7 @@ interface Fixture {
 let database: W1ScratchDatabase;
 let fixture: Fixture;
 
-async function seedPre090(db: W1ScratchDatabase): Promise<Fixture> {
+async function seedPre091(db: W1ScratchDatabase): Promise<Fixture> {
   return db.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
     const f = (await client.query<Fixture>(
@@ -165,7 +165,7 @@ beforeAll(async () => {
   // Upgrade shape: the whole chain except the loops migration, seed a pre-loops
   // world, then apply it exactly as an upgrade would.
   database.apply(files.filter((f) => f !== loops));
-  fixture = await seedPre090(database);
+  fixture = await seedPre091(database);
   database.apply([loops]);
 });
 
@@ -173,7 +173,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('090 registers loop as a core kind', () => {
+describe('091 registers loop as a core kind', () => {
   it('seeds the kind row with core origin and no owning space', async () => {
     const rows = await database.query<{ origin: string; space_id: string | null }>(
       `select origin, space_id from public.entity_kinds where kind = 'loop'`,

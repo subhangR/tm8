@@ -111,7 +111,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 const SCHEMAS = INPUT_SCHEMAS as Record<string, ZodTypeAny | undefined>;
 
-/** The 98: v1, non-WS. Derived from the catalog, never hand-listed. */
+/** The v1, non-WS surface. Derived from the catalog, never hand-listed. */
 const SURFACE: readonly OperationBinding[] = OPERATIONS.filter(
   (op) => op.status === 'v1' && op.method !== 'WS',
 );
@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 134 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 135 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -301,9 +301,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(134);
-    expect(rows).toHaveLength(134);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(134);
+    expect(SURFACE).toHaveLength(135);
+    expect(rows).toHaveLength(135);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(135);
   });
 
   /**
@@ -452,9 +452,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
     // 79 -> 80: 083 (per-member credential sessions).
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
-    // 81 -> 82: 087 (single-use, hash-only PTY grants), measured by running
-    // this final post-#87 tree rather than inferred across concurrent branches.
-    expect(server.appliedMigrations.length).toBe(82);
+    // Measured on the PR #98 merge tree on 2026-08-10: 88 files through 093,
+    // including main's 088 Library migration and this wave's 089-093 tranche.
+    expect(server.appliedMigrations.length).toBe(88);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -680,7 +680,6 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'credentials.delete',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
-  'entityKinds.create',
   'entityKinds.update',
   'interactionProfiles.activate',
   'interactionProfiles.preview',
@@ -688,14 +687,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
-  'savedViews.create',
-  'savedViews.update',
-  'spaces.create',
   'spaces.defaultChannel.set',
   'spaces.interactionProfile.setDefault',
   'spaces.menu.update',
-  'spaces.taskAxes.create',
-  'spaces.taskAxes.update',
   'spaces.update',
   'teamMembers.interactionProfile.setDefault',
 ];

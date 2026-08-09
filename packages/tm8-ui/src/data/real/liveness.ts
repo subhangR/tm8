@@ -3,7 +3,7 @@
  * predicate, which is the ONLY place in the whole UI where liveness truth is
  * computed.
  *
- *     statusOf(s):  workStatus !== 'running'      → 'not-running'
+ *     statusOf(s):  workStatus ∉ {running, idle}  → 'not-running'
  *                   no snapshot / snapshot > 90s  → 'unknown'   (neutral, NEVER live)
  *                   s.id ∈ live set               → 'live'
  *                   otherwise                     → 'stale'
@@ -169,7 +169,10 @@ export function createLivenessManager(deps: LivenessDeps): LivenessManager {
      * space that owns it.
      */
     statusOf(session): SessionLiveness {
-      if ((session.workStatus as string | null) !== 'running') return 'not-running';
+      // `idle` means the agent is quiet, not that its PTY exited. The live-set
+      // snapshot remains authoritative for both running and idle records.
+      const recorded = session.workStatus as string | null;
+      if (recorded !== 'running' && recorded !== 'idle') return 'not-running';
       let sawFresh = false;
       for (const snap of snapshots.values()) {
         if (!isFresh(snap)) continue;

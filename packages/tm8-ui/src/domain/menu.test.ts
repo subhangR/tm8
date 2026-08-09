@@ -36,7 +36,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
 
   it('encodes the WLT §2 diagram, pinned to the contract spine', () => {
     // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
-    // seeder (db/migrations/092, tested by
+    // seeder (db/migrations/093, tested by
     // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
     // to. Before the spine existed the two carried unjoined hand-copies, and
     // migration 059 dropped the voice group with every suite green — the
@@ -50,12 +50,28 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     // Revisions 4 and 6 added memory/artifact and channel; revision 7 adds Loop.
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([
       ...DEFAULT_MENU_WORKSPACE_KIND_SPINE,
+      'file',
+      'spell',
+      'collection',
       'project',
       'pull_request',
       'worktree',
       'member',
     ]);
     expect(DEFAULT_MENU_WORKSPACE_KIND_SPINE).toHaveLength(8);
+  });
+
+  it('ships Files, Spells and Collections as first-class Library rows', () => {
+    const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
+    expect(library).toEqual({
+      id: 'library',
+      label: 'Library',
+      items: [
+        { type: 'kind', ref: 'file' },
+        { type: 'kind', ref: 'spell' },
+        { type: 'kind', ref: 'collection' },
+      ],
+    });
   });
 
   it('always contains settings (the fail-closed floor)', () => {

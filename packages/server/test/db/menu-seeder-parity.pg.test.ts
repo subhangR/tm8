@@ -95,6 +95,16 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.refs).toEqual(DEFAULT_MENU_WORKSPACE_KIND_SPINE);
     expect(rows[0]?.refs).toHaveLength(8);
   });
+
+  it('names Files, Spells and Collections as first-class Library rows', async () => {
+    const rows = await db.query<{ refs: string[] }>(
+      `select array_agg(item->>'ref' order by item_ord) as refs
+         from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
+              jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
+        where g->>'id' = 'library'`,
+    );
+    expect(rows[0]?.refs).toEqual(['file', 'spell', 'collection']);
+  });
 });
 
 describeDb('Loop default-menu saved-row compatibility', () => {

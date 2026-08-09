@@ -9,7 +9,7 @@ import { getKind } from './registry';
  * WHY IT IS A MODULE. The predicate itself lives in the registry
  * (`KindConfig.list.needsAttentionGroup`) because it is per-kind knowledge, and
  * L2 forbids a component branching on kind. But it was only ever *evaluated* in
- * one place — the list panel's `splitAttention` — so a detail panel that wanted
+ * one place — the list panel's `attentionIdsOf` — so a detail panel that wanted
  * the same answer had no way to get it except by re-deriving it, and a
  * re-derivation is a second implementation that drifts. The list saying "needs
  * you" while the open session says nothing is exactly the terminal/chat

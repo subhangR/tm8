@@ -1,5 +1,5 @@
 -- =============================================================================
--- 089 — Memory working sets for ANY entity + authorship is remembered.
+-- 090 — Memory working sets for ANY entity + authorship is remembered.
 --
 -- Design: docs/features/dreamer-dispatcher/DESIGN.md §2 D9/D10 (rulings,
 -- Subhang 2026-08-09, post-P1):
@@ -39,7 +39,7 @@ update public.edge_types
 
 -- -----------------------------------------------------------------------------
 -- 2. D10 — the authoring session auto-remembers. Body verbatim from 056 plus
---    the ONE insert marked `-- 089:`.
+--    the ONE insert marked `-- 090:`.
 -- -----------------------------------------------------------------------------
 create or replace function public.create_memory(
   p_space_id uuid, p_statement text, p_mechanism text, p_subject_scope text,
@@ -109,7 +109,7 @@ begin
     values (p_space_id, memory_id, p_work_session_id, 'authored_from', actor);
     perform internal.w1_set_writer('');
 
-    -- 089: D10 — authorship is remembered. Same validated session, plain
+    -- 090: D10 — authorship is remembered. Same validated session, plain
     -- insert (remembers is not recorder-owned; mutable, so it can later be
     -- moved by consolidation). Idempotent for the replay-free path where a
     -- retried command re-runs after a partial failure.

@@ -708,14 +708,22 @@ describe('liveness presentation is presentation only (R-UI-5, D6)', () => {
     });
   });
 
-  it('takes the NEEDS-YOU verdict as a parameter and never derives it', () => {
+  // Was: `needs(idleRow, 'live') === true`. That assertion only ever passed
+  // in the abstract — `statusOf` could not return 'live' for an idle session,
+  // so the pairing never occurred on real data. Once it could, this predicate
+  // banded EVERY quiet session as NEEDS ATTENTION and flattened the session
+  // tree, because the attention band does not nest. 'idle' is quiet, not
+  // blocked, and nothing on the row separates the two.
+  it('NEVER derives attention from liveness — idle is quiet, not blocked', () => {
     const needs = getKind('work_session').list.needsAttentionGroup!;
     const row = { id: 's1', kind: 'work_session' as const, activityAt: '', status: 'idle', blockedCount: 0 };
-    expect(needs(row, 'live')).toBe(true);
-    // A record that merely CLAIMS to be idle, with no live verdict, never fires.
+    // The pairing that used to fire. It must not, or the tree collapses again.
+    expect(needs(row, 'live')).toBe(false);
     expect(needs(row, 'unknown')).toBe(false);
     expect(needs(row, 'stale')).toBe(false);
     expect(needs({ ...row, status: 'running' }, 'live')).toBe(false);
+    // Attention is raised by an explicit server fact (`badges.attention`),
+    // which the list panel ORs in at the call site — never by this predicate.
   });
 });
 

@@ -1444,7 +1444,7 @@ export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
  * The default menu's group spine — ONE shared truth for its two twins.
  *
  * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
- * db/migrations/092) and the client shipped default (tm8-ui
+ * db/migrations/093) and the client shipped default (tm8-ui
  * `SHIPPED_DEFAULT_MENU`) each carry a hand-written copy of the default
  * menu's groups, and the ids DIFFER in one place for historical reasons
  * (`work` server-side, `workspace` client-side). Until 2026-07-31 nothing
@@ -1469,6 +1469,11 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // removes rail rows, not features.
   { serverId: 'home', clientId: 'home' },
   { serverId: 'work', clientId: 'workspace' },
+  // 2026-08-09: Files, Spells and Collections graduated from palette-only
+  // reachability into the shipped rail. They get their own group because the
+  // Workspace caret is contract-capped at eight children and already carries
+  // seven collection destinations.
+  { serverId: 'library', clientId: 'library' },
   { serverId: 'tracking', clientId: 'tracking' },
   { serverId: 'collab', clientId: 'collab' },
   // items-empty on both sides BY NECESSITY: MenuViewRef is a closed enum with
