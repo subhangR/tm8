@@ -27,6 +27,7 @@ import type {
   GitHubCredential,
   PermissionMode,
   ReasoningEffort,
+  ResolvedCredentialSources,
   SessionLaunchPosture,
   SpawnContext,
   SpawnRequest,
@@ -152,8 +153,10 @@ export interface ResolvedLaunchConfig {
   permissionMode: PermissionMode;
   accessMode: AccessMode;
   reasoningEffort: ReasoningEffort | null;
-  /** Launch-time credential choice; null = auto (member when connected). */
+  /** Deprecated common value; null when provider choices differ or are auto. */
   credentialSource: CredentialSource | null;
+  /** Independent launch-time choice for every credential provider. */
+  credentialSources: ResolvedCredentialSources;
 }
 
 /**
@@ -297,17 +300,42 @@ export function resolveLaunchConfig(
   const accessMode = requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
   const reasoningEffort = asReasoningEffort(request.reasoningEffort);
 
-  // Explicit request first, then the recorded posture (which is how a resume
-  // honours the choice its spawn was made with, and how a child inherits its
-  // parent's). `asCredentialSource` and not a cast: `inherited` is read back
-  // out of a stored JSON document, and an unrecognised value must fall through
-  // to auto, not launch on a string nothing maps.
-  const credentialSource =
+  // Each provider resolves independently. New provider keys outrank the
+  // deprecated global carrier; inherited provider keys then outrank an older
+  // manifest's global value. Every read is narrowed because inherited posture
+  // comes from stored JSON written by arbitrary older builds.
+  const credentialSources: ResolvedCredentialSources = {
+    anthropic: resolveCredentialSource('anthropic', request, inherited),
+    openai: resolveCredentialSource('openai', request, inherited),
+    github: resolveCredentialSource('github', request, inherited),
+  };
+  const commonSources = new Set(Object.values(credentialSources));
+  const credentialSource = commonSources.size === 1
+    ? ([...commonSources][0] ?? null)
+    : null;
+
+  return {
+    mode,
+    model,
+    agentTool,
+    permissionMode,
+    accessMode,
+    reasoningEffort,
+    credentialSource,
+    credentialSources,
+  };
+}
+
+function resolveCredentialSource(
+  provider: keyof ResolvedCredentialSources,
+  request: SpawnRequest,
+  inherited: SessionLaunchPosture | null | undefined,
+): CredentialSource | null {
+  return asCredentialSource(request.credentialSources?.[provider]) ??
     asCredentialSource(request.credentialSource) ??
+    asCredentialSource(inherited?.credentialSources?.[provider]) ??
     asCredentialSource(inherited?.credentialSource) ??
     null;
-
-  return { mode, model, agentTool, permissionMode, accessMode, reasoningEffort, credentialSource };
 }
 
 function asCredentialSource(value: unknown): CredentialSource | null {
@@ -878,8 +906,8 @@ export function composeEnv(
   credentialHome?: AgentCredentialHome,
   /** DB-gated, caller-owned GitHub credential. Never inherited from parentEnv. */
   gitHubCredential?: GitHubCredential,
-  /** `member` fails closed against machine-wide gh/git fallback even with no row. */
-  credentialSource?: CredentialSource | null,
+  /** GitHub `member` fails closed against machine-wide gh/git fallback even with no row. */
+  githubCredentialSource?: CredentialSource | null,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -937,7 +965,7 @@ export function composeEnv(
   // GitHub is universal rather than agent-tool-specific. Apply after the env
   // copy loops and after XDG_CONFIG_HOME is redirected into the identity home,
   // so neither a parent token nor a machine helper/config can win precedence.
-  isolateGitHubCredential(env, gitHubCredential, credentialSource === 'member');
+  isolateGitHubCredential(env, gitHubCredential, githubCredentialSource === 'member');
 
   // Explicit empty strings also defend wrappers that interpret presence.
   env.CLAUDE_CODE_ENTRYPOINT = '';
@@ -1178,6 +1206,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       accessMode: launch.accessMode,
       reasoningEffort: launch.reasoningEffort,
       credentialSource: launch.credentialSource,
+      credentialSources: launch.credentialSources,
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
       command,

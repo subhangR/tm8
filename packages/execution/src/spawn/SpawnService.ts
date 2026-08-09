@@ -277,7 +277,7 @@ export class SpawnService {
       : null;
     if (source === 'member' && !home && agentCredentialProviderFor(agentTool)) {
       throw new SpawnError(
-        `credentialSource 'member' was requested but no active ${agentCredentialProviderFor(agentTool)} ` +
+        `credentialSources.${agentCredentialProviderFor(agentTool)} 'member' was requested but no active ${agentCredentialProviderFor(agentTool)} ` +
           'credential is connected for your account — connect it under Settings → Connections, ' +
           "or launch with the node credential ('node')",
         'conflict',
@@ -853,9 +853,13 @@ export class SpawnService {
         this.env,
       );
 
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
       const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSource),
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
       ]);
       const env = composeEnv(
         manifest,
@@ -866,7 +870,7 @@ export class SpawnService {
         agentToken,
         credentialHome ?? undefined,
         gitHubCredential ?? undefined,
-        launch.credentialSource,
+        launch.credentialSources.github,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -1220,9 +1224,13 @@ export class SpawnService {
       // credential on the way back up, and one that has been disconnected must
       // stop being injected. A resume that kept the launch-time answer would be
       // the one path where Ruling 3's "disconnect terminates" could be undone.
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
       const [credentialHome, gitHubCredential] = await Promise.all([
-        this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource),
-        this.resolveGitHubCredential(auth, launch.credentialSource),
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
       ]);
       const env = composeEnv(
         manifest,
@@ -1233,7 +1241,7 @@ export class SpawnService {
         agentToken,
         credentialHome ?? undefined,
         gitHubCredential ?? undefined,
-        launch.credentialSource,
+        launch.credentialSources.github,
       );
       const envVarNames = Object.keys(env).sort();
 

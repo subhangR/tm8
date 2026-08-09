@@ -162,11 +162,17 @@ describe('server spawn integration with a stub PTY', () => {
         accessMode: 'acceptEdits',
         model: 'gpt-5.6-sol',
         agentTool: 'codex',
+        credentialSources: { openai: 'node', github: 'member' },
         clientMutationId: 'spawn-stub-pty-1',
       },
     );
 
     expect(result.sessionId).toBe(SESSION);
+    expect(result.manifest.launch.credentialSources).toEqual({
+      anthropic: null,
+      openai: 'node',
+      github: 'member',
+    });
     expect(spawnIfAbsent).toHaveBeenCalledOnce();
     expect(spawnIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: SESSION,
