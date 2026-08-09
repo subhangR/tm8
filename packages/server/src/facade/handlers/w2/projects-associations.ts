@@ -14,6 +14,7 @@ export function registerW2ProjectsAssociationsHandlers(
     'projects.create': async (ctx) => json(await service.createProject(ctx), { status: 201 }),
     'projects.directories.list': service.listProjectDirectories,
     'projects.get': service.getProject,
+    'projects.branches.list': service.listBranches,
     'projects.update': service.updateProject,
     'projects.link': service.linkProject,
     'projects.unlink': service.unlinkProject,

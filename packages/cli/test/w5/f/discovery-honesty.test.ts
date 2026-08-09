@@ -94,7 +94,8 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     const rows = discovery(fresh);
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-    expect(rows).toHaveLength(127);
+    // 127 -> 128 (2026-08-09): projects.branches.list (public, with a command).
+    expect(rows).toHaveLength(128);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -106,7 +107,8 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // And the rows nothing looked at all say so, uniformly.
     // 123 -> 125 (2026-08-02): execution.launch is a v1 row, so the cold ledger
     // declines it like every other — it joins the `none` population, not `earned`.
-    expect(unknownRows).toHaveLength(125);
+    // 125 -> 126 (2026-08-09): projects.branches.list, likewise a v1 row.
+    expect(unknownRows).toHaveLength(126);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

@@ -824,6 +824,18 @@ const ROWS: Record<OperationName, Row> = {
     authz: 'project',
     input: 'none',
   },
+  'projects.branches.list': {
+    cmd: ['project', 'branches'],
+    syn: 'tm8 project branches <project-resource-id> [--stale-after-days <days>] [--limit <count>]',
+    sum: 'List local branches in a project working directory with ahead/behind and stale',
+    authz: 'project',
+    input: 'none',
+    tags: ['git', 'branch', 'repo', 'workdir', 'stale', 'ahead', 'behind'],
+    notes: [
+      'a READ — git is invoked argv-only and nothing is checked out, fetched or written',
+      'ahead/behind are measured against the default branch, whose SOURCE travels with the answer: main is a convention, not a rule',
+    ],
+  },
   'projects.update': {
     cmd: ['project', 'update'],
     syn: 'tm8 project update <project-resource-id> [--name <name>] [--working-dir <absolute-path>] [--trust trusted|untrusted] [--yes] [--mutation-id <id>]',
@@ -1555,7 +1567,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:bc784809f209ecce563bd2b347688e5791c9d0cbce967a1318b0658a3e4b0713';
 
 export const GRAMMAR_VERSION = '2';
 

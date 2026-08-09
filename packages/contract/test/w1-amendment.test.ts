@@ -58,8 +58,10 @@ describe('W1 adopted catalog target', () => {
     // TOLD at spawn: its manifest, its env var NAMES and its two prompts.
     // 126 -> 127 (2026-08-02): projects.directories.list (GET read) — the
     // root-confined node-local folder browser for Space project onboarding.
-    expect(OPERATIONS).toHaveLength(127);
-    expect(V1_OPERATIONS).toHaveLength(125);
+    // 127 -> 128 (2026-08-09): projects.branches.list (GET read) — branch
+    // topology for a project working directory, argv-only git, no writes.
+    expect(OPERATIONS).toHaveLength(128);
+    expect(V1_OPERATIONS).toHaveLength(126);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -75,12 +77,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 47, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 48, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 50, command: 76, stream: 1 });
+    }).toEqual({ read: 51, command: 76, stream: 1 });
   });
 });
 

@@ -51,6 +51,7 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
+  ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
   ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
@@ -1554,6 +1555,30 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
   ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
+  name: z.string().min(1),
+  head: z.string(),
+  lastCommitAt: z.string().min(1),
+  subject: z.string(),
+  upstream: z.string().nullable(),
+  ahead: z.number().int().nonnegative(),
+  behind: z.number().int().nonnegative(),
+  isDefault: z.boolean(),
+  isCurrent: z.boolean(),
+  merged: z.boolean(),
+  stale: z.boolean(),
+}).strict();
+
+export const ProjectBranchTopologySchema: z.ZodType<ProjectBranchTopology> = z.object({
+  projectId: ProjectIdSchema,
+  workingDir: z.string().min(1),
+  defaultBranch: z.string().min(1),
+  defaultBranchSource: z.enum(['origin_head', 'local_conventional', 'current_branch']),
+  branches: z.array(ProjectBranchSchema),
+  truncated: z.boolean(),
+  staleAfterDays: z.number().int().positive(),
 }).strict();
 
 export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({

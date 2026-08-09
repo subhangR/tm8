@@ -198,6 +198,25 @@ async function projectGet(cmd: CommandContext): Promise<ExitCode> {
   return EXIT_OK;
 }
 
+/**
+ * `project branches` — what exists in the working directory, and how far each
+ * branch has drifted from the trunk. A READ: it runs git argv-only and checks
+ * nothing out, so it is safe against a directory someone is actively editing.
+ */
+async function projectBranches(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project branches', cmd.options.value('mutation-id'));
+  const projectId = requireArg(cmd.args[0], 'project branches', '<project-resource-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.branches.list', {
+    params: { projectId },
+    query: {
+      staleAfterDays: cmd.options.value('stale-after-days'),
+      limit: cmd.options.value('limit'),
+    },
+  });
+  cmd.out.data(data, renderBranches);
+  return EXIT_OK;
+}
+
 async function projectCreate(cmd: CommandContext): Promise<ExitCode> {
   const name = requireArg(cmd.args[0], 'project create', '<name>');
   const workingDir = workingDirOf(cmd.options.require('working-dir'));
@@ -391,6 +410,64 @@ function renderProject(dto: unknown): string {
   return lines.join('\n');
 }
 
+interface BranchRow {
+  name?: unknown;
+  ahead?: unknown;
+  behind?: unknown;
+  isDefault?: unknown;
+  isCurrent?: unknown;
+  merged?: unknown;
+  stale?: unknown;
+  lastCommitAt?: unknown;
+  subject?: unknown;
+}
+
+function renderBranches(dto: unknown): string {
+  const t = (dto ?? {}) as {
+    defaultBranch?: unknown;
+    defaultBranchSource?: unknown;
+    branches?: unknown;
+    truncated?: unknown;
+    staleAfterDays?: unknown;
+  };
+  const branches = Array.isArray(t.branches) ? (t.branches as BranchRow[]) : [];
+  // The SOURCE is printed beside the trunk on purpose: `main` is a convention,
+  // and "12 behind main" is a different claim when the trunk was guessed from
+  // whatever happened to be checked out than when the remote said so.
+  const lines = [
+    `default: ${String(t.defaultBranch)} (source: ${String(t.defaultBranchSource)})`,
+    `stale after: ${String(t.staleAfterDays)} days`,
+  ];
+  if (branches.length === 0) {
+    lines.push('no branches');
+    return lines.join('\n');
+  }
+  lines.push('');
+  for (const b of branches) {
+    const flags = [
+      b.isCurrent === true ? 'current' : null,
+      b.isDefault === true ? 'default' : null,
+      b.merged === true ? 'merged' : null,
+      b.stale === true ? 'stale' : null,
+    ].filter((f): f is string => f !== null);
+    // Signs, not colour: `+3/-1` reads the same in a pipe, a log and a CI job.
+    lines.push(
+      [
+        `+${String(b.ahead)}/-${String(b.behind)}`.padEnd(10),
+        String(b.name),
+        flags.length > 0 ? `[${flags.join(' ')}]` : '',
+        String(b.lastCommitAt ?? ''),
+      ]
+        .filter((part) => part !== '')
+        .join('  '),
+    );
+  }
+  if (t.truncated === true) {
+    lines.push('', 'truncated: more branches exist than --limit allowed');
+  }
+  return lines.join('\n');
+}
+
 function projectionIdOf(dto: unknown): string | undefined {
   const raw = (dto as { projectEntityId?: unknown } | null | undefined)?.projectEntityId;
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
@@ -433,6 +510,7 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'list'], run: projectList },
   { path: ['project', 'create'], run: projectCreate },
   { path: ['project', 'get'], run: projectGet },
+  { path: ['project', 'branches'], run: projectBranches },
   { path: ['project', 'update'], run: projectUpdate },
   { path: ['project', 'link'], run: projectLink },
   { path: ['project', 'unlink'], run: projectUnlink },
