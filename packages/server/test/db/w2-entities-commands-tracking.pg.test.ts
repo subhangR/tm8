@@ -140,12 +140,31 @@ async function asApp<T>(
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => (
         await client.query(sql, [...params])
       ).rows as R[],
+      /*
+       * MIRRORS `unwrapRpc` in src/db/client.ts, deliberately, down to the SQL.
+       *
+       * This shim used to be `select public.f(...) result` unwrapped with
+       * `.rows[0]!.result`, which models only ONE of the 007 catalog's two
+       * return shapes. The command RPCs return a single `jsonb` and survive it;
+       * the `returns table(...)` reads do not — they come back as N rows of one
+       * COMPOSITE column, so the caller's `row.anchor_id` is undefined, and at
+       * zero rows the non-null assertion throws outright.
+       *
+       * That gap was invisible until a test drove `buildUniversalDetail` on a
+       * `channel`, because `loadUnreadCounts` short-circuits for every other
+       * kind and no earlier test in this file reached the RPC. A harness that
+       * models one shape passes for the wrong reason until the day it does not.
+       */
       rpc: async <TResult>(name: string, args: readonly unknown[] = []): Promise<TResult> => {
         if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error(`unsafe test RPC ${name}`);
         const placeholders = args.map((_, index) => `$${index + 1}`).join(',');
-        return (await client.query<{ result: TResult }>(
-          `select public.${name}(${placeholders}) result`, [...args],
-        )).rows[0]!.result;
+        const result = await client.query(`select * from public.${name}(${placeholders})`, [...args]);
+        if (result.rows.length === 1 && result.fields.length === 1) {
+          const row = result.rows[0] as Record<string, unknown>;
+          const field = result.fields[0];
+          return (field ? row[field.name] : undefined) as TResult;
+        }
+        return result.rows as unknown as TResult;
       },
     };
     return fn(q, client);
