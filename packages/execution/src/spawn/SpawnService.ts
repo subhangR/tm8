@@ -880,8 +880,12 @@ export class SpawnService {
       // this launch is unattended — nobody is watching the PTY to answer it.
       // Must also come after the `mkdir` above, since these resolve `cwd`
       // through `realpath` and a scratch directory does not exist until then.
-      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, this.env);
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, this.env);
+      // Trust belongs to the same credential/config home the child is about to
+      // use. Passing the server environment here writes into the node account
+      // even when `env` points Claude/Codex at a member-specific home, leaving
+      // the child untrusted and reintroducing shared mutable provider state.
+      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, env);
+      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
       // Prompts accepted between here and the PTY being live must not be
       // dropped on the floor; the handoff parks them in the bounded FIFO and
@@ -1211,8 +1215,9 @@ export class SpawnService {
       await this.writeManifestFile(manifestPath, manifest);
 
       if (!context.project) await this.ensurePrivateScratchDirectory(cwd);
-      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, this.env);
-      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, this.env);
+      // Resume must seed the exact same member-scoped home as a fresh spawn.
+      if (launch.agentTool === 'claude-code') await trustClaudeWorkspace(cwd, env);
+      if (launch.agentTool === 'codex') await trustCodexWorkspace(cwd, env);
 
       this.pty.beginPromptHandoff(sessionId);
       const { reused } = this.pty.spawnIfAbsent({

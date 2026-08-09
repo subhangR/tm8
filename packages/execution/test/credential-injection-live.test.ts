@@ -24,7 +24,7 @@
 // a secret. The live `~/.claude` is never referenced.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -39,6 +39,7 @@ import { FakeGraph } from './fake-graph.js';
 const SPACE_ID = '11111111-1111-4111-8111-111111111111';
 const MEMBER_ID = '22222222-2222-4222-8222-222222222222';
 const AUTH = { identityId: 'identity-alice', actorId: 'actor-1' };
+const AUTH_BOB = { identityId: 'identity-bob', actorId: 'actor-2' };
 
 /** Read the PTY output ring until `needle` shows up, or fail loudly. */
 async function waitForOutput(
@@ -399,10 +400,70 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
       baseUrl: 'http://127.0.0.1:4614',
       dataDir,
       nodeId: 'test-node',
-      env: { ...process.env, TM8_AGENT_CMD: 'echo-agent', XDG_CONFIG_HOME: '/home/tm8/.config' },
+      env: {
+        ...process.env,
+        HOME: `${dataDir}/node-home`,
+        TM8_AGENT_CMD: 'echo-agent',
+        XDG_CONFIG_HOME: '/home/tm8/.config',
+      },
       ...(port ? { credentialHome: port } : {}),
     });
   }
+
+  it('keeps two members\' Claude sessions alive and seeds trust only in each member home', async () => {
+    const homes = new Map([
+      [AUTH.identityId, {
+        provider: 'anthropic' as const,
+        homeDir: `${dataDir}/credentials/${AUTH.identityId}`,
+        configDir: `${dataDir}/credentials/${AUTH.identityId}/anthropic`,
+      }],
+      [AUTH_BOB.identityId, {
+        provider: 'anthropic' as const,
+        homeDir: `${dataDir}/credentials/${AUTH_BOB.identityId}`,
+        configDir: `${dataDir}/credentials/${AUTH_BOB.identityId}/anthropic`,
+      }],
+    ]);
+    const service = serviceWith({
+      async resolve(auth) {
+        return homes.get(auth.identityId) ?? null;
+      },
+    });
+
+    const alice = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      credentialSource: 'member',
+    });
+    await waitForOutput(pty, alice.sessionId, 'TM8-ECHO-READY');
+
+    const bob = await service.spawn(AUTH_BOB, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      credentialSource: 'member',
+    });
+    await waitForOutput(pty, bob.sessionId, 'TM8-ECHO-READY');
+
+    expect(alice.sessionId).not.toBe(bob.sessionId);
+    expect(pty.hasSession(alice.sessionId)).toBe(true);
+    expect(pty.hasSession(bob.sessionId)).toBe(true);
+
+    await service.prompt(AUTH, alice.sessionId, 'alice-still-live');
+    await service.prompt(AUTH_BOB, bob.sessionId, 'bob-still-live');
+    expect(await waitForOutput(pty, alice.sessionId, 'TM8-ECHO: alice-still-live'))
+      .toContain('TM8-ECHO: alice-still-live');
+    expect(await waitForOutput(pty, bob.sessionId, 'TM8-ECHO: bob-still-live'))
+      .toContain('TM8-ECHO: bob-still-live');
+
+    for (const home of homes.values()) {
+      const trust = JSON.parse(await readFile(`${home.configDir}/.claude.json`, 'utf8')) as {
+        projects?: Record<string, { hasTrustDialogAccepted?: boolean }>;
+      };
+      expect(Object.values(trust.projects ?? {})).toContainEqual({ hasTrustDialogAccepted: true });
+    }
+    await expect(readFile(`${dataDir}/node-home/.claude.json`, 'utf8')).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  }, 30000);
 
   it('records the config-dir variable in the manifest env names when a credential resolves', async () => {
     const asked: Array<{ agentTool: string }> = [];
