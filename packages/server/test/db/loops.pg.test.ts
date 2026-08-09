@@ -29,7 +29,26 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
-const MIGRATION_086 = '086_loops.sql';
+/**
+ * Resolved by SUFFIX, not by number.
+ *
+ * This wave's chain gets renumbered at integration (origin/main independently
+ * took 085 and 086), and a hard-coded `'086_loops.sql'` would turn a mechanical
+ * rename into a test failure someone has to debug during a merge — the worst
+ * possible moment to be reading an unrelated suite. The number is the one part
+ * of a migration's name that is NOT stable; `_loops.sql` is.
+ */
+const LOOPS_MIGRATION_SUFFIX = '_loops.sql';
+
+function loopsMigration(files: readonly string[]): string {
+  const matches = files.filter((file) => file.endsWith(LOOPS_MIGRATION_SUFFIX));
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one *${LOOPS_MIGRATION_SUFFIX} migration, found ${matches.length}: ${matches.join(', ')}`,
+    );
+  }
+  return matches[0]!;
+}
 
 interface Fixture {
   identityId: string;
@@ -140,11 +159,12 @@ async function createLoop(
 beforeAll(async () => {
   database = await createW1ScratchDatabase('loops');
   const files = migrationFiles();
-  expect(files).toContain(MIGRATION_086);
-  // Upgrade shape: the whole chain except 086, seed a pre-086 world, then 086.
-  database.apply(files.filter((f) => f !== MIGRATION_086));
+  const loops = loopsMigration(files);
+  // Upgrade shape: the whole chain except the loops migration, seed a pre-loops
+  // world, then apply it exactly as an upgrade would.
+  database.apply(files.filter((f) => f !== loops));
   fixture = await seedPre086(database);
-  database.apply([MIGRATION_086]);
+  database.apply([loops]);
 });
 
 afterAll(async () => {
