@@ -58,5 +58,11 @@ export type {
 
 export * from './spawn/index.js';
 export * from './worktree/index.js';
+export {
+  readBranchTopology,
+  type BranchTopology,
+  type BranchTopologyEntry,
+  type BranchTopologyOptions,
+} from './git/branch-topology.js';
 
 export const EXECUTION_PACKAGE = '@tm8/execution';
