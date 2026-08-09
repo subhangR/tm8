@@ -124,9 +124,14 @@ describe('narrow — three axes intersect, they never overwrite', () => {
     expect(narrow({ workStatus: ['open'] }, { workStatus: ['done'] })).toBeNull();
   });
 
-  it('the SAME scalar twice is agreement; two DIFFERENT values are a contradiction', () => {
+  it('a scalar takes the LATER value, because scalars have no intersection', () => {
     expect(narrow({ deleted: 'exclude' }, { deleted: 'exclude' })).toEqual({ deleted: 'exclude' });
-    expect(narrow({ deleted: 'exclude' }, { deleted: 'only' })).toBeNull();
+    // NOT null. This exact pair is the task Archived tab: both sections carry
+    // `deleted:'exclude'` and the Archived TIER carries `deleted:'only'`, and
+    // the tier is applied second precisely because the tier owns the lifecycle
+    // band while a section only triages WITHIN it. Treating the pair as a
+    // contradiction empties the Archive instead of grouping it.
+    expect(narrow({ deleted: 'exclude' }, { deleted: 'only' })).toEqual({ deleted: 'only' });
   });
 
   it('disjoint axes compose into one narrower query', () => {
@@ -138,6 +143,23 @@ describe('narrow — three axes intersect, they never overwrite', () => {
 });
 
 describe('a contradiction is STATED, and costs no query', () => {
+  it('the Archived tab is a REAL query, not a self-contradiction', () => {
+    // The regression this guards is one narrowing rule away: task sections say
+    // `deleted:'exclude'`, the Archived tier says `deleted:'only'`. Read as a
+    // contradiction, every archived band renders the explanation and asks
+    // nothing — an Archive that is always empty and always sure of itself.
+    const seam = recorder(tasks);
+    const { getByRole, container } = render(
+      <EntityListPanel kind="task" rowsFor={seam.rowsFor} ctx={ctx} />,
+    );
+    seam.asks.length = 0;
+    fireEvent.click(getByRole('tab', { name: /Archived/ }));
+
+    expect(container.textContent).not.toContain('contradict this tab');
+    const archived = seam.asks.filter((a) => (a.filter as Record<string, unknown>).deleted === 'only');
+    expect(archived.length).toBeGreaterThan(0);
+  });
+
   it('picking Done on the Open tab explains itself instead of going blank', () => {
     const seam = recorder(tasks);
     const { getByTestId, getByRole, container } = render(
