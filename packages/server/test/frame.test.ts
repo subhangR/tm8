@@ -99,6 +99,22 @@ describe('config (S1 — loopback only)', () => {
       expect(loadConfig({ TM8_BIND: host }).host).toBe(host);
     }
   });
+
+  it('normalizes exact allowed origins and requires HTTPS in production', () => {
+    expect(loadConfig({
+      TM8_ALLOWED_ORIGINS: 'https://tm8.sh, https://console.tm8.sh:8443',
+      TM8_PREVIEW_ENABLED: '0',
+    }).allowedOrigins).toEqual(['https://tm8.sh', 'https://console.tm8.sh:8443']);
+    expect(() => loadConfig({
+      TM8_ENV: 'prod',
+      TM8_ALLOWED_ORIGINS: 'http://tm8.sh',
+      TM8_PREVIEW_ENABLED: '0',
+    })).toThrow(/must use https/);
+    expect(() => loadConfig({
+      TM8_ALLOWED_ORIGINS: 'https://tm8.sh/path',
+      TM8_PREVIEW_ENABLED: '0',
+    })).toThrow(/bare http\(s\) origins/);
+  });
 });
 
 describe('handler registry (the W2 seam)', () => {

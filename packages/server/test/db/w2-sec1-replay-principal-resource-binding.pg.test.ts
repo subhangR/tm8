@@ -577,7 +577,7 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
       const cmid = 'sec1-site2-cross-principal';
       const recorded = await appValue<{ grant: { work_session_id: string; subject_identity: string } }>(
         ADMIN_IDENTITY,
-        `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+        `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
         [sessionOne, cmid],
       );
       expect(recorded.grant.subject_identity).toBe(ADMIN_IDENTITY);
@@ -585,7 +585,7 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
       const outcome = await attempt(() =>
         appValue(
           OUTSIDER_IDENTITY,
-          `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+          `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
           [sessionOne, cmid],
         ),
       );
@@ -604,14 +604,14 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
       const cmid = 'sec1-site2-session-crossing';
       await appValue(
         ADMIN_IDENTITY,
-        `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+        `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
         [sessionOne, cmid],
       );
 
       const outcome = await attempt(() =>
         appValue<{ grant: { work_session_id: string } }>(
           ADMIN_IDENTITY,
-          `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+          `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
           [sessionTwo, cmid],
         ),
       );
@@ -632,14 +632,14 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
       const cmid = 'sec1-site2-mode-crossing';
       await appValue(
         ADMIN_IDENTITY,
-        `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+        `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
         [sessionOne, cmid],
       );
 
       const outcome = await attempt(() =>
         appValue<{ grant: { mode: string } }>(
           ADMIN_IDENTITY,
-          `select public.grant_stream_attach($1, 'drive', null, interval '15 minutes', $2) value`,
+          `select public.grant_stream_attach($1, 'drive', md5($2) || md5($2), interval '15 minutes', $2) value`,
           [sessionOne, cmid],
         ),
       );
@@ -680,7 +680,7 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
           [ADMIN_IDENTITY],
         );
         await victim.query(
-          `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+          `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
           [sessionOne, cmid],
         );
 
@@ -698,7 +698,7 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
         // Same session AND same mode, so the resource binding cannot be what refuses it.
         const attackerCall = attacker
           .query<{ value: unknown }>(
-            `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+            `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
             [sessionOne, cmid],
           )
           .then((r) => ({ ok: true as const, value: r.rows[0]!.value }))
@@ -743,12 +743,12 @@ describe.sequential('W2.SEC-1 replay principal and resource binding', () => {
       const cmid = 'sec1-site2-idempotent';
       const first = await appValue<{ grant: { id: string } }>(
         ADMIN_IDENTITY,
-        `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+        `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
         [sessionTwo, cmid],
       );
       const replayed = await appValue<{ grant: { id: string } }>(
         ADMIN_IDENTITY,
-        `select public.grant_stream_attach($1, 'view', null, interval '15 minutes', $2) value`,
+        `select public.grant_stream_attach($1, 'view', md5($2) || md5($2), interval '15 minutes', $2) value`,
         [sessionTwo, cmid],
       );
       expect(replayed).toEqual(first);

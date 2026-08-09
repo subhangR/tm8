@@ -28,11 +28,10 @@
  *        stops its mutations from LANDING. A CORS preflight (OPTIONS with
  *        Access-Control-Request-Method) announces a cross-origin intent and
  *        is refused outright.
- *   S6 — `X-TM8-Client` required on state-changing requests that carry a
- *        TM8 browser cookie. No tm8 cookie exists today, so this branch is
- *        inert until one does — wired now so the moment a session cookie
- *        appears the CSRF gate is already standing (the alternative is a
- *        cookie shipping before anyone remembers this file). "TM8 cookie" is
+ *   S6 — `X-TM8-Client` required on state-changing requests that carry the
+ *        TM8 browser cookie. The Secure/HttpOnly cookie authenticates browser
+ *        HTTP and native WebSocket upgrades, so this gate prevents ambient
+ *        cookie authority from landing a cross-site mutation. "TM8 cookie" is
  *        load-bearing and was learned the hard way: cookies are host-scoped,
  *        not port-scoped, so gating on *any* Cookie header 403s every mutation
  *        as soon as an unrelated app on this loopback host sets one. See
@@ -114,7 +113,10 @@ export function checkHost(headers: IncomingHttpHeaders, config: ServerConfig): S
 export function checkOrigin(headers: IncomingHttpHeaders, config: ServerConfig): SecurityDecision {
   const origin = headers.origin;
   if (origin === undefined) return ALLOWED; // non-browser client
-  const value = Array.isArray(origin) ? origin[0] : origin;
+  if (Array.isArray(origin) || origin.includes(',')) {
+    return refuse('multiple Origin values are not accepted (S3)');
+  }
+  const value = origin;
   if (value === 'null') {
     return refuse('opaque-origin documents may not call this API (S3)');
   }
@@ -125,6 +127,15 @@ export function checkOrigin(headers: IncomingHttpHeaders, config: ServerConfig):
     return refuse(`unparseable Origin ${JSON.stringify(value)} (S3)`);
   }
   const hostname = parsed.hostname.toLowerCase();
+  if ((config.allowedOrigins?.length ?? 0) > 0) {
+    // Browser Origin is exactly scheme://host[:port]. Refuse values that URL
+    // parsing would otherwise normalize (credentials, path, query, fragment,
+    // or a trailing slash) before comparing the operator's exact allowlist.
+    if (value !== parsed.origin || !config.allowedOrigins!.includes(value)) {
+      return refuse(`cross-origin request from ${parsed.origin} refused (S3 exact-origin allowlist)`);
+    }
+    return ALLOWED;
+  }
   // URL.hostname strips IPv6 brackets; the allowlist stores both forms.
   if (!allowedHostnames(config).has(hostname) && !allowedHostnames(config).has(`[${hostname}]`)) {
     return refuse(`cross-origin request from ${parsed.origin} refused (S3/S4 same-origin only)`);
@@ -157,9 +168,8 @@ function carriesTm8Cookie(header: IncomingHttpHeaders['cookie']): boolean {
 }
 
 /**
- * S6 — `X-TM8-Client` on cookie-authenticated mutations. No tm8 session cookie
- * exists yet, so this is inert in practice; see the header note and
- * `carriesTm8Cookie` for why "inert" has to mean *tm8's* cookies specifically.
+ * S6 — `X-TM8-Client` on cookie-authenticated mutations. See the header note
+ * and `carriesTm8Cookie` for why the trigger must mean *tm8's* cookies only.
  */
 export function checkCsrf(
   method: string,
@@ -208,8 +218,8 @@ export function checkTransport(
  * S2 + S3 for the WS upgrade path. The upgrade listener in ./server.ts never
  * reaches the ordinary request handler, so it calls THIS — forgetting that
  * wiring is exactly the C3 under-scoping the design doc warns about. CSRF
- * does not apply to upgrades (no cookie auth exists on sockets), and a
- * preflight cannot precede one.
+ * does not apply to upgrades because exact Origin is the browser-side gate
+ * there, and a preflight cannot precede one.
  */
 export function checkUpgradeTransport(
   headers: IncomingHttpHeaders,

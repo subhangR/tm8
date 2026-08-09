@@ -13,3 +13,4 @@ export * from './catalog.js';
 export * from './schemas.js';
 export * from './launch-models.js';
 export * from './artifact-manifest.js';
+export * from './pty-protocol.js';

@@ -22,8 +22,14 @@ import type { Duplex } from 'node:stream';
 import { getOperation } from '@tm8/contract';
 
 import type { RequestIdentity } from '../http/types.js';
+import { WsAdmissionController, wsClientKey } from '../http/ws-admission.js';
 import { SubscriptionRegistry, fanOutDurable, fanOutPresence } from './subscriptions.js';
-import { WsConnection, type EventSink, type WsSocket } from './ws-connection.js';
+import {
+  WsConnection,
+  type EventSink,
+  type WsConnectionOptions,
+  type WsSocket,
+} from './ws-connection.js';
 import { CLOSE_CODE } from './ws-frame.js';
 
 /** RFC 6455 §1.3 — the fixed GUID mixed into `Sec-WebSocket-Accept`. */
@@ -45,6 +51,8 @@ export interface WsServerOptions {
   /** Forwarded to each connection; injectable so tests need not wait 30s. */
   heartbeatMs?: number;
   missedPongLimit?: number;
+  /** Frame/rate/backpressure/lifetime policy; injectable for focused tests. */
+  connection?: WsConnectionOptions;
   /**
    * Raw client→server text frames.
    *
@@ -66,6 +74,8 @@ export interface WsServerOptions {
   onDisconnect?: (connId: string) => void;
   /** Called after a successful upgrade, before any frame is read. */
   onConnection?: (conn: EventSink) => void;
+  /** Shared with the PTY server so all public socket slots have one ceiling. */
+  admission?: WsAdmissionController;
 }
 
 export interface WsServer {
@@ -106,6 +116,7 @@ function headerValue(req: IncomingMessage, name: string): string {
 
 export function createWsServer(opts: WsServerOptions = {}): WsServer {
   const registry = opts.registry ?? new SubscriptionRegistry();
+  const admission = opts.admission ?? new WsAdmissionController();
 
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const path = new URL(req.url ?? '/', 'http://tm8.invalid').pathname;
@@ -128,6 +139,18 @@ export function createWsServer(opts: WsServerOptions = {}): WsServer {
       return;
     }
 
+    const clientKey = wsClientKey(req);
+    const preflight = admission.preflight(clientKey);
+    if (preflight) {
+      refuse(
+        socket,
+        preflight.status,
+        preflight.status === 429 ? 'Too Many Requests' : 'Service Unavailable',
+        preflight.message,
+      );
+      return;
+    }
+
     // NOTE: Origin and Host checks are DELIBERATELY NOT HERE. Per the CTO's
     // scope trim they land in http/security.ts post-G1A and are applied to
     // every request including this upgrade — a WebSocket-only origin check
@@ -141,6 +164,18 @@ export function createWsServer(opts: WsServerOptions = {}): WsServer {
       return;
     }
 
+    const identityKey = identity.identityId ?? identity.kind;
+    const lease = admission.admit(clientKey, identityKey);
+    if (!('ok' in lease)) {
+      refuse(
+        socket,
+        lease.status,
+        lease.status === 429 ? 'Too Many Requests' : 'Service Unavailable',
+        lease.message,
+      );
+      return;
+    }
+
     socket.write(
       'HTTP/1.1 101 Switching Protocols\r\n' +
         'upgrade: websocket\r\n' +
@@ -150,12 +185,14 @@ export function createWsServer(opts: WsServerOptions = {}): WsServer {
 
     const wsSocket: WsSocket = socket;
     const conn = new WsConnection(wsSocket, identity, {
+      ...opts.connection,
       ...(opts.heartbeatMs === undefined ? {} : { heartbeatMs: opts.heartbeatMs }),
       ...(opts.missedPongLimit === undefined ? {} : { missedPongLimit: opts.missedPongLimit }),
     });
 
     registry.add(conn);
     conn.onClose(() => {
+      lease.release();
       registry.remove(conn.id);
       opts.onDisconnect?.(conn.id);
     });

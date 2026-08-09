@@ -26,7 +26,12 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { WorkspaceEventSchema } from '@tm8/contract';
+import {
+  PTY_GRANT_PROTOCOL_PREFIX,
+  PTY_WS_PROTOCOL,
+  WorkspaceEventSchema,
+  type StreamAttachGrant,
+} from '@tm8/contract';
 
 import {
   addSpaceMember,
@@ -459,11 +464,9 @@ describe('/v2/ws coexistence — events WS and PTY WS on one upgrade path', () =
   });
 
   it('A6b: ?sessionId= dispatches to the PTY server — a ghost session is REFUSED before the 101 (trap 5)', async () => {
-    // Identity v2 Stage 1 (2026-08-02): the PTY server used to complete the
-    // upgrade and then close 1011, which oracled session ids to anyone. A
-    // ghost session now gets a plain-HTTP 404 and no WebSocket ever exists —
-    // the refusal itself proves the upgrade split routed to the PTY server,
-    // because the events server would have accepted the socket.
+    // A sessionId selects the PTY upgrade path, but session ids are not
+    // credentials. With no one-shot capability the request is refused before
+    // the 101 and learns nothing about whether that UUID names a live PTY.
     await expect(connectWs(`${node.wsUrl}?sessionId=${randomUUID()}`)).rejects.toThrow(
       /ws connection failed/,
     );
@@ -508,8 +511,21 @@ describe('/v2/ws coexistence — events WS and PTY WS on one upgrade path', () =
     expect(spawned.status, JSON.stringify(spawned.error)).toBe(201);
     const sessionId = spawned.data!.entity.id;
 
-    // Attach: handshake-then-replay protocol, `attached` is the proof frame.
-    const pty = new WebSocket(`${node.wsUrl}?sessionId=${sessionId}`);
+    // Mint a fresh exact-session/exact-mode one-shot capability over HTTP,
+    // then carry it only in the protocol offer. The selected protocol is the
+    // public constant, never the bearer carrier.
+    const granted = await node.request<StreamAttachGrant>(
+      'POST',
+      `/v2/entities/${sessionId}/commands/streams-attach`,
+      { mode: 'drive', clientMutationId: cmid() },
+    );
+    expect(granted.status, JSON.stringify(granted.error)).toBe(200);
+    const grant = granted.data!;
+    expect(grant.url).not.toContain(grant.token);
+    const pty = new WebSocket(new URL(grant.url, node.wsUrl), [
+      PTY_WS_PROTOCOL,
+      `${PTY_GRANT_PROTOCOL_PREFIX}${grant.token}`,
+    ]);
     sockets.push(pty);
     const attached = await new Promise<{ type: string }>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('no attached frame')), 20_000);
@@ -525,6 +541,7 @@ describe('/v2/ws coexistence — events WS and PTY WS on one upgrade path', () =
       pty.addEventListener('error', () => reject(new Error('pty ws errored')), { once: true });
     });
     expect(attached.type).toBe('attached');
+    expect(pty.protocol).toBe(PTY_WS_PROTOCOL);
 
     // The events socket did not blink: the spawn itself produced durable
     // events (work_session entity), and they arrive while the PTY socket is

@@ -1909,7 +1909,7 @@ export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({
   url: z.string().min(1),
   protocol: z.literal('ws'),
   mode: z.enum(['view', 'drive']),
-  token: z.string().nullable().optional(),
+  token: z.string().min(1),
   expiresAt: IsoTimestamp,
 }).strict();
 

@@ -16,7 +16,7 @@
 1. **tm8 already owns every noun it needs except one.** `identity_id` (the human), `member` (that human in one space), `team_member` (an agent persona), `work_session` (an execution session), `account` (login on one server) are all real, keyed, and correctly shaped. The one missing noun is **`serverId`** — a stable identity for the server itself. Nothing else new is invented.
 
 2. **Identity travels in exactly two places, and nowhere else.**
-   - **The credential** — `Authorization: Bearer` on HTTP, `?token=` on WebSocket upgrades — proves *who* (identity) and, for agent tokens, *pins* the teammate and the work session. Today the credential is the loopback itself (auto-owner); the bearer path is the same seam with a second resolver.
+   - **The credential** — `Authorization: Bearer` or the Secure/HttpOnly browser cookie on HTTP; that same cookie on the events WebSocket; a one-shot `tm8g_` capability offered (but never selected) as a PTY subprotocol — proves *who* and/or exact attach scope. Credentials never ride URLs.
    - **The command envelope** — the existing body fields `{actorId?, clientMutationId?}` (`facade/context.ts:32-35`), extended with one optional field, `workSessionId` — *requests* an actor and *declares* a session. Requests are validated by the database (`internal.resolve_actor` → `internal.can_act_as`, `002_identity.sql:277-291`, `:254-272`); declarations are overridden by the credential when the credential pins one.
    - Everything else (`identityId`, `serverId`, `requestId`) is **derived server-side**, never client-asserted. This is T-L11 kept intact.
 
@@ -91,8 +91,8 @@ The whole design reduces to four verbs, one per identity dimension. This is the 
 | Surface | Format | Notes |
 |---|---|---|
 | HTTP | `Authorization: Bearer tm8s_<sessionId>.<secret>` | Token format already implemented, `identity/crypto.ts` (`TOKEN_PREFIX`, first-dot split). Header already sent by the CLI when `TM8_AGENT_TOKEN` is set (`cli/src/client.ts:212` per auth brief §2.8) and ignored by the server today. |
-| Events WS (`/v2/ws`) | `?token=tm8s_…` on the upgrade URL | Browsers **cannot set headers on a WebSocket upgrade** — a query parameter is the only browser-compatible carrier. Precedent: the remote design already accepts this for PTY grants with the log-redaction caveat; adopt the same rule here (redact `token` in any access log). Identity is **connection-scoped**: resolved once at upgrade, applied to every subsequent `subscribe`/`resume` control frame. The existing control-frame protocol (`contract.ts` §5 block) is unchanged. |
-| PTY WS | `?sessionId=…&token=<attach-grant>` | The contract already has the slot: `StreamAttachGrant.token` is an optional field (`contract.ts:1218`); the RPC already accepts a `tokenHash` (currently passed `null`, `execution-handlers.ts:383`). This design uses the already-designed shape; it adds nothing new. |
+| Events WS (`/v2/ws`) | Secure/HttpOnly/SameSite browser session cookie | Browsers send the cookie on the native upgrade. The server validates exact Host/Origin and resolves the identity once per connection; no bearer appears in a URL. |
+| PTY WS | URL carries only `sessionId`, `mode`, and replay `offset`; `Sec-WebSocket-Protocol` offers `tm8-pty-v1, tm8-grant.<tm8g_…>` | `tm8g_` is random, short-lived, hash-only at rest, exact-scoped and atomically single-use. The server selects only `tm8-pty-v1`, never the bearer carrier. |
 | Absent credential | — | Resolves exactly as today: the loopback auto-owner (`main.ts:288-293`), which is a *real* account row, not a bypass (`identity/loopback.ts`). T-L7: local is the degenerate case of the same path. |
 
 **Carrier 2 — the command envelope** (mutations only; JSON body):
@@ -136,8 +136,8 @@ For every request, the server derives one principal record through the single pa
 HTTP mutation   POST /v2/…            Authorization: Bearer tm8s_…        ← proves identity, pins persona+session (agent)
                 body { actorId?, workSessionId?, clientMutationId?, … }   ← requests actor, declares session
 HTTP read       GET /v2/…             Authorization: Bearer tm8s_…        ← proves identity; nothing else
-Events WS       GET /v2/ws?token=…    upgrade-time resolution; control frames (subscribe/resume/presence) unchanged
-PTY WS          GET /v2/ws?sessionId=…&token=<attach-grant>               ← grant token per the already-designed shape
+Events WS       GET /v2/ws            Secure browser cookie; upgrade-time resolution; control frames unchanged
+PTY WS          GET /v2/ws?sessionId=…&mode=…&offset=…                    one-shot grant in an unselected subprotocol offer
 Response        { data, requestId }   + x-tm8-request-id header           ← unchanged (DEV-6)
 ```
 
@@ -328,7 +328,7 @@ Existing data needs nothing: the one owner account, 8 team_members, and every `c
 
 Each with a one-line recommendation; none blocks steps 0–2 of §7.
 
-1. **WS credential: upgrade-URL `?token=` vs an `auth` control frame post-upgrade.** Query param leaks into access logs (mitigated by redaction, already the PTY design's stated rule); a first-frame auth is cleaner but adds a contract frame and cannot serve the PTY socket, which has no control channel. *Recommend: query param on both sockets for uniformity, with mandatory redaction; revisit only if a log-hygiene audit demands it.*
+1. **WS credential carrier — resolved.** Event sockets use the Secure browser cookie. PTY sockets use a fresh, scoped, one-shot grant in an offered subprotocol and select only the public protocol. No credential is placed in an upgrade URL or selected-protocol response.
 2. **Conflict between a token-pinned and envelope-declared `workSessionId`: refuse vs prefer-pin.** *Recommend: refuse with `invalid_input` (§2.1) — silent correction is a dishonest surface.*
 3. **Claim-surface amendment process.** The four-GUC surface is a Vega ruling; widening it (§2.2) needs whatever re-consensus that ruling class requires — I could not determine the formal process from the tree. UNCERTAIN. *Recommend: a one-paragraph amendment ratified alongside step 2, mirroring the ruling's own format.*
 4. **Spawn-internal minting vs a `teamMembers.mintToken` catalog op.** *Recommend: spawn-internal first (zero contract surface, closes the gap); add the op only when a user-facing "issue a token for my agent elsewhere" story exists.*

@@ -3,6 +3,12 @@
 **Date:** 2026-07-31 · **Tree:** `/Users/subhang/Desktop/Projects/tm8`, branch `main`, HEAD `765115c`, working tree DIRTY.
 **Method:** direct file reads + call-graph trace from `packages/server/src/main.ts`. Every claim below carries a `file:line`. Nothing here is taken from `STATE.md` (known stale).
 
+> **Implementation update (2026-08-09):** this document is a historical audit
+> of HEAD `765115c`, not the current transport design. Bearer/cookie resolution,
+> exact Origin checks, path-bound PTY dispatch, hash-only single-use PTY grants,
+> and server-enforced view/drive now exist. See `IDENTITY-DESIGN.md` §2.1 and
+> `deploy/utho/PUBLIC-WSS-CUTOVER.md` for the current carrier and rollout.
+
 > **⚠ Rev 3 headline (§3.2):** the server connects to Postgres as a **superuser with `rolbypassrls`** and never issues `set local role`, so **migration 008's RLS policy set is largely inert on the read path** — contradicting T-L11 and S9, which both require a low-privilege role. Measured, not inferred. Writes are unaffected. This is the single most consequential finding in this document and it was not in rev 1 or rev 2.
 
 **Revision note (rev 2).** Three claims in rev 1 were wrong, all inherited from `REMOTE-STATUS-2026-07-29.md` rather than verified against the tree — bearer-token forwarding in the proxy, "no Connection store in the UI", and the size of the `PgIdentityRepository` repair. They are corrected in place and flagged where they appeared (§2.7, §4.1, §5). **The lesson generalizes: the remote docs are the least reliable source in this repo — they were accurate when written and the tree has moved under them.** Verify anything load-bearing against code. Companion: `TM8-REMOTE-DEEP-REPORT.md` (same directory), an independent deep pass on remote.
@@ -313,7 +319,7 @@ Both ends are still loopback-only, so this is **multi-process on one machine**, 
 - **CSRF:** bearer-in-header has no ambient-cookie surface, so no CSRF token scheme is introduced — stated as a decision, not a gap.
 - **Token storage:** CLI → OS keychain else `0600` file; browser → in-memory + encrypted per-Connection store (httpOnly cookies are impossible: different origin per Connection). Short access token (~1h) + long refresh (~30d).
 - **Revocation:** effective on the next request (the resolver checks every time); live WS sockets need a periodic re-check (~60s poll) or they survive revocation.
-- **PTY grant token must ride the WS upgrade URL as a query param** — browsers cannot set headers on an upgrade. This is the first live bearer-equivalent secret tm8 puts in a URL, so **access logs must redact the `token` query param** (15-min TTL < typical log retention).
+- **Superseded by the secure-WS implementation:** PTY grants are short-lived, hash-only, exact-scoped and atomically single-use. The browser offers the grant as an unselected subprotocol carrier; URLs and the negotiated protocol contain no credential. Events use the Secure/HttpOnly browser cookie under exact Origin/Host checks.
 
 ### 4.4 Delivery order (from the 2026-07-29 status doc)
 

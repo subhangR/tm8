@@ -50,7 +50,13 @@ import { InterruptedError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
-import type { SessionJournalPage, SessionLaunchRecord, SessionTranscriptPage } from '@tm8/contract';
+import {
+  PTY_GRANT_PROTOCOL_PREFIX,
+  PTY_WS_PROTOCOL,
+  type SessionJournalPage,
+  type SessionLaunchRecord,
+  type SessionTranscriptPage,
+} from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
@@ -545,7 +551,18 @@ async function streamTerminal(cmd: CommandContext, grant: StreamAttachGrantDto):
     );
   }
 
-  const socket = new Ctor(url);
+  const token = typeof grant.token === 'string' ? grant.token : '';
+  if (!token) {
+    throw new CliError('the PTY attach grant has no bearer token', EXIT_USAGE);
+  }
+  const expiresAt = typeof grant.expiresAt === 'string' ? Date.parse(grant.expiresAt) : Number.NaN;
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    throw new CliError('the PTY attach grant is invalid or expired', EXIT_USAGE);
+  }
+  // The credential is offered only in the request header. The server selects
+  // PTY_WS_PROTOCOL, never the carrier, so the bearer is absent from both the
+  // URL and the negotiated-protocol response.
+  const socket = new Ctor(url, [PTY_WS_PROTOCOL, `${PTY_GRANT_PROTOCOL_PREFIX}${token}`]);
   socket.binaryType = 'arraybuffer';
   const drive = grant.mode === 'drive';
 
@@ -560,6 +577,10 @@ async function streamTerminal(cmd: CommandContext, grant: StreamAttachGrantDto):
     };
 
     socket.addEventListener('open', () => {
+      if (socket.protocol !== PTY_WS_PROTOCOL) {
+        socket.close(1002, 'unexpected PTY subprotocol');
+        return;
+      }
       cmd.out.note(`attached to ${String(grant.workSessionId ?? '')} in ${String(grant.mode ?? '')} mode`);
       if (drive) {
         process.stdin.on('data', forward);
@@ -613,6 +634,16 @@ function grantSocketUrl(cmd: CommandContext, grant: StreamAttachGrantDto): strin
   const resolved = new URL(raw, cmd.ctx.baseUrl.value);
   if (resolved.protocol === 'http:') resolved.protocol = 'ws:';
   else if (resolved.protocol === 'https:') resolved.protocol = 'wss:';
+  if (resolved.protocol !== 'ws:' && resolved.protocol !== 'wss:') {
+    throw new CliError('the attach grant URL must use ws or wss', EXIT_USAGE);
+  }
+  if (
+    resolved.searchParams.has('token') ||
+    resolved.href.includes('tm8g_') ||
+    resolved.href.includes('tm8s_')
+  ) {
+    throw new CliError('the attach grant URL contains credential material', EXIT_USAGE);
+  }
   return resolved.href;
 }
 

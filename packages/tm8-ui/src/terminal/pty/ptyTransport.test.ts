@@ -22,6 +22,8 @@ class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
 
   url: string;
+  protocols: string[];
+  protocol: string;
   readyState = 1;
   binaryType = 'arraybuffer';
   onopen: (() => void) | null = null;
@@ -29,8 +31,10 @@ class FakeWebSocket {
   onclose: ((ev: { code: number }) => void) | null = null;
   sent: unknown[] = [];
 
-  constructor(url: string) {
+  constructor(url: string, protocols: string[] = []) {
     this.url = url;
+    this.protocols = protocols;
+    this.protocol = protocols[0] ?? '';
     FakeWebSocket.instances.push(this);
   }
   send(d: unknown) {
@@ -101,10 +105,11 @@ describe('pty transport — offset resume', () => {
     expect(url.searchParams.get('offset')).toBe('0');
   });
 
-  it('authenticates a remote-browser PTY and reads a fresh pass on reconnect', () => {
+  it('never puts the long-lived browser pass in a PTY URL', () => {
     let token = 'tm8s_first.secret/value';
     ptyTransport.openSession('s1', '', () => token);
-    expect(new URL(last().url).searchParams.get('token')).toBe(token);
+    expect(new URL(last().url).searchParams.get('token')).toBeNull();
+    expect(ptyTransport.endpointFor('s1')?.authToken).toBe(token);
 
     last().text({ type: 'attached', base: 0, gap: 0, next: 42, hasReplay: false, epoch: 'e1' });
     token = 'tm8s_second.new-secret';
@@ -113,7 +118,35 @@ describe('pty transport — offset resume', () => {
 
     const resumed = new URL(last().url);
     expect(resumed.searchParams.get('offset')).toBe('42');
-    expect(resumed.searchParams.get('token')).toBe(token);
+    expect(resumed.searchParams.get('token')).toBeNull();
+    expect(ptyTransport.endpointFor('s1')?.authToken).toBe(token);
+  });
+
+  it('mints a fresh one-shot grant on reconnect and carries it only in the protocol offer', async () => {
+    let minted = 0;
+    const mint = async () => {
+      minted += 1;
+      return {
+        workSessionId: 's1',
+        url: '/v2/ws?sessionId=s1&mode=drive',
+        protocol: 'ws' as const,
+        mode: 'drive' as const,
+        token: `tm8g_grant-${minted}`,
+        expiresAt: new Date(Date.now() + 30_000).toISOString(),
+      };
+    };
+    ptyTransport.openSession('s1', '', undefined, mint, 'drive');
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    expect(last().url).not.toContain('tm8g_');
+    expect(last().protocols).toEqual(['tm8-pty-v1', 'tm8-grant.tm8g_grant-1']);
+
+    last().text({ type: 'attached', base: 0, gap: 0, next: 42, hasReplay: false, epoch: 'e1' });
+    ptyTransport.suspend('s1');
+    ptyTransport.resume('s1');
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+    expect(last().url).not.toContain('tm8g_');
+    expect(new URL(last().url).searchParams.get('offset')).toBe('42');
+    expect(last().protocols[1]).toBe('tm8-grant.tm8g_grant-2');
   });
 
   it('keeps the selected server relay when the PTY reconnects', () => {

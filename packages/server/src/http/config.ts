@@ -1,15 +1,9 @@
 /**
  * Server configuration, resolved from the environment once at startup.
  *
- * 10-SECURITY-MODEL S1 is the only security rule enforced in this pass (CTO
- * scope trim, 2026-07-25): **tm8-server binds loopback only.** Non-loopback
- * binding requires token auth (S8), which does not exist yet — so rather than
- * bind wide open, the server REFUSES TO START. A refusal is honest; a silent
- * downgrade to 0.0.0.0 would be the exact failure S1 exists to prevent.
- *
- * The remaining transport rules (S2 Host allowlist, S3 WS Origin, S4 CORS,
- * S6 X-TM8-Client on mutations) are deferred post-G1A and slot into
- * ./security.ts.
+ * tm8-server binds loopback only and is published through a TLS reverse proxy.
+ * S2 Host, exact S3 Origin, S4 same-origin and S6 cookie-mutation checks are
+ * resolved here and enforced in ./security.ts on HTTP and upgrade paths.
  */
 
 import { homedir } from 'node:os';
@@ -120,6 +114,13 @@ export interface ServerConfig {
    * preview name, the preview socket answers only to it (design §9.3).
    */
   readonly extraAllowedHostnames?: readonly string[];
+  /**
+   * Exact browser origins accepted by HTTP and WebSocket transport checks.
+   * When set, this supersedes hostname-only Origin matching, so an HTTPS
+   * deployment cannot be called from HTTP or from an unexpected port on the
+   * same host (`TM8_ALLOWED_ORIGINS`, comma-separated origins only).
+   */
+  readonly allowedOrigins?: readonly string[];
   /**
    * The artifact-preview origin — the SECOND listener, whose only job is
    * serving untrusted bundle content (TM8-ARTIFACTS-DESIGN §9; user-ratified
@@ -280,6 +281,37 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     .map((name) => name.trim().toLowerCase())
     .filter((name) => name.length > 0);
 
+  const allowedOrigins = (env.TM8_ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .map((value) => {
+      let parsed: URL;
+      try {
+        parsed = new URL(value);
+      } catch {
+        throw new ConfigError(`TM8_ALLOWED_ORIGINS contains an invalid URL: ${JSON.stringify(value)}`);
+      }
+      const normalized = value.endsWith('/') ? value.slice(0, -1) : value;
+      if (
+        (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+        || parsed.username !== ''
+        || parsed.password !== ''
+        || parsed.pathname !== '/'
+        || parsed.search !== ''
+        || parsed.hash !== ''
+        || normalized !== parsed.origin
+      ) {
+        throw new ConfigError(
+          `TM8_ALLOWED_ORIGINS entries must be bare http(s) origins, got ${JSON.stringify(value)}`,
+        );
+      }
+      if ((env.TM8_ENV ?? '').trim() === 'prod' && parsed.protocol !== 'https:') {
+        throw new ConfigError(`production TM8_ALLOWED_ORIGINS entries must use https, got ${JSON.stringify(value)}`);
+      }
+      return parsed.origin;
+    });
+
   const preview = resolvePreview(env, host, port, extraAllowedHostnames);
 
   const dataDir = resolveServerDataDir(env);
@@ -299,6 +331,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     host,
     port,
     extraAllowedHostnames,
+    allowedOrigins,
     ...(preview ? { preview } : {}),
     uiDir: env.TM8_UI_DIR?.trim() || undefined,
     maxBodyBytes,

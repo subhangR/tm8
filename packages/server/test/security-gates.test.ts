@@ -63,6 +63,28 @@ describe('S3/S4 — Origin (unit)', () => {
     }
   });
 
+  it('uses an exact scheme/host/port allowlist when configured for HTTPS', () => {
+    const production = {
+      ...TEST_CONFIG,
+      extraAllowedHostnames: ['tm8.sh'],
+      allowedOrigins: ['https://tm8.sh'],
+    };
+    expect(checkOrigin({ origin: 'https://tm8.sh' }, production).refusal).toBeUndefined();
+    for (const origin of [
+      'http://tm8.sh',
+      'https://tm8.sh:444',
+      'https://sub.tm8.sh',
+      'https://tm8.sh.evil.example',
+      'https://tm8.sh/',
+      'https://user:password@tm8.sh',
+      'https://tm8.sh/path',
+      'https://tm8.sh?query=1',
+      'https://tm8.sh, https://evil.example',
+    ]) {
+      expect(checkOrigin({ origin }, production).refusal?.code, origin).toBe('forbidden');
+    }
+  });
+
   it('refuses a CORS preflight outright (S4: same-origin only, no ACAO ever)', () => {
     const decision = checkTransport(
       'OPTIONS',
