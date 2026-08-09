@@ -1,5 +1,5 @@
 // =============================================================================
-// 083 — the forge observer's facts, its watch list, and its dedup.
+// 084 — the forge observer's facts, its watch list, and its dedup.
 //
 // Every assertion here is about a DIFFERENCE, because that is the only thing
 // this migration exists to compute. A door that stores check runs correctly and
@@ -409,4 +409,74 @@ test('a lookup for an unknown key is an empty object, not a failure', () => {
     }),
     {},
   );
+});
+
+// -----------------------------------------------------------------------------
+// 083 (credential sessions) INTERACTION. Its header rules that anything which
+// assumed "a work_sessions row is an agent" must narrow on `session_kind`, and
+// this lane is squarely that: a credential login terminal has no agent reading
+// its anchor, so a nudge routed to one closes no loop.
+//
+// The predicate is created conditionally (084 §F0) because this branch predates
+// 083, so the assertion adapts: where the column exists, a credential session
+// must be refused; where it does not, every session is an agent and the door
+// behaves as it did before 083 was written. Both are stated, so whichever tree
+// this runs on the test says something true.
+// -----------------------------------------------------------------------------
+
+const hasSessionKind = scalar(
+  `select exists (select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'work_sessions'
+       and column_name = 'session_kind')`,
+  { url: OWNER_URL },
+) === 't';
+
+test('a credential login terminal is never nudged and never owns a PR', (t) => {
+  if (!hasSessionKind) {
+    t.skip('work_sessions.session_kind absent — this tree predates 083');
+    return;
+  }
+  const session = spawnSession('lane-a-credential');
+  // Flip it to a credential terminal directly: 083's own door mints these, and
+  // borrowing it here would couple this suite to that migration's call shape.
+  ok(
+    `update public.work_sessions set session_kind = 'credential' where entity_id = ${uuid(session)}`,
+    { url: OWNER_URL },
+  );
+
+  const res = json(
+    `select public.claim_session_nudge(${uuid(session)}, 'ci_failure', 's', 'sig-cred', null)`,
+    { claims: w.claimsA },
+  );
+  assert.equal(res.claimed, false);
+  assert.equal(res.reason, 'not_an_agent_session', 'live by status is not the same as able to act');
+
+  // And it must not be selected as an owner in the first place.
+  const pr = linkPr(501);
+  ok(`select public.record_session_commit(${uuid(session)}, 'acme/forge', ${literal('c'.repeat(40))})`, {
+    claims: w.claimsA,
+  });
+  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, null, ${literal('c'.repeat(40))})`, {
+    claims: w.claimsA,
+  });
+  assert.equal(targetFor(pr).owningSessionId, null, 'a credential terminal is not a candidate owner');
+});
+
+test('an agent session is still selected once 083 is in the chain', (t) => {
+  if (!hasSessionKind) {
+    t.skip('work_sessions.session_kind absent — this tree predates 083');
+    return;
+  }
+  // The other half of the narrowing: it must not filter out real agents, which
+  // is the failure mode 083's header warns about by name.
+  const session = spawnSession('lane-a-agent-after-083');
+  const pr = linkPr(502);
+  ok(`select public.record_session_commit(${uuid(session)}, 'acme/forge', ${literal('d'.repeat(40))})`, {
+    claims: w.claimsA,
+  });
+  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, null, ${literal('d'.repeat(40))})`, {
+    claims: w.claimsA,
+  });
+  assert.equal(targetFor(pr).owningSessionId, session);
+  assert.equal(targetFor(pr).owningSessionLive, true);
 });

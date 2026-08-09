@@ -452,3 +452,52 @@ describe('failure is bounded to the target it happened to', () => {
     expect(String((outcome.detail as { problems: string[] }).problems[0])).toContain('gitlab');
   });
 });
+
+describe('the job log redirect must not carry our credential', () => {
+  it('BLOCKING SECURITY — the 302 is followed by hand, with NO authorization header', async () => {
+    // GitHub 302s the log endpoint to objects.githubusercontent.com. Whether
+    // undici strips `authorization` on a cross-origin redirect is
+    // version-dependent; if it does not, the node's token is posted to a
+    // third-party host on every CI failure and nothing in the logs shows it.
+    // So the follow is ours: redirect:'manual', then fetch unauthenticated.
+    const seen: Seen[] = [];
+    const redRun = { id: 9001, name: 'build', status: 'completed', conclusion: 'failure' };
+    const { db } = fakeDb({
+      'public.observer_watch_targets': { targets: [watchTarget()] },
+      'public.provider_etag_lookup': {},
+      'public.apply_pull_request_facts': { previousMergeableState: 'clean', mergeableState: 'clean' },
+      'public.apply_pr_check_facts': {
+        newlyFailing: [{ name: 'build', status: 'completed', conclusion: 'failure', externalId: '9001' }],
+        ciStatus: 'failing',
+      },
+      'public.apply_pr_review_thread_facts': { newlyUnresolved: [] },
+      'public.claim_session_nudge': { claimed: true },
+    });
+
+    const BLOB = 'https://objects.githubusercontent.com/signed-blob?token=abc';
+    const gh = client(
+      (url) => {
+        if (url === BLOB) return json('the log tail');
+        if (url.includes('/actions/jobs/')) {
+          return new Response(null, { status: 302, headers: { location: BLOB } });
+        }
+        if (url.includes('/check-runs')) return json(JSON.stringify({ check_runs: [redRun] }));
+        if (url.includes('/graphql')) {
+          return json(JSON.stringify({
+            data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } },
+          }));
+        }
+        return json(prBody());
+      },
+      seen,
+    );
+    await runForgeWatchTick(options({ db, client: gh }));
+
+    const apiCall = seen.find((s) => s.url.includes('/actions/jobs/'));
+    expect(apiCall?.headers.authorization).toBe('Bearer test-token');
+
+    const blobCall = seen.find((s) => s.url === BLOB);
+    expect(blobCall).toBeTruthy();
+    expect(blobCall?.headers.authorization).toBeUndefined();
+  });
+});

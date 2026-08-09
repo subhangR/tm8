@@ -1,5 +1,5 @@
 -- =============================================================================
--- 083 — The forge observer stops being a state-fetcher and becomes a WATCHER.
+-- 084 — The forge observer stops being a state-fetcher and becomes a WATCHER.
 --
 -- 081 shipped a queue drainer: something asked for a refresh, the observer
 -- fetched the PR, wrote `title/state/head_sha`, and stopped. 082 made the state
@@ -66,10 +66,10 @@ alter table public.pull_requests
 
 comment on column public.pull_requests.head_ref is
   'Source branch. Also the provenance key: a session working in a worktree on '
-  'this branch owns this PR (083 internal.pr_owning_session).';
+  'this branch owns this PR (084 internal.pr_owning_session).';
 comment on column public.pull_requests.base_ref is
   'Target branch. A PR whose base_ref is another open PR''s head_ref is '
-  'STACKED, which is why its conflicts are suppressed (083 §G).';
+  'STACKED, which is why its conflicts are suppressed (084 §G).';
 
 -- Stacked detection reads (space, repo, head_ref); so does branch provenance.
 create index if not exists pull_requests_space_repo_head_ref_idx
@@ -200,7 +200,7 @@ create table if not exists public.pr_check_facts (
 -- one place, deliberately conservative about what counts as red.
 comment on table public.pr_check_facts is
   'Last-observed CI check runs per (pull request, head sha). The subtrahend the '
-  '083 watcher computes "went red" against; not a client surface.';
+  '084 watcher computes "went red" against; not a client surface.';
 
 -- =============================================================================
 -- D. Review-thread facts — one row per (pull request, thread).
@@ -264,7 +264,61 @@ create table if not exists public.provider_etags (
 -- session is a message nobody will ever read, so a live weaker candidate beats
 -- a dead stronger one — this function answers "who can act", not "who to
 -- blame". The caller still gets the status and decides.
+--
+-- AND SO DOES BEING AN AGENT AT ALL — see F0.
 -- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- F0. "Is this work session something that can ACT on a nudge?"
+--
+-- 083 (credential sessions) made `work_sessions` hold two different animals: a
+-- real agent, and an interactive vendor-login TERMINAL a human types into. Its
+-- header states the obligation directly — "anything that assumed a work_sessions
+-- row is an agent must narrow on this" — and this lane is squarely that: a
+-- credential terminal has no agent reading its anchor, so every nudge routed to
+-- one is durable spam that closes no loop.
+--
+-- ⚠ CREATED CONDITIONALLY, and that is not defensive tidiness. This lane's
+-- branch is based at 38acf120, which PREDATES 083, so `work_sessions` has no
+-- `session_kind` column on this tree and a direct reference would fail to
+-- create the function at all (`language sql` bodies are parsed at creation).
+-- Selecting the body against the schema actually present lets one file verify
+-- green both here and on the rebased tree, and every CALL SITE reads the same
+-- either way — which is the property that matters, because the call sites are
+-- what a future reader has to trust.
+--
+-- On the rebased tree this narrows to `session_kind = 'agent'`. On a tree
+-- without the column every work session is an agent, which is exactly what was
+-- true before 083 existed.
+-- -----------------------------------------------------------------------------
+do $narrowing$
+begin
+  if exists (
+    select 1 from information_schema.columns
+     where table_schema = 'public' and table_name = 'work_sessions'
+       and column_name = 'session_kind'
+  ) then
+    execute $body$
+      create or replace function internal.is_agent_session(p_session_id uuid)
+      returns boolean language sql stable set search_path = public, internal, pg_temp as
+      $sql$
+        select coalesce(
+          (select ws.session_kind from public.work_sessions ws where ws.entity_id = p_session_id),
+          'none') = 'agent'
+      $sql$;
+    $body$;
+  else
+    execute $body$
+      create or replace function internal.is_agent_session(p_session_id uuid)
+      returns boolean language sql stable set search_path = public, internal, pg_temp as
+      $sql$
+        select exists (select 1 from public.work_sessions ws where ws.entity_id = p_session_id)
+      $sql$;
+    $body$;
+  end if;
+end
+$narrowing$;
+
 create or replace function internal.pr_owning_session(p_pr_entity_id uuid)
 returns uuid language sql stable set search_path = public, internal, pg_temp as $$
   with pr as (
@@ -292,6 +346,9 @@ returns uuid language sql stable set search_path = public, internal, pg_temp as 
     join public.entities se
       on se.id = c.session_id and se.kind = 'work_session' and se.deleted_at is null
     join public.work_sessions ws on ws.entity_id = se.id
+    -- F0: a credential login terminal is not an addressee. Filtered rather than
+    -- de-ranked — there is no circumstance in which nudging one is right.
+   where internal.is_agent_session(se.id)
    order by (ws.status in ('spawning','running','idle')) desc, c.confidence, ws.status_changed_at desc
    limit 1
 $$;
@@ -403,6 +460,30 @@ $$;
 -- has not been told yet, and "we started watching after it broke" is not a
 -- reason to stay quiet; §I's durable signature is what stops that from
 -- repeating.
+--
+-- ⚠ KNOWN AND ACCEPTED: THE LOST-TRANSITION WINDOW.
+--
+-- This call COMMITS the new facts and RETURNS the transition in one step. If
+-- the process dies after that commit and before the nudge is claimed and
+-- posted, that transition is gone: the dedup table never saw the signature, and
+-- the next tick compares red against red and correctly reports no change. The
+-- agent is never told about that particular transition. `newlyUnresolved` in H2
+-- has the same shape.
+--
+-- Not fixed here, and the reason is a judgement about which failure mode to
+-- prefer rather than an oversight. Closing it properly means an OUTBOX: the
+-- diff door writes pending nudges in the same transaction as the facts, and
+-- delivery drains them with its own retry and its own poison handling. That is
+-- a second queue with a second set of failure modes, bought to cover a window
+-- that is (a) microseconds wide, (b) only reachable by a crash in exactly that
+-- gap, and (c) SELF-HEALING for everything that still matters — a check that is
+-- still red re-fires the moment it is re-run or the head moves, and a still-
+-- unresolved thread re-fires on the reviewer's next comment. What is genuinely
+-- lost is the announcement of a failure that then stays red and untouched
+-- forever, which is a state the PR itself already advertises.
+--
+-- Revisit if the outbox is ever wanted for a second reason. Building it for
+-- this one alone is not worth its own failure modes.
 -- -----------------------------------------------------------------------------
 create or replace function public.apply_pr_check_facts(
   p_pr_entity_id uuid, p_head_sha text, p_checks jsonb
@@ -703,7 +784,7 @@ create table if not exists public.session_nudge_signatures (
 
 comment on table public.session_nudge_signatures is
   'One row per nudge actually delivered. Durable so a server restart does not '
-  're-spam a live session with facts it has already been told (083 §J).';
+  're-spam a live session with facts it has already been told (084 §J).';
 
 -- CLAIM BEFORE POSTING, and release if the post fails.
 --
@@ -748,6 +829,12 @@ begin
     return jsonb_build_object('claimed', false, 'reason', 'session_not_live',
                               'sessionStatus', session_status);
   end if;
+  -- F0 again, at the door. A credential login terminal (083) is a work_sessions
+  -- row with no agent behind it: live by status, and still nobody to read this.
+  if not internal.is_agent_session(p_work_session_id) then
+    return jsonb_build_object('claimed', false, 'reason', 'not_an_agent_session',
+                              'sessionStatus', session_status);
+  end if;
 
   perform pg_advisory_xact_lock(hashtextextended(
     p_work_session_id::text || ':nudge:' || p_loop_kind || ':' || p_scope_key, 0));
@@ -783,7 +870,16 @@ create or replace function public.release_session_nudge(
 declare session_entity public.entities;
 begin
   perform internal.require_identity();
-  select * into session_entity from public.entities where id = p_work_session_id;
+  -- The same kind check `claim_session_nudge` makes, and for the same reason:
+  -- two doors onto one table that disagree about what a valid subject is hand
+  -- a caller the looser of the two.
+  --
+  -- Deliberately NOT filtered on `deleted_at`, where claim is: a signature
+  -- claimed against a session that has since been deleted must still be
+  -- releasable, or a failed post strands the row forever and the agent is
+  -- permanently recorded as having been told something it never heard.
+  select * into session_entity from public.entities
+   where id = p_work_session_id and kind = 'work_session';
   if not found then
     raise exception 'no work session %', p_work_session_id using errcode = 'P0002';
   end if;

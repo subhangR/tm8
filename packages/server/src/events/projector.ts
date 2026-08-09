@@ -45,6 +45,7 @@ import type { Querier } from '../db/types.js';
 // the `channel` arm of stateOf. `entity-read.ts` imports nothing from `events/`,
 // so this direction adds no cycle.
 import { loadUnreadCounts } from '../facade/entity-read.js';
+import { projectForgeFacts } from '../tracking/pr-projection.js';
 
 /**
  * Thrown when the database holds an entity kind the FROZEN contract does not
@@ -216,6 +217,8 @@ interface SummaryRow {
   pr_repo: string | null;
   pr_number: number | null;
   pr_state: string | null;
+  pr_ci_status: string | null;
+  pr_mergeable_state: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
   commit_repo: string | null;
@@ -309,6 +312,8 @@ select
   pr.repo            as pr_repo,
   pr.number          as pr_number,
   pr.state           as pr_state,
+  pr.ci_status       as pr_ci_status,
+  pr.mergeable_state as pr_mergeable_state,
   pr.url             as pr_url,
   pr.fetched_at      as pr_fetched_at,
   cm.repo            as commit_repo,
@@ -890,6 +895,7 @@ export class PgEntityProjector implements EntityProjector {
           // `stale` is "the mirror is older than the upstream", which needs a
           // tracking comparison. Never fetched ⇒ definitionally stale.
           stale: r.pr_fetched_at === null,
+          ...projectForgeFacts(r.pr_ci_status, r.pr_mergeable_state),
         };
         return r.pr_url === null ? base : { ...base, url: r.pr_url };
       }
