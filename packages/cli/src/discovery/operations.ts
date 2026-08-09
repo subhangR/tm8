@@ -947,6 +947,30 @@ const ROWS: Record<OperationName, Row> = {
       'ahead/behind are measured against the default branch, whose SOURCE travels with the answer: main is a convention, not a rule',
     ],
   },
+  'projects.file.history': {
+    cmd: ['project', 'file-history'],
+    syn: 'tm8 project file-history <project-resource-id> <path> [--max-revisions <count>]',
+    sum: 'Revisions of one path in a project working directory, with session attribution',
+    authz: 'project',
+    input: 'none',
+    tags: ['git', 'history', 'log', 'file', 'revision', 'attribution', 'provenance'],
+    notes: [
+      'a READ — argv-only git log --follow; the path is a pathspec inside the project checkout, never a directory',
+      'each revision carries the created_in session join when the graph recorded one; "no tm8 session recorded" is the honest absence',
+    ],
+  },
+  'projects.file.blame': {
+    cmd: ['project', 'blame'],
+    syn: 'tm8 project blame <project-resource-id> <path> [--max-lines <count>]',
+    sum: 'Working-tree blame of one path, hunks joined to the session that produced each commit',
+    authz: 'project',
+    input: 'none',
+    tags: ['git', 'blame', 'attribution', 'provenance', 'session', 'hunk'],
+    notes: [
+      'a READ — argv-only git blame --porcelain, bounded by --max-lines; the cut reports how many lines it holds back',
+      'attribution comes ONLY from the created_in edge; absent facts are absent claims',
+    ],
+  },
   'projects.update': {
     cmd: ['project', 'update'],
     syn: 'tm8 project update <project-resource-id> [--name <name>] [--working-dir <absolute-path>] [--trust trusted|untrusted] [--yes] [--mutation-id <id>]',
