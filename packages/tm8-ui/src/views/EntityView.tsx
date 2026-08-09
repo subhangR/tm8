@@ -155,7 +155,10 @@ export function EntityView(props: EntityViewProps) {
     data.ensureKind(kind);
   }, [data, kind]);
 
-  const ctx = useMemo<ActionContext>(() => ({ spaceId: data.spaceId }), [data.spaceId]);
+  const ctx = useMemo<ActionContext>(
+    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActor?.id }),
+    [data.spaceId, data.viewerActor],
+  );
 
   /*
    * ATTACHMENTS, one port for the whole view. Memoized on the seam+space so
@@ -503,7 +506,9 @@ export function EntityView(props: EntityViewProps) {
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
-          rowsFor={data.rowsFor(kind) as never}
+          rowsFor={data.rowsFor(kind)}
+          pageStateOf={data.pageStateOf(kind)}
+          loadMore={data.loadMore(kind)}
           boardFor={data.boardFor(kind) as never}
           mode={mode}
           onMode={setMode}
