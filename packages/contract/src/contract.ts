@@ -505,6 +505,18 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'menu.updated'; menu: MenuConfig; clientMutationId?: string }
  | { type: 'space.default_channel.updated'; channelId: EntityId | null;
      settingsRevision: number; clientMutationId?: string }
+ // Git facts on the durable stream (Tier 4 git×graph). RPC-authored
+ // passthrough rows: the SQL authors (db/migrations/082) build these payloads
+ // contract-shaped, discriminant included — see mapper.ts
+ // RPC_AUTHORED_PASSTHROUGH for the membership rules they satisfy.
+ | { type: 'git.commit_recorded'; commitEntityId: EntityId; repo: string; sha: string;
+     provider: string; clientMutationId?: string }
+ | { type: 'git.pr_state_changed'; prEntityId: EntityId; repo: string; number: number;
+     previousState: 'open'|'merged'|'closed'|'draft'; state: 'open'|'merged'|'closed'|'draft';
+     headSha?: string | null; clientMutationId?: string }
+ | { type: 'git.worktree_status_changed'; worktreeEntityId: EntityId; projectId: string;
+     branch: string; previousStatus: 'active'|'merged'|'abandoned'|'deleted';
+     status: 'active'|'merged'|'abandoned'|'deleted'; clientMutationId?: string }
  | { type: 'project.association.corrected'; result: EdgeCorrectionResult; clientMutationId?: string }
  | { type: 'handoff.prepared'|'handoff.delivery_settled'|'handoff.recorded'|'handoff.withdrawn';
      handoff: HandoffView; clientMutationId?: string }
@@ -1128,6 +1140,9 @@ export interface LinkPrInput extends CommandContext { clientMutationId: string; 
 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
 export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
+
+/** POST /v2/entities/:id/commands/gate — 082's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
+export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 
 export interface TaskAxisInput extends CommandContext {
   name: string;

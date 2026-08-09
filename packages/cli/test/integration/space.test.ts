@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(127); // 126 -> 127 (2026-08-09): projects.branches.list, branch topology for a project working directory.
+    expect(health.operations).toBe(129); // 127 -> 129 (2026-08-09): projects.contention + entities.commands.gate.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

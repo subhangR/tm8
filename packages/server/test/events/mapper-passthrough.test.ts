@@ -208,9 +208,79 @@ describe('WorkspaceEventMapper passthrough arm', () => {
       expect(RPC_AUTHORED_PASSTHROUGH.has(type)).toBe(false);
     }
     expect([...RPC_AUTHORED_PASSTHROUGH].sort()).toEqual([
+      'git.commit_recorded',
+      'git.pr_state_changed',
+      'git.worktree_status_changed',
       'menu.updated',
       'space.default_channel.updated',
     ]);
+  });
+
+  // 082's git facts: authored by capture triggers on the FACTS tables
+  // (commits / pull_requests / worktrees — none 003-covered), but PASSTHROUGH
+  // members because the trigger builds the payload contract-shaped, `type`
+  // included — unlike 003's raw to_jsonb(row) captures.
+
+  it('projects git.commit_recorded verbatim', () => {
+    const event = mapper.mapRow(
+      row({
+        event_type: 'git.commit_recorded',
+        payload: {
+          type: 'git.commit_recorded',
+          commitEntityId: TASK,
+          repo: 'acme/repo',
+          sha: 'a'.repeat(40),
+          provider: 'github',
+        },
+      }),
+      entities,
+    );
+    if (event.type !== 'git.commit_recorded') throw new Error('unreachable');
+    expect(event.commitEntityId).toBe(TASK);
+    expect(event.sha).toBe('a'.repeat(40));
+    expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it('projects git.pr_state_changed verbatim, null headSha included', () => {
+    const event = mapper.mapRow(
+      row({
+        event_type: 'git.pr_state_changed',
+        payload: {
+          type: 'git.pr_state_changed',
+          prEntityId: TASK,
+          repo: 'acme/repo',
+          number: 67,
+          previousState: 'open',
+          state: 'merged',
+          headSha: null,
+        },
+      }),
+      entities,
+    );
+    if (event.type !== 'git.pr_state_changed') throw new Error('unreachable');
+    expect(event.previousState).toBe('open');
+    expect(event.state).toBe('merged');
+    expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
+  });
+
+  it('projects git.worktree_status_changed verbatim', () => {
+    const event = mapper.mapRow(
+      row({
+        event_type: 'git.worktree_status_changed',
+        payload: {
+          type: 'git.worktree_status_changed',
+          worktreeEntityId: TASK,
+          projectId: SPACE,
+          branch: 'feat/lane',
+          previousStatus: 'active',
+          status: 'merged',
+        },
+      }),
+      entities,
+    );
+    if (event.type !== 'git.worktree_status_changed') throw new Error('unreachable');
+    expect(event.status).toBe('merged');
+    expect(WorkspaceEventSchema.safeParse(event).success).toBe(true);
   });
 
   it('still projects a trigger-captured entity.upsert through the entity arm, not verbatim', () => {

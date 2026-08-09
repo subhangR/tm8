@@ -199,6 +199,59 @@ async function projectGet(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
+ * `tm8 project contention <project-resource-id>` — the read-only contention
+ * map: overlapping touched paths across the project's ACTIVE worktree lanes,
+ * computed server-side from local git. Two lanes that both touch a file are
+ * the "merges cleanly, silently reverts" precondition; this names them while
+ * both are still open.
+ */
+async function projectContention(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('project contention', cmd.options.value('mutation-id'));
+  const projectId = requireArg(cmd.args[0], 'project contention', '<project-resource-id>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'projects.contention', {
+    params: { projectId },
+  });
+  cmd.out.data(data, renderContention);
+  return EXIT_OK;
+}
+
+interface ContentionLaneView {
+  worktreeId?: string;
+  branch?: string;
+  sessionId?: string | null;
+  touchedCount?: number;
+  skipped?: string | null;
+}
+interface ContentionPairView {
+  aBranch?: string;
+  bBranch?: string;
+  overlappingPaths?: string[];
+}
+
+function renderContention(data: unknown): string {
+  const report = (data ?? {}) as {
+    lanes?: ContentionLaneView[];
+    pairs?: ContentionPairView[];
+  };
+  const lanes = report.lanes ?? [];
+  const pairs = report.pairs ?? [];
+  const lines: string[] = [];
+  lines.push(`${String(lanes.length)} active lane(s), ${String(pairs.length)} contended pair(s)`);
+  for (const lane of lanes) {
+    const skipped = lane.skipped ? `  [skipped: ${lane.skipped}]` : '';
+    lines.push(
+      `  ${lane.branch ?? '?'}  touched=${String(lane.touchedCount ?? 0)}` +
+        `${lane.sessionId ? `  session=${lane.sessionId}` : ''}${skipped}`,
+    );
+  }
+  for (const pair of pairs) {
+    lines.push(`  CONTENTION ${pair.aBranch ?? '?'} <-> ${pair.bBranch ?? '?'}:`);
+    for (const path of pair.overlappingPaths ?? []) lines.push(`    ${path}`);
+  }
+  return lines.join('\n');
+}
+
+/**
  * `project branches` — what exists in the working directory, and how far each
  * branch has drifted from the trunk. A READ: it runs git argv-only and checks
  * nothing out, so it is safe against a directory someone is actively editing.
@@ -510,6 +563,7 @@ export const PROJECT_COMMANDS: CommandModule[] = [
   { path: ['project', 'list'], run: projectList },
   { path: ['project', 'create'], run: projectCreate },
   { path: ['project', 'get'], run: projectGet },
+  { path: ['project', 'contention'], run: projectContention },
   { path: ['project', 'branches'], run: projectBranches },
   { path: ['project', 'update'], run: projectUpdate },
   { path: ['project', 'link'], run: projectLink },

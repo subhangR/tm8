@@ -596,6 +596,15 @@ const ROWS: Record<OperationName, Row> = {
     input: 'bound',
     tags: ['commit', 'sha', 'git'],
   },
+  'entities.commands.gate': {
+    cmd: ['task', 'gate'],
+    syn: 'tm8 task gate <task-id> <none|pr_merged> --expect-version <n> [--mutation-id <id>]',
+    sum: 'Set the opt-in completion gate on a task — pr_merged refuses completion while a tracked PR is unmerged or CI-red',
+    authz: 'entity',
+    input: 'bound',
+    ver: 'expectedVersion',
+    tags: ['gate', 'pr', 'ci', 'complete'],
+  },
   'tracking.refresh': {
     cmd: ['tracking', 'refresh'],
     syn: 'tm8 tracking refresh [<pull-request-or-commit-entity-id>...] [--mutation-id <id>]',
@@ -823,6 +832,14 @@ const ROWS: Record<OperationName, Row> = {
     sum: 'Read one ProjectResource',
     authz: 'project',
     input: 'none',
+  },
+  'projects.contention': {
+    cmd: ['project', 'contention'],
+    syn: 'tm8 project contention <project-resource-id>',
+    sum: 'Report overlapping touched paths across the project\'s active worktree lanes',
+    authz: 'project',
+    input: 'none',
+    tags: ['worktree', 'conflict', 'overlap', 'git'],
   },
   'projects.branches.list': {
     cmd: ['project', 'branches'],
@@ -1582,7 +1599,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:391f5ee638dc2dc5cc53842e07602ef0d103c1a369862709d9bb5b4eeed2f716';
+  'sha256:9e8b10c9ab00863ae61643747f91d491cff84fa1cfb76e454407e1a775d32c65';
 
 export const GRAMMAR_VERSION = '2';
 

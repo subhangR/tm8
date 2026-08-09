@@ -39,6 +39,7 @@ import type {
   ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
+  GateTaskInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
@@ -802,6 +803,39 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     settingsRevision: z.number().int().positive(),
     clientMutationId: z.string().optional(),
   }).strict(),
+  // Git facts (Tier 4 git×graph): RPC-authored passthrough — SQL authors in
+  // db/migrations/082 build these payloads contract-shaped. STRICT, like every
+  // passthrough arm, so an off-contract stored row fails the tripwire.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.commit_recorded'),
+    commitEntityId: EntityIdSchema,
+    repo: z.string(),
+    sha: z.string(),
+    provider: z.string(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.pr_state_changed'),
+    prEntityId: EntityIdSchema,
+    repo: z.string(),
+    number: z.number().int().positive(),
+    previousState: z.enum(['open', 'merged', 'closed', 'draft']),
+    state: z.enum(['open', 'merged', 'closed', 'draft']),
+    headSha: z.string().nullable().optional(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.worktree_status_changed'),
+    worktreeEntityId: EntityIdSchema,
+    projectId: z.string(),
+    branch: z.string(),
+    previousStatus: z.enum(['active', 'merged', 'abandoned', 'deleted']),
+    status: z.enum(['active', 'merged', 'abandoned', 'deleted']),
+    clientMutationId: z.string().optional(),
+  }).strict(),
   z.object({
     ...workspaceEventEnvelopeShape,
     type: z.literal('project.association.corrected'),
@@ -1415,6 +1449,12 @@ export const LinkCommitInputSchema: z.ZodType<LinkCommitInput> = z.object({
   clientMutationId: z.string().min(1),
   url: z.string().url(),
   projectId: z.string().min(1).optional(),
+}).strict();
+
+export const GateTaskInputSchema: z.ZodType<GateTaskInput> = z.object({
+  ...commandContextShape,
+  expectedVersion: z.number().finite(),
+  gate: z.enum(['none', 'pr_merged']),
 }).strict();
 
 export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({

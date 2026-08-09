@@ -110,17 +110,18 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 127 -> 128 (2026-08-07): execution.transcript (public).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
     // 128 -> 129 (2026-08-09): projects.branches.list (public, with a command).
-    expect(wanted).toHaveLength(126);
+    // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
+    expect(wanted).toHaveLength(128);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
-  it('D3: every one of the 129 operations has intent tags', () => {
+  it('D3: every one of the 131 operations has intent tags', () => {
     let swept = 0;
     for (const op of OPERATIONS) {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    expect(swept).toBe(129);
+    expect(swept).toBe(131);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -195,7 +196,7 @@ describe('command shards — tm8.help.command.v1, 16 KiB HARD', () => {
   });
 });
 
-describe('exact operation lookup — TOTAL over all 129 (conformance D2)', () => {
+describe('exact operation lookup — TOTAL over all 131 (conformance D2)', () => {
   it('succeeds for every catalog operation and returns ONE digest', () => {
     const digests = new Set<string>();
     const seen = new Set<string>();
@@ -207,7 +208,7 @@ describe('exact operation lookup — TOTAL over all 129 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(129);
+    expect(seen.size).toBe(131);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 

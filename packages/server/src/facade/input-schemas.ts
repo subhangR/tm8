@@ -47,6 +47,7 @@ import {
   FileUploadAbortInputSchema,
   FileUploadCompleteInputSchema,
   FileUploadInitInputSchema,
+  GateTaskInputSchema,
   GrantPointsInputSchema,
   GraphQuerySchema,
   IdentityProfileUpdateInputSchema,
@@ -157,6 +158,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'entities.commands.pull': PullInputSchema,
   'entities.commands.linkPr': LinkPrInputSchema,
   'entities.commands.linkCommit': LinkCommitInputSchema,
+  'entities.commands.gate': GateTaskInputSchema,
   'tracking.refresh': TrackingRefreshInputSchema,
 
   // edges + messages

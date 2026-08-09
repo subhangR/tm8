@@ -165,7 +165,8 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // is the very distinction this assertion is here to watch.
     // 126 -> 127: `project branches`.
     // 127 -> 132 (2026-08-09): five Tier 2 git-verb ALIASES (catalog rows unmoved).
-    expect(COMMAND_PATHS).toHaveLength(132);
+    // 132 -> 134 (2026-08-09): project contention + task gate.
+    expect(COMMAND_PATHS).toHaveLength(134);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

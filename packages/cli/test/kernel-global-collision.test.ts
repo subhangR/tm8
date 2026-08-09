@@ -296,7 +296,8 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
     // 127 -> 128 (2026-08-07): execution.transcript (public, with a command).
     // 128 -> 129 (2026-08-09): projects.branches.list.
-    expect(rows.length).toBe(129);
+    // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
+    expect(rows.length).toBe(131);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

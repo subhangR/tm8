@@ -238,8 +238,13 @@ const ONBOARDING_NET_NEW_OPERATIONS = [
   'projects.directories.list',
 ] as const;
 
-/** Branch topology for a project working directory — a read, argv-only git. */
+/**
+ * Tier 4 git x graph (2026-08-09): the opt-in completion gate joined the G02
+ * entities seam; contention and branch topology are project reads. Net-new.
+ */
 const GIT_NET_NEW_OPERATIONS = [
+  'entities.commands.gate',
+  'projects.contention',
   'projects.branches.list',
 ] as const;
 
@@ -372,7 +377,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 108 -> 109: `identity.profile.update` (Identity v2 Stage 0).
     // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
     // 114 -> 115 (2026-08-09): projects.branches.list.
-    expect(registry.size).toBe(115);
+    // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
+    expect(registry.size).toBe(117);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -526,7 +532,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 65 -> 66: identity.profile.update (Identity v2 Stage 0).
     // 66 -> 69 (2026-08-02): auth.signup/login/logout (Identity v2 Stage 1);
     // auth.session.get is a GET and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(69);
+    // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(70);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -667,11 +674,13 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
     // 127/124 -> 128/125 (2026-08-07): `execution.transcript`, mounted.
     // 128/125 -> 129/126 (2026-08-09): `projects.branches.list`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 128, implemented: 126 });
+    // 129/126 -> 131/128: entities.commands.gate + projects.contention.
+    expect(health).toMatchObject({ ok: true, operations: 130, implemented: 128 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
-    expect(harness.production.server.registry.size).toBe(126);
+    // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
+    expect(harness.production.server.registry.size).toBe(128);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -687,7 +696,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
-    expect(registered.size + residual.length).toBe(126);
+    // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
+    expect(registered.size + residual.length).toBe(128);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

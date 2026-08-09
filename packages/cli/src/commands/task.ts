@@ -125,9 +125,48 @@ function linker(
   };
 }
 
+/** The closed gate vocabulary — 082's `tasks.completion_gate` check constraint. */
+const GATES = ['none', 'pr_merged'] as const;
+
+/**
+ * `tm8 task gate <task-id> <none|pr_merged>` — the opt-in completion gate.
+ * `pr_merged` makes `task complete` refuse while any `tracks`-linked pull
+ * request is unmerged or CI-red; `none` (the default every task starts with)
+ * restores the plain completion path. The refusal itself lives in
+ * `complete_task`; this command only stores the flag.
+ */
+async function taskGate(cmd: CommandContext): Promise<ExitCode> {
+  assertKnownOptions(cmd, ['expect-version', 'mutation-id']);
+  const id = requireArg(cmd, 0, '<task-id>');
+  const gate = requireArg(cmd, 1, `<gate> (${GATES.join('|')})`);
+  if (!(GATES as readonly string[]).includes(gate)) {
+    throw new CliError(`${JSON.stringify(gate)} is not a completion gate`, EXIT_USAGE, {
+      hint: `one of: ${GATES.join('|')}`,
+    });
+  }
+  const expectedVersion = cmd.options.integer('expect-version');
+  if (expectedVersion === undefined) {
+    throw new CliError('`tm8 task gate` requires --expect-version <n>', EXIT_USAGE, {
+      hint: 'read the current version with `tm8 entity get <task-id>`',
+    });
+  }
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'entities.commands.gate', {
+    params: { id },
+    body: withActor(cmd, {
+      clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+      expectedVersion,
+      gate,
+    }),
+  });
+  cmd.out.data(data, renderCommandResult);
+  return EXIT_OK;
+}
+
 export const TASK_COMMANDS: CommandModule[] = [
   { path: ['task', 'transition'], run: taskTransition },
   { path: ['task', 'complete'], run: taskComplete },
+  { path: ['task', 'gate'], run: taskGate },
   { path: ['task', 'link-pr'], run: linker('entities.commands.linkPr') },
   { path: ['task', 'link-commit'], run: linker('entities.commands.linkCommit') },
 ];

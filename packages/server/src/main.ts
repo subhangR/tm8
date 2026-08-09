@@ -37,6 +37,7 @@ import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
+import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
 import { resolveBearerIdentity } from './identity/pg-auth.js';
 import {
@@ -624,8 +625,24 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // Tier 4 git×graph: session→commit provenance from local worktrees, same
+    // claims posture as the observer above.
+    scheduler.register(
+      createCommitRecorderJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'commit-recorder',
+          };
+        },
+      }),
+    );
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
+    console.log('  tracking: commit recorder walking active worktrees every 60s');
   }
 
   if (execution) {

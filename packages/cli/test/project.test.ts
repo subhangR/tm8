@@ -158,10 +158,11 @@ const RESOURCE = {
 };
 
 describe('the project module registers exactly its projected paths', () => {
-  it('claims the eight project rows and nothing else', () => {
+  it('claims the nine project rows and nothing else', () => {
     expect(PROJECT_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
       'project association correct',
       'project branches',
+      'project contention',
       'project create',
       'project get',
       'project link',

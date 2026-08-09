@@ -48,7 +48,7 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 128-row target (110 W1 + voice.token.create + 6 artifacts + execution.resume + spaces.counts + execution.journal + identity.profile.update + 4 auth + execution.launch + projects.directories.list + execution.transcript) without changing reserved honesty', () => {
+  it('reconciles the additive 131-row target without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
@@ -62,8 +62,9 @@ describe('W1 adopted catalog target', () => {
     // SAID, read back out of the agent's own native transcript file.
     // 128 -> 129 (2026-08-09): projects.branches.list (GET read) — branch
     // topology for a project working directory, argv-only git, no writes.
-    expect(OPERATIONS).toHaveLength(129);
-    expect(V1_OPERATIONS).toHaveLength(127);
+    // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
+    expect(OPERATIONS).toHaveLength(131);
+    expect(V1_OPERATIONS).toHaveLength(129);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -79,12 +80,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 49, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 50, POST: 55, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 52, command: 76, stream: 1 });
+    }).toEqual({ read: 53, command: 77, stream: 1 });
   });
 });
 

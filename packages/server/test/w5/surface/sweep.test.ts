@@ -298,9 +298,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // The 123 literal was ALREADY red at 124 when this lane arrived (the
     // onboarding read landed without moving it); 125 adds execution.transcript,
     // and 126 adds projects.branches.list.
-    expect(SURFACE).toHaveLength(126);
-    expect(rows).toHaveLength(126);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(126);
+    // Tier 4 adds projects.contention and entities.commands.gate.
+    expect(SURFACE).toHaveLength(128);
+    expect(rows).toHaveLength(128);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(128);
   });
 
   /**
@@ -446,7 +447,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // while the check job ran without a database.
     // 77 -> 78 on 2026-08-09: 081 (worktree provisioning + tracking observer).
     // Authored as 078, then renumbered on merge because #71 had landed 078/079.
-    expect(server.appliedMigrations.length).toBe(78);
+    // 78 -> 79: 082 (git graph events, provenance and completion gate).
+    expect(server.appliedMigrations.length).toBe(79);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
