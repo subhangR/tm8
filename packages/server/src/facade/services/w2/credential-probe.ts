@@ -61,6 +61,7 @@ export const CREDENTIAL_PROBE_COMMANDS = {
  * Comparing the two is what makes that impossible to miss.
  */
 const GH_API_USER_COMMAND = ['gh', 'api', 'user', '--jq', '.login'] as const;
+const GH_AUTH_TOKEN_COMMAND = ['gh', 'auth', 'token', '--hostname', 'github.com'] as const;
 
 /** Names that must not exist in a probe environment. See D6 above. */
 export const GH_TOKEN_ENV_NAMES = ['GH_TOKEN', 'GITHUB_TOKEN'] as const;
@@ -374,4 +375,29 @@ export async function runCredentialProbe(input: RunCredentialProbeInput): Promis
   if (provider === 'anthropic') return readAnthropicProbe(outcome);
   if (provider === 'github') return readGithubProbe(outcome, env, cwd, run);
   return readOpenAiProbe(outcome);
+}
+
+/**
+ * Extract the token only after the two-sided GitHub identity probe succeeded.
+ *
+ * The same D6 assertion is repeated at this exact seam because `gh auth token`
+ * prefers environment variables over hosts.yml. Returning a parent token here
+ * would persist the node's credential under the member's verified login while
+ * every surrounding operation still looked successful.
+ */
+export async function captureGitHubToken(input: {
+  env: Record<string, string>;
+  cwd: string;
+  run?: CommandRunner;
+}): Promise<string> {
+  assertNoGitHubTokenEnv(input.env);
+  const run = input.run ?? execFileRunner;
+  const outcome = await run(GH_AUTH_TOKEN_COMMAND, { env: input.env, cwd: input.cwd });
+  const token = outcome.stdout.trim();
+  if (outcome.exitCode !== 0 || token === '' || /\s/.test(token) || Buffer.byteLength(token) > 4_000) {
+    // Never include stdout/stderr, a prefix, or a length: this is a secret
+    // extraction failure, and diagnostic convenience is not worth token data.
+    throw new Error('GitHub credential token could not be extracted safely');
+  }
+  return token;
 }

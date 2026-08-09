@@ -10,7 +10,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, renderHook, within } from '@testing-library/react';
-import type { EntityId } from '@tm8/contract';
+import type { CredentialsStatusView, EntityId } from '@tm8/contract';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
@@ -36,6 +36,25 @@ const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = 
       />
     </div>,
   );
+
+function credentialStatus(input: {
+  store?: 'present' | 'absent';
+  connected?: boolean;
+  login?: string | null;
+} = {}): CredentialsStatusView {
+  return {
+    providers: [{
+      provider: 'github',
+      connected: input.connected ?? false,
+      login: input.login ?? null,
+      authMethod: null,
+      status: input.connected ? 'active' : null,
+      connectedAt: null,
+      lastVerifiedAt: null,
+    }],
+    gitCredentialStore: input.store ?? 'present',
+  };
+}
 
 describe('OBLIGATION 1 — Esc must not pop the panel under an open sheet', () => {
   const makeNav = (stack: string[]): NavPort & { popped: number } => {
@@ -387,7 +406,13 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     const directory = [...container.querySelectorAll('.ls__eyebrow')].find(
       (n) => n.textContent === 'WORKING DIRECTORY',
     ) as HTMLElement;
-    for (const id of ['launch-model', 'launch-reasoning-effort', 'launch-access-mode', 'launch-credential-source']) {
+    for (const id of [
+      'launch-model',
+      'launch-reasoning-effort',
+      'launch-access-mode',
+      'launch-agent-credential-source',
+      'launch-github-credential-source',
+    ]) {
       const control = getByTestId(id);
       expect(control.compareDocumentPosition(directory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
@@ -396,22 +421,125 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     expect(directory.compareDocumentPosition(mode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('sends a credential source ONLY when one was explicitly chosen', () => {
-    // Auto is the ABSENCE of the field, not a third value: an explicit
-    // 'member' refuses the launch for an unconnected member, so the sheet
-    // merely being opened must never pin one.
+  it('sends independent provider credential sources ONLY when explicitly chosen', () => {
+    // Auto is the ABSENCE of each provider key, not a third value. Merely
+    // opening the sheet must never couple the agent login to GitHub.
     const onLaunch = vi.fn();
     const { getByTestId, getByText } = renderSheet({ onLaunch });
     fireEvent.click(getByText('Launch ▸'));
-    expect(onLaunch.mock.calls[0]?.[0]).not.toHaveProperty('credentialSource');
+    expect(onLaunch.mock.calls[0]?.[0]).not.toHaveProperty('credentialSources');
 
-    fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'member' } });
+    fireEvent.change(getByTestId('launch-agent-credential-source'), { target: { value: 'node' } });
     fireEvent.click(getByText('Launch ▸'));
-    expect(onLaunch.mock.calls[1]?.[0]).toMatchObject({ credentialSource: 'member' });
+    expect(onLaunch.mock.calls[1]?.[0]).toMatchObject({ credentialSources: { anthropic: 'node' } });
 
-    fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'node' } });
+    fireEvent.change(getByTestId('launch-github-credential-source'), { target: { value: 'member' } });
     fireEvent.click(getByText('Launch ▸'));
-    expect(onLaunch.mock.calls[2]?.[0]).toMatchObject({ credentialSource: 'node' });
+    expect(onLaunch.mock.calls[2]?.[0]).toMatchObject({
+      credentialSources: { anthropic: 'node', github: 'member' },
+    });
+  });
+
+  it('binds the agent dropdown to the selected provider without coupling GitHub', async () => {
+    const onLaunch = vi.fn();
+    const codex = {
+      ...LAUNCH_TEAMMATES[0]!,
+      agentTool: 'codex',
+      model: 'gpt-5.6-sol',
+    };
+    const status: CredentialsStatusView = {
+      providers: [
+        {
+          provider: 'openai', connected: true, login: 'member@example.com',
+          authMethod: null, status: 'active', connectedAt: null, lastVerifiedAt: null,
+        },
+        {
+          provider: 'github', connected: true, login: 'octocat',
+          authMethod: null, status: 'active', connectedAt: null, lastVerifiedAt: null,
+        },
+      ],
+      gitCredentialStore: 'present',
+    };
+    const { findByTestId, getByTestId, getByText } = renderSheet({
+      teammates: [codex],
+      loadCredentialStatus: async () => status,
+      onLaunch,
+    });
+
+    expect(getByText('OpenAI credential')).toBeTruthy();
+    expect(getByText('GitHub credential')).toBeTruthy();
+    expect((await findByTestId('launch-agent-identity')).textContent).toContain('OpenAI');
+    expect(getByTestId('launch-agent-credential-source').textContent)
+      .toContain('My OpenAI · member@example.com');
+    expect(getByTestId('launch-github-credential-source').textContent)
+      .toContain('My GitHub · @octocat');
+
+    fireEvent.change(getByTestId('launch-agent-credential-source'), { target: { value: 'node' } });
+    fireEvent.change(getByTestId('launch-github-credential-source'), { target: { value: 'member' } });
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch).toHaveBeenCalledWith(expect.objectContaining({
+      credentialSources: { openai: 'node', github: 'member' },
+    }));
+  });
+
+  it('keeps Anthropic and OpenAI picks independent when the selected teammate changes', () => {
+    const claude = {
+      ...LAUNCH_TEAMMATES[0]!, id: 'tm-claude', name: 'claude-persona',
+    };
+    const codex = {
+      ...LAUNCH_TEAMMATES[0]!, id: 'tm-codex', name: 'codex-persona',
+      agentTool: 'codex', model: 'gpt-5.6-sol',
+    };
+    const { getByTestId, getByText } = renderSheet({ teammates: [claude, codex] });
+    const source = getByTestId('launch-agent-credential-source') as HTMLSelectElement;
+
+    fireEvent.change(source, { target: { value: 'node' } });
+    expect(source.value).toBe('node');
+    fireEvent.click(getByText('codex-persona'));
+    expect(source.value).toBe('');
+    fireEvent.change(source, { target: { value: 'member' } });
+    expect(source.value).toBe('member');
+    fireEvent.click(getByText('claude-persona'));
+    expect(source.value).toBe('node');
+  });
+
+  it('shows the configured GitHub login and how the selected source treats it', async () => {
+    const loadCredentialStatus = vi.fn(async () => credentialStatus({
+      connected: true,
+      login: 'octocat',
+    }));
+    const { findByTestId, getByTestId } = renderSheet({ loadCredentialStatus });
+    const identity = await findByTestId('launch-github-identity');
+
+    expect(identity.textContent).toContain('@octocat');
+    expect(identity.textContent).toContain('wins in Auto');
+    expect(getByTestId('launch-github-credential-source').textContent).toContain('GitHub · @octocat');
+
+    fireEvent.change(getByTestId('launch-github-credential-source'), { target: { value: 'member' } });
+    expect(identity.textContent).toContain('isolated to your member account');
+    fireEvent.change(getByTestId('launch-github-credential-source'), { target: { value: 'node' } });
+    expect(identity.textContent).toContain('your @octocat connection is not injected');
+  });
+
+  it('distinguishes measured no-login from an unmeasurable GitHub store', async () => {
+    const measured = renderSheet({
+      loadCredentialStatus: async () => credentialStatus({ store: 'present', connected: false }),
+    });
+    const measuredIdentity = await measured.findByTestId('launch-github-identity');
+    fireEvent.change(measured.getByTestId('launch-github-credential-source'), { target: { value: 'member' } });
+    expect(measuredIdentity.textContent).toContain('none · node fallback is blocked');
+    measured.unmount();
+
+    const unknown = renderSheet({
+      loadCredentialStatus: async () => credentialStatus({ store: 'absent', connected: false }),
+    });
+    const unknownIdentity = await unknown.findByTestId('launch-github-identity');
+    expect(unknownIdentity.textContent).toContain('GitHub identity unknown');
+    expect(unknown.queryByText(/no personal GitHub connection/)).toBeNull();
+    // Node selection does not depend on the per-member store whose absence is
+    // unknown, so the chosen source remains stateable.
+    fireEvent.change(unknown.getByTestId('launch-github-credential-source'), { target: { value: 'node' } });
+    expect(unknownIdentity.textContent).toContain('node account');
   });
 
   it('sends only an explicit active profile selection', () => {

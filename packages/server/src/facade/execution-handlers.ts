@@ -75,6 +75,7 @@ import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
 import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
+import { DbGitHubCredentialStore } from '../credentials/github-credential-store.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
@@ -648,11 +649,17 @@ export class DbGraphPort implements GraphPort {
       access_mode: string | null;
       permission_mode: string | null;
       credential_source: string | null;
+      anthropic_credential_source: string | null;
+      openai_credential_source: string | null;
+      github_credential_source: string | null;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
               sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
-              sm.manifest #>> '{launch,credentialSource}' as credential_source
+              sm.manifest #>> '{launch,credentialSource}' as credential_source,
+              sm.manifest #>> '{launch,credentialSources,anthropic}' as anthropic_credential_source,
+              sm.manifest #>> '{launch,credentialSources,openai}'    as openai_credential_source,
+              sm.manifest #>> '{launch,credentialSources,github}'    as github_credential_source
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -667,6 +674,11 @@ export class DbGraphPort implements GraphPort {
       accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
       permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
       credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
+      credentialSources: {
+        anthropic: row.anthropic_credential_source,
+        openai: row.openai_credential_source,
+        github: row.github_credential_source,
+      } as SessionLaunchPosture['credentialSources'],
     };
   }
 
@@ -1098,7 +1110,14 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     // root there is nowhere a login terminal could have written a credential,
     // so there is nothing to read and the spawn loop behaves exactly as before.
     ...(deps.dataDir
-      ? { credentialHome: new DbAgentCredentialHome({ db: deps.db, dataDir: deps.dataDir }) }
+      ? {
+          credentialHome: new DbAgentCredentialHome({ db: deps.db, dataDir: deps.dataDir }),
+          gitHubCredentials: new DbGitHubCredentialStore({
+            db: deps.db,
+            dataDir: deps.dataDir,
+            ...(deps.logger ? { logger: deps.logger } : {}),
+          }),
+        }
       : {}),
     ...(worktrees ? { worktrees } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
@@ -1225,7 +1244,14 @@ export function registerExecutionHandlers(
     // rather than shared: a node on the legacy shape must not silently lose
     // per-member credentials just because it wires the runtime differently.
     ...(deps.dataDir
-      ? { credentialHome: new DbAgentCredentialHome({ db: deps.db, dataDir: deps.dataDir }) }
+      ? {
+          credentialHome: new DbAgentCredentialHome({ db: deps.db, dataDir: deps.dataDir }),
+          gitHubCredentials: new DbGitHubCredentialStore({
+            db: deps.db,
+            dataDir: deps.dataDir,
+            ...(deps.logger ? { logger: deps.logger } : {}),
+          }),
+        }
       : {}),
     ...(worktrees ? { worktrees } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
@@ -2204,6 +2230,7 @@ function registerHandlers(
       agentTool: input.agentTool ?? null,
       reasoningEffort: input.reasoningEffort ?? null,
       accessMode: input.accessMode ?? null,
+      credentialSources: input.credentialSources ?? null,
       credentialSource: input.credentialSource ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,

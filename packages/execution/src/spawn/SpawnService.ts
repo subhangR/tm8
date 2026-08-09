@@ -46,6 +46,8 @@ import type {
   CredentialSource,
   GraphAuth,
   GraphPort,
+  GitHubCredential,
+  GitHubCredentialPort,
   InteractionProfilePinContext,
   ResumeRequest,
   SessionLaunchPosture,
@@ -82,6 +84,8 @@ export interface SpawnServiceOptions {
    * screen that populates the credentials, without a feature flag.
    */
   credentialHome?: AgentCredentialHomePort;
+  /** Caller-owned GitHub token store, resolved independently of agent vendor. */
+  gitHubCredentials?: GitHubCredentialPort;
   /**
    * The node's Git worktree manager. Its PRESENCE is what makes
    * `workdir.mode:'worktree'` serviceable — omit it and the mode is refused by
@@ -210,6 +214,7 @@ export class SpawnService {
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
+  private readonly gitHubCredentials: GitHubCredentialPort | undefined;
   private readonly worktrees: WorktreeManager | null;
   private readonly worktreeCap: number;
   /** One fail-closed remediation pass per service lifetime. */
@@ -243,6 +248,7 @@ export class SpawnService {
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
+    this.gitHubCredentials = options.gitHubCredentials;
     this.worktrees = options.worktrees ?? null;
     this.worktreeCap = options.worktreeCap ?? 0;
   }
@@ -271,7 +277,7 @@ export class SpawnService {
       : null;
     if (source === 'member' && !home && agentCredentialProviderFor(agentTool)) {
       throw new SpawnError(
-        `credentialSource 'member' was requested but no active ${agentCredentialProviderFor(agentTool)} ` +
+        `credentialSources.${agentCredentialProviderFor(agentTool)} 'member' was requested but no active ${agentCredentialProviderFor(agentTool)} ` +
           'credential is connected for your account — connect it under Settings → Connections, ' +
           "or launch with the node credential ('node')",
         'conflict',
@@ -279,6 +285,19 @@ export class SpawnService {
       );
     }
     return home;
+  }
+
+  /**
+   * Resolve the caller's GitHub row. `node` deliberately skips it. Errors are
+   * never swallowed: in member posture, degrading to the node's machine login
+   * is an attribution bug, not an availability feature.
+   */
+  private async resolveGitHubCredential(
+    auth: GraphAuth,
+    source: CredentialSource | null = null,
+  ): Promise<GitHubCredential | null> {
+    if (source === 'node' || !this.gitHubCredentials) return null;
+    return this.gitHubCredentials.resolve(auth);
   }
 
   /**
@@ -834,7 +853,14 @@ export class SpawnService {
         this.env,
       );
 
-      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource);
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
+      const [credentialHome, gitHubCredential] = await Promise.all([
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
+      ]);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -843,6 +869,8 @@ export class SpawnService {
         this.journalPathFor(sessionId),
         agentToken,
         credentialHome ?? undefined,
+        gitHubCredential ?? undefined,
+        launch.credentialSources.github,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -1196,7 +1224,14 @@ export class SpawnService {
       // credential on the way back up, and one that has been disconnected must
       // stop being injected. A resume that kept the launch-time answer would be
       // the one path where Ruling 3's "disconnect terminates" could be undone.
-      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource);
+      const agentCredentialProvider = agentCredentialProviderFor(launch.agentTool);
+      const agentCredentialSource = agentCredentialProvider
+        ? launch.credentialSources[agentCredentialProvider]
+        : null;
+      const [credentialHome, gitHubCredential] = await Promise.all([
+        this.resolveCredentialHome(auth, launch.agentTool, agentCredentialSource),
+        this.resolveGitHubCredential(auth, launch.credentialSources.github),
+      ]);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -1205,6 +1240,8 @@ export class SpawnService {
         this.journalPathFor(sessionId),
         agentToken,
         credentialHome ?? undefined,
+        gitHubCredential ?? undefined,
+        launch.credentialSources.github,
       );
       const envVarNames = Object.keys(env).sort();
 

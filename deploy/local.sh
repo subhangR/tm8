@@ -75,4 +75,8 @@ if [[ "$DO_PG" == 1 && "$MODE" != stop ]]; then
 fi
 
 # --- 2. everything else ------------------------------------------------------
-exec "$HERE/prod/deploy.sh" "${PASSTHRU[@]}"
+# `${PASSTHRU[@]}` unguarded is an UNBOUND VARIABLE under `set -u` on bash 3.2 —
+# which is the only bash macOS ships. That makes the no-argument `bun run local`
+# (the headline command) the one invocation that always dies here, while every
+# flagged form works, because a flag is what makes the array non-empty.
+exec "$HERE/prod/deploy.sh" ${PASSTHRU[@]+"${PASSTHRU[@]}"}

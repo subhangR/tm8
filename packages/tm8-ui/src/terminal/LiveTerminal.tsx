@@ -105,6 +105,8 @@ export interface LiveTerminalProps {
   serverBaseUrl?: string;
   /** False renders the terminal read-only (stdin disabled). */
   live: boolean;
+  /** Focus stdin as soon as this intentionally-interactive terminal mounts. */
+  autoFocus?: boolean;
   onResize?: (sessionId: string, size: { cols: number; rows: number }) => void;
   onExit?: (sessionId: string, exitCode?: number | null) => void;
 }
@@ -121,7 +123,7 @@ export interface LiveTerminalProps {
  * (maestro main ef0dcbe) rather than a user setting.
  */
 export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(function LiveTerminal(
-  { sessionId, serverBaseUrl = '', live, onResize, onExit },
+  { sessionId, serverBaseUrl = '', live, autoFocus = false, onResize, onExit },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -170,6 +172,13 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     patchXtermRenderServiceDimensions(term);
     termRef.current = term;
     fitRef.current = fit;
+
+    // xterm receives keyboard input through a hidden textarea. The credential
+    // login panel is mounted in an already-focused Settings surface, so the
+    // textarea otherwise starts unfocused and keystrokes disappear into the
+    // page. This panel opts in explicitly; ordinary session terminals keep
+    // their existing non-stealing mount behaviour.
+    if (autoFocus && !readOnlyRef.current) term.focus();
 
     const finishReplayHydration = () => {
       requestAnimationFrame(() => {
@@ -475,12 +484,22 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
       resizeTimeoutRef.current = null;
       resizeRetryCountRef.current = 0;
     };
-  }, [sessionId, serverBaseUrl]);
+  }, [sessionId, serverBaseUrl, autoFocus]);
 
   useEffect(() => {
     const term = termRef.current;
     if (term) term.options.disableStdin = !live;
   }, [live]);
 
-  return <TerminalHost hostRef={hostRef} ariaLabel="Live terminal" />;
+  return (
+    <TerminalHost
+      hostRef={hostRef}
+      ariaLabel="Live terminal"
+      onPointerDown={() => {
+        // Reclaim the textarea even when a surrounding scroll/settings layer
+        // was the browser's previous focus target.
+        if (!readOnlyRef.current) termRef.current?.focus();
+      }}
+    />
+  );
 });

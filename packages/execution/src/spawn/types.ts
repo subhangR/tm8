@@ -109,6 +109,22 @@ export interface WorktreeAllocationRow {
  */
 export type GraphAuth = unknown;
 
+/** A decrypted GitHub credential, held only long enough to compose one PTY env. */
+export interface GitHubCredential {
+  readonly provider: 'github';
+  readonly login: string;
+  readonly token: string;
+}
+
+/**
+ * Spawn-side lookup for the calling identity's string-shaped GitHub credential.
+ * The server implementation resolves the row under RLS and decrypts in-process;
+ * execution never imports a database driver or a node key.
+ */
+export interface GitHubCredentialPort {
+  resolve(auth: GraphAuth): Promise<GitHubCredential | null>;
+}
+
 /**
  * Server-owned credential minting. Execution carries opaque claims but never
  * imports a database driver or sees a human bearer token.
@@ -143,6 +159,10 @@ export interface LoadSpawnContextInput {
  * credential a session may use is not a client-expressible decision.
  */
 export type CredentialSource = 'member' | 'node';
+export type CredentialProvider = 'anthropic' | 'openai' | 'github';
+export type CredentialSources = Partial<Record<CredentialProvider, CredentialSource>>;
+export type ResolvedCredentialSources = Record<CredentialProvider, CredentialSource | null>;
+export type StoredCredentialSources = Partial<Record<CredentialProvider, CredentialSource | null>>;
 
 /**
  * How an EXISTING session was launched, read back from its recorded manifest.
@@ -158,11 +178,12 @@ export interface SessionLaunchPosture {
   accessMode: AccessMode | null;
   permissionMode: PermissionMode | null;
   /**
-   * Which credential the session was told to authenticate with. Optional so
-   * producers predating the field stay valid; absent reads as "auto" — the
-   * member's credential when connected, the node's otherwise.
+   * Deprecated common source written by pre-split manifests. Current readers
+   * use it only as a fallback for provider keys that are absent.
    */
   credentialSource?: CredentialSource | null;
+  /** Provider-specific posture written by current manifests. */
+  credentialSources?: StoredCredentialSources | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -574,11 +595,11 @@ export interface Tm8Manifest {
     accessMode: AccessMode;
     reasoningEffort: ReasoningEffort | null;
     /**
-     * The credential choice this session was launched under — recorded so the
-     * Debug surface can say what the session was TOLD, and so a resume can
-     * honour the choice instead of silently re-deciding it.
+     * Deprecated common source. Null when providers differ or run in auto.
      */
     credentialSource: CredentialSource | null;
+    /** Provider-specific choices, recorded for debug, child inheritance and resume. */
+    credentialSources: ResolvedCredentialSources;
     /** Effective shell-command networking, independent of filesystem posture. */
     commandNetwork: CommandNetworkPolicy;
     /**
@@ -645,16 +666,13 @@ export interface SpawnRequest {
   agentTool?: string | null;
   reasoningEffort?: ReasoningEffort | null;
   accessMode?: AccessMode | null;
-  /**
-   * Which credential this session authenticates with. `'member'` REQUIRES the
-   * spawner's own connected credential and refuses the launch when there is
-   * none — never a silent fallback to the node's identity. `'node'` skips
-   * member-credential injection. Absent = auto: the member's credential when
-   * connected, the node's otherwise (the pre-field behaviour, byte for byte).
-   * It can only ever name the CALLER'S OWN credential — the resolve is
-   * RLS-scoped to the spawner, so no value here reaches another member's store.
-   */
+  /** Deprecated global compatibility carrier; provider keys below win. */
   credentialSource?: CredentialSource | null;
+  /**
+   * Independent provider choices; an absent key means auto/inherit. A member
+   * source can only resolve the CALLER'S OWN RLS-scoped credential.
+   */
+  credentialSources?: CredentialSources | null;
   title?: string | null;
   promptExtra?: string | null;
   /** Spawn-time memory hand-off (D3a); see `LoadSpawnContextInput.memoryIds`. */

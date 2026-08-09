@@ -452,12 +452,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
     // 79 -> 80: 083 (per-member credential sessions).
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
-    // Measured on the PR #98 merge tree on 2026-08-10: 88 files through 093,
-    // including main's 088 Library migration and this wave's 089-093 tranche.
-    // 88 -> 89 on 2026-08-10: 094 (file upload slot sweep doors, Files Lane 4).
-    // Measured by `ls db/migrations/*.sql | wc -l` on this tree, never
-    // previous-plus-one.
-    expect(server.appliedMigrations.length).toBe(89);
+    // Measured on the consolidated Files tree 2026-08-10: 90 files through
+    // 095 — production-lineage 093 credentials + 094 Loops menu (main #145)
+    // plus this wave's 095 file upload slot sweep. Measured by
+    // `ls db/migrations/*.sql | wc -l`, never previous-plus-one.
+    expect(server.appliedMigrations.length).toBe(90);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -686,6 +685,7 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // query in-handler; the sweep supplies none, so the 400 is handler-reached.
   'projects.files.read',
   'entities.commands.linkPr',
+  'entityKinds.create',
   'entityKinds.update',
   'interactionProfiles.activate',
   'interactionProfiles.preview',
@@ -693,10 +693,15 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  'savedViews.create',
+  'savedViews.update',
+  'spaces.create',
   'projects.files.read',
   'spaces.defaultChannel.set',
   'spaces.interactionProfile.setDefault',
   'spaces.menu.update',
+  'spaces.taskAxes.create',
+  'spaces.taskAxes.update',
   'spaces.update',
   'teamMembers.interactionProfile.setDefault',
 ];

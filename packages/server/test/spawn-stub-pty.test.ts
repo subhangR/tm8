@@ -74,6 +74,11 @@ class SpawnDb implements Db {
         createdAt: '2026-07-29T00:00:00.000Z',
       } as T;
     }
+    if (fn === 'read_account_git_credential') {
+      // No member GitHub row in this fixture. The RPC's real absent shape is
+      // SQL NULL, not the catch-all object used by unrelated fake calls.
+      return null as T;
+    }
     return {} as T;
   }
 
@@ -99,6 +104,7 @@ async function stubCodexOnPath(): Promise<string> {
   await writeFile(
     join(binDir, 'codex'),
     '#!/bin/sh\n'
+      + 'if [ "$1" = "sandbox" ]; then echo "TM8_SANDBOX_PROBE_OK"; exit 0; fi\n'
       + 'case "$*" in\n'
       + '  *--version*) echo "codex-cli 999.0.0" ;;\n'
       + '  *) echo "network_proxy   stable   true" ;;\n'
@@ -150,13 +156,23 @@ describe('server spawn integration with a stub PTY', () => {
         projectId: PROJECT,
         workdir: { mode: 'project' },
         mode: 'worker',
+        // The command assertion is specifically the workspace-write posture;
+        // make it request-owned so a node-wide test-runner override cannot
+        // silently turn this unrelated integration test into full access.
+        accessMode: 'acceptEdits',
         model: 'gpt-5.6-sol',
         agentTool: 'codex',
+        credentialSources: { openai: 'node', github: 'member' },
         clientMutationId: 'spawn-stub-pty-1',
       },
     );
 
     expect(result.sessionId).toBe(SESSION);
+    expect(result.manifest.launch.credentialSources).toEqual({
+      anthropic: null,
+      openai: 'node',
+      github: 'member',
+    });
     expect(spawnIfAbsent).toHaveBeenCalledOnce();
     expect(spawnIfAbsent).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: SESSION,

@@ -429,16 +429,16 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
     // Consent is only carried when actually given — absent and false are not
     // the same statement, and the contract types it as literal `true`.
     expect(input).not.toHaveProperty('confirmUntrusted');
-    // Same law for the credential choice: auto is the ABSENCE of the field
-    // (the node's pre-field behaviour), never a third literal.
-    expect(input).not.toHaveProperty('credentialSource');
+    // Same law for each credential choice: auto is the ABSENCE of that
+    // provider key, never a third literal.
+    expect(input).not.toHaveProperty('credentialSources');
     expect(
       buildSpawnInput({
         clientMutationId: 'cmid-2',
         spaceId: 'space-1',
-        config: { ...config, credentialSource: 'member' },
+        config: { ...config, credentialSources: { anthropic: 'member', github: 'node' } },
       }),
-    ).toMatchObject({ credentialSource: 'member' });
+    ).toMatchObject({ credentialSources: { anthropic: 'member', github: 'node' } });
     // Same rule for the spawn-time memory hand-off (D3a): no picks, no field.
     expect(input).not.toHaveProperty('memoryIds');
   });
