@@ -39,6 +39,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { Scheduler } from './scheduler/scheduler.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
+import { createForgeWatcherJob } from './tracking/loops.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
 import { resolveBearerIdentity } from './identity/pg-auth.js';
 import {
@@ -657,9 +658,28 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // Tier 3 forge closed loops: the WATCHER, which is the complement of the
+    // queue drainer above. It decides for itself what to poll (083's watch
+    // list) and turns semantic changes into messages in the owning session.
+    // `runOnStart` is false — it makes provider calls, and a node that restarts
+    // three times during a deploy should not make three rounds of them.
+    scheduler.register(
+      createForgeWatcherJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'forge-watcher',
+          };
+        },
+      }),
+    );
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
+    console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
   }
 
   if (execution) {
