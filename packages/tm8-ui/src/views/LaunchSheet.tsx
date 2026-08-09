@@ -268,6 +268,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               <span className="ls__rowname">Model</span>
               <span className="ls__rowsub">{agentTool(agentToolId)?.label ?? agentToolId}</span>
               <select
+                className="ls__select"
                 value={model}
                 data-testid="launch-model"
                 onChange={(event) => setModel(event.target.value)}
@@ -283,6 +284,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               <span className="ls__rowname">Reasoning effort</span>
               <span className="ls__rowsub">passed to the selected provider</span>
               <select
+                className="ls__select"
                 value={reasoningEffort}
                 data-testid="launch-reasoning-effort"
                 onChange={(event) => setReasoningEffort(event.target.value as NonNullable<LaunchConfig['reasoningEffort']>)}
@@ -318,6 +320,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 {accessModeLabel(accessMode)}
               </button>
               <select
+                className="ls__select"
                 value={accessMode}
                 data-testid="launch-access-mode"
                 onChange={(event) => setAccessMode(event.target.value as NonNullable<LaunchConfig['accessMode']>)}
@@ -392,6 +395,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 {LAUNCH_MODES.find((option) => option.id === mode)?.description ?? ''}
               </span>
               <select
+                className="ls__select"
                 value={mode}
                 data-testid="launch-mode"
                 onChange={(event) => setMode(event.target.value as LaunchMode)}

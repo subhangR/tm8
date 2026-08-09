@@ -13,6 +13,14 @@
    T1-1 Menu rail grammar (row grammars), T1-4 (notice vocabulary).
    ========================================================================== */
 
+/* Native widget chrome (select option popups, scrollbars) follows the theme;
+   without this a dark UI opens a glaring white option list. Lives here, not in
+   tokens.css — the palette file is guarded byte-identical to its reference
+   twin and is not hand-edited. */
+.cv2-root { color-scheme: light; }
+.cv2-root[data-theme="dark"],
+[data-theme="dark"] .cv2-root { color-scheme: dark; }
+
 /* --- Compact Server + Space bar ------------------------------------------ */
 .cv2-root .shell-tabbar {
   height: 24px;
@@ -1119,6 +1127,29 @@
 .cv2-root .ls__rowsub { font-family: var(--pn-mono); font-size: 9px; color: var(--pn-ink-3); }
 .cv2-root .ls__rowsub--ok { color: var(--pn-run); }
 .cv2-root .ls__rowsub--bad { color: var(--pn-block); }
+/* The configuration dropdowns. Native selects ignore the theme entirely
+   (white chrome on the dark paper), so `appearance: none` takes ownership
+   and the chevron is drawn as an inline SVG. Its stroke is a fixed neutral
+   (#8C8470 ≈ --pn-ink-3 in BOTH themes) because a data-URI cannot read
+   custom properties. */
+.cv2-root .ls__select {
+  appearance: none;
+  width: 100%; margin-top: 6px;
+  padding: 6px 30px 6px 10px;
+  font-family: var(--pn-ui); font-size: 12px;
+  color: var(--pn-ink);
+  background: var(--pn-card)
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238C8470' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  border: 1px solid var(--pn-line); border-radius: 8px;
+  cursor: pointer;
+}
+.cv2-root .ls__select:hover { border-color: var(--pn-line-2); }
+.cv2-root .ls__select:focus-visible {
+  outline: none;
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 2px var(--pn-brand-soft);
+}
 .cv2-root .ls__check {
   width: 15px; height: 15px; flex: none; display: flex;
   align-items: center; justify-content: center; font-size: 9px;
