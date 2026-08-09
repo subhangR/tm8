@@ -80,6 +80,20 @@ describe('liveness: the R-UI-5 predicate', () => {
     expect(h.mgr.statusOf(running('ws-1'))).toBe('live');
   });
 
+  it('idle + in the live set = live', async () => {
+    const h = mk();
+    h.reply('sp-1', { liveEntityIds: ['ws-1'] });
+    await h.mgr.refresh('sp-1');
+    expect(h.mgr.statusOf({ id: 'ws-1', workStatus: 'idle' })).toBe('live');
+  });
+
+  it('idle + absent from the live set = stale, never exited', async () => {
+    const h = mk();
+    h.reply('sp-1', { liveEntityIds: ['ws-other'] });
+    await h.mgr.refresh('sp-1');
+    expect(h.mgr.statusOf({ id: 'ws-1', workStatus: 'idle' })).toBe('stale');
+  });
+
   it('running + NOT in the live set = stale (the whole point of Delta 2)', async () => {
     const h = mk();
     h.reply('sp-1', { liveEntityIds: ['ws-other'] });
