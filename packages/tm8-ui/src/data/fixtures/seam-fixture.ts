@@ -719,6 +719,20 @@ export function createFixtureSeam(): FixtureSeam {
         };
       case 'collection':
         return { kind: 'collection', collectionType: (c.collectionType as string) ?? 'manual', itemCount: 0 };
+      // The 056 scope fields ride in STATE, not content, so that a memory's
+      // conditions arrive on every summary read in the same payload as its
+      // title. `create_memory` (056) takes them off `content` on the wire and
+      // the read projects them back into state — this mirrors both halves,
+      // because a fixture that stored them only in content would let a working
+      // set render its scope in jsdom and lose it against the node.
+      case 'memory':
+        return {
+          kind: 'memory',
+          mechanism: (c.mechanism as string) ?? '',
+          subjectScope: (c.subjectScope as string) ?? '',
+          doesNotEstablish: (c.doesNotEstablish as string) ?? '',
+          measuredAt: (c.measuredAt as string | null) ?? null,
+        };
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
     }
@@ -1244,13 +1258,27 @@ export function createFixtureSeam(): FixtureSeam {
     commands: {
       async createEntity(input) {
         if (input.parentId) requireSummary(input.parentId);
+        /*
+         * `create_memory` (056) takes NO title argument — the title IS the
+         * statement, derived server-side. Mirroring that here is not cosmetic:
+         * a fixture that kept the caller's title would let a composer send a
+         * separate title and look correct in jsdom while the node overwrote it.
+         * The excerpt carries the statement for the same reason the server
+         * does — summaries are how a memory's claim travels.
+         */
+        const statement = (input.content as Record<string, unknown> | undefined)?.statement;
+        const derivedTitle =
+          input.kind === 'memory' && typeof statement === 'string' && statement.length > 0
+            ? statement
+            : input.title;
         const s = insertSummary({
           id: nextId(input.kind),
           kind: input.kind,
-          title: input.title,
+          title: derivedTitle,
           spaceId: input.spaceId,
           parentId: input.parentId ?? null,
           ...(input.position !== undefined ? { position: input.position } : {}),
+          ...(input.kind === 'memory' ? { excerpt: derivedTitle } : {}),
           state: defaultStateFor(input),
         });
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
