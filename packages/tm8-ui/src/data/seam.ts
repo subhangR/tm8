@@ -38,6 +38,19 @@
  * authorization input — nothing in the UI may gate on it. Filed by the
  * identity-display lane for dual re-consensus recording.
  *
+ * Amendment 5 (2026-08-09, edges): commands gain `createEdge`/`deleteEdge` —
+ * the generic `edges.create`/`edges.delete` catalog rows. Reached by the
+ * assignment and attachment features at once; one amendment, not two (see the
+ * op's own note below).
+ *
+ * Amendment 6 (2026-08-09, branch topology): reads gain `projectBranches` —
+ * the contract's `projects.branches.list` (`GET /v2/projects/:projectId/branches`,
+ * catalog v1). A READ over a linked project's working directory: local
+ * branches with ahead/behind vs the default branch, stale and merged flags.
+ * Contract-shaped (`ProjectBranchTopology` verbatim) and additive, zero
+ * caller churn. Filed by the branch-topology-ui lane for dual re-consensus
+ * recording alongside the catalog row it consumes (PR #74).
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -101,6 +114,7 @@ import type {
   PatchMessageInput,
   PatchTaskInput,
   PostMessageInput,
+  ProjectBranchTopology,
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectLinkInput,
@@ -228,6 +242,17 @@ export interface TranscriptOpts {
   last?: number;
 }
 
+/**
+ * `projectBranches` options — both bounded SERVER-side (limit caps at 200;
+ * each branch costs a rev-list, so the cap is a process budget, not taste).
+ */
+export interface BranchTopologyOpts {
+  /** Days without a commit before a branch is flagged stale. Server default: 30. */
+  staleAfterDays?: number;
+  /** Max branches returned; the DTO's `truncated` says when this cut the list. */
+  limit?: number;
+}
+
 export interface Seam {
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -283,6 +308,15 @@ export interface Seam {
   entityKinds(spaceId: SpaceId): Promise<EntityKindDef[]>;
   /** Linked project resources, including trust and graph-owned cwd. */
   projects(spaceId: SpaceId): Promise<ProjectResource[]>;
+  /**
+   * Branch topology for one linked project's working directory (Amendment 6):
+   * local branches with ahead/behind vs the default branch, stale and merged
+   * flags. A READ — the server runs git argv-only and checks nothing out.
+   * `invalid_input` is a real, expected rejection (the project's workingDir is
+   * not a git repository) and consumers must render it as a fact about the
+   * project, not as a seam fault.
+   */
+  projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology>;
   /**
    * Node-local onboarding is optional because fixture seams have no filesystem.
    * The real seam exposes the complete contract-backed saga surface; its

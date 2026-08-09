@@ -76,6 +76,7 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectBranchTopology,
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectLinkInput,
@@ -92,7 +93,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -224,6 +225,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     projectDirectories(path?: string): Promise<ProjectDirectoryListing> {
       return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { path } });
+    },
+
+    /** Branch topology for a project's working directory — seam Amendment 5. */
+    projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology> {
+      return http.call<ProjectBranchTopology>('projects.branches.list', {
+        params: { projectId },
+        query: { staleAfterDays: opts?.staleAfterDays, limit: opts?.limit },
+      });
     },
 
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult> {

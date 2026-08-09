@@ -75,6 +75,7 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectBranchTopology,
   type ProjectResource,
   type ReactionInput,
   type SessionJournalPage,
@@ -99,6 +100,7 @@ import type {
   Unsubscribe,
 } from '../seam';
 import {
+  FIXTURE_BRANCH_TOPOLOGY,
   FIXTURE_NOW,
   FIXTURE_SPACE_ID,
   ada,
@@ -951,6 +953,29 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async projects(): Promise<ProjectResource[]> {
       return clone([...FIXTURE_PROJECTS]);
+    },
+    /**
+     * Amendment 5. `opts` are honoured HERE too, not only on the wire — a
+     * fixture that ignored `limit` would let a caller's bound go unexercised
+     * and still pass. `staleAfterDays` re-derives `stale` from the fixed
+     * fixture dates (never Date.now()), so a caller's threshold visibly
+     * changes the answer the way the server's would.
+     */
+    async projectBranches(projectId, opts): Promise<ProjectBranchTopology> {
+      if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
+        throw new CollabError('not_found', `project ${projectId} not found`);
+      }
+      const t = clone(FIXTURE_BRANCH_TOPOLOGY);
+      if (opts?.staleAfterDays !== undefined) {
+        t.staleAfterDays = opts.staleAfterDays;
+        const cutoff = FIXTURE_BASE_MS - opts.staleAfterDays * 86_400_000;
+        for (const b of t.branches) b.stale = Date.parse(b.lastCommitAt) < cutoff;
+      }
+      if (opts?.limit !== undefined && opts.limit < t.branches.length) {
+        t.branches = t.branches.slice(0, opts.limit);
+        t.truncated = true;
+      }
+      return t;
     },
     async entity(id) {
       return clone(detailOf(id));

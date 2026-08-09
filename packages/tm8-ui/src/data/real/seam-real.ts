@@ -52,6 +52,7 @@ import {
   type MessageView,
   type NotificationItem,
   type Page,
+  type ProjectBranchTopology,
   type ProjectResource,
   type SessionJournalPage,
   type SessionLaunchRecord,
@@ -61,7 +62,7 @@ import {
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -267,6 +268,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     graph: (input: GraphQuery): Promise<GraphResult> => ops.graph(input),
     entityKinds: (spaceId: SpaceId): Promise<EntityKindDef[]> => ops.entityKinds(spaceId),
     projects: (spaceId: SpaceId): Promise<ProjectResource[]> => ops.projects(spaceId),
+    projectBranches: (projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology> =>
+      ops.projectBranches(projectId, opts),
     projectSetup: {
       directories: (path) => ops.projectDirectories(path),
       createSpace: (input) => ops.createSpace(input),
