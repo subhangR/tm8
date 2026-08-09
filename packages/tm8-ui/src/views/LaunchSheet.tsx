@@ -113,6 +113,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
   // launch does. It is the sheet's only pre-selected posture because the sheet
   // always SENDS one (unlike the quick config, which can send nothing at all).
   const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('auto');
+  // Auto (null) is the pre-field behaviour: the launcher's own credential when
+  // one is connected, the node account otherwise. Unlike accessMode the sheet
+  // does NOT pin a value by default — an explicit 'member' REFUSES the launch
+  // for an unconnected member, which merely opening the sheet must not cause.
+  const [credentialSource, setCredentialSource] = useState<NonNullable<LaunchConfig['credentialSource']> | ''>('');
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [rosterQuery, setRosterQuery] = useState('');
@@ -330,6 +335,22 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 <option value="auto">Auto · run what is safe, escalate the rest</option>
                 <option value="plan">Plan · read only</option>
                 <option value="fullAccess">Full access · bypass safeguards</option>
+              </select>
+            </span>
+          </label>
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">Credential</span>
+              <span className="ls__rowsub">which vendor account the agent signs in as</span>
+              <select
+                className="ls__select"
+                value={credentialSource}
+                data-testid="launch-credential-source"
+                onChange={(event) => setCredentialSource(event.target.value as NonNullable<LaunchConfig['credentialSource']> | '')}
+              >
+                <option value="">Auto · mine if connected, else the node&apos;s</option>
+                <option value="member">My credential · refuse if not connected</option>
+                <option value="node">Node credential · this server&apos;s account</option>
               </select>
             </span>
           </label>
@@ -554,6 +575,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               model: model || null,
               reasoningEffort,
               accessMode,
+              ...(credentialSource ? { credentialSource } : {}),
               mode,
               target,
               ...(profileId ? { interactionProfileId: profileId } : {}),

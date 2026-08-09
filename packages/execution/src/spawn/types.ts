@@ -126,6 +126,14 @@ export interface LoadSpawnContextInput {
 }
 
 /**
+ * A launch-time credential choice. `'member'` = the spawner's own connected
+ * vendor credential, and ONLY their own; `'node'` = the node's machine
+ * credential. There is deliberately no value naming another member — whose
+ * credential a session may use is not a client-expressible decision.
+ */
+export type CredentialSource = 'member' | 'node';
+
+/**
  * How an EXISTING session was launched, read back from its recorded manifest.
  *
  * This is the fact a child needs in order to inherit its parent's posture, and
@@ -138,6 +146,12 @@ export interface LoadSpawnContextInput {
 export interface SessionLaunchPosture {
   accessMode: AccessMode | null;
   permissionMode: PermissionMode | null;
+  /**
+   * Which credential the session was told to authenticate with. Optional so
+   * producers predating the field stay valid; absent reads as "auto" — the
+   * member's credential when connected, the node's otherwise.
+   */
+  credentialSource?: CredentialSource | null;
 }
 
 /** A project as the server computed it — `workingDir` is graph truth (S11). */
@@ -548,6 +562,12 @@ export interface Tm8Manifest {
     permissionMode: PermissionMode;
     accessMode: AccessMode;
     reasoningEffort: ReasoningEffort | null;
+    /**
+     * The credential choice this session was launched under — recorded so the
+     * Debug surface can say what the session was TOLD, and so a resume can
+     * honour the choice instead of silently re-deciding it.
+     */
+    credentialSource: CredentialSource | null;
     /** Effective shell-command networking, independent of filesystem posture. */
     commandNetwork: CommandNetworkPolicy;
     /**
@@ -614,6 +634,16 @@ export interface SpawnRequest {
   agentTool?: string | null;
   reasoningEffort?: ReasoningEffort | null;
   accessMode?: AccessMode | null;
+  /**
+   * Which credential this session authenticates with. `'member'` REQUIRES the
+   * spawner's own connected credential and refuses the launch when there is
+   * none — never a silent fallback to the node's identity. `'node'` skips
+   * member-credential injection. Absent = auto: the member's credential when
+   * connected, the node's otherwise (the pre-field behaviour, byte for byte).
+   * It can only ever name the CALLER'S OWN credential — the resolve is
+   * RLS-scoped to the spawner, so no value here reaches another member's store.
+   */
+  credentialSource?: CredentialSource | null;
   title?: string | null;
   promptExtra?: string | null;
   /** S12: untrusted projects require per-spawn consent. */

@@ -157,12 +157,15 @@ export function assertNoGitHubTokenEnv(env: Record<string, string>): void {
 /**
  * `claude auth status` — JSON, and `loggedIn` is the whole answer.
  *
- * `login` is passed through from `email` rather than hard-coded to null. With
- * `claude setup-token` — the verb tm8 uses, ruled (R4) — the scopes exclude
- * `user:profile`, so `email` is absent and `login` lands NULL, which is why the
- * card must read "Connected — inference access". Passing it through rather than
+ * `login` is passed through from `email` rather than hard-coded to null.
+ * Post-R4-amendment the table runs `claude auth login`, whose grant includes
+ * `user:profile`, so a completed login answers with `email` present and it
+ * lands in `login` ("Connected as <address>"). A NULL still occurs — an answer
+ * without `email` (e.g. a store minted under the original `setup-token` verb)
+ * reads as "Connected — inference access". Passing it through rather than
  * nulling it means this code states a FACT about what the probe returned
- * instead of encoding an assumption about which verb ran.
+ * instead of encoding an assumption about which verb ran — which is exactly
+ * why the amendment needed no parser change.
  */
 function readAnthropicProbe(outcome: CommandOutcome): ProbeResult {
   const base = { provider: 'anthropic' as const, authMethod: null, login: null };

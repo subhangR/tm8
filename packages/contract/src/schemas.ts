@@ -1879,6 +1879,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
+  credentialSource: z.enum(['member', 'node']).optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
 }).strict();

@@ -21,16 +21,27 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *
  * Each entry is a measured decision, not a plausible guess:
  *
- *  anthropic — `claude setup-token`, NOT `claude auth login`. RULED (R4), and
- *    the reason is scope: `setup-token` requests `user:inference` ONLY, while
- *    `auth login` requests six scopes including `org:create_api_key`. On a node
- *    with no cross-user isolation, storing a credential that can MINT FURTHER
- *    CREDENTIALS is a materially worse failure than storing one that can only
- *    spend inference. The cost is structural and must not be "fixed": those
- *    scopes exclude `user:profile`, so a `setup-token` directory can never learn
- *    an email, `account_agent_credentials.login` stays NULL forever for
- *    anthropic, and the card reads "Connected — inference access" rather than
- *    "Connected as <address>".
+ *  anthropic — `claude auth login`, AMENDING R4 (which ruled `claude
+ *    setup-token` for its narrower scope: `user:inference` only, vs the six
+ *    scopes `auth login` requests including `org:create_api_key`). The scope
+ *    argument was sound; the premise was not, and it was MEASURED wrong on Utho
+ *    prod (2026-08-09, claude 2.1.220): `setup-token`'s product is a PRINTED
+ *    `sk-ant-oat01-…` token the member is meant to carry as
+ *    `CLAUDE_CODE_OAUTH_TOKEN` — the binary's own strings say "Mint a fresh
+ *    token with `claude setup-token` and restart the session with it". It
+ *    NEVER persists a login into the config directory, so the finish probe
+ *    (`claude auth status`) reads `loggedIn: false` after a perfectly
+ *    completed flow. Consequences, both observed: the flow can NEVER end
+ *    "signed in" (four completed attempts, zero `.credentials.json`), and the
+ *    member is left holding a raw token on screen — which is exactly how one
+ *    ended up pasted into a task description and tripped the S15 guard on
+ *    every launch of that task. A login verb whose success the probe is
+ *    structurally blind to is not a narrower credential, it is NO credential
+ *    plus a leaked secret. `auth login` persists a login the probe can see;
+ *    its wider grant is the accepted price, and `user:profile` in that grant
+ *    means the probe now learns an email, so
+ *    `account_agent_credentials.login` is populated for anthropic and the
+ *    card reads "Connected as <address>".
  *
  *    Also measured, and both are finish-step bugs waiting to happen: Claude's
  *    OAuth callback is REMOTE (`https://platform.claude.com/oauth/code/callback`,
@@ -51,7 +62,7 @@ import { composeCredentialEnv, type CredentialProvider } from './credential-env.
  *    the credential this login produces can actually serve.
  */
 export const CREDENTIAL_LOGIN_COMMANDS = {
-  anthropic: 'claude setup-token',
+  anthropic: 'claude auth login',
   openai: 'codex login --device-auth',
   github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
 } as const satisfies Record<CredentialProvider, string>;

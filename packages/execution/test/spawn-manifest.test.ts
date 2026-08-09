@@ -178,6 +178,45 @@ describe('resolveLaunchConfig', () => {
     ).toBe('auto');
   });
 
+  /**
+   * `credentialSource` rides the same precedence chain as the posture: the
+   * request outranks what a parent held, and absence means auto — the
+   * pre-field behaviour, byte for byte. The values are narrowed rather than
+   * trusted because the inherited half comes out of a stored JSON manifest.
+   */
+  it('resolves credentialSource from the request, then the parent posture, then auto', () => {
+    expect(resolveLaunchConfig(base, context(), {}).credentialSource).toBeNull();
+    expect(
+      resolveLaunchConfig({ ...base, credentialSource: 'member' }, context(), {}).credentialSource,
+    ).toBe('member');
+    // A child of a 'node'-credentialed session inherits that choice…
+    expect(
+      resolveLaunchConfig(base, context(), {}, {
+        accessMode: null,
+        permissionMode: null,
+        credentialSource: 'node',
+      }).credentialSource,
+    ).toBe('node');
+    // …unless the request says otherwise.
+    expect(
+      resolveLaunchConfig({ ...base, credentialSource: 'member' }, context(), {}, {
+        accessMode: null,
+        permissionMode: null,
+        credentialSource: 'node',
+      }).credentialSource,
+    ).toBe('member');
+  });
+
+  it('ignores an unrecognised stored credentialSource instead of launching on it', () => {
+    expect(
+      resolveLaunchConfig(base, context(), {}, {
+        accessMode: null,
+        permissionMode: null,
+        credentialSource: 'somebody-else' as never,
+      }).credentialSource,
+    ).toBeNull();
+  });
+
   it('maps model families to tools', () => {
     expect(agentToolForModel('claude-opus-5')).toBe('claude-code');
     expect(agentToolForModel('gpt-5')).toBe('codex');

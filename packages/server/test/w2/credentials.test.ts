@@ -473,9 +473,10 @@ describe('credentials.status merges two stores and degrades honestly', () => {
     const byProvider = Object.fromEntries(view.providers.map((p) => [p.provider, p]));
     expect(byProvider['github']?.connected).toBe(true);
     expect(byProvider['github']?.login).toBe('octocat');
-    // Anthropic's login is NULL FOREVER (R4) — `claude setup-token` requests
-    // inference scope only and can never learn an email. Null, not absent, so
-    // the UI has one thing to branch on.
+    // A NULL login is a legal anthropic shape: rows minted under the original
+    // R4 verb (`claude setup-token`) never learned an email. Post-amendment
+    // rows (`claude auth login` grants `user:profile`) carry one, but the view
+    // must keep passing NULL through, not fabricate or drop the field.
     expect(byProvider['anthropic']?.connected).toBe(true);
     expect(byProvider['anthropic']?.login).toBeNull();
     expect(byProvider['openai']?.connected).toBe(false);
@@ -660,7 +661,7 @@ describe('the login session operations answer their contract shapes', () => {
         return {
           sessionId: SESSION_ID,
           provider: 'anthropic',
-          command: 'claude setup-token',
+          command: 'claude auth login',
           cwd: '/tmp',
           env: {},
           reused: false,
@@ -693,7 +694,7 @@ describe('the login session operations answer their contract shapes', () => {
       ),
     );
 
-    expect(result.command).toBe('claude setup-token');
+    expect(result.command).toBe('claude auth login');
     expect(JSON.stringify(launched)).not.toContain('rm -rf');
     expect(JSON.stringify(launched)).not.toContain('--evil');
   });

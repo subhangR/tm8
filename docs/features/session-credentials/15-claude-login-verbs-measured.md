@@ -166,3 +166,31 @@ happens. Keep the retry-on-corrupt-read mitigation as belt-and-braces; drop the 
 Nothing in gap 1. Gap 3 is narrowed to the 60s-stale window. Still open and unchanged: the Codex
 positive control (needs a node with a Codex login — an ops dependency, not a measurement), and
 Tier A's GitHub OAuth App registration.
+
+---
+
+## G. AMENDMENT 2026-08-09 — §B's recommendation is REVERSED (R4 amended)
+
+Every measurement above abandoned the flow at the paste-code prompt (stated in the preamble), so
+this doc never observed what each verb does **on completion**. Measured on Utho prod
+(claude 2.1.220, four completed member attempts plus binary-string evidence):
+
+- **`setup-token`'s product is a PRINTED token, not a persisted login.** The flow ends by printing
+  an `sk-ant-oat01-…` token the user is meant to carry as `CLAUDE_CODE_OAUTH_TOKEN` — the binary's
+  own strings say *"Mint a fresh token with `claude setup-token` and restart the session with
+  it"*. It writes **no `.credentials.json`** into `CLAUDE_CONFIG_DIR`.
+- Consequence 1: the finish probe (`claude auth status`, §C2) reads `loggedIn: false` after a
+  **perfectly completed** flow, so the Connect card can structurally never end "signed in". Four
+  completed attempts on Utho left `.claude.json` + `backups/` (§C1's pre-auth writes) and nothing
+  else.
+- Consequence 2: the member is left holding a raw token on screen. One was pasted into a task
+  description and tripped the S15 manifest guard on every launch of that task — the exact
+  credential-leak class the store exists to prevent.
+
+§B's scope analysis stands as measured. But a verb whose success the probe cannot see is not a
+narrower credential — it is **no stored credential plus a leaked secret**. The fixed command table
+now runs **`claude auth login`**; its wider grant (including `org:create_api_key`) is the accepted
+price, and `user:profile` in that grant means `account_agent_credentials.login` is now populated
+for anthropic ("Connected as <address>"). Rows minted before the amendment keep `login: null` and
+the "Connected — inference access" copy. §C1/§C2/§C3 are unchanged and remain the reasons the
+probe keys on `loggedIn`, never on directory contents or exit codes.

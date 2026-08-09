@@ -363,13 +363,31 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     const directory = [...container.querySelectorAll('.ls__eyebrow')].find(
       (n) => n.textContent === 'WORKING DIRECTORY',
     ) as HTMLElement;
-    for (const id of ['launch-model', 'launch-reasoning-effort', 'launch-access-mode']) {
+    for (const id of ['launch-model', 'launch-reasoning-effort', 'launch-access-mode', 'launch-credential-source']) {
       const control = getByTestId(id);
       expect(control.compareDocumentPosition(directory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     }
     // Session mode moved DOWN — a topology choice most launches never touch.
     const mode = getByTestId('launch-mode');
     expect(directory.compareDocumentPosition(mode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('sends a credential source ONLY when one was explicitly chosen', () => {
+    // Auto is the ABSENCE of the field, not a third value: an explicit
+    // 'member' refuses the launch for an unconnected member, so the sheet
+    // merely being opened must never pin one.
+    const onLaunch = vi.fn();
+    const { getByTestId, getByText } = renderSheet({ onLaunch });
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch.mock.calls[0]?.[0]).not.toHaveProperty('credentialSource');
+
+    fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'member' } });
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch.mock.calls[1]?.[0]).toMatchObject({ credentialSource: 'member' });
+
+    fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'node' } });
+    fireEvent.click(getByText('Launch ▸'));
+    expect(onLaunch.mock.calls[2]?.[0]).toMatchObject({ credentialSource: 'node' });
   });
 
   it('sends only an explicit active profile selection', () => {

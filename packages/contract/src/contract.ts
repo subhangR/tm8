@@ -1015,12 +1015,12 @@ export interface CredentialConnectionView {
   /**
    * The vendor-side account name, when the login verb can learn one.
    *
-   * NULL FOREVER for anthropic (R4): tm8 runs `claude setup-token`, whose
-   * scopes are `user:inference` only and therefore exclude `user:profile`. The
-   * UI must branch on presence and render "Connected — inference access", never
-   * "Connected as null" — and must NOT "fix" it by switching to the wider login
-   * verb, which requests `org:create_api_key` and is materially worse on a node
-   * with no cross-user isolation.
+   * For anthropic this is populated post-R4-amendment: tm8 now runs `claude
+   * auth login` (whose grant includes `user:profile`), because the previously
+   * ruled `claude setup-token` PRINTS a token without persisting a login, so
+   * the finish probe could never see a completed flow. Rows minted under the
+   * old verb remain NULL here — the UI must still branch on presence and
+   * render "Connected — inference access" for them, never "Connected as null".
    */
   login: string | null;
   authMethod: string | null;
@@ -1923,6 +1923,16 @@ export interface ExecutionSpawnInput extends CommandContext {
   agentTool?: string | null;
   reasoningEffort?: LaunchReasoningEffort;
   accessMode?: LaunchAccessMode;
+  /**
+   * Which credential the session authenticates with. `'member'` requires the
+   * spawner's own connected credential (the launch is refused when there is
+   * none — never a silent fallback to the node's identity); `'node'` skips
+   * member-credential injection. Absent = auto: the member's credential when
+   * connected, the node's otherwise. This can only ever name the CALLER'S OWN
+   * credential — the server resolves it RLS-scoped to the spawner, so no value
+   * here reaches another member's store.
+   */
+  credentialSource?: 'member' | 'node';
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;
