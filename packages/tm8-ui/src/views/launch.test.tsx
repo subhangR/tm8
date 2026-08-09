@@ -16,7 +16,8 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
 import type { NavPort } from '../shell/nav-port';
 import { teamMemberForge } from '../fixtures';
-import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
+import { createFixtureSeam } from '../data/fixtures/seam-fixture';
+import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) =>
   render(
@@ -197,9 +198,9 @@ describe('the teammate picker scales to an UNBOUNDED roster', () => {
   });
 
   it('states that a non-matching filter KEEPS the selection', () => {
-    const { getByTestId, getByRole, container } = renderSheet({ teammates: manyTeammates });
+    const { getByTestId, getByText, container } = renderSheet({ teammates: manyTeammates });
     fireEvent.change(getByTestId('launch-teammate-search'), { target: { value: 'nobody-here' } });
-    expect(getByRole('status').textContent).toContain('the current selection is kept');
+    expect(getByText(/the current selection is kept/).textContent).toContain('the current selection is kept');
     // The selected row itself is still drawn, so the empty state never reads
     // as "nothing is selected".
     const rows = [...container.querySelectorAll('.ls__roster [role="radio"]')];
@@ -233,6 +234,7 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
       'WORKING DIRECTORY',
       'SESSION MODE',
       'INTERACTION PROFILE',
+      'MEMORIES',
     ]);
     expect(container.textContent).toContain('claude-sonnet-5 · claude-code · owned by @ada');
     expect(getByTestId('launch-model')).toBeInstanceOf(HTMLSelectElement);
@@ -423,4 +425,193 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     );
   });
 
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE MEMORY PICKER (D3a, `memoryIds`).
+ *
+ * Two things here are easy to get wrong and expensive to notice later:
+ *
+ * 1. ABSENT IS NOT EMPTY. `memories === undefined` means nobody has read the
+ *    kind into this client; `memories === []` means the space has none. Only
+ *    the second is a measurement, and a picker that renders them the same way
+ *    reports a fact nobody established.
+ * 2. THE CAP IS THE CONTRACT'S. `memoryIds` is `max(32)` (schemas.ts:1662).
+ *    Enforced at the pick, not at the launch, so the 33rd is refused with a
+ *    reason instead of the node rejecting a launch already committed to.
+ */
+describe('the memory picker hands ids to spawn without becoming a manager', () => {
+  const openPicker = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) => {
+    const view = renderSheet({ memories: LAUNCH_MEMORIES, ...props });
+    fireEvent.click(view.getByLabelText('Change picked memories'));
+    return view;
+  };
+
+  it('says the list is UNKNOWN when memories were never read, not empty', () => {
+    // The prop is omitted entirely — the boot-time state before `ensureKind`.
+    const { getByText, queryByLabelText } = renderSheet();
+    expect(getByText(/have not been read into this client/i)).toBeTruthy();
+    expect(getByText(/unknown, not empty/i)).toBeTruthy();
+    // …and there is nothing to open, because there is nothing to choose from.
+    expect(queryByLabelText('Change picked memories')).toBeNull();
+  });
+
+  it('says the SPACE is empty when the read happened and found none', () => {
+    const { getByText } = openPicker({ memories: [] });
+    expect(getByText(/This space has no memories yet/i)).toBeTruthy();
+  });
+
+  it('carries picked ids into onLaunch, and omits the field when none picked', () => {
+    const launches: Array<Record<string, unknown>> = [];
+    const { getByText, getByRole } = openPicker({
+      onLaunch: (config) => launches.push(config as unknown as Record<string, unknown>),
+    });
+
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    // An absent field and an empty array are not the same statement.
+    expect(launches[0] && 'memoryIds' in launches[0]).toBe(false);
+
+    fireEvent.click(getByText('tokens.css is verbatim — a byte-equality test guards it'));
+    fireEvent.click(getByText('The fixture seam drops fields it does not know'));
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect(launches[1]?.memoryIds).toEqual(['ent-mem-tokens', 'ent-mem-disputed']);
+  });
+
+  it('toggles a pick off again — it is a set, not a one-way door', () => {
+    const launches: Array<Record<string, unknown>> = [];
+    const { getByText, getByRole } = openPicker({
+      onLaunch: (config) => launches.push(config as unknown as Record<string, unknown>),
+    });
+    const row = getByText('tokens.css is verbatim — a byte-equality test guards it');
+    fireEvent.click(row);
+    fireEvent.click(row);
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect(launches[0] && 'memoryIds' in launches[0]).toBe(false);
+  });
+
+  it('announces a SET, not a single choice, and shows each mark before the pick', () => {
+    const { getAllByRole, getByText } = openPicker();
+    // checkbox, never radio: a radiogroup would announce single-choice.
+    expect(getAllByRole('checkbox')).toHaveLength(3);
+    // A disputed claim cannot be picked without its mark being visible.
+    expect(getByText(/disputed · data\/fixtures/)).toBeTruthy();
+    // The SCOPE rides along — a true statement about the wrong subject is the
+    // failure the scope line exists to prevent.
+    expect(getByText(/unflagged · packages\/tm8-ui\/src\/styles\/tokens\.css/)).toBeTruthy();
+  });
+
+  it('is a picker and not a manager — no authoring controls anywhere in it', () => {
+    const { queryByTestId, queryByText } = openPicker();
+    expect(queryByTestId('memory-add')).toBeNull();
+    expect(queryByTestId('memory-forget')).toBeNull();
+    expect(queryByText(/remember something/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * DISPATCH (D5) — the option beside the manual flow.
+ *
+ * THE PROPERTY THAT MATTERS is what it does NOT carry. `ExecutionDispatchInput`
+ * has no launch configuration at all, because — in the contract's own words —
+ * "the moment a caller can name the teammate, it is spawning, not dispatching".
+ * So the risk here is not a broken button; it is a button that quietly appears
+ * to honour a form it structurally cannot use. These tests hold that line from
+ * both sides: the payload is one field, and the sheet says so.
+ */
+describe('Dispatch hands off the subject and cannot smuggle a configuration', () => {
+  it('sends ONLY the subject, whatever the sheet was configured to', () => {
+    const dispatched: Array<Record<string, unknown>> = [];
+    const { getByTestId, getByText, getByLabelText } = renderSheet({
+      memories: LAUNCH_MEMORIES,
+      onDispatch: (r) => dispatched.push(r as unknown as Record<string, unknown>),
+    });
+
+    // Configure the sheet as fully as the surface allows first — a teammate
+    // other than the default, a model, and a picked memory.
+    fireEvent.click(getByText('scout'));
+    fireEvent.change(getByTestId('launch-model'), { target: { value: 'claude-opus-5' } });
+    fireEvent.click(getByLabelText('Change picked memories'));
+    fireEvent.click(getByText('tokens.css is verbatim — a byte-equality test guards it'));
+
+    fireEvent.click(getByTestId('launch-dispatch'));
+
+    expect(dispatched).toHaveLength(1);
+    // ONE key. Not "teamMemberId is undefined" — the key is absent, so no
+    // future edit can start populating it without this failing.
+    expect(Object.keys(dispatched[0] ?? {})).toEqual(['subjectId']);
+    expect(dispatched[0]?.subjectId).toBe('task-1');
+  });
+
+  it('says out loud that the settings above are not used', () => {
+    // A control that silently discards a form the viewer just filled in is the
+    // worst class of surprise: everything looks like it was honoured.
+    const { getByTestId } = renderSheet({ onDispatch: () => {} });
+    const title = getByTestId('launch-dispatch').getAttribute('title') ?? '';
+    expect(title).toContain('picks the teammate');
+    expect(title).toMatch(/settings above are NOT used/i);
+  });
+
+  it('does not launch, and Launch does not dispatch', () => {
+    // The two commits are different actions; neither may stand in for the other.
+    const launched: unknown[] = [];
+    const dispatched: unknown[] = [];
+    const { getByTestId, getByRole } = renderSheet({
+      onLaunch: (c) => launched.push(c),
+      onDispatch: (r) => dispatched.push(r),
+    });
+    fireEvent.click(getByTestId('launch-dispatch'));
+    expect(launched).toHaveLength(0);
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect(dispatched).toHaveLength(1);
+    expect(launched).toHaveLength(1);
+  });
+
+  it('refuses WITH A REASON when unwired, rather than hiding the button', () => {
+    // A missing button would claim this node cannot dispatch at all.
+    const { getByTestId } = renderSheet();
+    const button = getByTestId('launch-dispatch');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('title')).toContain('not wired');
+    expect(button.tagName).toBe('BUTTON');
+  });
+});
+
+/**
+ * THE SEAM SIDE of dispatch. The fixture seam is where a UI meets the resident
+ * dispatcher saga in jsdom, and the two facts it must not flatten are that a
+ * dispatcher can have to be SPAWNED, and that the answer is a delivery verdict
+ * rather than a session.
+ */
+describe('the fixture seam models the dispatcher saga rather than stubbing it', () => {
+  const firstSpaceId = async (seam: ReturnType<typeof createFixtureSeam>) => {
+    const spaces = await seam.spaces();
+    expect(spaces.length, 'the fixture seam must expose at least one space').toBeGreaterThan(0);
+    return spaces[0]!.id;
+  };
+
+  it('spawns the dispatcher once, then reuses it', async () => {
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const subject = (await seam.query({ spaceId })).page.items[0];
+    if (!subject) throw new Error('fixture must supply a subject');
+
+    const first = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d1', spaceId, subjectId: subject.id,
+    });
+    expect(first.dispatcherSpawned).toBe(true);
+    expect(first.delivery).toBe('delivered');
+    // A task is always derived — dispatch anchors on a task, never the subject.
+    expect(first.taskId).toBeTruthy();
+
+    const second = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d2', spaceId, subjectId: subject.id,
+    });
+    // RESIDENT, not per-request: a second dispatcher would be a real defect.
+    expect(second.dispatcherSpawned).toBe(false);
+    expect(second.dispatcherSessionId).toBe(first.dispatcherSessionId);
+  });
 });

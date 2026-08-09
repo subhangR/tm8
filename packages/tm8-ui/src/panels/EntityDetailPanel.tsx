@@ -46,7 +46,8 @@ import { SubtreeBody } from './bodies/SubtreeBody';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
-import { ProfileBody } from './bodies/ProfileBody';
+import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
+import type { MemoryMarkKind } from '../domain/memory';
 import { GovernedBody } from './bodies/GovernedBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
@@ -174,6 +175,18 @@ export interface EntityDetailPanelProps {
       SESSIONS) — same seam source as `liveness`, per-id. Optional: an absent
       map renders those rows' liveness as unverified, never as live. */
   livenessOf?: (id: string) => SessionLiveness;
+  /**
+   * Working-set authoring for the `memory-set` block (056/084/085). Absent ⇒
+   * the block renders the set READ-ONLY rather than drawing dead controls; the
+   * panel does not perform the writes itself, it only forwards the intent.
+   */
+  memoryAuthoring?: MemoryAuthoring | null;
+  /**
+   * Begin a `supersedes`/`disputes` mark against the open memory (056 §5).
+   * Absent ⇒ the `epistemics` block states that marking is unwired rather than
+   * hiding the verbs, which would claim the memory cannot be marked.
+   */
+  onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
   /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
   onPostMessage?: (body: string) => Promise<void> | void;
   /**
@@ -874,6 +887,7 @@ function PanelBody(
         blocks={config.panel.blocks}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+        memoryAuthoring={props.memoryAuthoring}
         descriptionDraft={typeof save.edits.description === 'string' ? save.edits.description : undefined}
         onDescriptionChange={
           save.unavailable ? undefined : (description) => save.edit({ description })
@@ -956,6 +970,8 @@ function PanelBody(
         blocks={config.panel.blocks ?? []}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+        memoryAuthoring={props.memoryAuthoring}
+        onMarkMemory={props.onMarkMemory}
       />
     );
   }

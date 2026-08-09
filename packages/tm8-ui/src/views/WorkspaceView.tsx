@@ -41,7 +41,7 @@ import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { EmptyCenter } from './EmptyCenter';
-import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
+import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 import { openEntityAndResolve } from './open-entity';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
@@ -84,6 +84,8 @@ export interface WorkspaceViewProps {
   launchInFlight?: boolean;
   onLaunchCancel?(): void;
   onLaunchSubmit?(config: LaunchSelection): void;
+  /** D5 — hand the subject to the dispatcher instead of configuring a launch. */
+  onLaunchDispatch?(request: DispatchSelection): void;
   /** Esc must not pop the panel under an open sheet (A1a finding 1). */
   isModalOpen?(): boolean;
   /** THE DOOR: A1c's quick-config "full options ▸" opens the full sheet. */
@@ -543,9 +545,15 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               teammates={data.launch.teammates}
               projects={data.launch.projects}
               profiles={data.launch.profiles}
+              /* Undefined until the kind is hydrated, and the sheet draws that
+                 as "unknown" rather than "none" — see the picker's comment. */
+              memories={data.launch.memories}
               capacity={data.launch.capacity}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
+              /* Passed straight through, unbound to any sheet state — see the
+                 button's comment for why dispatch cannot carry a config. */
+              onDispatch={props.onLaunchDispatch}
             />
           )}
           {centreIsEmpty ? (

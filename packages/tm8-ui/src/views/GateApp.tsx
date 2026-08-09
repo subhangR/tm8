@@ -30,7 +30,7 @@ import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
-import type { LaunchSelection } from './LaunchSheet';
+import type { DispatchSelection, LaunchSelection } from './LaunchSheet';
 import type { DetailReasons } from '../panels';
 import { BootLoader, VectorIcon } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
@@ -268,6 +268,55 @@ export function GateApp(props: GateAppProps = {}) {
         setLaunching(false);
       });
   };
+
+  /* D5: dispatch stores/delivers the subject only. The dispatcher chooses the
+     teammate and memories later, so none of the sheet's launch config crosses
+     this boundary and success never navigates to a terminal. */
+  const submitDispatch = (request: DispatchSelection) => {
+    setLaunchRefusal(null);
+    void data.seam.commands
+      .dispatch({
+        clientMutationId: newLaunchMutationId(),
+        spaceId: data.spaceId,
+        subjectId: request.subjectId,
+      })
+      .then((result) => {
+        launch.close();
+        notices.push({
+          id: 'dispatch-done',
+          tone: result.delivery === 'delivered' ? 'info' : 'warn',
+          title: result.delivery === 'delivered'
+            ? 'Handed to the dispatcher'
+            : 'Dispatch request stored, not delivered',
+          body: result.delivery === 'delivered'
+            ? `${result.dispatcherSpawned ? 'Spawned the dispatcher and sent' : 'Sent'} the request. It picks the teammate and the memories, then replies on the task.`
+            : 'The dispatcher session did not receive it. The request is stored on the task and is not lost, but nothing is running yet.',
+          ttlMs: 8000,
+        });
+      })
+      .catch((error: unknown) =>
+        setLaunchRefusal({
+          cause: 'Dispatch refused',
+          detail: String((error as { message?: string })?.message ?? error),
+        }),
+      );
+  };
+
+  /*
+   * Read memories only when a launch is actually being configured (D3a).
+   *
+   * NOT AT BOOT: the sheet is the one surface that offers them, and hydrating a
+   * whole kind on every boot for a picker most launches never open is a query
+   * bought for nobody. `ensureKind` guards on its own cache, so re-opening the
+   * sheet costs nothing.
+   *
+   * Until it lands `data.launch.memories` is undefined, and the sheet draws
+   * that as UNKNOWN rather than as an empty space — the two are different
+   * facts and only one of them is a measurement.
+   */
+  useEffect(() => {
+    if (launch.subjectId) data.ensureKind('memory');
+  }, [launch.subjectId, data]);
 
   /* GraphScreen takes its launch sources as a PROP (its data port is
      deliberately narrow), so the shell builds them here — from the same hook
@@ -666,6 +715,7 @@ export function GateApp(props: GateAppProps = {}) {
                 launch.close();
               }}
               onLaunchSubmit={submitLaunch}
+              onLaunchDispatch={submitDispatch}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
             /* T5-1 Home — the first void route dispatching to a real screen
@@ -748,6 +798,7 @@ export function GateApp(props: GateAppProps = {}) {
               // itself after a click — the same misleading-glance shape as a
               // transient refusal wearing the permanent form. The honest fix
               // is to wire it, not to grey it out.
+              onLaunchDispatch={submitDispatch}
               onLaunchSubmit={submitLaunch}
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);

@@ -505,6 +505,33 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'subtree',
+      /* The task's memory working set (085 widened `remembers.src_kinds` to
+         the wildcard; P2 auto-injects a spawn task's remembered memories).
+         Declared as the SAME block the teammate row uses — `SubtreeBody`
+         renders it as one named section, so the two hosts cannot drift into
+         two renderings of one fact. Before this existed these edges fell
+         through `peersOf` into LINKED as anonymous chips. */
+      blocks: [
+        {
+          block: 'memory-set',
+          label: 'MEMORIES',
+          params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory' },
+        },
+        /* WHY THIS TASK EXISTS, when a loop made it (086 `triggered_by`,
+           src task|work_session → dst loop). Provenance, not a generic link:
+           without its own row it would fall through `peersOf` into LINKED as
+           an anonymous chip — the same defect `remembers` had, which is why
+           both edge types now sit in `OWN_SECTION_EDGES`. */
+        {
+          block: 'peer-rows',
+          label: 'TRIGGERED BY',
+          params: {
+            edgeType: 'triggered_by',
+            direction: 'outgoing',
+            empty: 'Not triggered by a loop — this task was created directly.',
+          },
+        },
+      ],
       // The detail header keeps one task action: Run. Coordinate and Complete
       // remain available from their task-specific surfaces, not this compact
       // panel toolbar.
@@ -875,12 +902,32 @@ const ROWS: readonly KindConfig[] = [
       /* T0-4 AGENT frame (oracle lines 452–496), verbatim in order… */
       blocks: [
         { block: 'bio', params: { source: 'identity' } },
+        /* `memories=Memories` is GONE from this grid, and its removal is a fix
+           rather than a trim: `FieldValue` prints an array as its length, the
+           source was the `team_members.memories` jsonb, and migration 084
+           emptied that column after moving every entry into the graph. The cell
+           could only ever print `0` — a measurement-shaped zero for a column
+           nobody writes. The real working set is the `memory-set` block below,
+           read from the `remembers` edges 084/085 established. */
         {
           block: 'field-grid',
-          params: { fields: 'model=Model,agentTool=Tool,owner=Owner,memories=Memories' },
+          params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
         },
         { block: 'live-work', params: { source: 'liveWork' } },
         { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+        /* The working set that spawn actually injects (`loadSpawnContext`).
+           Edge-backed and kind-free: 085 widened `remembers.src_kinds` to the
+           wildcard, so this identical row on a task panel needs no new code. */
+        {
+          block: 'memory-set',
+          label: 'MEMORIES',
+          /* `dstKind` is what the authoring flow creates when this set gains a
+             member. It is DATA here and not a literal in the authoring lane
+             because §15.2 is enforced there by `no-kind-literals.test.ts`: the
+             create/save flows must reach a kind through the registry, so the
+             row that declares the block also declares what the block authors. */
+          params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory', count: true },
+        },
         {
           block: 'session-rows',
           label: 'RECENT SESSIONS',
@@ -1172,10 +1219,69 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
     }),
+    /*
+     * PROFILE, not generic — and this is the archetype working as designed
+     * rather than a teammate surface being borrowed.
+     *
+     * `ProfileBody`'s own docblock states the rule: the anatomy IS the ordered
+     * block list the registry row carries, there is no `kind ===` in it, and
+     * "a third profile-shaped kind is a registry row, not an edit here". A
+     * memory needs exactly what that body already draws — prose, a fact grid,
+     * edge-backed rows — plus the two blocks added with it (`epistemics`,
+     * `peer-rows`), which are equally kind-free.
+     *
+     * The generic `fields` block could not carry any of it: it cannot render a
+     * staleness badge, cannot list edge peers, and cannot offer a verb.
+     */
     panel: {
-      archetype: 'generic',
+      archetype: 'profile',
       blocks: [
-        { block: 'fields', label: 'SCOPE' },
+        /* The claim itself, as prose. `statement` is CONTENT — the only 056
+           field that is, since the four scope fields ride in `state` so they
+           travel with every summary. */
+        { block: 'bio', params: { source: 'statement' } },
+        /* The conditions the claim is true under. `lookup` reads state before
+           content, and these are state, so they arrive without a second read.
+           `doesNotEstablish` is here and not hidden behind a disclosure: it is
+           the field that stops a memory being over-applied, which is the whole
+           reason 056 made it required. */
+        {
+          block: 'field-grid',
+          label: 'SCOPE',
+          params: {
+            fields: 'subjectScope=Ranges over,mechanism=Measured by,doesNotEstablish=Does not establish,measuredAt=Measured at',
+          },
+        },
+        { block: 'epistemics', label: 'STANDING' },
+        /* WHO HOLDS IT. Mixed kinds since 085 widened `remembers` src to the
+           wildcard — teammates, tasks and sessions all land in one list, and
+           each row names its kind because the edge no longer distinguishes
+           them. Injection follows these edges, so this is also the answer to
+           "who will be told this". */
+        {
+          block: 'peer-rows',
+          label: 'REMEMBERED BY',
+          params: {
+            edgeType: 'remembers',
+            direction: 'incoming',
+            count: true,
+            empty: 'Nobody remembers this yet — it exists as a claim but no working set carries it, so no session will be told it.',
+          },
+        },
+        /* AUTHORSHIP IS A DIFFERENT EDGE (D10). The server writes
+           `authored_from` when a session creates a memory, and it is kept
+           separate from `remembers` precisely so consolidation can move working
+           sets around without rewriting who wrote what. Never inferred from a
+           holder's kind. */
+        {
+          block: 'peer-rows',
+          label: 'AUTHORED IN',
+          params: {
+            edgeType: 'authored_from',
+            direction: 'outgoing',
+            empty: 'No authoring session recorded — written outside a session, or before authorship was tracked.',
+          },
+        },
       ],
     },
     palette: { createLabel: 'New memory' },
@@ -1202,10 +1308,43 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
     }),
+    /*
+     * PROFILE, for the same reason `memory` is: the generic `fields` block
+     * cannot list edge peers, and a loop's RUN HISTORY *is* its inbound
+     * `triggered_by` edges (086 §4.4 — "there is no separate run table"). A
+     * loop panel that could not show its runs would be hiding the only record
+     * that exists.
+     */
     panel: {
-      archetype: 'generic',
+      archetype: 'profile',
       blocks: [
-        { block: 'fields', label: 'SCHEDULE' },
+        /* The instruction each firing carries. Content, not state. */
+        { block: 'bio', params: { source: 'prompt' } },
+        /* Scheduling rides in STATE so a list can say "enabled, next at X"
+           without a second read (the contract's own note), which is also why
+           these render from the summary here. `teamMemberId` absent is
+           MEANINGFUL — it means firings route through the dispatcher rather
+           than naming a runner — so the grid shows it rather than hiding a
+           null. */
+        {
+          block: 'field-grid',
+          label: 'SCHEDULE',
+          params: {
+            fields: 'schedule=Every,enabled=Enabled,nextRunAt=Next run,lastRunAt=Last run,teamMemberId=Runs as,lastError=Last error',
+          },
+        },
+        /* RUN HISTORY. Inbound `triggered_by` from every task or session this
+           loop has fired — the loop's edge neighbourhood IS the history. */
+        {
+          block: 'peer-rows',
+          label: 'RUNS',
+          params: {
+            edgeType: 'triggered_by',
+            direction: 'incoming',
+            count: true,
+            empty: 'No firings recorded yet. Each firing derives a task and edges back here, so this list IS the run history — an empty one means it has not fired.',
+          },
+        },
       ],
     },
     palette: { createLabel: 'New loop' },

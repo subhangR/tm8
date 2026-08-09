@@ -52,6 +52,8 @@ import {
   type EntityState,
   type EntitySummary,
   type ExecutionPromptInput,
+  type ExecutionDispatchInput,
+  type ExecutionDispatchResult,
   type ExecutionSpawnInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
@@ -768,6 +770,20 @@ export function createFixtureSeam(): FixtureSeam {
         };
       case 'collection':
         return { kind: 'collection', collectionType: (c.collectionType as string) ?? 'manual', itemCount: 0 };
+      // The 056 scope fields ride in STATE, not content, so that a memory's
+      // conditions arrive on every summary read in the same payload as its
+      // title. `create_memory` (056) takes them off `content` on the wire and
+      // the read projects them back into state — this mirrors both halves,
+      // because a fixture that stored them only in content would let a working
+      // set render its scope in jsdom and lose it against the node.
+      case 'memory':
+        return {
+          kind: 'memory',
+          mechanism: (c.mechanism as string) ?? '',
+          subjectScope: (c.subjectScope as string) ?? '',
+          doesNotEstablish: (c.doesNotEstablish as string) ?? '',
+          measuredAt: (c.measuredAt as string | null) ?? null,
+        };
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
     }
@@ -1391,13 +1407,27 @@ export function createFixtureSeam(): FixtureSeam {
     commands: {
       async createEntity(input) {
         if (input.parentId) requireSummary(input.parentId);
+        /*
+         * `create_memory` (056) takes NO title argument — the title IS the
+         * statement, derived server-side. Mirroring that here is not cosmetic:
+         * a fixture that kept the caller's title would let a composer send a
+         * separate title and look correct in jsdom while the node overwrote it.
+         * The excerpt carries the statement for the same reason the server
+         * does — summaries are how a memory's claim travels.
+         */
+        const statement = (input.content as Record<string, unknown> | undefined)?.statement;
+        const derivedTitle =
+          input.kind === 'memory' && typeof statement === 'string' && statement.length > 0
+            ? statement
+            : input.title;
         const s = insertSummary({
           id: nextId(input.kind),
           kind: input.kind,
-          title: input.title,
+          title: derivedTitle,
           spaceId: input.spaceId,
           parentId: input.parentId ?? null,
           ...(input.position !== undefined ? { position: input.position } : {}),
+          ...(input.kind === 'memory' ? { excerpt: derivedTitle } : {}),
           state: defaultStateFor(input),
         });
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
@@ -1763,6 +1793,78 @@ export function createFixtureSeam(): FixtureSeam {
         setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), s.id], snap?.nodeBootId);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      /**
+       * `execution.dispatch` — the fixture mirror of the resident-dispatcher
+       * saga (DESIGN §4.3).
+       *
+       * IT MODELS THE PARTS A UI CAN GET WRONG, and no more:
+       *   · a dispatcher session may have to be SPAWNED first, so
+       *     `dispatcherSpawned` is sometimes true and a surface that ignores it
+       *     cannot claim "reused the existing dispatcher";
+       *   · the answer is a DELIVERY VERDICT, not a session — dispatch is
+       *     asynchronous by construction and there is nothing to open;
+       *   · `undelivered` is a real, non-exceptional outcome that still leaves
+       *     a durable message, so it is reachable here rather than being a
+       *     failure path only a broken node could produce.
+       *
+       * It deliberately does NOT invent the dispatcher's decision: no teammate
+       * is chosen and no session is spawned for the work, because on a real
+       * node that happens later, in another agent, and a fixture that faked it
+       * would let a surface render a launch that never happened.
+       */
+      async dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult> {
+        const subject = requireSummary(input.subjectId);
+        // 064 derives a task for any launchable subject before dispatch; a
+        // subject that IS a task is its own derivation.
+        const task = subject.state.kind === 'task'
+          ? subject
+          : insertSummary({
+              id: nextId('task'),
+              kind: 'task',
+              title: subject.title,
+              spaceId: subject.spaceId,
+              parentId: subject.id,
+              state: {
+                kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+                dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
+              },
+            });
+        const existing = [...summaries.values()].find(
+          (row) => row.spaceId === input.spaceId
+            && row.state.kind === 'work_session'
+            && row.title.startsWith('dispatcher'),
+        );
+        const dispatcher = existing ?? insertSummary({
+          id: nextId('ws'),
+          kind: 'work_session',
+          title: 'dispatcher',
+          spaceId: input.spaceId,
+          state: {
+            kind: 'work_session', status: 'running', agentTool: 'claude-code',
+            model: null, shareMode: 'space', startedAt: tick(), exitedAt: null,
+          },
+        });
+        if (!existing) {
+          extras.set(dispatcher.id, {
+            content: {
+              kind: 'work_session', nodeId: 'node-fixture', launchProjectId: null,
+              workingOn: [], transcriptDoc: null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+          const snap = livenessBySpace.get(input.spaceId);
+          setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), dispatcher.id], snap?.nodeBootId);
+          emit(dispatcher.spaceId, { type: 'entity.upsert', entity: clone(dispatcher) }, input);
+        }
+        return {
+          taskId: task.id,
+          dispatcherSessionId: dispatcher.id,
+          dispatcherSpawned: existing === undefined,
+          requestMessageId: nextId('msg'),
+          delivery: 'delivered',
+        };
       },
       async prompt(id, _input: ExecutionPromptInput) {
         const s = requireSummary(id);

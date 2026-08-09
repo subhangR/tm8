@@ -25,6 +25,7 @@ import type {
 } from '@tm8/contract';
 import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
 import { catalogModelsFor } from './model-catalog';
+import { MEMORY_IDS_MAX } from './memory';
 
 // ---------------------------------------------------------------------------
 // Agent tools and models
@@ -453,6 +454,42 @@ export interface LaunchConfig {
   confirmUntrusted?: true;
   interactionProfileId?: EntityId;
   promptExtra?: string | null;
+  /**
+   * Spawn-time memory hand-off (D3a). These memories are injected for THIS
+   * session only and do not join the teammate's working set — the sheet says so
+   * where it is picked, because a picker that silently taught the persona
+   * something permanent would be a very quiet surprise.
+   *
+   * Capped at `MEMORY_IDS_MAX`: the contract types it `max(32)`
+   * (`schemas.ts:1662`), and a 33rd would be refused by the node after the
+   * viewer had already committed.
+   */
+  memoryIds?: readonly EntityId[];
+}
+
+/**
+ * One memory offered by the launch picker.
+ *
+ * The scope fields ride along because 056 puts them in `state`, so they arrive
+ * with every summary — a picker can show what a claim RANGES OVER without a
+ * second read, and picking a memory blind is how you inject a true statement
+ * about the wrong subject.
+ */
+export interface LaunchMemory {
+  id: EntityId;
+  statement: string;
+  subjectScope: string;
+  /** The badge word from `domain/memory.ts`; never a bare "verified". */
+  mark: string;
+  /**
+   * Whether spawn will actually inject it. A superseded memory picked BY ID is
+   * still injected (`execution-handlers.ts:167` — the caller named THAT one),
+   * which is the opposite of the working-set rule, so the picker must not
+   * borrow the working set's wording here.
+   */
+  injectedWhenPicked: boolean;
+  /** The sentence behind the mark, for a title. */
+  detail: string;
 }
 
 export type LaunchRefusal = { ok: true } | { ok: false; reason: string };
@@ -628,6 +665,11 @@ export function buildSpawnInput(args: {
   if (args.title) input.title = args.title;
   if (config.interactionProfileId) input.interactionProfileId = config.interactionProfileId;
   if (config.promptExtra) input.promptExtra = config.promptExtra;
+  /* Sent only when non-empty: an absent field and an empty array are not the
+     same statement, and the contract types the field optional for that reason.
+     Sliced at the contract's own ceiling so a caller that ignored the picker's
+     cap earns a truncation here rather than a refusal at the node. */
+  if (config.memoryIds?.length) input.memoryIds = config.memoryIds.slice(0, MEMORY_IDS_MAX);
   // Only carried when consent was actually given — the contract types it as
   // `true`, so an absent field and a false one are not the same statement.
   if (config.confirmUntrusted) input.confirmUntrusted = true;
