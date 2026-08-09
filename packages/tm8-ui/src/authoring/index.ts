@@ -51,6 +51,14 @@ export {
   type DialogField,
 } from './EditEntityDialog';
 export { InlineTitleEditor } from './InlineTitleEditor';
+export { MemoryComposer } from './MemoryComposer';
+export {
+  useMemoryWorkingSet,
+  type MemoryComposerHandle,
+  type MemoryWorkingSetCommands,
+  type MemoryWorkingSetHandle,
+  type MemoryWorkingSetPort,
+} from './useMemoryWorkingSet';
 export { NewTaskControl } from './NewTaskControl';
 export { RefusalCard, type RefusalMove } from './RefusalCard';
 export { AuthoringHost, SaveControls } from './SaveControls';

@@ -49,7 +49,12 @@ import type { EntityStaleness, EntitySummary } from '@tm8/contract';
 export interface MemoryEpistemics {
   /** The word on the badge. Never a bare "verified" — see divergence 1. */
   word: string;
-  tone: 'bad' | 'warn' | 'idle';
+  /**
+   * The house status vocabulary (`profile-body.css:258` — run/wait/block/idle),
+   * reused rather than a second palette invented for memories. Color is never
+   * the only carrier: `word` is always rendered beside it.
+   */
+  tone: 'block' | 'wait' | 'idle';
   /** The sentence behind the word, for `title`/aria. Always names the mechanism. */
   full: string;
   /**
@@ -83,7 +88,7 @@ export function memoryEpistemics(badges: EntitySummary['badges'] | undefined): M
     case 'superseded':
       return {
         word: 'superseded',
-        tone: 'bad',
+        tone: 'block',
         full: supersededSentence(staleness),
         // The one case spawn drops. Stated here, once.
         injected: false,
@@ -92,7 +97,7 @@ export function memoryEpistemics(badges: EntitySummary['badges'] | undefined): M
       const open = staleness.disputed?.openCount ?? 0;
       return {
         word: open > 1 ? `disputed · ${String(open)}` : 'disputed',
-        tone: 'warn',
+        tone: 'wait',
         full: `${String(open)} open dispute${open === 1 ? '' : 's'} against this memory — evidence contradicts it and no verification has answered them at the current version. It is still injected, carrying its [disputed] marker.`,
         injected: true,
       };
@@ -100,14 +105,14 @@ export function memoryEpistemics(badges: EntitySummary['badges'] | undefined): M
     case 'basisDeleted':
       return {
         word: 'basis deleted',
-        tone: 'warn',
+        tone: 'wait',
         full: `${String(staleness.basisDeleted?.count ?? 0)} entity this memory was based on has been deleted, so the ground under the claim is gone. It is still injected.`,
         injected: true,
       };
     default:
       return {
         word: 'basis moved',
-        tone: 'warn',
+        tone: 'wait',
         full: `${String(staleness.basisMoved?.count ?? 0)} entity this memory was based on has changed since it was pinned, so the claim may no longer describe it. It is still injected.`,
         injected: true,
       };

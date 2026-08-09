@@ -46,7 +46,7 @@ import { SubtreeBody } from './bodies/SubtreeBody';
 import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
-import { ProfileBody } from './bodies/ProfileBody';
+import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
 import { GovernedBody } from './bodies/GovernedBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
@@ -174,6 +174,12 @@ export interface EntityDetailPanelProps {
       SESSIONS) — same seam source as `liveness`, per-id. Optional: an absent
       map renders those rows' liveness as unverified, never as live. */
   livenessOf?: (id: string) => SessionLiveness;
+  /**
+   * Working-set authoring for the `memory-set` block (056/084/085). Absent ⇒
+   * the block renders the set READ-ONLY rather than drawing dead controls; the
+   * panel does not perform the writes itself, it only forwards the intent.
+   */
+  memoryAuthoring?: MemoryAuthoring | null;
   /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
   onPostMessage?: (body: string) => Promise<void> | void;
   /**
@@ -948,6 +954,7 @@ function PanelBody(
         blocks={config.panel.blocks ?? []}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+        memoryAuthoring={props.memoryAuthoring}
       />
     );
   }

@@ -52,12 +52,29 @@ const MEMBER_BLOCKS: readonly ProfileBlockRef[] = [
 /** The block list the `team_member` registry row is expected to carry. */
 const AGENT_BLOCKS: readonly ProfileBlockRef[] = [
   { block: 'bio', params: { source: 'identity' } },
+  /*
+   * `memories=Memories` was REMOVED from this grid, and the old expectation
+   * asserting it is gone with it rather than relaxed.
+   *
+   * It was the tested-shut case: `FieldValue` prints an array as its length,
+   * the array was `team_members.memories`, and migration 084 emptied that
+   * column after moving every entry into the graph as `memory` entities. The
+   * cell could only ever print `0` from then on, and this suite would have
+   * stayed green while it did — the assertion below used to read
+   * `toContain('1')` against fixture jsonb no production row still carries.
+   * The working set is now the `memory-set` block, read from `remembers`.
+   */
   {
     block: 'field-grid',
-    params: { fields: 'model=Model,agentTool=Tool,owner=Owner,memories=Memories' },
+    params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
   },
   { block: 'live-work', params: { source: 'liveWork' } },
   { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+  {
+    block: 'memory-set',
+    label: 'MEMORIES',
+    params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory', count: true },
+  },
   {
     block: 'session-rows',
     label: 'RECENT SESSIONS',
@@ -114,7 +131,7 @@ describe('one archetype body, two screens, chosen by registry DATA', () => {
     // Persona prose — T0-4 line 472.
     expect(getByTestId('block-bio').textContent).toContain('A0 foundation engineer');
 
-    // Model / Tool / Owner / Memories — T0-4 lines 474-478.
+    // Model / Tool / Owner — T0-4 lines 474-478.
     const grid = getByTestId('block-field-grid');
     expect(grid.textContent).toContain('Model');
     expect(grid.textContent).toContain('claude-fable-5');
@@ -122,8 +139,10 @@ describe('one archetype body, two screens, chosen by registry DATA', () => {
     expect(grid.textContent).toContain('claude-code');
     expect(grid.textContent).toContain('Owner');
     expect(grid.textContent).toContain('@Ada');
-    expect(grid.textContent).toContain('Memories');
-    expect(grid.textContent).toContain('1'); // content.memories.length — a real count
+    // …and NOT Memories. The count is gone because it counted a column 084
+    // emptied; asserting its ABSENCE is what stops it being re-added as a
+    // "missing field" by someone reading the oracle frame alone.
+    expect(grid.textContent).not.toContain('Memories');
 
     // Working-on row — T0-4 line 479.
     const work = getByTestId('block-live-work');
@@ -399,5 +418,109 @@ describe('org-tree block', () => {
     expect(text).toContain('No leader and no reports');
     // It names what would change the picture, rather than only reporting empty.
     expect(text).toContain('parent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE WORKING SET — and the one thing this block exists to say.
+ *
+ * A list of remembered memories is easy and nearly useless. The fact that
+ * matters is that BEING REMEMBERED AND BEING INJECTED ARE DIFFERENT:
+ * `execution-handlers.ts:162` skips superseded rows when it builds a spawn's
+ * working set (`if (!r.remembered || r.superseded) continue;`) while the
+ * `remembers` edge survives untouched. So a teammate's set genuinely contains
+ * memories no session will ever receive.
+ *
+ * A block that drew every row alike would tell the reader this teammate carries
+ * context it does not carry — which is the same defect class as a `running`
+ * badge over a dead session, just quieter. These tests hold that line.
+ */
+const MEMORY_BLOCK: readonly ProfileBlockRef[] = [
+  {
+    block: 'memory-set',
+    label: 'MEMORIES',
+    params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory', count: true },
+  },
+];
+
+describe('the memory working set separates remembered from injected', () => {
+  it('draws one row per remembers edge and counts them on the eyebrow', () => {
+    const { getAllByTestId, getByTestId } = renderBody(teamMemberForge.id, MEMORY_BLOCK);
+    const rows = getAllByTestId('memory-row');
+    expect(rows).toHaveLength(3);
+    // The count is of the very list below it, so the two cannot disagree.
+    expect(getByTestId('block-memory-set').textContent).toContain('MEMORIES · 3');
+  });
+
+  it('marks the superseded memory NOT INJECTED and leaves the others alone', () => {
+    const { getAllByTestId } = renderBody(teamMemberForge.id, MEMORY_BLOCK);
+    const rows = getAllByTestId('memory-row');
+
+    const dropped = rows.filter((row) => row.dataset.injected === 'no');
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]?.textContent).toContain('Panels have a border-box reset');
+    // In WORDS, not by tint alone — the strike-through is the third carrier.
+    expect(dropped[0]?.textContent).toContain('not injected');
+    expect(dropped[0]?.textContent).toContain('superseded');
+
+    // …and nothing else is struck. A block that marked everything would pass
+    // the assertion above while saying something false.
+    expect(rows.filter((row) => row.dataset.injected === 'yes')).toHaveLength(2);
+  });
+
+  it('never claims "verified" — an unflagged memory says unflagged', () => {
+    /*
+     * The divergence recorded in domain/memory.ts: `badges.staleness` is
+     * dropped entirely when nothing is wrong (entity-read.ts:1326), so a
+     * verified memory and an unexamined one are identical on the wire. Drawing
+     * a positive verification here would be authority nobody measured.
+     */
+    const { getByTestId } = renderBody(teamMemberForge.id, MEMORY_BLOCK);
+    const block = getByTestId('block-memory-set');
+    expect(block.textContent).toContain('unflagged');
+    expect(block.textContent).not.toContain('verified');
+  });
+
+  it('renders the set READ-ONLY when the host wires no authoring', () => {
+    // Absent authoring must not draw dead controls — a forget button that does
+    // nothing is worse than no button, because it claims the write exists.
+    const { queryByTestId } = renderBody(teamMemberForge.id, MEMORY_BLOCK);
+    expect(queryByTestId('memory-forget')).toBeNull();
+    expect(queryByTestId('memory-add')).toBeNull();
+  });
+
+  it('hands the EDGE id to forget, never the memory id', () => {
+    /*
+     * `edges.delete` is addressed by the edge's own id, and the memory entity
+     * must survive: it is the target of other actors' append-only marks, so
+     * deleting the claim because one holder stopped tracking it would destroy
+     * other people's evidence.
+     */
+    const forgotten: string[] = [];
+    const { getAllByTestId } = renderBody(teamMemberForge.id, MEMORY_BLOCK, {
+      memoryAuthoring: {
+        onAdd: () => undefined,
+        onForget: (edgeId) => forgotten.push(edgeId),
+      },
+    });
+    getAllByTestId('memory-forget')[0]?.click();
+    expect(forgotten).toEqual(['edge-remembers-1']);
+  });
+
+  it('refuses authoring WITH A REASON rather than hiding the controls', () => {
+    const { getByTestId } = renderBody(teamMemberForge.id, MEMORY_BLOCK, {
+      memoryAuthoring: {
+        onAdd: () => undefined,
+        onForget: () => undefined,
+        refusal: 'the node refuses edits to this entity',
+      },
+    });
+    const add = getByTestId('memory-add');
+    // Focusable and titled — the reason is unreachable if the control is not.
+    expect(add.getAttribute('aria-disabled')).toBe('true');
+    expect(add.getAttribute('title')).toContain('refuses edits');
+    expect(add.tagName).toBe('BUTTON');
   });
 });

@@ -30,7 +30,7 @@
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → centre → list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
+import type { EntityId, EntityKind, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import {
   EntityDetailPanel,
   EntityListPanel,
@@ -44,7 +44,15 @@ import { ConnectionsTab, DiscussionTab } from '../panels/detail/tabs';
 import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
-import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import {
+  creatableKind,
+  EditEntityDialog,
+  MemoryComposer,
+  NewTaskControl,
+  placeholderTitleFor,
+  useMemoryWorkingSet,
+  useNewTask,
+} from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
@@ -390,6 +398,42 @@ export function EntityView(props: EntityViewProps) {
     onSaved: (id) => props.data.refetchDetail(id),
   });
 
+  /**
+   * The `remembers` working-set authoring for whatever the centre is showing.
+   *
+   * WHICH ENTITIES HOST ONE IS A REGISTRY QUESTION, not a kind check here: the
+   * set is offered exactly where a row declares a `memory-set` block. 085
+   * widened `remembers.src_kinds` to the wildcard, so adding that block to the
+   * task row is all it takes to give tasks a working set — no edit in this file.
+   *
+   * `canEdit` is the server's own answer about this subject, so the controls
+   * refuse for the same reason the node would rather than guessing.
+   */
+  const memorySetBlock = detail
+    ? (getKind(detail.state.kind).panel.blocks ?? []).find((block) => block.block === 'memory-set')
+    : undefined;
+  const memorySetHost = memorySetBlock ? detail : null;
+  const memoryWorkingSet = useMemoryWorkingSet({
+    spaceId: data.spaceId,
+    holderId: memorySetHost?.id ?? null,
+    /* Both read off the block the registry declared — see the row's comment for
+       why the authoring lane cannot carry these as literals. */
+    memberKind: creatableKind(String(memorySetBlock?.params?.dstKind ?? '') as EntityKind),
+    edgeType: String(memorySetBlock?.params?.edgeType ?? ''),
+    refusal: memorySetHost && !memorySetHost.capabilities.canEdit
+      ? 'The node refuses edits to this entity, so its working set is read-only here.'
+      : null,
+    commands: data.seam.commands,
+    onChanged: (id) => props.data.refetchDetail(id),
+    onError: (title, body) => props.onNotice({
+      id: `memory-working-set:${String(memorySetHost?.id ?? 'none')}`,
+      tone: 'error',
+      title,
+      body,
+      ttlMs: 12_000,
+    }),
+  });
+
   const panelActions = composePanelActions([
     { onAction: selectedId ? primaries.forEntity(selectedId) : undefined, wiredActions: primaries.wiredActions },
     { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
@@ -408,6 +452,7 @@ export function EntityView(props: EntityViewProps) {
          see `composePanelActions` for why neither can be passed alone. */
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      memoryAuthoring={memoryWorkingSet.authoring}
       launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
          archive control flips to, through the same executor — so an archived
@@ -499,6 +544,12 @@ export function EntityView(props: EntityViewProps) {
         flow={verbs.edit}
         fields={verbs.editFields}
         title={verbs.editTitle}
+      />
+      {/* Same reason as the dialog above: fixed over a scrim, so it belongs at
+          the view root and not inside the panel's overflow context. */}
+      <MemoryComposer
+        composer={memoryWorkingSet.composer}
+        holderLabel={memorySetHost?.title ?? 'this entity'}
       />
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel

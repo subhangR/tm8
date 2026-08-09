@@ -667,7 +667,12 @@ export type ContentBlockKind =
   | 'session-rows'
   // …plus the org tree: a teammate's place in the entity hierarchy, which
   // db/migrations/002_identity.sql:110 rules IS the org tree (leader = parent).
-  | 'org-tree';
+  | 'org-tree'
+  // …plus the memory working set: the memories an entity `remembers` (056,
+  // 084, 085). Named for the EDGE it reads and not for a kind, because 085
+  // widened `remembers.src_kinds` to the wildcard — the same block row serves
+  // a teammate and a task.
+  | 'memory-set';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;

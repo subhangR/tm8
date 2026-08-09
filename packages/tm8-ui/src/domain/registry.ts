@@ -797,12 +797,32 @@ const ROWS: readonly KindConfig[] = [
       /* T0-4 AGENT frame (oracle lines 452–496), verbatim in order… */
       blocks: [
         { block: 'bio', params: { source: 'identity' } },
+        /* `memories=Memories` is GONE from this grid, and its removal is a fix
+           rather than a trim: `FieldValue` prints an array as its length, the
+           source was the `team_members.memories` jsonb, and migration 084
+           emptied that column after moving every entry into the graph. The cell
+           could only ever print `0` — a measurement-shaped zero for a column
+           nobody writes. The real working set is the `memory-set` block below,
+           read from the `remembers` edges 084/085 established. */
         {
           block: 'field-grid',
-          params: { fields: 'model=Model,agentTool=Tool,owner=Owner,memories=Memories' },
+          params: { fields: 'model=Model,agentTool=Tool,owner=Owner' },
         },
         { block: 'live-work', params: { source: 'liveWork' } },
         { block: 'items', label: 'EQUIPPED', params: { source: 'equipped', count: true } },
+        /* The working set that spawn actually injects (`loadSpawnContext`).
+           Edge-backed and kind-free: 085 widened `remembers.src_kinds` to the
+           wildcard, so this identical row on a task panel needs no new code. */
+        {
+          block: 'memory-set',
+          label: 'MEMORIES',
+          /* `dstKind` is what the authoring flow creates when this set gains a
+             member. It is DATA here and not a literal in the authoring lane
+             because §15.2 is enforced there by `no-kind-literals.test.ts`: the
+             create/save flows must reach a kind through the registry, so the
+             row that declares the block also declares what the block authors. */
+          params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory', count: true },
+        },
         {
           block: 'session-rows',
           label: 'RECENT SESSIONS',
