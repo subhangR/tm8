@@ -879,6 +879,7 @@ function PanelBody(
         blocks={config.panel.blocks}
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
+        memoryAuthoring={props.memoryAuthoring}
         descriptionDraft={typeof save.edits.description === 'string' ? save.edits.description : undefined}
         onDescriptionChange={
           save.unavailable ? undefined : (description) => save.edit({ description })

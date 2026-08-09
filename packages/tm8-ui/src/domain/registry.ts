@@ -439,6 +439,19 @@ const ROWS: readonly KindConfig[] = [
     }),
     panel: {
       archetype: 'subtree',
+      /* The task's memory working set (085 widened `remembers.src_kinds` to
+         the wildcard; P2 auto-injects a spawn task's remembered memories).
+         Declared as the SAME block the teammate row uses — `SubtreeBody`
+         renders it as one named section, so the two hosts cannot drift into
+         two renderings of one fact. Before this existed these edges fell
+         through `peersOf` into LINKED as anonymous chips. */
+      blocks: [
+        {
+          block: 'memory-set',
+          label: 'MEMORIES',
+          params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory' },
+        },
+      ],
       // The detail header keeps one task action: Run. Coordinate and Complete
       // remain available from their task-specific surfaces, not this compact
       // panel toolbar.

@@ -6,6 +6,7 @@ import { KindIcon, getKind } from '../../domain';
 import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
+import { MemorySetBlock, type MemoryAuthoring } from './MemorySetBlock';
 import './subtree-body.css';
 
 /**
@@ -58,6 +59,12 @@ export interface SubtreeBodyProps {
    * no such row exists rather than leaving it to be noticed on screen.
    */
   blocks?: readonly ContentBlockRef[];
+  /**
+   * Working-set authoring for the `memory-set` section. Absent ⇒ the set is
+   * read-only rather than drawing dead controls. The body raises intent only;
+   * the view performs the write, exactly as on the profile archetype.
+   */
+  memoryAuthoring?: MemoryAuthoring | null;
   /**
    * THE VERDICT, per run row — `seam.liveness.statusOf`, handed down.
    *
@@ -113,12 +120,24 @@ export function SubtreeBody({
   criteriaDraft,
   onCriteriaChange,
   criteriaUnavailableReason,
+  memoryAuthoring,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
   const runs = dedupe([...children.filter(isRunKind), ...peersOf(detail).filter(isRunKind)]);
   const linked = dedupe(peersOf(detail).filter((p) => !isRunKind(p)));
   const notices = (blocks ?? []).filter((b) => b.block === 'notice');
+  /*
+   * The memory working set, when the registry row declares it (085: a task
+   * holds one exactly as a teammate does, and P2 injects it at spawn).
+   *
+   * ONE NAMED SECTION, not a generic block renderer. This body draws a fixed
+   * anatomy on purpose and growing a `blocks.map` here would invite every
+   * future block into a body that has no opinion about them — and a block it
+   * did not know would then draw nothing, which is the failure this section
+   * exists to fix, reintroduced one level up.
+   */
+  const memorySet = (blocks ?? []).find((b) => b.block === 'memory-set');
 
   return (
     <div
@@ -148,6 +167,17 @@ export function SubtreeBody({
         onAddChild={onAddChild}
       />
       <RunsSection runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
+      {memorySet ? (
+        <section className="sb-section" data-testid="memory-set-section">
+          <Eyebrow faint>{memorySet.label ?? 'MEMORIES'}</Eyebrow>
+          <MemorySetBlock
+            detail={detail}
+            params={memorySet.params ?? {}}
+            onOpenEntity={onOpenEntity}
+            authoring={memoryAuthoring}
+          />
+        </section>
+      ) : null}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         <div className="sb-notices" data-testid="subtree-notices">
@@ -820,9 +850,27 @@ function isRunKind(summary: EntitySummary): boolean {
   return getKind(summary.kind).list.liveTreatment != null;
 }
 
+/**
+ * The edge type MEMORY SET owns, and the one group `peersOf` must not sweep up.
+ *
+ * This function used to push every endpoint of every group with no type filter,
+ * which was harmless until 085 widened `remembers.src_kinds` to the wildcard and
+ * P2 began auto-injecting a task's remembered memories at spawn. From that
+ * point a `remembers(task → memory)` edge rendered here as an undifferentiated
+ * LINKED chip — visually identical to a `blocks` or `references` peer, with no
+ * epistemic marker, no statement that the task now injects that claim into
+ * every session spawned on it, and no way to detach it.
+ *
+ * That is the one link type on a task that changes what an agent is TOLD, so it
+ * gets its own section (`memory-set`) and is excluded here. Exactly this group
+ * and nothing broader: every other edge type still belongs in LINKED.
+ */
+const MEMORY_SET_EDGE = 'remembers';
+
 function peersOf(detail: EntityDetail): EntitySummary[] {
   const out: EntitySummary[] = [];
   for (const group of [...detail.connections.outgoing, ...detail.connections.incoming]) {
+    if (group.type === MEMORY_SET_EDGE) continue;
     for (const edge of group.edges) {
       out.push(edge.source.id === detail.id ? edge.target : edge.source);
     }

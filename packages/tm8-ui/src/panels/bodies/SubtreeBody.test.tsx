@@ -8,6 +8,7 @@ import {
   ada,
   docLayoutSpec,
   fixtureDetails,
+  memoryTokens,
   sessionStale,
   taskBlocked,
   taskGuideLines,
@@ -505,17 +506,27 @@ describe('LINKED — connection peers as chips', () => {
 describe('the registry seam this body reads through', () => {
   /**
    * ONE TEST IN THE GAP (brief §4.3). This body does NOT compose itself from
-   * content blocks — its regions come from the entity's own structure — and it
-   * renders exactly one block kind, `notice`. A registry row that declared any
-   * other block for a subtree kind would render NOTHING and nobody would be
-   * red. This is that red.
+   * content blocks — its regions come from the entity's own structure — so a
+   * registry row declaring a block it does not draw would render NOTHING and
+   * nobody would be red. This is that red.
+   *
+   * IT WORKED. Adding `memory-set` to the task row turned this test red before
+   * the section existed, which is exactly the failure it was written for. The
+   * SET below grows only when the body genuinely grows a renderer — widening it
+   * to make a red go away would retire the guard while leaving it looking
+   * green, which is the one edit this test must never receive.
    */
+  const RENDERED_BLOCKS = new Set(['notice', 'memory-set']);
+
   it('every subtree-archetype registry row declares only blocks this body renders', () => {
     const rows = allSubtreeRows();
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       for (const block of row.panel.blocks ?? []) {
-        expect(block.block, `${row.kind} declares a block SubtreeBody does not draw`).toBe('notice');
+        expect(
+          RENDERED_BLOCKS.has(block.block),
+          `${row.kind} declares '${block.block}' but SubtreeBody draws nothing for it`,
+        ).toBe(true);
       }
     }
   });
@@ -533,3 +544,85 @@ describe('the registry seam this body reads through', () => {
 function allSubtreeRows() {
   return allKinds().filter((k) => k.panel.archetype === 'subtree');
 }
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE MEMORY WORKING SET ON A TASK.
+ *
+ * WHAT WENT WRONG BEFORE, and it was NOT a missing block guard — that guard
+ * exists above and it did its job, going red the moment the task row declared
+ * `memory-set` with no renderer behind it.
+ *
+ * The real defect was quieter. 085 widened `remembers.src_kinds` to the
+ * wildcard and P2 began auto-injecting a spawn task's remembered memories,
+ * while `peersOf` swept EVERY connection group with no type filter. So those
+ * edges arrived in LINKED as anonymous chips — indistinguishable from a
+ * `blocks` or `references` peer, while being the one link type on a task that
+ * changes what an agent is TOLD. No block was declared, so no block guard
+ * could fire; the leak was in a function that was correct until the substrate
+ * moved underneath it.
+ *
+ * That is what the LINKED test below pins, and it is the one to keep.
+ */
+const REMEMBERS_MEMORY = {
+  id: 'edge-task-remembers-1',
+  type: 'remembers',
+  props: {},
+  createdBy: ada,
+  createdAt: '2026-07-20T09:00:00.000Z',
+  updatedAt: '2026-07-28T09:15:00.000Z',
+};
+
+function taskWithMemory(): EntityDetail {
+  const base = taskDetail();
+  return {
+    ...base,
+    connections: {
+      ...base.connections,
+      outgoing: [
+        ...base.connections.outgoing,
+        {
+          type: 'remembers',
+          direction: 'outgoing' as const,
+          label: 'remembers',
+          edges: [{ ...REMEMBERS_MEMORY, source: base as EntitySummary, target: memoryTokens }],
+        },
+      ],
+    },
+  };
+}
+
+describe('a task holds a memory working set, and a declared block must draw', () => {
+  it('draws the declared section, with the label the registry row carries', () => {
+    const { getByTestId } = renderBody({
+      detail: taskWithMemory(),
+      blocks: getKind('task').panel.blocks,
+    });
+    const section = getByTestId('memory-set-section');
+    expect(section.textContent).toContain('MEMORIES');
+    expect(section.textContent).toContain('tokens.css is verbatim');
+  });
+
+  it('keeps remembered memories OUT of LINKED — one fact, one place', () => {
+    /*
+     * The actual bug. `remembers` is excluded from `peersOf` by GROUP TYPE and
+     * nothing broader: every other edge type still belongs in LINKED, which the
+     * second half of this test holds.
+     */
+    const { getByTestId } = renderBody({
+      detail: taskWithMemory(),
+      blocks: getKind('task').panel.blocks,
+    });
+    const linked = getByTestId('linked-section').textContent ?? '';
+    expect(linked).not.toContain('tokens.css is verbatim');
+    // …and the ordinary link types are untouched by the filter.
+    expect(linked).toContain(docLayoutSpec.title);
+  });
+
+  it('draws no section at all when the row declares none', () => {
+    // Absent blocks must not conjure an empty MEMORIES heading on every task.
+    const { queryByTestId } = renderBody({ detail: taskWithMemory() });
+    expect(queryByTestId('memory-set-section')).toBeNull();
+  });
+});
