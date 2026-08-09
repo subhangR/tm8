@@ -1402,6 +1402,28 @@ export function createFixtureSeam(): FixtureSeam {
       },
       async patchTask(id, input: PatchTaskInput) {
         const s = requireSummary(id);
+        // A work session is a title-ONLY door here, mirroring what the node
+        // does (085 / rename_work_session): every other member belongs to the
+        // execution block, so accepting one would let a fixture-backed screen
+        // pass where the real node refuses.
+        if (s.state.kind === 'work_session') {
+          const envelope = new Set(['expectedVersion', 'actorId', 'clientMutationId', 'title']);
+          const rejected = Object.entries(input)
+            .filter(([member, value]) => !envelope.has(member) && value !== undefined)
+            .map(([member]) => member);
+          if (rejected.length > 0) {
+            throw new CollabError('invalid_input',
+              `work_session patch accepts title only, not: ${rejected.join(', ')}`);
+          }
+          if (input.title === undefined) {
+            throw new CollabError('invalid_input', 'work_session patch requires title');
+          }
+          requireVersion(s, input.expectedVersion);
+          s.title = input.title;
+          touch(s);
+          emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
+          return commandResult(s);
+        }
         if (s.state.kind !== 'task') throw new CollabError('invariant_violation', `${id} is not a task`);
         requireVersion(s, input.expectedVersion);
         if (input.title !== undefined) s.title = input.title;

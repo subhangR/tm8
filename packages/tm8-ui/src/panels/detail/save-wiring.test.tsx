@@ -55,6 +55,7 @@ import {
   presenceHollowReason,
   taskUuidTitle,
   commitFoundation,
+  sessionStale,
 } from '../../fixtures';
 import { EntityDetailPanel, type DetailReasons } from '../index';
 
@@ -460,6 +461,100 @@ describe('a panel with no executor says so — it does not pretend', () => {
     );
     expect(container.querySelector('.au-title--editable')).toBeNull();
     expect(container.querySelector('[contenteditable]')).toBeNull();
+  });
+});
+
+describe('a RUNNING work session can be renamed from the panel (085)', () => {
+  /**
+   * `sessionStale` is the only work_session with a DETAIL fixture, and its
+   * status is `running` — "while running" is the whole ask. ("Stale" names the
+   * liveness half: running per record, unheard-from since. That is a stricter
+   * subject than a verified-live one, not a weaker one.)
+   */
+  const SESSION: EntityDetail = fixtureDetails[sessionStale.id]!;
+
+  it('CONTROL: the subject really is a running session, so the rest is not vacuous', () => {
+    expect(SESSION.kind).toBe('work_session');
+    expect(SESSION.state.kind === 'work_session' && SESSION.state.status).toBe('running');
+  });
+
+  it('the title is a REAL editor and it commits, with the version the edit was based on', async () => {
+    const patchTask = patchSpy();
+    const { getByTestId, getByRole } = render(
+      <div className="cv2-root">
+        <EntityDetailPanel
+          detail={SESSION}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createTask: vi.fn(ok), patchTask }}
+        />
+      </div>,
+    );
+
+    fireEvent.click(getByTestId('authoring-title'));
+    const input = getByRole('textbox', { name: 'Title' });
+    fireEvent.change(input, { target: { value: 'the rebase lane' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(patchTask).toHaveBeenCalledTimes(1));
+    const [id, patch] = patchTask.mock.calls[0]!;
+    expect(id).toBe(SESSION.id);
+    expect(patch).toMatchObject({ title: 'the rebase lane', expectedVersion: SESSION.version });
+  });
+
+  it('sends the TITLE ALONE — the node door 085 opened accepts nothing else', () => {
+    // `rename_work_session` is a title-only door, and the server arm refuses any
+    // content member BY NAME. A panel that shipped a description alongside would
+    // turn every rename into an `invalid_input` naming a field the user never
+    // touched, so what the panel sends is asserted here rather than trusted.
+    const patchTask = patchSpy();
+    const { getByTestId, getByRole, queryByRole } = render(
+      <div className="cv2-root">
+        <EntityDetailPanel
+          detail={SESSION}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createTask: vi.fn(ok), patchTask }}
+        />
+      </div>,
+    );
+    // There is no description editor on this kind to stage text into...
+    expect(queryByRole('textbox', { name: 'Description' })).toBeNull();
+
+    fireEvent.click(getByTestId('authoring-title'));
+    fireEvent.change(getByRole('textbox', { name: 'Title' }), { target: { value: 'renamed' } });
+    fireEvent.keyDown(getByRole('textbox', { name: 'Title' }), { key: 'Enter' });
+
+    return waitFor(() => {
+      expect(patchTask).toHaveBeenCalledTimes(1);
+      const [, patch] = patchTask.mock.calls[0]!;
+      // `clientMutationId` and `expectedVersion` are ENVELOPE — the node's arm
+      // reads them off the envelope and never counts them as content. `title`
+      // is the only content member, and that is the assertion.
+      expect(Object.keys(patch).filter((k) => (patch as Record<string, unknown>)[k] !== undefined).sort())
+        .toEqual(['clientMutationId', 'expectedVersion', 'title']);
+    });
+  });
+
+  it('mounts NO Save control while the draft is clean — the old refusal is gone, not hidden', () => {
+    // This is the premise the earlier ruling turned on. `inlineEdit.title` used
+    // to be deliberately off for this kind because `capabilities.canEdit` was
+    // false, and `SaveControls` renders a PERMANENT disabled-with-reason in
+    // that state — a refusal wide enough to squeeze the tabs out of the compact
+    // row. With the door open the control renders nothing until there is
+    // something to save, so the compact row is unaffected.
+    const { getByTestId } = render(
+      <div className="cv2-root">
+        <EntityDetailPanel
+          detail={SESSION}
+          reasons={REASONS}
+          ctx={ctx}
+          commands={{ createTask: vi.fn(ok), patchTask: vi.fn(ok) }}
+        />
+      </div>,
+    );
+    expect(getByTestId('panel-toolbar').textContent).not.toContain('Save');
+    expect(getByTestId('panel-header').textContent).not.toContain('Save');
   });
 });
 
