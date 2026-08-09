@@ -963,6 +963,19 @@ const ROWS: Record<OperationName, Row> = {
       'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
     ],
   },
+  'projects.files.read': {
+    cmd: null,
+    sum: 'Read one file content inside a connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'view', 'read', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'the VIEWER half of `projects.files.list`, which lists a directory but never reads one',
+      'same posture as that row: a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+      'answers a structured view with a NAMED refusal (secret-pattern, too-large, binary-not-previewable, outside-root), never raw bytes and never a silent empty body',
+    ],
+  },
   'projects.files.attach': {
     cmd: null,
     sum: 'Attach one file read from a connected project folder, without a browser byte transfer',
@@ -974,6 +987,58 @@ const ROWS: Record<OperationName, Row> = {
       'the browser cannot name an absolute node path, so a connected folder is readable only by the node holding it',
       '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
     ],
+  },
+
+  // Uploaded Space folders are a browser workflow. The CLI already has local
+  // filesystem access; publishing six low-level lifecycle commands would make
+  // callers reconstruct a checksum/grant/PUT/ingest composition themselves.
+  'spaceFolders.list': {
+    cmd: null,
+    sum: 'List uploaded folder roots owned by one Space',
+    authz: 'space',
+    input: 'none',
+    reason: 'ui_project_browser_only',
+    tags: ['files', 'folders', 'upload', 'browse'],
+  },
+  'spaceFolders.create': {
+    cmd: null,
+    sum: 'Create a named uploaded-folder root in one Space',
+    authz: 'space',
+    input: 'bound',
+    reason: 'ui_project_browser_only',
+    tags: ['files', 'folders', 'upload'],
+  },
+  'spaceFolders.uploadInit': {
+    cmd: null,
+    sum: 'Mint a raw-byte upload grant for a Space-folder archive',
+    authz: 'space',
+    input: 'bound',
+    reason: 'ui_project_browser_only',
+    tags: ['files', 'folders', 'upload', 'archive'],
+  },
+  'spaceFolders.ingest': {
+    cmd: null,
+    sum: 'Validate and expand one staged archive into an uploaded Space folder',
+    authz: 'space',
+    input: 'bound',
+    reason: 'ui_project_browser_only',
+    tags: ['files', 'folders', 'upload', 'archive'],
+  },
+  'spaceFolders.browse': {
+    cmd: null,
+    sum: 'Browse one level inside an uploaded Space folder',
+    authz: 'space',
+    input: 'none',
+    reason: 'ui_project_browser_only',
+    tags: ['files', 'folders', 'browse'],
+  },
+  'spaceFolders.read': {
+    cmd: null,
+    sum: 'Read previewable content from an uploaded Space-folder file',
+    authz: 'space',
+    input: 'none',
+    reason: 'ui_project_browser_only',
+    tags: ['files', 'folders', 'read', 'preview'],
   },
 
   // ── files ────────────────────────────────────────────────────────────────
@@ -1620,6 +1685,7 @@ const NOUN_BY_FAMILY: Record<string, string> = {
   auth: 'auth',
   serverConnections: 'server',
   spaces: 'space',
+  spaceFolders: 'file',
   entities: 'entity',
   attentionRequests: 'attention',
   tracking: 'tracking',
@@ -1701,7 +1767,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe';
+  'sha256:4cc9e28bf4601cc2918b6c7d0fb6fd3290f78ea2538d447e46d6c1c3a4c8f764';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -50,6 +50,7 @@ import { WorkspaceView } from './WorkspaceView';
 import { EntityView } from './EntityView';
 import { HomeScreen } from '../home';
 import { GraphScreen } from '../graph';
+import { FilesScreen } from '../files-browser';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
@@ -62,6 +63,7 @@ import {
   type ProjectBranchesPort,
   type ProjectOnboardingPort,
 } from '../projects';
+import { readSpaceFoldersPort } from '../space-folder/port';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -195,6 +197,10 @@ export function GateApp(props: GateAppProps = {}) {
     return {
       ...setup,
       createMemory: (input) => data.seam.commands.createEntity(input),
+      // Lane B's Space-folder storage. `readSpaceFoldersPort` returns null on a
+      // node that does not offer it, and the optional upload step renders
+      // disabled-with-reason rather than pretending to be available.
+      spaceFolders: readSpaceFoldersPort(data.seam) ?? undefined,
     };
   }, [data.seam]);
 
@@ -676,6 +682,18 @@ export function GateApp(props: GateAppProps = {}) {
               spaceLabel={data.spaces.find((sp) => sp.id === data.spaceId)?.name}
               onOpenEntity={(id) => nav.push?.(id as EntityId)}
             />
+          ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'files' ? (
+            /* ▤ Files — browse and VIEW a linked project's working directory on
+               the node (FILES-DESIGN §5.3). Mounted in the SAME change that
+               built it: this repo already carries screens that were finished and
+               never wired, and a screen no human can reach has not shipped.
+               Roots come from `data.launch.projects`, already the space's linked
+               project list, so this costs no new read. */
+            <FilesScreen
+              seam={data.seam}
+              projects={data.launch.projects}
+              spaceId={data.spaceId}
+            />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'settings' &&
@@ -846,6 +864,12 @@ export function GateApp(props: GateAppProps = {}) {
             open={newSpaceOpen}
             nodeLabel={activeServer.label}
             port={projectOnboardingPort}
+            /* Lane C owns the one store-only ZIP encoder; this lane does not
+               ship a second one. Until that commit lands there is nothing to
+               pass, and the optional folder step renders disabled-with-reason
+               rather than offering an upload it cannot package. Adopting the
+               encoder is this one prop and nothing else. */
+            packArchive={undefined}
             onDismiss={() => setNewSpaceOpen(false)}
             onCreated={(space) => {
               navStore.getState().applyNormalization({ stack: [], pinned: [] });

@@ -124,6 +124,16 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
         // Menu-visible only — creation stays with the provisioning saga
         // (contract MenuKindRef note; registry row has quickCreate: false).
         { type: 'kind', ref: 'worktree' },
+        /* Revision 7 (2026-08-09): ▤ Files — browse and view a linked project's
+           working directory on the node (FILES-DESIGN §5.3). It sits HERE,
+           beside Projects, because a project's folder is exactly what it reads.
+
+           NOT under the Workspace caret: that caret lists ENTITY collections
+           and this lists paths on disk. NOT its own group either — group ids
+           are pinned to DEFAULT_MENU_GROUP_SPINE, which the server seeder
+           (migration 061, menu-seeder-parity.pg.test.ts) derives from too, so
+           a new group is a MIGRATION and a rail row does not justify one. */
+        { type: 'view', ref: 'files' },
       ],
     },
     { id: 'collab', label: 'Collab', items: [{ type: 'kind', ref: 'member' }] },

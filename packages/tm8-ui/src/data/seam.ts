@@ -131,7 +131,13 @@ import type {
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectFileAttachInput,
+  ProjectFileContent,
   ProjectFileListing,
+  SpaceFolderFileContent,
+  SpaceFolderId,
+  SpaceFolderListing,
+  SpaceFolderSummary,
+  SpaceFolderUploadResult,
   ProjectId,
   ProjectLinkInput,
   ProjectResource,
@@ -354,7 +360,71 @@ export interface Seam {
    */
   projectFiles?: {
     list(projectId: ProjectId, path?: string): Promise<ProjectFileListing>;
+    /**
+     * Amendment 8 (2026-08-09, Files browser): `read` — one file's CONTENT,
+     * `projects.files.read`. The group could LIST a directory and ATTACH a file
+     * but never SHOW one, so a viewer had nothing to render.
+     *
+     * `path` is ABSOLUTE, the same vocabulary `list` answers in
+     * `ProjectFileEntry.path` and `attach` consumes — a second, relative
+     * vocabulary over one filesystem would invite passing one for the other.
+     */
+    read(projectId: ProjectId, path: string): Promise<ProjectFileContent>;
     attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
+  };
+  /**
+   * The OTHER file root: a directory tree the user UPLOADED, named by them and
+   * owned by the Space. `projectFiles` above reads a LIVE directory on the
+   * node; this reads a STORED SNAPSHOT that exists nowhere on any
+   * filesystem. They are not alternatives and a UI must not merge them.
+   *
+   * Optional for the same reason `projectFiles` is: a fixture seam has no
+   * server to upload to. Absence must disable the control WITH A REASON, never
+   * silently render an empty folder list.
+   *
+   * PATHS HERE ARE RELATIVE to the folder root, '/'-separated, and '' is the
+   * root. Deliberately NOT the absolute vocabulary `projectFiles` uses.
+   */
+  spaceFolders?: {
+    list(spaceId: SpaceId): Promise<SpaceFolderSummary[]>;
+    create(spaceId: SpaceId, name: string): Promise<SpaceFolderSummary>;
+    /**
+     * Upload one ARCHIVE and expand it into the folder beneath `destPath`.
+     *
+     * FORMAT: ZIP, with every member STORED (compression method 0). Any other
+     * method is refused BY NAME rather than decompressed — with STORE the
+     * expanded size equals the stored size exactly, which makes the ingest
+     * bomb caps an exact bound and a decompression bomb structurally
+     * impossible. Note that ZIP cannot express a hard link at all; every
+     * non-regular member type it CAN express (symlink, device, fifo, socket)
+     * is refused by name.
+     *
+     * The bytes do NOT ride a JSON body. This performs `files.uploadInit`, a
+     * raw PUT to `/v2/files/uploads/:uploadId/content`, then
+     * `spaceFolders.ingest` — three calls behind one signature so a caller
+     * never has to know the transport.
+     *
+     * `onProgress` reports BYTES SENT, not members ingested: the send is the
+     * slow half and the only half a client can observe.
+     *
+     * The result's `skipped[]` is not an error channel — a partial ingest is a
+     * normal outcome and every refused member is named there. A caller that
+     * ignores it is lying to its user about what was uploaded.
+     */
+    upload(
+      folderId: SpaceFolderId,
+      destPath: string,
+      archive: Blob,
+      opts?: { signal?: AbortSignal; onProgress?: (sent: number, total: number) => void },
+    ): Promise<SpaceFolderUploadResult>;
+    /** ONE directory level. `path` defaults to '' — the folder root. */
+    browse(folderId: SpaceFolderId, path?: string): Promise<SpaceFolderListing>;
+    /**
+     * One file's CONTENT. A withheld file arrives as a NAMED `refusal` inside a
+     * 200, and an EMPTY file arrives as `text: ''` with no refusal — the same
+     * honesty `projectFiles.read` answers, so one viewer can render both roots.
+     */
+    read(folderId: SpaceFolderId, path: string): Promise<SpaceFolderFileContent>;
   };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;

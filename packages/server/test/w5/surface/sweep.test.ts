@@ -301,9 +301,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(134);
-    expect(rows).toHaveLength(134);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(134);
+    // 134 -> 135 (2026-08-09): projects.files.read.
+    expect(SURFACE).toHaveLength(141);
+    expect(rows).toHaveLength(141);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(141);
   });
 
   /**
@@ -454,7 +455,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
     // 81 -> 82: 087 (single-use, hash-only PTY grants), measured by running
     // this final post-#87 tree rather than inferred across concurrent branches.
-    expect(server.appliedMigrations.length).toBe(82);
+    expect(server.appliedMigrations.length).toBe(83);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -688,6 +689,14 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  // 2026-08-09: projects.files.read requires `?path=`, which the sweep does not
+  // supply — a GET carries no body, so there is no :166 gate to reject it and
+  // the handler's own invalid_input is what answers. Requiring the parameter is
+  // the point: guessing a default would silently read the wrong file.
+  'projects.files.read',
+  // Like the live-project read, an uploaded-folder read requires an explicit
+  // path and therefore authors its own 400 when the sweep omits the query.
+  'spaceFolders.read',
   'savedViews.create',
   'savedViews.update',
   'spaces.create',

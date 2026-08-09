@@ -85,6 +85,7 @@ import {
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
+  type ProjectFileContent,
   type ProjectFileListing,
   type ProjectId,
   type ProjectLinkInput,
@@ -97,6 +98,13 @@ import {
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
+  type SpaceFolderCreateInput,
+  type SpaceFolderFileContent,
+  type SpaceFolderIngestInput,
+  type SpaceFolderListing,
+  type SpaceFolderSummary,
+  type SpaceFolderUploadInitInput,
+  type SpaceFolderUploadResult,
   type SpaceSummary,
   type WorkInput,
 } from '@tm8/contract';
@@ -287,6 +295,69 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     projectFiles(projectId: ProjectId, path?: string): Promise<ProjectFileListing> {
       return http.call<ProjectFileListing>('projects.files.list', { params: { projectId }, query: { path } });
+    },
+
+    /**
+     * One file's CONTENT out of a connected project folder — the viewer half of
+     * `projectFiles`. Answers a DTO, deliberately NOT an href like
+     * `fileDownloadHref`: a project's disk must never reach the browser as a
+     * document on the app origin. A withheld file arrives as a NAMED `refusal`
+     * inside a 200, so a caller can tell it from a transport failure.
+     */
+    readProjectFile(projectId: ProjectId, path: string): Promise<ProjectFileContent> {
+      return http.call<ProjectFileContent>('projects.files.read', {
+        params: { projectId }, query: { path },
+      });
+    },
+
+    spaceFolders(spaceId: SpaceId): Promise<SpaceFolderSummary[]> {
+      return http.call<SpaceFolderSummary[]>('spaceFolders.list', { params: { spaceId } });
+    },
+
+    createSpaceFolder(spaceId: SpaceId, name: string): Promise<SpaceFolderSummary> {
+      const body: SpaceFolderCreateInput = {
+        name,
+        clientMutationId: newId('space-folder-create'),
+      };
+      return http.call<SpaceFolderSummary>('spaceFolders.create', { params: { spaceId }, body });
+    },
+
+    initSpaceFolderUpload(
+      folderId: string,
+      sizeBytes: number,
+      checksumSha256: string,
+    ): Promise<FileUploadGrant> {
+      const body: SpaceFolderUploadInitInput = {
+        sizeBytes,
+        checksumSha256,
+        clientMutationId: newId('space-folder-upload'),
+      };
+      return http.call<FileUploadGrant>('spaceFolders.uploadInit', { params: { folderId }, body });
+    },
+
+    ingestSpaceFolder(
+      folderId: string,
+      uploadId: string,
+      destPath: string,
+    ): Promise<SpaceFolderUploadResult> {
+      const body: SpaceFolderIngestInput = {
+        uploadId,
+        destPath,
+        clientMutationId: newId('space-folder-ingest'),
+      };
+      return http.call<SpaceFolderUploadResult>('spaceFolders.ingest', { params: { folderId }, body });
+    },
+
+    browseSpaceFolder(folderId: string, path?: string): Promise<SpaceFolderListing> {
+      return http.call<SpaceFolderListing>('spaceFolders.browse', {
+        params: { folderId }, query: { path },
+      });
+    },
+
+    readSpaceFolder(folderId: string, path: string): Promise<SpaceFolderFileContent> {
+      return http.call<SpaceFolderFileContent>('spaceFolders.read', {
+        params: { folderId }, query: { path },
+      });
     },
 
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
@@ -540,8 +611,8 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<FileUploadGrant>('files.uploadInit', { body: input });
     },
 
-    fileUploadBytes(grant: FileUploadGrant, bytes: BodyInit): Promise<void> {
-      return http.putGrantedBytes(grant.uploadUrl, grant.token, bytes);
+    fileUploadBytes(grant: FileUploadGrant, bytes: BodyInit, signal?: AbortSignal): Promise<void> {
+      return http.putGrantedBytes(grant.uploadUrl, grant.token, bytes, signal);
     },
 
     fileUploadComplete(uploadId: string, input: FileUploadCompleteInput): Promise<CommandResult> {

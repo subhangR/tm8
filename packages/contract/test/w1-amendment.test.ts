@@ -65,8 +65,11 @@ describe('W1 adopted catalog target', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
     // 131 -> 135: credentials.status (GET/read), delete (DELETE/command),
     // and two login-session POST commands. All four are v1 and human-only.
-    expect(OPERATIONS).toHaveLength(137);
-    expect(V1_OPERATIONS).toHaveLength(135);
+    // 137 -> 138 (2026-08-09): projects.files.read (GET/read) — the VIEWER
+    // half of projects.files.list, which lists a directory but never reads one.
+    // 138 -> 144 (2026-08-09): Space folder storage (3 reads, 3 commands).
+    expect(OPERATIONS).toHaveLength(144);
+    expect(V1_OPERATIONS).toHaveLength(142);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -82,12 +85,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 52, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 56, POST: 61, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 55, command: 81, stream: 1 });
+    }).toEqual({ read: 59, command: 84, stream: 1 });
   });
 });
 

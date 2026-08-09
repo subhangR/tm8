@@ -63,6 +63,7 @@ import {
   type W2MessagesHandoffsServiceOptions,
 } from './handlers/w2/messages-handoffs.js';
 import { registerW2ProjectFilesHandlers } from './handlers/w2/project-files.js';
+import { registerW2SpaceFolderHandlers } from './handlers/w2/space-folders.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
@@ -166,6 +167,7 @@ export function registerFacadeHandlers(
   if (deps.files) registerW2FileHandlers(registry, facade, deps.files);
   if (deps.files) registerW2ProjectFilesHandlers(registry, facade, deps.files);
   if (deps.files) registerW2ArtifactHandlers(registry, facade, { blobStore: deps.files.blobStore });
+  if (deps.files) registerW2SpaceFolderHandlers(registry, facade, { blobStore: deps.files.blobStore });
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);
 

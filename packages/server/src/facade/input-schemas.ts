@@ -75,6 +75,9 @@ import {
   ResolveEntityAttentionInputSchema,
   ServerConnectionCreateInputSchema,
   ServerConnectionDeleteInputSchema,
+  SpaceFolderCreateInputSchema,
+  SpaceFolderIngestInputSchema,
+  SpaceFolderUploadInitInputSchema,
   TaskAxisInputSchema,
   TrackingRefreshInputSchema,
   UpdateSpaceInputSchema,
@@ -216,6 +219,11 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'files.uploadInit': FileUploadInitInputSchema,
   'files.uploadComplete': FileUploadCompleteInputSchema,
   'files.uploadAbort': FileUploadAbortInputSchema,
+
+  // uploaded Space folders
+  'spaceFolders.create': SpaceFolderCreateInputSchema,
+  'spaceFolders.uploadInit': SpaceFolderUploadInitInputSchema,
+  'spaceFolders.ingest': SpaceFolderIngestInputSchema,
 
   // inbox / read marks
   'inbox.markRead': InboxMarkReadInputSchema,
