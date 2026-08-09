@@ -19,8 +19,15 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
-const MIGRATION_084 = '084_memory_working_set.sql';
-const MIGRATION_085 = '085_memory_any_holder.sql';
+// Resolved by SUFFIX, not number: the ordinal is the one part of a migration
+// filename that is not stable (this wave renumbers at integration because
+// main took 085/086), and a literal pin fails at beforeAll, SKIPPING the
+// whole suite. Exactly-one-match keeps an accidental duplicate loud.
+function migrationBySuffix(files: readonly string[], suffix: string): string {
+  const matches = files.filter((f) => f.endsWith(suffix));
+  expect(matches, `exactly one migration ending ${suffix}`).toHaveLength(1);
+  return matches[0]!;
+}
 
 interface Fixture {
   identityId: string;
@@ -181,14 +188,15 @@ async function mintSession(): Promise<string> {
 beforeAll(async () => {
   database = await createW1ScratchDatabase('memory_working_set');
   const files = migrationFiles();
-  expect(files).toContain(MIGRATION_084);
-  expect(files).toContain(MIGRATION_085);
-  // Pre-084 world: everything BEFORE the two memory migrations, in order —
-  // then seed the jsonb the way a live node would have it, then apply 084
-  // and 085 exactly as an upgrade would.
-  database.apply(files.filter((f) => f !== MIGRATION_084 && f !== MIGRATION_085));
+  const workingSetMigration = migrationBySuffix(files, '_memory_working_set.sql');
+  const anyHolderMigration = migrationBySuffix(files, '_memory_any_holder.sql');
+  // Pre-memory world: everything BEFORE the two memory migrations, in order —
+  // then seed the jsonb the way a live node would have it, then apply both
+  // exactly as an upgrade would (working-set first: any-holder replaces its
+  // create_memory and widens its edge type).
+  database.apply(files.filter((f) => f !== workingSetMigration && f !== anyHolderMigration));
   fixture = await seedPre084(database);
-  database.apply([MIGRATION_084, MIGRATION_085]);
+  database.apply([workingSetMigration, anyHolderMigration]);
 });
 
 afterAll(async () => {
