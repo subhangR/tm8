@@ -59,8 +59,17 @@ export interface LoopExecutorPort {
   /**
    * Spawn for a firing. Returns the new work_session id.
    * `teamMemberId === null` means "route through the dispatcher" (§4.4).
+   *
+   * `firedAt` is passed rather than read from the clock inside the port because
+   * it is the identity of THIS firing: it keys the mutation ids that keep two
+   * firings of one loop distinct commands. Taking it from the scheduler makes
+   * that key deterministic and testable instead of wall-clock dependent.
    */
-  fire(loop: DueLoop, claims: DbClaims): Promise<{ taskId: string; sessionId: string }>;
+  fire(
+    loop: DueLoop,
+    claims: DbClaims,
+    firedAt: Date,
+  ): Promise<{ taskId: string; sessionId: string }>;
 }
 
 export interface LoopsJobOptions {
@@ -169,7 +178,7 @@ export function createLoopsJob(opts: LoopsJobOptions): ScheduledJob {
         }
 
         try {
-          await port.fire(loop, loopClaims);
+          await port.fire(loop, loopClaims, ctx.firedAt);
           await recordRun(db, loopClaims, loop, advance, null);
           fired += 1;
         } catch (error) {

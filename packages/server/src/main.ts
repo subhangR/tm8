@@ -593,6 +593,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       pty: execution.pty,
       spawnService: execution.spawnService,
       resolveOwner: owner,
+      // The same seam `execution.dispatch` gets. Without it a null-runner loop
+      // still STORES its request on the task — the dispatcher finds it on its
+      // next wake — but nothing is pushed at a live terminal.
+      ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
     });
     scheduler = createDefaultScheduler({ loops: { db, port } });
     scheduler.start();

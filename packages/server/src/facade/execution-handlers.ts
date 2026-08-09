@@ -1199,14 +1199,94 @@ const DISPATCHER_SETTLE_POLL_MS = 250;
  * what the dispatcher re-reads if it wakes without having received the push.
  * Plain prose on purpose: the trusted envelope is the machine-addressed copy.
  */
-function dispatchRequestBody(input: ExecutionDispatchInput, taskId: string): string {
+function dispatchRequestBody(subjectId: string, taskId: string, note: string | null): string {
   const lines = [
-    `Dispatch requested for this task (subject \`${input.subjectId}\`, anchor \`${taskId}\`).`,
+    `Dispatch requested for this task (subject \`${subjectId}\`, anchor \`${taskId}\`).`,
     '',
     'Pick the teammate, attach the memories they need to this task, spawn them on it, and reply here with who and why.',
   ];
-  if (input.note) lines.push('', `Requester note: ${input.note}`);
+  if (note) lines.push('', `Requester note: ${note}`);
   return lines.join('\n');
+}
+
+export interface DispatchRequestSend {
+  db: Db;
+  claims: DbClaims;
+  seam?: DispatchDelivery;
+  taskId: string;
+  subjectId: string;
+  dispatcherSessionId: string;
+  note: string | null;
+  requesterActorId: string | null;
+  requesterActorKind: string;
+  requestId: string;
+  clientMutationId: string;
+}
+
+/**
+ * Store a dispatch request on the task AND push it at the dispatcher's terminal.
+ *
+ * ONE implementation, two callers — `execution.dispatch` and the loop executor.
+ * They were briefly two, and the loop one simply forgot the second half: it
+ * resolved a dispatcher and told it nothing, so a null-runner loop fired
+ * silently forever. Two copies of "how do you ask a dispatcher for something"
+ * is exactly the drift this collapses.
+ *
+ * Order is failure-cost order: STORE first, push second. A stored request that
+ * was never delivered is recoverable — the dispatcher reads its anchor when it
+ * next wakes — while a delivered request with no durable row is not. Delivery
+ * is therefore REPORTED, never thrown on.
+ */
+async function sendDispatchRequest(
+  args: DispatchRequestSend,
+): Promise<{ requestMessageId: string | undefined; delivered: boolean }> {
+  const { db, claims, seam, taskId, subjectId, dispatcherSessionId, note } = args;
+
+  const posted = await db.tx(claims, async (q) =>
+    q.rpc<{ messageIds: string[] }>('w2_post_message_batch', [
+      [taskId],
+      dispatchRequestBody(subjectId, taskId, note),
+      null,
+      [],
+      [],
+      null,
+      args.requesterActorId,
+      args.clientMutationId,
+    ]),
+  );
+  const requestMessageId = posted.messageIds[0];
+  if (!seam || !requestMessageId) return { requestMessageId, delivered: false };
+
+  const content = dispatchRequestInjection({
+    messageId: requestMessageId,
+    taskId,
+    subjectId,
+    requesterActorId: args.requesterActorId,
+    requesterActorKind: args.requesterActorKind,
+    destinationSessionId: dispatcherSessionId,
+    note,
+  });
+  try {
+    const reservation = await seam.reserve({
+      messageId: requestMessageId,
+      targetWorkSessionId: dispatcherSessionId,
+      content,
+      mode: 'send',
+      requestId: args.requestId,
+    });
+    if (!reservation) return { requestMessageId, delivered: false };
+    await seam.adapter.dispatch({
+      ...reservation,
+      content,
+      requestId: args.requestId,
+      principal: seam.principalFor(reservation),
+    });
+    return { requestMessageId, delivered: true };
+  } catch {
+    // The durable row already exists; an adapter failure downgrades the report,
+    // it does not roll back the dispatch.
+    return { requestMessageId, delivered: false };
+  }
 }
 
 /**
@@ -1355,6 +1435,8 @@ export function createLoopExecutorPort(deps: {
   pty: PtyHostService;
   spawnService: SpawnService;
   resolveOwner: () => Promise<LoopbackOwner>;
+  /** Same seam `execution.dispatch` uses; absent ⇒ stored-but-undelivered. */
+  dispatchDelivery?: DispatchDelivery;
 }): LoopExecutorPort {
   const { db, pty, spawnService, resolveOwner } = deps;
 
@@ -1373,7 +1455,7 @@ export function createLoopExecutorPort(deps: {
   return {
     claimsFor: claimsForOwner,
     liveSessionIds: () => pty.liveSessionIds(),
-    async fire(loop, claims) {
+    async fire(loop, claims, firedAt) {
       // The loop is its OWN launchable subject when it names none (§4.4), so
       // there is always something to derive a task from.
       const [taskId] = await resolveAssignmentAnchors(
@@ -1383,34 +1465,83 @@ export function createLoopExecutorPort(deps: {
         throw new Error(`derive_task_for_entity returned no task for loop ${loop.entityId}`);
       }
 
-      await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-fire-task:${loop.entityId}`);
+      /**
+       * THE firing key, and the reason it carries the instant.
+       *
+       * `derive_task_for_entity` REUSES an open derived task, so `taskId` is
+       * stable across every firing of a loop whose task nobody closed. A
+       * mutation id built from (loop, task) is therefore also stable — and
+       * `execution_spawn` opens with `internal.ledger_replay(cmid,
+       * 'execution.spawn')` (043) unconditionally, gated only by
+       * `internal.idempotency_enabled()`, which DEFAULTS ON (046; the server
+       * pool sends `tm8.idempotency_enabled=on` unless
+       * `TM8_IDEMPOTENCY_ENABLED=0`). On a replay hit SpawnService takes its
+       * `replayed` branch, returns the ORIGINAL session id with `reused: true`
+       * and boots no PTY at all.
+       *
+       * So a stable id makes every firing after the first a silent no-op that
+       * looks like a success: the seeded Dreamer daily loop would spawn once
+       * and then quietly never again. And the command ledger is not pruned on
+       * this node — `retention.command-ledger` is registered as an inert stub —
+       * so the poisoning is permanent, not a 24h window.
+       *
+       * A firing is a DISTINCT INTENT, so it gets a distinct id. Idempotency is
+       * not what stops a pile-up here; the overlap guard is, and that is
+       * precisely what it is for.
+       */
+      const firingKey = `${loop.entityId}:${firedAt.toISOString()}`;
 
-      const sessionId = loop.teamMemberId
-        ? (await spawnService.spawn(claims, {
-            spaceId: loop.spaceId,
-            teamMemberId: loop.teamMemberId,
-            parentSessionId: null,
-            taskIds: [taskId],
-            projectId: null,
-            mode: null,
-            model: (loop.config?.['model'] as string | undefined) ?? null,
-            agentTool: (loop.config?.['agentTool'] as string | undefined) ?? null,
-            reasoningEffort: null,
-            accessMode: (loop.config?.['accessMode'] as never) ?? null,
-            title: loop.title,
-            // The loop's instruction is launch-manifest context, not a runtime
-            // prompt — the same channel `--context` uses.
-            promptExtra: loop.prompt === '' ? null : loop.prompt,
-            clientMutationId: `loop-fire:${loop.entityId}:${taskId}`,
-          })).sessionId
-        // A null runner means "route through the dispatcher" (§4.4). Resolve or
-        // spawn it and hand it the task; the dispatcher picks who actually runs.
-        : (await resolveDispatcherSession(
-            db, claims, pty, spawnService, loop.spaceId,
-            `loop-fire-dispatcher:${loop.entityId}:${taskId}`,
-          )).sessionId;
+      // STABLE on purpose, and the contrast with `firingKey` is the point: this
+      // edge asserts "this task belongs to this loop", which is one fact no
+      // matter how many times it fires. A replay here is the correct outcome.
+      await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-task:${loop.entityId}:${taskId}`);
 
-      await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-fire-session:${loop.entityId}:${sessionId}`);
+      let sessionId: string;
+      if (loop.teamMemberId) {
+        sessionId = (await spawnService.spawn(claims, {
+          spaceId: loop.spaceId,
+          teamMemberId: loop.teamMemberId,
+          parentSessionId: null,
+          taskIds: [taskId],
+          projectId: null,
+          mode: null,
+          model: (loop.config?.['model'] as string | undefined) ?? null,
+          agentTool: (loop.config?.['agentTool'] as string | undefined) ?? null,
+          reasoningEffort: null,
+          accessMode: (loop.config?.['accessMode'] as never) ?? null,
+          title: loop.title,
+          // The loop's instruction is launch-manifest context, not a runtime
+          // prompt — the same channel `--context` uses.
+          promptExtra: loop.prompt === '' ? null : loop.prompt,
+          clientMutationId: `loop-fire:${firingKey}`,
+        })).sessionId;
+      } else {
+        // A null runner means "route through the dispatcher" (§4.4). Resolving
+        // one is only half of it: a dispatcher that is never TOLD anything sits
+        // idle while the loop records a successful firing. It goes through the
+        // same `sendDispatchRequest` the HTTP op uses, so the two callers
+        // cannot drift.
+        const resolved = await resolveDispatcherSession(
+          db, claims, pty, spawnService, loop.spaceId,
+          `loop-dispatcher-spawn:${firingKey}`,
+        );
+        sessionId = resolved.sessionId;
+        await sendDispatchRequest({
+          db,
+          claims,
+          ...(deps.dispatchDelivery ? { seam: deps.dispatchDelivery } : {}),
+          taskId,
+          subjectId: loop.subjectId ?? loop.entityId,
+          dispatcherSessionId: sessionId,
+          note: loop.prompt === '' ? null : loop.prompt,
+          requesterActorId: null,
+          requesterActorKind: 'work_session',
+          requestId: `loop-fire:${loop.entityId}`,
+          clientMutationId: `loop-dispatch-request:${firingKey}`,
+        });
+      }
+
+      await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-session:${firingKey}:${sessionId}`);
       return { taskId, sessionId };
     },
   };
@@ -1742,69 +1873,26 @@ function registerHandlers(
     const dispatcherSessionId = resolved.sessionId;
     const dispatcherSpawned = resolved.spawned;
 
-    // Stored on the TASK, addressed at the SESSION. Both, deliberately: the
-    // anchor is where a human (and the dispatcher's own next wake) can find the
-    // request, and the session id is the only address that cannot silently miss
-    // a live session.
-    const posted = await db.tx(claims, async (q) =>
-      q.rpc<{ messageIds: string[] }>('w2_post_message_batch', [
-        [taskId],
-        dispatchRequestBody(input, taskId),
-        null,
-        [],
-        [],
-        null,
-        envelope.actorId ?? null,
-        `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
-      ]),
-    );
-    const requestMessageId = posted.messageIds[0];
-
-    // Narrowed once, here: every branch above either assigned it or threw.
-    const sessionId: string = dispatcherSessionId;
-
-    let delivered = false;
-    const seam = options.dispatchDelivery;
-    if (seam && requestMessageId) {
-      const content = dispatchRequestInjection({
-        messageId: requestMessageId,
-        taskId,
-        subjectId: input.subjectId,
-        requesterActorId: envelope.actorId ?? owner.identityId,
-        requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
-        destinationSessionId: sessionId,
-        note: input.note ?? null,
-      });
-      try {
-        const reservation = await seam.reserve({
-          messageId: requestMessageId,
-          targetWorkSessionId: sessionId,
-          content,
-          mode: 'send',
-          requestId: ctx.requestId,
-        });
-        if (reservation) {
-          await seam.adapter.dispatch({
-            ...reservation,
-            content,
-            requestId: ctx.requestId,
-            principal: seam.principalFor(reservation),
-          });
-          delivered = true;
-        }
-      } catch {
-        // The durable row already exists; an adapter failure downgrades the
-        // report, it does not roll back the dispatch.
-        delivered = false;
-      }
-    }
+    const sent = await sendDispatchRequest({
+      db,
+      claims,
+      ...(options.dispatchDelivery ? { seam: options.dispatchDelivery } : {}),
+      taskId,
+      subjectId: input.subjectId,
+      dispatcherSessionId,
+      note: input.note ?? null,
+      requesterActorId: envelope.actorId ?? owner.identityId,
+      requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+      requestId: ctx.requestId,
+      clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
+    });
 
     const result: ExecutionDispatchResult = {
       taskId,
-      dispatcherSessionId: sessionId,
+      dispatcherSessionId,
       dispatcherSpawned,
-      ...(requestMessageId ? { requestMessageId } : {}),
-      delivery: delivered ? 'delivered' : 'undelivered',
+      ...(sent.requestMessageId ? { requestMessageId: sent.requestMessageId } : {}),
+      delivery: sent.delivered ? 'delivered' : 'undelivered',
     };
     return json(result, { status: 202 });
   });
