@@ -135,6 +135,11 @@ export const LAUNCH_MODES: readonly LaunchModeDef[] = [
     label: 'Coordinated coordinator',
     description: 'Coordinates beneath another coordinator.',
   },
+  {
+    id: 'dispatcher',
+    label: 'Dispatcher',
+    description: 'Routes work to the right teammate. Never does the work itself.',
+  },
 ];
 
 // ---------------------------------------------------------------------------

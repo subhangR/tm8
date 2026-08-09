@@ -100,6 +100,11 @@ export const ENTITY_COLUMNS = `
   memo.subject_scope as memory_subject_scope,
   memo.does_not_establish as memory_does_not_establish,
   memo.measured_at as memory_measured_at,
+  lp.title as loop_title, lp.schedule as loop_schedule, lp.enabled as loop_enabled,
+  lp.team_member_id as loop_team_member_id, lp.subject_id as loop_subject_id,
+  lp.prompt as loop_prompt, lp.config as loop_config,
+  lp.next_run_at as loop_next_run_at, lp.last_run_at as loop_last_run_at,
+  lp.last_error as loop_last_error,
   wt.project_id as wt_project_id, wt.path as wt_path, wt.branch as wt_branch,
   wt.base_ref as wt_base_ref, wt.base_commit_oid as wt_base_commit_oid,
   wt.status as wt_status, wt.status_changed_at as wt_status_changed_at,
@@ -144,6 +149,7 @@ export const ENTITY_FROM = `
    and profile_version.version = coalesce(ip.active_version, ip.current_draft_version)
   left join public.memories memo         on memo.entity_id = e.id
   left join public.worktrees wt          on wt.entity_id = e.id
+  left join public.loops lp              on lp.entity_id = e.id
   left join public.artifacts art         on art.entity_id = e.id
   left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 `;
@@ -234,6 +240,16 @@ export interface EntityRow {
   ip_retired_at: Date | string | null;
   /** Versioned authored name; optional keeps legacy row fixtures source-compatible. */
   ip_name?: string | null;
+  loop_title: string | null;
+  loop_schedule: string | null;
+  loop_enabled: boolean | null;
+  loop_team_member_id: string | null;
+  loop_subject_id: string | null;
+  loop_prompt: string | null;
+  loop_config: Record<string, unknown> | null;
+  loop_next_run_at: Date | string | null;
+  loop_last_run_at: Date | string | null;
+  loop_last_error: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -997,6 +1013,11 @@ export function titleOf(row: EntityRow): string {
       // free-standing title would be a restatement with no back-link (design
       // §3.1). Same 120-char bound as the projector twin.
       return (row.memory_statement ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Memory';
+    case 'loop':
+      // A loop carries its own title on its detail row — MIRRORS the projector
+      // twin. `entities` has no title column, so an unnamed loop must fall back
+      // to something a human can read rather than to an id (L3).
+      return row.loop_title ?? 'Loop';
     case 'worktree':
       // The branch IS the human name of a worktree; paths are server-computed
       // noise and ids are forbidden as titles (L3).
@@ -1032,6 +1053,10 @@ function excerptOf(row: EntityRow): string | undefined {
     case 'artifact':
       // The description is the artifact's body text — MIRRORS the projector twin.
       return excerpt(row.artifact_description);
+    case 'loop':
+      // The schedule is the one fact that makes a loop legible in a list: what
+      // it does is the prompt, but WHEN is what distinguishes two of them.
+      return excerpt(row.loop_schedule);
     default:
       return undefined;
   }
@@ -1208,6 +1233,20 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         subjectScope: row.memory_subject_scope ?? '',
         doesNotEstablish: row.memory_does_not_establish ?? '',
         measuredAt: isoOrNull(row.memory_measured_at),
+      };
+    case 'loop':
+      // `teamMemberId: null` is a VALUE, not a gap: it means the firing routes
+      // through the dispatcher. Coalescing it to '' here would erase the whole
+      // distinction the executor branches on.
+      return {
+        kind: 'loop',
+        schedule: row.loop_schedule ?? '',
+        enabled: row.loop_enabled ?? false,
+        teamMemberId: row.loop_team_member_id,
+        subjectId: row.loop_subject_id,
+        nextRunAt: isoOrNull(row.loop_next_run_at),
+        lastRunAt: isoOrNull(row.loop_last_run_at),
+        lastError: row.loop_last_error,
       };
     case 'worktree':
       // SEMANTIC lifecycle only. Operational disk health lives in
@@ -1536,6 +1575,19 @@ export function contentOf(row: EntityRow): EntityContent {
         subjectScope: row.memory_subject_scope ?? '',
         doesNotEstablish: row.memory_does_not_establish ?? '',
         measuredAt: isoOrNull(row.memory_measured_at),
+      };
+    case 'loop':
+      return {
+        kind: 'loop',
+        schedule: row.loop_schedule ?? '',
+        enabled: row.loop_enabled ?? false,
+        teamMemberId: row.loop_team_member_id,
+        subjectId: row.loop_subject_id,
+        prompt: row.loop_prompt ?? '',
+        config: row.loop_config ?? {},
+        nextRunAt: isoOrNull(row.loop_next_run_at),
+        lastRunAt: isoOrNull(row.loop_last_run_at),
+        lastError: row.loop_last_error,
       };
     case 'worktree':
       return {

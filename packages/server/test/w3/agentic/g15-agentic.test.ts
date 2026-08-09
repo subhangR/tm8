@@ -31,7 +31,8 @@ import {
 // already gone stale on the tree (several amendments landed without moving
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
-const CATALOG_DIGEST = 'sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe';
+// Re-derived 2026-08-09 at the dispatcher merge — the catalog is now 138 rows.
+const CATALOG_DIGEST = 'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -103,7 +104,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // The 126 literal was ALREADY red at 127 when this lane arrived (the
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
-    expect(root.catalog.total).toBe(137);
+    expect(root.catalog.total).toBe(138);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
@@ -234,8 +235,11 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // the next boot pass. Counted exactly rather than loosened to "more than
     // before", because the point of this cell is that the oracle sees precisely
     // what the operation wrote.
+    // + 2: the Dreamer and Dispatcher teammates seed alongside the model
+    // catalog (D7); + 1: the Dreamer's daily loop seeds ENABLED (D8). Each is
+    // its own ledgered command, counted exactly for the same reason as above.
     expect(after.totalCommandLedgerRows).toBe(
-      before.totalCommandLedgerRows + 1 + LAUNCH_MODEL_CATALOG.length,
+      before.totalCommandLedgerRows + 1 + LAUNCH_MODEL_CATALOG.length + 3,
     );
     expect(after.totalEntityRows).toBeGreaterThan(before.totalEntityRows);
   }, 120_000);

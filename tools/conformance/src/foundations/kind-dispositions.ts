@@ -50,6 +50,7 @@ export type MigrationStrategy =
   | 'memory-detail'
   | 'worktree-detail'
   | 'artifact-detail'
+  | 'loop-detail'
   | 'custom-registry'
   | 'none';
 
@@ -358,6 +359,15 @@ export const CORE_KIND_DISPOSITIONS = {
     collection: typedCollection, projection: universal,
     capabilities: { profile: 'artifact-lifecycle' },
     menu: { strategy: 'registered-not-default' }, migration: { strategy: 'artifact-detail' },
+  }),
+  // Loops (dreamer-dispatcher DESIGN §4.4). Generic lifecycle, exactly like
+  // memory: CRUD rides entities.create/patch through create_loop/update_loop,
+  // which is what keeps the whole scheduling feature at zero new catalog rows.
+  // Menu-addressable but registered-not-default — a loop is authored on
+  // purpose, it is not a container things get filed into.
+  loop: core('loop', 'loops', {
+    collection: typedCollection, projection: universal, capabilities: generic,
+    menu: { strategy: 'registered-not-default' }, migration: { strategy: 'loop-detail' },
   }),
 } as const satisfies Readonly<Record<CoreEntityKind, KindDisposition>>;
 

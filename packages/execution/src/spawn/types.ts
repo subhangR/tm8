@@ -15,7 +15,12 @@
 //      makes that mistake impossible to make here.
 
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
-export type AgentMode = 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
+export type AgentMode =
+  | 'worker'
+  | 'coordinator'
+  | 'coordinated-worker'
+  | 'coordinated-coordinator'
+  | 'dispatcher';
 
 /** work_sessions.status — the five states 001_core_graph.sql:703 allows. */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';

@@ -401,6 +401,16 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         branch: state.branch, baseRef: state.baseRef, baseCommitOid: state.baseCommitOid,
         status: state.status, statusChangedAt: null,
       };
+    case 'loop':
+      // The loop content arm is CLOSED (every field required), so the fixture
+      // has to produce a whole one rather than falling through to the open
+      // `{ kind }` variant below.
+      return {
+        kind: 'loop', schedule: state.schedule, enabled: state.enabled,
+        teamMemberId: state.teamMemberId, subjectId: state.subjectId,
+        prompt: '', config: {},
+        nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
+      };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
       return { kind: state.kind };

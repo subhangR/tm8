@@ -263,6 +263,17 @@ export const OPERATIONS = [
   // `execution.journal` is — every path component is derived from that row's own
   // columns, so no request can ever name a file.
   { name: 'execution.transcript',                        method: 'GET',    path: '/v2/work-sessions/:workSessionId/transcript',                        kind: 'read',    status: 'v1' },
+
+  // Dispatcher (dreamer-dispatcher DESIGN §4.3, D2/D4). "Route this entity to
+  // whoever should do it" — the caller names a subject and nothing else. The
+  // resident-dispatcher resolution (liveness probe, spawn-if-absent, task
+  // derivation, trusted delivery to the session id) is entirely server-side,
+  // which is the point: a client that had to find the dispatcher itself would
+  // have to reimplement the liveness rule, and `work_sessions.status` lies.
+  // This is the ONLY new catalog row the dispatcher needs — the dispatcher's
+  // own actions are existing ops (`entities.patch`, `edges.create`,
+  // `execution.spawn`, `messages.post`).
+  { name: 'execution.dispatch',                          method: 'POST',   path: '/v2/execution/dispatch',                                             kind: 'command', status: 'v1' },
 ] as const satisfies readonly OperationBinding[];
 
 export type OperationName = (typeof OPERATIONS)[number]['name'];

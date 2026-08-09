@@ -545,7 +545,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // auth.session.get is a GET and binds nothing.
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
     // 70 -> 73: the three credentials.* command bodies are bound.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(74);
+    // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its body.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(75);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -692,8 +693,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 136, implemented: 134 });
-    expect(harness.production.server.registry.size).toBe(134);
+    // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
+    expect(health).toMatchObject({ ok: true, operations: 137, implemented: 135 });
+    expect(harness.production.server.registry.size).toBe(135);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -711,7 +713,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(134);
+    expect(registered.size + residual.length).toBe(135);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

@@ -44,6 +44,7 @@ import {
   EntityKindUpdateInputSchema,
   ExecutionPromptInputSchema,
   ExecutionResumeInputSchema,
+  ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
@@ -228,6 +229,7 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
 
   // execution (R16)
   'execution.spawn': ExecutionSpawnInputSchema,
+  'execution.dispatch': ExecutionDispatchInputSchema,
   'execution.prompt': ExecutionPromptInputSchema,
   'execution.terminate': ExecutionTerminateInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,

@@ -64,7 +64,7 @@ const WORKDIRS = ['project', 'scratch', 'worktree'] as const;
 type WorkdirMode = (typeof WORKDIRS)[number];
 
 /** §4.13's closed session-mode set. */
-const SESSION_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator'] as const;
+const SESSION_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher'] as const;
 type SessionMode = (typeof SESSION_MODES)[number];
 
 /**
@@ -444,6 +444,38 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
 }
 
 /**
+ * `tm8 session dispatch <subject-entity-id>` — the sibling of `session spawn`
+ * for when you do NOT know who should do it.
+ *
+ * Note what this does not accept: no `--teammate`, no `--model`, no `--mode`.
+ * Choosing those IS the dispatcher's job, and a flag here would let a caller
+ * make every one of those choices and still call the result a dispatch. The
+ * whole request is a subject, an optional steer, and a mutation id.
+ */
+async function sessionDispatch(cmd: CommandContext): Promise<ExitCode> {
+  const spaceId = requireSpace(cmd.ctx);
+  const subjectId = cmd.args[0];
+  if (subjectId === undefined || subjectId === '') {
+    throw new CliError('tm8 session dispatch requires <subject-entity-id>', EXIT_USAGE, {
+      hint: 'any launchable entity; the Server derives its task the same way --task does',
+    });
+  }
+
+  const body: Record<string, unknown> = {
+    clientMutationId: resolveMutationId(cmd.options.value('mutation-id')),
+    spaceId,
+    subjectId,
+  };
+  const note = cmd.options.value('note');
+  if (note !== undefined) body.note = note;
+  if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
+
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.dispatch', { body });
+  cmd.out.data(data, renderDispatched);
+  return EXIT_OK;
+}
+
+/**
  * `tm8 session resume <work-session-id>` — bring an exited session back with
  * its agent's conversation restored. Everything about WHAT gets resumed
  * (persona, project, model, the provider-native session id) is Server-owned
@@ -668,6 +700,23 @@ function renderSpawned(dto: unknown): string {
   return `${String(entity.id)}${status}`.trim();
 }
 
+/**
+ * Reports whether the envelope actually reached a terminal, and whether a
+ * dispatcher had to be spawned to receive it. Both are the things a caller
+ * cannot see for themselves and would otherwise have to assume.
+ */
+function renderDispatched(dto: unknown): string {
+  const r = dto as {
+    taskId?: string;
+    dispatcherSessionId?: string;
+    dispatcherSpawned?: boolean;
+    delivery?: string;
+  } | null;
+  if (!r?.dispatcherSessionId) return JSON.stringify(dto);
+  const spawned = r.dispatcherSpawned === true ? ' (dispatcher spawned)' : '';
+  return `task ${String(r.taskId ?? '')}  dispatcher ${r.dispatcherSessionId}  ${String(r.delivery ?? '')}${spawned}`.trim();
+}
+
 function renderTerminated(dto: unknown): string {
   const entity = (dto as CommandResultish)?.entity;
   if (entity?.id === undefined) return JSON.stringify(dto);
@@ -702,6 +751,7 @@ export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'launch'], run: sessionLaunch },
   { path: ['session', 'transcript'], run: sessionTranscript },
   { path: ['session', 'spawn'], run: sessionSpawn },
+  { path: ['session', 'dispatch'], run: sessionDispatch },
   { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },
   { path: ['session', 'attach'], run: sessionAttach },

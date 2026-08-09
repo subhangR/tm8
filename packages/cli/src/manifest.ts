@@ -160,14 +160,20 @@ function defined<T extends object>(o: T): T {
 function projectBootstrap(bootstrap: BootstrapManifestV2): Tm8Manifest {
   const { identity, session, assignment } = bootstrap;
   const coordinated = session.coordinatorSessionId !== undefined;
+  // `dispatcher` is the one identity mode that maps straight through: it never
+  // gains a `coordinated-` prefix, because a dispatcher is nobody's delegate —
+  // it is the thing that delegates, and it answers on the request thread rather
+  // than to a coordinator waiting on a report.
   const agentMode: AgentMode =
-    identity.mode === 'coordinator'
-      ? coordinated
-        ? 'coordinated-coordinator'
-        : 'coordinator'
-      : coordinated
-        ? 'coordinated-worker'
-        : 'worker';
+    identity.mode === 'dispatcher'
+      ? 'dispatcher'
+      : identity.mode === 'coordinator'
+        ? coordinated
+          ? 'coordinated-coordinator'
+          : 'coordinator'
+        : coordinated
+          ? 'coordinated-worker'
+          : 'worker';
 
   const taskIds = assignment.taskIds ?? (assignment.primaryTaskId ? [assignment.primaryTaskId] : []);
 
