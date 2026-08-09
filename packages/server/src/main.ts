@@ -35,6 +35,7 @@ import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
+import { createDeletedFileBlobPurgeJob, createFileUploadSweepJob } from './scheduler/jobs/file-uploads.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
@@ -556,10 +557,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
 
+  // Declared before the server so /health can late-bind to it; assigned only
+  // when background jobs are enabled below.
+  let scheduler: Scheduler | undefined;
+
   const server = createFacadeServer({
     config,
     registry,
     upgrades,
+    jobsStatus: () => scheduler?.status(),
     // `select 1` through the SAME claim-binding pool the reads use — the only
     // probe that goes red when the pool is exhausted, which is the one outage
     // /health has actually failed to report.
@@ -653,7 +659,6 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    * The scheduler's timers are `unref`'d, so it cannot by itself keep the
    * process alive and shutdown needs no new coordination.
    */
-  let scheduler: Scheduler | undefined;
   if (db && owner && opts.startBackgroundJobs === true) {
     // Loops (§4.4) join the same runner when this node has an execution block.
     // NO SIDECAR IS PASSED, deliberately: attaching one would register the
@@ -712,9 +717,27 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // The file-upload slot sweep — expiry + staged-byte cleanup (094). Only
+    // where a blob store exists; the doors are node-admin-only by design.
+    if (blobStore) {
+      const sweepClaims = (requestId: string) => async () => {
+        const o = await owner();
+        return { identityId: o.identityId, nodeAdmin: o.isNodeAdmin, requestId };
+      };
+      scheduler.register(
+        createFileUploadSweepJob({ db, blobStore, claims: sweepClaims('file-upload-sweep') }),
+      );
+      scheduler.register(
+        createDeletedFileBlobPurgeJob({ db, blobStore, claims: sweepClaims('file-blob-purge') }),
+      );
+    }
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
+    if (blobStore) {
+      console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
+      console.log('  files: deleted-blob purge reclaiming soft-deleted file bytes daily (30d grace)');
+    }
   }
 
   if (execution) {

@@ -11,7 +11,7 @@ import {
 
 import type { DbClaims } from '../../../db/types.js';
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
-import { raw } from '../../../http/types.js';
+import { raw, rawStream } from '../../../http/types.js';
 import type { W2BlobStore } from '../../../files/w2-blob-store.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -142,6 +142,65 @@ function safeMime(mime: string): string {
   return mime.length <= MAX_MIME_CHARS && !/[\u0000-\u001f\u007f]/.test(mime)
     ? mime
     : 'application/octet-stream';
+}
+
+function headerValue(ctx: RequestContext, name: string): string | undefined {
+  const value = ctx.headers[name];
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+/**
+ * Strong-compare `If-None-Match` against the blob's checksum ETag. Weak tags
+ * (`W/"…"`) never match a byte-exact download, per RFC 9110 §8.8.3.2.
+ */
+function etagMatches(header: string | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const candidates = header.split(',').map((part) => part.trim());
+  return candidates.includes('*') || candidates.includes(etag);
+}
+
+const SINGLE_BYTE_RANGE_RE = /^bytes=(\d*)-(\d*)$/;
+
+/**
+ * Resolve a `Range` header to an inclusive byte span.
+ *
+ * Returns `null` for "serve the whole file": no header, a shape we do not
+ * support (multi-range, non-bytes units — RFC 9110 lets a server ignore
+ * those), or an `If-Range` validator that no longer matches. Returns
+ * `'unsatisfiable'` only for a well-formed bytes range that names no
+ * satisfiable byte, which MUST be a 416.
+ */
+function parseByteRange(
+  rangeHeader: string | undefined,
+  ifRangeHeader: string | undefined,
+  etag: string,
+  sizeBytes: number,
+): { start: number; end: number } | null | 'unsatisfiable' {
+  if (rangeHeader === undefined) return null;
+  const match = SINGLE_BYTE_RANGE_RE.exec(rangeHeader.trim());
+  if (!match) return null;
+  // An If-Range mismatch means the client's partial copy is of different
+  // bytes; serving the range would splice two versions together.
+  if (ifRangeHeader !== undefined && ifRangeHeader.trim() !== etag) return null;
+
+  const [, firstRaw, lastRaw] = match;
+  if (firstRaw === '' && lastRaw === '') return null;
+  if (firstRaw === '') {
+    // suffix form: last N bytes
+    const suffix = Number(lastRaw);
+    if (!Number.isSafeInteger(suffix) || suffix === 0 || sizeBytes === 0) return 'unsatisfiable';
+    const span = Math.min(suffix, sizeBytes);
+    return { start: sizeBytes - span, end: sizeBytes - 1 };
+  }
+  const start = Number(firstRaw);
+  if (!Number.isSafeInteger(start) || start >= sizeBytes) return 'unsatisfiable';
+  if (lastRaw === '') return { start, end: sizeBytes - 1 };
+  const end = Number(lastRaw);
+  // last-byte-pos < first-byte-pos makes the whole header INVALID (not merely
+  // unsatisfiable), which RFC 9110 says to ignore.
+  if (!Number.isSafeInteger(end) || end < start) return null;
+  return { start, end: Math.min(end, sizeBytes - 1) };
 }
 
 export class W2FilesService {
@@ -295,21 +354,59 @@ export class W2FilesService {
     if (!file || !file.checksum_sha256) {
       throw new CollabError('not_found', `no readable file: ${fileEntityId}`);
     }
-    const bytes = await this.options.blobStore.read(file.storage_path, file.space_id);
-    const actualChecksum = createHash('sha256').update(bytes).digest('hex');
-    if (bytes.length !== Number(file.size_bytes) || actualChecksum !== file.checksum_sha256) {
-      throw new CollabError('upstream_unavailable', 'stored blob metadata does not match its bytes');
-    }
     const mime = safeMime(file.mime_type);
-    return raw(200, {
+    const checksum = file.checksum_sha256;
+    const etag = `"sha256-${checksum}"`;
+    const declaredSize = Number(file.size_bytes);
+    const baseHeaders = {
       'content-type': mime,
-      'content-length': String(bytes.length),
       'content-disposition': storageDisposition(file.name, mime),
       'x-content-type-options': 'nosniff',
-      'x-tm8-checksum-sha256': actualChecksum,
-      etag: `"sha256-${actualChecksum}"`,
-      digest: `sha-256=${Buffer.from(actualChecksum, 'hex').toString('base64')}`,
-    }, bytes);
+      'x-tm8-checksum-sha256': checksum,
+      etag,
+      digest: `sha-256=${Buffer.from(checksum, 'hex').toString('base64')}`,
+      'accept-ranges': 'bytes',
+      // The blob is content-addressed by its checksum ETag, so revalidation is
+      // free and the bytes themselves never change under one entity id.
+      'cache-control': 'private, no-cache',
+    };
+
+    if (etagMatches(headerValue(ctx, 'if-none-match'), etag)) {
+      return raw(304, baseHeaders, '');
+    }
+
+    // The upload path verified size+checksum before the slot completed; here a
+    // cheap stat guards metadata/bytes divergence without re-reading the whole
+    // blob on every download (which forced full buffering and made large
+    // files unstreamable).
+    const range = parseByteRange(headerValue(ctx, 'range'), headerValue(ctx, 'if-range'), etag, declaredSize);
+    if (range === 'unsatisfiable') {
+      return raw(416, {
+        ...baseHeaders,
+        'content-range': `bytes */${declaredSize}`,
+      }, '');
+    }
+
+    const opened = await this.options.blobStore.openRead(
+      file.storage_path,
+      file.space_id,
+      range ?? undefined,
+    );
+    if (opened.sizeBytes !== declaredSize) {
+      opened.stream.destroy();
+      throw new CollabError('upstream_unavailable', 'stored blob metadata does not match its bytes');
+    }
+    if (range === null) {
+      return rawStream(200, {
+        ...baseHeaders,
+        'content-length': String(declaredSize),
+      }, opened.stream);
+    }
+    return rawStream(206, {
+      ...baseHeaders,
+      'content-length': String(range.end - range.start + 1),
+      'content-range': `bytes ${range.start}-${range.end}/${declaredSize}`,
+    }, opened.stream);
   };
 }
 

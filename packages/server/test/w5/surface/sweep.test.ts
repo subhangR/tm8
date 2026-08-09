@@ -454,7 +454,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
     // Measured on the PR #98 merge tree on 2026-08-10: 88 files through 093,
     // including main's 088 Library migration and this wave's 089-093 tranche.
-    expect(server.appliedMigrations.length).toBe(88);
+    // 88 -> 89 on 2026-08-10: 094 (file upload slot sweep doors, Files Lane 4).
+    // Measured by `ls db/migrations/*.sql | wc -l` on this tree, never
+    // previous-plus-one.
+    expect(server.appliedMigrations.length).toBe(89);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

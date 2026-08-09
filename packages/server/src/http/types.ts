@@ -100,7 +100,19 @@ export interface RawResult {
   body: Buffer | string;
 }
 
-export type HandlerResult = JsonResult | RawResult;
+/**
+ * A raw STREAMING result. Same envelope escape as `RawResult`, but the body is
+ * produced incrementally so a large blob is never buffered whole in memory.
+ * The frame pipes it and destroys the stream if the client disconnects.
+ */
+export interface RawStreamResult {
+  kind: 'raw-stream';
+  status: number;
+  headers: Record<string, string>;
+  stream: NodeJS.ReadableStream & { destroy?: (error?: Error) => void };
+}
+
+export type HandlerResult = JsonResult | RawResult | RawStreamResult;
 
 /**
  * A handler may return a `HandlerResult` for full control, or any other value
@@ -114,7 +126,8 @@ export function isHandlerResult(v: unknown): v is HandlerResult {
     typeof v === 'object' &&
     v !== null &&
     'kind' in v &&
-    ((v as { kind: unknown }).kind === 'json' || (v as { kind: unknown }).kind === 'raw')
+    ((v as { kind: unknown }).kind === 'json' || (v as { kind: unknown }).kind === 'raw'
+      || (v as { kind: unknown }).kind === 'raw-stream')
   );
 }
 
@@ -125,6 +138,14 @@ export function json(data: unknown, opts: { status?: number; headers?: Record<st
 
 export function raw(status: number, headers: Record<string, string>, body: Buffer | string): RawResult {
   return { kind: 'raw', status, headers, body };
+}
+
+export function rawStream(
+  status: number,
+  headers: Record<string, string>,
+  stream: RawStreamResult['stream'],
+): RawStreamResult {
+  return { kind: 'raw-stream', status, headers, stream };
 }
 
 /** Facts supplied by the transport, never by a caller-controlled header. */

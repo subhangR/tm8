@@ -125,6 +125,12 @@ function handler(registry: HandlerRegistry, name: OperationName): OperationHandl
   return value;
 }
 
+async function collect(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+  return Buffer.concat(chunks);
+}
+
 const tempDirs: string[] = [];
 async function tempDataDir(): Promise<string> {
   const value = await mkdtemp(join(tmpdir(), 'tm8-w2-files-'));
@@ -317,16 +323,17 @@ describe('W2.G07 file facade and blob store', () => {
     );
     const result = await handler(registry, 'files.download')(
       request('files.download', { params: { fileEntityId: IDS.file } }),
-    ) as { kind: string; status: number; headers: Record<string, string>; body: Buffer };
+    ) as { kind: string; status: number; headers: Record<string, string>; stream: NodeJS.ReadableStream };
 
-    expect(result.kind).toBe('raw');
+    expect(result.kind).toBe('raw-stream');
     expect(result.status).toBe(200);
-    expect(result.body).toEqual(BODY);
+    expect(await collect(result.stream)).toEqual(BODY);
     expect(result.headers).toMatchObject({
       'content-type': 'text/html',
       'content-length': String(BODY.length),
       'x-content-type-options': 'nosniff',
       'x-tm8-checksum-sha256': CHECKSUM,
+      'accept-ranges': 'bytes',
     });
     expect(result.headers.etag).toContain(CHECKSUM);
     expect(result.headers['content-disposition']).toMatch(/^attachment;/);
@@ -336,6 +343,102 @@ describe('W2.G07 file facade and blob store', () => {
     await expect(handler(registry, 'files.download')(
       request('files.download', { params: { fileEntityId: IDS.file } }),
     )).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('answers conditional and single-range downloads without buffering, and refuses metadata drift', async () => {
+    const dataDir = await tempDataDir();
+    const store = createW2BlobStore({ dataDir, maxSizeBytes: 64 });
+    const storagePath = store.storagePath(IDS.space, IDS.blob);
+    await store.writeUpload({
+      stream: Readable.from([BODY]),
+      storagePath,
+      expectedSpaceId: IDS.space,
+      expectedSizeBytes: BODY.length,
+      expectedChecksumSha256: CHECKSUM,
+    });
+
+    const db = new FakeDb();
+    let reportedSize = BODY.length;
+    db.queryImpl = async <R>() => [{
+      entity_id: IDS.file,
+      space_id: IDS.space,
+      name: 'movie.mp4',
+      mime_type: 'video/mp4',
+      size_bytes: reportedSize,
+      checksum_sha256: CHECKSUM,
+      storage_path: storagePath,
+    }] as R[];
+    const registry = new HandlerRegistry();
+    registerW2FileHandlers(
+      registry,
+      {
+        db,
+        config: { host: '127.0.0.1', port: 0, uiDir: undefined, maxBodyBytes: 1024, databaseUrl: 'postgres://unused' },
+        owner: async () => OWNER,
+      },
+      { blobStore: store, maxSizeBytes: 64 },
+    );
+    const etag = `"sha256-${CHECKSUM}"`;
+    const download = (headers: Record<string, string>) => handler(registry, 'files.download')({
+      ...request('files.download', { params: { fileEntityId: IDS.file } }),
+      headers,
+    }) as Promise<{
+      kind: string; status: number; headers: Record<string, string>;
+      body?: Buffer | string; stream?: NodeJS.ReadableStream;
+    }>;
+
+    // If-None-Match with the current strong ETag revalidates for free: 304, no body.
+    const notModified = await download({ 'if-none-match': etag });
+    expect(notModified.status).toBe(304);
+    expect(notModified.kind).toBe('raw');
+    expect(notModified.body).toBe('');
+    // A weak or stale validator still gets bytes.
+    for (const validator of [`W/${etag}`, '"sha256-stale"']) {
+      const fresh = await download({ 'if-none-match': validator });
+      expect(fresh.status).toBe(200);
+      expect(await collect(fresh.stream!)).toEqual(BODY);
+    }
+
+    // Single closed range → 206 with exactly those bytes and a content-range.
+    const middle = await download({ range: 'bytes=2-5' });
+    expect(middle.status).toBe(206);
+    expect(middle.headers['content-range']).toBe(`bytes 2-5/${BODY.length}`);
+    expect(middle.headers['content-length']).toBe('4');
+    expect(await collect(middle.stream!)).toEqual(BODY.subarray(2, 6));
+
+    // Open-ended and suffix forms; an over-long end clamps to the file.
+    expect(await collect((await download({ range: 'bytes=6-' })).stream!)).toEqual(BODY.subarray(6));
+    expect(await collect((await download({ range: 'bytes=-3' })).stream!)).toEqual(BODY.subarray(BODY.length - 3));
+    const clamped = await download({ range: `bytes=4-${BODY.length + 100}` });
+    expect(clamped.headers['content-range']).toBe(`bytes 4-${BODY.length - 1}/${BODY.length}`);
+    expect(await collect(clamped.stream!)).toEqual(BODY.subarray(4));
+
+    // A start past the end is unsatisfiable: 416 names the true size, no stream.
+    const past = await download({ range: `bytes=${BODY.length}-` });
+    expect(past.status).toBe(416);
+    expect(past.kind).toBe('raw');
+    expect(past.headers['content-range']).toBe(`bytes */${BODY.length}`);
+
+    // Shapes we do not serve partially are IGNORED, never a corrupt 206:
+    // multi-range, non-bytes units, inverted ranges, and a stale If-Range.
+    for (const headers of [
+      { range: 'bytes=0-1,3-4' },
+      { range: 'items=0-1' },
+      { range: 'bytes=5-2' },
+      { range: 'bytes=2-5', 'if-range': '"sha256-stale"' },
+    ]) {
+      const whole = await download(headers);
+      expect(whole.status).toBe(200);
+      expect(await collect(whole.stream!)).toEqual(BODY);
+    }
+    // A fresh If-Range validator lets the range through.
+    const revalidated = await download({ range: 'bytes=2-5', 'if-range': etag });
+    expect(revalidated.status).toBe(206);
+    expect(await collect(revalidated.stream!)).toEqual(BODY.subarray(2, 6));
+
+    // Metadata that no longer matches the bytes on disk is refused, not served.
+    reportedSize = BODY.length + 1;
+    await expect(download({})).rejects.toMatchObject({ code: 'upstream_unavailable' });
   });
 
   it('aborts unfinished storage idempotently while completed slots retain their file bytes', async () => {
