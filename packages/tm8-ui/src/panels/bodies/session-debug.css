@@ -354,6 +354,42 @@
   color: var(--pn-ink-2);
 }
 
+/* --- agent transcript turns ---------------------------------------------- */
+
+/* Bounded and scrolling: a transcript window is prose, and an unbounded one
+   would push the journal table below the fold on every long turn. */
+.cv2-root .pn-debug__turns {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  margin-top: var(--pn-space-3);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cv2-root .pn-debug__turn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cv2-root .pn-debug__turn-head {
+  font: 600 10px/1.4 var(--pn-mono);
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+
+/* The agent's own words are the point of the section; the user's turns are
+   context, so only the agent's are given full ink. */
+.cv2-root .pn-debug__turn[data-source='assistant'] .pn-debug__pre {
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-debug__boundary[data-tone='bad'] {
+  color: var(--pn-block);
+}
+
 .cv2-root .pn-debug__sample-empty,
 .cv2-root .pn-debug__no-calls {
   color: var(--pn-ink-3);

@@ -80,6 +80,7 @@ import {
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionJournalRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -1065,6 +1066,81 @@ export function createFixtureSeam(): FixtureSeam {
         });
       }
       return clone(fixtureLaunchRecord(workSessionId));
+    },
+    async transcript(workSessionId, opts): Promise<SessionTranscriptPage> {
+      requireSummary(workSessionId);
+      // Third face of the DEBUG surface, and the same honesty contract as the
+      // two above: only the live PTY (C-5) has an agent that has written a
+      // native transcript, so every other session renders the explained empty.
+      // `stats: null` rather than a zeroed object — there are no statistics
+      // about a file that was never found, and zeros read as "did nothing".
+      if (workSessionId !== sessionLive.id) {
+        return clone({
+          sessionId: workSessionId,
+          available: false,
+          unavailableReason: 'no_transcript_file',
+          agentTool: null,
+          entries: [],
+          stats: null,
+          stuck: null,
+          lastActivityAt: null,
+          malformed: 0,
+        });
+      }
+      // Oldest-first, as the contract requires of a tail, and short enough that
+      // the default window (20) never trims it — a fixture that silently paged
+      // would hide the renderer's ordering bug rather than expose it.
+      const entries = [
+        {
+          at: '2026-01-04T09:15:02.000Z',
+          source: 'user' as const,
+          text: 'Take the failing spawn test and find why the PTY never emits.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:15:44.000Z',
+          source: 'assistant' as const,
+          text: 'Reading the spawn service and its test harness to see which side owns the timeout.',
+          truncated: false,
+        },
+        {
+          at: '2026-01-04T09:18:10.000Z',
+          source: 'assistant' as const,
+          text: 'The harness asserts on a ring that is only filled after the first flush, so the read races the write.',
+          truncated: false,
+        },
+      ];
+      const last = opts?.last ?? 20;
+      return clone({
+        sessionId: workSessionId,
+        available: true,
+        unavailableReason: null,
+        agentTool: 'claude-code',
+        entries: entries.slice(-last),
+        stats: {
+          // True on purpose: the reader tails a bounded slice, so the honest
+          // default state of this surface is "you are looking at a window".
+          partial: true,
+          userMessages: 1,
+          assistantMessages: 2,
+          toolCalls: 6,
+          inputTokens: 4820,
+          outputTokens: 640,
+          cacheReadTokens: 18200,
+          cacheCreationTokens: 1100,
+          tools: [
+            { name: 'Read', count: 3 },
+            { name: 'Grep', count: 2 },
+            { name: 'Bash', count: 1 },
+          ],
+          models: ['claude-opus-4-6'],
+        },
+        // Null, not a zeroed object: the heuristic does not fire on this
+        // session, and a `{ silentMs: 0 }` would render as a stuck badge.
+        stuck: null,
+        lastActivityAt: '2026-01-04T09:18:10.000Z',
+        malformed: 0,
+      });
     },
     async inbox(opts): Promise<Page<NotificationItem>> {
       // The dataset carries no notification rows: the inbox is honestly empty.

@@ -657,10 +657,11 @@ describe.sequential('W2.I02 real production public surface', () => {
     // a red pin) and `identity.profile.update` (which reconciled it).
     // 120/118 -> 126/122 (2026-08-02): the four auth.* rows, all implemented.
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 126, implemented: 124 });
+    // 127/124 -> 128/125 (2026-08-07): `execution.transcript`, mounted.
+    expect(health).toMatchObject({ ok: true, operations: 127, implemented: 125 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
-    // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(harness.production.server.registry.size).toBe(124);
+    // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
+    expect(harness.production.server.registry.size).toBe(125);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -674,8 +675,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     expect(residual).toEqual([]);
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
-    // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(registered.size + residual.length).toBe(124);
+    // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
+    expect(registered.size + residual.length).toBe(125);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

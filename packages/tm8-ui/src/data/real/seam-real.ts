@@ -55,12 +55,13 @@ import {
   type ProjectResource,
   type SessionJournalPage,
   type SessionLaunchRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, Unsubscribe } from '../seam';
+import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -282,6 +283,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     journal: (workSessionId: EntityId, opts?: JournalOpts): Promise<SessionJournalPage> =>
       ops.journal(workSessionId, opts),
     launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
+    transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
+      ops.transcript(workSessionId, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),
