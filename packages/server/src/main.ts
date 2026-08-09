@@ -42,6 +42,7 @@ import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
+import { createForgeWatcherJob } from './tracking/loops.js';
 import {
   loadConfig,
   resolveClipboardDir,
@@ -679,6 +680,24 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         },
       }),
     );
+    // Tier 3 forge closed loops: the WATCHER, which is the complement of the
+    // queue drainer above. It decides for itself what to poll (the watch
+    // list) and turns semantic changes into messages in the owning session.
+    // `runOnStart` is false — it makes provider calls, and a node that restarts
+    // three times during a deploy should not make three rounds of them.
+    scheduler.register(
+      createForgeWatcherJob({
+        db,
+        claims: async () => {
+          const o = await owner();
+          return {
+            identityId: o.identityId,
+            nodeAdmin: o.isNodeAdmin,
+            requestId: 'forge-watcher',
+          };
+        },
+      }),
+    );
     // The file-upload slot sweep — expiry + staged-byte cleanup (094). Only
     // where a blob store exists; the doors are node-admin-only by design.
     if (blobStore) {
@@ -696,6 +715,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     scheduler.start();
     console.log('  tracking: observer draining the refresh queue every 60s');
     console.log('  tracking: commit recorder walking active worktrees every 60s');
+    console.log('  tracking: forge watcher closing CI/conflict/review loops every 90s');
     if (blobStore) {
       console.log('  files: upload-slot sweep expiring slots and purging staged bytes every 10m');
       console.log('  files: deleted-blob purge reclaiming soft-deleted file bytes daily (30d grace)');
