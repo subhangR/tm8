@@ -928,7 +928,7 @@ function PanelBody(
             : (acceptanceCriteria) => save.edit({ acceptanceCriteria })
         }
         criteriaUnavailableReason={saveRefusal}
-        gitSection={detail.kind === 'task' ? props.taskGitSection : undefined}
+        gitSection={config.panel.gitSection ? props.taskGitSection : undefined}
       />
     );
   }
