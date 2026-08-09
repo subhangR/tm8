@@ -331,7 +331,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     // 123 -> 129 (2026-08-09, measured): the six git-ui-wave execution.git*
     // facade handlers were mounted without this pin moving. Tier 2 completion's
     // three handlers move it again to 132 when they land.
-    expect(handlers.facade).toHaveLength(129);
+    expect(handlers.facade).toHaveLength(132);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -348,14 +348,14 @@ describe('W2.C01 current mounted registry inventory', () => {
     // credentials.* add four facade handlers.
     // 134 -> 140 (2026-08-09, measured): six git-ui-wave execution.git*
     // handlers; Tier 2 completion's three make it 143 when they land.
-    expect(handlers.all).toHaveLength(140);
+    expect(handlers.all).toHaveLength(143);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('4962b47bba950a8ff6f1c307aab33b983f8679060a2b6c363c4f4e4bef019436');
+      .toBe('be1a4e011276c16ebeeab6cb49651bb6332b47d12198b3f1f65f31d9ccaad1c7');
 
     // 74 -> 78 (2026-08-09, measured): the four git-ui-wave execution.git*
     // bound inputs; Tier 2 completion adds three more when its handlers land.
-    expect(inputSchemas.bound).toHaveLength(78);
+    expect(inputSchemas.bound).toHaveLength(81);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',

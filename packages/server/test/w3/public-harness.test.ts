@@ -59,7 +59,7 @@ describe.sequential('W3 production-Server public harness', () => {
     // landed without moving it, so main MEASURED 124 against a pin of 122.
     // `execution.transcript` makes it 125; projects.branches.list makes it 126.
     // Tier 4 adds two facade handlers.
-    expect(body.implemented).toBe(134);
+    expect(body.implemented).toBe(143);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

@@ -49,6 +49,9 @@ import {
   ExecutionGitRollbackInputSchema,
   ExecutionGitCommitInputSchema,
   ExecutionGitMergeInputSchema,
+  ExecutionGitCherryPickInputSchema,
+  ExecutionGitBranchInputSchema,
+  ExecutionGitStashInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
   FileUploadAbortInputSchema,
@@ -242,6 +245,9 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.gitRollback': ExecutionGitRollbackInputSchema,
   'execution.gitCommit': ExecutionGitCommitInputSchema,
   'execution.gitMerge': ExecutionGitMergeInputSchema,
+  'execution.gitCherryPick': ExecutionGitCherryPickInputSchema,
+  'execution.gitBranch': ExecutionGitBranchInputSchema,
+  'execution.gitStash': ExecutionGitStashInputSchema,
 
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,
