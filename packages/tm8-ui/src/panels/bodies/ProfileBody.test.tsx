@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { allKinds } from '../../domain';
-import { fixtureDetails, memberAda, teamMemberForge, teamMemberScout } from '../../fixtures';
+import { allKinds, getKind } from '../../domain';
+import {
+  fixtureDetails,
+  memberAda,
+  memoryDisputed,
+  memorySuperseded,
+  memoryTokens,
+  teamMemberForge,
+  teamMemberScout,
+} from '../../fixtures';
 import { PROFILE_BLOCKS, ProfileBody, type ProfileBlockRef } from './ProfileBody';
 
 /**
@@ -522,5 +530,108 @@ describe('the memory working set separates remembered from injected', () => {
     expect(add.getAttribute('aria-disabled')).toBe('true');
     expect(add.getAttribute('title')).toContain('refuses edits');
     expect(add.tagName).toBe('BUTTON');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE MEMORY DETAIL — the profile archetype's third frame.
+ *
+ * It is here rather than in a MemoryBody because there is no MemoryBody and
+ * there must not be: this body's contract is that anatomy is the registry's
+ * ordered block list and no code asks what the entity IS. The memory row is
+ * the proof — it reuses `bio` and `field-grid` unchanged and adds two blocks
+ * that are themselves kind-free.
+ */
+const MEMORY_PANEL = getKind('memory').panel.blocks ?? [];
+
+describe('the memory detail is a registry row, not a new body', () => {
+  it('renders the memory frame from the registry row alone', () => {
+    const { getByTestId } = renderBody(memoryTokens.id, MEMORY_PANEL as ProfileBlockRef[]);
+    // The claim as prose — `statement` is the one 056 field that is content.
+    expect(getByTestId('block-bio').textContent).toContain('tokens.css is verbatim');
+    // The scope, read from STATE, which is why it needs no second fetch.
+    const grid = getByTestId('block-field-grid').textContent ?? '';
+    expect(grid).toContain('Ranges over');
+    expect(grid).toContain('packages/tm8-ui/src/styles/tokens.css');
+    expect(grid).toContain('Measured by');
+    // The field 056 made required so a memory cannot be over-applied.
+    expect(grid).toContain('Does not establish');
+    expect(grid).toContain('that the token VALUES are correct');
+  });
+
+  it('states UNFLAGGED with the verified caveat rather than implying a clean bill', () => {
+    const { getByTestId, queryByTestId } = renderBody(memoryTokens.id, MEMORY_PANEL as ProfileBlockRef[]);
+    expect(queryByTestId('epistemics-reasons')).toBeNull();
+    const text = getByTestId('epistemics-unflagged').textContent ?? '';
+    expect(text).toContain('not the same as verified');
+    // The mechanism of the blindness is named, not just asserted.
+    expect(text).toContain('omits the badge entirely');
+  });
+
+  it('lists EVERY reason, not just the headline the row shows', () => {
+    const { getByTestId } = renderBody(memorySuperseded.id, MEMORY_PANEL as ProfileBlockRef[]);
+    const reasons = getByTestId('epistemics-reasons').textContent ?? '';
+    expect(reasons).toContain('superseded');
+    // …and it says what superseded MEANS for injection, which is the fact a
+    // reader opened this panel to find.
+    expect(reasons).toContain('drops it from working sets');
+  });
+
+  it('names the disputes it carries with their open count', () => {
+    const { getByTestId } = renderBody(memoryDisputed.id, MEMORY_PANEL as ProfileBlockRef[]);
+    const reasons = getByTestId('epistemics-reasons').textContent ?? '';
+    expect(reasons).toContain('disputed');
+    expect(reasons).toContain('2 open dispute');
+    // Still injected — a dispute marks, it does not withhold.
+    expect(reasons).toContain('Still injected');
+  });
+
+  it('says marking is UNWIRED rather than hiding the verbs', () => {
+    // Hiding them would claim the memory cannot be marked, which is false.
+    const { queryByTestId, getByTestId } = renderBody(memoryTokens.id, MEMORY_PANEL as ProfileBlockRef[]);
+    expect(queryByTestId('memory-mark-supersede')).toBeNull();
+    expect(getByTestId('block-epistemics').textContent).toContain('not wired on this surface');
+  });
+
+  it('offers both marks, each carrying its permanence BEFORE the click', () => {
+    const marks: string[] = [];
+    const { getByTestId } = renderBody(memoryTokens.id, MEMORY_PANEL as ProfileBlockRef[], {
+      onMarkMemory: (mark) => marks.push(mark),
+    });
+    const supersede = getByTestId('memory-mark-supersede');
+    // Both edges are append_only — the form must not be where you find out.
+    expect(supersede.getAttribute('title')).toContain('append-only');
+    expect(getByTestId('memory-mark-dispute').getAttribute('title')).toContain('append-only');
+    supersede.click();
+    getByTestId('memory-mark-dispute').click();
+    expect(marks).toEqual(['supersede', 'dispute']);
+  });
+
+  it('lists holders by KIND and keeps authorship in its own block', () => {
+    /*
+     * 085 made `remembers` a mixed-kind list, so the kind is the only thing
+     * distinguishing a teammate holder from a task or a session one. Authorship
+     * is NOT derived from that kind — it is the separate `authored_from` edge,
+     * which is why the two are separate blocks and the second says so when the
+     * edge is absent rather than guessing from the first.
+     */
+    const { getAllByTestId } = renderBody(memoryTokens.id, MEMORY_PANEL as ProfileBlockRef[]);
+    const [holders] = getAllByTestId('peer-rows');
+    expect(holders?.textContent).toContain('forge');
+    expect(holders?.textContent).toContain('Teammate');
+  });
+
+  it('says what an EMPTY holder list means for injection', () => {
+    const { getByTestId } = renderBody(memoryDisputed.id, [
+      {
+        block: 'peer-rows',
+        label: 'REMEMBERED BY',
+        params: { edgeType: 'authored_from', direction: 'outgoing', empty: 'No authoring session recorded.' },
+      },
+    ]);
+    // An absence stated, with the consequence named — never a blank region.
+    expect(getByTestId('block-peer-rows').textContent).toContain('No authoring session recorded.');
   });
 });

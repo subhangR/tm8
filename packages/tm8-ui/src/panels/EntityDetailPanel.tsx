@@ -47,6 +47,7 @@ import { ReaderSurface } from './bodies/ReaderSurface';
 import type { DocCommands } from '../doc-edit';
 import { HubBody } from './bodies/HubBody';
 import { ProfileBody, type MemoryAuthoring } from './bodies/ProfileBody';
+import type { MemoryMarkKind } from '../domain/memory';
 import { GovernedBody } from './bodies/GovernedBody';
 import { RestrictedBody } from './bodies/RestrictedBody';
 import { WorkSessionContent } from './bodies/WorkSessionContent';
@@ -180,6 +181,12 @@ export interface EntityDetailPanelProps {
    * panel does not perform the writes itself, it only forwards the intent.
    */
   memoryAuthoring?: MemoryAuthoring | null;
+  /**
+   * Begin a `supersedes`/`disputes` mark against the open memory (056 §5).
+   * Absent ⇒ the `epistemics` block states that marking is unwired rather than
+   * hiding the verbs, which would claim the memory cannot be marked.
+   */
+  onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
   /** The composer's dispatcher — absent ⇒ composer disabled-with-reason. */
   onPostMessage?: (body: string) => Promise<void> | void;
   /**
@@ -955,6 +962,7 @@ function PanelBody(
         livenessOf={props.livenessOf}
         onOpenEntity={onOpenEntity}
         memoryAuthoring={props.memoryAuthoring}
+        onMarkMemory={props.onMarkMemory}
       />
     );
   }

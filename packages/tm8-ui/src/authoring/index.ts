@@ -51,7 +51,13 @@ export {
   type DialogField,
 } from './EditEntityDialog';
 export { InlineTitleEditor } from './InlineTitleEditor';
-export { MemoryComposer } from './MemoryComposer';
+export { MemoryComposer, MemoryMarkComposer } from './MemoryComposer';
+export {
+  useMemoryMarks,
+  type MemoryMarkComposerHandle,
+  type MemoryMarksHandle,
+  type MemoryMarksPort,
+} from './useMemoryMarks';
 export {
   useMemoryWorkingSet,
   type MemoryComposerHandle,

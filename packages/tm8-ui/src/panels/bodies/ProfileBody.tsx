@@ -1,7 +1,13 @@
 import type { EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { KindIcon, getKind } from '../../domain';
-import { memoryEpistemics, memoryScopeOf } from '../../domain/memory';
+import {
+  MEMORY_MARK_COPY,
+  memoryEpistemics,
+  memoryScopeOf,
+  VERIFIED_NOT_READABLE,
+  type MemoryMarkKind,
+} from '../../domain/memory';
 import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts`, deliberately: the barrel also
@@ -71,6 +77,8 @@ export const PROFILE_BLOCKS = [
   'session-rows',
   'org-tree',
   'memory-set',
+  'epistemics',
+  'peer-rows',
 ] as const;
 
 export type ProfileBlockName = (typeof PROFILE_BLOCKS)[number];
@@ -127,6 +135,12 @@ export interface ProfileBodyProps {
    * working set read-only rather than drawing dead controls.
    */
   memoryAuthoring?: MemoryAuthoring | null;
+  /**
+   * Begin authoring a `supersedes` or `disputes` mark against THIS memory.
+   * Same intent-raising split as `memoryAuthoring`: the block offers the verb,
+   * the view writes the edge. Absent ⇒ the marks render read-only.
+   */
+  onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
 }
 
 export interface MemoryAuthoring {
@@ -154,6 +168,7 @@ export function ProfileBody({
   now,
   onOpenEntity,
   memoryAuthoring,
+  onMarkMemory,
 }: ProfileBodyProps) {
   if (blocks.length === 0) {
     return (
@@ -192,6 +207,7 @@ export function ProfileBody({
           now={nowIso}
           onOpenEntity={onOpenEntity}
           memoryAuthoring={memoryAuthoring}
+          onMarkMemory={onMarkMemory}
         />
       ))}
     </div>
@@ -205,6 +221,7 @@ function ProfileBlock({
   now,
   onOpenEntity,
   memoryAuthoring,
+  onMarkMemory,
 }: {
   detail: EntityDetail;
   block: ProfileBlockRef;
@@ -212,6 +229,7 @@ function ProfileBlock({
   now: string;
   onOpenEntity?: (id: string) => void;
   memoryAuthoring?: MemoryAuthoring | null;
+  onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
 }) {
   const params = block.params ?? {};
   const body = (() => {
@@ -239,6 +257,10 @@ function ProfileBlock({
             authoring={memoryAuthoring}
           />
         );
+      case 'epistemics':
+        return <EpistemicsBlock detail={detail} onMark={onMarkMemory} />;
+      case 'peer-rows':
+        return <PeerRowsBlock detail={detail} params={params} onOpenEntity={onOpenEntity} />;
       case 'session-rows':
         return (
           <SessionRowsBlock
@@ -885,6 +907,168 @@ function MemorySetBlock({
         })}
       </div>
       {add}
+    </div>
+  );
+}
+
+/**
+ * EPISTEMICS — every mark standing against this entity, and the two verbs that
+ * can add one.
+ *
+ * IT LISTS ALL REASONS, NOT JUST THE HEADLINE. `badges.staleness.reasons`
+ * arrives ordered by display precedence and the server's own comment is
+ * explicit that the order "ORDERS the array — it never hides a reason". A
+ * detail panel that showed only `reasons[0]` would hide the rest at the one
+ * place a reader came specifically to find them; the working-set ROW shows the
+ * headline because a row has one line, a panel has no such excuse.
+ *
+ * THE VERIFIED CAVEAT IS DRAWN, not omitted. Absent staleness is UNFLAGGED and
+ * this build cannot tell it from verified (see `domain/memory.ts`), so the
+ * panel says that in words. Leaving it blank would let "no badge" read as a
+ * clean bill of health, which is the precise inference `contract.ts:174`
+ * forbids.
+ */
+function EpistemicsBlock({
+  detail,
+  onMark,
+}: {
+  detail: EntityDetail;
+  onMark?: ((mark: MemoryMarkKind) => void) | null;
+}) {
+  const staleness = detail.badges.staleness;
+  const reasons = staleness?.reasons ?? [];
+  const verified = staleness?.verified;
+
+  return (
+    <div className="pn-memory__epistemics">
+      {reasons.length === 0 ? (
+        <p className="pn-section__empty" data-testid="epistemics-unflagged">
+          Unflagged — nothing is marked against this memory. That is not the
+          same as verified: this build omits the badge entirely when nothing is
+          wrong, so a verified memory and an unexamined one look identical here.
+          Spawn-time injection can see the difference and marks it [verified].
+        </p>
+      ) : (
+        <ul className="pn-memory__reasons" data-testid="epistemics-reasons">
+          {reasons.map((reason) => (
+            <li key={reason} className="pn-memory__reason" data-reason={reason}>
+              <span className="pn-memory__mark" data-tone={reason === 'superseded' ? 'block' : 'wait'}>
+                {reason === 'basisDeleted'
+                  ? 'basis deleted'
+                  : reason === 'basisMoved'
+                    ? 'basis moved'
+                    : reason}
+              </span>
+              <span className="pn-memory__reason-detail">{reasonDetail(detail, reason)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* A verification is only ever reported ALONGSIDE a reason, and it is
+          reported with its version, because a clear of version N stops clearing
+          the moment the content moves to N+1. */}
+      {verified ? (
+        <p className="pn-memory__reason-detail" data-testid="epistemics-verified">
+          {verified.current
+            ? `Verified at version ${String(verified.atVersion)}, which is still the current version — independence basis: ${verified.independenceBasis}.`
+            : `Verified at version ${String(verified.atVersion)}, but the content has moved past it, so the verification no longer applies.`}
+        </p>
+      ) : null}
+
+      {onMark ? (
+        <div className="pn-memory__marks-actions">
+          {(['supersede', 'dispute'] as const).map((mark) => (
+            <button
+              key={mark}
+              type="button"
+              className="pn-memory__add"
+              data-testid={`memory-mark-${mark}`}
+              title={MEMORY_MARK_COPY[mark].permanence}
+              onClick={() => onMark(mark)}
+            >
+              {mark}
+            </button>
+          ))}
+        </div>
+      ) : (
+        /* No verb wired is stated, not hidden: a panel that simply omits the
+           controls claims this memory cannot be marked, which is false. */
+        <p className="pn-section__empty">
+          Marking is not wired on this surface. {VERIFIED_NOT_READABLE}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function reasonDetail(detail: EntityDetail, reason: string): string {
+  const staleness = detail.badges.staleness;
+  switch (reason) {
+    case 'superseded':
+      return 'A newer memory replaces this one. Reads resolve to the chain head, and spawn drops it from working sets — though naming it explicitly by id still injects it.';
+    case 'disputed':
+      return `${String(staleness?.disputed?.openCount ?? 0)} open dispute(s), unanswered at the current version. Still injected, marked [disputed].`;
+    case 'basisDeleted':
+      return `${String(staleness?.basisDeleted?.count ?? 0)} entity this memory was based on has been deleted.`;
+    default:
+      return `${String(staleness?.basisMoved?.count ?? 0)} entity this memory was based on has changed since it was pinned.`;
+  }
+}
+
+/**
+ * PEER ROWS — the entities on the other end of the edge the registry names.
+ *
+ * Deliberately the plainest block here: a glyph, a title and the peer's KIND.
+ * It exists because "who remembers this memory" is now a mixed list — 085
+ * widened `remembers.src_kinds` to the wildcard, so teammates, tasks and work
+ * sessions all appear in it — and the kind is the only thing that distinguishes
+ * them.
+ *
+ * WHY IT DOES NOT SPLIT AUTHORSHIP OUT OF THE HOLDERS: it must not guess. A
+ * `remembers` edge from a work_session and one from a teammate are the same
+ * claim ("this is in my working set"); authorship is a DIFFERENT edge
+ * (`authored_from`, server-written), so the panel asks for it as a second
+ * `peer-rows` row rather than inferring it from the holder's kind. That
+ * distinction survives consolidation moving `remembers` edges around, which is
+ * why D10 kept both edges.
+ */
+function PeerRowsBlock({
+  detail,
+  params,
+  onOpenEntity,
+}: {
+  detail: EntityDetail;
+  params: Params;
+  onOpenEntity?: (id: string) => void;
+}) {
+  const peers = edgesOf(detail, params).map((edge) => (
+    edge.source.id === detail.id ? edge.target : edge.source
+  ));
+  if (peers.length === 0) {
+    const empty = typeof params.empty === 'string' ? params.empty : 'Nothing here yet.';
+    return <p className="pn-section__empty">{empty}</p>;
+  }
+  return (
+    <div className="pn-profile__rows" data-testid="peer-rows">
+      {peers.map((peer) => (
+        <button
+          type="button"
+          key={peer.id}
+          className="pn-profile__row"
+          onClick={() => onOpenEntity?.(peer.id)}
+          title={peer.title}
+        >
+          <span aria-hidden className="pn-profile__row-glyph">
+            <KindIcon kind={peer.kind} />
+          </span>
+          <span className="pn-profile__row-name">{peer.title}</span>
+          <span aria-hidden className="pn-profile__sep">·</span>
+          {/* The kind IN WORDS, from the registry — the glyph alone cannot
+              tell a task from a work session for anyone not fluent in it. */}
+          <span className="pn-profile__org-role">{getKind(peer.kind).label}</span>
+        </button>
+      ))}
     </div>
   );
 }

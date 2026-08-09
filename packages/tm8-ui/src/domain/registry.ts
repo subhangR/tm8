@@ -1114,10 +1114,69 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
     }),
+    /*
+     * PROFILE, not generic — and this is the archetype working as designed
+     * rather than a teammate surface being borrowed.
+     *
+     * `ProfileBody`'s own docblock states the rule: the anatomy IS the ordered
+     * block list the registry row carries, there is no `kind ===` in it, and
+     * "a third profile-shaped kind is a registry row, not an edit here". A
+     * memory needs exactly what that body already draws — prose, a fact grid,
+     * edge-backed rows — plus the two blocks added with it (`epistemics`,
+     * `peer-rows`), which are equally kind-free.
+     *
+     * The generic `fields` block could not carry any of it: it cannot render a
+     * staleness badge, cannot list edge peers, and cannot offer a verb.
+     */
     panel: {
-      archetype: 'generic',
+      archetype: 'profile',
       blocks: [
-        { block: 'fields', label: 'SCOPE' },
+        /* The claim itself, as prose. `statement` is CONTENT — the only 056
+           field that is, since the four scope fields ride in `state` so they
+           travel with every summary. */
+        { block: 'bio', params: { source: 'statement' } },
+        /* The conditions the claim is true under. `lookup` reads state before
+           content, and these are state, so they arrive without a second read.
+           `doesNotEstablish` is here and not hidden behind a disclosure: it is
+           the field that stops a memory being over-applied, which is the whole
+           reason 056 made it required. */
+        {
+          block: 'field-grid',
+          label: 'SCOPE',
+          params: {
+            fields: 'subjectScope=Ranges over,mechanism=Measured by,doesNotEstablish=Does not establish,measuredAt=Measured at',
+          },
+        },
+        { block: 'epistemics', label: 'STANDING' },
+        /* WHO HOLDS IT. Mixed kinds since 085 widened `remembers` src to the
+           wildcard — teammates, tasks and sessions all land in one list, and
+           each row names its kind because the edge no longer distinguishes
+           them. Injection follows these edges, so this is also the answer to
+           "who will be told this". */
+        {
+          block: 'peer-rows',
+          label: 'REMEMBERED BY',
+          params: {
+            edgeType: 'remembers',
+            direction: 'incoming',
+            count: true,
+            empty: 'Nobody remembers this yet — it exists as a claim but no working set carries it, so no session will be told it.',
+          },
+        },
+        /* AUTHORSHIP IS A DIFFERENT EDGE (D10). The server writes
+           `authored_from` when a session creates a memory, and it is kept
+           separate from `remembers` precisely so consolidation can move working
+           sets around without rewriting who wrote what. Never inferred from a
+           holder's kind. */
+        {
+          block: 'peer-rows',
+          label: 'AUTHORED IN',
+          params: {
+            edgeType: 'authored_from',
+            direction: 'outgoing',
+            empty: 'No authoring session recorded — written outside a session, or before authorship was tracked.',
+          },
+        },
       ],
     },
     palette: { createLabel: 'New memory' },

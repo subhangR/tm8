@@ -468,3 +468,48 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/*
+ * EPISTEMICS — every mark standing against a memory.
+ *
+ * A LIST, not a single badge: `reasons` is ordered by display precedence and
+ * the server's own comment insists the order "never hides a reason". The detail
+ * panel is the one surface with room to honour that, so it draws all of them.
+ */
+.cv2-root .pn-memory__epistemics {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cv2-root .pn-memory__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cv2-root .pn-memory__reason {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+}
+/* The superseded row is the only one that changes what gets INJECTED, so it is
+   the only one that gets a heavier edge. The others are warnings about a claim
+   that is still being handed to agents. */
+.cv2-root .pn-memory__reason[data-reason='superseded'] {
+  border-color: var(--pn-block);
+}
+.cv2-root .pn-memory__reason-detail {
+  color: var(--pn-ink-3);
+  font-size: 10.5px;
+  text-wrap: pretty;
+}
+.cv2-root .pn-memory__marks-actions {
+  display: flex;
+  gap: 6px;
+}

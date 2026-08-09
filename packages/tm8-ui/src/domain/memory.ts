@@ -182,3 +182,92 @@ export function memoryDraftRefusal(draft: Readonly<Record<string, string>>): str
 
 /** The contract's own ceiling: `memoryIds: z.array(...).max(32)` (schemas.ts:1662). */
 export const MEMORY_IDS_MAX = 32;
+
+// ---------------------------------------------------------------------------
+// Authoring a MARK — supersede and dispute (056 §5, the mark-edge vocabulary)
+// ---------------------------------------------------------------------------
+
+/**
+ * BOTH MARKS AUTHOR A NEW MEMORY FIRST, and that is a property of the
+ * substrate rather than a choice this UI made.
+ *
+ * 056 registers the two edges like this:
+ *
+ *   `supersedes`  src [memory]           → dst [memory]   props {reason} required
+ *   `disputes`    src [message, memory]  → dst [*]        props {quote, expected,
+ *                                                              observed,
+ *                                                              pinnedVersion} required
+ *
+ * Note what the SOURCE column rules out. There is no "mark this suspect"
+ * button that could exist: a dispute must come FROM a message or a memory, and
+ * 056 says why in its own description — "Source must be evidence-bearing, so a
+ * dispute without evidence is structurally impossible". A supersede likewise
+ * comes from the successor claim, because superseding is asserting a better
+ * one, not deleting a worse one.
+ *
+ * So both flows are: author the evidence as a memory, then point the mark at
+ * the target. Anything cheaper would be a UI inventing an authority the
+ * database refuses to store.
+ *
+ * BOTH EDGES ARE APPEND-ONLY (`append_only = true`), so neither is undoable
+ * from this surface, and the forms say so before the write rather than after.
+ */
+export type MemoryMarkKind = 'supersede' | 'dispute';
+
+export interface MemoryMarkField {
+  key: string;
+  label: string;
+  hint: string;
+}
+
+export const SUPERSEDE_FIELDS: readonly MemoryMarkField[] = [
+  {
+    key: 'reason',
+    label: 'Reason',
+    hint: 'why the new claim replaces the old one — required by the edge, and the only prose the chain carries',
+  },
+];
+
+export const DISPUTE_FIELDS: readonly MemoryMarkField[] = [
+  { key: 'quote', label: 'Quote', hint: 'the part of the claim being contested, verbatim' },
+  { key: 'expected', label: 'Expected', hint: 'what the claim says should be true' },
+  { key: 'observed', label: 'Observed', hint: 'what was actually measured instead' },
+];
+
+export function markFields(mark: MemoryMarkKind): readonly MemoryMarkField[] {
+  return mark === 'supersede' ? SUPERSEDE_FIELDS : DISPUTE_FIELDS;
+}
+
+export const MEMORY_MARK_COPY: Record<MemoryMarkKind, {
+  title: string;
+  submit: string;
+  edgeType: string;
+  /** Stated in the form, because the edge is append-only and cannot be undone. */
+  permanence: string;
+}> = {
+  supersede: {
+    title: 'Supersede this memory',
+    submit: 'Supersede',
+    edgeType: 'supersedes',
+    permanence:
+      'Writes a new memory and points a supersedes edge at this one. Reads then resolve to the chain head, and spawn stops injecting the superseded claim from working sets. The edge is append-only — it cannot be taken back from here.',
+  },
+  dispute: {
+    title: 'Dispute this memory',
+    submit: 'Dispute',
+    edgeType: 'disputes',
+    permanence:
+      'Writes a new memory carrying your evidence and points a disputes edge at this one, pinned to its CURRENT version. The claim keeps being injected, now marked [disputed]. A dispute is answered by a verification, never deleted — the edge is append-only.',
+  },
+};
+
+export function markDraftRefusal(mark: MemoryMarkKind, draft: Readonly<Record<string, string>>): string | null {
+  const memoryRefusal = memoryDraftRefusal(draft);
+  if (memoryRefusal) return memoryRefusal;
+  for (const field of markFields(mark)) {
+    if ((draft[field.key] ?? '').trim().length === 0) {
+      return `${field.label} is required — 056 lists it in the edge's props_schema, and the schema closes with additionalProperties:false, so a missing one is refused at the write.`;
+    }
+  }
+  return null;
+}

@@ -48,8 +48,10 @@ import {
   creatableKind,
   EditEntityDialog,
   MemoryComposer,
+  MemoryMarkComposer,
   NewTaskControl,
   placeholderTitleFor,
+  useMemoryMarks,
   useMemoryWorkingSet,
   useNewTask,
 } from '../authoring';
@@ -434,6 +436,36 @@ export function EntityView(props: EntityViewProps) {
     }),
   });
 
+  /**
+   * Marking a memory (`supersedes` / `disputes`, 056 §5).
+   *
+   * OFFERED WHERE THE ROW DECLARES AN `epistemics` BLOCK — the same registry
+   * test the working set uses, so no kind is named here either. The memory's
+   * CURRENT version is threaded through because `disputes.props.pinnedVersion`
+   * must pin it: a dispute pinned at an older version stops applying the moment
+   * the content moves, so a guessed number authors a mark that does nothing.
+   */
+  const marksHost = detail
+    && (getKind(detail.state.kind).panel.blocks ?? []).some((block) => block.block === 'epistemics')
+    ? detail
+    : null;
+  const memoryMarks = useMemoryMarks({
+    spaceId: data.spaceId,
+    target: marksHost
+      ? { id: marksHost.id, version: marksHost.version, title: marksHost.title }
+      : null,
+    memberKind: creatableKind(String(memorySetBlock?.params?.dstKind ?? 'memory') as EntityKind),
+    commands: data.seam.commands,
+    onChanged: (id) => props.data.refetchDetail(id),
+    onError: (title, body) => props.onNotice({
+      id: `memory-mark:${String(marksHost?.id ?? 'none')}`,
+      tone: 'error',
+      title,
+      body,
+      ttlMs: 12_000,
+    }),
+  });
+
   const panelActions = composePanelActions([
     { onAction: selectedId ? primaries.forEntity(selectedId) : undefined, wiredActions: primaries.wiredActions },
     { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
@@ -453,6 +485,7 @@ export function EntityView(props: EntityViewProps) {
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
       memoryAuthoring={memoryWorkingSet.authoring}
+      onMarkMemory={memoryMarks.begin}
       launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
          archive control flips to, through the same executor — so an archived
@@ -550,6 +583,10 @@ export function EntityView(props: EntityViewProps) {
       <MemoryComposer
         composer={memoryWorkingSet.composer}
         holderLabel={memorySetHost?.title ?? 'this entity'}
+      />
+      <MemoryMarkComposer
+        composer={memoryMarks.composer}
+        targetTitle={marksHost?.title ?? 'this memory'}
       />
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
