@@ -1862,6 +1862,12 @@ export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion(
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
+const CredentialSourceSchema = z.enum(['member', 'node']);
+const CredentialSourcesSchema = z.object({
+  anthropic: CredentialSourceSchema.optional(),
+  openai: CredentialSourceSchema.optional(),
+  github: CredentialSourceSchema.optional(),
+}).strict();
 
 export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.object({
   ...commandContextShape,
@@ -1879,7 +1885,9 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
   accessMode: z.enum(['safe', 'acceptEdits', 'auto', 'plan', 'fullAccess']).optional(),
-  credentialSource: z.enum(['member', 'node']).optional(),
+  credentialSources: CredentialSourcesSchema.optional(),
+  // Deprecated compatibility carrier. Provider-specific keys above win.
+  credentialSource: CredentialSourceSchema.optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
 }).strict();

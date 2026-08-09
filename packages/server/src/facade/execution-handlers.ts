@@ -528,11 +528,17 @@ export class DbGraphPort implements GraphPort {
       access_mode: string | null;
       permission_mode: string | null;
       credential_source: string | null;
+      anthropic_credential_source: string | null;
+      openai_credential_source: string | null;
+      github_credential_source: string | null;
     }>(
       this.claims(auth),
       `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
               sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
-              sm.manifest #>> '{launch,credentialSource}' as credential_source
+              sm.manifest #>> '{launch,credentialSource}' as credential_source,
+              sm.manifest #>> '{launch,credentialSources,anthropic}' as anthropic_credential_source,
+              sm.manifest #>> '{launch,credentialSources,openai}'    as openai_credential_source,
+              sm.manifest #>> '{launch,credentialSources,github}'    as github_credential_source
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -547,6 +553,11 @@ export class DbGraphPort implements GraphPort {
       accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
       permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
       credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
+      credentialSources: {
+        anthropic: row.anthropic_credential_source,
+        openai: row.openai_credential_source,
+        github: row.github_credential_source,
+      } as SessionLaunchPosture['credentialSources'],
     };
   }
 
@@ -1709,6 +1720,7 @@ function registerHandlers(
       agentTool: input.agentTool ?? null,
       reasoningEffort: input.reasoningEffort ?? null,
       accessMode: input.accessMode ?? null,
+      credentialSources: input.credentialSources ?? null,
       credentialSource: input.credentialSource ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,

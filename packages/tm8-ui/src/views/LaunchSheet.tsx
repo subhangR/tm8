@@ -22,7 +22,7 @@
  * exists, which is enforced by there being no import of it in this file.
  */
 import { useEffect, useId, useMemo, useState } from 'react';
-import type { CredentialsStatusView, EntityId } from '@tm8/contract';
+import type { CredentialProviderName, CredentialsStatusView, EntityId } from '@tm8/contract';
 import { Avatar } from '../kit';
 import {
   accessModeLabel,
@@ -72,6 +72,19 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
 /** Rosters longer than this get the filter input. Below it, a search box over
  * a list that fits on screen whole is only friction. */
 const TEAMMATE_SEARCH_FROM = 5;
+type CredentialChoice = '' | 'member' | 'node';
+type AgentCredentialProvider = Extract<CredentialProviderName, 'anthropic' | 'openai'>;
+
+const AGENT_CREDENTIAL_PROVIDER: Partial<Record<string, AgentCredentialProvider>> = {
+  'claude-code': 'anthropic',
+  codex: 'openai',
+};
+
+const CREDENTIAL_PROVIDER_LABEL: Record<CredentialProviderName, string> = {
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  github: 'GitHub',
+};
 
 export function LaunchSheet(props: LaunchSheetProps) {
   const { teammates, projects, profiles } = props;
@@ -117,11 +130,14 @@ export function LaunchSheet(props: LaunchSheetProps) {
   // launch does. It is the sheet's only pre-selected posture because the sheet
   // always SENDS one (unlike the quick config, which can send nothing at all).
   const [accessMode, setAccessMode] = useState<NonNullable<LaunchConfig['accessMode']>>('auto');
-  // Auto (null) is the pre-field behaviour: the launcher's own credential when
-  // one is connected, the node account otherwise. Unlike accessMode the sheet
-  // does NOT pin a value by default — an explicit 'member' REFUSES the launch
-  // for an unconnected member, which merely opening the sheet must not cause.
-  const [credentialSource, setCredentialSource] = useState<NonNullable<LaunchConfig['credentialSource']> | ''>('');
+  // Each provider defaults independently to Auto (the absent key). Keeping the
+  // UI state provider-keyed means switching Claude ↔ Codex does not carry an
+  // Anthropic choice into OpenAI, while GitHub remains independent from both.
+  const [credentialChoices, setCredentialChoices] = useState<Record<CredentialProviderName, CredentialChoice>>({
+    anthropic: '',
+    openai: '',
+    github: '',
+  });
   const [credentialStatus, setCredentialStatus] = useState<CredentialsStatusView | null>(null);
   const [credentialStatusState, setCredentialStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
     props.loadCredentialStatus ? 'loading' : 'idle',
@@ -158,15 +174,38 @@ export function LaunchSheet(props: LaunchSheetProps) {
     };
   }, [props.loadCredentialStatus]);
 
+  const agentCredentialProvider = AGENT_CREDENTIAL_PROVIDER[agentToolId] ?? null;
+  const agentCredentialSource = agentCredentialProvider
+    ? credentialChoices[agentCredentialProvider]
+    : '';
+  const githubCredentialSource = credentialChoices.github;
+  const agentConnection = agentCredentialProvider
+    ? credentialStatus?.providers.find((entry) => entry.provider === agentCredentialProvider)
+    : null;
   const githubConnection = credentialStatus?.providers.find((entry) => entry.provider === 'github');
+  const agentIdentity = agentConnection?.connected
+    ? agentConnection.login ?? 'connected'
+    : null;
   const githubHandle = githubConnection?.connected && githubConnection.login
     ? `@${githubConnection.login.replace(/^@/, '')}`
     : null;
-  const githubIdentityCopy = describeGitHubLaunchIdentity({
-    credentialSource,
+  const agentIdentityCopy = agentCredentialProvider
+    ? describeProviderLaunchIdentity({
+        provider: agentCredentialProvider,
+        source: agentCredentialSource,
+        credentialStatus,
+        credentialStatusState,
+        identity: agentIdentity,
+        strictMissing: true,
+      })
+    : 'This agent tool has no personal credential provider';
+  const githubIdentityCopy = describeProviderLaunchIdentity({
+    provider: 'github',
+    source: githubCredentialSource,
     credentialStatus,
     credentialStatusState,
-    githubHandle,
+    identity: githubHandle,
+    strictMissing: false,
   });
 
   /**
@@ -390,21 +429,67 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </label>
           <label className="ls__row ls__row--inert">
             <span className="ls__rowtext">
-              <span className="ls__rowname">Credential</span>
-              <span className="ls__rowsub">which vendor account the agent signs in as</span>
+              <span className="ls__rowname">
+                {agentCredentialProvider
+                  ? `${CREDENTIAL_PROVIDER_LABEL[agentCredentialProvider]} credential`
+                  : 'Agent credential'}
+              </span>
+              <span className="ls__rowsub">
+                {agentCredentialProvider
+                  ? `${CREDENTIAL_PROVIDER_LABEL[agentCredentialProvider]} account used by ${agentTool(agentToolId)?.label ?? agentToolId}`
+                  : 'this tool has no personal credential provider'}
+              </span>
               <select
                 className="ls__select"
-                value={credentialSource}
-                data-testid="launch-credential-source"
-                onChange={(event) => setCredentialSource(event.target.value as NonNullable<LaunchConfig['credentialSource']> | '')}
+                value={agentCredentialSource}
+                data-testid="launch-agent-credential-source"
+                disabled={!agentCredentialProvider}
+                onChange={(event) => {
+                  if (!agentCredentialProvider) return;
+                  const source = event.target.value as CredentialChoice;
+                  setCredentialChoices((current) => ({
+                    ...current,
+                    [agentCredentialProvider]: source,
+                  }));
+                }}
+              >
+                <option value="">Auto · mine if connected, else the node&apos;s</option>
+                <option value="member">
+                  {agentCredentialProvider && agentIdentity
+                    ? `My ${CREDENTIAL_PROVIDER_LABEL[agentCredentialProvider]} · ${agentIdentity}`
+                    : 'My credential · refuse if this provider is not connected'}
+                </option>
+                <option value="node">Node credential · this server&apos;s agent account</option>
+              </select>
+              <span
+                className="ls__rowsub"
+                data-testid="launch-agent-identity"
+                aria-live="polite"
+              >
+                {agentIdentityCopy}
+              </span>
+            </span>
+          </label>
+          <label className="ls__row ls__row--inert">
+            <span className="ls__rowtext">
+              <span className="ls__rowname">GitHub credential</span>
+              <span className="ls__rowsub">used by gh, git push and pull requests</span>
+              <select
+                className="ls__select"
+                value={githubCredentialSource}
+                data-testid="launch-github-credential-source"
+                onChange={(event) => {
+                  const source = event.target.value as CredentialChoice;
+                  setCredentialChoices((current) => ({ ...current, github: source }));
+                }}
               >
                 <option value="">Auto · mine if connected, else the node&apos;s</option>
                 <option value="member">
                   {githubHandle
-                    ? `My credential · GitHub ${githubHandle}`
-                    : 'My credential · refuse if vendor login is not connected'}
+                    ? `My GitHub · ${githubHandle}`
+                    : 'My GitHub · block node fallback if not connected'}
                 </option>
-                <option value="node">Node credential · this server&apos;s account</option>
+                <option value="node">Node GitHub · this server&apos;s account</option>
               </select>
               <span
                 className="ls__rowsub"
@@ -630,6 +715,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
           aria-busy={launching || undefined}
           onClick={() => {
             if (!teammate || atCapacity || launching) return;
+            const credentialSources: NonNullable<LaunchConfig['credentialSources']> = {};
+            if (agentCredentialProvider && agentCredentialSource) {
+              credentialSources[agentCredentialProvider] = agentCredentialSource;
+            }
+            if (githubCredentialSource) credentialSources.github = githubCredentialSource;
             props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
@@ -637,7 +727,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
               model: model || null,
               reasoningEffort,
               accessMode,
-              ...(credentialSource ? { credentialSource } : {}),
+              ...(Object.keys(credentialSources).length > 0 ? { credentialSources } : {}),
               mode,
               target,
               ...(profileId ? { interactionProfileId: profileId } : {}),
@@ -651,34 +741,41 @@ export function LaunchSheet(props: LaunchSheetProps) {
   );
 }
 
-function describeGitHubLaunchIdentity(input: {
-  credentialSource: NonNullable<LaunchConfig['credentialSource']> | '';
+function describeProviderLaunchIdentity(input: {
+  provider: CredentialProviderName;
+  source: CredentialChoice;
   credentialStatus: CredentialsStatusView | null;
   credentialStatusState: 'idle' | 'loading' | 'ready' | 'error';
-  githubHandle: string | null;
+  identity: string | null;
+  /** Missing personal agent auth refuses launch; missing GitHub only blocks fallback. */
+  strictMissing: boolean;
 }): string {
-  if (input.credentialStatusState === 'loading') return 'Checking your GitHub identity…';
+  const label = CREDENTIAL_PROVIDER_LABEL[input.provider];
+  if (input.credentialStatusState === 'loading') return `Checking your ${label} identity…`;
   if (input.credentialStatusState === 'error') {
-    return 'GitHub identity unavailable · the server will decide at launch';
+    return `${label} identity unavailable · the server will decide at launch`;
   }
-  if (!input.credentialStatus) return 'GitHub identity is checked when this sheet is connected to a node';
-  if (input.credentialStatus.gitCredentialStore === 'absent') {
+  if (!input.credentialStatus) return `${label} identity is checked when this sheet is connected to a node`;
+
+  if (input.source === 'node') {
+    return input.identity
+      ? `${label} for this session: node account · your ${input.identity} connection is not injected`
+      : `${label} for this session: node account`;
+  }
+  if (input.provider === 'github' && input.credentialStatus.gitCredentialStore === 'absent') {
     return 'GitHub identity unknown · this node cannot measure the credential store';
   }
-
-  if (input.credentialSource === 'node') {
-    return input.githubHandle
-      ? `GitHub for this session: node account · your ${input.githubHandle} connection is not injected`
-      : 'GitHub for this session: node account';
+  if (input.source === 'member') {
+    if (input.identity) {
+      return `${label} for this session: ${input.identity} · isolated to your member account`;
+    }
+    return input.strictMissing
+      ? `${label} for this session: none · launch will be refused`
+      : `${label} for this session: none · node fallback is blocked`;
   }
-  if (input.credentialSource === 'member') {
-    return input.githubHandle
-      ? `GitHub for this session: ${input.githubHandle} · isolated to your member account`
-      : 'GitHub for this session: none · node fallback is blocked';
-  }
-  return input.githubHandle
-    ? `GitHub for this session: ${input.githubHandle} · your connection wins in Auto`
-    : 'GitHub for this session: node fallback · no personal GitHub connection';
+  return input.identity
+    ? `${label} for this session: ${input.identity} · your connection wins in Auto`
+    : `${label} for this session: node fallback · no personal ${label} connection`;
 }
 
 /**

@@ -303,6 +303,22 @@ describe('command input schemas (DEF-1/2/3 conventions)', () => {
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'member' }).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'node' }).success).toBe(true);
     expect(ExecutionSpawnInputSchema.safeParse({ ...ok, credentialSource: 'another-member' }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok,
+      credentialSources: { anthropic: 'node', github: 'member' },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok,
+      credentialSources: { openai: 'member', github: 'node' },
+    }).success).toBe(true);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok,
+      credentialSources: { github: 'another-member' },
+    }).success).toBe(false);
+    expect(ExecutionSpawnInputSchema.safeParse({
+      ...ok,
+      credentialSources: { somebodyElse: 'member' },
+    }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({ spaceId: ok.spaceId }).success).toBe(false);
     expect(ExecutionSpawnInputSchema.safeParse({
       ...ok, projectId: '44444444-4444-4444-8444-444444444444', workdir: { mode: 'project' },

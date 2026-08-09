@@ -217,6 +217,47 @@ describe('resolveLaunchConfig', () => {
     ).toBeNull();
   });
 
+  it('resolves each provider credential source independently and keeps legacy fallback', () => {
+    expect(resolveLaunchConfig(base, context(), {}).credentialSources).toEqual({
+      anthropic: null,
+      openai: null,
+      github: null,
+    });
+
+    expect(resolveLaunchConfig({
+      ...base,
+      credentialSources: { anthropic: 'node', github: 'member' },
+    }, context(), {}).credentialSources).toEqual({
+      anthropic: 'node',
+      openai: null,
+      github: 'member',
+    });
+
+    // A new provider-specific choice overrides only its own legacy/global arm.
+    expect(resolveLaunchConfig({
+      ...base,
+      credentialSource: 'node',
+      credentialSources: { github: 'member' },
+    }, context(), {}).credentialSources).toEqual({
+      anthropic: 'node',
+      openai: 'node',
+      github: 'member',
+    });
+
+    // Existing manifests remain inheritable: their one source fans out only
+    // when no provider-specific value exists.
+    expect(resolveLaunchConfig(base, context(), {}, {
+      accessMode: null,
+      permissionMode: null,
+      credentialSource: 'member',
+      credentialSources: { github: 'node' },
+    }).credentialSources).toEqual({
+      anthropic: 'member',
+      openai: 'member',
+      github: 'node',
+    });
+  });
+
   it('maps model families to tools', () => {
     expect(agentToolForModel('claude-opus-5')).toBe('claude-code');
     expect(agentToolForModel('gpt-5')).toBe('codex');

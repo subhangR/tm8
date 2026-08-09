@@ -155,4 +155,42 @@ describe('member GitHub credential injection', () => {
     expect(env).not.toHaveProperty('GH_TOKEN');
     expect(env).not.toHaveProperty('GIT_CONFIG_COUNT');
   });
+
+  it('can use node agent auth and member GitHub auth independently', async () => {
+    const seen: GraphAuth[] = [];
+    const spawnIfAbsent = vi.spyOn(pty, 'spawnIfAbsent').mockReturnValue({ reused: false });
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+    const result = await service(seen).spawn(ALICE, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      credentialSources: { anthropic: 'node', github: 'member' },
+    });
+
+    expect(seen).toEqual([ALICE]);
+    const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+    expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
+    expect(env.GH_TOKEN).toBe(TOKEN);
+    expect(result.manifest.launch.credentialSources).toEqual({
+      anthropic: 'node',
+      openai: null,
+      github: 'member',
+    });
+  });
+
+  it('can use member agent auth and node GitHub auth independently', async () => {
+    const seen: GraphAuth[] = [];
+    const spawnIfAbsent = vi.spyOn(pty, 'spawnIfAbsent').mockReturnValue({ reused: false });
+    vi.spyOn(pty, 'waitForBootSettlement').mockResolvedValue(null);
+    await service(seen).spawn(ALICE, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      credentialSources: { anthropic: 'member', github: 'node' },
+    });
+
+    expect(seen).toEqual([]);
+    const env = spawnIfAbsent.mock.calls[0]![0].env as Record<string, string>;
+    expect(env.CLAUDE_CONFIG_DIR).toContain('/credentials/identity-alice/anthropic');
+    expect(env).not.toHaveProperty('GH_TOKEN');
+    expect(env).not.toHaveProperty('GIT_CONFIG_COUNT');
+  });
 });

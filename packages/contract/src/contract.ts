@@ -1878,6 +1878,9 @@ export type LaunchReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
  * a client that wants the posture on the record rather than inherited says so).
  */
 export type LaunchAccessMode = 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess';
+export type LaunchCredentialSource = 'member' | 'node';
+export type LaunchCredentialProvider = 'anthropic' | 'openai' | 'github';
+export type LaunchCredentialSources = Partial<Record<LaunchCredentialProvider, LaunchCredentialSource>>;
 
 // --- execution.* operation family (R16) ------------------------------------
 
@@ -1928,16 +1931,14 @@ export interface ExecutionSpawnInput extends CommandContext {
   agentTool?: string | null;
   reasoningEffort?: LaunchReasoningEffort;
   accessMode?: LaunchAccessMode;
+  /** Independent source selection per vendor. An absent key means auto. */
+  credentialSources?: LaunchCredentialSources;
   /**
-   * Which credential the session authenticates with. `'member'` requires the
-   * spawner's own connected credential (the launch is refused when there is
-   * none — never a silent fallback to the node's identity); `'node'` skips
-   * member-credential injection. Absent = auto: the member's credential when
-   * connected, the node's otherwise. This can only ever name the CALLER'S OWN
-   * credential — the server resolves it RLS-scoped to the spawner, so no value
-   * here reaches another member's store.
+   * Backward-compatible global source used only when a provider-specific key
+   * is absent. New clients should send `credentialSources`.
+   * @deprecated
    */
-  credentialSource?: 'member' | 'node';
+  credentialSource?: LaunchCredentialSource;
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;
