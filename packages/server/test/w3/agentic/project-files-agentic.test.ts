@@ -71,6 +71,11 @@ describe('W3 connected project folder — read and attach over the public surfac
     });
     expect(projectRes.status).toBe(201);
     const projectId = successData(projectRes).id as string;
+    const linkRes = await harness.request('POST', `/v2/spaces/${spaceId}/projects`, {
+      clientMutationId: 'pf-link-1',
+      projectId,
+    });
+    expect(linkRes.status).toBe(200);
 
     // Written HERE, so the bytes the server reads are bytes this test authored.
     const contents = `release notes for ${taskId}\n`;
@@ -142,6 +147,11 @@ describe('W3 connected project folder — read and attach over the public surfac
       name: 'Replay Project',
       workingDir: replayDir,
     })).id as string;
+    const linkRes = await harness.request('POST', `/v2/spaces/${spaceId}/projects`, {
+      clientMutationId: 'pf-link-2',
+      projectId,
+    });
+    expect(linkRes.status).toBe(200);
 
     const path = join(replayDir, 'REPLAY.md');
     await writeFile(path, 'replay me\n');
@@ -178,6 +188,11 @@ describe('W3 connected project folder — read and attach over the public surfac
       name: 'Refusal Project',
       workingDir: refusalDir,
     })).id as string;
+    const linkRes = await harness.request('POST', `/v2/spaces/${spaceId}/projects`, {
+      clientMutationId: 'pf-link-3',
+      projectId,
+    });
+    expect(linkRes.status).toBe(200);
 
     const outside = await harness.request('POST', `/v2/projects/${projectId}/files/attach`, {
       clientMutationId: 'pf-attach-outside',

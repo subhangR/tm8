@@ -80,6 +80,8 @@ Recorded from the task owner, 2026-08-09.
 | R4 | Prefer the smallest reachable surface over a bespoke one. |
 | R5 | **No quotas.** |
 | R6 | In scope overall: folder upload, in-app viewing beyond images, dedup + GC, agent write access. |
+| R7 | `projects.files.list` and `projects.files.read` require authentication plus a readable `space_projects` link, not node-admin. Missing and linked-only-elsewhere projects are one `not_found` answer. |
+| R8 | `projects.files.attach` **keeps node-admin** and scopes the project link to the destination `spaceId`, because it copies node-local bytes into graph-owned storage and writes graph state. |
 
 **Void:** an earlier ruling modelled folders as zero-byte `file` entities
 reparented with `entities.move`. It was answered under the entity-per-file
@@ -94,7 +96,21 @@ at all.
 
 The viewer is a remote read primitive. Defenses, none relying on another.
 
-### 4.1 Containment (inherited, not reinvented)
+### 4.1 Space scope and containment
+
+Before touching the filesystem, the service authenticates the caller and does
+one joined lookup through `public.projects` → `public.space_projects`, the same
+scope edge `execution.spawn` uses. For list/read, which have no `spaceId`
+parameter, the `space_projects_select` RLS policy resolves the caller's readable
+links with `internal.is_space_member`; any readable linked Space is sufficient.
+Attach supplies its destination `spaceId`, so the same join must match that
+Space specifically.
+
+There is no preceding projects-only existence probe. A missing project and a
+project linked only to another caller's Space both yield the same `not_found`
+code and message for the same request. That collapse is part of the security
+boundary: distinguishing the two would turn Files into a node-wide project-id
+oracle.
 
 `readProjectFile` uses `browsableWorkingDir` + `containedBy` on the **canonical**
 path — the same pair `resolveProjectFile` already uses for attach. Resolving with
@@ -142,7 +158,16 @@ is excluded** because an SVG *is* a document.
 A member who can see a project can already spawn an agent into it — untrusted
 projects are a confirmation gate, not a refusal
 (`db/migrations/007_rpc_catalog.sql:2081`). A spawned agent has a shell, so
-read-only viewing grants no capability a space member does not already hold.
+read-only listing/viewing grants no capability a space member does not already
+hold. Consequently `projects.files.list` and `projects.files.read` require the
+authenticated, readable Space link from §4.1 but do **not** require node-admin.
+
+That argument does not cover `projects.files.attach`. Attach streams bytes from
+the node into tm8's blob store and completes the file-upload ledger, thereby
+creating graph-owned state. It therefore keeps node-admin in Phase 1, after the
+precise destination-Space link check. This is intentionally stricter than
+reading; relaxing it would be a write-policy decision, not a consequence of the
+spawn equivalence.
 
 > `packages/execution/src/spawn/workspace-trust.ts:31` claims `execution_spawn`
 > *refuses* untrusted projects. Measured, it does not. The argument above uses
