@@ -54,6 +54,8 @@ import {
   type Page,
   type ProjectBranchTopology,
   type ProjectResource,
+  type SessionGitDiff,
+  type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionTranscriptPage,
@@ -62,7 +64,7 @@ import {
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -292,6 +294,9 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
     transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
       ops.transcript(workSessionId, opts),
+    gitStatus: (workSessionId: EntityId): Promise<SessionGitStatus> => ops.gitStatus(workSessionId),
+    gitDiff: (workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> =>
+      ops.gitDiff(workSessionId, opts),
     inbox: (opts?: PageOpts): Promise<Page<NotificationItem>> => ops.inbox(opts),
     attentionRequests: (input: AttentionRequestListQuery): Promise<AttentionRequestPage> =>
       ops.attentionRequests(input),
@@ -341,6 +346,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       prompt: (id, input) => ops.prompt(id, input),
       terminate: (id, input) => ops.terminate(id, input),
       resume: (id, input) => ops.resume(id, input),
+      gitCheckpoint: (id, input) => ops.gitCheckpoint(id, input),
+      gitRollback: (id, input) => ops.gitRollback(id, input),
+      gitCommit: (id, input) => ops.gitCommit(id, input),
+      gitMerge: (id, input) => ops.gitMerge(id, input),
     },
 
     // -- credentials ---------------------------------------------------------

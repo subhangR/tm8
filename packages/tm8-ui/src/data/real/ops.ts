@@ -91,6 +91,16 @@ import {
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
+  type ExecutionGitCheckpointInput,
+  type ExecutionGitCommitInput,
+  type ExecutionGitMergeInput,
+  type ExecutionGitRollbackInput,
+  type SessionGitCheckpointResult,
+  type SessionGitCommitResult,
+  type SessionGitDiff,
+  type SessionGitMergeResult,
+  type SessionGitRollbackResult,
+  type SessionGitStatus,
   type SessionJournalPage,
   type SessionLaunchRecord,
   type SessionTranscriptPage,
@@ -101,7 +111,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, GitDiffOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -370,6 +380,39 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<SessionTranscriptPage>('execution.transcript', {
         params: { workSessionId },
         query: { last: opts?.last },
+      });
+    },
+    gitStatus(workSessionId: EntityId): Promise<SessionGitStatus> {
+      return http.call<SessionGitStatus>('execution.gitStatus', { params: { workSessionId } });
+    },
+    gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> {
+      return http.call<SessionGitDiff>('execution.gitDiff', {
+        params: { workSessionId },
+        query: { maxBytes: opts?.maxBytes },
+      });
+    },
+    gitCheckpoint(workSessionId: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult> {
+      return http.call<SessionGitCheckpointResult>('execution.gitCheckpoint', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitRollback(workSessionId: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult> {
+      return http.call<SessionGitRollbackResult>('execution.gitRollback', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitCommit(workSessionId: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult> {
+      return http.call<SessionGitCommitResult>('execution.gitCommit', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitMerge(workSessionId: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult> {
+      return http.call<SessionGitMergeResult>('execution.gitMerge', {
+        params: { workSessionId },
+        body: input,
       });
     },
 

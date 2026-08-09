@@ -48,6 +48,7 @@ import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface
 import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface';
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import { debugSurfaceFor } from './debugSurface';
+import { gitSurfaceFor } from './gitSurface';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
 import { representedThreadMessageCount } from './message-thread';
@@ -329,6 +330,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           }
           liveness={data.livenessOf(id)}
           debugSurface={debugSurfaceFor(data.seam, id, data.livenessOf)}
+          gitSurface={gitSurfaceFor(data.seam, id, data.livenessOf)}
           graphSurface={graphSurfaceFor(data.seam, id, data.livenessOf, openEntity)}
           attachments={attachments}
           onAttachmentUploaded={() => props.data.refetchDetail(id)}
