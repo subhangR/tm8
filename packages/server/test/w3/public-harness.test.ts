@@ -60,7 +60,7 @@ describe.sequential('W3 production-Server public harness', () => {
     // `execution.transcript` makes it 125; projects.branches.list makes it 126.
     // Tier 4 adds two facade handlers.
     // 134 -> 135 (2026-08-09, merge): execution.dispatch's facade handler.
-    expect(body.implemented).toBe(136);
+    expect(body.implemented).toBe(139);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

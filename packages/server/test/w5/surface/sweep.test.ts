@@ -301,9 +301,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(136);
-    expect(rows).toHaveLength(136);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(136);
+    expect(SURFACE).toHaveLength(139);
+    expect(rows).toHaveLength(139);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(139);
   });
 
   /**
@@ -681,9 +681,6 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // normally rather than 400.
   'credentials.delete',
   'entities.commands.linkCommit',
-  // 2026-08-10 (files consolidation): projects.files.read validates its `path`
-  // query in-handler; the sweep supplies none, so the 400 is handler-reached.
-  'projects.files.read',
   'entities.commands.linkPr',
   'entityKinds.create',
   'entityKinds.update',
@@ -693,10 +690,14 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  // 2026-08-10 (files consolidation): projects.files.read validates its `path`
+  // query in-handler, and folderUploads.init validates its manifest in-handler;
+  // the sweep's synthetic bodies reach both refusals.
+  'projects.files.read',
+  'projects.folderUploads.init',
   'savedViews.create',
   'savedViews.update',
   'spaces.create',
-  'projects.files.read',
   'spaces.defaultChannel.set',
   'spaces.interactionProfile.setDefault',
   'spaces.menu.update',

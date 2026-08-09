@@ -23,11 +23,11 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135} (2026-08-09, merge): execution.dispatch.
         total: 142,
-        v1: 137,
-        reserved: 5,
+        v1: 140,
+        reserved: 2,
         http: 141,
         ws: 1,
-        registerableV1Http: 136,
+        registerableV1Http: 139,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

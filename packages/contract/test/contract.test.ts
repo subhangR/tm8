@@ -119,8 +119,8 @@ describe('operation catalog', () => {
   });
 
   it('reserved slots: search, bridge.fetchBlob, and the held-back folderUploads lifecycle', () => {
-    expect(RESERVED_OPERATIONS.map((o) => o.name)).toEqual(['search.query', 'projects.folderUploads.init', 'projects.folderUploads.complete', 'projects.folderUploads.abort', 'bridge.fetchBlob']);
-    expect(V1_OPERATIONS.length).toBe(OPERATIONS.length - 5);
+    expect(RESERVED_OPERATIONS.map((o) => o.name)).toEqual(['search.query', 'bridge.fetchBlob']);
+    expect(V1_OPERATIONS.length).toBe(OPERATIONS.length - 2);
   });
 
   it('bindPath substitutes params and refuses missing ones', () => {

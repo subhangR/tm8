@@ -278,7 +278,4 @@ export const UNBOUND_COMMAND_OPERATIONS: readonly OperationName[] = [
   'interactionProfiles.retire',
   'teamMembers.interactionProfile.setDefault',
   'spaces.interactionProfile.setDefault',
-  'projects.folderUploads.init',
-  'projects.folderUploads.complete',
-  'projects.folderUploads.abort',
 ];

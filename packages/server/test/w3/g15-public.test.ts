@@ -11,7 +11,7 @@ import {
   type W3PublicServer,
 } from './public-harness.js';
 
-const RESERVED = new Set(['search.query', 'bridge.fetchBlob', 'projects.folderUploads.init', 'projects.folderUploads.complete', 'projects.folderUploads.abort']);
+const RESERVED = new Set(['search.query', 'bridge.fetchBlob']);
 
 function publicPath(operation: OperationBinding): string {
   return operation.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, () => randomUUID());
@@ -80,7 +80,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
       operations: 141,
-      implemented: 136,
+      implemented: 139,
     });
   });
 
@@ -119,7 +119,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
     // are mounted, so none answers 501).
     // The four credentials.* rows bring the mounted set to 132.
-    expect(implemented).toHaveLength(136);
+    expect(implemented).toHaveLength(139);
   });
 
   /**

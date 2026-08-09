@@ -336,8 +336,8 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 138 -> 142 (2026-08-10, files consolidation): projects.files.read (GET/read)
   // + projects.folderUploads.init/complete/abort (3 POST commands).
   assertEqual(names.length, 142, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 137, 'v1 total');
-  assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'projects.folderUploads.init', 'projects.folderUploads.complete', 'projects.folderUploads.abort', 'bridge.fetchBlob'], 'reserved operations');
+  assertEqual(V1_OPERATIONS.length, 140, 'v1 total');
+  assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');

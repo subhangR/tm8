@@ -113,7 +113,7 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // credentials.* are reachable-by-name though not CLI-invocable.
     // 134 -> 135: execution.dispatch is public and reachable under session.
-    expect(wanted).toHaveLength(136);
+    expect(wanted).toHaveLength(139);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 

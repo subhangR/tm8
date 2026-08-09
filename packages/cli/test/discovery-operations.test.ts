@@ -133,7 +133,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
   });
 
   it('agrees on the reserved set exactly', () => {
-    expect(manifest.reservedOperations.sort()).toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
+    expect(manifest.reservedOperations.sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(manifest.reservedOperations.sort());
     expect(DISCOVERY.filter((d) => d.exposure === 'reserved').map((d) => d.operation).sort()).toEqual(
       manifest.reservedOperations.sort(),
@@ -165,7 +165,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 135, composite: 1, internal: 1, reserved: 5 });
+    expect(histogram).toEqual({ public: 138, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

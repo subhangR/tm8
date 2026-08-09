@@ -93,7 +93,7 @@ afterAll(async () => {
 });
 
 describe('G15 reserved and residual honesty, via generated discovery only', () => {
-  it('navigates root -> noun -> operation and finds exactly five reserved operations', async () => {
+  it('navigates root -> noun -> operation and finds exactly two reserved operations', async () => {
     const root = digestChecked(await queryW3Discovery({ kind: 'root' }));
     // 101 -> 117 on 2026-07-31: the consolidation wave (voice, artifacts,
     // attention, memories, worktrees) grew the catalog.
@@ -105,7 +105,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
     expect(root.catalog.total).toBe(142);
-    expect(root.catalog.reserved).toBe(5);
+    expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
     const summaries: Array<{ noun: string; operation: string; exposure: string }> = [];
@@ -147,7 +147,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     }
 
     reserved = catalog.filter((entry) => entry.exposure === 'reserved');
-    expect(reserved.map((entry) => entry.operation).sort()).toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
+    expect(reserved.map((entry) => entry.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     for (const entry of reserved) {
       // Discovery is itself honest: it advertises the reason rather than hiding it.
       expect(entry.reason, `${entry.operation} reason`).toBe('not_implemented');
@@ -155,8 +155,8 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     }
   }, 120_000);
 
-  it('A: all reserved operations answer with a standard closed 501 not_implemented envelope', async () => {
-    expect(reserved.length).toBe(5);
+  it('A: both reserved operations answer with a standard closed 501 not_implemented envelope', async () => {
+    expect(reserved.length).toBe(2);
     for (const entry of reserved) {
       const response = await harness.request(entry.method, concretePath(entry.path));
       expectHonest501(response, entry.operation);

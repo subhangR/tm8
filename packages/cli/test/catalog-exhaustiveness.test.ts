@@ -47,10 +47,10 @@ const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
 
 describe('the catalog itself is the shape W4 was briefed on', () => {
-  it('138 rows = 136 v1 + 2 reserved, 137 HTTP + 1 WS', () => {
+  it('142 rows = 140 v1 + 2 reserved, 141 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(137);
-    expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
+    expect(V1_OPERATIONS.length).toBe(140);
+    expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
 });

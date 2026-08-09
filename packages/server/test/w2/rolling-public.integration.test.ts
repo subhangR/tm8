@@ -247,6 +247,11 @@ const PROJECT_FOLDER_NET_NEW_OPERATIONS = [
   'projects.files.list',
   'projects.files.attach',
   'projects.files.read',
+  // 2026-08-10: browser-originated folder import (R7). Net-new; mounts only
+  // where the node passes the folderUploads seam (file storage + state dir).
+  'projects.folderUploads.init',
+  'projects.folderUploads.complete',
+  'projects.folderUploads.abort',
 ] as const;
 
 /**
@@ -340,6 +345,12 @@ function composeTrancheV2(
       blobStore: createW2BlobStore({ dataDir, maxSizeBytes: config.fileMaxSizeBytes }),
       maxSizeBytes: config.fileMaxSizeBytes,
     },
+    // Mirrors src/main.ts: folderUploads mounts beside files in production.
+    folderUploads: {
+      blobStore: createW2BlobStore({ dataDir, maxSizeBytes: config.fileMaxSizeBytes }),
+      maxSizeBytes: config.fileMaxSizeBytes,
+      stateDir: join(dataDir, 'folder-uploads'),
+    },
   });
   return registry;
 }
@@ -390,7 +401,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 114 -> 115 (2026-08-09): projects.branches.list.
     // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
     // 117 -> 119: projects.files.list + projects.files.attach.
-    expect(registry.size).toBe(120);
+    // 119 -> 122: projects.folderUploads.init/complete/abort.
+    // 122 -> 123: projects.files.read (the viewer half).
+    expect(registry.size).toBe(123);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -547,7 +560,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
     // 70 -> 73: the three credentials.* command bodies are bound.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(75);
+    // 75 -> 78 (2026-08-10): the three projects.folderUploads.* bodies bind.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(78);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -563,7 +577,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // nine command operations had no binding while the constant claimed none
     // were missing. They are enumerated now (see input-schemas.ts) so the
     // derived check above has something true to compare against.
-    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(12);
+    expect(UNBOUND_COMMAND_OPERATIONS).toHaveLength(9);
     expect(UNBOUND_COMMAND_OPERATIONS).not.toContain('execution.resume');
     for (const operation of [
       'messages.delete',
@@ -695,8 +709,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 141, implemented: 136 });
-    expect(harness.production.server.registry.size).toBe(136);
+    expect(health).toMatchObject({ ok: true, operations: 141, implemented: 139 });
+    expect(harness.production.server.registry.size).toBe(139);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -714,7 +728,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(136);
+    expect(registered.size + residual.length).toBe(139);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 
@@ -786,25 +800,22 @@ describe.sequential('W2.I02 real production public surface', () => {
    * validated. The second half is what makes the first half mean anything —
    * the SAME body must reach validation on a built operation.
    */
-  it('refuses all 5 remaining operations before input validation, and validates the composed ones', async () => {
+  it('refuses all 2 remaining operations before input validation, and validates the composed ones', async () => {
     const registered = new Set<string>(harness.production.server.registry.implemented());
     const refusing = OPERATIONS.filter((op) => op.method !== 'WS' && !registered.has(op.name));
-    expect(refusing).toHaveLength(5);
+    expect(refusing).toHaveLength(2);
     expect(refusing.map((op) => op.name).sort())
-      .toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
+      .toEqual(['bridge.fetchBlob', 'search.query']);
     // The refusing set is now EXACTLY the reserved set — nothing is unbuilt any
     // more, only contractually withheld. If these two ever stop matching, the
     // node has either implemented a reserved operation or regressed a built one.
     expect(refusing.filter((op) => op.status === 'reserved').map((op) => op.name))
-      .toEqual(['search.query', 'projects.folderUploads.init', 'projects.folderUploads.complete', 'projects.folderUploads.abort', 'bridge.fetchBlob']);
+      .toEqual(['search.query', 'bridge.fetchBlob']);
     expect(refusing.every((op) => op.status === 'reserved')).toBe(true);
     // Both are reads. No v1 command is unmounted, which is why the
     // refusal-costs-nothing probe below cannot be built from a residual command
     // and uses a reserved read instead.
-    expect(refusing.filter((op) => op.kind === 'read').every((op) => op.method === 'GET')).toBe(true);
-    // The three reserved projects.folderUploads.* rows are POST commands held
-    // back until their HTTP lifecycle lands; the two reserved reads stay GET.
-    expect(refusing.filter((op) => op.kind === 'command').every((op) => op.method === 'POST')).toBe(true);
+    expect(refusing.every((op) => op.method === 'GET')).toBe(true);
 
     for (const op of refusing) {
       const path = op.path.replace(/:([A-Za-z]+)/g, () => PROBE_UUID);

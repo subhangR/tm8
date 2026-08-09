@@ -3,11 +3,11 @@
   "catalogDigest": "sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf",
   "catalog": {
     "total": 142,
-    "v1": 137,
-    "reserved": 5,
+    "v1": 140,
+    "reserved": 2,
     "http": 141,
     "ws": 1,
-    "registerableV1Http": 136,
+    "registerableV1Http": 139,
     "methods": {
       "GET": 53,
       "POST": 62,
@@ -26,9 +26,6 @@
   },
   "reservedOperations": [
     "search.query",
-    "projects.folderUploads.init",
-    "projects.folderUploads.complete",
-    "projects.folderUploads.abort",
     "bridge.fetchBlob"
   ],
   "additiveOperations": [
@@ -725,21 +722,21 @@
         "operation": "projects.folderUploads.init",
         "method": "POST",
         "path": "/v2/spaces/:spaceId/project-folder-uploads",
-        "status": "reserved",
+        "status": "registered",
         "source": "server-router"
       },
       {
         "operation": "projects.folderUploads.complete",
         "method": "POST",
         "path": "/v2/project-folder-uploads/:folderUploadId/complete",
-        "status": "reserved",
+        "status": "registered",
         "source": "server-router"
       },
       {
         "operation": "projects.folderUploads.abort",
         "method": "POST",
         "path": "/v2/project-folder-uploads/:folderUploadId/abort",
-        "status": "reserved",
+        "status": "registered",
         "source": "server-router"
       },
       {
@@ -1401,7 +1398,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 108
+    "unimplementedV1Http": 111
   },
   "schemas": {
     "additive": {
@@ -2791,7 +2788,7 @@
       {
         "operation": "projects.folderUploads.init",
         "noun": "project",
-        "exposure": "reserved",
+        "exposure": "public",
         "helpRef": "tm8://help/operation/projects.folderUploads.init",
         "intentTags": [
           "projects",
@@ -2802,14 +2799,14 @@
         "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
-        "actionDiscoverable": false,
-        "reason": "not_implemented",
+        "actionDiscoverable": true,
+        "reason": null,
         "publicComposite": null
       },
       {
         "operation": "projects.folderUploads.complete",
         "noun": "project",
-        "exposure": "reserved",
+        "exposure": "public",
         "helpRef": "tm8://help/operation/projects.folderUploads.complete",
         "intentTags": [
           "projects",
@@ -2820,14 +2817,14 @@
         "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
-        "actionDiscoverable": false,
-        "reason": "not_implemented",
+        "actionDiscoverable": true,
+        "reason": null,
         "publicComposite": null
       },
       {
         "operation": "projects.folderUploads.abort",
         "noun": "project",
-        "exposure": "reserved",
+        "exposure": "public",
         "helpRef": "tm8://help/operation/projects.folderUploads.abort",
         "intentTags": [
           "projects",
@@ -2838,8 +2835,8 @@
         "inputSchemaRef": null,
         "resultSchemaRef": null,
         "invocationSyntax": null,
-        "actionDiscoverable": false,
-        "reason": "not_implemented",
+        "actionDiscoverable": true,
+        "reason": null,
         "publicComposite": null
       },
       {
