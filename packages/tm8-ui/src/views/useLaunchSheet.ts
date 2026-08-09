@@ -49,9 +49,18 @@ export interface LaunchSheetOptions {
 export function useLaunchSheet(options: LaunchSheetOptions): LaunchSheetState {
   const [subjectId, setSubjectId] = useState<EntityId | null>(null);
   const depth = useRef(0);
+  /**
+   * Whether the subject was HOSTED when the sheet opened. Run on a list row
+   * opens the sheet for an entity with no panel at all — the orphan rule binds
+   * a sheet to the panel it came from, and a row-opened sheet has no panel to
+   * be orphaned by, so enforcing membership there would close the sheet in the
+   * same tick it opened.
+   */
+  const openedHosted = useRef(false);
 
   const open = useCallback(
     (id: EntityId) => {
+      openedHosted.current = options.hostedIds.includes(id);
       setSubjectId(id);
       depth.current += 1;
       options.setKeyboardContext?.({ modalDepth: depth.current });
@@ -68,10 +77,12 @@ export function useLaunchSheet(options: LaunchSheetOptions): LaunchSheetState {
   // OBLIGATION 2, wired: when the subject stops being hosted, the sheet goes.
   // Keyed on membership rather than on a nav event, so it holds for every way
   // an entity can leave — including hydration changes nobody dispatched.
+  // Only for sheets whose subject WAS hosted at open: a row-opened sheet never
+  // had a panel, so stack churn says nothing about its subject.
   const hosted = options.hostedIds.join(',');
   useEffect(() => {
     if (subjectId === null) return;
-    if (!options.hostedIds.includes(subjectId)) close();
+    if (openedHosted.current && !options.hostedIds.includes(subjectId)) close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hosted, subjectId, close]);
 

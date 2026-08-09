@@ -20,10 +20,16 @@
  * workspace passed throughout the entire life of the bug.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { render, renderHook, within } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, waitFor, within } from '@testing-library/react';
+import type { EntityId } from '@tm8/contract';
 import { LaunchQuickConfig, type LaunchTeammateOption } from '../panels/launch/LaunchQuickConfig';
 import { useLaunchPort } from './useLaunchPort';
+import { useLaunchSheet } from './useLaunchSheet';
+import { EntityView } from './EntityView';
+import { useGateData } from './useGateData';
 import type { GateData } from './useGateData';
+import { createFixtureSeam } from '../data/fixtures/seam-fixture';
+import type { DetailReasons } from '../panels';
 import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 /** Only the slice `useLaunchPort` reads; the rest of GateData is irrelevant here. */
@@ -130,5 +136,97 @@ describe('the quick config renders real options from the port', () => {
     expect((view.getByTestId('launch-teammate') as HTMLSelectElement).value).toBe('ent-tm-forge');
     expect((view.getByTestId('launch-model') as HTMLSelectElement).value).toBe('claude-sonnet-5');
     expect(view.getByTestId('launch-model').textContent).not.toContain('no known models');
+  });
+});
+
+/**
+ * The orphan rule's POLARITY depends on where the sheet was opened from.
+ *
+ * Obligation 2 binds a sheet to the PANEL it came from: panel leaves, sheet
+ * goes. But Run on a LIST ROW opens the sheet for an entity that has no panel
+ * at all — enforcing hosted-membership there closed the sheet in the same
+ * tick it opened, so the direct-to-sheet Run (user ruling 2026-08-09) would
+ * flash and vanish on every row whose entity was not already open.
+ */
+describe('useLaunchSheet — the orphan rule knows a row-opened sheet has no panel', () => {
+  const hook = (hostedIds: readonly EntityId[]) =>
+    renderHook(({ ids }) => useLaunchSheet({ hostedIds: ids }), {
+      initialProps: { ids: hostedIds },
+    });
+
+  it('a sheet opened from a LIST ROW (subject never hosted) STAYS OPEN', () => {
+    const { result, rerender } = hook(['ent-open-panel' as EntityId]);
+
+    act(() => result.current.open('ent-task-row' as EntityId));
+    expect(result.current.subjectId).toBe('ent-task-row');
+
+    // Stack churn — a panel closes elsewhere. Says nothing about this subject.
+    rerender({ ids: [] });
+    expect(result.current.subjectId).toBe('ent-task-row');
+  });
+
+  it('a sheet opened for a HOSTED panel still closes when that panel leaves', () => {
+    const { result, rerender } = hook(['ent-open-panel' as EntityId]);
+
+    act(() => result.current.open('ent-open-panel' as EntityId));
+    expect(result.current.subjectId).toBe('ent-open-panel');
+
+    rerender({ ids: [] });
+    expect(result.current.subjectId).toBeNull();
+  });
+});
+
+/**
+ * THE SHEET EXISTS ON THE KIND SCREEN (user report 2026-08-09): tasks are
+ * launched FROM the standalone Tasks screen, and the sheet living only in the
+ * workspace centre made "full options" permanently disabled exactly where
+ * launching happens. Same vantage as the header comment: only mounting the
+ * REAL view can see a missing mount.
+ */
+describe('the kind screen mounts the FULL launch sheet', () => {
+  const REASONS: DetailReasons = {
+    presenceHollow: 'Presence isn’t measured yet.',
+    versionHistory: 'Version history isn’t available yet.',
+    provenanceHollow: 'Authorship provenance isn’t available yet.',
+    shareUnavailable: 'Sharing into a session isn’t available yet.',
+    withdrawUnavailable: 'Withdrawing a handoff isn’t available yet.',
+  };
+
+  function TasksHost(props: { launchSubjectId: EntityId | null; onLaunchCancel?: () => void }) {
+    const data = useGateData({ leftKind: 'task', rightKind: 'work_session', seam: createFixtureSeam() });
+    return (
+      <EntityView
+        data={data as GateData & { pull?: (id: string) => void }}
+        kind="task"
+        reasons={REASONS}
+        onNotice={() => {}}
+        onLaunchOpen={() => {}}
+        launchSubjectId={props.launchSubjectId}
+        onLaunchCancel={props.onLaunchCancel}
+      />
+    );
+  }
+
+  it('renders the sheet over the tasks screen while the shell holds a subject', async () => {
+    const onLaunchCancel = vi.fn();
+    const view = render(
+      <TasksHost launchSubjectId={'ent-task-row' as EntityId} onLaunchCancel={onLaunchCancel} />,
+    );
+
+    const sheet = await waitFor(() => view.getByTestId('launch-sheet'));
+    // The reorganized anatomy, on THIS screen: teammate and configuration
+    // are present, so the mount is the real five-section sheet, not a stub.
+    const eyebrows = [...sheet.querySelectorAll('.ls__eyebrow')].map((n) => n.textContent);
+    expect(eyebrows).toContain('TEAMMATE');
+    expect(eyebrows).toContain('CONFIGURATION');
+
+    // And its verbs reach the shell — Cancel is the shell's close, not a no-op.
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Close launch sheet' }));
+    expect(onLaunchCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('mounts NO sheet when the shell holds none — the fallback state is clean', () => {
+    const view = render(<TasksHost launchSubjectId={null} />);
+    expect(view.queryByTestId('launch-sheet')).toBeNull();
   });
 });

@@ -52,6 +52,7 @@ import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
+import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
@@ -82,6 +83,19 @@ export interface EntityViewProps {
    * persisted), which is why the dropdowns "started working after a refresh".
    */
   onSpawn?(input: ExecutionSpawnInput): void | Promise<void>;
+  /**
+   * The full launch sheet, HERE TOO (user report 2026-08-09): tasks live on
+   * this screen, and Run falling back to the inline expand exactly where
+   * people launch from made the reorganized sheet unreachable in practice.
+   * The shell owns the sheet state (same `useLaunchSheet` the workspace
+   * uses); this screen only mounts the overlay and forwards the verbs.
+   * All optional — a host that wires none keeps the honest inline fallback.
+   */
+  onLaunchOpen?(id: EntityId): void;
+  launchSubjectId?: EntityId | null;
+  launchRefusal?: { cause: string; detail: string } | null;
+  onLaunchCancel?(): void;
+  onLaunchSubmit?(config: LaunchSelection): void;
   /**
    * §1.1 mode wiring: the shell holds the layout mode (it is route state) and
    * this screen passes it through to the panel. Absent ⇒ the panel's local
@@ -194,7 +208,12 @@ export function EntityView(props: EntityViewProps) {
   /* The list panel's Run expand, wired from the SAME source the workspace uses
      (`useLaunchPort`). Without this the expand rendered with `teammates ?? []`
      and the teammate and model selects were both empty. */
-  const launchPort = useLaunchPort(data, props.onSpawn ? { onSpawn: props.onSpawn } : {});
+  const launchPort = useLaunchPort(data, {
+    ...(props.onSpawn ? { onSpawn: props.onSpawn } : {}),
+    ...(props.onLaunchOpen
+      ? { onFullOptions: (id: string) => props.onLaunchOpen?.(id as EntityId) }
+      : {}),
+  });
 
   /* The panel action bar's executor. Same hook the workspace uses, so the
      Terminate button behaves identically wherever a session panel is opened. */
@@ -500,6 +519,23 @@ export function EntityView(props: EntityViewProps) {
         fields={verbs.editFields}
         title={verbs.editTitle}
       />
+      {/* The full launch sheet, overlaying this screen the same way it
+          overlays the workspace centre (`.ls` is absolute against the view
+          root). Mounted only while the shell holds a subject. */}
+      {props.launchSubjectId && (
+        <LaunchSheet
+          refusal={props.launchRefusal}
+          subjectId={props.launchSubjectId}
+          fromChip="◔ Run ▸"
+          fromCaption="subject pre-associated — the session links to it"
+          teammates={data.launch.teammates}
+          projects={data.launch.projects}
+          profiles={data.launch.profiles}
+          capacity={data.launch.capacity}
+          onCancel={() => props.onLaunchCancel?.()}
+          onLaunch={(config) => props.onLaunchSubmit?.(config)}
+        />
+      )}
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
@@ -530,11 +566,10 @@ export function EntityView(props: EntityViewProps) {
           onSetValue={rowLifecycle.setValue}
           onAssign={rowLifecycle.assign}
           assignableActors={rowLifecycle.assignable}
-          /* The SAME sources the workspace passes. `onFullOptions` is
-             deliberately absent: the five-section sheet is mounted by the
-             workspace centre and does not exist on this screen, so the escape
-             keeps its honest disabled-with-reason state rather than pretending
-             to open something that is not here. */
+          /* The SAME sources the workspace passes. `onFullOptions` rides in
+             when the shell wired `onLaunchOpen` — this screen mounts the
+             sheet itself now — and stays absent otherwise, keeping the
+             honest disabled-with-reason state on hosts without one. */
           launch={launchPort}
         />
       </section>
