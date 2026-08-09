@@ -495,4 +495,64 @@ describe('the fixture seam models the dispatcher saga rather than stubbing it', 
     expect(second.dispatcherSpawned).toBe(false);
     expect(second.dispatcherSessionId).toBe(first.dispatcherSessionId);
   });
+
+  it('stores the request message for real — the id must resolve', async () => {
+    /*
+     * The handler posts the dispatch request as a durable message on the
+     * derived task, and it survives whether or not delivery lands — that is
+     * what makes `undelivered` non-fatal. A minted id that resolved to nothing
+     * (the original fixture behaviour) would let a surface offer a link into
+     * the void and look correct in every test that only checked the shape.
+     */
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const subject = (await seam.query({ spaceId })).page.items[0];
+    if (!subject) throw new Error('fixture must supply a subject');
+
+    const result = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d3', spaceId, subjectId: subject.id, note: 'please route this',
+    });
+    expect(result.requestMessageId).toBeTruthy();
+
+    const message = await seam.entity(result.requestMessageId!);
+    expect(message.kind).toBe('message');
+    // Anchored to the TASK — that is where the dispatcher replies, so it is
+    // where the request has to live.
+    expect(message.state.kind === 'message' ? message.state.anchorId : null).toBe(result.taskId);
+    expect(message.content.kind === 'message' ? message.content.body : '').toContain('please route this');
+  });
+
+  it('resolves residency by LIVENESS, never by a recorded status', async () => {
+    /*
+     * DESIGN §5's hazard, stated twice there: "never trust
+     * `work_sessions.status` for is-the-dispatcher-alive — sessions die in 40ms
+     * with a NULL exit_code; probe, don't read." A dispatcher row that is
+     * merely RECORDED as running is not a dispatcher.
+     *
+     * So: dispatch once, then take the dispatcher out of the liveness snapshot
+     * while leaving its stored row untouched. A status-reading resolver would
+     * reuse the dead session and report `dispatcherSpawned: false`, delivering
+     * into nothing.
+     */
+    const seam = createFixtureSeam();
+    const spaceId = await firstSpaceId(seam);
+    const subject = (await seam.query({ spaceId })).page.items[0];
+    if (!subject) throw new Error('fixture must supply a subject');
+
+    const first = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d4', spaceId, subjectId: subject.id,
+    });
+    expect(first.dispatcherSpawned).toBe(true);
+
+    // The row still says `running`; only the verdict changes.
+    const record = await seam.entity(first.dispatcherSessionId);
+    expect(record.state.kind === 'work_session' ? record.state.status : null).toBe('running');
+    seam.fixtureControls.setLiveness(spaceId, []);
+
+    const second = await seam.commands.dispatch({
+      clientMutationId: 'cmid-d5', spaceId, subjectId: subject.id,
+    });
+    expect(second.dispatcherSpawned).toBe(true);
+    expect(second.dispatcherSessionId).not.toBe(first.dispatcherSessionId);
+  });
 });
