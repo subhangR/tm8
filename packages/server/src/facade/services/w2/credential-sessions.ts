@@ -256,7 +256,7 @@ export class W2CredentialSessionsService {
       );
     }
 
-    await this.reclaimOwnStaleSessions(principal);
+    await this.reclaimOwnStaleSessions(principal, provider);
 
     const { homeDir, configDir } = await ensureCredentialHome(
       this.dataDir,
@@ -264,16 +264,31 @@ export class W2CredentialSessionsService {
       provider,
     );
 
-    const started = await this.db.rpc<StartRpcResult>(
-      principal.claims,
-      'start_credential_session',
-      [
-        input.spaceId,
-        provider,
-        DEFAULT_CREDENTIAL_TTL_SECONDS,
-        resolveCredentialSessionCap(this.env),
-      ],
-    );
+    let started: StartRpcResult;
+    try {
+      started = await this.db.rpc<StartRpcResult>(
+        principal.claims,
+        'start_credential_session',
+        [
+          input.spaceId,
+          provider,
+          DEFAULT_CREDENTIAL_TTL_SECONDS,
+          resolveCredentialSessionCap(this.env),
+        ],
+      );
+    } catch (error) {
+      // After the same-provider supersede above, the one-live-per-pair index
+      // can only fire on a race — two Connect clicks landing together. The
+      // raw `duplicate key value violates unique constraint …` message is a
+      // debugging artifact, not an answer; say what actually happened.
+      if (error instanceof CollabError && error.code === 'invariant_violation') {
+        throw new CollabError(
+          'conflict',
+          `a ${provider} login terminal for your account just opened elsewhere — finish or close it, then try again`,
+        );
+      }
+      throw error;
+    }
 
     try {
       const launched = this.launcher.launch({
@@ -462,16 +477,30 @@ export class W2CredentialSessionsService {
   }
 
   /**
-   * Finish the CALLING member's own unfinished rows that are expired or have no
-   * live PTY on this node.
+   * Finish the CALLING member's own unfinished rows that are expired, have no
+   * live PTY on this node, or belong to the provider the member is about to
+   * start again.
    *
    * Self-scoped, so it reads only rows RLS already lets this member see — no
    * privilege widening, no `security definer` helper, no migration. This is the
    * boot sweep's replacement: the case a boot sweep actually had to fix is a
    * member blocked by their OWN orphan, and that member is by definition
    * present when it matters.
+   *
+   * THE SAME-PROVIDER SUPERSEDE (measured on utho-prod 2026-08-09): a member
+   * opened the Anthropic login terminal, abandoned the tab, and every retry
+   * for the next fifteen minutes died on
+   * `credential_sessions_one_live_per_account_provider` — a raw 23505 in the
+   * settings UI. A live, unexpired terminal for a DIFFERENT provider is left
+   * alone (it does not contend for this start's index slot anyway). But the
+   * member clicking Connect again for the SAME provider is the authority to
+   * retire their own previous login terminal: only one login flow per
+   * (account, provider) can be real, and the newer request is it.
    */
-  private async reclaimOwnStaleSessions(principal: CredentialPrincipal): Promise<number> {
+  private async reclaimOwnStaleSessions(
+    principal: CredentialPrincipal,
+    startingProvider: CredentialProvider,
+  ): Promise<number> {
     const rows = await this.db.query<OpenSessionRow>(
       principal.claims,
       `select work_session_id, provider, expires_at
@@ -484,10 +513,11 @@ export class W2CredentialSessionsService {
     for (const row of rows) {
       const expiresAtMs = new Date(row.expires_at).getTime();
       const live = this.launcher.hasLiveTerminal(row.work_session_id);
-      // A live, unexpired terminal is someone's session in progress — most
-      // likely this member's other tab. It is left alone and the RPC's unique
-      // index refuses the second start, which is the correct answer.
-      if (live && expiresAtMs > now) continue;
+      const supersede = row.provider === startingProvider;
+      // A live, unexpired terminal for ANOTHER provider is someone's session
+      // in progress — most likely this member's other tab, and it holds a
+      // different index slot. It is left alone.
+      if (live && expiresAtMs > now && !supersede) continue;
       if (live) this.launcher.terminate(row.work_session_id);
 
       await this.finishRow(principal, row.work_session_id);

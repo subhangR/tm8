@@ -612,26 +612,35 @@ describe('AC4 / AC8 — start, the cap, the TTL and the one-per-pair rule', () =
     );
   });
 
-  it('REFUSES a second live session for the same account-and-provider pair', async () => {
+  it('SUPERSEDES the member’s own live terminal on a same-provider re-connect', async () => {
     const pty = fakePty();
     const service = serviceFor(pty.pty);
     const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
     const first = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
 
-    // The second start must be refused by the partial unique index. The PTY is
-    // still live, so the self-scoped reclaim correctly leaves the row alone.
-    const error = await captureError(() =>
-      service.start({ spaceId: fixture.space, provider: 'openai' }, principal),
+    // The abandoned-tab case, measured on utho-prod 2026-08-09: the first
+    // terminal is still LIVE and UNEXPIRED, and the member clicks Connect
+    // again. The old behaviour let the partial unique index refuse with a raw
+    // `duplicate key value violates …one_live_per_account_provider` for the
+    // whole TTL. The member asking again IS the authority to retire their own
+    // login terminal: only one login flow per (account, provider) can be real.
+    const second = await service.start({ spaceId: fixture.space, provider: 'openai' }, principal);
+    expect(second.workSessionId).not.toBe(first.workSessionId);
+    expect(pty.kills).toContain(first.workSessionId);
+    const [old] = await database.query<{ finished_at: Date | null }>(
+      `select finished_at from public.credential_sessions where work_session_id = $1`,
+      [first.workSessionId],
     );
-    // The partial unique index, surfaced to a caller as a conflict.
-    expectRefusedBySqlstate(error, '23505');
+    expect(old!.finished_at).not.toBeNull();
 
-    // …and the SAME member may still open a DIFFERENT provider: the index is
-    // per (account, provider), not per account.
+    // …a DIFFERENT provider still runs concurrently — only the same-provider
+    // slot is superseded, and the index stays per (account, provider)…
     const other = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
-    expect(other.workSessionId).not.toBe(first.workSessionId);
+    expect(other.workSessionId).not.toBe(second.workSessionId);
+    // …and opening it did NOT retire the openai terminal.
+    expect(pty.live.has(second.workSessionId)).toBe(true);
 
-    await service.finish({ workSessionId: first.workSessionId }, principal);
+    await service.finish({ workSessionId: second.workSessionId }, principal);
     await service.finish({ workSessionId: other.workSessionId }, principal);
   });
 
