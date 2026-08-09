@@ -42,7 +42,12 @@ import {
   ensureCredentialHome,
 } from '../../src/credentials/agent-credential-home.js';
 import {
+  createGitCredentialPort,
+  GitCredentialStore,
+} from '../../src/credentials/git-credentials.js';
+import {
   assertNoGitHubTokenEnv,
+  readGitHubCredentialToken,
   runCredentialProbe,
   type CommandOutcome,
   type CommandRunner,
@@ -50,6 +55,7 @@ import {
 import {
   resolveCredentialSessionCap,
   W2CredentialSessionsService,
+  type W2CredentialSessionsServiceOptions,
 } from '../../src/facade/services/w2/credential-sessions.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
@@ -290,6 +296,39 @@ describe('R11 — tm8.auth_kind is bound by the server, not by a test harness', 
   });
 });
 
+describe('090 — encrypted GitHub store reaches the spawn reader for two principals', () => {
+  it('round-trips Alice and Bob own tokens without crossing identities', async () => {
+    const store = new GitCredentialStore({ db, dataDir });
+    const port = createGitCredentialPort({ db, dataDir });
+    const aliceClaims = humanClaims(fixture.aliceIdentity);
+    const bobClaims = humanClaims(fixture.bobIdentity);
+    const aliceToken = 'ghp_SYNTHETIC_ALICE_0123456789';
+    const bobToken = 'ghp_SYNTHETIC_BOB_9876543210';
+
+    await store.store({ claims: aliceClaims, provider: 'github', login: 'alice-gh', token: aliceToken });
+    await store.store({ claims: bobClaims, provider: 'github', login: 'bob-gh', token: bobToken });
+
+    await expect(port.forSpawner(aliceClaims)).resolves.toEqual({
+      provider: 'github', login: 'alice-gh', token: aliceToken,
+    });
+    await expect(port.forSpawner(bobClaims)).resolves.toEqual({
+      provider: 'github', login: 'bob-gh', token: bobToken,
+    });
+
+    const rows = await database.query<{ stored: Buffer }>(
+      `select token_ciphertext as stored
+         from public.account_git_credentials order by login`,
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => !row.stored.includes(Buffer.from(aliceToken)))).toBe(true);
+    expect(rows.every((row) => !row.stored.includes(Buffer.from(bobToken)))).toBe(true);
+
+    await store.delete({ claims: aliceClaims });
+    await expect(port.forSpawner(aliceClaims)).resolves.toBeNull();
+    await expect(port.forSpawner(bobClaims)).resolves.toMatchObject({ token: bobToken });
+  });
+});
+
 // ===========================================================================
 // Acceptance criterion 7 — the credential home is 0700, including the repair
 // ===========================================================================
@@ -465,6 +504,34 @@ describe('AC5 — the GitHub finish step (finding D6)', () => {
     expect(() => assertNoGitHubTokenEnv({ HOME: '/x' })).not.toThrow();
   });
 
+  it('extracts only one scrubbed token line and never echoes a rejected secret', async () => {
+    const calls: Array<{ argv: readonly string[]; env: Record<string, string>; cwd: string }> = [];
+    const run: CommandRunner = async (argv, options) => {
+      calls.push({ argv, env: options.env, cwd: options.cwd });
+      return outcome({ stdout: 'github_test_token\nsecond_line_that_must_be_rejected\n' });
+    };
+    const rejection = await captureError(() =>
+      readGitHubCredentialToken({ env: { HOME: '/member' }, cwd: '/member', run }),
+    );
+    expect(String(rejection)).not.toContain('second_line_that_must_be_rejected');
+    expect(calls).toEqual([{
+      argv: ['gh', 'auth', 'token'],
+      env: { HOME: '/member' },
+      cwd: '/member',
+    }]);
+
+    const poisonedCalls: string[][] = [];
+    await expect(readGitHubCredentialToken({
+      env: { HOME: '/member', GH_TOKEN: 'machine_token' },
+      cwd: '/member',
+      run: async (argv) => {
+        poisonedCalls.push([...argv]);
+        return outcome({ stdout: 'machine_token' });
+      },
+    })).rejects.toThrow(/D6/);
+    expect(poisonedCalls).toEqual([]);
+  });
+
   it('refuses through runCredentialProbe as well, BEFORE any command runs', async () => {
     const calls: string[][] = [];
     const run: CommandRunner = async (argv) => {
@@ -540,7 +607,7 @@ function serviceFor(
   options: {
     run?: CommandRunner;
     now?: () => number;
-    storeGitCredential?: W2CredentialSessionsService['finish'] extends never ? never : undefined;
+    storeGitCredential?: NonNullable<W2CredentialSessionsServiceOptions['storeGitCredential']>;
   } = {},
 ): W2CredentialSessionsService {
   return new W2CredentialSessionsService({
@@ -553,6 +620,9 @@ function serviceFor(
     env: {},
     ...(options.run ? { probeRunner: options.run } : {}),
     ...(options.now ? { now: options.now } : {}),
+    ...(options.storeGitCredential
+      ? { storeGitCredential: options.storeGitCredential }
+      : {}),
   });
 }
 
@@ -877,23 +947,30 @@ describe('the probe runs in the SAME environment the terminal ran in', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('does not persist a GitHub credential on this branch, and says so', async () => {
-    // The storage split is by SHAPE: a GitHub token is string-shaped and
-    // belongs in 079's already-shipped `account_git_credentials`, which is
-    // reachable from no local git object. The seam is injected and absent here
-    // rather than duplicated or faked.
+  it('extracts the verified GitHub token and hands it to the string store', async () => {
     const pty = fakePty();
-    const run: CommandRunner = async (argv) =>
-      argv.includes('api')
-        ? outcome({ stdout: 'alice\n' })
-        : outcome({ stdout: 'github.com\n  ✓ Logged in to github.com account alice (keyring)' });
-    const service = serviceFor(pty.pty, { run });
+    const token = 'github_test_alice_token';
+    const run: CommandRunner = async (argv) => {
+      if (argv.includes('api')) return outcome({ stdout: 'alice\n' });
+      if (argv.includes('token')) return outcome({ stdout: `${token}\n` });
+      return outcome({ stdout: 'github.com\n  ✓ Logged in to github.com account alice (keyring)' });
+    };
+    let stored: Parameters<
+      NonNullable<W2CredentialSessionsServiceOptions['storeGitCredential']>
+    >[0] | null = null;
+    const service = serviceFor(pty.pty, {
+      run,
+      storeGitCredential: async (input) => {
+        stored = input;
+      },
+    });
     const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
     const started = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
     const finished = await service.finish({ workSessionId: started.workSessionId }, principal);
 
     expect(finished.probe.connected).toBe(true);
-    expect(finished.stored).toBe(false);
+    expect(finished.stored).toBe(true);
+    expect(stored).toMatchObject({ login: 'alice', provider: 'github', token });
     // And it never lands in the FILE-shaped table, whose CHECK admits only the
     // two file-shaped providers (R6).
     const rows = await database.query(

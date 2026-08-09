@@ -27,13 +27,13 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PtyHostService } from '../src/pty/PtyHostService.js';
 import { SpawnService } from '../src/spawn/SpawnService.js';
 import { composeEnv, composeManifest, resolveAgentBinary } from '../src/spawn/manifest.js';
 import type { AgentCredentialHome, AgentCredentialHomePort } from '../src/spawn/agent-credentials.js';
-import type { SpawnContext, SpawnRequest } from '../src/spawn/types.js';
+import type { GitCredentialPort, SpawnContext, SpawnRequest } from '../src/spawn/types.js';
 import { FakeGraph } from './fake-graph.js';
 
 const SPACE_ID = '11111111-1111-4111-8111-111111111111';
@@ -393,7 +393,7 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
     await rm(projectDir, { recursive: true, force: true });
   });
 
-  function serviceWith(port?: AgentCredentialHomePort): SpawnService {
+  function serviceWith(port?: AgentCredentialHomePort, gitCredentials?: GitCredentialPort): SpawnService {
     return new SpawnService({
       graph,
       pty,
@@ -407,8 +407,40 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
         XDG_CONFIG_HOME: '/home/tm8/.config',
       },
       ...(port ? { credentialHome: port } : {}),
+      ...(gitCredentials ? { gitCredentials } : {}),
     });
   }
+
+  it('injects two distinct spawning principals GitHub tokens into only their own child env', async () => {
+    const tokens = new Map([
+      [AUTH.identityId, 'ghp_SYNTHETIC_ALICE_0123456789'],
+      [AUTH_BOB.identityId, 'ghp_SYNTHETIC_BOB_9876543210'],
+    ]);
+    const asked: string[] = [];
+    const captured = new Map<string, Record<string, string>>();
+    const realSpawn = pty.spawnIfAbsent.bind(pty);
+    vi.spyOn(pty, 'spawnIfAbsent').mockImplementation((input) => {
+      captured.set(input.sessionId, input.env);
+      return realSpawn(input);
+    });
+
+    const service = serviceWith(undefined, {
+      async forSpawner(auth) {
+        const identityId = (auth as typeof AUTH).identityId;
+        asked.push(identityId);
+        return { provider: 'github', login: identityId, token: tokens.get(identityId)! };
+      },
+    });
+    const alice = await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
+    const bob = await service.spawn(AUTH_BOB, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
+
+    expect(asked).toEqual([AUTH.identityId, AUTH_BOB.identityId]);
+    expect(captured.get(alice.sessionId)?.GH_TOKEN).toBe(tokens.get(AUTH.identityId));
+    expect(captured.get(bob.sessionId)?.GH_TOKEN).toBe(tokens.get(AUTH_BOB.identityId));
+    expect(captured.get(alice.sessionId)?.GH_TOKEN).not.toBe(captured.get(bob.sessionId)?.GH_TOKEN);
+    expect(captured.get(alice.sessionId)?.GIT_CONFIG_VALUE_0).toBe('');
+    expect(JSON.stringify(graph.manifests)).not.toContain('ghp_SYNTHETIC');
+  }, 30000);
 
   it('keeps two members\' Claude sessions alive and seeds trust only in each member home', async () => {
     const homes = new Map([
@@ -537,16 +569,25 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
 
   it("credentialSource 'node' skips the port entirely and injects nothing", async () => {
     let asked = 0;
-    const service = serviceWith({
-      async resolve() {
-        asked += 1;
-        return {
-          provider: 'anthropic',
-          homeDir: `${dataDir}/credentials/identity-alice`,
-          configDir: `${dataDir}/credentials/identity-alice/anthropic`,
-        };
+    let gitAsked = 0;
+    const service = serviceWith(
+      {
+        async resolve() {
+          asked += 1;
+          return {
+            provider: 'anthropic',
+            homeDir: `${dataDir}/credentials/identity-alice`,
+            configDir: `${dataDir}/credentials/identity-alice/anthropic`,
+          };
+        },
       },
-    });
+      {
+        async forSpawner() {
+          gitAsked += 1;
+          return { provider: 'github', login: 'alice', token: 'ghp_SYNTHETIC_NODE_SKIP' };
+        },
+      },
+    );
 
     const result = await service.spawn(AUTH, {
       spaceId: SPACE_ID,
@@ -555,7 +596,9 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
     });
 
     expect(asked).toBe(0);
+    expect(gitAsked).toBe(0);
     expect(result.envVarNames).not.toContain('CLAUDE_CONFIG_DIR');
+    expect(result.envVarNames).not.toContain('GH_TOKEN');
     // The choice is durable: a resume or a child spawn reads it back from here.
     expect(graph.manifests[0]?.manifest.launch.credentialSource).toBe('node');
   }, 30000);

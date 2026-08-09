@@ -116,6 +116,18 @@ export interface AgentCredentialPort {
   revoke(auth: GraphAuth, workSessionId: string): Promise<void>;
 }
 
+/** Plaintext GitHub credential held only long enough to compose a child env. */
+export interface GitCredential {
+  readonly provider: 'github';
+  readonly login: string | null;
+  readonly token: string;
+}
+
+/** Resolve only the spawning human's own GitHub credential. */
+export interface GitCredentialPort {
+  forSpawner(auth: GraphAuth): Promise<GitCredential | null>;
+}
+
 // --- what the graph must be able to do for us --------------------------------
 
 export interface LoadSpawnContextInput {

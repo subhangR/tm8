@@ -429,11 +429,10 @@ describe('credentials.status merges two stores and degrades honestly', () => {
   });
 
   it('reports the string-shaped store ABSENT rather than claiming GitHub is disconnected', async () => {
-    // THE ACCEPTANCE CRITERION. `account_git_credentials` ships in 079 on the
-    // deployed staging line and is reachable from no local git object. A view
-    // that let an absent table read as "no rows, therefore not connected" would
-    // put a confident, measured-looking "Not connected" in front of a member
-    // whose connection state was never actually observed.
+    // Rolling-deploy acceptance criterion: a server may start before migration
+    // 090 has reached its database. A view that let an absent table read as
+    // "no rows, therefore not connected" would put a confident-looking "Not
+    // connected" in front of a member whose state was never observed.
     const db = new FakeDb(serviceQueries);
     const registry = registryFor(db);
     const view = CredentialsStatusViewSchema.parse(
@@ -585,12 +584,8 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     }
   });
 
-  it('reports GitHub as NOT revoked here, because its store is not on this line', async () => {
-    // The honest answer, and the one that matters most for this button: PR2's
-    // write seam is injected and absent, so there is nothing to revoke. A
-    // `revoked: true` here would be a Disconnect that reported success having
-    // done nothing.
-    const { registry } = disconnectFixture('github');
+  it('revokes GitHub through its string store before terminating every agent session', async () => {
+    const { order, registry } = disconnectFixture('github');
     const result = CredentialsDeleteResultSchema.parse(
       await invoke(
         registry,
@@ -598,9 +593,12 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
         context('credentials.delete', 'browser', { params: { provider: 'github' }, body: {} }),
       ),
     );
-    expect(result.revoked).toBe(false);
-    expect(result.failures.some((f) => f.step === 'revoke')).toBe(true);
-    // But it still TERMINATED, because the sessions carrying it are real.
+    expect(result.revoked).toBe(true);
+    expect(result.failures).toEqual([]);
+    const revokeAt = order.indexOf('rpc:public.delete_account_git_credential');
+    const firstKillAt = order.findIndex((call) => call.startsWith('kill:'));
+    expect(revokeAt).toBeGreaterThanOrEqual(0);
+    expect(revokeAt).toBeLessThan(firstKillAt);
     expect(result.terminatedAgentSessionIds).toEqual([AGENT_SESSION_ID]);
   });
 
@@ -700,9 +698,9 @@ describe('the login session operations answer their contract shapes', () => {
   });
 
   it('finish reports connected and stored as SEPARATE facts', async () => {
-    // A verified GitHub login on this line is `connected: true, stored: false`,
-    // because its string-shaped store is not here. Collapsing the two would
-    // either hide a real login or claim a persistence that did not happen.
+    // This deliberately constructs a service without the optional string
+    // store, exercising rolling-deploy degradation. Collapsing the two facts
+    // would either hide a real login or claim persistence that did not happen.
     const db = new FakeDb(serviceQueries, serviceRpcs);
     const launcher = {
       launch: () => ({
@@ -742,7 +740,7 @@ describe('the login session operations answer their contract shapes', () => {
     expect(finished.workSessionId).toBe(SESSION_ID);
     expect(typeof finished.connected).toBe('boolean');
     expect(typeof finished.stored).toBe('boolean');
-    // Nothing was persisted: `storeGitCredential` is injected and absent.
+    // Nothing was persisted in this deliberately unwired composition.
     expect(finished.stored).toBe(false);
   });
 });

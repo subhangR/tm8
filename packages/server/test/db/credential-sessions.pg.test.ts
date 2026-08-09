@@ -18,15 +18,10 @@
  * distinguish "the policy works" from "there was only ever one row", which is
  * the failure mode a self-select policy is most likely to hide.
  *
- * ONE MEASUREMENT CAVEAT, so the evidence is not overstated: `migrationFiles()`
- * reads the working tree. `internal.current_account_id()` and
- * `public.account_git_credentials` are NOT reachable from `origin/main` — they
- * live in `078_private_projects` / `079_account_git_credentials` on the deployed
- * staging line, renumbered to 080/081 on `origin/feat/per-user-private-workspaces`.
- * 083 carries its own byte-identical copy of `current_account_id()` so it is
- * order-independent, but the git-credential TABLE it does not create. The one
- * assertion that needs that table is therefore gated on its existence and says
- * so loudly when it skips, rather than silently passing.
+ * CROSS-LINE HISTORY. `account_git_credentials` first shipped as 079 on the
+ * deployed staging line but never reached main. Migration 090 ports that exact
+ * storage choice onto main; this suite requires the table and proves its RLS
+ * against two distinct principals rather than retaining the former skip.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -301,6 +296,65 @@ describe('083 — isolation between two distinct principals', () => {
   });
 });
 
+describe('090 — the staging GitHub store preserves two-principal isolation', () => {
+  it('stores one encrypted row per account and returns only the caller own row', async () => {
+    await asApp(fixture.aliceIdentity, (client) =>
+      client.query(
+        `select public.set_account_git_credential('github', 'alice-gh', $1, $2)`,
+        [Buffer.alloc(17, 0x11), Buffer.alloc(12, 0x21)],
+      ),
+    );
+    await asApp(fixture.bobIdentity, (client) =>
+      client.query(
+        `select public.set_account_git_credential('github', 'bob-gh', $1, $2)`,
+        [Buffer.alloc(17, 0x12), Buffer.alloc(12, 0x22)],
+      ),
+    );
+
+    const alice = await asApp(fixture.aliceIdentity, async (client) =>
+      (await client.query<{ account_id: string; login: string }>(
+        `select account_id::text, login from public.account_git_credentials`,
+      )).rows,
+    );
+    const bob = await asApp(fixture.bobIdentity, async (client) =>
+      (await client.query<{ account_id: string; login: string }>(
+        `select account_id::text, login from public.account_git_credentials`,
+      )).rows,
+    );
+
+    expect(alice).toEqual([{ account_id: fixture.aliceAccount, login: 'alice-gh' }]);
+    expect(bob).toEqual([{ account_id: fixture.bobAccount, login: 'bob-gh' }]);
+    const all = await asOwner(async (client) =>
+      (await client.query<{ count: string }>(
+        `select count(*)::text from public.account_git_credentials`,
+      )).rows[0]!.count,
+    );
+    expect(all).toBe('2');
+  });
+
+  it('binds the ciphertext read to the caller and exposes no account parameter', async () => {
+    const alice = await asApp(fixture.aliceIdentity, async (client) =>
+      (await client.query<{ result: { accountId: string; login: string } }>(
+        `select public.read_account_git_credential('github') as result`,
+      )).rows[0]!.result,
+    );
+    const bob = await asApp(fixture.bobIdentity, async (client) =>
+      (await client.query<{ result: { accountId: string; login: string } }>(
+        `select public.read_account_git_credential('github') as result`,
+      )).rows[0]!.result,
+    );
+    expect(alice).toMatchObject({ accountId: fixture.aliceAccount, login: 'alice-gh' });
+    expect(bob).toMatchObject({ accountId: fixture.bobAccount, login: 'bob-gh' });
+
+    const [shape] = await database.query<{ args: string }>(
+      `select pg_get_function_arguments(p.oid) as args
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname = 'read_account_git_credential'`,
+    );
+    expect(shape!.args).not.toMatch(/account/i);
+  });
+});
+
 describe('083 — privileges, not policies', () => {
   it('gives tm8_app no insert, update or delete on either credential table', async () => {
     const rows = await database.query<{ table_name: string; privilege_type: string }>(
@@ -343,20 +397,10 @@ describe('083 — privileges, not policies', () => {
   });
 
   it('still refuses `select *` on the SHIPPED git-credential table with 42501', async () => {
-    if (!gitCredentialTablePresent) {
-      // NOT a silent pass. This assertion needs `public.account_git_credentials`,
-      // which 083 does not create: it ships in `079_account_git_credentials` on
-      // the deployed staging line (`origin/deploy/channels-on-staging`), and as
-      // `081_account_git_credentials` on `origin/feat/per-user-private-workspaces`.
-      // Neither is reachable from `origin/main`. When one of them merges this
-      // gate opens by itself and the assertion below runs for real.
-      console.warn(
-        '[083] SKIPPED the git-credential 42501 check: public.account_git_credentials ' +
-          'is absent from this migration chain (079/081 are not on origin/main).',
-      );
-      expect(gitCredentialTablePresent).toBe(false);
-      return;
-    }
+    // 090 ports the already-shipped staging store onto main. This is no longer
+    // an optional cross-line assertion: a missing table means GitHub Connect
+    // can verify a login but cannot persist or inject it.
+    expect(gitCredentialTablePresent).toBe(true);
     // The column-level grant omits token_ciphertext and token_nonce, so `select
     // *` asks for a privilege that DOES NOT EXIST — which is strictly stronger
     // than a policy a future `using (true)` could widen. 083 must not have

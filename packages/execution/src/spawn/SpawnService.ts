@@ -44,6 +44,8 @@ import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisio
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
 import type {
   CredentialSource,
+  GitCredential,
+  GitCredentialPort,
   GraphAuth,
   GraphPort,
   InteractionProfilePinContext,
@@ -82,6 +84,8 @@ export interface SpawnServiceOptions {
    * screen that populates the credentials, without a feature flag.
    */
   credentialHome?: AgentCredentialHomePort;
+  /** Staging-compatible, encrypted-at-rest GitHub credential for the spawner. */
+  gitCredentials?: GitCredentialPort;
   /**
    * The node's Git worktree manager. Its PRESENCE is what makes
    * `workdir.mode:'worktree'` serviceable — omit it and the mode is refused by
@@ -210,6 +214,7 @@ export class SpawnService {
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
   private readonly credentialHome: AgentCredentialHomePort | undefined;
+  private readonly gitCredentials: GitCredentialPort | undefined;
   private readonly worktrees: WorktreeManager | null;
   private readonly worktreeCap: number;
   /** One fail-closed remediation pass per service lifetime. */
@@ -243,6 +248,7 @@ export class SpawnService {
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
     this.credentialHome = options.credentialHome;
+    this.gitCredentials = options.gitCredentials;
     this.worktrees = options.worktrees ?? null;
     this.worktreeCap = options.worktreeCap ?? 0;
   }
@@ -279,6 +285,22 @@ export class SpawnService {
       );
     }
     return home;
+  }
+
+  /** GitHub is optional, but an explicit node source must never receive it. */
+  private async resolveGitCredential(
+    auth: GraphAuth,
+    source: CredentialSource | null = null,
+  ): Promise<GitCredential | null> {
+    if (source === 'node' || !this.gitCredentials) return null;
+    try {
+      return await this.gitCredentials.forSpawner(auth);
+    } catch (error) {
+      this.logger?.warn?.('SpawnService: git credential lookup failed; launching without one', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   /**
@@ -834,6 +856,9 @@ export class SpawnService {
       );
 
       const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource);
+      // Read only after manifest composition; plaintext can reach the child env
+      // but cannot reach the manifest file or graph row.
+      const gitCredential = await this.resolveGitCredential(auth, launch.credentialSource);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -842,6 +867,7 @@ export class SpawnService {
         this.journalPathFor(sessionId),
         agentToken,
         credentialHome ?? undefined,
+        gitCredential,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -1196,6 +1222,8 @@ export class SpawnService {
       // stop being injected. A resume that kept the launch-time answer would be
       // the one path where Ruling 3's "disconnect terminates" could be undone.
       const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource);
+      // Re-read on resume so disconnect/rotation takes effect immediately.
+      const gitCredential = await this.resolveGitCredential(auth, launch.credentialSource);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -1204,6 +1232,7 @@ export class SpawnService {
         this.journalPathFor(sessionId),
         agentToken,
         credentialHome ?? undefined,
+        gitCredential,
       );
       const envVarNames = Object.keys(env).sort();
 
