@@ -49,6 +49,8 @@ export interface EntityEditHandle {
   open: boolean;
   /** The staged draft, keyed by `EditFieldSpec` identity (see `fieldKey`). */
   values: Readonly<Record<string, string>>;
+  /** The values captured when this dialog opened, for changed-field semantics. */
+  initialValues: Readonly<Record<string, string>>;
   dirty: boolean;
   /** Non-null ⇒ every save affordance renders disabled-with-reason (R7/L6). */
   unavailable: UnavailableReason | null;
@@ -177,6 +179,7 @@ export function useEntityEdit(options: EntityEditOptions): EntityEditHandle {
     state,
     open: state.phase !== 'closed',
     values,
+    initialValues: seed.current,
     dirty,
     unavailable,
     begin,

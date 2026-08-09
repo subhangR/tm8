@@ -1212,6 +1212,26 @@
   color: var(--pn-brand-2); cursor: pointer;
 }
 
+/*
+ * DISPATCH — the secondary commit, and it must NOT look like Launch.
+ *
+ * Launch carries the brand fill because it is the action this sheet is FOR.
+ * Dispatch is a different action with different semantics — it discards the
+ * configuration above it and hands the subject to another agent — so it reads
+ * as an outline beside the filled primary. Two brand-filled buttons side by
+ * side would say "same thing, two ways", which is exactly the misreading that
+ * loses a user's picks.
+ */
+.cv2-root .ls__dispatch {
+  padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  background: none; border: 1px solid var(--pn-line-2);
+  color: var(--pn-ink-2); cursor: pointer;
+}
+.cv2-root .ls__dispatch:hover { background: var(--pn-hover); color: var(--pn-ink); }
+/* Refused stays FOCUSABLE and keeps its title — the reason is unreachable if
+   the control is not (L6/D28). Only the affordance dims. */
+.cv2-root .ls__dispatch[aria-disabled='true'] { opacity: 0.5; cursor: not-allowed; }
+
 /* The sheet's copy of the quick access toggle — same words, same colours. */
 .cv2-root .ls__accessbtn {
   appearance: none;

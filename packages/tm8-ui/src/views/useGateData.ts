@@ -65,10 +65,12 @@ import type { BoardSnapshot } from '../panels';
 import {
   CORE_CHAT_LAUNCH_PRESENTATION,
   type LaunchCapacity,
+  type LaunchMemory,
   type LaunchProfile,
   type LaunchProject,
   type LaunchTeammate,
 } from '../domain/launch';
+import { memoryEpistemics, memoryScopeOf } from '../domain/memory';
 import { representedThreadMessageCount } from './message-thread';
 
 /** Frozen so an empty result keeps referential identity across renders. */
@@ -436,6 +438,13 @@ export interface GateData {
     teammates: readonly LaunchTeammate[];
     projects: readonly LaunchProject[];
     profiles: readonly LaunchProfile[];
+    /**
+     * Spawn-time memory hand-off (D3a). OPTIONAL on purpose: absent means the
+     * `memory` kind has not been hydrated into this client, which is not the
+     * same fact as "this space has no memories" — and the sheet renders those
+     * two differently.
+     */
+    memories?: readonly LaunchMemory[];
     capacity?: LaunchCapacity;
   };
   /** Hydrate a kind the viewer selected after boot. Idempotent. */
@@ -1286,14 +1295,52 @@ export function useGateData(options: GateOptions): GateData {
         : {}),
       selectedByDefault: index === 0 && project.trust === 'trusted',
     }));
+    /*
+     * MEMORIES, and the reason this is `undefined` rather than `[]` when the
+     * kind has not been hydrated.
+     *
+     * `entities` holds whatever has been read into this client, so an empty
+     * result here has two possible causes — the space genuinely has no
+     * memories, or nobody has asked for the kind — and they are different
+     * facts. Returning `[]` would let the picker say "this space has no
+     * memories" on the strength of a read that never happened. The `rows`
+     * cache settles it: `memory::*` exists only once `ensureKind` has actually
+     * run the query, which is the same key every list panel hydrates through.
+     */
+    const memoryRows = summaries.filter((row) => row.state.kind === 'memory');
+    const memories: LaunchMemory[] | undefined = rows['memory::*']
+      ? memoryRows.map((row) => {
+          const mark = memoryEpistemics(row.badges);
+          const scope = memoryScopeOf(row);
+          return {
+            id: row.id,
+            statement: row.title || row.excerpt || row.id,
+            subjectScope: scope?.subjectScope ?? 'scope not recorded',
+            mark: mark.word,
+            /* NOT `mark.injected`. That flag is the WORKING-SET rule, where
+               spawn drops superseded rows. An explicitly picked id is the
+               opposite case: `execution-handlers.ts:167` injects it because the
+               caller named THAT memory. Reusing the working-set flag here would
+               tell the viewer their pick will be ignored when it will not. */
+            injectedWhenPicked: true,
+            detail: mark.full,
+          };
+        })
+      : undefined;
     const capacity = executionCapacity
       ? {
           slotsFree: Math.max(0, executionCapacity.total - executionCapacity.used),
           slotsTotal: executionCapacity.total,
         }
       : undefined;
-    return { teammates, projects, profiles, ...(capacity ? { capacity } : {}) };
-  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, teammateProfileDefaults]);
+    return {
+      teammates,
+      projects,
+      profiles,
+      ...(memories ? { memories } : {}),
+      ...(capacity ? { capacity } : {}),
+    };
+  }, [entities, spaceId, linkedProjects, executionCapacity, spaceDefaultProfileId, teammateProfileDefaults, rows]);
 
   /* Surface Audit 2026-07-29: the composer rendered ENABLED and wired to
      nothing — inviting an action it could not perform, the worst honesty

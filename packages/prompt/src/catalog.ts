@@ -142,6 +142,7 @@ const MODE_TITLES: Record<AgentMode, string> = {
   coordinator: 'Coordinator',
   'coordinated-worker': 'Coordinated worker',
   'coordinated-coordinator': 'Sub-coordinator',
+  dispatcher: 'Dispatcher',
 };
 
 const MODE_SUMMARIES: Record<AgentMode, string> = {
@@ -153,6 +154,8 @@ const MODE_SUMMARIES: Record<AgentMode, string> = {
     'A worker spawned by a coordinator. Adds the do-not-go-idle rule — a parent is blocked on a durable reply.',
   'coordinated-coordinator':
     'A sub-coordinator owning a slice. Must integrate child results or report explicitly that it could not.',
+  dispatcher:
+    'A resident router. Picks an existing teammate and the memories they need, then spawns them. Never does the work, never edits the roster.',
 };
 
 const V2_UNWIRED =
@@ -601,9 +604,9 @@ const AUTHORED_ENTRIES: readonly PromptEntry[] = [
       'Appended entries a member carries between sessions. Each becomes one escaped <entry> in the <memory> block.',
     status: 'reference',
     statusNote:
-      'Stored per team member in public.team_members.memories. Note that the separate `memory` entity kind (migration 056) is NOT injected into any prompt — only this column is.',
+      'Sourced from `memory` entities (migration 056) linked to the team member by `remembers` edges, plus spawn-request memoryIds, plus any legacy entries still in public.team_members.memories (jsonb, emptied by migration 084; column retained until every writer is off it). Each renders as one string with epistemic markers ([disputed]/[verified]) when present.',
     rendering: 'pointer',
-    source: 'db/migrations/002_identity.sql · rendered at packages/prompt/src/index.ts',
+    source: 'db/migrations/056_entity_memory.sql · composed at packages/server/src/facade/execution-handlers.ts · rendered at packages/prompt/src/index.ts',
     injectedWhen: 'Inside <memory> on every v1 envelope, when the member has entries.',
     text: '',
   },

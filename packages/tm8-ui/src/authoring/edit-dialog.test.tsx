@@ -59,7 +59,9 @@ import { slugifyTitle } from '../domain';
 import { fixtureDetails, channelDesign, taskUuidTitle } from '../fixtures';
 import {
   EditEntityDialog,
+  draftValueFor,
   editsFrom,
+  fieldProblem,
   fieldKey,
   missingRequired,
   useEntityEdit,
@@ -252,6 +254,49 @@ describe('the payload is the contract’s shape', () => {
     });
     expect(missingRequired(CHANNEL_FIELDS, values)).toEqual([]);
     expect(missingRequired(CHANNEL_FIELDS, { title: '   ' }).map((f) => f.label)).toEqual(['Name']);
+  });
+});
+
+describe('typed loop fields preserve the loop door semantics', () => {
+  const fields: readonly DialogField[] = [
+    { target: 'content', source: 'schedule', label: 'Schedule', required: true, valueType: 'schedule' },
+    { target: 'content', source: 'teamMemberId', label: 'Runner', valueType: 'nullable-text' },
+    { target: 'content', source: 'subjectId', label: 'Subject', valueType: 'nullable-text' },
+    { target: 'content', source: 'config', label: 'Config', valueType: 'json-object' },
+  ];
+
+  it('clears nullable ids, parses config, and reschedules only a changed schedule', () => {
+    const now = new Date('2026-08-09T12:00:00.000Z');
+    const initial = {
+      'content.schedule': 'every 1d',
+      'content.teamMemberId': '019fe999-0000-7000-8000-000000000003',
+      'content.subjectId': '019fe999-0000-7000-8000-000000000004',
+      'content.config': '{}',
+    };
+    const edits = editsFrom(fields, {
+      'content.schedule': 'every 2h',
+      'content.teamMemberId': '',
+      'content.subjectId': '',
+      'content.config': '{"model":"opus"}',
+    }, initial, now);
+    expect(edits.content).toEqual({
+      schedule: 'every 2h',
+      teamMemberId: null,
+      subjectId: null,
+      config: { model: 'opus' },
+      nextRunAt: '2026-08-09T14:00:00.000Z',
+    });
+
+    const unchanged = editsFrom(fields, initial, initial, now);
+    expect(unchanged.content).not.toHaveProperty('nextRunAt');
+  });
+
+  it('formats stored JSON for editing and refuses non-object JSON', () => {
+    const config = fields[3]!;
+    expect(draftValueFor(config, { model: 'opus' })).toContain('"model": "opus"');
+    expect(fieldProblem(config, '[]')).toContain('JSON object');
+    expect(fieldProblem(config, '{')).toContain('valid JSON');
+    expect(fieldProblem(fields[0]!, 'tomorrow')).toContain('5 fields');
   });
 });
 

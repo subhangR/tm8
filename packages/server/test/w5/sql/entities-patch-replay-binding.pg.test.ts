@@ -101,6 +101,10 @@ const PATCH_DOORS = [
   'update_custom_entity',
   'update_document',
   'update_file_entity',
+  // 2026-08-09: migration 090 (loops) added `update_loop`, which carries 038's
+  // replay binding from birth. Thirteen doors -> fourteen; the detector fired
+  // and the list moved to the new exact literals, never to a pattern.
+  'update_loop',
   'update_memory',
   'update_pull_request_entity',
   'update_skill_entity',
@@ -148,9 +152,12 @@ describe.sequential('W5 Duo A — 038: the eleven entities.patch doors keep thei
     await database?.destroy();
   }, 120_000);
 
-  it('the frozen list is exactly fourteen and every one exists in the catalog', () => {
-    expect(PATCH_DOORS).toHaveLength(14);
-    expect(new Set(PATCH_DOORS).size).toBe(14);
+  // 2026-08-09 (merge): fifteen — 085's rename_work_session and 090's
+  // update_loop arrived on separate branches, each side counting fourteen;
+  // the union is fifteen and the detector fired on the merge.
+  it('the frozen list is exactly fifteen and every one exists in the catalog', () => {
+    expect(PATCH_DOORS).toHaveLength(15);
+    expect(new Set(PATCH_DOORS).size).toBe(15);
     for (const door of PATCH_DOORS) {
       expect(bodies.get(door), `${door} is missing from the catalog`).toBeTypeOf('string');
     }

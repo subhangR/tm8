@@ -2,6 +2,7 @@ import { useEffect, useRef, type FormEvent, type MouseEvent } from 'react';
 import { RefusalCard } from './RefusalCard';
 import type { EntityEditHandle } from './useEntityEdit';
 import type { EntityEdits } from './commands';
+import { loopScheduleProblem, nextLoopRunAt } from '../loops/schedule';
 
 /**
  * THE `editFields` DIALOG — one component, every kind, no kind literal.
@@ -39,6 +40,7 @@ export interface DialogField {
   multiline?: boolean;
   /** Resolved by the HOST from `grammar` — this lane may not name a kind. */
   normalize?: (raw: string) => string;
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule';
 }
 
 /**
@@ -56,6 +58,8 @@ export function fieldKey(field: DialogField): string {
 export function editsFrom(
   fields: readonly DialogField[],
   values: Readonly<Record<string, string>>,
+  initialValues?: Readonly<Record<string, string>>,
+  now = new Date(),
 ): EntityEdits {
   const edits: EntityEdits = {};
   for (const field of fields) {
@@ -65,9 +69,51 @@ export function editsFrom(
       continue;
     }
     if (!field.source) continue;
-    edits.content = { ...(edits.content ?? {}), [field.source]: value };
+    edits.content = {
+      ...(edits.content ?? {}),
+      [field.source]: valueForWire(field, value),
+    };
+    if (
+      field.valueType === 'schedule'
+      && initialValues !== undefined
+      && value !== (initialValues[fieldKey(field)] ?? '')
+    ) {
+      const next = nextLoopRunAt(value, now);
+      if (next === null) throw new Error('schedule does not match any time in the next year');
+      edits.content.nextRunAt = next.toISOString();
+    }
   }
   return edits;
+}
+
+function valueForWire(field: DialogField, value: string): unknown {
+  if (field.valueType === 'nullable-text') return value.trim() === '' ? null : value.trim();
+  if (field.valueType === 'json-object') return JSON.parse(value) as Record<string, unknown>;
+  return value;
+}
+
+/** Project a typed detail value into the dialog's editable string draft. */
+export function draftValueFor(field: DialogField, raw: unknown): string {
+  if (field.valueType === 'json-object') {
+    return isRecord(raw) ? JSON.stringify(raw, null, 2) : '{}';
+  }
+  return typeof raw === 'string' ? raw : '';
+}
+
+/** A field-level refusal stated before the command spends a round trip. */
+export function fieldProblem(field: DialogField, value: string): string | null {
+  if (field.valueType === 'schedule') return loopScheduleProblem(value);
+  if (field.valueType !== 'json-object') return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return isRecord(parsed) ? null : `${field.label} must be a JSON object.`;
+  } catch {
+    return `${field.label} must be valid JSON.`;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** The fields whose `required` promise the draft does not keep. */
@@ -113,11 +159,14 @@ export function EditEntityDialog({
   if (!flow.open || fields.length === 0) return null;
 
   const missing = missingRequired(fields, flow.values);
+  const problems = fields
+    .map((field) => ({ field, problem: fieldProblem(field, flow.values[fieldKey(field)] ?? '') }))
+    .filter((item): item is { field: DialogField; problem: string } => item.problem !== null);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (saving || missing.length > 0 || flow.unavailable) return;
-    void flow.save(editsFrom(fields, flow.values));
+    if (saving || missing.length > 0 || problems.length > 0 || flow.unavailable) return;
+    void flow.save(editsFrom(fields, flow.values, flow.initialValues));
   };
 
   const stop = (event: MouseEvent) => event.stopPropagation();
@@ -144,6 +193,7 @@ export function EditEntityDialog({
           const key = fieldKey(field);
           const value = flow.values[key] ?? '';
           const empty = field.required && value.trim() === '';
+          const problem = fieldProblem(field, value);
           return (
             <label className="au-dialog__field" key={key}>
               <span className="au-dialog__label">
@@ -181,6 +231,9 @@ export function EditEntityDialog({
                   {`${field.label} is required — the server refuses an empty one.`}
                 </span>
               ) : null}
+              {!empty && problem ? (
+                <span className="au-dialog__missing" role="alert">{problem}</span>
+              ) : null}
             </label>
           );
         })}
@@ -213,7 +266,7 @@ export function EditEntityDialog({
             type="submit"
             className="au-dialog__primary"
             aria-busy={saving}
-            disabled={saving || missing.length > 0 || flow.unavailable !== null}
+            disabled={saving || missing.length > 0 || problems.length > 0 || flow.unavailable !== null}
           >
             {saving ? 'Saving…' : submitLabel}
           </button>

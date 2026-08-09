@@ -51,6 +51,7 @@ function modeLabel(mode: string | null): string {
   if (mode === 'coordinated-coordinator') return 'Coordinated · Coordinator';
   if (mode === 'coordinated-worker') return 'Coordinated · Worker';
   if (mode === 'worker') return 'Worker';
+  if (mode === 'dispatcher') return 'Dispatcher';
   return 'Role unavailable';
 }
 

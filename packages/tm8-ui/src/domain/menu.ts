@@ -35,7 +35,7 @@ export const SHIPPED_DEFAULT_MENU_REVISION = 7;
  *   Home        → Dashboard
  *   Workspace ▾ → (row click = the composed view; caret expands — RULING E)
  *                 Tasks · Sessions · Docs · Channels · Teammates · Memories ·
- *                 Artifacts
+ *                 Artifacts · Loops
  *   Library     → Files · Spells · Collections
  *   Tracking    → Projects · Pull requests · Worktrees
  *   Collab      → Members
@@ -95,9 +95,13 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
             { type: 'kind', ref: 'team_member' },
             // Revision 4 (2026-07-31): Memories and Artifacts — both shipped
             // features whose lists were unreachable from the rail. Caret
-            // children cap is 8; revision 6 brings the count to 7.
+            // children cap is 8; revision 6 brought the count to 7.
             { type: 'kind', ref: 'memory' },
             { type: 'kind', ref: 'artifact' },
+            // Revision 7 (2026-08-09): Loop fills the eighth and final caret
+            // slot. The kind already has a collection route and registry row;
+            // this makes the shipped scheduler surface reachable by default.
+            { type: 'kind', ref: 'loop' },
           ],
         },
         // Revision 2 (2026-07-29): the ◉ Graph view — no longer deferred, the

@@ -6,6 +6,8 @@ import { KindIcon, getKind } from '../../domain';
 import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
+import { MemorySetBlock, type MemoryAuthoring } from './MemorySetBlock';
+import { PeerRowsBlock } from './PeerRowsBlock';
 import './subtree-body.css';
 
 /**
@@ -58,6 +60,12 @@ export interface SubtreeBodyProps {
    * no such row exists rather than leaving it to be noticed on screen.
    */
   blocks?: readonly ContentBlockRef[];
+  /**
+   * Working-set authoring for the `memory-set` section. Absent ⇒ the set is
+   * read-only rather than drawing dead controls. The body raises intent only;
+   * the view performs the write, exactly as on the profile archetype.
+   */
+  memoryAuthoring?: MemoryAuthoring | null;
   /**
    * THE VERDICT, per run row — `seam.liveness.statusOf`, handed down.
    *
@@ -113,12 +121,31 @@ export function SubtreeBody({
   criteriaDraft,
   onCriteriaChange,
   criteriaUnavailableReason,
+  memoryAuthoring,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
   const runs = dedupe([...children.filter(isRunKind), ...peersOf(detail).filter(isRunKind)]);
   const linked = dedupe(peersOf(detail).filter((p) => !isRunKind(p)));
   const notices = (blocks ?? []).filter((b) => b.block === 'notice');
+  /*
+   * The memory working set, when the registry row declares it (085: a task
+   * holds one exactly as a teammate does, and P2 injects it at spawn).
+   *
+   * ONE NAMED SECTION, not a generic block renderer. This body draws a fixed
+   * anatomy on purpose and growing a `blocks.map` here would invite every
+   * future block into a body that has no opinion about them — and a block it
+   * did not know would then draw nothing, which is the failure this section
+   * exists to fix, reintroduced one level up.
+   */
+  const memorySet = (blocks ?? []).find((b) => b.block === 'memory-set');
+  /*
+   * Provenance rows — today the loop that fired this task (`triggered_by`).
+   * A SECOND named case, not a generic renderer: the body still knows every
+   * block it draws by name, and `RENDERED_BLOCKS` in the test holds the two
+   * lists together.
+   */
+  const peerRows = (blocks ?? []).filter((b) => b.block === 'peer-rows');
 
   return (
     <div
@@ -148,6 +175,23 @@ export function SubtreeBody({
         onAddChild={onAddChild}
       />
       <RunsSection runs={runs} livenessOf={livenessOf} onOpenEntity={onOpenEntity} />
+      {memorySet ? (
+        <section className="sb-section" data-testid="memory-set-section">
+          <Eyebrow faint>{memorySet.label ?? 'MEMORIES'}</Eyebrow>
+          <MemorySetBlock
+            detail={detail}
+            params={memorySet.params ?? {}}
+            onOpenEntity={onOpenEntity}
+            authoring={memoryAuthoring}
+          />
+        </section>
+      ) : null}
+      {peerRows.map((block, i) => (
+        <section className="sb-section" data-testid="peer-rows-section" key={`${block.block}:${i}`}>
+          <Eyebrow faint>{block.label ?? 'RELATED'}</Eyebrow>
+          <PeerRowsBlock detail={detail} params={block.params ?? {}} onOpenEntity={onOpenEntity} />
+        </section>
+      ))}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         <div className="sb-notices" data-testid="subtree-notices">
@@ -820,9 +864,32 @@ function isRunKind(summary: EntitySummary): boolean {
   return getKind(summary.kind).list.liveTreatment != null;
 }
 
+/**
+ * THE EDGE TYPES THAT HAVE THEIR OWN SECTION, and therefore must not also be
+ * swept into LINKED.
+ *
+ * THE FAILURE CLASS THIS SET EXISTS FOR — worth stating once, because it has
+ * now recurred: `peersOf` pushes every endpoint of every group, which is
+ * correct only while the edge registry is narrow. Twice a migration has widened
+ * it underneath this function and given an edge BEHAVIOURAL semantics without
+ * this file knowing:
+ *
+ *   · `remembers` (085 + P2) — a task's remembered memories are injected into
+ *     every session spawned on it. It rendered as an anonymous LINKED chip.
+ *   · `triggered_by` (086) — "this task exists because that loop fired". Run
+ *     history and provenance, and it would have rendered the same way.
+ *
+ * A type-blind sweep cannot see either, and no declared-block guard can catch
+ * it because nothing is declared. So each type that carries meaning gets a
+ * NAMED SECTION and joins this set. Exactly these groups and nothing broader:
+ * every other edge type still belongs in LINKED, which is what the test holds.
+ */
+const OWN_SECTION_EDGES: ReadonlySet<string> = new Set(['remembers', 'triggered_by']);
+
 function peersOf(detail: EntityDetail): EntitySummary[] {
   const out: EntitySummary[] = [];
   for (const group of [...detail.connections.outgoing, ...detail.connections.incoming]) {
+    if (OWN_SECTION_EDGES.has(group.type)) continue;
     for (const edge of group.edges) {
       out.push(edge.source.id === detail.id ? edge.target : edge.source);
     }

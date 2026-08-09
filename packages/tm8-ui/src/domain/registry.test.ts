@@ -44,14 +44,15 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 16 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 20 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
-    // then `memory`, `worktree` and `artifact` landed the same day → 19.
+    // then `memory`, `worktree` and `artifact` landed the same day → 19;
+    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(19);
+    expect(CORE_KINDS.length).toBe(20);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -67,6 +68,30 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     expect(customKindSlug('c:incident')).toBe('c-incident');
     expect(slugOfKind('c:incident')).toBe('c-incident');
     expect(kindOfSlug('c-incident')).toBe('c:incident');
+  });
+});
+
+describe('loop management is registry-declared and fully wired', () => {
+  it('selects staged create, typed edit, lifecycle controls, and the live Edit verb', () => {
+    const loop = getKind('loop');
+    expect(loop.list.quickCreate).toBe(true);
+    expect(loop.createForm).toBe('scheduled-work');
+    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual([
+      'title', 'schedule', 'teamMemberId', 'subjectId', 'prompt', 'config',
+    ]);
+    expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
+    expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
+    expect(loop.panel.primaries).toEqual(['edit']);
+    // RUNS is the third block on purpose: a loop's firing history IS its
+    // inbound `triggered_by` edges, so a panel without it hides the only
+    // record of what the loop has done.
+    expect(loop.panel.blocks?.map((block) => block.block)).toEqual([
+      'loop-controls', 'fields', 'peer-rows',
+    ]);
+    expect(loop.panel.blocks?.find((block) => block.block === 'peer-rows')?.params).toMatchObject({
+      edgeType: 'triggered_by',
+      direction: 'incoming',
+    });
   });
 });
 
@@ -414,6 +439,43 @@ describe('D44 — the launch flow is declared as DATA on the verb', () => {
         config: { ...config, credentialSource: 'member' },
       }),
     ).toMatchObject({ credentialSource: 'member' });
+    // Same rule for the spawn-time memory hand-off (D3a): no picks, no field.
+    expect(input).not.toHaveProperty('memoryIds');
+  });
+
+  it('carries picked memoryIds and truncates at the CONTRACT ceiling, not a UI one', () => {
+    /*
+     * `memoryIds` is `z.array(SpawnUuidSchema).max(32)` (schemas.ts:1662). The
+     * sheet's picker refuses the 33rd pick with a reason, but this builder is
+     * also reachable from the quick config, so the ceiling is enforced where
+     * the contract object is actually made. Truncating here is the honest
+     * failure: a caller that ignored the cap loses the overflow rather than
+     * losing the whole launch to a node-side refusal it cannot act on.
+     */
+    const config = defaultConfigFor({ id: 'tm-1', agentTool: 'claude-code', model: 'claude-opus-5' });
+    const two = buildSpawnInput({
+      clientMutationId: 'cmid-2',
+      spaceId: 'space-1',
+      config: { ...config, memoryIds: ['mem-a', 'mem-b'] },
+    });
+    expect(two.memoryIds).toEqual(['mem-a', 'mem-b']);
+
+    const overflow = Array.from({ length: 40 }, (_, i) => `mem-${String(i)}`);
+    const capped = buildSpawnInput({
+      clientMutationId: 'cmid-3',
+      spaceId: 'space-1',
+      config: { ...config, memoryIds: overflow },
+    });
+    expect(capped.memoryIds).toHaveLength(32);
+    expect(capped.memoryIds?.[31]).toBe('mem-31');
+
+    // An empty array is still an ABSENT field, not an empty one on the wire.
+    const none = buildSpawnInput({
+      clientMutationId: 'cmid-4',
+      spaceId: 'space-1',
+      config: { ...config, memoryIds: [] },
+    });
+    expect(none).not.toHaveProperty('memoryIds');
   });
 
   it('refuses an untrusted project WITH the mechanism, until consent is explicit', () => {

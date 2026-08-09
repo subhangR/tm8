@@ -30,7 +30,7 @@
  * ESC WALKS DOWN ONE RUNG PER PRESS: aux → centre → list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { EntityId, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
+import type { EntityId, EntityKind, ExecutionSpawnInput, WorkSessionInteractionProfileProjection } from '@tm8/contract';
 import {
   EntityDetailPanel,
   EntityListPanel,
@@ -45,7 +45,17 @@ import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
-import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import {
+  creatableKind,
+  EditEntityDialog,
+  EntityCreateControl,
+  MemoryComposer,
+  MemoryMarkComposer,
+  placeholderTitleFor,
+  useMemoryMarks,
+  useMemoryWorkingSet,
+  useNewTask,
+} from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
@@ -53,7 +63,7 @@ import type { GateData } from './useGateData';
 import { attachmentsFor } from '../files/port';
 import { openEntityAndResolve } from './open-entity';
 import { useLaunchPort } from './useLaunchPort';
-import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
+import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { useRowLifecycle } from './useRowLifecycle';
 import type { ContentSurface } from '../routes';
@@ -99,6 +109,8 @@ export interface EntityViewProps {
   launchInFlight?: boolean;
   onLaunchCancel?(): void;
   onLaunchSubmit?(config: LaunchSelection): void;
+  /** D5 — hand the subject to the dispatcher without forwarding launch config. */
+  onLaunchDispatch?(request: DispatchSelection): void;
   /**
    * §1.1 mode wiring: the shell holds the layout mode (it is route state) and
    * this screen passes it through to the panel. Absent ⇒ the panel's local
@@ -415,6 +427,72 @@ export function EntityView(props: EntityViewProps) {
     onSaved: (id) => props.data.refetchDetail(id),
   });
 
+  /**
+   * The `remembers` working-set authoring for whatever the centre is showing.
+   *
+   * WHICH ENTITIES HOST ONE IS A REGISTRY QUESTION, not a kind check here: the
+   * set is offered exactly where a row declares a `memory-set` block. 085
+   * widened `remembers.src_kinds` to the wildcard, so adding that block to the
+   * task row is all it takes to give tasks a working set — no edit in this file.
+   *
+   * `canEdit` is the server's own answer about this subject, so the controls
+   * refuse for the same reason the node would rather than guessing.
+   */
+  const memorySetBlock = detail
+    ? (getKind(detail.state.kind).panel.blocks ?? []).find((block) => block.block === 'memory-set')
+    : undefined;
+  const memorySetHost = memorySetBlock ? detail : null;
+  const memoryWorkingSet = useMemoryWorkingSet({
+    spaceId: data.spaceId,
+    holderId: memorySetHost?.id ?? null,
+    /* Both read off the block the registry declared — see the row's comment for
+       why the authoring lane cannot carry these as literals. */
+    memberKind: creatableKind(String(memorySetBlock?.params?.dstKind ?? '') as EntityKind),
+    edgeType: String(memorySetBlock?.params?.edgeType ?? ''),
+    refusal: memorySetHost && !memorySetHost.capabilities.canEdit
+      ? 'The node refuses edits to this entity, so its working set is read-only here.'
+      : null,
+    commands: data.seam.commands,
+    onChanged: (id) => props.data.refetchDetail(id),
+    onError: (title, body) => props.onNotice({
+      id: `memory-working-set:${String(memorySetHost?.id ?? 'none')}`,
+      tone: 'error',
+      title,
+      body,
+      ttlMs: 12_000,
+    }),
+  });
+
+  /**
+   * Marking a memory (`supersedes` / `disputes`, 056 §5).
+   *
+   * OFFERED WHERE THE ROW DECLARES AN `epistemics` BLOCK — the same registry
+   * test the working set uses, so no kind is named here either. The memory's
+   * CURRENT version is threaded through because `disputes.props.pinnedVersion`
+   * must pin it: a dispute pinned at an older version stops applying the moment
+   * the content moves, so a guessed number authors a mark that does nothing.
+   */
+  const marksHost = detail
+    && (getKind(detail.state.kind).panel.blocks ?? []).some((block) => block.block === 'epistemics')
+    ? detail
+    : null;
+  const memoryMarks = useMemoryMarks({
+    spaceId: data.spaceId,
+    target: marksHost
+      ? { id: marksHost.id, version: marksHost.version, title: marksHost.title }
+      : null,
+    memberKind: creatableKind(String(memorySetBlock?.params?.dstKind ?? 'memory') as EntityKind),
+    commands: data.seam.commands,
+    onChanged: (id) => props.data.refetchDetail(id),
+    onError: (title, body) => props.onNotice({
+      id: `memory-mark:${String(marksHost?.id ?? 'none')}`,
+      tone: 'error',
+      title,
+      body,
+      ttlMs: 12_000,
+    }),
+  });
+
   const panelActions = composePanelActions([
     { onAction: selectedId ? primaries.forEntity(selectedId) : undefined, wiredActions: primaries.wiredActions },
     { onAction: verbs.onAction, wiredActions: verbs.wiredActions },
@@ -433,6 +511,8 @@ export function EntityView(props: EntityViewProps) {
          see `composePanelActions` for why neither can be passed alone. */
       onAction={panelActions.onAction}
       wiredActions={panelActions.wiredActions}
+      memoryAuthoring={memoryWorkingSet.authoring}
+      onMarkMemory={memoryMarks.begin}
       launch={launchPort}
       /* The tombstone's way back. `restore` is the same verb the strip's
          archive control flips to, through the same executor — so an archived
@@ -553,11 +633,23 @@ export function EntityView(props: EntityViewProps) {
           teammates={data.launch.teammates}
           projects={data.launch.projects}
           profiles={data.launch.profiles}
+          memories={data.launch.memories}
           capacity={data.launch.capacity}
           onCancel={() => props.onLaunchCancel?.()}
           onLaunch={(config) => props.onLaunchSubmit?.(config)}
+          onDispatch={props.onLaunchDispatch}
         />
       )}
+      {/* Same reason as the dialog above: fixed over a scrim, so it belongs at
+          the view root and not inside the panel's overflow context. */}
+      <MemoryComposer
+        composer={memoryWorkingSet.composer}
+        holderLabel={memorySetHost?.title ?? 'this entity'}
+      />
+      <MemoryMarkComposer
+        composer={memoryMarks.composer}
+        targetTitle={marksHost?.title ?? 'this memory'}
+      />
       <section className="ev-list" aria-label={`${config.labelPlural} list`}>
         <EntityListPanel
           kind={kind}
@@ -571,7 +663,16 @@ export function EntityView(props: EntityViewProps) {
           ctx={ctx}
           createSlot={
             config.list.quickCreate ? (
-              <NewTaskControl flow={createFlow} label={config.palette?.createLabel ?? '＋ New'} />
+              <EntityCreateControl
+                config={config}
+                immediate={createFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  setSelectedId(id);
+                }}
+              />
             ) : undefined
           }
           liveIds={data.liveIds}

@@ -33,12 +33,14 @@ import {
   modelsFor,
   type LaunchCapacity,
   type LaunchConfig,
+  type LaunchMemory,
   type LaunchMode,
   type LaunchProfile,
   type LaunchProject,
   type LaunchTarget,
   type LaunchTeammate,
 } from '../domain/launch';
+import { MEMORY_IDS_MAX } from '../domain/memory';
 
 export interface LaunchSheetProps {
   /** The entity being launched from. The sheet is bound to it and dies with it. */
@@ -49,6 +51,12 @@ export interface LaunchSheetProps {
   teammates: readonly LaunchTeammate[];
   projects: readonly LaunchProject[];
   profiles: readonly LaunchProfile[];
+  /**
+   * The space's memories, offered as a spawn-time hand-off (D3a). Absent is not
+   * the same as empty and the section says which: an omitted list means nobody
+   * has read memories into this client, an empty one means the space has none.
+   */
+  memories?: readonly LaunchMemory[];
   /** Node capacity, stated BEFORE commitment (T5-5 footer). Domain's shape. */
   capacity?: LaunchCapacity;
   /** A refusal renders IN the sheet, never as a toast (T5-5 annotation 6). */
@@ -56,7 +64,21 @@ export interface LaunchSheetProps {
   /** One spawn may be outstanding; the sheet cannot submit or dismiss it. */
   launching?: boolean;
   onLaunch(config: LaunchSelection): void;
+  /**
+   * D5 — route the subject through the space's resident dispatcher instead of
+   * configuring the launch here. Takes ONLY the subject, mirroring
+   * `ExecutionDispatchInput`, so this prop cannot grow into a second spawn
+   * path: there is nowhere to put a teammate.
+   *
+   * Absent ⇒ the button renders refused-with-reason, never hidden.
+   */
+  onDispatch?(request: DispatchSelection): void;
   onCancel(): void;
+}
+
+/** Everything dispatch is allowed to know. Deliberately one field. */
+export interface DispatchSelection {
+  subjectId: EntityId;
 }
 
 export interface LaunchSelection extends LaunchConfig {
@@ -72,7 +94,7 @@ const RESOLUTION_ORDER = ['teammate default', 'space default', 'node default'] a
 const TEAMMATE_SEARCH_FROM = 5;
 
 export function LaunchSheet(props: LaunchSheetProps) {
-  const { teammates, projects, profiles } = props;
+  const { teammates, projects, profiles, memories } = props;
 
   /**
    * ESC CLOSES THE SHEET — the ACTING half of the modal contract.
@@ -123,6 +145,11 @@ export function LaunchSheet(props: LaunchSheetProps) {
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [rosterQuery, setRosterQuery] = useState('');
+  /* NOTHING PRE-SELECTED. Memories are epistemic claims injected into a
+     persona's context; the sheet opening on a default set would change what a
+     session believes without anyone choosing it. */
+  const [memoryIds, setMemoryIds] = useState<readonly EntityId[]>([]);
+  const [memoryOpen, setMemoryOpen] = useState(false);
 
   const teammate = teammates.find((t) => t.id === teammateId);
   const models = modelsFor(agentToolId);
@@ -166,6 +193,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
     return defaultResolution;
   }, [defaultResolution, profileId, profiles]);
   const profilePickerId = `launch-interaction-profile-${useId()}`;
+  const memoryPickerId = `launch-memories-${useId()}`;
   const selectedProfile = resolution.profile;
   const selectedProfileDescription = selectedProfile
     ? `${profileSurfaceDescription(selectedProfile)} · resolved from ${resolution.from}`
@@ -544,6 +572,121 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </span>
         </section>
 
+        {/*
+          * MEMORIES — the spawn-time hand-off (D3a, `memoryIds`).
+          *
+          * A PICKER, NOT A MANAGER. Nothing here creates, edits, supersedes or
+          * forgets: those live on the teammate's working set and the memory's
+          * own panel. This screen answers exactly one question — "what extra
+          * context should THIS session start with" — and every control that
+          * answered a different one would be a second place to author memories.
+          *
+          * WHY IT SAYS "this session only": these ids are injected for the
+          * spawn and do NOT join the teammate's working set. The two are easy
+          * to confuse precisely because they land in the same manifest field,
+          * and a picker that quietly taught a persona something permanent
+          * would be a very quiet surprise.
+          */}
+        <section className="ls__section">
+          <div className="ls__eyebrow">MEMORIES</div>
+          <div className="ls__row ls__row--inert">
+            <span className="ls__glyph" aria-hidden="true">◈</span>
+            <span className="ls__rowtext">
+              <span className="ls__rowname">
+                {memoryIds.length === 0
+                  ? 'None — the teammate’s own working set still applies'
+                  : `${String(memoryIds.length)} picked for this session`}
+              </span>
+              <span className="ls__rowsub">
+                injected at spawn for this session only · not added to the persona
+              </span>
+            </span>
+            {memories ? (
+              <button
+                type="button"
+                className="ls__change"
+                aria-label="Change picked memories"
+                aria-expanded={memoryOpen}
+                aria-controls={memoryPickerId}
+                onClick={() => setMemoryOpen((o) => !o)}
+              >
+                change ▾
+              </button>
+            ) : null}
+          </div>
+
+          {/* ABSENT AND EMPTY ARE DIFFERENT FACTS, and this is the whole reason
+              the prop is optional rather than defaulted to []. "No memories in
+              this space" is a measurement; "nobody read them" is not, and
+              rendering the second as the first is the hollow-value law. */}
+          {!memories ? (
+            <p className="ls__profile-empty" role="status">
+              Memories have not been read into this client, so none can be
+              offered. This is unknown, not empty.
+            </p>
+          ) : null}
+
+          {memoryOpen && memories ? (
+            <div
+              id={memoryPickerId}
+              className="ls__picker"
+              role="group"
+              aria-label="Memory options"
+            >
+              {memories.length === 0 ? (
+                <p className="ls__profile-empty" role="status">
+                  This space has no memories yet.
+                </p>
+              ) : null}
+              {memories.map((memory) => {
+                const on = memoryIds.includes(memory.id);
+                // The cap is the CONTRACT's (`memoryIds: max(32)`), enforced
+                // here so the 33rd pick is refused with a reason instead of the
+                // node rejecting a launch the viewer already committed to.
+                const capped = !on && memoryIds.length >= MEMORY_IDS_MAX;
+                return (
+                  <button
+                    key={memory.id}
+                    type="button"
+                    // CHECKBOX, not radio: this is a set, and a radiogroup here
+                    // would announce single-choice to a screen reader.
+                    role="checkbox"
+                    aria-checked={on}
+                    aria-disabled={capped || undefined}
+                    className={`ls__row ${on ? 'ls__row--on' : ''} ${capped ? 'ls__row--refused' : ''}`}
+                    title={capped
+                      ? `The contract caps a spawn at ${String(MEMORY_IDS_MAX)} memories.`
+                      : memory.detail}
+                    onClick={(event) => {
+                      if (capped) return event.preventDefault();
+                      setMemoryIds((current) => (
+                        current.includes(memory.id)
+                          ? current.filter((id) => id !== memory.id)
+                          : [...current, memory.id]
+                      ));
+                    }}
+                  >
+                    <span className="ls__glyph" aria-hidden="true">◈</span>
+                    <span className="ls__rowtext">
+                      <span className="ls__rowname">{memory.statement}</span>
+                      {/* The SCOPE, not just the claim: picking a memory blind
+                          is how a true statement about the wrong subject gets
+                          injected. `mark` rides along so a disputed claim
+                          cannot be picked without seeing that it is disputed. */}
+                      <span className="ls__rowsub">
+                        {memory.mark} · {memory.subjectScope}
+                      </span>
+                    </span>
+                    <span className={`ls__check ${on ? 'ls__check--on' : 'ls__check--off'}`} aria-hidden="true">
+                      {on ? '✓' : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </section>
+
         {props.refusal && (
           // T5-5: refusal renders IN the sheet — red word, cause, what did NOT
           // happen, and the picks kept. Never a toast apology.
@@ -570,6 +713,42 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <button type="button" className="ls__cancel" disabled={launching} onClick={props.onCancel}>
           Cancel
         </button>
+        {/*
+          * DISPATCH — D5, beside the manual flow rather than inside it.
+          *
+          * IT IGNORES EVERY CONTROL ABOVE IT, and that is the point rather than
+          * an oversight. `ExecutionDispatchInput` carries no launch
+          * configuration at all — the contract's own comment is that "the
+          * moment a caller can name the teammate, it is spawning, not
+          * dispatching" — so the dispatcher chooses the teammate AND the
+          * memories itself. Forwarding the sheet's picks would be impossible
+          * and pretending to would be a lie in the direction users most want to
+          * believe.
+          *
+          * WHICH IS WHY THE TITLE SAYS SO. A control that silently discards a
+          * form the viewer has just filled in is the worst class of surprise:
+          * everything looks like it was honoured.
+          *
+          * DISABLED-WITH-REASON when no handler is wired, never hidden — a
+          * missing button would claim this node cannot dispatch.
+          */}
+        <button
+          type="button"
+          className="ls__dispatch"
+          data-testid="launch-dispatch"
+          aria-disabled={props.onDispatch ? undefined : true}
+          title={
+            props.onDispatch
+              ? 'Hand this subject to the space\u2019s dispatcher. It picks the teammate and the memories — the settings above are NOT used.'
+              : 'Dispatch is not wired on this surface, so nothing would be routed.'
+          }
+          onClick={(event) => {
+            if (!props.onDispatch) return event.preventDefault();
+            props.onDispatch({ subjectId: props.subjectId });
+          }}
+        >
+          Dispatch ⇥
+        </button>
         <button
           type="button"
           className="ls__launch"
@@ -588,6 +767,9 @@ export function LaunchSheet(props: LaunchSheetProps) {
               mode,
               target,
               ...(profileId ? { interactionProfileId: profileId } : {}),
+              /* Omitted when nothing was picked: an absent field and an empty
+                 array are not the same statement to the node. */
+              ...(memoryIds.length > 0 ? { memoryIds } : {}),
             });
           }}
         >

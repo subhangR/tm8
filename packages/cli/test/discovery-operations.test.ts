@@ -52,7 +52,8 @@ import { createOutput } from '../src/output.js';
 // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
 // 131 -> 135: credentials.* Tier B.
 // 135 -> 137: projects.files.list/attach (public, UI-only, commandless).
-const EXPECTED_ROWS = 137;
+// 137 -> 138: execution.dispatch.
+const EXPECTED_ROWS = 138;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -157,14 +158,14 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('133 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('134 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 133, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 134, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

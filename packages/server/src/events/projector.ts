@@ -238,6 +238,14 @@ interface SummaryRow {
   ip_active_hash: string | null;
   ip_retired_at: Date | string | null;
   ip_name: string | null;
+  loop_title: string | null;
+  loop_schedule: string | null;
+  loop_enabled: boolean | null;
+  loop_team_member_id: string | null;
+  loop_subject_id: string | null;
+  loop_next_run_at: Date | string | null;
+  loop_last_run_at: Date | string | null;
+  loop_last_error: string | null;
   memory_statement: string | null;
   memory_mechanism: string | null;
   memory_subject_scope: string | null;
@@ -336,6 +344,14 @@ select
   memo.subject_scope as memory_subject_scope,
   memo.does_not_establish as memory_does_not_establish,
   memo.measured_at   as memory_measured_at,
+  lp.title           as loop_title,
+  lp.schedule        as loop_schedule,
+  lp.enabled         as loop_enabled,
+  lp.team_member_id  as loop_team_member_id,
+  lp.subject_id      as loop_subject_id,
+  lp.next_run_at     as loop_next_run_at,
+  lp.last_run_at     as loop_last_run_at,
+  lp.last_error      as loop_last_error,
   wt.project_id      as wt_project_id,
   wt.branch          as wt_branch,
   wt.base_ref        as wt_base_ref,
@@ -369,6 +385,7 @@ left join public.interaction_profile_versions profile_version
  and profile_version.version = coalesce(ip.active_version, ip.current_draft_version)
 left join public.memories memo       on memo.entity_id = e.id
 left join public.worktrees wt        on wt.entity_id = e.id
+left join public.loops lp            on lp.entity_id = e.id
 left join public.artifacts art       on art.entity_id = e.id
 left join public.artifact_bundle_revisions arev on arev.id = art.current_revision_id
 left join public.custom_entities cev on cev.entity_id = e.id
@@ -721,6 +738,10 @@ export class PgEntityProjector implements EntityProjector {
         // fallback), because a title that differs between the feed and the
         // read path is drift a client can see.
         return (r.memory_statement ?? '').replace(/\s+/g, ' ').trim().slice(0, 120) || 'Memory';
+      case 'loop':
+        // Its own detail-row title — MIRRORS entity-read.ts titleOf, same
+        // fallback. `entities` has no title column for it to fall back to.
+        return r.loop_title ?? 'Loop';
       case 'worktree':
         // The branch is the human name — MIRRORS entity-read.ts titleOf.
         return r.wt_branch ?? 'Worktree';
@@ -762,6 +783,7 @@ export class PgEntityProjector implements EntityProjector {
       : r.kind === 'channel' ? r.channel_topic
       : r.kind === 'memory' ? r.memory_statement
       : r.kind === 'artifact' ? r.artifact_description
+      : r.kind === 'loop' ? r.loop_schedule
       : null;
     if (source === null || source === '') return null;
     // Empty becomes "no excerpt", not an empty one — `entity-read.ts` maps the
@@ -961,6 +983,19 @@ export class PgEntityProjector implements EntityProjector {
           subjectScope: r.memory_subject_scope ?? '',
           doesNotEstablish: r.memory_does_not_establish ?? '',
           measuredAt: iso(r.memory_measured_at),
+        };
+      case 'loop':
+        // MIRRORS entity-read.ts stateOf. `teamMemberId: null` is meaningful
+        // (route via the dispatcher), so it is projected as null, not ''.
+        return {
+          kind: 'loop',
+          schedule: r.loop_schedule ?? '',
+          enabled: r.loop_enabled ?? false,
+          teamMemberId: r.loop_team_member_id,
+          subjectId: r.loop_subject_id,
+          nextRunAt: iso(r.loop_next_run_at),
+          lastRunAt: iso(r.loop_last_run_at),
+          lastError: r.loop_last_error,
         };
       case 'worktree':
         // Semantic lifecycle only — allocation (disk) state is deliberately

@@ -40,7 +40,8 @@ import type {
   EntityContextQuery, EntityContextView, EntityCounters, EntityDetail,
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
-  ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
+  ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
+  ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
@@ -109,6 +110,7 @@ export const CoreEntityKindSchema = z.enum([
   'memory',
   'worktree',
   'artifact',
+  'loop',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(
@@ -292,6 +294,16 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     baseRef: z.string().min(1),
     baseCommitOid: z.string().regex(/^[0-9a-f]{40}$/),
     projectId: z.string().min(1),
+  }).strict(),
+  z.object({
+    kind: z.literal('loop'),
+    schedule: z.string().min(1),
+    enabled: z.boolean(),
+    teamMemberId: z.string().min(1).nullable(),
+    subjectId: z.string().min(1).nullable(),
+    nextRunAt: z.string().nullable(),
+    lastRunAt: z.string().nullable(),
+    lastError: z.string().nullable(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -541,6 +553,18 @@ export const EntityContentSchema: z.ZodType<EntityContent> = z.lazy(() => z.unio
     baseCommitOid: z.string().regex(/^[0-9a-f]{40}$/),
     status: WorktreeStatusSchema,
     statusChangedAt: IsoTimestamp.nullable(),
+  }).strict(),
+  z.object({
+    kind: z.literal('loop'),
+    schedule: z.string().min(1),
+    enabled: z.boolean(),
+    teamMemberId: z.string().min(1).nullable(),
+    subjectId: z.string().min(1).nullable(),
+    prompt: z.string(),
+    config: z.record(z.unknown()),
+    nextRunAt: z.string().nullable(),
+    lastRunAt: z.string().nullable(),
+    lastError: z.string().nullable(),
   }).strict(),
   z.object({
     kind: z.literal('artifact'),
@@ -1688,7 +1712,7 @@ export const ProjectTrustLevelSchema: z.ZodType<ProjectTrustLevel> =
 export const ProjectDefaultsSchema: z.ZodType<ProjectDefaults> = z.object({
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
-  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).nullable().optional(),
+  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']).nullable().optional(),
 }).strict();
 
 export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
@@ -1874,7 +1898,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
   interactionProfileId: SpawnUuidSchema.optional(),
-  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).optional(),
+  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
@@ -1882,6 +1906,38 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   credentialSource: z.enum(['member', 'node']).optional(),
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
+  memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+}).strict();
+
+/**
+ * execution.dispatch — hand an entity to the space's dispatcher (§4.3).
+ *
+ * Three fields and no launch configuration is the whole design: choosing the
+ * teammate, the model and the memories IS the dispatcher's job, so a caller
+ * that could pass `teamMemberId` here would be doing the dispatching itself
+ * and calling it a dispatch. `subjectId` is any launchable entity — it is
+ * mapped through `derive_task_for_entity` (064) server-side, exactly as
+ * `execution.spawn.taskIds` is.
+ */
+export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpawnUuidSchema,
+  subjectId: SpawnUuidSchema,
+  note: z.string().max(4000).optional(),
+}).strict();
+
+/**
+ * `delivery` is reported rather than thrown on. A dispatch whose envelope did
+ * not reach the PTY still left a durable request message on the task, so the
+ * work is recoverable; answering 5xx would tell the caller nothing happened.
+ */
+export const ExecutionDispatchResultSchema: z.ZodType<ExecutionDispatchResult> = z.object({
+  taskId: EntityIdSchema,
+  dispatcherSessionId: EntityIdSchema,
+  dispatcherSpawned: z.boolean(),
+  requestMessageId: EntityIdSchema.optional(),
+  delivery: z.enum(['delivered', 'undelivered']),
 }).strict();
 
 export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.object({

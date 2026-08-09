@@ -103,6 +103,8 @@ import type {
   EntityKindDef,
   EntitySummary,
   ExecutionPromptInput,
+  ExecutionDispatchInput,
+  ExecutionDispatchResult,
   ExecutionSpawnInput,
   ExecutionResumeInput,
   ExecutionTerminateInput,
@@ -522,6 +524,23 @@ export interface Seam {
      */
     previewArtifact(id: EntityId, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
     spawn(input: ExecutionSpawnInput): Promise<CommandResult>;
+    /**
+     * `execution.dispatch` — hand a subject to the space's resident dispatcher
+     * and let IT choose the teammate and the memories (DESIGN §4.3, D2/D4).
+     *
+     * IT CARRIES NO LAUNCH CONFIGURATION, and that absence is the feature: the
+     * contract's own comment is that "the moment a caller can name the
+     * teammate, it is spawning, not dispatching". So this is not a variant of
+     * `spawn` with defaults filled in and must never grow toward one.
+     *
+     * IT RETURNS A DELIVERY VERDICT, not a session. Dispatch is asynchronous by
+     * construction — it posts a request to another agent, which decides later —
+     * so there is no session id to hand back and `delivery: 'undelivered'` is a
+     * real, non-exceptional outcome that still leaves a durable message. A
+     * caller that treats this like `spawn` and waits for a terminal will wait
+     * forever.
+     */
+    dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult>;
     prompt(id: EntityId, input: ExecutionPromptInput): Promise<CommandResult>;
     terminate(id: EntityId, input: ExecutionTerminateInput): Promise<CommandResult>;
     /**

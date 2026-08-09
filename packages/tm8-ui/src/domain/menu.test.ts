@@ -6,7 +6,12 @@
  * prevent.
  */
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MENU_GROUP_SPINE, MenuConfigSchema, type MenuConfig } from '@tm8/contract';
+import {
+  DEFAULT_MENU_GROUP_SPINE,
+  DEFAULT_MENU_WORKSPACE_KIND_SPINE,
+  MenuConfigSchema,
+  type MenuConfig,
+} from '@tm8/contract';
 import {
   SHIPPED_DEFAULT_MENU,
   SHIPPED_DEFAULT_MENU_REVISION,
@@ -31,7 +36,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
 
   it('encodes the WLT §2 diagram, pinned to the contract spine', () => {
     // DEFAULT_MENU_GROUP_SPINE is the ONE truth this default and the server
-    // seeder (db/migrations/061, tested by
+    // seeder (db/migrations/093, tested by
     // packages/server/test/db/menu-seeder-parity.pg.test.ts) are both pinned
     // to. Before the spine existed the two carried unjoined hand-copies, and
     // migration 059 dropped the voice group with every suite green — the
@@ -40,23 +45,11 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.id)).toEqual(
       DEFAULT_MENU_GROUP_SPINE.map((g) => g.clientId),
     );
+    // The ordered Workspace spine is the second shared parity pin: the client
+    // fallback and SQL seeder each prove their hand-written copy against it.
+    // Revisions 4 and 6 added memory/artifact and channel; revision 7 adds Loop.
     expect(menuKindRefs(SHIPPED_DEFAULT_MENU)).toEqual([
-      'task',
-      'work_session',
-      'doc',
-      // Revision 6 (2026-08-01): Channels joins the collection rows. The
-      // contract's MenuKindRef un-excluded `channel` in the same change — it is
-      // a collection kind with a real list now, so the rail can name it.
-      'channel',
-      'team_member',
-      // Revision 4 (2026-07-31): Memories and Artifacts under the Workspace
-      // caret, Worktrees beside the git-adjacent Tracking rows. All three
-      // shipped with registry rows but no menu named them — unreachable
-      // features, not deferred ones.
-      'memory',
-      'artifact',
-      // Revision 7 (2026-08-09): the Library group makes these three shipped
-      // collection views reachable without overflowing the Workspace caret.
+      ...DEFAULT_MENU_WORKSPACE_KIND_SPINE,
       'file',
       'spell',
       'collection',
@@ -65,6 +58,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
       'worktree',
       'member',
     ]);
+    expect(DEFAULT_MENU_WORKSPACE_KIND_SPINE).toHaveLength(8);
   });
 
   it('ships Files, Spells and Collections as first-class Library rows', () => {
@@ -140,6 +134,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(7);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

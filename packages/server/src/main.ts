@@ -29,14 +29,14 @@ import {
   SubscriptionRegistry,
   WorkspaceEventPublisher,
 } from './events/index.js';
-import { createExecutionRuntime } from './facade/execution-handlers.js';
+import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
+import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
 import { createW2BlobStore } from './files/w2-blob-store.js';
 import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
-import { Scheduler } from './scheduler/scheduler.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
@@ -326,7 +326,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       },
     });
     registerEventHandlers(registry, { db, config, presence });
-    execution?.register(registry);
+    // The delivery seam again, and narrow for the same reason it is narrow
+    // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
+    // terminal, which only the delivery role may do. Absent, a dispatch still
+    // stores its request on the task and answers `undelivered`.
+    execution?.register(
+      registry,
+      delivery ? { dispatchDelivery: delivery.messageDelivery } : {},
+    );
   }
 
   const subscriptions = new SubscriptionRegistry();
@@ -648,7 +655,32 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
    */
   let scheduler: Scheduler | undefined;
   if (db && owner && opts.startBackgroundJobs === true) {
-    scheduler = new Scheduler();
+    // Loops (§4.4) join the same runner when this node has an execution block.
+    // NO SIDECAR IS PASSED, deliberately: attaching one would register the
+    // daily `pg_dump` and silently begin taking backups on nodes that have
+    // never taken one — that decision belongs to whoever owns backups. The
+    // retention jobs registered alongside are the W1 stubs (each reports
+    // `skipped` and touches nothing).
+    scheduler = createDefaultScheduler(
+      execution
+        ? {
+            loops: {
+              db,
+              port: createLoopExecutorPort({
+                db,
+                pty: execution.pty,
+                spawnService: execution.spawnService,
+                resolveOwner: owner,
+                // The same seam `execution.dispatch` gets. Without it a
+                // null-runner loop still STORES its request on the task — the
+                // dispatcher finds it on its next wake — but nothing is pushed
+                // at a live terminal.
+                ...(delivery ? { dispatchDelivery: delivery.messageDelivery } : {}),
+              }),
+            },
+          }
+        : {},
+    );
     scheduler.register(
       createTrackingObserverJob({
         db,
@@ -734,6 +766,9 @@ export async function main(): Promise<void> {
     );
     console.log(`  graph: ${db ? 'connected' : 'NOT CONFIGURED (set TM8_DATABASE_URL) — all operations answer 501'}`);
     console.log(`  delivery: ${delivery ? 'wired' : 'NOT CONFIGURED (set TM8_DELIVERY_DATABASE_URL) — messages are stored but never pushed to a live terminal'}`);
+    console.log(
+      `  scheduler: ${scheduler ? `${scheduler.status().jobs.length} job(s) running (loops + retention stubs; backup NOT attached)` : 'NOT RUNNING (needs a database and an execution block)'}`,
+    );
     console.log(`  ws: /v2/ws  ·  health: ${url}/health`);
 
     // Close the pool as well as the listener. A pool left open holds the

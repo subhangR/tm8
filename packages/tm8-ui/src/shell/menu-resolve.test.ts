@@ -6,7 +6,7 @@
  * not a default, it is a latent bug with a friendly name.
  */
 import { describe, expect, it } from 'vitest';
-import { MenuConfigSchema } from '@tm8/contract';
+import { DEFAULT_MENU_WORKSPACE_KIND_SPINE, MenuConfigSchema } from '@tm8/contract';
 import type { MenuConfig } from '@tm8/contract';
 import { SHIPPED_DEFAULT_MENU, SHIPPED_DEFAULT_MENU_REVISION } from '../domain';
 import { VIEW_PRESENTATION, resolveMenu } from './menu-resolve';
@@ -42,7 +42,7 @@ describe('the shipped default menu', () => {
     ]);
   });
 
-  it('makes Workspace the ONE caret view item, with its seven leaves (RULING E)', () => {
+  it('makes Workspace the ONE caret view item, with its eight leaves (RULING E)', () => {
     const workspace = SHIPPED_DEFAULT_MENU.groups
       .flatMap((g) => g.items)
       .find((item) => item.ref === 'workspace');
@@ -50,10 +50,10 @@ describe('the shipped default menu', () => {
     const children = workspace?.type === 'view' ? workspace.children ?? [] : [];
     // Revision 4 (2026-07-31): memory + artifact joined the caret.
     // Revision 6 (2026-08-01): channel joined it, beside doc — it became a
-    // collection kind and was the only one the rail never named. Cap is 8.
-    expect(children.map((c) => c.ref)).toEqual([
-      'task', 'work_session', 'doc', 'channel', 'team_member', 'memory', 'artifact',
-    ]);
+    // collection kind and was the only one the rail never named.
+    // Revision 7 (2026-08-09): loop fills the eighth and final slot.
+    expect(children.map((c) => c.ref)).toEqual(DEFAULT_MENU_WORKSPACE_KIND_SPINE);
+    expect(children).toHaveLength(8);
   });
 
   it('is the only item with children — depth is exactly ≤1', () => {

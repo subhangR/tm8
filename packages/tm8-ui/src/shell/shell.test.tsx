@@ -26,9 +26,14 @@ const presentKind: KindPresenter = (ref) => {
     task: { label: 'Tasks', icon: '◔', badge: 18, unseen: 4 },
     work_session: { label: 'Sessions', icon: '▣', live: 3 },
     doc: { label: 'Docs', icon: '▤' },
+    channel: { label: 'Channels', icon: '#' },
     team_member: { label: 'Teammates', icon: '◯' },
+    memory: { label: 'Memories', icon: '◈' },
+    artifact: { label: 'Artifacts', icon: '❖' },
+    loop: { label: 'Loops', icon: '↻' },
     project: { label: 'Projects', icon: '⬒' },
     pull_request: { label: 'Pull requests', icon: '⑂' },
+    worktree: { label: 'Worktrees', icon: '⑂' },
     member: { label: 'Members', icon: '◯' },
   };
   return table[ref] ?? null;
@@ -133,7 +138,11 @@ describe('MenuRail — three row grammars, chosen by data shape (LLD §4.1)', ()
     expect(leaf).not.toBeNull();
     expect(leaf?.querySelector('.shell-rail__guide')).not.toBeNull();
     expect(leaf?.querySelector('.shell-rail__icon')).toBeNull();
-    expect(container.querySelectorAll('.shell-rail__leaf')).toHaveLength(4);
+    const leaves = [...container.querySelectorAll('.shell-rail__leaf')];
+    expect(leaves).toHaveLength(8);
+    expect(leaves.map((row) => row.querySelector('.shell-rail__label')?.textContent)).toEqual([
+      'Tasks', 'Sessions', 'Docs', 'Channels', 'Teammates', 'Memories', 'Artifacts', 'Loops',
+    ]);
   });
 
   it('marks the active target with aria-current, and only that one', () => {

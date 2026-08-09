@@ -35,7 +35,8 @@ export type CoreEntityKind =
   | 'voice_channel'
   | 'memory'
   | 'artifact'
-  | 'worktree';
+  | 'worktree'
+  | 'loop';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -168,7 +169,15 @@ export type CoreEntityState =
    * and never bumps the entity version (WORKTREE-DESIGN.md §3).
    */
   | { kind: 'worktree'; status: WorktreeStatus; branch: string; baseRef: string;
-      baseCommitOid: string; projectId: ProjectId };
+      baseCommitOid: string; projectId: ProjectId }
+  /**
+   * Scheduling state rides in `state` so a list can show "enabled, next at X"
+   * without a second read. `teamMemberId: null` is MEANINGFUL — it means the
+   * firing routes through the dispatcher rather than naming a runner.
+   */
+  | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
+      subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
+      lastError: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -327,7 +336,10 @@ export type CoreEntityContent =
       entrypoint: string; manifestSha256: string; fileCount: number; totalSizeBytes: number }
   | { kind: 'worktree'; projectId: ProjectId; path: string; branch: string;
       baseRef: string; baseCommitOid: string; status: WorktreeStatus;
-      statusChangedAt: string | null };
+      statusChangedAt: string | null }
+  | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
+      subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
+      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 
@@ -1411,10 +1423,28 @@ export interface MenuGroup {
 }
 
 /**
+ * The ordered collection rows beneath the default Workspace caret.
+ *
+ * Like `DEFAULT_MENU_GROUP_SPINE`, this joins the server seeder and client
+ * fallback without making either implementation import the other. The frozen
+ * menu DTO caps caret children at 8; this list intentionally fills that cap.
+ */
+export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
+  'task',
+  'work_session',
+  'doc',
+  'channel',
+  'team_member',
+  'memory',
+  'artifact',
+  'loop',
+] as const satisfies readonly MenuKindRef[];
+
+/**
  * The default menu's group spine — ONE shared truth for its two twins.
  *
  * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
- * db/migrations/061) and the client shipped default (tm8-ui
+ * db/migrations/093) and the client shipped default (tm8-ui
  * `SHIPPED_DEFAULT_MENU`) each carry a hand-written copy of the default
  * menu's groups, and the ids DIFFER in one place for historical reasons
  * (`work` server-side, `workspace` client-side). Until 2026-07-31 nothing
@@ -1662,7 +1692,7 @@ export type ProjectTrustLevel = 'trusted' | 'untrusted';
 export interface ProjectDefaults {
   model?: string | null;
   agentTool?: string | null;
-  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | null;
+  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | 'dispatcher' | null;
 }
 
 export interface ProjectResource {
@@ -1923,7 +1953,7 @@ export interface ExecutionSpawnInput extends CommandContext {
   confirmUntrusted?: true;
   /** Optional active profile override; human-principal authorization is server-owned. */
   interactionProfileId?: EntityId;
-  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
+  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | 'dispatcher';
   model?: string | null;
   agentTool?: string | null;
   reasoningEffort?: LaunchReasoningEffort;
@@ -1941,6 +1971,44 @@ export interface ExecutionSpawnInput extends CommandContext {
   title?: string;
   /** Extra prompt context appended to the composed manifest. */
   promptExtra?: string | null;
+  /**
+   * Memory entities (kind `memory`, same space) appended to the persona's
+   * working set for THIS session only — a spawn-time memory hand-off. They are
+   * rendered into the manifest's `agent.memory` alongside the teammate's own
+   * `remembers` set; nothing is written to the graph.
+   */
+  memoryIds?: EntityId[];
+}
+
+/**
+ * execution.dispatch — POST /v2/execution/dispatch (DESIGN §4.3, D2/D4).
+ *
+ * Route `subjectId` to the space's resident dispatcher, which picks the
+ * teammate and the memories and then spawns. Deliberately carries NO launch
+ * configuration: the moment a caller can name the teammate, it is spawning,
+ * not dispatching.
+ */
+export interface ExecutionDispatchInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: EntityId;
+  /** Any launchable entity; derived to a task server-side via 064. */
+  subjectId: EntityId;
+  /** Free-text steer for the dispatcher, carried in the trusted envelope. */
+  note?: string;
+}
+
+/** What `execution.dispatch` answers with — see the handler for the states. */
+export interface ExecutionDispatchResult {
+  /** The task the subject derived to; the dispatcher's anchor for this request. */
+  taskId: EntityId;
+  /** The dispatcher session the request was delivered to. */
+  dispatcherSessionId: EntityId;
+  /** True when this call had to spawn the dispatcher rather than reuse one. */
+  dispatcherSpawned: boolean;
+  /** The stored request message. Absent only if delivery was not attempted. */
+  requestMessageId?: EntityId;
+  /** Honest delivery outcome; `undelivered` still leaves a durable message. */
+  delivery: 'delivered' | 'undelivered';
 }
 
 /**

@@ -108,6 +108,107 @@ export function coordinatorBootstrapControl(f: BootstrapControlFacts): string {
   ].join('\n');
 }
 
+// -- dispatcher bootstrap (D4) ------------------------------------------------
+
+/**
+ * What the dispatcher needs on top of the common bootstrap facts: the roster it
+ * selects FROM, a memory-graph summary, and current capacity.
+ *
+ * All three are optional and all three render honestly when absent. A dispatcher
+ * whose manifest could not carry the roster must be told to go fetch it, not
+ * handed an empty `<roster/>` that reads as "there are no teammates" — the
+ * difference between "none" and "not loaded" is the difference between refusing
+ * to dispatch and dispatching blind.
+ */
+export interface DispatcherBootstrapControlFacts extends BootstrapControlFacts {
+  roster?: ReadonlyArray<{
+    teamMemberId: string;
+    name: string;
+    mode?: string | null;
+    model?: string | null;
+    role?: string | null;
+  }>;
+  memorySummary?: { total: number; disputed: number; superseded: number } | null;
+  capacity?: { used: number; total: number } | null;
+}
+
+function rosterBlock(f: DispatcherBootstrapControlFacts): string[] {
+  if (f.roster === undefined) {
+    return ['  <roster loaded="false">Read the roster with `tm8 entity list --kind team_member` before choosing.</roster>'];
+  }
+  if (f.roster.length === 0) {
+    return ['  <roster loaded="true" count="0">This space has no teammates to dispatch to. Say so; do not create one.</roster>'];
+  }
+  return [
+    `  <roster loaded="true" count="${f.roster.length}">`,
+    ...f.roster.map((r) =>
+      `    <teammate team_member_id="${attr(r.teamMemberId)}" name="${attr(r.name)}" mode="${attr(r.mode)}" model="${attr(r.model)}" role="${attr(r.role)}" />`),
+    '  </roster>',
+  ];
+}
+
+function memoryBlock(f: DispatcherBootstrapControlFacts): string {
+  const m = f.memorySummary;
+  if (!m) return '  <memory loaded="false">Read the memory graph before attaching context.</memory>';
+  return `  <memory loaded="true" total="${m.total}" disputed="${m.disputed}" superseded="${m.superseded}" />`;
+}
+
+function capacityBlock(f: DispatcherBootstrapControlFacts): string {
+  const c = f.capacity;
+  if (!c) return '  <capacity loaded="false" />';
+  return `  <capacity used="${c.used}" total="${c.total}" />`;
+}
+
+export function dispatcherBootstrapControl(f: DispatcherBootstrapControlFacts): string {
+  return [
+    '<trusted_control type="tm8.dispatcher-bootstrap" version="1">',
+    identityLine(f),
+    workspaceLine(f),
+    profileLine(f),
+    ...rosterBlock(f),
+    memoryBlock(f),
+    capacityBlock(f),
+    '  <verbs>Read teammates, memories and tasks. Attach memories to the task so they are injected into the session you spawn. Spawn with execution.spawn. Reply on the request thread.</verbs>',
+    '  <prohibition>Never do the dispatched work yourself. Never create, edit or delete a teammate, and never change a persona or model. Select from the roster as it is.</prohibition>',
+    '  <rule>Reply on the request thread with the teammate you chose, the memories you attached, and why. A dispatch nobody can see did not happen.</rule>',
+    '</trusted_control>',
+  ].join('\n');
+}
+
+// -- dispatch request (§4.3) --------------------------------------------------
+
+export interface DispatchRequestFacts {
+  messageId?: string | null;
+  taskId: string;
+  subjectId: string;
+  /** Who asked for the dispatch. */
+  requesterActorId?: string | null;
+  requesterActorKind?: string | null;
+  destinationSessionId: string;
+  /** The requester's free-text steer, already length-bounded by the contract. */
+  note?: string | null;
+}
+
+/**
+ * What a dispatcher is woken with. A control block, not a task assignment: the
+ * dispatcher is not being told to do this task, it is being told to route it,
+ * and conflating the two is the exact failure the persona spends its length
+ * guarding against. The note is UNTRUSTED — it came from a request body — so it
+ * rides in the same escaped-data envelope every other caller-supplied string does.
+ */
+export function dispatchRequestInjection(f: DispatchRequestFacts): string {
+  const control = [
+    `<trusted_control type="tm8.session-input" version="1" kind="dispatch_request" message_id="${attr(f.messageId)}">`,
+    `  <from actor_id="${attr(f.requesterActorId)}" actor_kind="${attr(f.requesterActorKind)}" />`,
+    `  <to session_id="${attr(f.destinationSessionId)}" />`,
+    `  <dispatch task_id="${attr(f.taskId)}" subject_id="${attr(f.subjectId)}" />`,
+    '  <rule>Route this task: pick the teammate, attach the memories they need to the task, spawn them on it, and report who and why on the task anchor. Do not do the task yourself.</rule>',
+    '</trusted_control>',
+  ].join('\n');
+  if (f.note == null || f.note === '') return control;
+  return `${control}\n${untrustedData({ type: 'dispatch-note', body: f.note })}`;
+}
+
 // -- §14.3 task assignment ----------------------------------------------------
 
 export interface TaskAssignmentFacts {

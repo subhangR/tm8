@@ -722,6 +722,9 @@ export type ContentBlockKind =
   | 'field-rows'
   | 'restrictions'
   | 'pin-provenance'
+  // Scheduled-work management. The block owns enable/disable and queue-now;
+  // its presence is registry data, so GenericBody never asks for a kind.
+  | 'loop-controls'
   // Profile wave: the six blocks ProfileBody draws (T0-4 MEMBER lines 400–448,
   // AGENT lines 452–496). `items` above is reused deliberately — one block
   // name, one meaning, two renderers (GenericBody and ProfileBody).
@@ -733,7 +736,19 @@ export type ContentBlockKind =
   | 'session-rows'
   // …plus the org tree: a teammate's place in the entity hierarchy, which
   // db/migrations/002_identity.sql:110 rules IS the org tree (leader = parent).
-  | 'org-tree';
+  | 'org-tree'
+  // …plus the memory working set: the memories an entity `remembers` (056,
+  // 084, 085). Named for the EDGE it reads and not for a kind, because 085
+  // widened `remembers.src_kinds` to the wildcard — the same block row serves
+  // a teammate and a task.
+  | 'memory-set'
+  // …the epistemic standing of an entity: every `badges.staleness` reason it
+  // carries, the verification caveat, and the mark verbs (056 §5).
+  | 'epistemics'
+  // …and the plainest edge block there is: the peers on the other end of a
+  // named edge type, each labelled with its KIND. Needed because 085 made
+  // `remembers` a mixed-kind list, where the kind is the only distinguisher.
+  | 'peer-rows';
 
 export interface ContentBlockRef {
   block: ContentBlockKind;
@@ -809,6 +824,15 @@ export interface EditFieldSpec {
   placeholder?: string;
   /** Draw a textarea rather than an input. */
   multiline?: boolean;
+  /**
+   * The wire value represented by the draft string.
+   *
+   * `nullable-text` turns an empty draft into an explicit `null` (the loop
+   * door's clear flag); `json-object` parses before Save and refuses arrays or
+   * invalid JSON visibly; `schedule` validates against the executor grammar
+   * and recomputes `nextRunAt` only when this field changed.
+   */
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule';
 }
 
 export interface KindConfig {
@@ -862,6 +886,13 @@ export interface KindConfig {
    * opens onto nothing.
    */
   editFields?: readonly EditFieldSpec[];
+  /**
+   * A kind whose required create payload cannot be produced by the immediate
+   * placeholder flow. Presence selects the staged, scheduler-aware form while
+   * `list.quickCreate` continues to decide whether the header has a create
+   * affordance at all.
+   */
+  createForm?: 'scheduled-work';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

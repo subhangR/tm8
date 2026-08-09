@@ -17,7 +17,10 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   const h = await server.health();
   expect(h.ok).toBe(true);
   expect(h.server).toBe('tm8-server');
-  expect(h.operations).toBe(135); // +2: connected project folder file routes.
+  // 136 -> 137 (2026-08-09): execution.dispatch. NOTE this counts ROUTES, not
+  // catalog rows — the catalog is 138, of which `events.subscribe` is WS and
+  // never becomes an HTTP route.
+  expect(h.operations).toBe(137);
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

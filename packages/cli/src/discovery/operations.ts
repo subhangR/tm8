@@ -884,7 +884,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'projects.create': {
     cmd: ['project', 'create'],
-    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
+    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher|none] [--mutation-id <id>]',
     sum: 'Register a ProjectResource',
     authz: 'server',
     input: 'bound',
@@ -1154,7 +1154,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -1163,8 +1163,26 @@ const ROWS: Record<OperationName, Row> = {
     notes: [
       'the server-hosted PTY is the only spawn path; cwd is always Server-computed',
       '`--context` is launch-manifest context, NOT a runtime prompt',
+      '`--memory` appends memory entities to the persona’s injected working set for THIS session only; nothing is written to the graph',
+      'memories a `--task` task `remembers` are auto-injected after the persona’s working set (D9)',
       'omit `--access-mode` and a session spawned BY a session inherits its spawner’s posture',
       'worktree is not advertised until the node can create and clean one up safely',
+    ],
+  },
+  'execution.dispatch': {
+    cmd: ['session', 'dispatch'],
+    syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--mutation-id <id>]',
+    sum: 'Hand an entity to the space’s dispatcher, which picks the teammate and spawns',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['dispatch', 'route', 'delegate', 'launch', 'triage'],
+    notes: [
+      'you do NOT name a teammate — choosing one is the dispatcher’s whole job; use `session spawn` when you already know who should do it',
+      'any launchable entity works as the subject; it is derived to a task Server-side (064) exactly as `--task` is',
+      'if no dispatcher session is alive the Server spawns one first and waits for it to settle, so the first dispatch in a space is the slow one',
+      'liveness is probed, never read off `work_sessions.status` — `idle` is a legal live status and a crashed session keeps its last status forever',
+      'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
     ],
   },
   'execution.prompt': {
@@ -1701,7 +1719,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe';
+  'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
 
 export const GRAMMAR_VERSION = '2';
 

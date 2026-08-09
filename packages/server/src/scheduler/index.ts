@@ -16,6 +16,7 @@
 
 import type { SidecarManager } from '../sidecar/manager.js';
 import { createBackupJob, BACKUP_JOB_NAME, type BackupJobOptions } from './jobs/backup.js';
+import { createLoopsJob, LOOPS_JOB_NAME, type LoopExecutorPort, type LoopsJobOptions } from './jobs/loops.js';
 import { createRetentionJobs, type RetentionJobOptions } from './jobs/retention.js';
 import { Scheduler, type SchedulerOptions } from './scheduler.js';
 
@@ -25,6 +26,14 @@ export {
   createBackupJob,
   type BackupJobOptions,
 } from './jobs/backup.js';
+export {
+  createLoopsJob,
+  type DueLoop,
+  type LoopExecutorPort,
+  type LoopsJobOptions,
+} from './jobs/loops.js';
+export { LOOPS_JOB_NAME } from './jobs/loops.js';
+export { assertValidSchedule, nextRunAt, ScheduleError } from './schedule.js';
 export {
   COMMAND_LEDGER_TTL_MS,
   RESERVED_JOB_SLOTS,
@@ -48,6 +57,12 @@ export interface DefaultSchedulerOptions extends SchedulerOptions {
   readonly sidecar?: SidecarManager;
   readonly backup?: Omit<BackupJobOptions, 'sidecar'>;
   readonly retention?: RetentionJobOptions;
+  /**
+   * Loops (§4.4). Optional because the executor needs a live database AND the
+   * PTY liveness probe, which a node running without the execution block does
+   * not have — such a node must still schedule backups.
+   */
+  readonly loops?: Omit<LoopsJobOptions, 'db' | 'port'> & { db: LoopsJobOptions['db']; port: LoopExecutorPort };
 }
 
 /** The W1 job set: daily backup (when a sidecar is supplied) + retention. */
@@ -57,11 +72,13 @@ export function createDefaultScheduler(opts: DefaultSchedulerOptions = {}): Sche
     scheduler.register(createBackupJob({ sidecar: opts.sidecar, ...opts.backup }));
   }
   scheduler.registerAll(createRetentionJobs(opts.retention));
+  if (opts.loops !== undefined) scheduler.register(createLoopsJob(opts.loops));
   return scheduler;
 }
 
 /** Every job name the default set registers — handy for assertions and `doctor`. */
-export function defaultJobNames(withSidecar: boolean): string[] {
+export function defaultJobNames(withSidecar: boolean, withLoops = false): string[] {
   const names = createRetentionJobs().map((j) => j.name);
-  return withSidecar ? [BACKUP_JOB_NAME, ...names] : names;
+  const base = withSidecar ? [BACKUP_JOB_NAME, ...names] : names;
+  return withLoops ? [...base, LOOPS_JOB_NAME] : base;
 }
