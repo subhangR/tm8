@@ -23,6 +23,64 @@ staging. Prod will not show it until someone rebuilds and redeploys the
 snapshot. Editing the tree and then checking 7777 proves nothing — that has
 burned people before.
 
+## The four commands
+
+Added 2026-08-05. Everything below this section still holds; these wrap it.
+
+```bash
+bun run local                      # LOCAL: postgres → build → serve 7777/7778
+bun run local:status               # LOCAL: database + instance, in one report
+./deploy/utho/deploy.sh staging <ref>   # UTHO staging  (8888)
+./deploy/utho/deploy.sh prod    <ref>   # UTHO prod     (7777)
+```
+
+**`bun run local` is `bun run prod` plus a database.** The only thing it adds is
+`deploy/pg/ensure-cluster.sh`, which makes the 5442 cluster exist before
+`deploy.sh` asserts it does. That assertion (`deploy.sh` step 1) was the whole
+gap: **nothing in this repo ever started Postgres.** `packages/server/src/sidecar/`
+is a complete ten-file Postgres lifecycle subsystem and it is imported by
+*nothing* — the cluster serving prod was a hand-started postmaster that happened
+to still be up, and a reboot ended the one-command story.
+
+Two things that bootstrap encodes, because both are silent:
+
+- PG18 on macOS dies at **startup** with `FATAL: postmaster became multithreaded
+  during startup` unless `LC_ALL` is a valid locale. Not at `initdb` — that part
+  succeeds. So the cluster's ability to boot depended on whose shell launched it,
+  which is why "it worked when I ran it" and "it survives a reboot" were
+  different claims.
+- Stopping tm8 leaves the cluster **up**, deliberately. That one cluster holds
+  `tm8_staging` and ~130 test databases besides prod's `tm8_stable`. Stop it on
+  purpose: `bun run pg -- --stop`.
+
+**The Utho script deploys a PUSHED REF only** — it never pushes, and never rsyncs
+your working tree, so what runs on the box is always a commit you can name.
+Uncommitted edits are invisible to it by design.
+
+```bash
+./deploy/utho/deploy.sh prod origin/main --plan   # show the commits + FULL migration text
+./deploy/utho/deploy.sh staging <ref> --from-scratch  # wipe the checkout, rebuild clean
+./deploy/utho/deploy.sh staging --status
+```
+
+`prod` requires you to type `deploy prod` after it prints the migration bodies.
+That gate is not decoration: a migration reached this box unread once and killed
+every `messages.post`. Branch builds go to the **staging slot** — `--from-scratch`
+is refused for prod, because wiping prod's checkout is an outage, not a deploy.
+
+Four things about the box that make the obvious recipe wrong, all verified
+2026-08-05 and all encoded in the script:
+
+| | |
+|---|---|
+| `/etc/tm8/*.env` is `0600 root:root` | the `tm8` user **cannot read it** — the documented `runuser -u tm8 -- . /etc/tm8/prod.env` step could never have worked |
+| staging's `TM8_DATABASE_URL` is a `tm8_app` URL | it **cannot** create `applied_migrations`; migrations need an explicit superuser URL |
+| root fetches, `tm8` builds | `tm8` has no `~/.ssh` and cannot reach GitHub; root building leaves files the services can't read |
+| staging is vite **dev**, prod is a built `dist` | prod needs a *separate* `vite build`; staging needs none |
+
+Both boxes' databases differ from local: prod is `tm8_prod` @ **5442**, staging is
+`tm8_staging` @ **5443**. Local's `tm8_stable` exists only on the Mac.
+
 ## Deploying prod — one command
 
 ```bash
