@@ -355,7 +355,12 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
     for (const id of ['open', 'done', 'archived']) expect(footer).toContain(id);
   });
 
-  it('sorts a generic attention request above ordinary rows and renders its yellow label', () => {
+  it('marks a generic attention request IN PLACE — the flagged parent keeps its children', () => {
+    // The regression this pins: attention used to hoist the row into its own
+    // flat band, which took it out of the set the tree is built from — so a
+    // flagged PARENT re-rooted every child it had and the hierarchy the user
+    // was reading fell apart. Being flagged is a fact about the row, not a
+    // reason to move it.
     const attention = {
       ...taskGuideLines,
       badges: {
@@ -369,13 +374,22 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         },
       },
     } satisfies EntitySummary;
+    const child = { ...taskUuidTitle, parentId: attention.id } satisfies EntitySummary;
     const view = render(
-      <EntityListPanel kind="task" rowsFor={rowsFor([taskUuidTitle, attention])} ctx={ctx} />,
+      <EntityListPanel kind="task" rowsFor={rowsFor([attention, child])} ctx={ctx} />,
     );
-    expect(view.getByText('NEEDS ATTENTION · 1')).toBeTruthy();
-    const first = view.getAllByTestId('list-tile')[0]!;
-    expect(first.textContent).toContain(attention.title);
-    expect(within(first).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
+
+    // No band: nothing was lifted out of the tree.
+    expect(view.queryByText('NEEDS ATTENTION · 1')).toBeNull();
+
+    const flagged = view
+      .getAllByTestId('list-tile')
+      .find((tile) => tile.textContent?.includes(attention.title))!;
+    expect(within(flagged).getByText('Needs attention').getAttribute('title')).toBe('Choose the API shape');
+
+    // …and the child is still NESTED under it rather than re-rooted.
+    const nested = view.getByTestId('list-tile-children');
+    expect(nested.textContent).toContain(child.title);
   });
 
   it('THE GATE: activity on a NON-LIVE row never streams and never pulses', () => {

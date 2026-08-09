@@ -205,9 +205,12 @@ describe('composeMyWork', () => {
   });
 
   it('consumes the REGISTRY needs-attention predicate rather than a rule of its own', () => {
-    // A live session whose agent went idle is waiting on you — that predicate
-    // is registry data (`list.needsAttentionGroup`) and had NO consumer before
-    // this screen, which D39.2 names as a defect class in its own right.
+    // This screen must have NO attention rule of its own — it asks
+    // `list.needsAttentionGroup` and abides by the answer. The predicate is now
+    // deliberately dormant (idle means quiet, not blocked — see registry.ts),
+    // so the live-but-idle session must NOT be banded as needs-you. It must
+    // still appear, under MY LIVE SESSIONS: a row that is merely un-flagged is
+    // not a row that may vanish.
     const idleLive: EntitySummary = {
       ...sessionLive,
       id: 'ws-idle',
@@ -218,7 +221,10 @@ describe('composeMyWork', () => {
       sessionPool: [idleLive],
       livenessOf: () => 'live',
     });
-    expect(out.sections[0]?.rows.map((r) => r.id)).toEqual(['ws-idle']);
+    const needsYou = out.sections.find((s) => s.id === 'needs-you');
+    const live = out.sections.find((s) => s.id === 'live');
+    expect(needsYou?.rows.map((r) => r.id) ?? []).not.toContain('ws-idle');
+    expect(live?.rows.map((r) => r.id)).toContain('ws-idle');
   });
 
   it('puts a stale session in MY LIVE SESSIONS and leaves a not-running one out', () => {
