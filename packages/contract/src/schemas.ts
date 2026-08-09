@@ -49,7 +49,9 @@ import type {
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
   ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
-  ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
+  ExecutionStreamsAttachInput, ExecutionTerminateInput,
+  ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
+  FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
@@ -2087,6 +2089,30 @@ export const ExecutionResumeInputSchema: z.ZodType<ExecutionResumeInput> = z.obj
 export const ExecutionStreamsAttachInputSchema: z.ZodType<ExecutionStreamsAttachInput> = z.object({
   ...commandContextShape,
   mode: z.enum(['view', 'drive']),
+}).strict();
+
+export const ExecutionGitCheckpointInputSchema: z.ZodType<ExecutionGitCheckpointInput> = z.object({
+  ...commandContextShape,
+  message: z.string().min(1).optional(),
+}).strict();
+
+export const ExecutionGitRollbackInputSchema: z.ZodType<ExecutionGitRollbackInput> = z.object({
+  ...commandContextShape,
+  to: z.string().min(1),
+  force: z.boolean().optional(),
+}).strict();
+
+export const ExecutionGitCommitInputSchema: z.ZodType<ExecutionGitCommitInput> = z.object({
+  ...commandContextShape,
+  message: z.string().min(1),
+  paths: z.array(z.string().min(1)).optional(),
+  all: z.boolean().optional(),
+}).strict();
+
+export const ExecutionGitMergeInputSchema: z.ZodType<ExecutionGitMergeInput> = z.object({
+  ...commandContextShape,
+  fromRef: z.string().min(1).optional(),
+  message: z.string().min(1).optional(),
 }).strict();
 
 export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({

@@ -47,6 +47,10 @@ import {
   ExecutionResumeInputSchema,
   ExecutionDispatchInputSchema,
   ExecutionSpawnInputSchema,
+  ExecutionGitCheckpointInputSchema,
+  ExecutionGitRollbackInputSchema,
+  ExecutionGitCommitInputSchema,
+  ExecutionGitMergeInputSchema,
   ExecutionStreamsAttachInputSchema,
   ExecutionTerminateInputSchema,
   FileUploadAbortInputSchema,
@@ -245,6 +249,12 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'execution.terminate': ExecutionTerminateInputSchema,
   'execution.streams.attach': ExecutionStreamsAttachInputSchema,
   'execution.resume': ExecutionResumeInputSchema,
+
+  // session git rail (Git UI wave)
+  'execution.gitCheckpoint': ExecutionGitCheckpointInputSchema,
+  'execution.gitRollback': ExecutionGitRollbackInputSchema,
+  'execution.gitCommit': ExecutionGitCommitInputSchema,
+  'execution.gitMerge': ExecutionGitMergeInputSchema,
 
   // custom entity kinds (T-L4)
   'entityKinds.create': EntityKindCreateInputSchema,
