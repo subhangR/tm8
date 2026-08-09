@@ -48,7 +48,7 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
     // then `memory`, `worktree` and `artifact` landed the same day → 19;
-    // then `loop` joined with migration 086 (Dreamer & Dispatcher P4) → 20.
+    // then `loop` joined with migration 090 (Dreamer & Dispatcher P4) → 20.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.

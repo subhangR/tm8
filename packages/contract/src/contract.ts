@@ -1423,10 +1423,28 @@ export interface MenuGroup {
 }
 
 /**
+ * The ordered collection rows beneath the default Workspace caret.
+ *
+ * Like `DEFAULT_MENU_GROUP_SPINE`, this joins the server seeder and client
+ * fallback without making either implementation import the other. The frozen
+ * menu DTO caps caret children at 8; this list intentionally fills that cap.
+ */
+export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
+  'task',
+  'work_session',
+  'doc',
+  'channel',
+  'team_member',
+  'memory',
+  'artifact',
+  'loop',
+] as const satisfies readonly MenuKindRef[];
+
+/**
  * The default menu's group spine — ONE shared truth for its two twins.
  *
  * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
- * db/migrations/061) and the client shipped default (tm8-ui
+ * db/migrations/092) and the client shipped default (tm8-ui
  * `SHIPPED_DEFAULT_MENU`) each carry a hand-written copy of the default
  * menu's groups, and the ids DIFFER in one place for historical reasons
  * (`work` server-side, `workspace` client-side). Until 2026-07-31 nothing
