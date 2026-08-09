@@ -88,6 +88,11 @@ import {
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
   type ProjectFileReadResult,
+  type ProjectFolderUploadAbortInput,
+  type ProjectFolderUploadCompleteInput,
+  type ProjectFolderUploadGrant,
+  type ProjectFolderUploadInitInput,
+  type ProjectFolderUploadResult,
   type ProjectFileListing,
   type ProjectId,
   type ProjectLinkInput,
@@ -307,6 +312,25 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
       return http.call<CommandResult>('projects.files.attach', { params: { projectId }, body: input });
+    },
+
+    /** Folder import lifecycle (seam Amendment 8, owner ruling R7). */
+    folderUploadInit(spaceId: SpaceId, input: ProjectFolderUploadInitInput): Promise<ProjectFolderUploadGrant> {
+      return http.call<ProjectFolderUploadGrant>('projects.folderUploads.init', { params: { spaceId }, body: input });
+    },
+
+    folderUploadComplete(
+      folderUploadId: string,
+      input: ProjectFolderUploadCompleteInput,
+    ): Promise<ProjectFolderUploadResult> {
+      return http.call<ProjectFolderUploadResult>('projects.folderUploads.complete', {
+        params: { folderUploadId },
+        body: input,
+      });
+    },
+
+    async folderUploadAbort(folderUploadId: string, input: ProjectFolderUploadAbortInput): Promise<void> {
+      await http.call('projects.folderUploads.abort', { params: { folderUploadId }, body: input });
     },
 
     /** Branch topology for a project's working directory — seam Amendment 5. */

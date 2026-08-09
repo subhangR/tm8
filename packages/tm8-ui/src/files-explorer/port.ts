@@ -43,6 +43,7 @@ import type {
 import type { Seam } from '../data/seam';
 import { fileKindRef } from '../files/port';
 import { createFileUploadTask, type FileUploadTask } from '../files/upload';
+import { startFolderImport, type FolderImportTask } from './folder-import';
 
 // ---------------------------------------------------------------------------
 // Vocabulary
@@ -99,16 +100,18 @@ export interface ExplorerUploadCapability {
 /**
  * R7 folder import: the picked tree is materialized as a REAL directory on
  * the node's disk and linked as a Project; re-import into an existing root is
- * merge-and-replace and reports how many paths were replaced (R8). UNBOUND on
- * the real wiring until the backend lane republishes the
- * `projects.folderUploads.*` DTOs — the names are theirs to publish, not
- * this module's to invent.
+ * merge-and-replace and reports how many paths were replaced (R8). BOUND
+ * 2026-08-10 to the published `projects.folderUploads.init|complete|abort`
+ * lifecycle (seam Amendment 8) via `folder-import.ts`; present only when the
+ * seam carries BOTH `projectFolderUploads` and `projectSetup` (the destination
+ * browser). A task, not a bare promise, so an import is cancellable and a
+ * cancel ABORTS the server session rather than orphaning staging.
  */
 export interface ExplorerFolderImport {
   start(
     files: ReadonlyArray<{ file: File; relativePath: string }>,
     rootName: string,
-  ): Promise<{ replacedCount: number }>;
+  ): FolderImportTask;
 }
 
 export interface FilesExplorerPort {
@@ -135,6 +138,8 @@ export interface FilesExplorerPort {
 export const EXPLORER_REASONS = {
   FOLDER_IMPORT_UNAVAILABLE:
     'Importing a folder lands it on the node as a linked project. This node does not serve the folder-import operations yet.',
+  FOLDER_IMPORT_FORBIDDEN:
+    'Importing a folder writes to the node’s disk, which needs node-admin rights on this node. Ask an owner to run the import or to approve a managed import root.',
   CREATE_FOLDER_UNAVAILABLE:
     'The library stores flat uploaded files; folders arrive by importing a local folder as a linked project, which this node does not serve yet.',
   MOVE_UNAVAILABLE:
@@ -174,6 +179,8 @@ function libraryEntry(entity: EntitySummary): ExplorerEntry {
 
 export function filesExplorerPortFromSeam(seam: Seam, spaceId: SpaceId): FilesExplorerPort {
   const projectFiles = seam.projectFiles;
+  const folderUploads = seam.projectFolderUploads;
+  const projectSetup = seam.projectSetup;
 
   async function libraryEntities(trashed: boolean): Promise<EntitySummary[]> {
     const result = await seam.query({
@@ -291,8 +298,40 @@ export function filesExplorerPortFromSeam(seam: Seam, spaceId: SpaceId): FilesEx
       } as never);
     },
 
-    // `createFolder` and `move` are deliberately ABSENT: no node capability
-    // exists yet (EXPLORER_REASONS carries the user-facing copy). Bind them
-    // here when the backend lane's folder ops land.
+    // R7: a folder import needs the lifecycle ops AND the destination
+    // browser; with either absent the control stays disabled-with-reason.
+    ...(folderUploads && projectSetup
+      ? {
+          importFolder: {
+            start: (files, rootName) =>
+              startFolderImport(
+                {
+                  folderUploads,
+                  putBytes: (grant, bytes) => seam.files.putBytes(grant, bytes),
+                  directories: (path?: string) => projectSetup.directories(path),
+                  // Lane 3 ruling (2026-08-10): v1 folder import is
+                  // NODE-ADMIN-ONLY. Checked before destination discovery so
+                  // an unauthorized member's attempt leaks nothing and earns
+                  // the truthful refusal, not a late 403.
+                  authorize: async () => {
+                    const viewer = await seam.identity();
+                    if (!viewer.isNodeAdmin) {
+                      throw Object.assign(new Error(EXPLORER_REASONS.FOLDER_IMPORT_FORBIDDEN), {
+                        code: 'forbidden',
+                      });
+                    }
+                  },
+                  spaceId,
+                },
+                files,
+                rootName,
+              ),
+          } satisfies ExplorerFolderImport,
+        }
+      : {}),
+
+    // `createFolder` and `move` remain deliberately ABSENT: the library is
+    // flat and folder structure lives in linked projects (R7); the
+    // EXPLORER_REASONS entries carry the user-facing copy.
   };
 }

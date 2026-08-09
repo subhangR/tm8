@@ -281,6 +281,12 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       read: (projectId, path) => ops.readProjectFile(projectId, path),
       attach: (projectId, input) => ops.attachProjectFile(projectId, input),
     },
+    // Seam Amendment 8: browser-originated folder import (R7 materialization).
+    projectFolderUploads: {
+      init: (spaceId, input) => ops.folderUploadInit(spaceId, input),
+      complete: (folderUploadId, input) => ops.folderUploadComplete(folderUploadId, input),
+      abort: (folderUploadId, input) => ops.folderUploadAbort(folderUploadId, input),
+    },
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
     children: (id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> => ops.children(id, opts),
     connections: (id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),

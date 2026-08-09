@@ -91,6 +91,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
   const [renameValue, setRenameValue] = useState('');
   const [conflictAsk, setConflictAsk] = useState<{ picked: PickedFile[]; count: number } | null>(null);
   const [queueSnap, setQueueSnap] = useState<UploadQueueSnapshot | null>(null);
+  const [imports, setImports] = useState<Array<{ rootName: string; cancel: () => void }>>([]);
   const [dragOver, setDragOver] = useState(false);
   const queueRef = useRef<UploadQueue | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -183,12 +184,16 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
         byRoot.set(top, group);
       }
       for (const [rootName, group] of byRoot) {
-        void port.importFolder
-          .start(group.map(({ file, relativePath }) => ({ file, relativePath })), rootName)
-          .then(({ replacedCount }) => {
+        const task = port.importFolder.start(
+          group.map(({ file, relativePath }) => ({ file, relativePath })),
+          rootName,
+        );
+        setImports((current) => [...current, { rootName, cancel: task.cancel }]);
+        void task.result
+          .then(({ replacedCount, merged }) => {
             onNotice?.(
-              replacedCount > 0
-                ? `Imported ${rootName} — ${replacedCount} existing file${replacedCount === 1 ? '' : 's'} replaced.`
+              merged
+                ? `Merged into ${rootName} — ${replacedCount} existing file${replacedCount === 1 ? '' : 's'} replaced.`
                 : `Imported ${rootName} as a linked project.`,
             );
             refresh();
@@ -199,6 +204,9 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
                 ? `Folder import: ${error.message}`
                 : 'Folder import failed.',
             );
+          })
+          .finally(() => {
+            setImports((current) => current.filter((i) => i.cancel !== task.cancel));
           });
       }
     },
@@ -551,6 +559,21 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
         ) : null}
 
         {body()}
+
+        {imports.length > 0 ? (
+          <section className="fx-queue" aria-label="Folder imports">
+            <ul className="fx-queue-list">
+              {imports.map((item, i) => (
+                <li key={`${item.rootName}:${i}`} className="fx-queue-row" data-status="uploading">
+                  <span className="fx-queue-name">Importing {item.rootName} as a linked project…</span>
+                  <button type="button" onClick={() => item.cancel()}>
+                    Cancel
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {queueSnap && queueSnap.items.length > 0 ? (
           <section className="fx-queue" aria-label="Upload queue">

@@ -46,12 +46,14 @@ describe('the explorer port over a real fixture seam', () => {
     expect(port.downloadHref({ ...entry, entityId: null })).toBeNull();
   });
 
-  it('declares upload but NOT the unpublished folder capabilities — the R7 posture', async () => {
+  it('declares upload; folder capabilities follow the SEAM, not wishful thinking', async () => {
     const { port } = await portAndSpace();
     expect(port.upload).toBeDefined();
     expect(port.upload!.preservesPaths).toBe(false);
-    // Bind these ONLY when the backend lane publishes its operations; a
-    // defined member here would light controls no node can honour.
+    // The fixture seam has no filesystem, so it carries neither
+    // `projectFolderUploads` nor `projectSetup` — and the port must answer
+    // that truth with an ABSENT capability (disabled-with-reason render),
+    // not a member that would light controls this seam cannot honour.
     expect(port.importFolder).toBeUndefined();
     expect(port.createFolder).toBeUndefined();
     expect(port.move).toBeUndefined();

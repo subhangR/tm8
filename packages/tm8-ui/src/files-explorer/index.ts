@@ -17,6 +17,12 @@ export {
 } from './port';
 export { createUploadQueue, type UploadQueue, type UploadQueueItem, type UploadQueueSnapshot } from './upload-queue';
 export {
+  directoryEntries,
+  startFolderImport,
+  type FolderImportOutcome,
+  type FolderImportTask,
+} from './folder-import';
+export {
   filesFromDataTransfer,
   filesFromInput,
   findConflicts,

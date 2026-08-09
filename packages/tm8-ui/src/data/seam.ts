@@ -135,6 +135,11 @@ import type {
   ProjectFileAttachInput,
   ProjectFileReadResult,
   ProjectFileListing,
+  ProjectFolderUploadAbortInput,
+  ProjectFolderUploadCompleteInput,
+  ProjectFolderUploadGrant,
+  ProjectFolderUploadInitInput,
+  ProjectFolderUploadResult,
   ProjectId,
   ProjectLinkInput,
   ProjectResource,
@@ -368,6 +373,25 @@ export interface Seam {
      */
     read(projectId: ProjectId, path: string): Promise<ProjectFileReadResult>;
     attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
+  };
+  /**
+   * Amendment 8 (2026-08-10, folder import — owner ruling R7): the
+   * `projects.folderUploads.init|complete|abort` lifecycle. A picked local
+   * folder MATERIALIZES on the node's disk and is linked as a Project; the
+   * bytes ride the EXISTING raw-PUT transport (`files.putBytes` accepts each
+   * per-file grant — zero-byte files receive NO grant by design). Optional
+   * for the same reason `projectSetup` is: a fixture seam has no filesystem
+   * to materialize onto, and its absence keeps the Import-folder control
+   * disabled-with-reason. `mode: 'merge'` is R8 — in-place replacement with
+   * an explicit `replacedCount`, never a refusal and never a delete.
+   */
+  projectFolderUploads?: {
+    init(spaceId: SpaceId, input: ProjectFolderUploadInitInput): Promise<ProjectFolderUploadGrant>;
+    complete(
+      folderUploadId: string,
+      input: ProjectFolderUploadCompleteInput,
+    ): Promise<ProjectFolderUploadResult>;
+    abort(folderUploadId: string, input: ProjectFolderUploadAbortInput): Promise<void>;
   };
   entity(id: EntityId): Promise<EntityDetail>;
   children(id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>>;

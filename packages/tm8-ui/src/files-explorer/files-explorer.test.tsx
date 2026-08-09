@@ -61,7 +61,9 @@ describe('honest states — every void says why', () => {
       },
     });
     render(<FilesExplorerScreen port={port} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+    // Generous timeout: under a loaded parallel run the default 1s produced
+    // a phantom red while the same file alone is green.
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }, { timeout: 5000 }));
     expect(await screen.findByText('ok.txt')).toBeTruthy();
   });
 
@@ -174,7 +176,15 @@ describe('verbs — real when the port carries them, disabled-with-reason when n
   });
 
   it('with importFolder present a directory pick becomes ONE import per top folder and reports replacedCount (R8)', async () => {
-    const importStart = vi.fn(async () => ({ replacedCount: 2 }));
+    const importStart = vi.fn(
+      (
+        _files: ReadonlyArray<{ file: File; relativePath: string }>,
+        _rootName: string,
+      ) => ({
+        result: Promise.resolve({ projectName: 'proj', fileCount: 2, replacedCount: 2, merged: true }),
+        cancel: () => {},
+      }),
+    );
     const onNotice = vi.fn();
     render(
       <FilesExplorerScreen
