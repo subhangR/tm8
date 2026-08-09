@@ -30,6 +30,7 @@ import { createKeyboardController, type KeyboardController } from '../keyboard';
 import { allKinds, KindIcon, VIEW_ART } from '../domain';
 import { getKind } from '../domain';
 import { buildSpawnInput, newLaunchMutationId } from '../domain/launch';
+import type { LaunchSelection } from './LaunchSheet';
 import type { DetailReasons } from '../panels';
 import { BootLoader, VectorIcon } from '../kit';
 import { CatchBoundary } from '../panels/detail/CatchBoundary';
@@ -216,6 +217,45 @@ export function GateApp(props: GateAppProps = {}) {
      closes only on success; the refusal state lives here because the sheet
      is stateless about outcomes by design. */
   const [launchRefusal, setLaunchRefusal] = useState<{ cause: string; detail: string } | null>(null);
+
+  // D44: the sheet's Launch PERFORMS — one submit path for EVERY host of the
+  // sheet (workspace centre AND the kind screens), so a refusal renders in
+  // the sheet identically wherever it was opened.
+  const submitLaunch = (config: LaunchSelection) => {
+    setLaunchRefusal(null);
+    void data
+      .spawn(
+        buildSpawnInput({
+          clientMutationId: newLaunchMutationId(),
+          spaceId: data.spaceId,
+          config,
+          // Any kind: the server derives the task anchor (064).
+          taskIds: [config.subjectId],
+          title: data.detailOf(config.subjectId)?.title,
+        }),
+      )
+      .then((sessionId) => {
+        launch.close();
+        navigateTo(WORKSPACE_TARGET);
+        nav.push(sessionId);
+        notices.push({
+          id: 'launch-done',
+          tone: 'info',
+          title: 'Session launched',
+          body: 'The live terminal is open in the workspace.',
+          ttlMs: 6000,
+        });
+      })
+      .catch((error: unknown) =>
+        // A refusal is a FACT about the node and it renders IN THE SHEET
+        // beside the config that provoked it — the sheet stays open,
+        // nothing toasts (T5-5 annotation 6).
+        setLaunchRefusal({
+          cause: 'Launch refused',
+          detail: String((error as { message?: string })?.message ?? error),
+        }),
+      );
+  };
 
   /* GraphScreen takes its launch sources as a PROP (its data port is
      deliberately narrow), so the shell builds them here — from the same hook
@@ -600,6 +640,19 @@ export function GateApp(props: GateAppProps = {}) {
                 navigateTo(WORKSPACE_TARGET);
                 nav.push(sessionId);
               }}
+              /* The full sheet on the kind screen too — Run on a task tile
+                 goes straight here (user report 2026-08-09: tasks are
+                 launched FROM this screen, and the sheet only existing in
+                 the workspace made "full options" permanently disabled
+                 exactly where launching happens). */
+              onLaunchOpen={(id) => launch.open(id)}
+              launchSubjectId={launch.subjectId}
+              launchRefusal={launchRefusal}
+              onLaunchCancel={() => {
+                setLaunchRefusal(null);
+                launch.close();
+              }}
+              onLaunchSubmit={submitLaunch}
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
             /* T5-1 Home — the first void route dispatching to a real screen
@@ -681,42 +734,7 @@ export function GateApp(props: GateAppProps = {}) {
               // itself after a click — the same misleading-glance shape as a
               // transient refusal wearing the permanent form. The honest fix
               // is to wire it, not to grey it out.
-              onLaunchSubmit={(config) => {
-                setLaunchRefusal(null);
-                void data
-                  .spawn(
-                    buildSpawnInput({
-                      clientMutationId: newLaunchMutationId(),
-                      spaceId: data.spaceId,
-                      config,
-                      // Any kind: the server derives the task anchor (064).
-              taskIds: [config.subjectId],
-                      title: data.detailOf(config.subjectId)?.title,
-                    }),
-                  )
-                  .then((sessionId) => {
-                    launch.close();
-                    navigateTo(WORKSPACE_TARGET);
-                    nav.push(sessionId);
-                    notices.push({
-                      id: 'launch-done',
-                      tone: 'info',
-                      title: 'Session launched',
-                      body: 'The live terminal is open in the workspace.',
-                      ttlMs: 6000,
-                    });
-                  })
-                  .catch((error: unknown) =>
-                    // A refusal is a FACT about the node and it renders IN
-                    // THE SHEET beside the config that provoked it — the
-                    // sheet stays open, nothing toasts (T5-5 annotation 6;
-                    // the audit found this card built and dead).
-                    setLaunchRefusal({
-                      cause: 'Launch refused',
-                      detail: String((error as { message?: string })?.message ?? error),
-                    }),
-                  );
-              }}
+              onLaunchSubmit={submitLaunch}
               onSpawn={async (input) => {
                 const sessionId = await data.spawn(input);
                 navigateTo(WORKSPACE_TARGET);

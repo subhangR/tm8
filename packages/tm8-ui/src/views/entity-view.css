@@ -15,6 +15,9 @@
   min-width: 0;
   min-height: 0;
   display: flex;
+  /* The launch sheet (`.ls`, position:absolute) overlays THIS view now, so
+     the root is its containing block — same shape as the workspace centre. */
+  position: relative;
   background: var(--pn-paper);
 }
 
