@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@tm8/contract": "workspace:*",
+    "@tm8/execution": "workspace:*",
     "@tm8/prompt": "workspace:*"
   },
   "devDependencies": {
