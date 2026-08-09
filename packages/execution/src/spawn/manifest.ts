@@ -24,6 +24,7 @@ import type {
   AgentMode,
   CommandNetworkPolicy,
   CredentialSource,
+  GitHubCredential,
   PermissionMode,
   ReasoningEffort,
   SessionLaunchPosture,
@@ -790,6 +791,47 @@ const SAFE_BASE_ENV_KEYS = [
 ] as const;
 
 /**
+ * A process-local HTTPS helper. The string contains no secret: git expands
+ * `$GH_TOKEN` only inside the child environment when it asks for a credential.
+ */
+const GIT_CREDENTIAL_HELPER =
+  '!f() { test "$1" = get && printf '
+  + '"username=%s\\npassword=%s\\n" "${TM8_GIT_LOGIN:-x-access-token}" "$GH_TOKEN"; }; f';
+
+function isolateGitHubCredential(
+  env: Record<string, string>,
+  credential: GitHubCredential | undefined,
+  strictMemberIsolation: boolean,
+): void {
+  if (!credential && !strictMemberIsolation) return;
+
+  // Always reset machine/global helpers in member posture. With no member row
+  // this yields a prompt-free authentication failure, never a node fallback.
+  env.GIT_TERMINAL_PROMPT = '0';
+  env.GIT_CONFIG_KEY_0 = 'credential.https://github.com.helper';
+  env.GIT_CONFIG_VALUE_0 = '';
+  env.GIT_CONFIG_COUNT = credential ? '2' : '1';
+
+  // Explicit empty values also defeat wrappers that branch on presence. They
+  // are replaced below only when the DB row gate returned a real credential.
+  env.GH_TOKEN = '';
+  env.GITHUB_TOKEN = '';
+  delete env.TM8_GIT_LOGIN;
+
+  if (!credential) return;
+
+  env.GH_TOKEN = credential.token;
+  env.GITHUB_TOKEN = credential.token;
+  env.GIT_CONFIG_KEY_1 = 'credential.https://github.com.helper';
+  env.GIT_CONFIG_VALUE_1 = GIT_CREDENTIAL_HELPER;
+  env.TM8_GIT_LOGIN = credential.login;
+  env.GIT_AUTHOR_NAME = credential.login;
+  env.GIT_COMMITTER_NAME = credential.login;
+  env.GIT_AUTHOR_EMAIL = `${credential.login}@users.noreply.github.com`;
+  env.GIT_COMMITTER_EMAIL = env.GIT_AUTHOR_EMAIL;
+}
+
+/**
  * Compose the agent's environment.
  *
  * The session id, manifest path, base URL, and session-bound agent credential
@@ -833,6 +875,10 @@ export function composeEnv(
    * behaviour, where the agent uses whatever credential the node itself has.
    */
   credentialHome?: AgentCredentialHome,
+  /** DB-gated, caller-owned GitHub credential. Never inherited from parentEnv. */
+  gitHubCredential?: GitHubCredential,
+  /** `member` fails closed against machine-wide gh/git fallback even with no row. */
+  credentialSource?: CredentialSource | null,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -886,6 +932,11 @@ export function composeEnv(
       delete env[key];
     }
   }
+
+  // GitHub is universal rather than agent-tool-specific. Apply after the env
+  // copy loops and after XDG_CONFIG_HOME is redirected into the identity home,
+  // so neither a parent token nor a machine helper/config can win precedence.
+  isolateGitHubCredential(env, gitHubCredential, credentialSource === 'member');
 
   // Explicit empty strings also defend wrappers that interpret presence.
   env.CLAUDE_CODE_ENTRYPOINT = '';
