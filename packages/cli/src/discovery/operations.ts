@@ -1772,6 +1772,60 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ['tm8 worktree status <worktree-id>'],
   }],
+  // The Tier 2 mutating git verbs are ALIASES for the same reason `worktree
+  // list|status` are: every graph touch is an operation that already exists
+  // (entities.get + edges.list resolve, messages.post writes the receipt,
+  // attentionRequests.create raises a conflict), and the git mutation itself
+  // is local argv-only execution, which the catalog does not model. A
+  // `worktrees.checkpoint` row would have opened the catalog for a command
+  // whose graph writes are all existing doors.
+  ['session checkpoint', {
+    path: ['session', 'checkpoint'],
+    syntax: 'tm8 session checkpoint <session-id|worktree-id> [--message <text>] [--mutation-id <id>]',
+    summary: "Commit the session worktree's entire WIP to its branch and return the checkpoint ref",
+    notes: [
+      'a clean tree is a success that creates nothing — the ref is HEAD itself',
+      'writes a durable receipt on the session anchor via messages.post; git runs argv-only on this host at the graph-recorded path',
+    ],
+    examples: ['tm8 session checkpoint <session-id>'],
+  }],
+  ['session rollback', {
+    path: ['session', 'rollback'],
+    syntax: 'tm8 session rollback <session-id|worktree-id> --to <checkpoint-ref> [--force] [--mutation-id <id>]',
+    summary: 'Restore the session worktree to a checkpoint; untracked files refuse without --force',
+    notes: [
+      'tracked WIP is what a rollback discards; rolled-over commits stay reflog-reachable, so a rollback is reversible',
+      'untracked files may exist in NO commit — deleting them is the one unrecoverable act, hence the --force gate',
+    ],
+    examples: ['tm8 session rollback <session-id> --to <oid>'],
+  }],
+  ['worktree stage', {
+    path: ['worktree', 'stage'],
+    syntax: 'tm8 worktree stage <session-id|worktree-id> [<pathspec>...]',
+    summary: 'List changed files (no pathspecs), or stage the named pathspecs ("." for all)',
+    notes: [
+      'with no pathspecs it lists and stages NOTHING — the read-first half of the commit rail',
+      'pathspecs ride behind a literal `--`; options, absolute paths and ".." traversal are refused locally',
+    ],
+    examples: ['tm8 worktree stage <session-id>', 'tm8 worktree stage <session-id> src/a.ts'],
+  }],
+  ['worktree commit', {
+    path: ['worktree', 'commit'],
+    syntax: 'tm8 worktree commit <session-id|worktree-id> --message <text> [--mutation-id <id>]',
+    summary: 'Commit exactly what is staged in the session worktree, with a durable receipt',
+    notes: ['an empty index is a refusal, never an empty commit'],
+    examples: ["tm8 worktree commit <session-id> --message 'feat: …'"],
+  }],
+  ['worktree merge', {
+    path: ['worktree', 'merge'],
+    syntax: 'tm8 worktree merge <session-id|worktree-id> --from <ref> [--task <task-id>] [--mutation-id <id>]',
+    summary: 'Merge a ref into the session branch; a conflict aborts cleanly and is surfaced durably',
+    notes: [
+      'on conflict: abort + verify clean, then a message listing conflicted paths on the owning task anchor (fallback session, then worktree) AND attentionRequests.create — never silent, never mid-merge',
+      'merging the session branch INTO base is refused by design: base is checked out in the user’s tree or nowhere',
+    ],
+    examples: ['tm8 worktree merge <session-id> --from main'],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
@@ -1779,6 +1833,14 @@ COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIn
 COMMAND_OPS.set('worktree list', ['collections.query']);
 COMMAND_OPS.set('worktree status', ['entities.get']);
 COMMAND_ORDER.push('worktree list', 'worktree status');
+// Tier 2 git verbs: availability = the weakest of the operations each one
+// actually invokes on the wire (resolution reads + the durable writes).
+COMMAND_OPS.set('session checkpoint', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('session rollback', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('worktree stage', ['entities.get', 'edges.list']);
+COMMAND_OPS.set('worktree commit', ['entities.get', 'edges.list', 'messages.post']);
+COMMAND_OPS.set('worktree merge', ['entities.get', 'edges.list', 'messages.post', 'attentionRequests.create']);
+COMMAND_ORDER.push('session checkpoint', 'session rollback', 'worktree stage', 'worktree commit', 'worktree merge');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that
