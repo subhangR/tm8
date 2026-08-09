@@ -168,7 +168,9 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 132 -> 134 (2026-08-09): project contention + task gate.
     // 134 -> 135 (2026-08-09): `task import-issue`, an ALIAS over
     // entities.create (catalog rows unmoved).
-    expect(COMMAND_PATHS).toHaveLength(135);
+    // 135 -> 138 (2026-08-09): worktree cherry-pick|branch|stash, ALIASES
+    // over existing operations like the five #76 verbs (zero catalog rows).
+    expect(COMMAND_PATHS).toHaveLength(138);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
