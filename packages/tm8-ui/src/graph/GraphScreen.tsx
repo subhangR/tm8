@@ -28,6 +28,7 @@ import { usePanelPrimaries } from '../views/usePanelPrimaries';
 import type { Seam, SessionLiveness } from '../data/seam';
 import { GraphView, type GraphTimelineStep } from './GraphView';
 import { debugSurfaceFor } from '../views/debugSurface';
+import { graphSurfaceFor } from '../views/graphSurface';
 import { attachmentsFor } from '../files/port';
 
 export interface GraphScreenData {
@@ -162,6 +163,9 @@ export function GraphScreen(props: GraphScreenProps) {
       pinRefusal="Pinning lives in the Workspace — this view keeps the panel beside the graph already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
+        setSelectedId(id as EntityId),
+      )}
       attachments={attachments}
       onAttachmentUploaded={() => data.refetchDetail(selectedId)}
       messages={messages}

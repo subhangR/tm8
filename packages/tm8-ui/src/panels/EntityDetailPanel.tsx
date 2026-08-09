@@ -193,6 +193,8 @@ export interface EntityDetailPanelProps {
   chatSurface?: ReactNode;
   /** The DEBUG surface (session CLI journal). Self-fetching; host wires the seam. */
   debugSurface?: ReactNode;
+  /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
+  graphSurface?: ReactNode;
   /**
    * ATTACHMENTS — bytes and an uploader for the strip in the Content body.
    *
@@ -850,6 +852,11 @@ function PanelBody(
         debug={props.debugSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             The debug journal host is unavailable in this view.
+          </p>
+        )}
+        graph={props.graphSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The session graph host is unavailable in this view.
           </p>
         )}
       />

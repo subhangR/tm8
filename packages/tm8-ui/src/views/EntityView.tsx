@@ -60,6 +60,7 @@ import { LazyChannelChatSurface } from '../channel-screen/LazyChannelChatSurface
 import { channelFeedPortFromGateData } from './channel-feed-port';
 import './entity-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { graphSurfaceFor } from './graphSurface';
 import { representedThreadMessageCount } from './message-thread';
 
 export interface EntityViewProps {
@@ -457,6 +458,13 @@ export function EntityView(props: EntityViewProps) {
         />
       ) : undefined}
       debugSurface={detail ? debugSurfaceFor(data.seam, selectedId, data.livenessOf) : undefined}
+      graphSurface={
+        detail
+          ? graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
+              setAux({ sort: 'entity', id: id as EntityId }),
+            )
+          : undefined
+      }
       messages={messages}
       connections={data.connectionsOf(selectedId)}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
@@ -593,6 +601,9 @@ export function EntityView(props: EntityViewProps) {
                 pinRefusal="Pinning lives in the Workspace"
                 liveness={data.livenessOf(aux.id)}
                 debugSurface={debugSurfaceFor(data.seam, aux.id, data.livenessOf)}
+                graphSurface={graphSurfaceFor(data.seam, aux.id, data.livenessOf, (id) =>
+                  setAux({ sort: 'entity', id: id as EntityId }),
+                )}
                 livenessOf={data.livenessOf}
                 attachments={attachments}
                 onAttachmentUploaded={() => props.data.refetchDetail(aux.id)}

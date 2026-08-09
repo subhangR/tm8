@@ -1,6 +1,7 @@
 /**
  * EVERY host that mounts an `EntityDetailPanel` must hand it every SEAM-BACKED
- * surface the panel cannot reach for itself: `debugSurface` and `attachments`.
+ * surface the panel cannot reach for itself: `debugSurface`, `attachments` and
+ * `graphSurface`.
  *
  * THE BUG THIS EXISTS TO PREVENT, because it has now happened TWICE. The panel
  * layer is presentational and never touches a seam, so each of these arrives as
@@ -15,6 +16,8 @@
  *    `null` by design (an inert dropzone is worse than none). So there was no
  *    chip, no fallback and no empty state — attaching a file was simply
  *    impossible on the main workspace screen, invisibly.
+ *  - `graphSurface` — added WITH its surface rather than after a host was found
+ *    dead, which is the only reason it is not a third entry in that list.
  *
  * A STATIC SCAN rather than N render tests, deliberately: the failure mode is a
  * NEW mount site nobody thought to wire, and only a scan of all of them can
@@ -86,6 +89,16 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
+  it.each(hosts)('%s passes graphSurface at every mount', (_label, file) => {
+    for (const { block } of mounts.filter((m) => m.file === file)) {
+      expect(
+        block.includes('graphSurface'),
+        `an <EntityDetailPanel> in ${file} does not pass graphSurface, so its Graph chip ` +
+          'would render the "unavailable in this view" fallback',
+      ).toBe(true);
+    }
+  });
+
   it.each(hosts)('%s passes attachments at every mount', (_label, file) => {
     for (const { block } of mounts.filter((m) => m.file === file)) {
       expect(
@@ -96,13 +109,19 @@ describe('every EntityDetailPanel mount wires its seam-backed surfaces', () => {
     }
   });
 
-  it('composes both surfaces through their shared helpers, not by hand', () => {
+  it('composes every surface through its shared helper, not by hand', () => {
     // Four hand-rolled copies is how three of them drifted in the first place.
     for (const { file, block } of mounts) {
       if (block.includes('debugSurface')) {
         expect(
           block.includes('debugSurfaceFor'),
           `${file} builds debugSurface inline; use debugSurfaceFor() so every host stays identical`,
+        ).toBe(true);
+      }
+      if (block.includes('graphSurface')) {
+        expect(
+          block.includes('graphSurfaceFor'),
+          `${file} builds graphSurface inline; use graphSurfaceFor() so every host stays identical`,
         ).toBe(true);
       }
       if (block.includes('attachments=')) {
