@@ -486,7 +486,7 @@ describe('a RUNNING work session can be renamed from the panel (085)', () => {
           detail={SESSION}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask }}
+          commands={{ createEntity: vi.fn(ok), patchTask }}
         />
       </div>,
     );
@@ -514,7 +514,7 @@ describe('a RUNNING work session can be renamed from the panel (085)', () => {
           detail={SESSION}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask }}
+          commands={{ createEntity: vi.fn(ok), patchTask }}
         />
       </div>,
     );
@@ -549,7 +549,7 @@ describe('a RUNNING work session can be renamed from the panel (085)', () => {
           detail={SESSION}
           reasons={REASONS}
           ctx={ctx}
-          commands={{ createTask: vi.fn(ok), patchTask: vi.fn(ok) }}
+          commands={{ createEntity: vi.fn(ok), patchTask: vi.fn(ok) }}
         />
       </div>,
     );

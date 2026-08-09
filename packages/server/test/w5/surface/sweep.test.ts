@@ -393,7 +393,6 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // moving it, the same drift 067 had just reconciled. 069 (channels into
     // Home) is the second of the two.
     // 65 -> 66 on 2026-08-02: 070 (entities_select restricted-projection policy).
-<<<<<<< HEAD
     // 66 -> 71 on 2026-08-04: the identity composite (072 agent session
     // credentials, 073 shared teammate authority) merged with main's 071,
     // 072 session io routes and 073 session launch prompts.
