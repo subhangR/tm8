@@ -55,6 +55,8 @@ import {
   type ProjectBranchTopology,
   type ProjectResource,
   type ContentionReport,
+  type ProjectFileBlame,
+  type ProjectFileHistory,
   type SessionGitDiff,
   type SessionGitStatus,
   type SessionJournalPage,
@@ -65,7 +67,7 @@ import {
   type SpaceSettingsView,
   type SpaceSummary,
 } from '@tm8/contract';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, FileBlameOpts, FileHistoryOpts, GitDiffOpts, IdentityView, JournalOpts, PageOpts, Seam, TranscriptOpts, Unsubscribe } from '../seam';
 import { createHttpClient, type FetchLike } from './http';
 import { createOps } from './ops';
 import {
@@ -296,6 +298,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
       ops.transcript(workSessionId, opts),
     projectContention: (projectId: string): Promise<ContentionReport> => ops.projectContention(projectId),
+    projectFileHistory: (projectId: string, path: string, opts?: FileHistoryOpts): Promise<ProjectFileHistory> =>
+      ops.projectFileHistory(projectId, path, opts),
+    projectFileBlame: (projectId: string, path: string, opts?: FileBlameOpts): Promise<ProjectFileBlame> =>
+      ops.projectFileBlame(projectId, path, opts),
     gitStatus: (workSessionId: EntityId): Promise<SessionGitStatus> => ops.gitStatus(workSessionId),
     gitDiff: (workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> =>
       ops.gitDiff(workSessionId, opts),
