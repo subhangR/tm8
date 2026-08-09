@@ -1864,6 +1864,190 @@ export interface ProjectFileContent {
   maxInlineBytes: number;
 }
 
+// ---------------------------------------------------------------------------
+// Space folders — an UPLOADED directory tree, owned by a Space (FILES-DESIGN).
+//
+// THE SECOND KIND OF FILE ROOT, AND NOT AN ALTERNATIVE TO THE FIRST. A LINKED
+// PROJECT (`projects.files.*` above) is a LIVE directory on the node, read
+// through a filesystem jail. A SPACE FOLDER is an IMMUTABLE SNAPSHOT the user
+// uploaded and named; it has no directory anywhere. The two answer different
+// questions and a UI must never present them as one list.
+//
+// PATH VOCABULARY. Every path in this group is RELATIVE to the folder root,
+// '/'-separated, with NO leading slash, NO trailing slash, and no '.' or '..'
+// segment. The folder root itself is the EMPTY STRING. That is deliberately a
+// different vocabulary from `ProjectFileEntry.path`, which is ABSOLUTE on the
+// node — these paths name nothing on any filesystem, and giving them an
+// absolute shape would invite passing one where the other is meant.
+// ---------------------------------------------------------------------------
+
+/** An opaque id for one uploaded Space folder root. */
+export type SpaceFolderId = string;
+
+/** One uploaded folder root, as it appears in a Space's folder list. */
+export interface SpaceFolderSummary {
+  id: SpaceFolderId;
+  spaceId: SpaceId;
+  /** Chosen by the user at creation. Never derived from the archive. */
+  name: string;
+  /** Files only. Directories are not entries and are not counted here. */
+  entryCount: number;
+  totalSizeBytes: number;
+  createdBy: EntityId;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** POST /v2/spaces/:spaceId/folders */
+export interface SpaceFolderCreateInput extends CommandContext {
+  /**
+   * 1..200 characters after trimming. Unique within the Space, compared
+   * case- and whitespace-insensitively, so "Docs" and "docs " collide.
+   */
+  name: string;
+}
+
+/** A directory inside an uploaded folder. Carries no bytes. */
+export interface SpaceFolderDirectory {
+  /** Relative to the folder root; '' is the root and never appears as a child. */
+  path: string;
+  /** The last '/'-separated segment, so a UI need not re-split the path. */
+  name: string;
+}
+
+/** One file inside an uploaded folder. */
+export interface SpaceFolderEntry {
+  path: string;
+  name: string;
+  mediaType: string;
+  sizeBytes: number;
+}
+
+/**
+ * GET /v2/space-folders/:folderId/entries?path=<relative>
+ *
+ * ONE DIRECTORY LEVEL, never recursive. `directories` and `files` are the
+ * IMMEDIATE children of `path` and nothing deeper, because a snapshot of a real
+ * codebase is tens of thousands of paths and a client that asked for "the
+ * folder" must not be answered with all of them.
+ */
+export interface SpaceFolderListing {
+  folderId: SpaceFolderId;
+  /** The directory that was listed. '' is the folder root. */
+  path: string;
+  directories: SpaceFolderDirectory[];
+  files: SpaceFolderEntry[];
+  /**
+   * True when the level was TRUNCATED at the server's page bound. An honest
+   * listing says it is incomplete rather than quietly showing a prefix.
+   */
+  truncated: boolean;
+}
+
+/** Why an uploaded file's bytes are withheld. Never a silent empty body. */
+export type SpaceFolderRefusalReason =
+  | 'too-large'
+  | 'binary-not-previewable'
+  | 'not-found'
+  | 'unreadable';
+
+export interface SpaceFolderRefusal {
+  reason: SpaceFolderRefusalReason;
+  detail: string;
+}
+
+/**
+ * GET /v2/space-folders/:folderId/content?path=<relative>
+ *
+ * Shaped deliberately like `ProjectFileContent` — the SAME honesty, so a viewer
+ * can render either root with one component. `encoding` says which field
+ * carries the content: 'utf8' fills `text`, 'base64' fills `base64` for
+ * renderable media, and 'none' means `refusal` is set and both are null.
+ *
+ * An EMPTY file is `encoding: 'utf8'` with `text: ''` and NO refusal. "This
+ * file is empty" and "you may not read this" are different facts and a caller
+ * must be able to tell them apart.
+ */
+export interface SpaceFolderFileContent {
+  folderId: SpaceFolderId;
+  path: string;
+  mediaType: string;
+  sizeBytes: number;
+  encoding: 'utf8' | 'base64' | 'none';
+  text: string | null;
+  base64: string | null;
+  refusal: SpaceFolderRefusal | null;
+  /** The inline ceiling this deployment applied, so a refusal can explain itself. */
+  maxInlineBytes: number;
+}
+
+/**
+ * Why one archive member did not make it into the folder.
+ *
+ * These are REFUSALS BY NAME, never silent normalisations. A member with a
+ * `..` segment is not repaired into a safe path and quietly stored — it is
+ * dropped and reported, because a silent normalisation hides an attack from
+ * every log that would otherwise have recorded it.
+ */
+export type SpaceFolderSkipReason =
+  | 'path-traversal'
+  | 'absolute-path'
+  | 'backslash-path'
+  | 'control-character'
+  | 'empty-path'
+  | 'path-too-long'
+  | 'duplicate-path'
+  | 'not-a-regular-file'
+  | 'unsupported-compression'
+  | 'member-limit'
+  | 'size-limit'
+  | 'corrupt-member';
+
+export interface SpaceFolderSkippedMember {
+  /** The member name EXACTLY as the archive declared it, never repaired. */
+  path: string;
+  reason: SpaceFolderSkipReason;
+  detail: string;
+}
+
+/**
+ * POST /v2/space-folders/:folderId/ingest
+ *
+ * The archive bytes do NOT ride this body. They are PUT to the existing raw
+ * byte sink at `/v2/files/uploads/:uploadId/content`, which is mounted OUTSIDE
+ * the JSON body reader precisely so bytes never have to be base64'd through an
+ * 8 MiB JSON ceiling. This body names the slot those bytes were staged into.
+ */
+export interface SpaceFolderIngestInput extends CommandContext {
+  /** The `files.uploadInit` slot the archive was PUT into. */
+  uploadId: string;
+  /**
+   * Where inside the folder to place the archive's contents. '' (or omitted)
+   * is the folder root. Validated under exactly the same rules as an archive
+   * member's path.
+   */
+  destPath?: string;
+}
+
+/**
+ * The answer to an ingest.
+ *
+ * `skipped` IS THE POINT OF THIS SHAPE. A partial ingest that silently drops
+ * members is the dishonest outcome: the user sees a folder, believes it is
+ * their tree, and never learns which files are missing. Every refused member
+ * appears here with the name the archive gave it and the reason it was refused.
+ */
+export interface SpaceFolderUploadResult {
+  folder: SpaceFolderSummary;
+  /** Files newly recorded by this ingest. */
+  added: number;
+  /** Files whose path already existed and were replaced by this ingest. */
+  replaced: number;
+  /** Directories recorded, including ones that carried no files. */
+  directories: number;
+  skipped: SpaceFolderSkippedMember[];
+}
+
 /** The wrapper returned by spaces.create after its default member/channel saga. */
 export interface CreateSpaceResult {
   space: SpaceSummary;
