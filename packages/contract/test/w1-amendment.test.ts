@@ -131,6 +131,8 @@ describe('W1 frozen-row schema amendments', () => {
       'doc', 'file', 'spell', 'skill', 'pull_request', 'commit',
       'work_session', 'collection', 'project', 'interaction_profile',
       'voice_channel', 'memory', 'worktree', 'artifact',
+      // 2026-08-09: `loop` — the scheduled-work kind (dreamer-dispatcher §4.4).
+      'loop',
     ]);
     expect(CoreEntityKindSchema.safeParse('ui_template').success).toBe(false);
   });

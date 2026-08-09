@@ -1072,6 +1072,17 @@ export class W2EntitiesCommandsTrackingService {
             input.position ?? null, content.workSessionId ?? null,
             envelope.clientMutationId ?? null]);
           break;
+        case 'loop':
+          // Zero new catalog rows: a loop is created through the ordinary
+          // entities.create envelope, exactly as a memory is (056 pattern).
+          // Same-space containment of teamMemberId/subjectId is enforced in the
+          // door, not here — a check on this side would be advisory only.
+          raw = await q.rpc('create_loop', [input.spaceId, input.title, envelope.actorId ?? null,
+            content.schedule ?? null, content.teamMemberId ?? null, content.subjectId ?? null,
+            content.prompt ?? '', JSON.stringify(content.config ?? {}),
+            content.enabled ?? true, content.nextRunAt ?? null,
+            input.parentId ?? null, input.position ?? null, envelope.clientMutationId ?? null]);
+          break;
         default:
           if (!input.kind.startsWith('c:')) {
             throw new CollabError('forbidden', `entities.create is owned by the ${input.kind} lifecycle`);
@@ -1162,6 +1173,21 @@ export class W2EntitiesCommandsTrackingService {
               content.statement ?? null, content.mechanism ?? null,
               content.subjectScope ?? null, content.doesNotEstablish ?? null,
               content.measuredAt ?? null, content.measuredAt === null,
+              envelope.clientMutationId ?? null]);
+            break;
+          case 'loop':
+            // `null` MERGES and the explicit `clear*` booleans are the only way
+            // to null a column — so an unrelated patch cannot silently
+            // unschedule a loop or drop its runner.
+            raw = await q.rpc('update_loop', [id, input.expectedVersion, envelope.actorId ?? null,
+              input.title ?? null, content.schedule ?? null,
+              content.teamMemberId ?? null, content.teamMemberId === null,
+              content.subjectId ?? null, content.subjectId === null,
+              content.prompt ?? null,
+              content.config === undefined ? null : JSON.stringify(content.config),
+              content.enabled ?? null,
+              content.nextRunAt ?? null, content.nextRunAt === null,
+              null, null, false,
               envelope.clientMutationId ?? null]);
             break;
           case 'worktree': {

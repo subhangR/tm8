@@ -1103,6 +1103,36 @@ const ROWS: readonly KindConfig[] = [
     palette: { createLabel: 'New memory' },
   },
 
+  // -- loop (a schedule + a spawn config; each firing edges back triggered_by) --
+  {
+    kind: 'loop',
+    // NOT launchable: "Run" on a loop would mean "run the loop entity", but a
+    // loop's whole job is to run something ELSE on a period. Its primary
+    // actions are enable/disable and fire-now, which are patches, not launches.
+    launchable: false,
+    label: 'Loop',
+    labelPlural: 'Loops',
+    icon: '↻',
+    iconArt: KIND_ART.loop,
+    slug: 'loops',
+    strategy: 'collection',
+    defaultMode: 'list',
+    hiddenModes: ['board', 'tree', 'gallery'],
+    chip: { glyph: '↻', tintBy: 'none' },
+    card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
+    list: baseList({
+      quickCreate: false,
+      tile: { badges: [{ source: 'messages' }] },
+    }),
+    panel: {
+      archetype: 'generic',
+      blocks: [
+        { block: 'fields', label: 'SCHEDULE' },
+      ],
+    },
+    palette: { createLabel: 'New loop' },
+  },
+
   // -- artifact (versioned bundle; bytes served via preview/export, not here) --
   {
     kind: 'artifact',

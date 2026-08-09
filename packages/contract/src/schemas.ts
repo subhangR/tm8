@@ -101,6 +101,7 @@ export const CoreEntityKindSchema = z.enum([
   'memory',
   'worktree',
   'artifact',
+  'loop',
 ]);
 
 export const CustomEntityKindSchema = z.custom<CustomEntityKind>(

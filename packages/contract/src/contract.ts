@@ -35,7 +35,8 @@ export type CoreEntityKind =
   | 'voice_channel'
   | 'memory'
   | 'artifact'
-  | 'worktree';
+  | 'worktree'
+  | 'loop';
 
 /** tm8: runtime-registered custom kinds are namespaced (T-L4). */
 export type CustomEntityKind = `c:${string}`;
@@ -149,7 +150,15 @@ export type CoreEntityState =
    * and never bumps the entity version (WORKTREE-DESIGN.md §3).
    */
   | { kind: 'worktree'; status: WorktreeStatus; branch: string; baseRef: string;
-      baseCommitOid: string; projectId: ProjectId };
+      baseCommitOid: string; projectId: ProjectId }
+  /**
+   * Scheduling state rides in `state` so a list can show "enabled, next at X"
+   * without a second read. `teamMemberId: null` is MEANINGFUL — it means the
+   * firing routes through the dispatcher rather than naming a runner.
+   */
+  | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
+      subjectId: EntityId | null; nextRunAt: string | null; lastRunAt: string | null;
+      lastError: string | null };
 
 /** tm8 (T-L4): custom-kind Z1/Z2 fields are the schema-validated scalars. */
 export interface CustomEntityState { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
@@ -308,7 +317,10 @@ export type CoreEntityContent =
       entrypoint: string; manifestSha256: string; fileCount: number; totalSizeBytes: number }
   | { kind: 'worktree'; projectId: ProjectId; path: string; branch: string;
       baseRef: string; baseCommitOid: string; status: WorktreeStatus;
-      statusChangedAt: string | null };
+      statusChangedAt: string | null }
+  | { kind: 'loop'; schedule: string; enabled: boolean; teamMemberId: EntityId | null;
+      subjectId: EntityId | null; prompt: string; config: Record<string, unknown>;
+      nextRunAt: string | null; lastRunAt: string | null; lastError: string | null };
 
 export interface CustomEntityContent { kind: CustomEntityKind; fields: Record<string, CustomFieldValue> }
 

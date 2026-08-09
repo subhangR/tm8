@@ -4252,6 +4252,39 @@
         "migration": {
           "strategy": "artifact-detail"
         }
+      },
+      "loop": {
+        "kind": "loop",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "loops"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "loop-detail"
+        }
       }
     },
     "custom": {
