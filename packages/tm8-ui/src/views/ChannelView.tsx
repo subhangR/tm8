@@ -20,6 +20,7 @@ import { EntityDetailPanel, type DetailReasons } from '../panels';
 import type { GateData } from './useGateData';
 import './channel-view.css';
 import { debugSurfaceFor } from './debugSurface';
+import { gitSurfaceFor } from './gitSurface';
 import { graphSurfaceFor } from './graphSurface';
 import { attachmentsFor } from '../files/port';
 import { representedThreadMessageCount } from './message-thread';
@@ -169,6 +170,7 @@ export function ChannelView({
       pinRefusal="Pinning lives in the Workspace — this channel keeps the entity beside its feed already"
       liveness={data.livenessOf(selectedId)}
       debugSurface={debugSurfaceFor(data.seam, selectedId, data.livenessOf)}
+      gitSurface={gitSurfaceFor(data.seam, selectedId, data.livenessOf)}
       graphSurface={graphSurfaceFor(data.seam, selectedId, data.livenessOf, (id) =>
         setSelectedId(id as EntityId),
       )}

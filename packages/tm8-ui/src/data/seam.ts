@@ -146,6 +146,16 @@ import type {
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
+  ExecutionGitCheckpointInput,
+  ExecutionGitCommitInput,
+  ExecutionGitMergeInput,
+  ExecutionGitRollbackInput,
+  SessionGitCheckpointResult,
+  SessionGitCommitResult,
+  SessionGitDiff,
+  SessionGitMergeResult,
+  SessionGitRollbackResult,
+  SessionGitStatus,
   SessionJournalPage,
   SessionLaunchRecord,
   SessionTranscriptPage,
@@ -282,6 +292,12 @@ export interface BranchTopologyOpts {
   staleAfterDays?: number;
   /** Max branches returned; the DTO's `truncated` says when this cut the list. */
   limit?: number;
+}
+
+/** `gitDiff` options — bounded server-side (`maxBytes` caps at 1 MiB). */
+export interface GitDiffOpts {
+  /** Unified-diff byte cap; server default 256 KiB, max 1 MiB. */
+  maxBytes?: number;
 }
 
 export interface Seam {
@@ -456,6 +472,23 @@ export interface Seam {
    */
   transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage>;
   /**
+   * The session GIT RAIL's two reads (Git UI wave).
+   *
+   * `gitStatus` answers "where is this lane": branch, dirty counts,
+   * ahead/behind its recorded base — read LIVE from the worktree by the node
+   * that holds it. `gitDiff` answers "what did this session change": working
+   * tree vs the merge-base of the base ref, so upstream drift never pollutes
+   * the answer. Both carry `available:false` with a NAMED reason as a real,
+   * common state (a scratch/project-dir session simply has no worktree) and
+   * consumers render the reason, never an empty or broken panel.
+   *
+   * The diff is digest+partial (the transcript precedent): `stat`/`files`
+   * are always complete; the unified text is byte-capped with
+   * `diffTruncated` saying when the cap cut it.
+   */
+  gitStatus(workSessionId: EntityId): Promise<SessionGitStatus>;
+  gitDiff(workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff>;
+  /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter
    * nor an attention sort (contract.ts CollectionQuery), so the alternative
@@ -617,6 +650,19 @@ export interface Seam {
      * refuses any field the contract does not name.
      */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult>;
+    /**
+     * The session git rail's four verbs (Git UI wave) — checkpoint, rollback,
+     * commit, and merge-the-base-FORWARD. The other merge direction (session
+     * branch → base) is deliberately absent at every layer: base is checked
+     * out in the user's primary tree or nowhere, and landing on base goes
+     * through a PR. A merge CONFLICT resolves (not rejects) with
+     * `status:'conflict'` and the conflicted paths — the worktree is restored
+     * clean server-side, and the UI's job is to surface the paths loudly.
+     */
+    gitCheckpoint(id: EntityId, input: ExecutionGitCheckpointInput): Promise<SessionGitCheckpointResult>;
+    gitRollback(id: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult>;
+    gitCommit(id: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult>;
+    gitMerge(id: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult>;
   };
 
   /**

@@ -8,6 +8,7 @@ const PREFERENCE_PREFIX = 'tm8:work-session-surface:v1';
 const SURFACE_LABEL: Readonly<Record<ContentSurface, string>> = {
   terminal: 'Terminal',
   chat: 'Chat',
+  git: 'Git',
   debug: 'Debug',
   graph: 'Graph',
 };
@@ -28,6 +29,13 @@ export interface WorkSessionContentProps {
    * honesty rule); the terminal, by contrast, stays mounted throughout.
    */
   debug?: ReactNode;
+  /**
+   * The GIT surface (the session's worktree rail: status, diff, and the
+   * checkpoint/rollback/commit/merge verbs). Offered on the same terms as
+   * Debug — no pin — and mounted only while selected, because its status
+   * poll must stop the moment the viewer leaves it.
+   */
+  git?: ReactNode;
   /**
    * The GRAPH surface (what this session is connected to). Offered on the same
    * terms as Debug — it depends on no pin — and mounted only while selected,
@@ -72,6 +80,7 @@ export function WorkSessionContent({
   terminal,
   chat,
   debug,
+  git,
   graph,
   onSurfaceChange,
   switchSlot = null,
@@ -81,7 +90,7 @@ export function WorkSessionContent({
   // default); Chat is gated by the immutable pin; Debug and Graph are always
   // offered, in that order.
   const surfaces = useMemo<ContentSurface[]>(
-    () => ['terminal', ...(chatAvailable ? (['chat'] as const) : []), 'debug', 'graph'],
+    () => ['terminal', ...(chatAvailable ? (['chat'] as const) : []), 'git', 'debug', 'graph'],
     [chatAvailable],
   );
   const preferenceKey = `${PREFERENCE_PREFIX}:${viewerMemberId ?? 'anonymous'}:${sessionId}`;
@@ -249,6 +258,18 @@ export function WorkSessionContent({
         {surface === 'debug' ? debug : null}
       </div>
       <div
+        id={panelId('git')}
+        role="tabpanel"
+        aria-labelledby={tabId('git')}
+        aria-hidden={surface !== 'git'}
+        className="pn-work-session-content__surface"
+        data-active={surface === 'git' ? 'true' : 'false'}
+        data-testid="work-session-git-surface"
+      >
+        {/* Mounted only while selected — the status poll stops on unmount. */}
+        {surface === 'git' ? git : null}
+      </div>
+      <div
         id={panelId('graph')}
         role="tabpanel"
         aria-labelledby={tabId('graph')}
@@ -276,12 +297,17 @@ function resolveInitialSurface({
 }): ContentSurface {
   // The route wins first, but a `chat` request on a session without Chat falls
   // through to the terminal default.
-  if (requestedSurface === 'terminal' || requestedSurface === 'debug' || requestedSurface === 'graph') {
+  if (
+    requestedSurface === 'terminal' ||
+    requestedSurface === 'git' ||
+    requestedSurface === 'debug' ||
+    requestedSurface === 'graph'
+  ) {
     return requestedSurface;
   }
   if (requestedSurface === 'chat' && chatAvailable) return 'chat';
   const saved = readPreference(preferenceKey);
-  if (saved === 'debug' || saved === 'graph') return saved;
+  if (saved === 'git' || saved === 'debug' || saved === 'graph') return saved;
   if (saved === 'chat' && chatAvailable) return 'chat';
   if (saved === 'terminal') return 'terminal';
   // USER RULING 2026-08-01 — "I want all the default to be only terminal. I
@@ -300,7 +326,7 @@ function readPreference(key: string): ContentSurface | null {
   if (typeof window === 'undefined') return null;
   try {
     const saved = window.localStorage.getItem(key);
-    return saved === 'terminal' || saved === 'chat' || saved === 'debug' || saved === 'graph'
+    return saved === 'terminal' || saved === 'chat' || saved === 'git' || saved === 'debug' || saved === 'graph'
       ? saved
       : null;
   } catch {

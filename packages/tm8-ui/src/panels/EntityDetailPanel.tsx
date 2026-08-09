@@ -213,6 +213,8 @@ export interface EntityDetailPanelProps {
   chatSurface?: ReactNode;
   /** The DEBUG surface (session CLI journal). Self-fetching; host wires the seam. */
   debugSurface?: ReactNode;
+  /** The GIT surface (worktree status/diff/verbs rail). Same contract as Debug. */
+  gitSurface?: ReactNode;
   /** The GRAPH surface (what the session is connected to). Same contract as Debug. */
   graphSurface?: ReactNode;
   /**
@@ -873,6 +875,11 @@ function PanelBody(
         debug={props.debugSurface ?? (
           <p className="pn-surface-host-missing" role="alert">
             The debug journal host is unavailable in this view.
+          </p>
+        )}
+        git={props.gitSurface ?? (
+          <p className="pn-surface-host-missing" role="alert">
+            The session git host is unavailable in this view.
           </p>
         )}
         graph={props.graphSurface ?? (
