@@ -1634,9 +1634,19 @@ export const FileUploadAbortInputSchema = CommandContextSchema;
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
 
+/**
+ * `.strict()` on every member is the load-bearing part: it is what makes
+ * `{ mode: 'worktree', path: '/etc' }` a parse failure rather than a field the
+ * server quietly ignores. "Intent in, never paths" is structural here.
+ *
+ * The `baseRef` bound is politeness; the security control is that it reaches
+ * Git as an element of an argv array, never a shell string, and is shape-checked
+ * by `assertSafeRefName` on the way.
+ */
 export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('project') }).strict(),
   z.object({ mode: z.literal('scratch') }).strict(),
+  z.object({ mode: z.literal('worktree'), baseRef: z.string().min(1).max(255).optional() }).strict(),
 ]);
 
 const SpawnUuidSchema = z.string().uuid();

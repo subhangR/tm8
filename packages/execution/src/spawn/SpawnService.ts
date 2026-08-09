@@ -33,12 +33,16 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
+import type { WorktreeManager } from '../worktree/WorktreeManager.js';
+import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
+import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
 import type {
   GraphAuth,
   GraphPort,
   InteractionProfilePinContext,
   ResumeRequest,
   SessionLaunchPosture,
+  SpawnContext,
   SpawnRequest,
   SpawnResult,
   Tm8Manifest,
@@ -62,6 +66,18 @@ export interface SpawnServiceOptions {
   bootSettlementMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
+  /**
+   * The node's Git worktree manager. Its PRESENCE is what makes
+   * `workdir.mode:'worktree'` serviceable — omit it and the mode is refused by
+   * name, never silently downgraded to the project directory (§7.4).
+   */
+  worktrees?: WorktreeManager;
+  /**
+   * §5.2's worktree cap — separate from the session cap because it bounds a
+   * different scarce resource (disk and `.git/worktrees` metadata) and one
+   * worktree outlives many sessions. 0 means unbounded.
+   */
+  worktreeCap?: number;
 }
 
 /** PTY exit status → work_session status. The PTY speaks in outcomes, the
@@ -158,6 +174,8 @@ export class SpawnService {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  private readonly worktrees: WorktreeManager | null;
+  private readonly worktreeCap: number;
   /** One fail-closed remediation pass per service lifetime. */
   private privateDataLayoutReady: Promise<void> | undefined;
 
@@ -188,6 +206,8 @@ export class SpawnService {
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+    this.worktrees = options.worktrees ?? null;
+    this.worktreeCap = options.worktreeCap ?? 0;
   }
 
   /**
@@ -218,6 +238,85 @@ export class SpawnService {
     ) {
       await this.codexNetworkPreflight(resolved, env);
     }
+  }
+
+  /**
+   * §4.1 admission plus §4.2-4.7, for a spawn that asked for isolation.
+   *
+   * Every refusal here NAMES its reason, and none of them falls back to the
+   * project directory. That is §7.4's first prohibition and the reason the
+   * whole feature exists: a session told it is isolated, running in the shared
+   * checkout, is worse than a session that refused to start.
+   */
+  private async provisionWorktreeFor(
+    auth: GraphAuth,
+    request: SpawnRequest,
+    context: SpawnContext,
+    requestedBaseRef: string | null,
+  ): Promise<ProvisionedWorktree> {
+    if (!this.worktrees) {
+      throw new SpawnError(
+        'this node cannot provision worktrees — no worktree area is configured',
+        'invalid_input',
+        { reason: 'worktree_unavailable' },
+      );
+    }
+    if (!context.project) {
+      // Matches the shipped guard the design points at (048:77): a worktree is
+      // a checkout OF something, and without a project there is nothing to
+      // check out.
+      throw new SpawnError(
+        'workdir.mode "worktree" requires a project',
+        'invalid_input',
+        { reason: 'worktree_requires_project' },
+      );
+    }
+    if (!this.nodeId) {
+      // `worktree_allocations.node_id` is NOT NULL for a reason: an allocation
+      // nobody owns is one nobody reconciles, which is a leaked checkout.
+      throw new SpawnError(
+        'this node has no stable identity — refusing to allocate a worktree it could not later reconcile',
+        'internal',
+        { reason: 'worktree_no_node_identity' },
+      );
+    }
+
+    return provisionWorktree({
+      auth,
+      graph: this.graph,
+      manager: this.worktrees,
+      spaceId: request.spaceId,
+      projectId: context.project.id,
+      projectWorkingDir: context.project.workingDir,
+      requestedBaseRef,
+      nodeId: this.nodeId,
+      cap: this.worktreeCap,
+      clientMutationId: request.clientMutationId ?? null,
+      logger: this.logger,
+    });
+  }
+
+  /**
+   * §6 — startup reconciliation for this node's worktree allocations.
+   *
+   * Exposed like `reconcileNodeGhosts` and with the same posture: the
+   * composition root owns the ordering, it never rejects, and it is cleanup
+   * rather than a precondition for serving traffic.
+   */
+  async reconcileNodeWorktrees(auth: GraphAuth): Promise<WorktreeReconcileReport> {
+    if (!this.worktrees || !this.nodeId) {
+      return { examined: 0, repaired: [], quarantined: [], errors: [] };
+    }
+    return reconcileNodeWorktrees({
+      auth,
+      graph: this.graph,
+      manager: this.worktrees,
+      nodeId: this.nodeId,
+      hasLivePty: (sessionId) => this.pty.hasSession(sessionId),
+      repoRootFor: (projectId) =>
+        this.graph.loadProjectWorkingDir(auth, projectId).catch(() => null),
+      logger: this.logger,
+    });
   }
 
   private manifestPathFor(sessionId: string): string {
@@ -382,6 +481,16 @@ export class SpawnService {
       scratchRoot: join(this.dataDir, 'scratch'),
     });
 
+    // Worktree mode provisions BEFORE the work_session row exists, because the
+    // row must persist the path the PTY will actually use — that is §1.2's
+    // shipped scratch defect (a row recording `.../pending`) not being
+    // reintroduced. Everything after this point treats the worktree as just
+    // another workdir.
+    const worktree =
+      workdir.mode === 'worktree'
+        ? await this.provisionWorktreeFor(auth, request, context, workdir.baseRef)
+        : null;
+
     const resolvedProfile = await this.graph.resolveInteractionProfile(auth, {
       spaceId: request.spaceId,
       teamMemberId: request.teamMemberId,
@@ -395,8 +504,12 @@ export class SpawnService {
       taskIds,
       projectId: request.projectId ?? null,
       workdirMode: workdir.mode,
-      workdirPath: workdir.path,
-      baseRef: workdir.baseRef,
+      workdirPath: worktree ? worktree.path : workdir.path,
+      // The SYMBOLIC ref the server actually resolved, not the one asked for:
+      // an absent `baseRef` becomes the repository's own HEAD branch, and
+      // recording the request rather than the resolution would make the row a
+      // plausible record instead of a reproducible one (§4.3).
+      baseRef: worktree ? worktree.baseRef : workdir.baseRef,
       mode: launch.mode,
       model: launch.model,
       agentTool: launch.agentTool,
@@ -408,7 +521,15 @@ export class SpawnService {
 
     // A projectless scratch session's directory is named for the session, which
     // only exists now. Re-resolve so the manifest and the PTY agree.
-    const cwd = context.project ? workdir.path : join(this.dataDir, 'scratch', sessionId);
+    //
+    // A worktree's path needed no session id — it was computed from an id
+    // generated before any write — so it is simply the path, and the row above
+    // persisted this exact string (G3.6).
+    const cwd = worktree
+      ? worktree.path
+      : context.project
+        ? workdir.path
+        : join(this.dataDir, 'scratch', sessionId);
 
     // A ledger replay is a transport retry of the original command result, not
     // permission to boot another child under the old work-session id.
@@ -441,6 +562,24 @@ export class SpawnService {
     this.sessionAuth.set(sessionId, auth);
 
     try {
+      // Step 7 (§4.8) — publish. The lease and the association need the session
+      // id, so they are the one part of the saga that cannot run before the row
+      // exists. `ready` is last: it is the claim that this checkout is usable,
+      // and claiming it before the lease is held would let a second spawn take
+      // a worktree this one is about to boot into.
+      if (worktree) {
+        await this.graph.acquireWorktreeLease(auth, worktree.worktreeId, sessionId);
+        await this.graph.linkSessionToWorktree(auth, {
+          spaceId: request.spaceId,
+          sessionId,
+          worktreeId: worktree.worktreeId,
+        });
+        await this.graph.setWorktreeAllocationState(auth, {
+          worktreeId: worktree.worktreeId,
+          state: 'ready',
+        });
+      }
+
       // The pre-minted Claude id is graph truth from the moment the session
       // exists — recorded BEFORE the PTY spawns, so even a session that dies
       // in its boot window is already resume-capable.
@@ -596,6 +735,15 @@ export class SpawnService {
       // failed before rethrowing — and do not let a cleanup failure mask the
       // original error, which is the one that explains what happened.
       await this.failSession(auth, sessionId, error, bootExit);
+      // §4.8: the lease is released, and the WORKTREE IS PRESERVED. A failed
+      // spawn is evidence about a process, not about a checkout — and a
+      // checkout may already hold work. Removing it here would be the delete
+      // §6.3 forbids, arrived at through the back door.
+      if (worktree) {
+        await this.graph
+          .releaseWorktreeLease(auth, worktree.worktreeId)
+          .catch(() => undefined);
+      }
       this.sessionAuth.delete(sessionId);
       throw error;
     }

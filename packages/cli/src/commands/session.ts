@@ -20,9 +20,13 @@
  *  - CLOSED SETS ARE CHECKED LOCALLY, OPEN QUESTIONS ARE NOT. `--workdir` and
  *    `--mode` name closed enumerations, so a typo is caught here with the set
  *    spelled out (exit 2, nothing sent). Whether a Project is trusted, whether
- *    this caller may spawn, and project trust are Server decisions. Worktree is
- *    not in the public contract until the node can create and clean one safely,
- *    so the CLI neither advertises nor sends it.
+ *    this caller may spawn, and project trust are Server decisions.
+ *    `worktree` joined the set when the node gained the manager, the
+ *    provisioning saga and the reconciler — the discipline the design asks for
+ *    is that a mode is not offered before it can be serviced, and this file
+ *    kept it by omitting rather than sending-and-hoping. A node that cannot
+ *    service the mode still refuses BY NAME; it never silently downgrades to
+ *    the shared project directory.
  *  - TERMINATE IS DESTRUCTIVE. `--yes` is required (§7.5). `--force` changes
  *    HOW the process is stopped, never WHO may stop it, so it is an ordinary
  *    optional flag and adds no confirmation of its own.
@@ -50,7 +54,7 @@ import type { SessionJournalPage, SessionLaunchRecord } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
-const WORKDIRS = ['project', 'scratch'] as const;
+const WORKDIRS = ['project', 'scratch', 'worktree'] as const;
 type WorkdirMode = (typeof WORKDIRS)[number];
 
 /** §4.13's closed session-mode set. */
@@ -295,7 +299,23 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (taskIds.length > 0) body.taskIds = taskIds;
   if (projectId !== undefined) body.projectId = projectId;
   // `SpawnWorkdir` is a discriminated union, not a bare string.
-  if (workdir !== undefined) body.workdir = { mode: workdir };
+  //
+  // `--base-ref` is a SYMBOLIC ref and belongs only to the worktree variant,
+  // whose members are `.strict()`: sending it alongside project or scratch
+  // would be a parse failure at the facade, so it is refused here with the
+  // reason spelled out rather than as a 400 the caller has to decode. There is
+  // deliberately no `--path` flag of any kind — the server computes every
+  // checkout path, and a CLI that accepted one would be arguing with that.
+  const baseRef = cmd.options.value('base-ref');
+  if (baseRef !== undefined && workdir !== 'worktree') {
+    throw new CliError('--base-ref applies only to --workdir worktree', EXIT_USAGE, {
+      hint: 'project and scratch sessions have no base ref to resolve',
+    });
+  }
+  if (workdir !== undefined) {
+    body.workdir =
+      workdir === 'worktree' && baseRef !== undefined ? { mode: workdir, baseRef } : { mode: workdir };
+  }
   if (cmd.options.bool('confirm-untrusted')) body.confirmUntrusted = true;
   // A human-principal question the SERVER owns: supplying this as an agent or
   // through `--as` is refused there, not pre-judged here.

@@ -160,7 +160,10 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
    */
   it('is ABSENT from the operation catalog, and the catalog count is unmoved', () => {
     expect(isCommandPath(['doctor'])).toBe(false);
-    expect(COMMAND_PATHS).toHaveLength(123);
+    // 123 -> 125: `worktree list|status`, both ALIASES over existing
+    // operations. The command-path count moves and the CATALOG does not, which
+    // is the very distinction this assertion is here to watch.
+    expect(COMMAND_PATHS).toHaveLength(125);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
