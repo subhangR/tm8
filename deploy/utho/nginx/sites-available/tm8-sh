@@ -9,9 +9,10 @@ server {
 }
 
 server {
-  listen 443 ssl;
-  listen [::]:443 ssl;
-  http2 on;
+  # Utho currently ships nginx before the standalone `http2 on` directive.
+  # Keep HTTP/2 on the listen socket so this passes the live binary's parser.
+  listen 443 ssl http2;
+  listen [::]:443 ssl http2;
   server_name tm8.sh;
 
   ssl_certificate     /etc/letsencrypt/live/tm8.sh/fullchain.pem;

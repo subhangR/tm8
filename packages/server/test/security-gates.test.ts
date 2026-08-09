@@ -9,6 +9,7 @@
  * cases below drive a real socket handshake, not checkTransport() directly.
  */
 import { connect } from 'node:net';
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HandlerRegistry } from '../src/facade/index.js';
 import type { ServerConfig } from '../src/http/config.js';
@@ -22,6 +23,19 @@ const TEST_CONFIG: ServerConfig = {
   maxBodyBytes: 1024 * 1024,
   databaseUrl: undefined,
 };
+
+describe('Utho nginx artifact compatibility', () => {
+  const site = readFileSync(
+    new URL('../../../deploy/utho/nginx/sites-available/tm8-sh', import.meta.url),
+    'utf8',
+  );
+
+  it('enables HTTP/2 using the syntax accepted by the production nginx binary', () => {
+    expect(site).toContain('listen 443 ssl http2;');
+    expect(site).toContain('listen [::]:443 ssl http2;');
+    expect(site).not.toContain('http2 on;');
+  });
+});
 
 describe('S2 — Host allowlist (unit)', () => {
   it('allows the loopback trio with and without ports', () => {
