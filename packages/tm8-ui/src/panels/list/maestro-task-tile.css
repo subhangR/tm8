@@ -425,6 +425,9 @@
   min-height: 31px;
   padding: 4px 8px;
   background: var(--pn-card);
+  /* `appearance: auto` restores the native chevron here, so the base
+     .lq__select SVG chevron must not stack on top of it. */
+  background-image: none;
   font-size: 11px;
   font-weight: 600;
 }
