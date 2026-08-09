@@ -199,6 +199,26 @@ export function GateApp(props: GateAppProps = {}) {
     };
   }, [data.seam]);
 
+  // The viewer's node-admin standing, resolved once per seam. Connecting a
+  // local folder (projects.create / projects.folderUploads.*) is
+  // node-admin-only on this server, so the onboarding dialog and the Files
+  // explorer gate those controls up front instead of committing to a refusal.
+  // `null` is unknown (read failed or in flight) and never treated as a
+  // denial. Promise.resolve() so a seam whose identity read throws
+  // synchronously degrades to unknown instead of taking down the shell.
+  const [viewerIsNodeAdmin, setViewerIsNodeAdmin] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setViewerIsNodeAdmin(null);
+    Promise.resolve()
+      .then(() => data.seam.identity())
+      .then((viewer) => alive && setViewerIsNodeAdmin(viewer.isNodeAdmin))
+      .catch(() => alive && setViewerIsNodeAdmin(null));
+    return () => {
+      alive = false;
+    };
+  }, [data.seam]);
+
   const stack = useNavStore((s) => s.stack);
   const pinned = useNavStore((s) => s.pinned);
   const contentSurface = useNavStore((s) => s.contentSurface);
@@ -469,8 +489,8 @@ export function GateApp(props: GateAppProps = {}) {
   // The Files explorer's one seam adapter (files-explorer/port.ts) — the same
   // host-wires-the-seam rule as settings below; null until a space exists.
   const filesExplorerPort = useMemo(
-    () => (data.spaceId ? filesExplorerPortFromSeam(data.seam, data.spaceId) : null),
-    [data.seam, data.spaceId],
+    () => (data.spaceId ? filesExplorerPortFromSeam(data.seam, data.spaceId, viewerIsNodeAdmin) : null),
+    [data.seam, data.spaceId, viewerIsNodeAdmin],
   );
 
   const settingsPort = useMemo(
@@ -924,6 +944,7 @@ export function GateApp(props: GateAppProps = {}) {
             key={activeServer.id}
             open={newSpaceOpen}
             nodeLabel={activeServer.label}
+            viewerIsNodeAdmin={viewerIsNodeAdmin}
             port={projectOnboardingPort}
             onDismiss={() => setNewSpaceOpen(false)}
             onCreated={(space) => {

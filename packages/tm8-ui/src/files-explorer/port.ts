@@ -124,6 +124,12 @@ export interface FilesExplorerPort {
   /** R7: a folder becomes a linked Project on the node. Unbound until the
    *  backend `projects.folderUploads.*` ops are published. */
   importFolder?: ExplorerFolderImport;
+  /**
+   * Set when `importFolder` is withheld for a reason the viewer could act on
+   * (today: the node-admin rule), so the screen disables the control with the
+   * truthful copy instead of the generic not-served-yet reason.
+   */
+  importFolderBlockedReason?: string;
   rename?(entry: ExplorerEntry, nextName: string): Promise<void>;
   trash?(entry: ExplorerEntry): Promise<void>;
   restore?(entry: ExplorerEntry): Promise<void>;
@@ -177,7 +183,11 @@ function libraryEntry(entity: EntitySummary): ExplorerEntry {
   };
 }
 
-export function filesExplorerPortFromSeam(seam: Seam, spaceId: SpaceId): FilesExplorerPort {
+export function filesExplorerPortFromSeam(
+  seam: Seam,
+  spaceId: SpaceId,
+  viewerIsNodeAdmin?: boolean | null,
+): FilesExplorerPort {
   const projectFiles = seam.projectFiles;
   const folderUploads = seam.projectFolderUploads;
   const projectSetup = seam.projectSetup;
@@ -300,7 +310,17 @@ export function filesExplorerPortFromSeam(seam: Seam, spaceId: SpaceId): FilesEx
 
     // R7: a folder import needs the lifecycle ops AND the destination
     // browser; with either absent the control stays disabled-with-reason.
-    ...(folderUploads && projectSetup
+    // Lane 3 ruling (2026-08-10): v1 folder import is NODE-ADMIN-ONLY. When
+    // the host has already resolved the viewer and the answer is "not a node
+    // admin", the capability is withheld UP FRONT with the truthful reason —
+    // offering the OS picker only to refuse after selection is the late-403
+    // leak the ruling forbids. An unresolved viewer (undefined/null) keeps
+    // the capability: availability must not degrade on a failed enhancement
+    // read, and `authorize` below stays the server-truth backstop.
+    ...(folderUploads && projectSetup && viewerIsNodeAdmin === false
+      ? { importFolderBlockedReason: EXPLORER_REASONS.FOLDER_IMPORT_FORBIDDEN }
+      : {}),
+    ...(folderUploads && projectSetup && viewerIsNodeAdmin !== false
       ? {
           importFolder: {
             start: (files, rootName) =>

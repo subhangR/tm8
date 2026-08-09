@@ -195,6 +195,24 @@ describe('W2.G06 projects and association correction facade', () => {
         },
       }),
     )).rejects.toMatchObject({ code: 'forbidden' });
+
+    // The DB's create_project is node-admin-only for BOTH branches (007's
+    // require_node_admin), so the handler must refuse the existing-directory
+    // path truthfully up front too — not let it fall through to the raw
+    // plpgsql 'node admin required'.
+    await expect(handler(registry, 'projects.create')(
+      request('projects.create', {
+        identity,
+        body: {
+          name: 'refused-existing',
+          workingDir: '/tmp/refused-existing-dir',
+          clientMutationId: 'refused-create-existing',
+        },
+      }),
+    )).rejects.toMatchObject({
+      code: 'forbidden',
+      message: expect.stringContaining('node-admin access is required to create a project'),
+    });
   });
 
   it('still requires authentication before exposing local directory names', async () => {
