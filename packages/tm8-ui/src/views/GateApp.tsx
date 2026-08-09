@@ -684,7 +684,11 @@ export function GateApp(props: GateAppProps = {}) {
                never wired, and a screen no human can reach has not shipped.
                Roots come from `data.launch.projects`, already the space's linked
                project list, so this costs no new read. */
-            <FilesScreen seam={data.seam} projects={data.launch.projects} />
+            <FilesScreen
+              seam={data.seam}
+              projects={data.launch.projects}
+              spaceId={data.spaceId}
+            />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref === 'settings' &&

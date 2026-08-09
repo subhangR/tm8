@@ -73,19 +73,22 @@ describe('FilesScreen — what it can and cannot reach', () => {
     expect(await screen.findByTestId('files-no-port')).toBeTruthy();
   });
 
-  it('says plainly that no project is linked, rather than rendering an empty tree', async () => {
+  it('says plainly that NOTHING is browsable, naming both kinds of root', async () => {
     render(<FilesScreen seam={seamWith(listing())} projects={[]} />);
-    expect(await screen.findByTestId('files-no-projects')).toBeTruthy();
+    const empty = await screen.findByTestId('files-no-roots');
+    // Not "no projects": a Space with no project may still have folders, and a
+    // user told only about projects will not learn the other half exists.
+    expect(empty.textContent).toContain('LINKED PROJECT');
+    expect(empty.textContent).toContain('SPACE FOLDER');
   });
 
-  it('offers a root picker only when there is more than one project', async () => {
-    const seam = seamWith(listing({ files: [FILE] }));
-    const { rerender } = render(<FilesScreen seam={seam} projects={PROJECTS} />);
-    await screen.findByTestId('files-entry-README.md');
-    expect(screen.queryByTestId('files-root-select')).toBeNull();
-
-    rerender(<FilesScreen seam={seam} projects={[...PROJECTS, { id: 'p2', name: 'other' }]} />);
-    expect(screen.getByTestId('files-root-select')).toBeTruthy();
+  it('states that Space folders are unreachable in this build, rather than showing none', async () => {
+    // MEASURED on 541951a: the seam carries no `spaceFolders` group. An empty
+    // folder list would read as "you have uploaded nothing" — a different fact
+    // with a different remedy.
+    render(<FilesScreen seam={seamWith(listing({ files: [FILE] }))} projects={PROJECTS} />);
+    const off = await screen.findByTestId('files-space-folders-off');
+    expect(off.textContent).toContain('cannot read Space folders');
   });
 });
 
@@ -220,5 +223,196 @@ describe('FilesScreen — content, and the ways it can be absent', () => {
     await waitFor(() => {
       expect(seam.projectFiles?.read).toHaveBeenCalledWith('proj-1', `${ROOT}/README.md`);
     });
+  });
+});
+
+/* ==========================================================================
+ * THE TWO ROOT KINDS — the central UX claim of this lane.
+ * ======================================================================== */
+
+const FOLDER = { id: 'sf-1', name: 'design-assets' };
+
+function folderListing(over: Partial<SpaceFolderListing> = {}): SpaceFolderListing {
+  return {
+    path: '',
+    parentPath: null,
+    separator: '/',
+    directories: [],
+    files: [{ name: 'logo.svg', path: 'logo.svg', sizeBytes: 40 }],
+    truncated: false,
+    ...over,
+  };
+}
+
+function seamWithBoth(over: Partial<SpaceFoldersPort> = {}): Seam {
+  return {
+    projectFiles: {
+      list: vi.fn(async () => listing({ files: [FILE] })),
+      read: vi.fn(async () => content()),
+      attach: vi.fn(),
+    },
+    spaceFolders: {
+      list: vi.fn(async () => [FOLDER]),
+      create: vi.fn(async () => FOLDER),
+      upload: vi.fn(async () => ({ expandedFiles: 0, totalBytes: 0, skipped: [] })),
+      browse: vi.fn(async () => folderListing()),
+      read: vi.fn(async () => ({
+        path: 'logo.svg', mime: 'text/plain', sizeBytes: 3,
+        encoding: 'utf8' as const, text: 'hi', base64: null, refusal: null,
+      })),
+      ...over,
+    },
+  } as unknown as Seam;
+}
+
+describe('FilesScreen — two kinds of root, never one anonymous tree', () => {
+  it('STATES that a linked project is LIVE, not merely which project it is', async () => {
+    render(<FilesScreen seam={seamWith(listing({ files: [FILE] }))} projects={PROJECTS} />);
+    const banner = await screen.findByTestId('files-root-kind');
+    expect(banner.getAttribute('data-kind')).toBe('project');
+    expect(banner.textContent).toContain('LIVE');
+    expect(banner.textContent).toContain('change while you look at it');
+  });
+
+  it('groups the picker BY KIND, with each group naming its staleness', async () => {
+    render(<FilesScreen seam={seamWithBoth()} projects={PROJECTS} spaceId="sp-1" />);
+    const select = await screen.findByTestId('files-root-select');
+    await waitFor(() => {
+      expect(select.querySelectorAll('optgroup').length).toBe(2);
+    });
+    const labels = [...select.querySelectorAll('optgroup')].map((g) => g.getAttribute('label'));
+    expect(labels[0]).toContain('live on this node');
+    expect(labels[1]).toContain('uploaded snapshots');
+  });
+
+  it('switches the banner to SNAPSHOT when a Space folder is selected — the two do NOT collapse', async () => {
+    const seam = seamWithBoth();
+    render(<FilesScreen seam={seam} projects={PROJECTS} spaceId="sp-1" />);
+    const select = await screen.findByTestId('files-root-select');
+    await waitFor(() => expect(select.querySelectorAll('option').length).toBe(2));
+
+    fireEvent.change(select, { target: { value: 'folder:sf-1' } });
+
+    const banner = await screen.findByTestId('files-root-kind');
+    await waitFor(() => expect(banner.getAttribute('data-kind')).toBe('space-folder'));
+    expect(banner.textContent).toContain('SNAPSHOT');
+    expect(banner.textContent).not.toContain('LIVE —');
+    // And it reads through the OTHER port: a snapshot is not on the node's disk.
+    await waitFor(() => expect(seam.spaceFolders?.browse).toHaveBeenCalledWith('sf-1', undefined));
+  });
+
+  it('keeps browsing linked projects when Space folders cannot be listed', async () => {
+    const seam = seamWithBoth({
+      list: vi.fn(async () => { throw new Error('folder store is offline'); }),
+    });
+    render(<FilesScreen seam={seam} projects={PROJECTS} spaceId="sp-1" />);
+    expect((await screen.findByTestId('files-folders-error')).textContent)
+      .toContain('folder store is offline');
+    // The live root is untouched by the other kind's failure.
+    expect(await screen.findByTestId('files-entry-README.md')).toBeTruthy();
+  });
+
+  it('refuses folder upload into a LIVE project, and says why rather than hiding it', async () => {
+    render(<FilesScreen seam={seamWithBoth()} projects={PROJECTS} spaceId="sp-1" />);
+    const upload = await screen.findByTestId('folder-upload');
+    await waitFor(() => {
+      expect(upload.textContent).toContain('Folders upload into a Space folder, not into a project');
+    });
+  });
+});
+
+/* ==========================================================================
+ * KEYBOARD NAVIGATION — a behaviour, so `document.activeElement` is asserted,
+ * not merely that a handler was called.
+ * ======================================================================== */
+
+describe('FilesScreen — the tree is navigable from the keyboard', () => {
+  const TREE_LISTING = listing({
+    directories: [DIR],
+    files: [FILE, { ...FILE, name: 'LICENSE', path: `${ROOT}/LICENSE` }],
+  });
+
+  it('is ONE tabstop, not one per row', async () => {
+    render(<FilesScreen seam={seamWith(TREE_LISTING)} projects={PROJECTS} />);
+    await screen.findByTestId('files-entry-README.md');
+    const rows = screen.getByTestId('files-tree').querySelectorAll('[role="treeitem"]');
+    expect(rows.length).toBe(3);
+    expect([...rows].filter((row) => row.getAttribute('tabindex') === '0').length).toBe(1);
+  });
+
+  it('moves REAL focus with the arrow keys', async () => {
+    render(<FilesScreen seam={seamWith(TREE_LISTING)} projects={PROJECTS} />);
+    const first = await screen.findByTestId('files-dir-src');
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByTestId('files-entry-README.md'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(screen.getByTestId('files-entry-LICENSE'));
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(screen.getByTestId('files-entry-README.md'));
+  });
+
+  it('descends with ArrowRight and opens a file with Enter', async () => {
+    const seam = seamWith(TREE_LISTING);
+    render(<FilesScreen seam={seam} projects={PROJECTS} />);
+    const dir = await screen.findByTestId('files-dir-src');
+    fireEvent.keyDown(dir, { key: 'ArrowRight' });
+    await waitFor(() => {
+      expect(seam.projectFiles?.list).toHaveBeenCalledWith('proj-1', `${ROOT}/src`);
+    });
+
+    const file = await screen.findByTestId('files-entry-README.md');
+    fireEvent.keyDown(file, { key: 'Enter' });
+    await waitFor(() => {
+      expect(seam.projectFiles?.read).toHaveBeenCalledWith('proj-1', `${ROOT}/README.md`);
+    });
+  });
+});
+
+/* ==========================================================================
+ * SAVING — offered only when bytes actually exist.
+ * ======================================================================== */
+
+describe('FilesScreen — saving a file', () => {
+  it('offers a real download of the bytes it already read', async () => {
+    render(
+      <FilesScreen
+        seam={seamWith(listing({ files: [FILE] }), content({ text: 'hello' }))}
+        projects={PROJECTS}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('files-entry-README.md'));
+    const link = await screen.findByTestId('files-download');
+    expect(link.getAttribute('download')).toBe('README.md');
+    // btoa('hello') — the bytes on the link are the bytes that were read.
+    expect(link.getAttribute('href')).toBe('data:text/markdown;base64,aGVsbG8=');
+  });
+
+  it('offers a download for an EMPTY file — empty is not refused', async () => {
+    render(
+      <FilesScreen
+        seam={seamWith(listing({ files: [FILE] }), content({ text: '', sizeBytes: 0 }))}
+        projects={PROJECTS}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('files-entry-README.md'));
+    expect((await screen.findByTestId('files-download')).getAttribute('href'))
+      .toBe('data:text/markdown;base64,');
+  });
+
+  it('refuses to offer a download when the read was REFUSED, and says there are no bytes', async () => {
+    render(
+      <FilesScreen
+        seam={seamWith(
+          listing({ files: [FILE] }),
+          content({ encoding: 'none', text: null, refusal: { reason: 'too-large', detail: 'd' } }),
+        )}
+        projects={PROJECTS}
+      />,
+    );
+    fireEvent.click(await screen.findByTestId('files-entry-README.md'));
+    await screen.findByTestId('files-refusal');
+    expect(screen.queryByTestId('files-download')).toBeNull();
+    expect(screen.getByTestId('files-content').textContent).toContain('no bytes to save');
   });
 });

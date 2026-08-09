@@ -121,6 +121,57 @@
 .fb-view-path { font-weight: 600; overflow-wrap: anywhere; }
 .fb-view-meta { color: var(--pn-dim); font-size: 12px; }
 
+/* THE ROOT KIND, stated. Two kinds, two treatments, so a glance is enough. */
+.fb-kind {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--pn-line);
+  color: var(--pn-dim);
+  font-size: 12px;
+}
+.fb-kind-project { border-left: 3px solid var(--pn-accent, var(--pn-text)); }
+.fb-kind-space-folder { border-left: 3px dashed var(--pn-line); }
+
+.fb-upload { flex: 0 0 auto; padding: 8px 14px; border-bottom: 1px solid var(--pn-line); }
+.fb-upload-off { padding: 8px 14px; }
+
+.fb-drop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px dashed var(--pn-line);
+  border-radius: 4px;
+}
+.fb-drop-over { border-color: var(--pn-text); background: var(--pn-hover); }
+.fb-drop-text { color: var(--pn-dim); }
+/* Focusable and reachable, just not visible: the button drives it. */
+.fb-drop-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+.fb-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--pn-line);
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.fb-btn:hover { background: var(--pn-hover); }
+.fb-btn[disabled] { opacity: 0.5; cursor: default; }
+.fb-save { flex: 0 0 auto; margin-left: auto; text-decoration: none; }
+
+.fb-skipped { margin: 6px 14px; padding-left: 16px; color: var(--pn-dim); }
+.fb-skipped-reason { color: var(--pn-block); }
+.fb-skipped-paths { margin: 2px 0 6px; padding-left: 16px; font-family: var(--pn-mono, ui-monospace, monospace); font-size: 11px; }
+.fb-skipped-more { font-size: 11px; }
+
+/* The tree is ONE tabstop; the focused row is a real focused element. */
+.fb-tree { display: block; }
+.fb-row:focus-visible { outline: 2px solid var(--pn-text); outline-offset: -2px; }
+
 .fb-pre {
   margin: 0;
   white-space: pre;
