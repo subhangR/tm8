@@ -104,6 +104,22 @@ export interface WorktreeAllocationRow {
  */
 export type GraphAuth = unknown;
 
+/** A decrypted GitHub credential, held only long enough to compose one PTY env. */
+export interface GitHubCredential {
+  readonly provider: 'github';
+  readonly login: string;
+  readonly token: string;
+}
+
+/**
+ * Spawn-side lookup for the calling identity's string-shaped GitHub credential.
+ * The server implementation resolves the row under RLS and decrypts in-process;
+ * execution never imports a database driver or a node key.
+ */
+export interface GitHubCredentialPort {
+  resolve(auth: GraphAuth): Promise<GitHubCredential | null>;
+}
+
 /**
  * Server-owned credential minting. Execution carries opaque claims but never
  * imports a database driver or sees a human bearer token.

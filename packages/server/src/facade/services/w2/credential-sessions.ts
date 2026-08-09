@@ -57,6 +57,7 @@ import { CREDENTIAL_LOGIN_COMMANDS, CREDENTIAL_PROVIDERS } from '@tm8/execution'
 import type { Db, DbClaims } from '../../../db/types.js';
 import { ensureCredentialHome } from '../../../credentials/agent-credential-home.js';
 import {
+  captureGitHubToken,
   runCredentialProbe,
   type CommandRunner,
   type ProbeResult,
@@ -162,22 +163,18 @@ export interface W2CredentialSessionsServiceOptions {
   /** Injected clock, so TTL behaviour is testable without waiting. */
   now?: () => number;
   /**
-   * Persist a GitHub credential into 079's string-shaped table.
+   * Persist a GitHub credential into 092's string-shaped table.
    *
-   * OPTIONAL, AND ABSENT ON THIS BRANCH ON PURPOSE. The storage split is by
-   * credential SHAPE: file-shaped credentials (anthropic, openai) are indexed
-   * by `account_agent_credentials`, while a GitHub token is a STRING and
-   * belongs in the already-shipped `account_git_credentials` — which lives in
-   * migration 079 on the deployed staging line and is reachable from no local
-   * git object. Rather than duplicate that table or pretend to write to one
-   * that does not exist here, the seam is injected. When 079 reaches this line,
-   * wire it; until then a GitHub login is verified and reported, and the
-   * `stored` flag says plainly that nothing was persisted.
+   * The seam stays injected because session lifecycle and encrypted storage
+   * are separate responsibilities. A rolling/older composition that lacks the
+   * store can still report `connected` and `stored` independently without
+   * pretending persistence happened.
    */
   storeGitCredential?: (input: {
     claims: DbClaims;
     login: string;
     provider: 'github';
+    token: string;
   }) => Promise<void>;
 }
 
@@ -367,7 +364,7 @@ export class W2CredentialSessionsService {
       ...(this.probeRunner ? { run: this.probeRunner } : {}),
     });
 
-    const stored = await this.persistProbe(principal, probe);
+    const stored = await this.persistProbe(principal, probe, entry);
 
     await this.finishRow(principal, entry.workSessionId);
     this.registry.delete(entry.workSessionId);
@@ -387,19 +384,26 @@ export class W2CredentialSessionsService {
   private async persistProbe(
     principal: CredentialPrincipal,
     probe: ProbeResult,
+    entry: RegistryEntry,
   ): Promise<boolean> {
     if (!probe.connected) return false;
 
     if (probe.provider === 'github') {
       // The storage split by SHAPE — see `storeGitCredential`'s doc. A GitHub
-      // token is string-shaped and belongs in 079's already-shipped table, not
+      // token is string-shaped and belongs in 092's encrypted table, not
       // in `account_agent_credentials`, whose CHECK admits only the two
       // file-shaped providers (R6).
       if (!this.storeGitCredential || !probe.login) return false;
+      const token = await captureGitHubToken({
+        env: entry.env,
+        cwd: entry.homeDir,
+        ...(this.probeRunner ? { run: this.probeRunner } : {}),
+      });
       await this.storeGitCredential({
         claims: principal.claims,
         login: probe.login,
         provider: 'github',
+        token,
       });
       return true;
     }

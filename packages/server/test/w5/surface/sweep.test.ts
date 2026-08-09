@@ -452,9 +452,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
     // 79 -> 80: 083 (per-member credential sessions).
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
-    // 81 -> 82: 087 (single-use, hash-only PTY grants), measured by running
-    // this final post-#87 tree rather than inferred across concurrent branches.
-    expect(server.appliedMigrations.length).toBe(82);
+    // 81 -> 82: 087 (single-use, hash-only PTY grants).
+    // 82 -> 83: 092 (per-account string-shaped GitHub credentials), measured
+    // from this final tree rather than inferred across concurrent branches.
+    expect(server.appliedMigrations.length).toBe(83);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

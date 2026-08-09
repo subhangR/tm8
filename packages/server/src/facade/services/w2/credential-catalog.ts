@@ -19,17 +19,14 @@
  *     per-account config directory. `account_agent_credentials` (083) indexes
  *     them and holds no secret column at all.
  *   * A GitHub token is a STRING, and its home is `account_git_credentials`,
- *     which shipped in migration 079 — on the DEPLOYED STAGING LINE. It is
- *     reachable from no local git object. `git grep current_account_id` over
- *     every origin ref finds it only on `feat/per-user-private-workspaces`
- *     (as 081) and `deploy/channels-on-staging` (as 079); `origin/main` has
- *     zero hits.
+ *     which ships on main in migration 092 with encrypted secret columns.
  *
- * So on this line the second table DOES NOT EXIST, and the merged view has to
- * say so. The alternative — letting an absent table read as "no rows" and
+ * Rolling nodes can temporarily run code against a database where the second
+ * table DOES NOT EXIST, and the merged view has to say so. The alternative —
+ * letting an absent table read as "no rows" and
  * therefore "not connected" — collapses two different facts into one, and it
  * collapses them in the dangerous direction: a member who IS connected on a
- * node that has 079 would be shown a confident "Not connected", and a member
+ * node that has 092 would be shown a confident "Not connected", and a member
  * here would be shown one that was never measured. `gitCredentialStore` is
  * therefore part of the answer rather than an implementation detail.
  *
@@ -166,14 +163,9 @@ export interface W2CredentialCatalogServiceOptions {
     provider: CredentialProviderName;
   }) => Promise<void>;
   /**
-   * Revoke a GitHub credential from 079's string-shaped table.
-   *
-   * OPTIONAL AND ABSENT ON THIS LINE, mirroring PR2's `storeGitCredential`
-   * exactly and for the same reason: the table it would write to is not
-   * reachable from any local git object. Faking it would produce a Disconnect
-   * that reports success having revoked nothing, which is the worst possible
-   * lie for this particular button. Absent, `credentials.delete('github')`
-   * reports `revoked: false` and names the reason.
+   * Revoke a GitHub credential from 092's string-shaped table. Optional only
+   * so an older composition root cannot claim it revoked a store it does not
+   * have; the main server wires this on every path that has a data directory.
    */
   revokeGitCredential?: (input: {
     principal: CredentialPrincipal;
@@ -247,7 +239,7 @@ export class W2CredentialCatalogService {
     for (const row of git.rows) {
       byProvider.set(row.provider, {
         provider: row.provider as CredentialProviderName,
-        // 079's table has no status column of its own that this line can read,
+        // 092's table has no status column of its own,
         // so the presence of a row IS the connection. Deliberately not widened
         // into a guess about staleness.
         connected: true,
@@ -268,10 +260,10 @@ export class W2CredentialCatalogService {
   }
 
   /**
-   * Read 079's table if it is here, and say plainly when it is not.
+   * Read 092's table if it is here, and say plainly when it is not.
    *
    * `to_regclass` rather than a caught error, because catching would also
-   * swallow a permission failure and report it as "absent" — and 079's grant is
+   * swallow a permission failure and report it as "absent" — and 092's grant is
    * column-level with the cipher deliberately omitted, so a 42501 from this
    * table is a REAL and interesting failure that must not be laundered into a
    * shrug. The read is still guarded, but the two outcomes are logged
@@ -360,23 +352,46 @@ export class W2CredentialCatalogService {
     failures: CredentialsDeleteResult['failures'],
   ): Promise<boolean> {
     if (provider === 'github') {
-      // The string-shaped store is not on this line. Say so rather than
-      // returning a success that revoked nothing.
+      // An older/degraded composition may not have the string-shaped store.
+      // Say so rather than returning a success that revoked nothing.
       if (!this.revokeGitCredential) {
         failures.push({
           step: 'revoke',
           reason:
-            'the string-shaped credential store (migration 079) is not present on this node, so nothing was revoked',
+            'the string-shaped credential store (migration 092) is not present on this node, so nothing was revoked',
+        });
+        // Still remove any GH_CONFIG_DIR material from an abandoned/completed
+        // login. Directory cleanup cannot make a missing DB revoker truthful,
+        // but leaving a second copy is worse.
+        await this.removeCredentialFiles({
+          dataDir: this.dataDir,
+          identityId: principal.identityId,
+          provider,
+        }).catch((error: unknown) => {
+          failures.push({ step: 'revoke', reason: `credential files: ${errorMessage(error)}` });
         });
         return false;
       }
+      let revoked = true;
       try {
         await this.revokeGitCredential({ principal });
       } catch (error) {
         failures.push({ step: 'revoke', reason: errorMessage(error) });
-        return false;
+        revoked = false;
       }
-      return true;
+      try {
+        await this.removeCredentialFiles({
+          dataDir: this.dataDir,
+          identityId: principal.identityId,
+          provider,
+        });
+      } catch (error) {
+        // The DB row is the injection gate. Once it is gone future sessions
+        // cannot receive the token, so this is a partial cleanup failure rather
+        // than grounds to resurrect or misreport the revocation.
+        failures.push({ step: 'revoke', reason: `credential files: ${errorMessage(error)}` });
+      }
+      return revoked;
     }
 
     let removedRow = false;

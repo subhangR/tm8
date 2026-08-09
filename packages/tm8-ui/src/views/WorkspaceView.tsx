@@ -544,6 +544,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               projects={data.launch.projects}
               profiles={data.launch.profiles}
               capacity={data.launch.capacity}
+              loadCredentialStatus={data.seam.credentials.status}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
             />
