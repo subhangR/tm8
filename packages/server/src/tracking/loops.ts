@@ -260,24 +260,24 @@ async function watchOne(
   }
 
   // ---- 4. Decide, fetch only the logs a decision actually needs, deliver.
-  const decision = decideNudges(
-    target,
-    { newlyFailing, newlyUnresolved, previousMergeableState: previousMergeable, mergeableState: mergeable },
-    new Map(),
-  );
+  const diff = {
+    newlyFailing,
+    newlyUnresolved,
+    previousMergeableState: previousMergeable,
+    mergeableState: mergeable,
+  };
+
+  // TWO PASSES, and the order is the saving. The first decides with no logs,
+  // which is enough to know WHICH nudges survive suppression and dedup shape;
+  // the log fetch — the most expensive call in the tick — then happens only for
+  // those, and the second pass folds the tails into the bodies. Fetching first
+  // would spend a log download on every red check of every exited session.
+  const decision = decideNudges(target, diff, new Map());
   detail.suppressed += decision.suppressed.length;
   if (decision.nudges.length === 0) return 'ok';
 
-  // Logs are fetched AFTER the decision, so a suppressed CI nudge costs no
-  // provider call, and only for the checks that survived it.
   const tails = await fetchLogTails(client, target, newlyFailing, decision.nudges, options, signal);
-  const finalDecision = tails.size === 0
-    ? decision
-    : decideNudges(
-        target,
-        { newlyFailing, newlyUnresolved, previousMergeableState: previousMergeable, mergeableState: mergeable },
-        tails,
-      );
+  const finalDecision = tails.size === 0 ? decision : decideNudges(target, diff, tails);
 
   const delivery = await deliverNudges(options.db, claims, finalDecision.nudges);
   detail.nudgesDelivered += delivery.delivered;
