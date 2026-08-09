@@ -104,7 +104,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // The 126 literal was ALREADY red at 127 when this lane arrived (the
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
-    expect(root.catalog.total).toBe(138);
+    expect(root.catalog.total).toBe(141);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 
