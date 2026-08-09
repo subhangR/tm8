@@ -42,7 +42,8 @@ describe.sequential('W3 production-Server public harness', () => {
       // 126 against a pin of 124. `execution.transcript` makes it 127 and
       // projects.branches.list makes it 128.
       // Tier 4 adds two more mounted HTTP routes.
-      operations: 136,
+      // 136 -> 145 (2026-08-09, measured): nine execution.git* routes.
+      operations: 145,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.

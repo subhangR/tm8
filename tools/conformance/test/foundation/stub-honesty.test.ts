@@ -24,7 +24,8 @@ function fixturePath(path: string): string {
 describe('W1 stub route and honesty oracle', () => {
   it('recognizes all 136 HTTP catalog bindings as 501, never 404', async () => {
     const http = OPERATIONS.filter(({ method }) => method !== 'WS');
-    expect(http).toHaveLength(136);
+    // 136 -> 145 (2026-08-09, measured): nine execution.git* HTTP bindings.
+    expect(http).toHaveLength(145);
 
     for (const operation of http) {
       const response = await fetch(new URL(fixturePath(operation.path), baseUrl), {

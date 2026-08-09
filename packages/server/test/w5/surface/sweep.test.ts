@@ -301,9 +301,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(134);
-    expect(rows).toHaveLength(134);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(134);
+    // 134 -> 143, MEASURED on feat/tier2-cherry-branch-stash (the 134 pin was
+    // already red at 140 on feat/git-ui-wave, whose six execution.git* rows
+    // landed without moving it): +6 git-ui wave, +3 Tier 2 completion
+    // (execution.gitCherryPick/gitBranch/gitStash).
+    expect(SURFACE).toHaveLength(143);
+    expect(rows).toHaveLength(143);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(143);
   });
 
   /**
@@ -454,7 +458,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 80 -> 81: 084 (forge observer facts and nudges; authored as 083, then
     // renumbered because #78 landed 083). MEASURED on the integrated tree per
     // PIN RULE v3, not derived.
-    expect(server.appliedMigrations.length).toBe(81);
+    // 81 -> 83, MEASURED on feat/tier2-cherry-branch-stash: 088 + 089 landed
+    // on feat/git-ui-wave without moving this pin. Tier 2 completion claims
+    // NO migration of its own.
+    expect(server.appliedMigrations.length).toBe(83);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

@@ -692,8 +692,9 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 136, implemented: 134 });
-    expect(harness.production.server.registry.size).toBe(134);
+    // 136/134 -> 145/143 (2026-08-09, measured): nine execution.git* routes, all mounted.
+    expect(health).toMatchObject({ ok: true, operations: 145, implemented: 143 });
+    expect(harness.production.server.registry.size).toBe(143);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the

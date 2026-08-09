@@ -1306,6 +1306,33 @@ const ROWS: Record<OperationName, Row> = {
     reason: 'cli_runs_git_locally',
     notes: ['session branch → base is deliberately absent at every layer: landing on base goes through a PR'],
   },
+  'execution.gitCherryPick': {
+    cmd: null,
+    sum: "Apply commits onto a session's branch in its worktree; a conflict aborts (verified) and returns the conflicted paths with the worktree restored clean",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'cherry-pick', 'commit', 'conflict', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitBranch': {
+    cmd: null,
+    sum: 'Create, rename or delete a branch in a session worktree; checked-out and protected branches refuse, an unmerged delete gates on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'branch', 'create', 'rename', 'delete', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitStash': {
+    cmd: null,
+    sum: 'Stash push/pop/drop per session worktree; a conflicted pop aborts (verified) retaining the entry, drop gates on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'stash', 'push', 'pop', 'drop', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
   'execution.transcript': {
     cmd: ['session', 'transcript'],
     syn: 'tm8 session transcript <work-session-id> [--last <count>]',
@@ -1763,7 +1790,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe';
+  'sha256:add8ffb80b60c96fde7860aced5637310c3caf117fa98f5131498524f0334a19';
 
 export const GRAMMAR_VERSION = '2';
 
