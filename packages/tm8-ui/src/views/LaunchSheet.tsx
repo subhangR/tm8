@@ -22,7 +22,7 @@
  * exists, which is enforced by there being no import of it in this file.
  */
 import { useEffect, useId, useMemo, useState } from 'react';
-import type { EntityId } from '@tm8/contract';
+import type { CredentialsStatusView, EntityId } from '@tm8/contract';
 import { Avatar } from '../kit';
 import {
   accessModeLabel,
@@ -55,6 +55,8 @@ export interface LaunchSheetProps {
   refusal?: { cause: string; detail: string } | null;
   /** One spawn may be outstanding; the sheet cannot submit or dismiss it. */
   launching?: boolean;
+  /** Reads only the viewer's display-safe connection metadata; never a token. */
+  loadCredentialStatus?(): Promise<CredentialsStatusView>;
   onLaunch(config: LaunchSelection): void;
   onCancel(): void;
 }
@@ -120,12 +122,52 @@ export function LaunchSheet(props: LaunchSheetProps) {
   // does NOT pin a value by default — an explicit 'member' REFUSES the launch
   // for an unconnected member, which merely opening the sheet must not cause.
   const [credentialSource, setCredentialSource] = useState<NonNullable<LaunchConfig['credentialSource']> | ''>('');
+  const [credentialStatus, setCredentialStatus] = useState<CredentialsStatusView | null>(null);
+  const [credentialStatusState, setCredentialStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    props.loadCredentialStatus ? 'loading' : 'idle',
+  );
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileId, setProfileId] = useState('');
   const [rosterQuery, setRosterQuery] = useState('');
 
   const teammate = teammates.find((t) => t.id === teammateId);
   const models = modelsFor(agentToolId);
+
+  // Fetch on sheet mount, not at workspace boot: this is attribution evidence
+  // needed at commitment time, and a login/disconnect performed in Settings
+  // immediately beforehand must not be replaced by a boot-time cached answer.
+  useEffect(() => {
+    const load = props.loadCredentialStatus;
+    if (!load) return undefined;
+    let cancelled = false;
+    setCredentialStatusState('loading');
+    void load().then(
+      (status) => {
+        if (cancelled) return;
+        setCredentialStatus(status);
+        setCredentialStatusState('ready');
+      },
+      () => {
+        if (cancelled) return;
+        setCredentialStatus(null);
+        setCredentialStatusState('error');
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [props.loadCredentialStatus]);
+
+  const githubConnection = credentialStatus?.providers.find((entry) => entry.provider === 'github');
+  const githubHandle = githubConnection?.connected && githubConnection.login
+    ? `@${githubConnection.login.replace(/^@/, '')}`
+    : null;
+  const githubIdentityCopy = describeGitHubLaunchIdentity({
+    credentialSource,
+    credentialStatus,
+    credentialStatusState,
+    githubHandle,
+  });
 
   /**
    * The roster the picker draws: filtered by the query, with the SELECTED
@@ -357,9 +399,20 @@ export function LaunchSheet(props: LaunchSheetProps) {
                 onChange={(event) => setCredentialSource(event.target.value as NonNullable<LaunchConfig['credentialSource']> | '')}
               >
                 <option value="">Auto · mine if connected, else the node&apos;s</option>
-                <option value="member">My credential · refuse if not connected</option>
+                <option value="member">
+                  {githubHandle
+                    ? `My credential · GitHub ${githubHandle}`
+                    : 'My credential · refuse if vendor login is not connected'}
+                </option>
                 <option value="node">Node credential · this server&apos;s account</option>
               </select>
+              <span
+                className="ls__rowsub"
+                data-testid="launch-github-identity"
+                aria-live="polite"
+              >
+                {githubIdentityCopy}
+              </span>
             </span>
           </label>
         </section>
@@ -596,6 +649,36 @@ export function LaunchSheet(props: LaunchSheetProps) {
       </footer>
     </div>
   );
+}
+
+function describeGitHubLaunchIdentity(input: {
+  credentialSource: NonNullable<LaunchConfig['credentialSource']> | '';
+  credentialStatus: CredentialsStatusView | null;
+  credentialStatusState: 'idle' | 'loading' | 'ready' | 'error';
+  githubHandle: string | null;
+}): string {
+  if (input.credentialStatusState === 'loading') return 'Checking your GitHub identity…';
+  if (input.credentialStatusState === 'error') {
+    return 'GitHub identity unavailable · the server will decide at launch';
+  }
+  if (!input.credentialStatus) return 'GitHub identity is checked when this sheet is connected to a node';
+  if (input.credentialStatus.gitCredentialStore === 'absent') {
+    return 'GitHub identity unknown · this node cannot measure the credential store';
+  }
+
+  if (input.credentialSource === 'node') {
+    return input.githubHandle
+      ? `GitHub for this session: node account · your ${input.githubHandle} connection is not injected`
+      : 'GitHub for this session: node account';
+  }
+  if (input.credentialSource === 'member') {
+    return input.githubHandle
+      ? `GitHub for this session: ${input.githubHandle} · isolated to your member account`
+      : 'GitHub for this session: none · node fallback is blocked';
+  }
+  return input.githubHandle
+    ? `GitHub for this session: ${input.githubHandle} · your connection wins in Auto`
+    : 'GitHub for this session: node fallback · no personal GitHub connection';
 }
 
 /**

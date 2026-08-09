@@ -42,6 +42,7 @@ import {
   CREDENTIALS_HUMAN_ONLY,
   registerCredentialHandlers,
 } from '../../src/facade/handlers/w2/credentials.js';
+import { W2CredentialCatalogService } from '../../src/facade/services/w2/credential-catalog.js';
 import type { RequestContext } from '../../src/http/types.js';
 
 const SPACE_ID = '00000000-0000-7000-8000-000000000001';
@@ -585,11 +586,7 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
     }
   });
 
-  it('reports GitHub as NOT revoked here, because its store is not on this line', async () => {
-    // The honest answer, and the one that matters most for this button: PR2's
-    // write seam is injected and absent, so there is nothing to revoke. A
-    // `revoked: true` here would be a Disconnect that reported success having
-    // done nothing.
+  it('revokes GitHub through the dedicated string-shaped store', async () => {
     const { registry } = disconnectFixture('github');
     const result = CredentialsDeleteResultSchema.parse(
       await invoke(
@@ -598,10 +595,38 @@ describe('R3 — credentials.delete revokes first, then terminates', () => {
         context('credentials.delete', 'browser', { params: { provider: 'github' }, body: {} }),
       ),
     );
-    expect(result.revoked).toBe(false);
-    expect(result.failures.some((f) => f.step === 'revoke')).toBe(true);
-    // But it still TERMINATED, because the sessions carrying it are real.
+    expect(result.revoked).toBe(true);
+    expect(result.failures.some((f) => f.step === 'revoke')).toBe(false);
+    // It also terminates every agent session because GitHub injection applies
+    // independently of the agent tool.
     expect(result.terminatedAgentSessionIds).toEqual([AGENT_SESSION_ID]);
+  });
+
+  it('reports a GitHub cleanup partial failure through failures[] after DB revocation', async () => {
+    const db = new FakeDb(serviceQueries);
+    const catalog = new W2CredentialCatalogService({
+      db,
+      terminals: new FakeTerminals([]),
+      dataDir: '/tmp/tm8-credentials-test',
+      revokeGitCredential: async () => undefined,
+      removeCredentialFiles: async () => {
+        throw new Error('simulated cleanup refusal');
+      },
+    });
+
+    const result = await catalog.delete('github', {
+      identityId: 'identity-human',
+      claims: { identityId: 'identity-human', authKind: 'browser' },
+    });
+
+    // The DB row is the injection gate, so it stays revoked. The abandoned
+    // login-directory cleanup is an explicit partial failure, never swallowed
+    // and never promoted to a bare error after the security-critical step won.
+    expect(result.revoked).toBe(true);
+    expect(result.failures).toEqual([{
+      step: 'revoke',
+      reason: 'credential files: simulated cleanup refusal',
+    }]);
   });
 
   it('a kill that FAILS is reported and never resurrects the credential', async () => {
@@ -700,9 +725,10 @@ describe('the login session operations answer their contract shapes', () => {
   });
 
   it('finish reports connected and stored as SEPARATE facts', async () => {
-    // A verified GitHub login on this line is `connected: true, stored: false`,
-    // because its string-shaped store is not here. Collapsing the two would
-    // either hide a real login or claim a persistence that did not happen.
+    // This route-level double has no authenticated `gh` subprocess. The
+    // positive capture-and-store path is exercised with a controlled runner in
+    // credential-service.pg.test.ts; here we keep proving that the two facts
+    // remain independently represented on the HTTP contract.
     const db = new FakeDb(serviceQueries, serviceRpcs);
     const launcher = {
       launch: () => ({
@@ -742,7 +768,7 @@ describe('the login session operations answer their contract shapes', () => {
     expect(finished.workSessionId).toBe(SESSION_ID);
     expect(typeof finished.connected).toBe('boolean');
     expect(typeof finished.stored).toBe('boolean');
-    // Nothing was persisted: `storeGitCredential` is injected and absent.
+    // No verified GitHub login means the persistence path must not run.
     expect(finished.stored).toBe(false);
   });
 });

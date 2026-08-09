@@ -76,6 +76,8 @@ export type {
   CreateWorkSessionResult,
   GraphAuth,
   GraphPort,
+  GitHubCredential,
+  GitHubCredentialPort,
   LoadSpawnContextInput,
   ManifestSkillContext,
   PermissionMode,

@@ -66,6 +66,7 @@ import type { OperationName } from '@tm8/contract';
 
 import type { OperationHandler, RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
+import { DbGitHubCredentialStore } from '../../../credentials/github-credential-store.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
 import {
@@ -192,15 +193,22 @@ export function registerCredentialHandlers(
   deps: FacadeDeps,
   credentials: CredentialHandlerDeps,
 ): void {
+  const gitHubStore = new DbGitHubCredentialStore({
+    db: deps.db,
+    dataDir: credentials.dataDir,
+  });
   const sessions = new W2CredentialSessionsService({
     db: deps.db,
     launcher: credentials.launcher,
     dataDir: credentials.dataDir,
+    storeGitCredential: ({ claims, login, token }) =>
+      gitHubStore.store(claims, { login, token }),
   });
   const catalog = new W2CredentialCatalogService({
     db: deps.db,
     terminals: credentials.launcher,
     dataDir: credentials.dataDir,
+    revokeGitCredential: ({ principal }) => gitHubStore.delete(principal.claims),
   });
 
   // The node's own registry sweep (R10 element 1): expired or PTY-less login
