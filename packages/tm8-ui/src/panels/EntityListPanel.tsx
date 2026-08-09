@@ -235,18 +235,27 @@ export interface EntityListPanelProps {
    * ITS OWN PROP, NOT `onSetState`, because the two are not the same write. A
    * state goes through a command verb and is unversioned; these go through the
    * kind's content PATCH and are version-guarded, so the host has a 409 to
-   * handle here that `onSetState` never sees. Passing `source` rather than a
-   * field name keeps this panel free of the field it is editing.
+   * handle here that `onSetState` never sees. Sending the assembled CONTENT —
+   * registry-declared field names, registry-declared values — keeps this panel
+   * free of the fields it is editing.
    *
-   * `label` rides beside `source` because they are two faces of one registry
-   * control: `source` is the WIRE field the host patches, `label` is its USER
-   * copy, and the host's failure notice is read by a person ("Priority could
-   * not be changed", not "priority could not be changed"). Sending both from
-   * the one `ValueControl` is what stops them disagreeing.
+   * IT IS A PATCH AND NOT ONE FIELD because an option may carry companions
+   * that must not lag behind it (`ValueOption.also` — a teammate's `agentTool`
+   * moving with its `model`). One patch, one version, one guard.
+   *
+   * `label` rides beside it because they are two faces of one registry control:
+   * the content carries the WIRE fields the host patches, `label` is its USER
+   * copy, and the host's failure notice is read by a person ("Model could not
+   * be changed", not "model could not be changed"). Sending both from the one
+   * `ValueControl` is what stops them disagreeing.
    *
    * Absent ⇒ the picker renders DISABLED WITH REASON, never enabled-inert.
    */
-  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  onSetValue?: (
+    entityId: string,
+    content: Readonly<Record<string, string>>,
+    label: string,
+  ) => void;
 
   /**
    * Add or remove ONE assignment on an expanded row.

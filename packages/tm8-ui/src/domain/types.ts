@@ -588,6 +588,25 @@ export interface ValueOption {
   id: string;
   label: string;
   tone: PillTone;
+  /**
+   * Companion content keys written in the SAME patch when this option wins.
+   *
+   * FOR THE FIELDS THAT CANNOT LAG BEHIND THIS ONE. A teammate's `agentTool`
+   * is the worked example: the server infers the tool from the MODEL at spawn
+   * (`execution/src/spawn/manifest.ts:agentToolForModel`, and that ordering is
+   * load-bearing — "the model is what the user actually chose; the tool is a
+   * stale sidecar of it"), but this UI's launch picker seeds its tool from the
+   * teammate's STORED `agentTool` and then filters the model list by it
+   * (`domain/launch.ts:defaultConfigFor`). Move `model` alone and the launch
+   * picker opens filtered to the old tool with no option matching the model
+   * that is actually recorded.
+   *
+   * ONE PATCH, NOT TWO WRITES, and that is the point: two patches means two
+   * versions, so the second earns a `version_conflict` against the first and
+   * the pair lands half-applied. Absent ⇒ this option moves its own field and
+   * nothing else, which is every option task priority has.
+   */
+  also?: Readonly<Record<string, string>>;
 }
 
 export interface ValueControl {
@@ -604,8 +623,20 @@ export interface ValueControl {
    * The settable vocabulary in reading order. Unlike `StateControl` these
    * carry their own label and tone, because no `statusPill` spec exists for
    * them — there is no second source here to disagree with.
+   *
+   * A THUNK IS ALLOWED, because not every vocabulary is fixed at build time.
+   * Task priority is four words that ship with the binary and is an array. The
+   * MODEL list is not: it is the contract's catalog PLUS a per-browser,
+   * per-node delta the user maintains in Settings → Models
+   * (`domain/model-catalog.ts`). Frozen into an array at module load, this
+   * registry would capture that delta once — against whichever node happened
+   * to be current at import — and a model the user added would never reach the
+   * picker, which is the decorative control this codebase refuses everywhere
+   * else. A thunk is resolved at RENDER, so the picker and the settings screen
+   * cannot disagree. Resolve it through `valueOptionsOf`, never by calling it
+   * at a call site that assumes one of the two shapes.
    */
-  options: readonly ValueOption[];
+  options: readonly ValueOption[] | (() => readonly ValueOption[]);
 }
 
 export interface AssignControl {

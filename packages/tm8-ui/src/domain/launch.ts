@@ -24,7 +24,8 @@ import type {
   SpawnWorkdir,
 } from '@tm8/contract';
 import { LAUNCH_MODEL_CATALOG } from '@tm8/contract';
-import { catalogModelsFor } from './model-catalog';
+import { catalogModelsFor, modelCatalog } from './model-catalog';
+import type { ValueOption } from './types';
 
 // ---------------------------------------------------------------------------
 // Agent tools and models
@@ -87,6 +88,40 @@ export function modelsFor(toolId: string | null | undefined): readonly ModelDef[
     id: entry.model,
     label: entry.label,
     ...(entry.note ? { note: entry.note } : {}),
+  }));
+}
+
+/**
+ * EVERY model this node knows, across every tool, as a `ValueControl`
+ * vocabulary — the teammate panel's Model picker.
+ *
+ * ACROSS TOOLS, deliberately, where the launch picker is per-tool. The launch
+ * picker is choosing a model FOR a tool the config already names; this one is
+ * choosing what the teammate IS, and a teammate is free to move from Claude to
+ * Codex. Filtering by the teammate's current tool would make that move the one
+ * thing the control cannot express.
+ *
+ * WHICH IS EXACTLY WHY EVERY OPTION CARRIES `also.agentTool`. `agentToolForModel`
+ * settles the disagreement server-side at spawn, but `defaultConfigFor` seeds
+ * this UI's launch picker from the STORED tool — so a teammate moved to a Codex
+ * model while `agentTool` still reads `claude-code` opens a picker filtered to
+ * Claude with no option matching its own recorded model. The tool travels in
+ * the same patch or the record is internally inconsistent the moment it lands.
+ *
+ * A THUNK'S WORTH OF WORK, called at render: `modelCatalog` reads the per-node
+ * localStorage delta, so a model added in Settings → Models is in this list
+ * without a reload.
+ */
+export function modelValueOptions(): readonly ValueOption[] {
+  return modelCatalog(currentNodeKey()).map((entry) => ({
+    id: entry.model,
+    label: entry.label,
+    // `idle`, uniformly. Tone is this vocabulary's severity channel — `block`
+    // is what task priority paints `urgent` with — and no model is more urgent
+    // than another. Tinting by provider would put a second, invented meaning
+    // on the one channel that already means something.
+    tone: 'idle' as const,
+    also: { agentTool: entry.agentTool },
   }));
 }
 

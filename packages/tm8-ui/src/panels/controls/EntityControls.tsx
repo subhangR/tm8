@@ -52,7 +52,7 @@ import type {
   StatusPillSpec,
   ValueControl,
 } from '../../domain';
-import { REASONS, getKind, resolveAction } from '../../domain';
+import { REASONS, getKind, resolveAction, valueOptionsOf } from '../../domain';
 import { Avatar, type PillTone } from '../../kit';
 import {
   CheckingPermission,
@@ -102,13 +102,28 @@ export interface ControlHost {
   onSetState?: (entityId: string, next: string, via: ActionRef) => void;
   onArchive?: (ref: ActionRef, entityId: string) => void;
   /**
-   * `label` rides along beside `source` because a failure notice is USER copy:
-   * `source` is the wire field name, and titling a notice with it produced
-   * "priority could not be changed" — lowercase mid-sentence. Both come off the
-   * same registry `ValueControl`, whose `label` is required, so it is required
-   * here too; an optional fourth argument would let a host silently drop it.
+   * THE WHOLE CONTENT PATCH, not a field and a value.
+   *
+   * It used to be `(source, next)`, which could only ever move ONE field —
+   * fine for task priority, wrong for a teammate's model, whose `agentTool`
+   * must move with it or the launch picker opens filtered to a tool the
+   * recorded model does not belong to (`ValueOption.also`). A second call would
+   * be a second version and so a guaranteed `version_conflict` against the
+   * first, landing the pair half-applied; handing the assembled patch down is
+   * what keeps it one write. The panel still names the FIELDS and this still
+   * names the CALL — there is simply more than one field.
+   *
+   * `label` rides along because a failure notice is USER copy: the wire field
+   * name titled a notice "priority could not be changed" — lowercase
+   * mid-sentence. It comes off the same registry `ValueControl`, whose `label`
+   * is required, so it is required here too; an optional argument would let a
+   * host silently drop it.
    */
-  onSetValue?: (entityId: string, source: string, next: string, label: string) => void;
+  onSetValue?: (
+    entityId: string,
+    content: Readonly<Record<string, string>>,
+    label: string,
+  ) => void;
   onAssign?: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   assignableActors?: readonly ActorSummary[];
 }
@@ -261,7 +276,11 @@ function RowValueControl({
   const selectId = useId();
   const raw = (row.state as unknown as Record<string, unknown>)[control.source];
   const current = typeof raw === 'string' ? raw : '';
-  const chosen = control.options.find((o) => o.id === current);
+  /* Resolved ONCE per render, and through the helper: `options` may be a thunk
+     (the model vocabulary is per-node and user-editable), and a call site that
+     read the field directly would draw an empty select for those controls. */
+  const options = valueOptionsOf(control);
+  const chosen = options.find((o) => o.id === current);
   /* `data-source` on the REFUSED pill as well as on the live select: the two
      are the same control in two states, and a hook that only existed on the
      enabled one would let a refusal go unasserted. */
@@ -310,7 +329,17 @@ function RowValueControl({
         onChange={(e) => {
           const next = e.target.value;
           if (next === current) return;
-          props.onSetValue?.(row.id, control.source, next, control.label);
+          /* THE WHOLE PATCH, ASSEMBLED HERE. The chosen option may carry
+             companion fields that must not lag behind this one (`also`), and
+             they ride in the SAME patch: two writes would mean two versions,
+             so the second would earn a `version_conflict` against the first
+             and the pair would land half-applied. */
+          const option = options.find((o) => o.id === next);
+          props.onSetValue?.(
+            row.id,
+            { [control.source]: next, ...(option?.also ?? {}) },
+            control.label,
+          );
         }}
       >
         {/* An UNSET field is a real state and gets a real option, so the select
@@ -322,7 +351,7 @@ function RowValueControl({
             {control.emptyLabel}
           </option>
         ) : null}
-        {control.options.map((o) => (
+        {options.map((o) => (
           <option key={o.id} value={o.id}>
             {o.label}
           </option>

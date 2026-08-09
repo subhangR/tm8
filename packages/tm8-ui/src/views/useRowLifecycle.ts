@@ -21,17 +21,19 @@
  *                                    permitted to write `done`.
  *   set-value → `commands.patchEntity`    a CONTENT edit, version-guarded, and
  *                                    sparse (the node COALESCEs the fields the
- *                                    patch omits) — so one field moves and the
- *                                    rest of the record is not restated.
+ *                                    patch omits) — so the named fields move and
+ *                                    the rest of the record is not restated.
  *   assign    → `commands.createEdge` / `commands.deleteEdge`  one edge at a
  *                                    time; `state.assignees` is a PROJECTION of
  *                                    `assigned_to`, so there is no array to PUT.
  *   archive   → `commands.deleteEntity`   the shared tombstone.
  *   restore   → `commands.restoreEntity`  its inverse.
  *
- * THE PANEL NAMES THE FIELD, THIS NAMES THE CALL. `setValue` is handed the
- * registry's `source` ("priority") and `assign` the registry's `edgeType`
- * ("assigned_to"); neither is spelled here, so a second value control or a
+ * THE PANEL NAMES THE FIELDS, THIS NAMES THE CALL. `setValue` is handed an
+ * already-assembled content patch — keyed by the registry's `source`
+ * ("priority", "model") plus whatever companions the chosen option carries
+ * (`ValueOption.also`) — and `assign` the registry's `edgeType`
+ * ("assigned_to"); none of it is spelled here, so a second value control or a
  * second relationship needs registry data and not an edit to this file — the
  * same rule that keeps `EntityListPanel` free of kind literals.
  *
@@ -111,12 +113,18 @@ export interface RowLifecycle {
   /**
    * Bound to `EntityListPanel.onSetValue` — a registry `ValueControl` write.
    *
-   * `label` rides along beside `source` because a failure notice is USER copy:
-   * `source` is the wire field name and titling a notice with it produced
-   * "priority could not be changed", lowercase mid-sentence. Both come off the
-   * same registry control, so they cannot disagree.
+   * IT TAKES A PATCH AND NOT ONE FIELD because an option may carry companion
+   * keys that must not lag behind it (`ValueOption.also` — a teammate's
+   * `agentTool` moving with its `model`). Splitting those into two patches
+   * means two versions, so the second earns a `version_conflict` against the
+   * first and the pair lands half-applied. One patch, one version, one guard.
+   *
+   * `label` rides along beside the patch because a failure notice is USER copy:
+   * the content keys are wire field names and titling a notice with one
+   * produced "priority could not be changed", lowercase mid-sentence. Both come
+   * off the same registry control, so they cannot disagree.
    */
-  setValue: (entityId: string, source: string, next: string, label: string) => void;
+  setValue: (entityId: string, content: Readonly<Record<string, string>>, label: string) => void;
   /** Bound to `EntityListPanel.onAssign` — ONE actor's edge, added or removed. */
   assign: (entityId: string, actorId: string, edgeType: string, assigned: boolean) => void;
   /**
@@ -235,7 +243,7 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
   );
 
   const setValue = useCallback(
-    (entityId: string, source: string, next: string, label: string) => {
+    (entityId: string, content: Readonly<Record<string, string>>, label: string) => {
       const id = entityId as EntityId;
       /**
        * THE CACHED VERSION IS THE ONLY VERSION — there is no `entity()`
@@ -267,11 +275,11 @@ export function useRowLifecycle({ data, viewerMemberId, onNotice }: RowLifecycle
       settle(
         entityId,
         `${label} could not be changed`,
-        // Sparse: the node COALESCEs the fields the patch omits, so one field
-        // moves and the rest of the record is not restated. The guard still
-        // does its job — a concurrent edit lands as `version_conflict`, which
-        // surfaces as a notice rather than a silent overwrite.
-        seam.commands.patchEntity(id, { expectedVersion: version, content: { [source]: next } }),
+        // Sparse: the node COALESCEs the fields the patch omits, so the named
+        // fields move and the rest of the record is not restated. The guard
+        // still does its job — a concurrent edit lands as `version_conflict`,
+        // which surfaces as a notice rather than a silent overwrite.
+        seam.commands.patchEntity(id, { expectedVersion: version, content }),
       );
     },
     [data, onNotice, seam, settle],
