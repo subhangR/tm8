@@ -301,9 +301,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(134);
-    expect(rows).toHaveLength(134);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(134);
+    // 134 was ALREADY red at 140 when this lane arrived (the six git-ui-wave
+    // execution.git* ops landed without moving it); Tier 1 adds
+    // projects.file.history and projects.file.blame. MEASURED: 142.
+    expect(SURFACE).toHaveLength(142);
+    expect(rows).toHaveLength(142);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(142);
   });
 
   /**
@@ -454,7 +457,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 80 -> 81: 084 (forge observer facts and nudges; authored as 083, then
     // renumbered because #78 landed 083). MEASURED on the integrated tree per
     // PIN RULE v3, not derived.
-    expect(server.appliedMigrations.length).toBe(81);
+    expect(server.appliedMigrations.length).toBe(83);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

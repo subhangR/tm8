@@ -258,6 +258,23 @@ const GIT_NET_NEW_OPERATIONS = [
   'projects.branches.list',
 ] as const;
 
+/**
+ * The Git UI wave (2026-08-09): the six execution.git* session-rail operations
+ * landed on feat/git-ui-wave WITHOUT joining this list (red on the tree at
+ * d371c06); reconciled here alongside the two Tier 1 file reads that complete
+ * the same view. All net-new — no replacements.
+ */
+const GIT_UI_WAVE_NET_NEW_OPERATIONS = [
+  'execution.gitStatus',
+  'execution.gitDiff',
+  'execution.gitCheckpoint',
+  'execution.gitRollback',
+  'execution.gitCommit',
+  'execution.gitMerge',
+  'projects.file.history',
+  'projects.file.blame',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -265,6 +282,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...PROJECT_FOLDER_NET_NEW_OPERATIONS,
   ...GIT_NET_NEW_OPERATIONS,
+  ...GIT_UI_WAVE_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -389,7 +407,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 114 -> 115 (2026-08-09): projects.branches.list.
     // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
     // 117 -> 119: projects.files.list + projects.files.attach.
-    expect(registry.size).toBe(119);
+    // 119 -> 127: the git-ui-wave eight (six execution.git* + two Tier 1
+    // projects.file.* reads). MEASURED.
+    expect(registry.size).toBe(127);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -397,7 +417,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
         + PROJECT_FOLDER_NET_NEW_OPERATIONS.length
-        + GIT_NET_NEW_OPERATIONS.length,
+        + GIT_NET_NEW_OPERATIONS.length
+        + GIT_UI_WAVE_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -545,7 +566,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // auth.session.get is a GET and binds nothing.
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
     // 70 -> 73: the three credentials.* command bodies are bound.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(74);
+    // 74 -> 78: the four execution.git* command bodies (wave, unpinned at base).
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(78);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -692,8 +714,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
-    expect(health).toMatchObject({ ok: true, operations: 136, implemented: 134 });
-    expect(harness.production.server.registry.size).toBe(134);
+    expect(health).toMatchObject({ ok: true, operations: 144, implemented: 142 });
+    expect(harness.production.server.registry.size).toBe(142);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -711,7 +733,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(134);
+    expect(registered.size + residual.length).toBe(142);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

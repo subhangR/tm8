@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe",
+  "catalogDigest": "sha256:8d62f456d566520ec24548b0f17fd4e4761c5b84f2d98a5af92cc1c79c0ab393",
   "catalog": {
-    "total": 137,
-    "v1": 135,
+    "total": 145,
+    "v1": 143,
     "reserved": 2,
-    "http": 136,
+    "http": 144,
     "ws": 1,
-    "registerableV1Http": 134,
+    "registerableV1Http": 142,
     "methods": {
-      "GET": 52,
-      "POST": 58,
+      "GET": 56,
+      "POST": 62,
       "PATCH": 10,
       "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 55,
-      "command": 81,
+      "read": 59,
+      "command": 85,
       "stream": 1
     },
-    "uniqueNames": 137,
-    "uniqueBindings": 137
+    "uniqueNames": 145,
+    "uniqueBindings": 145
   },
   "reservedOperations": [
     "search.query",
@@ -677,6 +677,20 @@
         "source": "server-router"
       },
       {
+        "operation": "projects.file.history",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/file-history",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.file.blame",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/blame",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "projects.update",
         "method": "PATCH",
         "path": "/v2/projects/:projectId",
@@ -862,6 +876,48 @@
         "operation": "execution.launch",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/launch",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitStatus",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/git/status",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitDiff",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/git/diff",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitCheckpoint",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/checkpoint",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitRollback",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/rollback",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitCommit",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/commit",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "execution.gitMerge",
+        "method": "POST",
+        "path": "/v2/work-sessions/:workSessionId/git/merge",
         "status": "registered",
         "source": "server-router"
       },
@@ -1363,7 +1419,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 106
+    "unimplementedV1Http": 114
   },
   "schemas": {
     "additive": {
@@ -2652,6 +2708,40 @@
         "publicComposite": null
       },
       {
+        "operation": "projects.file.history",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.file.history",
+        "intentTags": [
+          "projects",
+          "file",
+          "history"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.file.blame",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.file.blame",
+        "intentTags": [
+          "projects",
+          "file",
+          "blame"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "projects.update",
         "noun": "project",
         "exposure": "public",
@@ -3104,6 +3194,108 @@
         "intentTags": [
           "execution",
           "launch"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitStatus",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitStatus",
+        "intentTags": [
+          "execution",
+          "git",
+          "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitDiff",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitDiff",
+        "intentTags": [
+          "execution",
+          "git",
+          "diff"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitCheckpoint",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitCheckpoint",
+        "intentTags": [
+          "execution",
+          "git",
+          "checkpoint"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitRollback",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitRollback",
+        "intentTags": [
+          "execution",
+          "git",
+          "rollback"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitCommit",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitCommit",
+        "intentTags": [
+          "execution",
+          "git",
+          "commit"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.gitMerge",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.gitMerge",
+        "intentTags": [
+          "execution",
+          "git",
+          "merge"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

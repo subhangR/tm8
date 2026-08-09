@@ -111,6 +111,11 @@ export const OPERATIONS = [
   { name: 'projects.get',            method: 'GET',    path: '/v2/projects/:projectId',                     kind: 'read',    status: 'v1' },
   { name: 'projects.contention',     method: 'GET',    path: '/v2/projects/:projectId/contention',          kind: 'read',    status: 'v1' },
   { name: 'projects.branches.list',  method: 'GET',    path: '/v2/projects/:projectId/branches',            kind: 'read',    status: 'v1' },
+  // Tier 1 file reads: the path is a `?path=` QUERY pathspec (a file path
+  // cannot ride a route segment); the directory git runs in always comes from
+  // the project row. Authorization is exactly `projects.get`'s.
+  { name: 'projects.file.history',   method: 'GET',    path: '/v2/projects/:projectId/file-history',        kind: 'read',    status: 'v1' },
+  { name: 'projects.file.blame',     method: 'GET',    path: '/v2/projects/:projectId/blame',               kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },

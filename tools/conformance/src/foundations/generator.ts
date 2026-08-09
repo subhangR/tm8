@@ -321,15 +321,19 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
   // 129 -> 131: projects.contention (GET/read) + entities.commands.gate (POST/command).
   // 131 -> 135: credentials.* (1 GET/read, 1 DELETE/command, 2 POST/command).
   // 135 -> 137: projects.files.list (GET/read) + projects.files.attach (POST/command).
-  assertEqual(names.length, 137, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 135, 'v1 total');
+  // 137 -> 143 landed on feat/git-ui-wave without moving these pins (red at
+  // base d371c06); 143 -> 145 (2026-08-09): projects.file.history +
+  // projects.file.blame, two GET reads. Values below are MEASURED on the
+  // merged tree, never computed by delta.
+  assertEqual(names.length, 145, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 143, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 52, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 55, command: 81, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 136, 'server router HTTP total');
+  assertEqual(methods, { GET: 56, POST: 62, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 59, command: 85, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 144, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

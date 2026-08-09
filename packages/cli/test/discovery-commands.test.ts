@@ -130,7 +130,9 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // 134 -> 135 (2026-08-09): `task import-issue` as an ALIAS over
     // entities.create (Tier 3 forge) — one command path, zero catalog rows.
     // Value MEASURED through dist per PIN RULE v3, not computed.
-    expect(COMMAND_PATHS).toHaveLength(135);
+    // 135 -> 137 (2026-08-09): `project file-history` + `project blame` —
+    // Tier 1 reads, each with its own catalog row. Value MEASURED, not computed.
+    expect(COMMAND_PATHS).toHaveLength(137);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

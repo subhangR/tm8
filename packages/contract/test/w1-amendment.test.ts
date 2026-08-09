@@ -70,8 +70,11 @@ describe('W1 adopted catalog target', () => {
     // (GET reads) and gitCheckpoint/gitRollback/gitCommit/gitMerge (POST
     // commands) — the session git rail behind the facade. MEASURED per PIN
     // RULE v3, never carried.
-    expect(OPERATIONS).toHaveLength(143);
-    expect(V1_OPERATIONS).toHaveLength(141);
+    // 143 -> 145 (2026-08-09, Tier 1): projects.file.history +
+    // projects.file.blame (GET reads) — file-history browser and blame with
+    // session attribution. MEASURED per PIN RULE v3, never carried.
+    expect(OPERATIONS).toHaveLength(145);
+    expect(V1_OPERATIONS).toHaveLength(143);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -87,12 +90,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 54, POST: 62, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 56, POST: 62, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 57, command: 85, stream: 1 });
+    }).toEqual({ read: 59, command: 85, stream: 1 });
   });
 });
 
