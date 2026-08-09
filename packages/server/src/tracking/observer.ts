@@ -60,6 +60,14 @@ export interface TrackingObserverOptions {
   client?: GithubClient;
   /** Requests per tick. Small on purpose — this is a poller, not a backfill. */
   batchSize?: number;
+  /**
+   * TARGETS per tick, which is the bound that corresponds to wall-clock.
+   * `batchSize` counts requests, and one request can name every tracked entity
+   * in a space, so it alone does not keep a tick inside its timeout.
+   */
+  targetBudget?: number;
+  /** Retirement budget — a request that keeps failing is retired, not retried forever. */
+  maxAttempts?: number;
   /** How long a `running` row may sit before the next claim reclaims it. */
   staleAfterSeconds?: number;
   intervalMs?: number;
@@ -75,14 +83,16 @@ export interface TrackingObserverOptions {
 export async function runTrackingObserverTick(
   options: TrackingObserverOptions,
   signal?: AbortSignal,
+  log?: (message: string) => void,
 ): Promise<JobOutcome> {
+  const ctxLogger = log;
   const client = options.client ?? new GithubClient({ token: resolveGithubToken() });
   const claims = await options.claims();
 
   const claimed = await options.db.rpc<{ claimed?: unknown }>(
     claims,
     'public.claim_tracking_refresh',
-    [options.batchSize ?? 5, options.staleAfterSeconds ?? 600],
+    [options.batchSize ?? 5, options.staleAfterSeconds ?? 600, options.maxAttempts ?? 5],
   );
   const requests = normalizeClaimed(claimed?.claimed);
   if (requests.length === 0) {
@@ -92,11 +102,29 @@ export async function runTrackingObserverTick(
   let refreshed = 0;
   let unresolved = 0;
   let rateLimited = false;
+  let abandoned = 0;
+  // Targets, not requests. `batchSize` bounds how many REQUESTS are claimed, and
+  // a single request with absent entityIds means "every tracked entity in this
+  // space" (078's claim door, matching what 034:145 enqueues) — so a space with
+  // a few hundred PRs blows the job timeout on one request. This is the bound
+  // that actually corresponds to wall-clock.
+  const targetBudget = options.targetBudget ?? 100;
+  let attempted = 0;
 
   for (const request of requests) {
     const problems: string[] = [];
+    let succeeded = 0;
+    // Distinguish "I stopped early" from "I finished". Completing a request
+    // whose targets were never fetched is the exact defect this file's header
+    // opens by naming, and it is only avoidable if the loop records WHY it ended.
+    let stoppedEarly = false;
+
     for (const target of request.targets) {
-      if (signal?.aborted) break;
+      if (signal?.aborted || attempted >= targetBudget) {
+        stoppedEarly = true;
+        break;
+      }
+      attempted += 1;
       // Only GitHub is implemented. A row naming another provider is recorded
       // as unresolved rather than silently completed — a queue that reports
       // success for work it cannot do is the defect this file exists to fix.
@@ -105,11 +133,25 @@ export async function runTrackingObserverTick(
         unresolved += 1;
         continue;
       }
-      const outcome = await refreshOne(options.db, claims, client, target, signal);
+
+      // PER-TARGET, and this catch is load-bearing. `Db.rpc` throws on any
+      // Postgres error, so without it a single 42501 or statement timeout on
+      // one apply propagates out of the tick and abandons every OTHER request
+      // already claimed in this batch, leaving them `running` until the stale
+      // window. One bad row would take the batch down with it, every tick.
+      let outcome: string;
+      try {
+        outcome = await refreshOne(options.db, claims, client, target, signal);
+      } catch (error) {
+        outcome = `apply failed: ${error instanceof Error ? error.message : String(error)}`;
+      }
+
       if (outcome === 'refreshed') {
         refreshed += 1;
+        succeeded += 1;
       } else if (outcome === 'rate_limited') {
         rateLimited = true;
+        stoppedEarly = true;
         break;
       } else {
         problems.push(`${target.entityId}: ${outcome}`);
@@ -117,17 +159,40 @@ export async function runTrackingObserverTick(
       }
     }
 
-    if (rateLimited) {
-      // Leave the request claimed-but-unfinished. `started_at` is set, so the
-      // stale window returns it to the queue and the next tick resumes it.
-      break;
+    if (stoppedEarly) {
+      // LEAVE IT CLAIMED AND UNFINISHED — do not complete it.
+      //
+      // `started_at` is set, so 078's stale window returns it to the queue and a
+      // later tick resumes it. Completing here is what would write a success
+      // receipt for work no process did; the abort signal fires on every
+      // shutdown and every job timeout, so this is an ordinary path, not an
+      // exotic one.
+      abandoned += 1;
+      if (rateLimited) break;
+      continue;
     }
-    await options.db
-      .rpc(claims, 'public.complete_tracking_refresh', [
+
+    // PARTIAL SUCCESS IS SUCCESS, and now actually is: `failed` only when
+    // nothing was learned. The problems ride along in `error` either way, so a
+    // nine-of-ten result is visible rather than averaged into a lie.
+    const status = succeeded > 0 || problems.length === 0 ? 'completed' : 'failed';
+    try {
+      await options.db.rpc(claims, 'public.complete_tracking_refresh', [
         request.requestId,
         problems.length > 0 ? problems.slice(0, 10).join('; ') : null,
-      ])
-      .catch(() => undefined);
+        status,
+      ]);
+    } catch (error) {
+      // Swallowing this silently is how you get an invisible loop: the row stays
+      // `running`, the stale window hands it back, and the next tick re-fetches
+      // every target from scratch and fails the same way — burning provider
+      // quota with nothing in the log to explain it.
+      ctxLogger?.(
+        `tracking.observer: could not complete request ${request.requestId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   return {
@@ -136,6 +201,7 @@ export async function runTrackingObserverTick(
       requests: requests.length,
       refreshed,
       unresolved,
+      abandoned,
       rateLimited,
       authenticated: client.authenticated,
     },
@@ -222,7 +288,7 @@ export function createTrackingObserverJob(options: TrackingObserverOptions): Sch
     runOnStart: options.runOnStart ?? true,
     timeoutMs: 2 * 60_000,
     async run(ctx: JobContext): Promise<JobOutcome> {
-      return runTrackingObserverTick(options, ctx.signal);
+      return runTrackingObserverTick(options, ctx.signal, (m) => { ctx.logger.warn(m); });
     },
   };
 }

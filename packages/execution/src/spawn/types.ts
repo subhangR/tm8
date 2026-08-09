@@ -85,6 +85,12 @@ export interface WorktreeAllocationRow {
   entityExists: boolean;
   worktreeStatus: string | null;
   leaseSessionStatus: string | null;
+  /**
+   * When the allocation last changed. Reconciliation needs it to leave a
+   * reservation that a live spawn is mid-way through ALONE — see the grace
+   * period in `worktree-reconcile.ts`.
+   */
+  updatedAt: string | null;
 }
 
 /**

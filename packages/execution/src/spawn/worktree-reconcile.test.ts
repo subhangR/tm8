@@ -58,6 +58,10 @@ function allocation(over: Partial<WorktreeAllocationRow> & { worktreeId: string 
     entityExists: false,
     worktreeStatus: null,
     leaseSessionStatus: null,
+    // Old enough that the in-flight grace window does not apply. A fixture that
+    // looked freshly-written would make every `preparing` case skip, and the
+    // suite would go green by testing nothing.
+    updatedAt: new Date(Date.now() - 3_600_000).toISOString(),
     ...over,
   };
 }
@@ -123,6 +127,33 @@ describe('§6.2 — the repair table', () => {
     ]);
     expect(calls).toEqual([{ call: 'state', worktreeId: id, state: 'failed' }]);
     expect(report.repaired[0]?.action).toContain('safe to retry');
+  });
+
+  it('G4.10 a preparing row that changed a moment ago is LEFT ALONE — the boot race', async () => {
+    // Reconcile runs after listen(), so the spawn endpoint is live while it
+    // sweeps, and its decision predates the project lock it then queues for.
+    // Without a grace window: a spawn reserves and runs `git worktree add`,
+    // reconcile snapshots that row and blocks on the lock, the saga commits the
+    // entity and releases, and reconcile removes the checkout of a worktree
+    // that is now published. The client got a 200 and the agent's cwd is gone.
+    const id = uuidN(20);
+    const oid = await git(['rev-parse', 'HEAD^{commit}'], repoRoot);
+    const { path } = await manager.add({
+      repoRoot,
+      projectId: PROJECT_ID,
+      worktreeId: id,
+      branch: `tm8/${id.slice(-8)}`,
+      baseCommitOid: oid,
+    });
+
+    const { report, calls } = await run([
+      allocation({ worktreeId: id, path, entityExists: false, updatedAt: new Date().toISOString() }),
+    ]);
+
+    expect(calls).toEqual([]);
+    expect(report.repaired[0]?.action).toContain('possible live spawn');
+    await expect(stat(path)).resolves.toBeTruthy();
+    await manager.remove({ repoRoot, path, force: true });
   });
 
   it('G4.2 preparing with a real checkout but no entity → the checkout is removed', async () => {

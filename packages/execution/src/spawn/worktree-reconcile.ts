@@ -69,6 +69,30 @@ export interface ReconcileParams {
 
 const TERMINAL_SESSION_STATUSES = new Set(['exited', 'failed']);
 
+/**
+ * How recently an allocation may have changed and still be left alone.
+ *
+ * Reconciliation runs AFTER `listen()`, so the spawn endpoint is live while it
+ * sweeps, and its decision about a row is made from a snapshot taken before it
+ * queues for the project lock. Without this, the following interleaving removes
+ * a healthy checkout: a spawn reserves (`preparing`, no entity) and runs
+ * `git worktree add`; reconcile snapshots that row, sees the new directory, and
+ * blocks on the lock; the saga commits the entity and releases; reconcile wakes
+ * and removes the checkout of a worktree that is now published and `active`.
+ * The client got a 200 and the agent's cwd does not exist.
+ *
+ * A reservation younger than this is presumed IN FLIGHT. Being wrong costs one
+ * sweep's delay — the next reconciliation catches a genuinely dead row — and
+ * being wrong the other way costs someone their session.
+ */
+const IN_FLIGHT_GRACE_MS = 60_000;
+
+function changedWithin(row: WorktreeAllocationRow, windowMs: number): boolean {
+  if (!row.updatedAt) return false;
+  const at = Date.parse(row.updatedAt);
+  return Number.isFinite(at) && Date.now() - at < windowMs;
+}
+
 async function exists(path: string): Promise<boolean> {
   return stat(path).then(
     () => true,
@@ -225,6 +249,15 @@ async function reconcileOne(
 
   switch (row.state) {
     case 'preparing': {
+      // A reservation that changed a moment ago is very likely a spawn still
+      // running, not a crash to clean up. Skip it and let the next sweep decide
+      // — the row is not going anywhere, and the cost of being hasty here is
+      // deleting a live session's working tree.
+      if (changedWithin(row, IN_FLIGHT_GRACE_MS)) {
+        record('preparing, changed within the grace window', 'left alone (possible live spawn)', null);
+        return;
+      }
+
       // Three §6.2 rows, distinguished by how far step 4→6 got before the
       // process died.
       if (!onDisk && inGit !== true) {
@@ -294,10 +327,19 @@ async function reconcileOne(
 const CLEANUP_MAX_ATTEMPTS = 5;
 
 /**
- * Remove a checkout and settle the allocation. The removal is `force: false`
- * for exactly the reason §5.3 gives — dirty and unpushed protection is not a
- * courtesy — so a checkout with uncommitted work stays `cleanup_pending` and
- * stays on disk, which is the outcome the design wants over a tidy database.
+ * Remove a checkout and settle the allocation.
+ *
+ * `force: false`, deliberately: `git worktree remove` refuses a DIRTY tree, so
+ * a checkout with uncommitted work stays on disk as `cleanup_pending`, which is
+ * the outcome §5.3 wants over a tidy database.
+ *
+ * To be precise about what that does and does not buy, because the distinction
+ * matters to anyone reading this before changing it: this is dirty protection
+ * ONLY. Git has no opinion about unpushed commits here, and §5.3's unpushed
+ * refusal — `unpushedCommitCount` / `preflight` on the manager — is not wired
+ * into this path. In practice no commits are lost anyway, since `worktree
+ * remove` leaves the branch ref behind; but do not read this function as
+ * enforcing the second half of §5.3, because it does not.
  */
 async function removeAndSettle(
   params: ReconcileParams,

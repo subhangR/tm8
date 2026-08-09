@@ -199,10 +199,16 @@ refuses('linking a session that does not exist is P0002, not a dangling edge',
 // --- P7/P8: the tracking observer surface ------------------------------------
 json(`select public.link_pull_request(${uuid(world.taskA)}, 'https://github.com/o/r/pull/7', 'github',
         'o/r', 7, null, ${uuid(memberA)}, ${literal(cmid(tag))})`, appA);
-const prId = scalar(`select entity_id::text from public.pull_requests limit 1`, ownerOpts);
+// Scoped to THIS run's space. A bare `limit 1` picks a stale row from an
+// earlier run's space against an accumulated database, and the test then fails
+// for a reason that has nothing to do with the code under test.
+const prId = scalar(
+  `select entity_id::text from public.pull_requests where space_id = ${uuid(spaceId)} limit 1`,
+  ownerOpts);
 {
   const prVersionBefore = Number(scalar(`select version from public.entities where id = ${uuid(prId)}`, ownerOpts));
 
+  run(`delete from public.tracking_refresh_requests where space_id = ${uuid(spaceId)}`, ownerOpts);
   run(`insert into public.tracking_refresh_requests(space_id, requested_by, entity_ids)
        values (${uuid(spaceId)}, ${uuid(memberA)}, array[${uuid(prId)}])`, ownerOpts);
 
@@ -247,6 +253,66 @@ const prId = scalar(`select entity_id::text from public.pull_requests limit 1`, 
       ownerOpts);
   const claim3 = json(`select public.claim_tracking_refresh(10, 600)`, appA);
   check('a stale running row is returned to the queue and reclaimed', claim3.claimed.length, 1);
+}
+
+// --- P9: the review's findings, pinned -----------------------------------------
+
+// The lease doors are no longer `require_identity()`-only. Clearing a lease is
+// exactly what frees 057's partial unique index to admit a SECOND session into
+// one working tree, so "the uuid is unguessable" was the only thing standing
+// between a cross-space caller and two agents writing the same checkout.
+refuses('a non-member cannot release another space\'s lease (§3.4 single-writer)',
+  `select public.release_worktree_lease(${uuid(WT1)})`,
+  { claims: claimsFor(identityB, null) }, '42501');
+refuses('nor acquire it',
+  `select public.acquire_worktree_lease(${uuid(WT1)}, ${uuid(memberA)})`,
+  { claims: claimsFor(identityB, null) }, '42501');
+refuses('nor mint its preflight token (§5.4)',
+  `select public.record_worktree_preflight(${uuid(WT1)}, 'forged')`,
+  { claims: claimsFor(identityB, null) }, '42501');
+refuses('releasing a lease that names nothing is reported, not silently true',
+  `select public.release_worktree_lease('66666666-6666-4666-8666-666666666666')`,
+  appA, 'P0002');
+
+// A vanished directory holds no disk, so `missing` must not consume a cap slot
+// — reconciliation treats it as terminal and nothing deletes allocation rows,
+// so counting it would eventually refuse every spawn on a capped node.
+json(`select public.set_worktree_allocation_state(${uuid(WT2)}, 'missing', null, null, false)`, appA);
+// Fresh id and fresh path per run — a fixed uuid here would 23505 on the second
+// run against the same database and report a cap failure that is really a
+// fixture collision. That is precisely the isolation defect this driver was
+// caught having elsewhere.
+const WT4 = `44444444-4444-4444-8444-${suffix()}`;
+check('a missing allocation does not hold a cap slot', (() => {
+  const res = run(
+    `select public.reserve_worktree_allocation(${uuid(WT4)},
+       ${uuid(spaceId)}, ${uuid(world.projectId)}, ${literal(NODE)},
+       ${literal(`/tmp/tm8-wp-${tag}/cap-${WT4.slice(-6)}`)},
+       ${literal(`tm8/${tag}-cap-${WT4.slice(-6)}`)}, 2)`,
+    { ...appA, verbose: true });
+  return res.ok || res.sqlstate;
+})(), true);
+
+// THE TRIGGER-DRIFT GUARD. 078 narrows two shipped snapshot triggers to a
+// hand-maintained column list. Nothing but this assertion stops the next person
+// who adds a column to `pull_requests` from silently losing versioning for it
+// forever — no migration error, no other failing test.
+const OBSERVATION_COLUMNS = ['entity_id', 'space_id', 'created_at', 'updated_at', 'fetched_at'];
+for (const table of ['pull_requests', 'commits']) {
+  const cols = json(
+    `select coalesce(jsonb_agg(column_name order by column_name), '[]'::jsonb)
+       from information_schema.columns
+      where table_schema = 'public' and table_name = ${literal(table)}
+        and column_name <> all(array[${OBSERVATION_COLUMNS.map(literal).join(',')}])`,
+    ownerOpts);
+  const def = scalar(
+    `select pg_get_triggerdef(t.oid) from pg_trigger t
+      where t.tgrelid = ${literal(`public.${table}`)}::regclass
+        and t.tgname = ${literal(`${table}_w2_snapshot_version`)}`,
+    ownerOpts);
+  const missing = cols.filter((c) => !String(def).includes(`new.${c} `) && !String(def).includes(`new.${c}\n`));
+  check(`${table}: every content column is in the snapshot trigger's WHEN list`,
+    missing, []);
 }
 
 // --- authorization ------------------------------------------------------------

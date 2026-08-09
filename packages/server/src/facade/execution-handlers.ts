@@ -613,7 +613,6 @@ export class DbGraphPort implements GraphPort {
       branch: string;
       baseRef: string;
       baseCommitOid: string;
-      clientMutationId: string | null;
     },
   ): Promise<void> {
     await this.db.rpc(this.claims(auth), 'public.create_worktree', [
@@ -684,6 +683,7 @@ export class DbGraphPort implements GraphPort {
       entity_exists: boolean;
       worktree_status: string | null;
       lease_session_status: string | null;
+      updated_at: string | null;
     }>(this.claims(auth), 'select * from public.node_worktree_allocations($1)', [nodeId]);
     return rows.map((r) => ({
       worktreeId: r.worktree_entity_id,
@@ -697,6 +697,7 @@ export class DbGraphPort implements GraphPort {
       entityExists: r.entity_exists === true,
       worktreeStatus: r.worktree_status,
       leaseSessionStatus: r.lease_session_status,
+      updatedAt: r.updated_at === null ? null : String(r.updated_at),
     }));
   }
 

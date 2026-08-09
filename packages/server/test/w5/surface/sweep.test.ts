@@ -398,7 +398,12 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 72 -> 73 on 2026-08-05: 077 (anchor-watcher notification fan-out). This
     // lane authored it as 076 in parallel with the reply-delivery lane; both
     // claimed the same free number, so it renumbered to 077 on landing.
-    expect(server.appliedMigrations.length).toBe(73);
+    // 73 -> 74 on 2026-08-09: 078 (worktree provisioning + the tracking
+    // observer's write surface). NOTE FOR WHOEVER MERGES SECOND: PR #52 also
+    // carries an 078, and 079-081 besides. The number in this pin is a COUNT,
+    // so it moves by however many land — but the ordinal collision on 078
+    // itself is resolved at merge time, not here.
+    expect(server.appliedMigrations.length).toBe(74);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

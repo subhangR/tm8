@@ -328,6 +328,7 @@ export class FakeGraph implements GraphPort {
       entityExists: false,
       worktreeStatus: null,
       leaseSessionStatus: null,
+      updatedAt: new Date().toISOString(),
     });
   }
 

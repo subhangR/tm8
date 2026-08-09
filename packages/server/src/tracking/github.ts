@@ -105,20 +105,32 @@ export class GithubClient {
     if (response.status === 404) return { ok: false, reason: 'not_found', detail: '404' };
     if (response.status === 401) return { ok: false, reason: 'unauthorized', detail: '401' };
     if (response.status === 403 || response.status === 429) {
-      // GitHub answers a spent rate limit with 403 and `x-ratelimit-remaining:
-      // 0`, which is otherwise indistinguishable from a genuine permission
-      // refusal. Telling them apart is what lets the observer back off instead
-      // of marking a request permanently failed.
+      // Three different things arrive as 403, and telling them apart is the
+      // difference between backing off and recording a permanent verdict on a
+      // transient throttle.
+      //
+      //   * PRIMARY rate limit — 403 with `x-ratelimit-remaining: 0`.
+      //   * SECONDARY rate limit (abuse detection) — 403 with `retry-after` and
+      //     a NON-ZERO `x-ratelimit-remaining`. Checking `remaining === '0'`
+      //     alone files this as `unauthorized`, which the observer then records
+      //     as a terminal failure for a limit that clears in seconds.
+      //   * A genuine permission refusal — neither header.
       const remaining = response.headers.get('x-ratelimit-remaining');
-      if (response.status === 429 || remaining === '0') {
+      const retryAfter = response.headers.get('retry-after');
+      if (response.status === 429 || remaining === '0' || retryAfter !== null) {
         return {
           ok: false,
           reason: 'rate_limited',
-          detail: `reset at ${response.headers.get('x-ratelimit-reset') ?? 'unknown'}`,
+          detail: retryAfter !== null
+            ? `retry after ${retryAfter}s`
+            : `reset at ${response.headers.get('x-ratelimit-reset') ?? 'unknown'}`,
         };
       }
       return { ok: false, reason: 'unauthorized', detail: '403' };
     }
+    // Everything else, 5xx included: `unavailable` means "I did not learn
+    // anything", which keeps it retryable. A `not_found` here would be a lie
+    // about a pull request that is probably fine.
     return { ok: false, reason: 'unavailable', detail: `http ${String(response.status)}` };
   }
 
