@@ -22,6 +22,7 @@ import type { W2BlobStore } from '../../../files/w2-blob-store.js';
 import { claimsFor, commandEnvelope, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { canonicalDirectory, canonicalRoots, requireAllowed } from './project-directories.js';
+import { isSecretBasename } from './project-file-policy.js';
 import {
   materializeProjectFolder,
   normalizeProjectFolderManifest,
@@ -127,6 +128,10 @@ export class W2ProjectFolderUploadService {
     const input = ctx.body as ProjectFolderUploadInitInput;
     const { claims, viewerIdentityId } = await this.requestClaims(ctx);
 
+    // C2 (Lane 3): PURE validation first — nothing below may touch the
+    // filesystem until every name in the request has been refused or cleared,
+    // so a hostile rootName/path never turns a stat into an existence oracle.
+    validateRootNameStrict(input.rootName);
     let manifest: NormalizedProjectFolderManifest;
     try {
       manifest = normalizeProjectFolderManifest(input.entries);
@@ -134,6 +139,7 @@ export class W2ProjectFolderUploadService {
       throw new CollabError('invalid_input', (error as Error).message);
     }
     for (const file of manifest.files) {
+      refuseProtectedComponents(file.relativePath);
       if (file.sizeBytes > this.maxSizeBytes) {
         throw new CollabError('payload_too_large', `${file.relativePath} exceeds the configured size limit`);
       }
@@ -141,8 +147,21 @@ export class W2ProjectFolderUploadService {
         throw new CollabError('invalid_input', `${file.relativePath} declares zero bytes with a non-empty checksum`);
       }
     }
+    for (const directory of manifest.directories) {
+      refuseProtectedComponents(directory);
+    }
 
+    // C1 (Lane 3): importing bytes onto the node's disk at an arbitrary
+    // in-roots destination is node-admin only, matching the createProject
+    // ensureWorkingDir precedent. Provisional policy until an owner approves
+    // a server-managed import root for ordinary members.
+    requireNodeAdmin(claims);
+
+    // Containment BEFORE the first probe of the target: a lexically
+    // out-of-jail parent is forbidden without any filesystem access, so the
+    // refusal cannot disclose what exists there.
     const roots = await canonicalRoots();
+    requireAllowed(resolve(input.destinationParent), roots);
     const destinationParent = await canonicalDirectory(input.destinationParent);
     requireAllowed(destinationParent, roots);
     const workingDir = resolve(destinationParent, input.rootName);
@@ -234,6 +253,9 @@ export class W2ProjectFolderUploadService {
   readonly complete: OperationHandler = async (ctx) => {
     const folderUploadId = requireUuidParam(ctx, 'folderUploadId');
     const { claims, viewerIdentityId } = await this.requestClaims(ctx);
+    // C1: gate BEFORE the session is even looked up — a non-admin cannot
+    // probe which folderUploadIds exist.
+    requireNodeAdmin(claims);
     const state = await this.loadState(folderUploadId, viewerIdentityId);
 
     if (new Date(state.expiresAt).getTime() <= this.now().getTime()) {
@@ -309,6 +331,7 @@ export class W2ProjectFolderUploadService {
   readonly abort: OperationHandler = async (ctx) => {
     const folderUploadId = requireUuidParam(ctx, 'folderUploadId');
     const { claims, viewerIdentityId } = await this.requestClaims(ctx);
+    requireNodeAdmin(claims);
     const state = await this.loadState(folderUploadId, viewerIdentityId);
     await this.release(claims, state);
     return { patches: [] } satisfies CommandResult;
@@ -393,6 +416,41 @@ export class W2ProjectFolderUploadService {
       if (file.storagePath !== null) {
         await this.options.blobStore.remove(file.storagePath, spaceId).catch(() => undefined);
       }
+    }
+  }
+}
+
+function requireNodeAdmin(claims: DbClaims): void {
+  if (claims.nodeAdmin !== true) {
+    throw new CollabError('forbidden', "node-admin access is required to import a folder onto the node's disk");
+  }
+}
+
+/** rootName is ONE directory name: no separators, no dot-dirs, no secrets. */
+function validateRootNameStrict(rootName: string): void {
+  if (
+    rootName.length === 0
+    || rootName === '.'
+    || rootName === '..'
+    || /[\\/\u0000-\u001f\u007f]/.test(rootName)
+  ) {
+    throw new CollabError('invalid_input', 'rootName must be one directory name');
+  }
+  if (isSecretBasename(rootName) || rootName === '.git') {
+    throw new CollabError('invalid_input', 'rootName names a protected file');
+  }
+}
+
+/**
+ * C2/C3: a browser import never writes credential material or repo internals.
+ * `.git` as ANY component is refused (a replaced .git/config in a live repo is
+ * an RCE-adjacent write), and the Lane 3 secret policy covers .env*, key
+ * material and credential homes. Pure string checks — no filesystem here.
+ */
+function refuseProtectedComponents(relativePath: string): void {
+  for (const segment of relativePath.split('/')) {
+    if (segment === '.git' || isSecretBasename(segment)) {
+      throw new CollabError('invalid_input', `entry path names a protected file: ${relativePath}`);
     }
   }
 }

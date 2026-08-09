@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
-import { access, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { access, lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+
+import { secretReason } from './project-file-policy.js';
 
 import {
   PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES,
@@ -250,6 +252,27 @@ async function exists(path: string): Promise<boolean> {
 }
 
 /**
+ * mkdir -p that never follows a symlink: each component is lstat'ed and a
+ * link (or anything that is not a directory) refuses the walk. Returns the
+ * final directory path.
+ */
+async function mkdirWalked(root: string, segments: readonly string[]): Promise<string> {
+  let current = root;
+  for (const segment of segments) {
+    current = resolve(current, segment);
+    const entry = await lstat(current).catch(() => null);
+    if (entry === null) {
+      await mkdir(current);
+    } else if (entry.isSymbolicLink()) {
+      throw new Error(`refusing a symlinked path component at ${relative(root, current)}`);
+    } else if (!entry.isDirectory()) {
+      throw new Error(`a file is in the way of directory ${relative(root, current)}`);
+    }
+  }
+  return current;
+}
+
+/**
  * R8 merge-and-replace. The existing root is REQUIRED. Every byte is written
  * and verified inside a sibling staging directory first, so a size or
  * checksum failure leaves the existing root byte-identical; only the apply
@@ -282,16 +305,34 @@ async function mergeProjectFolder(
     }
 
     // Everything verified; apply. Directories first, then per-file rename.
+    //
+    // C3 (Lane 3): the EXISTING root is hostile ground. Every intermediate
+    // component is walked with lstat and a symlink anywhere in the chain
+    // refuses the whole merge — mkdir/rename through a link would write
+    // outside the jail. Targets are checked with lstat too (a symlink target
+    // is never replaced), the Lane 3 secret policy refuses credential and
+    // .git-internals destinations, and the canonical parent is re-verified
+    // immediately before each rename to close the component-swap window.
     for (const directory of input.manifest.directories) {
-      await mkdir(resolve(workingDir, ...directory.split('/')), { recursive: true });
+      await mkdirWalked(workingDir, directory.split('/'));
     }
     for (const file of input.manifest.files) {
       const segments = file.relativePath.split('/');
-      const target = resolve(workingDir, ...segments);
-      if (segments.length > 1) {
-        await mkdir(resolve(workingDir, ...segments.slice(0, -1)), { recursive: true });
+      const parentDir = await mkdirWalked(workingDir, segments.slice(0, -1));
+      const target = resolve(parentDir, segments.at(-1)!);
+      const withheld = secretReason(workingDir, target);
+      if (withheld !== null) {
+        throw new Error(`refusing to write ${file.relativePath}: ${withheld}`);
       }
-      if (await exists(target)) replacedCount += 1;
+      const existing = await lstat(target).catch(() => null);
+      if (existing?.isSymbolicLink()) {
+        throw new Error(`refusing to replace a symlink at ${file.relativePath}`);
+      }
+      if (existing) replacedCount += 1;
+      const canonicalParent = await realpath(parentDir);
+      if (!isWithinRoot(canonicalParent, resolvedWorkingDir) && canonicalParent !== resolvedWorkingDir) {
+        throw new Error(`parent of ${file.relativePath} escaped the destination root`);
+      }
       await rename(resolve(stagingDir, ...segments), target);
     }
 

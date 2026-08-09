@@ -421,3 +421,124 @@ describe('projects.folderUploads lifecycle', () => {
     )).rejects.toMatchObject({ code: 'not_found' });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Lane 3 security corrections (C1/C2/C3). Each of these failed on 8ea0e14
+// before the correction delta and passes after it — red-then-green proofs.
+// ---------------------------------------------------------------------------
+describe('projects.folderUploads security corrections', () => {
+  function configuredWithOwner(db: Db, isNodeAdmin: boolean): HandlerRegistry {
+    const registry = new HandlerRegistry();
+    const blobStore = createW2BlobStore({ dataDir, maxSizeBytes: 1024 });
+    registerW2ProjectFolderUploadHandlers(
+      registry,
+      {
+        db,
+        config: {
+          host: '127.0.0.1', port: 0, uiDir: undefined,
+          maxBodyBytes: 1024 * 1024, databaseUrl: 'postgres://unused',
+        },
+        owner: async () => ({ ...OWNER, isNodeAdmin }),
+      },
+      { blobStore, stateDir, maxSizeBytes: 1024 },
+    );
+    return registry;
+  }
+
+  it('C1: a non-node-admin caller is forbidden on init AND complete', async () => {
+    const adminRegistry = configuredWithOwner(stagingDb(), true);
+    const nonAdminRegistry = configuredWithOwner(stagingDb(), false);
+
+    await expect(handler(nonAdminRegistry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody() }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+
+    // Open as the admin, then try to complete as the SAME identity with the
+    // admin bit gone — the refusal must be the node-admin gate, not the
+    // wrong-identity gate.
+    const grant = await handler(adminRegistry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', { params: { spaceId: SPACE }, body: initBody() }),
+    ) as ProjectFolderUploadGrant;
+    await expect(handler(nonAdminRegistry, 'projects.folderUploads.complete')(
+      request('projects.folderUploads.complete', {
+        params: { folderUploadId: grant.folderUploadId },
+        body: { clientMutationId: 'cmid-sec-1' },
+      }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+  });
+
+  it('C2: traversal/absolute rootName and secret entry names refuse BEFORE any filesystem probe', async () => {
+    const db = stagingDb();
+    const { registry } = configured(db);
+    const init = handler(registry, 'projects.folderUploads.init');
+
+    for (const rootName of ['../x', '/abs', 'a/b', '..', '.env']) {
+      await expect(init(request('projects.folderUploads.init', {
+        params: { spaceId: SPACE },
+        body: initBody({ rootName }),
+      })), rootName).rejects.toMatchObject({ code: 'invalid_input' });
+    }
+    // No slot was ever opened and no session was frozen: validation came first.
+    expect(db.calls.filter((call) => call.name === 'w2_init_file_upload')).toHaveLength(0);
+
+    // A secret-named or .git entry refuses with invalid_input, naming no
+    // filesystem fact.
+    for (const relativePath of ['.env', 'sub/.ssh/id_rsa', '.git/config']) {
+      await expect(init(request('projects.folderUploads.init', {
+        params: { spaceId: SPACE },
+        body: initBody({
+          entries: [{ kind: 'file', relativePath, sizeBytes: BODY.length, checksumSha256: CHECKSUM, mime: 'text/plain' }],
+        }),
+      })), relativePath).rejects.toMatchObject({ code: 'invalid_input' });
+    }
+
+    // Outside the jail the answer is forbidden — never conflict/not_found,
+    // which would disclose what exists there.
+    await expect(init(request('projects.folderUploads.init', {
+      params: { spaceId: SPACE },
+      body: initBody({ destinationParent: '/nonexistent-far-outside-the-jail' }),
+    }))).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('C3: merge refuses a symlinked intermediate directory in the existing root', async () => {
+    const { symlink } = await import('node:fs/promises');
+    const db = stagingDb();
+    db.queryImpl = (async <R>(_claims: DbClaims, sql: string, params: readonly unknown[]): Promise<R[]> => {
+      if (sql.includes('file_upload_slots')) {
+        return (params[0] as string[]).map((id) => ({
+          id, status: 'pending', staged_at: new Date().toISOString(),
+          staged_size_bytes: BODY.length, staged_checksum_sha256: CHECKSUM,
+        })) as R[];
+      }
+      if (sql.includes('public.projects')) return [{ ...PROJECT_ROW, working_dir: params[0] }] as R[];
+      throw new Error(`unexpected query: ${sql}`);
+    });
+    const { registry, blobStore } = configured(db);
+
+    const target = join(projectRoot, 'imported');
+    const outside = await tempDir('tm8-pfu-escape-');
+    await mkdir(target, { recursive: true });
+    await symlink(outside, join(target, 'src'));
+
+    const grant = await handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', {
+        params: { spaceId: SPACE },
+        body: initBody({
+          mode: 'merge',
+          entries: [{ kind: 'file', relativePath: 'src/data.bin', sizeBytes: BODY.length, checksumSha256: CHECKSUM, mime: 'application/octet-stream' }],
+        }),
+      }),
+    ) as ProjectFolderUploadGrant;
+    await stageGrantBytes(blobStore, grant);
+
+    await expect(handler(registry, 'projects.folderUploads.complete')(
+      request('projects.folderUploads.complete', {
+        params: { folderUploadId: grant.folderUploadId },
+        body: { clientMutationId: 'cmid-sec-2' },
+      }),
+    )).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringMatching(/symlink/i) });
+
+    // Nothing escaped the jail through the link.
+    expect(await readdir(outside)).toEqual([]);
+  });
+});
