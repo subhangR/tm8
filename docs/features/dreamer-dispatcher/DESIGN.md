@@ -37,6 +37,8 @@ parallel memory system.
 | D6 | Loop kind | **First-class core entity kind.** Full graph citizen: schedule expression, spawn configuration; each firing creates/derives a task and spawns on it, with edges to the loop, so the graph is maintained. |
 | D7 | Dreamer powers | Sweep **through teammates and their memory edges** and clean them: mark (disputes/supersedes/staleness) + consolidate (author new memories that supersede clusters). **No hard delete, no persona/identity edits.** |
 | D8 | Seeding | Dispatcher teammate + default Dreamer loop seeded at space bootstrap alongside the default teammates (`default-teammates.ts` path). |
+| D9 *(2026-08-09, post-P1, Subhang)* | One memory edge, any holder | `remembers` (056's existing edge — P1 used it instead of minting `remembered_by`) is THE memory-association edge, and its src widens to **any entity kind**. Task-attached memories (D3b) are `remembers(task → memory)`, NOT `attached_to`. |
+| D10 *(2026-08-09, post-P1, Subhang)* | Authorship is remembered | When a session creates a memory, the server auto-creates `remembers(work_session → memory)` — the authoring session tags itself, no caller action. Applies to session-authored memories; reads do NOT create edges (authorship is signal, reads are noise). |
 
 ## 3. Current-state grounding (verified in tree, 2026-08-09)
 
@@ -80,29 +82,34 @@ parallel memory system.
 
 ### 4.1 Memory substrate (completing 056)
 
-- New edge type `remembered_by` (memory → team_member) is the operational
-  "this memory belongs to this teammate's working set" link. (056's epistemic
-  edges stay what they are: provenance/verification, not routing.)
-- New edge use: memory → task attachment (D3b). Reuse `attached_to` is
-  FORBIDDEN for provenance-lookalikes per the 064 lesson only when a reuse
-  lookup keys on it; here attachment IS the user semantic, so
-  `attached_to(memory → task)` is correct and inherits RLS/purge/events.
-- Migration path off jsonb: a one-time migration converts each
-  `team_members.memories[]` element into a memory entity +
-  `remembered_by` edge; `manifest.ts` switches from `member.memories` to a
-  graph read; the jsonb column is dropped in a later migration once the read
-  path is proven (two-step, since :7777/:7778 serve frozen binaries).
+> **AMENDED post-P1.** P1 found 056 already registers `remembers`
+> (src member|team_member|work_session → memory) and used it instead of
+> minting `remembered_by` — a mirror type would be the parallel-substrate
+> anti-pattern D1 forbids. D9 then widened it: `remembers` src becomes ANY
+> entity kind, and task attachment is `remembers(task → memory)`, retiring
+> this section's `attached_to` proposal. D10 adds auto-authorship: a
+> session that creates a memory gets `remembers(work_session → memory)`
+> written by the server. The paragraphs below are the original text, kept
+> for the record.
+
+- ~~New edge type `remembered_by` (memory → team_member)~~ → shipped as
+  056's existing `remembers` edge (P1, migration 084).
+- ~~`attached_to(memory → task)` for task attachment~~ → D9:
+  `remembers(task → memory)`; one edge type carries every holder.
+- Migration path off jsonb: DONE in 084 (convert + empty, column kept);
+  the jsonb column is dropped in a later migration once every reader/writer
+  is proven off it (two-step, since :7777/:7778 serve frozen binaries).
 
 ### 4.2 Injection at spawn (D3)
 
 `loadSpawnContext` gains two memory sources, composed into the existing
 `agent.memory` manifest field (prompt templates unchanged in shape):
 
-1. Teammate working set: memories with `remembered_by` → the teammate
-   (replaces the jsonb read at `manifest.ts:967`).
-2. Task-attached: memories with `attached_to` → any task in `taskIds`
-   (auto-injected; this is how the Dispatcher hands context to the session it
-   spawns, and how any agent enriches a task for future sessions).
+1. Teammate working set: memories the teammate `remembers`
+   (replaces the jsonb read at `manifest.ts:967`). SHIPPED in P1.
+2. Task-attached: memories any task in `taskIds` `remembers` (D9;
+   auto-injected; this is how the Dispatcher hands context to the session it
+   spawns, and how any agent enriches a task for future sessions). P2.
 3. Request `memoryIds` (spawn-time append, D3a): validated same-space memory
    entities, injected for THAT session only. CLI: `tm8 session spawn
    --memory <id>` (repeatable).
@@ -182,12 +189,12 @@ last_error      text null
 - A seeded teammate ("Dreamer", worker mode, persona = the cleanup mission)
   plus a seeded default loop (`every 1d`, disabled-by-default is NOT wanted —
   seeded enabled, per D8's "from day one"; interval reviewable).
-- Each firing: walk the space's teammates and their `remembered_by` sets plus
+- Each firing: walk the space's teammates and their `remembers` sets plus
   epistemic edges, then:
   - **Mark**: write `disputes`/`supersedes`/staleness edges on memories that
     contradict newer evidence or reference dead entities.
   - **Consolidate**: author new merged memories that `supersedes` clusters of
-    overlapping ones; move the `remembered_by` working-set edge to the
+    overlapping ones; move the `remembers` working-set edge to the
     consolidated memory.
   - Never hard-delete; never edit teammate `identity`; report a summary
     message on its task anchor every run (work nobody can see has not
@@ -226,10 +233,10 @@ last_error      text null
 
 ## 6. Phasing
 
-1. **P1 Memory substrate**: `remembered_by` edge type + jsonb→entity
+1. **P1 Memory substrate** (SHIPPED, commit 03aa252): `remembers` working set + jsonb→entity
    migration + manifest read switch + `memoryIds` on spawn + `--memory` CLI.
    (Ships value alone: spawn-time memory append.)
-2. **P2 Task-attached injection**: `attached_to(memory→task)` +
+2. **P2 Task-attached injection**: `remembers(task→memory)` (D9) + src widening + D10 auto-authorship +
    `loadSpawnContext` merge + UI attach affordance on tasks.
 3. **P3 Dispatcher**: mode enum + kernel + `execution.dispatch` +
    resident resolution + LaunchSheet Dispatch option + seeding.
