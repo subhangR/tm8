@@ -46,6 +46,7 @@ import {
 } from '@tm8/execution';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import { dispatchRequestInjection } from '@tm8/prompt';
+import type { LoopExecutorPort } from '../scheduler/jobs/loops.js';
 import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
   ExecutionDispatchInput,
@@ -1273,6 +1274,170 @@ export interface RegisterHandlersOptions {
   readonly dispatchDelivery?: DispatchDelivery;
 }
 
+/**
+ * Find the space's live dispatcher session, or spawn one and wait for it.
+ *
+ * Shared by `execution.dispatch` and the loop executor rather than written
+ * twice: two copies of "is there a dispatcher" would eventually disagree about
+ * the liveness rule, and the whole reason this is server-side is that the
+ * liveness rule is the part everyone gets wrong.
+ */
+async function resolveDispatcherSession(
+  db: Db,
+  claims: DbClaims,
+  pty: PtyHostService,
+  spawnService: SpawnService,
+  spaceId: string,
+  clientMutationId: string,
+): Promise<{ sessionId: string; spawned: boolean }> {
+  const live = await findLiveDispatcherSession(db, claims, spaceId, pty);
+  if (live) return { sessionId: live, spawned: false };
+
+  // Agents can never seed teammates (that is boot's job), so a space with no
+  // dispatcher teammate is a configuration fact to report, not a thing to fix
+  // by inventing a persona.
+  const teammates = await db.query<{ id: string }>(
+    claims,
+    `select tm.entity_id::text id
+       from public.team_members tm
+       join public.entities e on e.id = tm.entity_id
+      where e.space_id = $1 and e.deleted_at is null and tm.mode = 'dispatcher'
+      order by tm.created_at
+      limit 1`,
+    [spaceId],
+  );
+  const teammateId = teammates[0]?.id;
+  if (!teammateId) {
+    throw fail(
+      'not_found',
+      'this space has no dispatcher teammate; it is seeded at boot and cannot be created at runtime',
+    );
+  }
+  const spawned = await rethrowing(() =>
+    spawnService.spawn(claims, {
+      spaceId,
+      teamMemberId: teammateId,
+      parentSessionId: null,
+      projectId: null,
+      mode: 'dispatcher',
+      model: null,
+      agentTool: null,
+      reasoningEffort: null,
+      accessMode: null,
+      title: 'Dispatcher',
+      promptExtra: null,
+      clientMutationId,
+    }),
+  );
+  await awaitDispatcherSettlement(pty, spawned.sessionId);
+  return { sessionId: spawned.sessionId, spawned: true };
+}
+
+/**
+ * The live `LoopExecutorPort` (dreamer-dispatcher §4.4).
+ *
+ * This is the seam that keeps `scheduler/jobs/loops.ts` testable: the job
+ * itself imports no PTY host and no SpawnService, so it can be exercised
+ * against fakes. This factory is where the real ones get attached, and it lives
+ * in this file because this file is already the ONLY place that knows both
+ * `Db` and `PtyHostService`.
+ *
+ * A firing does three things, in an order chosen so a crash between any two
+ * leaves the graph honest rather than lying:
+ *   1. derive the task (064) — idempotent, reused if one already exists;
+ *   2. `triggered_by` from that task to the loop, BEFORE spawning, so a firing
+ *      that dies mid-spawn still shows in the loop's run history;
+ *   3. spawn (or route to the dispatcher), then `triggered_by` from the
+ *      session too.
+ */
+export function createLoopExecutorPort(deps: {
+  db: Db;
+  pty: PtyHostService;
+  spawnService: SpawnService;
+  resolveOwner: () => Promise<LoopbackOwner>;
+}): LoopExecutorPort {
+  const { db, pty, spawnService, resolveOwner } = deps;
+
+  const claimsForOwner = async (): Promise<DbClaims> => {
+    const owner = await resolveOwner();
+    // The node's loopback owner, exactly as ghost reconciliation does it: a
+    // scheduled firing has no HTTP request and therefore no caller identity,
+    // and `require_space_member` has no node-admin bypass.
+    return {
+      identityId: owner.identityId,
+      nodeAdmin: owner.isNodeAdmin,
+      requestId: 'loop-executor',
+    };
+  };
+
+  return {
+    claimsFor: claimsForOwner,
+    liveSessionIds: () => pty.liveSessionIds(),
+    async fire(loop, claims) {
+      // The loop is its OWN launchable subject when it names none (§4.4), so
+      // there is always something to derive a task from.
+      const [taskId] = await resolveAssignmentAnchors(
+        db, claims, loop.spaceId, [loop.subjectId ?? loop.entityId],
+      );
+      if (!taskId) {
+        throw new Error(`derive_task_for_entity returned no task for loop ${loop.entityId}`);
+      }
+
+      await writeTriggeredBy(db, claims, taskId, loop.entityId, `loop-fire-task:${loop.entityId}`);
+
+      const sessionId = loop.teamMemberId
+        ? (await spawnService.spawn(claims, {
+            spaceId: loop.spaceId,
+            teamMemberId: loop.teamMemberId,
+            parentSessionId: null,
+            taskIds: [taskId],
+            projectId: null,
+            mode: null,
+            model: (loop.config?.['model'] as string | undefined) ?? null,
+            agentTool: (loop.config?.['agentTool'] as string | undefined) ?? null,
+            reasoningEffort: null,
+            accessMode: (loop.config?.['accessMode'] as never) ?? null,
+            title: loop.title,
+            // The loop's instruction is launch-manifest context, not a runtime
+            // prompt — the same channel `--context` uses.
+            promptExtra: loop.prompt === '' ? null : loop.prompt,
+            clientMutationId: `loop-fire:${loop.entityId}:${taskId}`,
+          })).sessionId
+        // A null runner means "route through the dispatcher" (§4.4). Resolve or
+        // spawn it and hand it the task; the dispatcher picks who actually runs.
+        : (await resolveDispatcherSession(
+            db, claims, pty, spawnService, loop.spaceId,
+            `loop-fire-dispatcher:${loop.entityId}:${taskId}`,
+          )).sessionId;
+
+      await writeTriggeredBy(db, claims, sessionId, loop.entityId, `loop-fire-session:${loop.entityId}:${sessionId}`);
+      return { taskId, sessionId };
+    },
+  };
+}
+
+/** Run history is the loop's inbound edge set; best-effort, never fatal. */
+async function writeTriggeredBy(
+  db: Db,
+  claims: DbClaims,
+  srcId: string,
+  loopId: string,
+  clientMutationId: string,
+): Promise<void> {
+  try {
+    await db.tx(claims, async (q) => {
+      await q.rpc('write_edge', [
+        srcId, loopId, 'triggered_by',
+        JSON.stringify({ firedAt: new Date().toISOString() }),
+        null, clientMutationId,
+      ]);
+    });
+  } catch {
+    // A duplicate edge (a re-derived task firing twice) is not a failure, and
+    // provenance is never worth failing a live firing for.
+  }
+}
+
 function registerHandlers(
   registry: HandlerRegistry,
   spawnService: SpawnService,
@@ -1570,50 +1735,12 @@ function registerHandlers(
       throw fail('upstream_unavailable', `could not derive a task for ${input.subjectId}`);
     }
 
-    let dispatcherSessionId = await findLiveDispatcherSession(db, claims, input.spaceId, pty);
-    let dispatcherSpawned = false;
-
-    if (!dispatcherSessionId) {
-      // Agents can never seed teammates (that is boot's job), so a space with
-      // no dispatcher teammate is a configuration fact to report, not a thing
-      // to fix by inventing a persona.
-      const teammates = await db.query<{ id: string }>(
-        claims,
-        `select tm.entity_id::text id
-           from public.team_members tm
-           join public.entities e on e.id = tm.entity_id
-          where e.space_id = $1 and e.deleted_at is null and tm.mode = 'dispatcher'
-          order by tm.created_at
-          limit 1`,
-        [input.spaceId],
-      );
-      const teammateId = teammates[0]?.id;
-      if (!teammateId) {
-        throw fail(
-          'not_found',
-          'this space has no dispatcher teammate; it is seeded at boot and cannot be created at runtime',
-        );
-      }
-      const spawned = await rethrowing(() =>
-        spawnService.spawn(claims, {
-          spaceId: input.spaceId,
-          teamMemberId: teammateId,
-          parentSessionId: null,
-          projectId: null,
-          mode: 'dispatcher',
-          model: null,
-          agentTool: null,
-          reasoningEffort: null,
-          accessMode: null,
-          title: 'Dispatcher',
-          promptExtra: null,
-          clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatcher-spawn`,
-        }),
-      );
-      dispatcherSessionId = spawned.sessionId;
-      dispatcherSpawned = true;
-      await awaitDispatcherSettlement(pty, dispatcherSessionId);
-    }
+    const resolved = await resolveDispatcherSession(
+      db, claims, pty, spawnService, input.spaceId,
+      `${envelope.clientMutationId ?? input.clientMutationId}:dispatcher-spawn`,
+    );
+    const dispatcherSessionId = resolved.sessionId;
+    const dispatcherSpawned = resolved.spawned;
 
     // Stored on the TASK, addressed at the SESSION. Both, deliberately: the
     // anchor is where a human (and the dispatcher's own next wake) can find the

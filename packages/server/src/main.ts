@@ -28,7 +28,8 @@ import {
   SubscriptionRegistry,
   WorkspaceEventPublisher,
 } from './events/index.js';
-import { createExecutionRuntime } from './facade/execution-handlers.js';
+import { createExecutionRuntime, createLoopExecutorPort } from './facade/execution-handlers.js';
+import { createDefaultScheduler, type Scheduler } from './scheduler/index.js';
 import { commandEnvelope } from './facade/context.js';
 import { createW2ExecutionDelivery, verifyDeliveryPrincipal } from './facade/services/w2/execution.js';
 import { HandlerRegistry, registerFacadeHandlers } from './facade/index.js';
@@ -92,6 +93,12 @@ export interface BootstrappedServer {
    * against. Narrowed to `url` + `close` for the same reason `delivery` is.
    */
   readonly preview: { readonly url: string; close(): Promise<void> } | undefined;
+  /**
+   * The R26 job runner, when this node has both a database and an execution
+   * block. Narrowed to `stop` because the composition root owns its lifetime
+   * and nothing else may register jobs onto it after boot.
+   */
+  readonly scheduler: Scheduler | undefined;
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<BootstrappedServer> {
@@ -561,6 +568,37 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   }
 
   /**
+   * The R26 scheduler — CONSTRUCTED AND STARTED HERE, and until this commit
+   * nowhere at all.
+   *
+   * `createDefaultScheduler` existed with backup and four retention jobs, and
+   * every reference to it in the tree was a doc comment: no production path
+   * ever built a `Scheduler`, so no scheduled job on this node has ever run.
+   * The loop executor would have inherited exactly that fate — a `loop` kind, a
+   * migration, a door and an executor, all reachable only from tests.
+   *
+   * NO SIDECAR IS PASSED, deliberately. Attaching one would register the daily
+   * `pg_dump` and start taking backups on nodes that have never taken one,
+   * which is a real operational change well outside this feature's remit and
+   * belongs to whoever owns backups. The retention jobs registered alongside
+   * are the W1 stubs: each reports `skipped` with a reason and touches nothing.
+   *
+   * AFTER listen(), like ghost reconciliation: a scheduled job must never be
+   * able to delay or prevent the node accepting connections.
+   */
+  let scheduler: Scheduler | undefined;
+  if (db && execution && owner) {
+    const port = createLoopExecutorPort({
+      db,
+      pty: execution.pty,
+      spawnService: execution.spawnService,
+      resolveOwner: owner,
+    });
+    scheduler = createDefaultScheduler({ loops: { db, port } });
+    scheduler.start();
+  }
+
+  /**
    * Retire the sessions this node left behind when it last died.
    *
    * A PTY lives in THIS process, so every restart kills its agents — but their
@@ -581,12 +619,12 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     }
   }
 
-  return { server, subscriptions, events, url, db, delivery, preview };
+  return { server, subscriptions, events, url, db, delivery, preview, scheduler };
 }
 
 export async function main(): Promise<void> {
   try {
-    const { server, url, db, delivery, preview } = await bootstrap();
+    const { server, url, db, delivery, preview, scheduler } = await bootstrap();
     const { registry, router } = server;
     console.log(`tm8-server listening on ${url}`);
     console.log(
@@ -598,6 +636,9 @@ export async function main(): Promise<void> {
     );
     console.log(`  graph: ${db ? 'connected' : 'NOT CONFIGURED (set TM8_DATABASE_URL) — all operations answer 501'}`);
     console.log(`  delivery: ${delivery ? 'wired' : 'NOT CONFIGURED (set TM8_DELIVERY_DATABASE_URL) — messages are stored but never pushed to a live terminal'}`);
+    console.log(
+      `  scheduler: ${scheduler ? `${scheduler.status().jobs.length} job(s) running (loops + retention stubs; backup NOT attached)` : 'NOT RUNNING (needs a database and an execution block)'}`,
+    );
     console.log(`  ws: /v2/ws  ·  health: ${url}/health`);
 
     // Close the pool as well as the listener. A pool left open holds the
@@ -607,6 +648,7 @@ export async function main(): Promise<void> {
       console.log(`\n${signal} — shutting down`);
       void server
         .close()
+        .then(() => scheduler?.stop())
         .then(() => preview?.close())
         .then(() => delivery?.close())
         .then(() => db?.end())
