@@ -546,6 +546,7 @@
 .cv2-root .pn-head__title--struck { color: var(--pn-ink-3); text-decoration: line-through; }
 .cv2-root .pn-head__title--absent { color: var(--pn-ink-4); }
 .cv2-root .pn-head__spacer { flex: 1; min-width: 0; }
+.cv2-root .pn-head__supplemental { min-width: 0; padding-left: 23px; }
 
 .cv2-root .pn-actions {
   flex: none;

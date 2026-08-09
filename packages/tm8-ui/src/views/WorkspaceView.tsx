@@ -361,6 +361,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           ) : undefined}
           messages={messages}
           connections={data.connectionsOf(id)}
+          linkedPullRequests={data.linkedPullRequestsOf?.(id) ?? []}
           onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${id}:${Date.now()}`, anchorIds: [id], body })}
           onResumeSession={() => handleSessionResume(id)}
           resumingSession={resumingId === id}
@@ -468,6 +469,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={leftConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
@@ -558,6 +560,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           activity={data.activity}
           messagePulses={data.messagePulses}
           linkedTasksOf={linkedTasksOf}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           selectedId={nav.stack[nav.stack.length - 1] ?? null}
           onSelect={openEntity}
           onTerminate={rightConfig.list.tile.anatomy === 'session-tree' ? handleSessionClose : undefined}
