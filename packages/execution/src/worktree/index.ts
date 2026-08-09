@@ -44,3 +44,24 @@ export {
   type MergeResult,
   type RollbackResult,
 } from './git-mutations.js';
+// Tier 2 completion — cherry-pick / branch ops / stash (same subpath law).
+export {
+  assertGitLegalBranchName,
+  branchCreate,
+  branchDelete,
+  branchRename,
+  checkedOutBranches,
+  cherryPick,
+  stashDrop,
+  stashList,
+  stashPop,
+  stashPush,
+  type BranchCreateResult,
+  type BranchDeleteResult,
+  type BranchRenameResult,
+  type CherryPickResult,
+  type StashDropResult,
+  type StashEntry,
+  type StashPopResult,
+  type StashPushResult,
+} from './git-mutations.js';
