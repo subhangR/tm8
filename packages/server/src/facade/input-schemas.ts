@@ -28,6 +28,9 @@ import {
   AuthLogoutInputSchema,
   AuthSignupInputSchema,
   CollectionQuerySchema,
+  CredentialsDeleteInputSchema,
+  CredentialsLoginSessionFinishInputSchema,
+  CredentialsLoginSessionStartInputSchema,
   CreateAttentionRequestInputSchema,
   CorrectProjectAssociationInputSchema,
   CompleteTaskInputSchema,
@@ -117,6 +120,16 @@ export const INPUT_SCHEMAS: Partial<Record<OperationName, ZodTypeAny>> = {
   'auth.signup': AuthSignupInputSchema,
   'auth.login': AuthLoginInputSchema,
   'auth.logout': AuthLogoutInputSchema,
+
+  // credentials (Tier B). All three command bodies are BOUND rather than
+  // enumerated as unbound gaps, because strictness here is a security control
+  // and not only a validation nicety: none of these DTOs declares `actorId`, so
+  // an acting-as claim on the wire is a 400 instead of a field the server has
+  // to remember to ignore (finding D2). `credentials.status` is a read and
+  // carries no body.
+  'credentials.delete': CredentialsDeleteInputSchema,
+  'credentials.loginSessions.start': CredentialsLoginSessionStartInputSchema,
+  'credentials.loginSessions.finish': CredentialsLoginSessionFinishInputSchema,
 
   // node-local named Server routes
   'serverConnections.create': ServerConnectionCreateInputSchema,

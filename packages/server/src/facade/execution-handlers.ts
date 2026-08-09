@@ -66,6 +66,7 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
+import { DbAgentCredentialHome } from '../credentials/agent-credential-injection.js';
 import type { ServerConfig } from '../http/config.js';
 import { fail } from '../http/errors.js';
 import type { RequestContext } from '../http/types.js';
@@ -890,6 +891,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
+    // Per-member credential delivery. Wired ONLY when this node has a data
+    // root, because the credential home is a path underneath it: with no data
+    // root there is nowhere a login terminal could have written a credential,
+    // so there is nothing to read and the spawn loop behaves exactly as before.
+    ...(deps.dataDir
+      ? { credentialHome: new DbAgentCredentialHome({ db: deps.db, dataDir: deps.dataDir }) }
+      : {}),
     ...(worktrees ? { worktrees } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });
@@ -1010,6 +1018,12 @@ export function registerExecutionHandlers(
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
+    // Same wiring as `createExecutionRuntime` above, deliberately duplicated
+    // rather than shared: a node on the legacy shape must not silently lose
+    // per-member credentials just because it wires the runtime differently.
+    ...(deps.dataDir
+      ? { credentialHome: new DbAgentCredentialHome({ db: deps.db, dataDir: deps.dataDir }) }
+      : {}),
     ...(worktrees ? { worktrees } : {}),
     worktreeCap: resolveWorktreeCap(process.env),
   });

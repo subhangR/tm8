@@ -63,6 +63,12 @@ import type { ServerConfig } from '../../../src/http/config.js';
  * a source, this literal goes red rather than a range quietly absorbing it.
  */
 const PRESENCE_GATED = 'presence.get' as const;
+const CREDENTIAL_SEAM = new Set<OperationName>([
+  'credentials.status',
+  'credentials.delete',
+  'credentials.loginSessions.start',
+  'credentials.loginSessions.finish',
+]);
 
 class StubDb implements Db {
   async tx<T>(_claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
@@ -100,9 +106,13 @@ function compose(
   return new Set(registry.implemented());
 }
 
-/** Every v1 HTTP operation — the denominator both worlds are measured against. */
+/**
+ * Every unconditionally composed v1 HTTP operation. Credential handlers need
+ * the separate credential launcher seam, which this two-world presence proof
+ * intentionally holds absent in both compositions.
+ */
 const REGISTERABLE: readonly OperationName[] = OPERATIONS.filter(
-  ({ method, status }) => method !== 'WS' && status === 'v1',
+  ({ name, method, status }) => method !== 'WS' && status === 'v1' && !CREDENTIAL_SEAM.has(name),
 ).map(({ name }) => name as OperationName);
 
 describe('W5.F composition honesty — the presence source is the whole delta', () => {
@@ -137,7 +147,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
   // wave: serverConnections, artifacts, attention, voice et al). Mechanical
   // denominator moves only — the two-world presence semantics this file
   // measures are untouched.
-  it('CONTROL — the denominator is the 128 v1 HTTP rows, by exact count and exact membership', () => {
+  it('CONTROL — the denominator is the 128 unconditional v1 HTTP rows, by exact count and exact membership', () => {
     // 118 -> 122 (2026-08-02): the four auth.* rows (Identity v2 Stage 1).
     // 122 -> 123 (2026-08-02): execution.launch.
     // The 123 literal was ALREADY red at 124 when this lane arrived; 125 adds

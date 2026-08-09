@@ -128,6 +128,15 @@ describe('W5.C generator proof', () => {
       // 2026-08-02: auth.logout's only field is an optional sessionId — a bare
       // {} means "revoke the session presented in the Authorization header".
       'auth.logout',
+      // 2026-08-07: both credential command bodies carry ONLY an optional
+      // clientMutationId. The subject of each rides the PATH — the provider for
+      // `delete`, the work session id for `finish` — and neither DTO declares a
+      // field naming whose credential to act on, because the account is derived
+      // inside the RPC from the bound identity. A bare {} is the normal body.
+      // `credentials.loginSessions.start` is deliberately NOT here: it requires
+      // spaceId and provider, so {} is correctly refused.
+      'credentials.delete',
+      'credentials.loginSessions.finish',
       'entityKinds.update',
       'execution.terminate',
       'files.uploadAbort',
@@ -167,6 +176,7 @@ describe('W5.C generator proof', () => {
     // 64 -> 65 on 2026-08-01: execution.journal bound its query schema.
     // 65 -> 66 on 2026-08-01: identity.profile.update bound its input DTO.
     // 66 -> 69 on 2026-08-02: auth.signup/login/logout bound their input DTOs.
-    expect(ENTRIES).toHaveLength(70);
+    // 69 -> 70: entities.commands.gate; 70 -> 73: credentials.* command bodies.
+    expect(ENTRIES).toHaveLength(73);
   });
 });

@@ -37,7 +37,8 @@ import { isExitCode } from '../src/exit.js';
 // 128 -> 129 (2026-08-09): projects.branches.list — branch topology for a
 // project working directory, read with argv-only git.
 // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
-const EXPECTED_ROWS = 131;
+// 131 -> 135 (2026-08-09): the four human-only credentials.* operations.
+const EXPECTED_ROWS = 135;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
@@ -45,7 +46,7 @@ const params = (name: OperationName): Record<string, string> =>
 describe('the catalog itself is the shape W4 was briefed on', () => {
   it('131 rows = 129 v1 + 2 reserved, 130 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(129);
+    expect(V1_OPERATIONS.length).toBe(133);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -119,11 +120,11 @@ describe('every row resolves through the client and the error mapping', () => {
     }
 
     expect(resolved.size).toBe(EXPECTED_ROWS);
-    // 130 HTTP rows produced an honest 8; the single WS row produced usage 2
+    // 134 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(130);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(134);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(130);
+    expect(requested).toHaveLength(134);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -156,7 +157,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(130);
+    expect(httpRows).toBe(134);
   });
 });
 

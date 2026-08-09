@@ -533,7 +533,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 66 -> 69 (2026-08-02): auth.signup/login/logout (Identity v2 Stage 1);
     // auth.session.get is a GET and binds nothing.
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(70);
+    // 70 -> 73: the three credentials.* command bodies are bound.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(73);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -675,12 +676,13 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 127/124 -> 128/125 (2026-08-07): `execution.transcript`, mounted.
     // 128/125 -> 129/126 (2026-08-09): `projects.branches.list`, mounted.
     // 129/126 -> 131/128: entities.commands.gate + projects.contention.
-    expect(health).toMatchObject({ ok: true, operations: 130, implemented: 128 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
-    expect(harness.production.server.registry.size).toBe(128);
+    // 130/128 -> 134/132: the four credentials.* routes, all mounted.
+    expect(health).toMatchObject({ ok: true, operations: 134, implemented: 132 });
+    expect(harness.production.server.registry.size).toBe(132);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -697,7 +699,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
-    expect(registered.size + residual.length).toBe(128);
+    // 128 -> 132: credentials.*.
+    expect(registered.size + residual.length).toBe(132);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

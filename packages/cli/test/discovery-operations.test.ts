@@ -50,7 +50,8 @@ import { createOutput } from '../src/output.js';
 // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
 // 128 -> 129 (2026-08-09): projects.branches.list (public, with a command).
 // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
-const EXPECTED_ROWS = 131;
+// 131 -> 135: credentials.* Tier B.
+const EXPECTED_ROWS = 135;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -155,17 +156,34 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('127 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('131 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 127, composite: 1, internal: 1, reserved: 2 });
+    // +4 public from the `credentials.*` family. They are PUBLIC despite having
+    // no CLI command: exposure describes who may call the operation, and the
+    // absent command is a scope decision (see the rows' own notes), not a
+    // refusal — a human `cli` session is admitted by the R2 guard.
+    expect(histogram).toEqual({ public: 131, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
 describe('the CLI command projection', () => {
-  it('exactly two rows have no CLI command, and they are the asymmetric pair', () => {
+  it('the rows with no CLI command are named exactly, never counted', () => {
     const commandless = DISCOVERY.filter((d) => d.command === null).map((d) => d.operation);
-    expect(commandless.sort()).toEqual(['bridge.fetchBlob', 'execution.prompt', 'projects.directories.list']);
+    // Asserted as a SET rather than a count, so a row that loses its command by
+    // accident is named rather than absorbed into a number. The four
+    // `credentials.*` rows are deliberate and their reason is recorded beside
+    // each: they are settings-screen operations, and adding CLI commands would
+    // oblige four command implementations in the same change.
+    expect(commandless.sort()).toEqual([
+      'bridge.fetchBlob',
+      'credentials.delete',
+      'credentials.loginSessions.finish',
+      'credentials.loginSessions.start',
+      'credentials.status',
+      'execution.prompt',
+      'projects.directories.list',
+    ]);
   });
 
   it('ASYMMETRIC RESERVED HANDLING: search.query has a command, bridge.fetchBlob has none', () => {
@@ -184,7 +202,11 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    expect(counted).toBe(EXPECTED_ROWS - 3);
+    // Minus the SEVEN commandless rows named exactly in the test above:
+    // bridge.fetchBlob, execution.prompt, projects.directories.list and the
+    // four credentials.* settings operations. Read out of the failure (124),
+    // which agrees with 131 - 7.
+    expect(counted).toBe(EXPECTED_ROWS - 7);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

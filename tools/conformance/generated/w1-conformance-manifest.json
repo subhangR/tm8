@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:9e8b10c9ab00863ae61643747f91d491cff84fa1cfb76e454407e1a775d32c65",
+  "catalogDigest": "sha256:5f195f4923e3dd6437adcd17be146b12801880894893cfd470160d11e116dd54",
   "catalog": {
-    "total": 131,
-    "v1": 129,
+    "total": 135,
+    "v1": 133,
     "reserved": 2,
-    "http": 130,
+    "http": 134,
     "ws": 1,
-    "registerableV1Http": 128,
+    "registerableV1Http": 132,
     "methods": {
-      "GET": 50,
-      "POST": 55,
+      "GET": 51,
+      "POST": 57,
       "PATCH": 10,
-      "DELETE": 8,
+      "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 53,
-      "command": 77,
+      "read": 54,
+      "command": 80,
       "stream": 1
     },
-    "uniqueNames": 131,
-    "uniqueBindings": 131
+    "uniqueNames": 135,
+    "uniqueBindings": 135
   },
   "reservedOperations": [
     "search.query",
@@ -1104,6 +1104,34 @@
         "source": "server-router"
       },
       {
+        "operation": "credentials.status",
+        "method": "GET",
+        "path": "/v2/identity/credentials",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.delete",
+        "method": "DELETE",
+        "path": "/v2/identity/credentials/:provider",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.loginSessions.start",
+        "method": "POST",
+        "path": "/v2/identity/credentials/login-sessions",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "credentials.loginSessions.finish",
+        "method": "POST",
+        "path": "/v2/identity/credentials/login-sessions/:id/finish",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "execution.transcript",
         "method": "GET",
         "path": "/v2/work-sessions/:workSessionId/transcript",
@@ -1321,7 +1349,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 100
+    "unimplementedV1Http": 104
   },
   "schemas": {
     "additive": {
@@ -3634,6 +3662,74 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.status",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.status",
+        "intentTags": [
+          "credentials",
+          "status"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.delete",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.delete",
+        "intentTags": [
+          "credentials",
+          "delete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.loginSessions.start",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.loginSessions.start",
+        "intentTags": [
+          "credentials",
+          "login",
+          "sessions",
+          "start"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "credentials.loginSessions.finish",
+        "noun": "credential",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/credentials.loginSessions.finish",
+        "intentTags": [
+          "credentials",
+          "login",
+          "sessions",
+          "finish"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

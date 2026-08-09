@@ -299,9 +299,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // onboarding read landed without moving it); 125 adds execution.transcript,
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
-    expect(SURFACE).toHaveLength(128);
-    expect(rows).toHaveLength(128);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(128);
+    // credentials.* add four mounted operations.
+    expect(SURFACE).toHaveLength(132);
+    expect(rows).toHaveLength(132);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(132);
   });
 
   /**
@@ -448,7 +449,8 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 77 -> 78 on 2026-08-09: 081 (worktree provisioning + tracking observer).
     // Authored as 078, then renumbered on merge because #71 had landed 078/079.
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
-    expect(server.appliedMigrations.length).toBe(79);
+    // 79 -> 80: 083 (per-member credential sessions).
+    expect(server.appliedMigrations.length).toBe(80);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -662,6 +664,16 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // 2026-08-02: auth.logout with a bare {} and no bearer session names nothing
   // to revoke — a handler-reached invalid_input, not a :166 gate rejection.
   'auth.logout',
+  // 2026-08-07: credentials.delete reads `:provider` off the PATH and checks it
+  // against the fixed three-value list BEFORE the value can name a directory.
+  // The sweep supplies a synthetic path param, so the refusal is correct and
+  // is handler-reached — the body schema (an optional clientMutationId) accepts
+  // the sweep's `{}` fine, so this is not a :166 gate rejection.
+  // The other three credentials.* operations are absent from this list on
+  // purpose: the sweep authenticates as the loopback auto-owner, whose
+  // `authKind` is `browser`, so the R2 guard ADMITS it and they answer
+  // normally rather than 400.
+  'credentials.delete',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',

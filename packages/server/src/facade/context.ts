@@ -86,6 +86,12 @@ export function claimsFor(
     ...(actorId ? { actorId } : {}),
     nodeAdmin: bearer ? bearer.nodeAdmin === true : owner.isNodeAdmin,
     requestId: ctx.requestId,
+    // 083 / R11. FORWARDED, never defaulted. A request whose resolver did not
+    // state a kind binds `''`, and `internal.require_human_auth_kind()` refuses
+    // it — supplying a friendly default here would be exactly the `is null`
+    // escape 083:133-138 warns against, moved one layer up where the migration
+    // cannot see it.
+    ...(ctx.identity?.authKind ? { authKind: ctx.identity.authKind } : {}),
   };
 }
 

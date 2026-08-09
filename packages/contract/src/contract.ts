@@ -122,7 +122,26 @@ export type CoreEntityState =
   // tm8 additions (03 §1) — see §2 for the enums.
   | { kind: 'work_session'; status: WorkSessionStatus; agentTool: string | null;
       model: string | null; shareMode: WorkSessionShareMode;
-      startedAt: string | null; exitedAt: string | null }
+      startedAt: string | null; exitedAt: string | null;
+      /**
+       * WHAT KIND OF SESSION THIS IS — the discriminator that lets a client
+       * tell a private credential login terminal from ordinary work (083).
+       *
+       * OPTIONAL, AND ITS ABSENCE IS LOAD-BEARING. A node that predates 083,
+       * or a row hydrated from a payload cached before the column shipped,
+       * carries no value here. Absence therefore means `agent` — the pre-083
+       * behaviour — so a frozen server degrades to showing everything rather
+       * than to showing nothing.
+       *
+       * WRITE EVERY CLIENT FILTER AS `sessionKind !== 'credential'`, NEVER AS
+       * `=== 'agent'`. SQL surfaces test the positive (`session_kind =
+       * 'agent'`, credential-catalog.ts:506) because the database column is
+       * NOT NULL; TypeScript surfaces must test the INVERSE, because here the
+       * field can be missing. `=== 'agent'` passes every test written against
+       * fresh data and silently blanks the session list for anyone holding an
+       * older payload.
+       */
+      sessionKind?: WorkSessionKind }
   | { kind: 'collection'; collectionType: string; itemCount: number }
   | { kind: 'project'; projectId: ProjectId; materializedVersion: number }
   | { kind: 'interaction_profile'; status: InteractionProfileStatus;
@@ -506,7 +525,7 @@ export type WorkspaceEvent = WorkspaceEventEnvelope & (
  | { type: 'space.default_channel.updated'; channelId: EntityId | null;
      settingsRevision: number; clientMutationId?: string }
  // Git facts on the durable stream (Tier 4 git×graph). RPC-authored
- // passthrough rows: the SQL authors (db/migrations/082) build these payloads
+ // passthrough rows: the SQL authors (db/migrations/083) build these payloads
  // contract-shaped, discriminant included — see mapper.ts
  // RPC_AUTHORED_PASSTHROUGH for the membership rules they satisfy.
  | { type: 'git.commit_recorded'; commitEntityId: EntityId; repo: string; sha: string;
@@ -956,6 +975,180 @@ export interface AuthSessionGetResult {
   session: AuthSessionView | null;
 }
 
+// ---------------------------------------------------------------------------
+// credentials.* — Tier B per-member vendor credentials (sub-doc 11 §D).
+//
+// NONE of these extend `CommandContext`, and the omission is the point rather
+// than an oversight. `CommandContext` carries `actorId`, which exists so a
+// caller can act AS a teammate — and a credential operation is the one thing
+// that must never be performed on someone else's behalf (finding D2). The
+// defence is now stated three times, in three layers that fail independently:
+// `start_credential_session` builds its envelope from
+// `internal.current_member_id` and never `internal.resolve_actor` (083);
+// `W2CredentialSessionsService.start` throws if the claims envelope carries an
+// `actorId` at all; and the strict schemas over these DTOs REFUSE `actorId` on
+// the wire rather than ignoring it, so the field cannot even arrive.
+//
+// They DO accept `clientMutationId`, because `commandAcceptsClientMutationId`
+// admits everything outside `auth.*` and a transport that supplies one to a
+// schema that forbids it fails validation — the exact bug that paragraph
+// documents.
+// ---------------------------------------------------------------------------
+
+/**
+ * The three providers a login terminal can run.
+ *
+ * Wider than what `account_agent_credentials` will store, and DELIBERATELY so
+ * (R6): that table's CHECK admits only the two FILE-shaped providers, while a
+ * GitHub token is string-shaped and belongs in 079's `account_git_credentials`.
+ * `credential_sessions.provider` carries all three because the terminal can run
+ * `gh auth login` regardless of where its output lands. A provider is admitted
+ * by measuring its login flow, never by widening a constraint.
+ */
+export type CredentialProviderName = 'anthropic' | 'openai' | 'github';
+
+/** One provider's card on the Connections screen. */
+export interface CredentialConnectionView {
+  provider: CredentialProviderName;
+  /** The only field the UI may branch a "Connected" badge on. */
+  connected: boolean;
+  /**
+   * The vendor-side account name, when the login verb can learn one.
+   *
+   * NULL FOREVER for anthropic (R4): tm8 runs `claude setup-token`, whose
+   * scopes are `user:inference` only and therefore exclude `user:profile`. The
+   * UI must branch on presence and render "Connected — inference access", never
+   * "Connected as null" — and must NOT "fix" it by switching to the wider login
+   * verb, which requests `org:create_api_key` and is materially worse on a node
+   * with no cross-user isolation.
+   */
+  login: string | null;
+  authMethod: string | null;
+  status: 'active' | 'stale' | 'revoked' | null;
+  connectedAt: string | null;
+  lastVerifiedAt: string | null;
+}
+
+/**
+ * `credentials.status` — the merged view, and an honest account of its own
+ * completeness.
+ *
+ * The two credential stores are split by SHAPE, so this reads two tables and
+ * one of them MAY NOT EXIST: `account_git_credentials` ships in migration 079
+ * on the deployed staging line and is reachable from no local git object.
+ * `gitCredentialStore` therefore reports what actually happened rather than
+ * letting an absent table read as "not connected" — a missing table and a
+ * member who has not connected GitHub are different facts, and collapsing them
+ * would put a confident "Not connected" in front of someone who IS connected on
+ * a node where the table exists.
+ */
+export interface CredentialsStatusView {
+  /** One entry per provider in `CredentialProviderName`, always all three. */
+  providers: CredentialConnectionView[];
+  /**
+   * `present` — the table exists and was read.
+   * `absent`  — the table does not exist on this node; the github entry's
+   *             `connected` is false because it is UNKNOWN, not because it was
+   *             measured false.
+   */
+  gitCredentialStore: 'present' | 'absent';
+}
+
+/**
+ * `credentials.delete` — Disconnect, which TERMINATES (R3).
+ *
+ * The provider travels in the PATH, not the body: it is the resource being
+ * addressed. There is no field naming whose credential to delete — the subject
+ * is always the bound identity's own account, which the RPC derives itself.
+ */
+export interface CredentialsDeleteInput {
+  clientMutationId?: string;
+}
+
+/**
+ * What Disconnect actually managed to do, stated per step.
+ *
+ * Best-effort by ruling: a kill that fails is REPORTED and never undoes the
+ * revoke. Callers must render both truths R3 requires — "this stops N running
+ * sessions" AND "to fully revoke, rotate the credential at the vendor" —
+ * because a process that already read the secret still holds it in memory.
+ * `revoked` being true while `failures` is non-empty is the normal, correct
+ * outcome of a partial disconnect, not a contradiction.
+ */
+export interface CredentialsDeleteResult {
+  provider: CredentialProviderName;
+  /** Step 1. True when the index row was removed (or was already absent). */
+  revoked: boolean;
+  /** Step 2 — the login terminal for this (account, provider), if one was live. */
+  terminatedCredentialSessionIds: string[];
+  /** Step 3 — the account's live agent sessions that carried this provider. */
+  terminatedAgentSessionIds: string[];
+  /** Non-fatal failures, in the order they happened. Never empties the above. */
+  failures: Array<{ step: 'revoke' | 'credentialSession' | 'agentSession'; sessionId?: string; reason: string }>;
+}
+
+/**
+ * `credentials.loginSessions.start` — open the login terminal.
+ *
+ * NO COMMAND FIELD, NO ARGS FIELD, NO FLAGS FIELD, and that absence is the
+ * security control. This starts a PTY running as the tm8 OS user from a
+ * settings form in a browser; a client-supplied command there is remote code
+ * execution with a pleasant user interface. argv comes from
+ * `CREDENTIAL_LOGIN_COMMANDS`, a fixed server-side table keyed by provider. A
+ * field that does not exist cannot be forwarded by a later refactor, which is a
+ * stronger guarantee than any assertion about a value.
+ */
+export interface CredentialsLoginSessionStartInput {
+  spaceId: SpaceId;
+  provider: CredentialProviderName;
+  /** Terminal geometry only — the one client input, and it cannot reach argv. */
+  cols?: number;
+  rows?: number;
+  clientMutationId?: string;
+}
+
+export interface CredentialsLoginSessionStartResult {
+  workSessionId: EntityId;
+  spaceId: SpaceId;
+  provider: CredentialProviderName;
+  /** Shorter than the vendor's device-code lifetime, so the terminal dies first. */
+  expiresAt: string;
+  /** The exact table entry that WAS launched. Recorded so a caller can assert it. */
+  command: string;
+}
+
+/**
+ * `credentials.loginSessions.finish` — close the terminal and record what the
+ * PROBE established. The work session id travels in the path.
+ */
+export interface CredentialsLoginSessionFinishInput {
+  clientMutationId?: string;
+}
+
+/**
+ * NOTHING HERE IS DERIVED FROM AN EXIT CODE. A member who opens the terminal,
+ * reads the device code and closes the tab exits 0 with nothing captured —
+ * indistinguishable at the process level from one who completed the flow. So
+ * `connected` is the probe's answer, and `stored` is a SEPARATE fact.
+ *
+ * `stored: false` with `connected: true` is a real and expected state on this
+ * line: a verified GitHub login has nowhere to go, because its string-shaped
+ * store (079) is not present here. Reporting it plainly is the whole reason the
+ * two fields are not collapsed into one.
+ */
+export interface CredentialsLoginSessionFinishResult {
+  workSessionId: EntityId;
+  provider: CredentialProviderName;
+  connected: boolean;
+  login: string | null;
+  authMethod: string | null;
+  status: 'active' | 'stale' | 'revoked';
+  /** True only when a metadata row was actually written. */
+  stored: boolean;
+  /** Whether this node's PTY was killed, as the PTY itself reported it. */
+  terminated: boolean;
+}
+
 export interface CreateTaskInput extends CommandContext {
   spaceId: SpaceId;
   title: string;
@@ -1141,7 +1334,7 @@ export interface LinkPrInput extends CommandContext { clientMutationId: string; 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
 export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
 
-/** POST /v2/entities/:id/commands/gate — 082's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
+/** POST /v2/entities/:id/commands/gate — 083's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
 export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
 
 export interface TaskAxisInput extends CommandContext {
@@ -1430,6 +1623,17 @@ export type WorktreeStatus = 'active' | 'merged' | 'abandoned' | 'deleted';
 
 /** Graph-side announce/authorize state for live terminal sharing (T-L10). */
 export type WorkSessionShareMode = 'none' | 'space' | 'explicit';
+
+/**
+ * What a work_session IS, mirroring 083's `work_sessions.session_kind`.
+ *
+ * `agent` is ordinary work. `credential` is a private login terminal minted by
+ * `credentials.loginSessions.start` so a member can authenticate an agent tool
+ * against their own account — it is not work, and it must not sit in session
+ * lists pretending to be. See the note on `EntityState`'s work_session arm for
+ * why every client filter must be written as the INVERSE of the SQL one.
+ */
+export type WorkSessionKind = 'agent' | 'credential';
 
 // --- projects — linked resources, NOT an entity kind (AM-2 §1, T-D17) -------
 

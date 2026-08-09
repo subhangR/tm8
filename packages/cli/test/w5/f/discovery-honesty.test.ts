@@ -97,7 +97,8 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 127 -> 128 (2026-08-09): execution.transcript (public, with a command).
     // 128 -> 129 (2026-08-09): projects.branches.list (public, with a command).
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
-    expect(rows).toHaveLength(131);
+    // 131 -> 135: credentials.* Tier B.
+    expect(rows).toHaveLength(135);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
@@ -112,7 +113,8 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 125 -> 126 (2026-08-07): execution.transcript, for the same reason.
     // 126 -> 127 (2026-08-09): projects.branches.list, likewise a v1 row.
     // 127 -> 129 (2026-08-09): projects.contention + entities.commands.gate.
-    expect(unknownRows).toHaveLength(129);
+    // 129 -> 133: the four credentials.* v1 rows join the `none` population.
+    expect(unknownRows).toHaveLength(133);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

@@ -45,6 +45,11 @@ import {
   type CreateSpaceInput,
   type CreateSpaceResult,
   type CreateTaskInput,
+  type CredentialProviderName,
+  type CredentialsDeleteResult,
+  type CredentialsLoginSessionFinishResult,
+  type CredentialsLoginSessionStartResult,
+  type CredentialsStatusView,
   type DurableWorkspaceEvent,
   type EdgeView,
   type EntityDetail,
@@ -182,6 +187,56 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      */
     updateProfile(input: IdentityProfileUpdateInput): Promise<IdentityProfileView> {
       return http.call<IdentityProfileView>('identity.profile.update', { body: input });
+    },
+
+    /**
+     * `credentials.status` — the viewer's own agent credentials.
+     *
+     * No params: like `identity.get`, the route names no subject and the
+     * server derives the account from the bound identity claim. It is a READ
+     * that is nonetheless HUMAN-ONLY (R2) — the server refuses any caller
+     * whose `authKind` is not `browser`/`cli`, so an agent asking this gets a
+     * refusal, which is the intended answer and not something to work around.
+     */
+    credentialsStatus(): Promise<CredentialsStatusView> {
+      return http.call<CredentialsStatusView>('credentials.status');
+    },
+
+    /**
+     * `credentials.delete` — Disconnect. The provider is the RESOURCE and
+     * travels in the path; the body carries only the mutation id, because the
+     * subject is always the caller's own account.
+     */
+    credentialsDisconnect(provider: CredentialProviderName): Promise<CredentialsDeleteResult> {
+      return http.call<CredentialsDeleteResult>('credentials.delete', {
+        params: { provider },
+        body: { clientMutationId: newId('creddisc') },
+      });
+    },
+
+    /**
+     * `credentials.loginSessions.start` — opens the login terminal.
+     *
+     * Geometry is deliberately NOT sent: the contract bounds `cols`/`rows` as
+     * the only client input this op accepts, and the terminal we host fits
+     * itself on mount, so sending a guess here would just be a second, wrong
+     * answer to a question the PTY resize already settles.
+     */
+    credentialsStartLogin(
+      spaceId: SpaceId,
+      provider: CredentialProviderName,
+    ): Promise<CredentialsLoginSessionStartResult> {
+      return http.call<CredentialsLoginSessionStartResult>('credentials.loginSessions.start', {
+        body: { spaceId, provider, clientMutationId: newId('credlogin') },
+      });
+    },
+
+    /** `credentials.loginSessions.finish` — the session id is the path resource. */
+    credentialsFinishLogin(workSessionId: EntityId): Promise<CredentialsLoginSessionFinishResult> {
+      return http.call<CredentialsLoginSessionFinishResult>('credentials.loginSessions.finish', {
+        params: { id: workSessionId },
+        body: { clientMutationId: newId('credfin') },
+      });
     },
 
     /** Bare array, not a Page — `spaces.list` accepts no pagination at all. */

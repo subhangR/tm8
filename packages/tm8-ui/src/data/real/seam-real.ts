@@ -339,6 +339,15 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       resume: (id, input) => ops.resume(id, input),
     },
 
+    // -- credentials ---------------------------------------------------------
+
+    credentials: {
+      status: () => ops.credentialsStatus(),
+      disconnect: (provider) => ops.credentialsDisconnect(provider),
+      startLogin: (spaceId, provider) => ops.credentialsStartLogin(spaceId, provider),
+      finishLogin: (workSessionId) => ops.credentialsFinishLogin(workSessionId),
+    },
+
     // -- liveness ------------------------------------------------------------
 
     liveness: {

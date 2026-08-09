@@ -223,6 +223,35 @@ export const OPERATIONS = [
   { name: 'auth.logout',                                 method: 'POST',   path: '/v2/auth/logout',                                                    kind: 'command', status: 'v1' },
   { name: 'auth.session.get',                            method: 'GET',    path: '/v2/auth/session',                                                   kind: 'read',    status: 'v1' },
 
+  // Tier B per-member credentials (sub-doc 11 §D). A member connects their OWN
+  // vendor account in a login terminal tm8 opens for them, so an agent they
+  // spawn runs as them instead of as the node.
+  //
+  // ALL FOUR ARE HUMAN-ONLY, `status` INCLUDED (architect ruling R2), and the
+  // reason is measured rather than defensive: `TM8_AGENT_TOKEN` binds the
+  // SPAWNING HUMAN'S account (sub-doc 14 C7 — `acting_as_team_member_id`
+  // constrains `internal.resolve_actor` only, while `identity_id()`,
+  // `can_act_as`, `is_space_member` and `entity_readable` all key off
+  // identity). So an agent calling these reaches its OWNER'S credentials: it
+  // could read their status, delete their token, and open a login terminal in
+  // their name. The refusal is enforced at registration and again in every RPC
+  // via `internal.require_human_auth_kind()`.
+  //
+  // `status` is a MERGED view over two tables that are split by credential
+  // SHAPE (sub-doc 0 / R6): file-shaped anthropic + openai in
+  // `account_agent_credentials` (083), string-shaped github in
+  // `account_git_credentials` (079). The second is NOT on this line, so the
+  // view degrades honestly rather than claiming a connection that is absent.
+  //
+  // `delete` is Disconnect, and R3 makes it TERMINATE: revoke first, then the
+  // login terminal for that pair, then the account's live agent sessions
+  // carrying that provider. Containment, not revocation — only rotating at the
+  // vendor invalidates a secret a running process already read.
+  { name: 'credentials.status',                          method: 'GET',    path: '/v2/identity/credentials',                                           kind: 'read',    status: 'v1' },
+  { name: 'credentials.delete',                          method: 'DELETE', path: '/v2/identity/credentials/:provider',                                 kind: 'command', status: 'v1' },
+  { name: 'credentials.loginSessions.start',             method: 'POST',   path: '/v2/identity/credentials/login-sessions',                            kind: 'command', status: 'v1' },
+  { name: 'credentials.loginSessions.finish',            method: 'POST',   path: '/v2/identity/credentials/login-sessions/:id/finish',                 kind: 'command', status: 'v1' },
+
   // What the agent SAID — the third face of a session, after `execution.launch`
   // (told) and `execution.journal` (did). The bytes are the agent's OWN native
   // transcript on the node's disk (`~/.claude/projects/**`, `~/.codex/sessions/**`),

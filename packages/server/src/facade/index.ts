@@ -66,6 +66,10 @@ import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-a
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
+import {
+  registerCredentialHandlers,
+  type CredentialHandlerDeps,
+} from './handlers/w2/credentials.js';
 import { registerVoiceHandlers } from './handlers/voice.js';
 
 export interface RegisterFacadeHandlersDeps {
@@ -99,6 +103,21 @@ export interface RegisterFacadeHandlersDeps {
    * against the pinned one.
    */
   readonly resolveAuthoredFromWorkSessionId?: W2MessagesHandoffsServiceOptions['resolveAuthoredFromWorkSessionId'];
+  /**
+   * Tier B per-member credentials (sub-doc 11 §D).
+   *
+   * OPTIONAL, and a parameter HERE rather than a field on `FacadeDeps`, for the
+   * reason this file's own header gives above: it reaches exactly one call, so
+   * its blast radius is visible in the signature.
+   *
+   * What it carries is a PTY HOST and a filesystem root — the login terminal is
+   * a real process started as the tm8 OS user. Neither is derivable inside the
+   * facade: `PtyHostService` is built by `createExecutionRuntime` and `dataDir`
+   * is resolved in the composition root. A node that has no execution runtime
+   * (no database, or a test harness) simply does not mount these four, which is
+   * the same conditional shape `deps.files` already uses.
+   */
+  readonly credentials?: CredentialHandlerDeps;
 }
 
 /**
@@ -185,4 +204,16 @@ export function registerFacadeHandlers(
   registerW2EntityKindsProfileHandlers(registry, facade);
   registerW2FeedContextHandlers(registry, facade);
   registerW2MenuDefaultChannelHandlers(registry, facade);
+
+  /**
+   * Tier B credentials. Conditional on the seam for the same reason `files` is:
+   * these four operations start and kill real processes, and a composition
+   * without a PTY host cannot honestly answer them.
+   *
+   * The human-only guard (R2) is applied INSIDE `registerCredentialHandlers`,
+   * over the whole record at once. It is deliberately not applied here — a
+   * guard the call site has to remember to add is a guard the fifth call site
+   * forgets.
+   */
+  if (deps.credentials) registerCredentialHandlers(registry, facade, deps.credentials);
 }

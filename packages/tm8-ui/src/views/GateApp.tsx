@@ -52,6 +52,7 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
 import {
@@ -368,6 +369,16 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  // The credentials section's own adapter, built the same way and on the same
+  // pair. It is a SECOND port rather than four more methods on the settings
+  // one because `settings-credentials/` is a separate module meeting the shell
+  // at its `sections` slot — the seam that lets two lanes mount into one screen
+  // without editing each other's files.
+  const credentialsPort = useMemo(
+    () => (data.spaceId ? credentialsPortFromSeam(data.seam, data.spaceId) : null),
+    [data.seam, data.spaceId],
+  );
+
   // The branch-topology section for the shell's externally-owned `projects`
   // slot (seam Amendment 5). The spaceId is closed over HERE so the section's
   // port stays two reads and nothing else — the same host-wires-the-seam rule
@@ -379,7 +390,7 @@ export function GateApp(props: GateAppProps = {}) {
             projects: () => data.seam.projects(data.spaceId!),
             branches: (projectId) => data.seam.projectBranches(projectId),
           }
-        : null,
+         : null,
     [data.seam, data.spaceId],
   );
 
@@ -611,10 +622,25 @@ export function GateApp(props: GateAppProps = {}) {
             <SettingsShell
               port={settingsPort}
               nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
-              /* The `projects` slot stops rendering not-mounted: the branch-
-                 topology section fills it (git-features Tier 1 follow-up).
-                 `kinds` stays honestly absent — its module has not landed. */
-              sections={branchesPort ? { projects: <ProjectBranchesSection port={branchesPort} /> } : undefined}
+              sections={
+                credentialsPort || branchesPort
+                  ? {
+                      ...(branchesPort
+                        ? { projects: <ProjectBranchesSection port={branchesPort} /> }
+                        : {}),
+                      ...(credentialsPort
+                        ? {
+                            credentials: (
+                              <CredentialsSection
+                                port={credentialsPort}
+                                serverBaseUrl={activeServer.routeBaseUrl}
+                              />
+                            ),
+                          }
+                        : {}),
+                    }
+                  : undefined
+              }
             />
           ) : data.ready &&
             activeTarget?.type === 'view' &&

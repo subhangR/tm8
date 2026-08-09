@@ -33,6 +33,7 @@ import {
   type ResolvedLaunchConfig,
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
+import type { AgentCredentialHome, AgentCredentialHomePort } from './agent-credentials.js';
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
@@ -66,6 +67,15 @@ export interface SpawnServiceOptions {
   bootSettlementMs?: number;
   /** Injected only for deterministic compatibility-preflight tests. */
   codexNetworkPreflight?: CodexNetworkPreflight;
+  /**
+   * Resolves the spawning identity's own vendor credential home, so an agent
+   * authenticates as the MEMBER rather than as the node's machine account.
+   *
+   * OPTIONAL. A node that does not wire it injects nothing and behaves exactly
+   * as it did before — which is what lets this land ahead of the settings
+   * screen that populates the credentials, without a feature flag.
+   */
+  credentialHome?: AgentCredentialHomePort;
   /**
    * The node's Git worktree manager. Its PRESENCE is what makes
    * `workdir.mode:'worktree'` serviceable — omit it and the mode is refused by
@@ -174,6 +184,7 @@ export class SpawnService {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bootSettlementMs: number;
   private readonly codexNetworkPreflight: CodexNetworkPreflight;
+  private readonly credentialHome: AgentCredentialHomePort | undefined;
   private readonly worktrees: WorktreeManager | null;
   private readonly worktreeCap: number;
   /** One fail-closed remediation pass per service lifetime. */
@@ -206,8 +217,24 @@ export class SpawnService {
     this.env = options.env ?? process.env;
     this.bootSettlementMs = options.bootSettlementMs ?? 150;
     this.codexNetworkPreflight = options.codexNetworkPreflight ?? preflightCodexNetworkPolicy;
+    this.credentialHome = options.credentialHome;
     this.worktrees = options.worktrees ?? null;
     this.worktreeCap = options.worktreeCap ?? 0;
+  }
+
+  /**
+   * The spawning identity's credential home for this session's agent tool, or
+   * null when there is nothing to inject.
+   *
+   * ERRORS ARE NOT SWALLOWED: silently falling back to the node's machine
+   * account would make a session run under the wrong identity.
+   */
+  private async resolveCredentialHome(
+    auth: GraphAuth,
+    agentTool: string,
+  ): Promise<AgentCredentialHome | null> {
+    if (!this.credentialHome) return null;
+    return this.credentialHome.resolve(auth, { agentTool });
   }
 
   /**
@@ -647,6 +674,7 @@ export class SpawnService {
         this.env,
       );
 
+      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -654,6 +682,7 @@ export class SpawnService {
         this.env,
         this.journalPathFor(sessionId),
         agentToken,
+        credentialHome ?? undefined,
       );
       const envVarNames = Object.keys(env).sort();
 
@@ -989,6 +1018,12 @@ export class SpawnService {
         this.env,
       );
 
+      // Resolved on resume too, not just spawn: a member who connects their
+      // identity between a session's spawn and its resume should get their own
+      // credential on the way back up, and one that has been disconnected must
+      // stop being injected. A resume that kept the launch-time answer would be
+      // the one path where Ruling 3's "disconnect terminates" could be undone.
+      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -996,6 +1031,7 @@ export class SpawnService {
         this.env,
         this.journalPathFor(sessionId),
         agentToken,
+        credentialHome ?? undefined,
       );
       const envVarNames = Object.keys(env).sort();
 
