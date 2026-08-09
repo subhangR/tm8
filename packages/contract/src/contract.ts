@@ -1438,7 +1438,7 @@ export type ProjectTrustLevel = 'trusted' | 'untrusted';
 export interface ProjectDefaults {
   model?: string | null;
   agentTool?: string | null;
-  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | null;
+  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | 'dispatcher' | null;
 }
 
 export interface ProjectResource {
@@ -1589,7 +1589,7 @@ export interface ExecutionSpawnInput extends CommandContext {
   confirmUntrusted?: true;
   /** Optional active profile override; human-principal authorization is server-owned. */
   interactionProfileId?: EntityId;
-  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
+  mode?: 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator' | 'dispatcher';
   model?: string | null;
   agentTool?: string | null;
   reasoningEffort?: LaunchReasoningEffort;

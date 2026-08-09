@@ -1531,7 +1531,7 @@ export const ProjectTrustLevelSchema: z.ZodType<ProjectTrustLevel> =
 export const ProjectDefaultsSchema: z.ZodType<ProjectDefaults> = z.object({
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
-  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).nullable().optional(),
+  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']).nullable().optional(),
 }).strict();
 
 export const ProjectResourceSchema: z.ZodType<ProjectResource> = z.object({
@@ -1652,7 +1652,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
   interactionProfileId: SpawnUuidSchema.optional(),
-  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator']).optional(),
+  mode: z.enum(['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher']).optional(),
   model: z.string().nullable().optional(),
   agentTool: z.string().nullable().optional(),
   reasoningEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),

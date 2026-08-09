@@ -142,6 +142,7 @@ const MODE_TITLES: Record<AgentMode, string> = {
   coordinator: 'Coordinator',
   'coordinated-worker': 'Coordinated worker',
   'coordinated-coordinator': 'Sub-coordinator',
+  dispatcher: 'Dispatcher',
 };
 
 const MODE_SUMMARIES: Record<AgentMode, string> = {
@@ -153,6 +154,8 @@ const MODE_SUMMARIES: Record<AgentMode, string> = {
     'A worker spawned by a coordinator. Adds the do-not-go-idle rule — a parent is blocked on a durable reply.',
   'coordinated-coordinator':
     'A sub-coordinator owning a slice. Must integrate child results or report explicitly that it could not.',
+  dispatcher:
+    'A resident router. Picks an existing teammate and the memories they need, then spawns them. Never does the work, never edits the roster.',
 };
 
 const V2_UNWIRED =

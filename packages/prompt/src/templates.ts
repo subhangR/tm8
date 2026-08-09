@@ -108,6 +108,73 @@ export function coordinatorBootstrapControl(f: BootstrapControlFacts): string {
   ].join('\n');
 }
 
+// -- dispatcher bootstrap (D4) ------------------------------------------------
+
+/**
+ * What the dispatcher needs on top of the common bootstrap facts: the roster it
+ * selects FROM, a memory-graph summary, and current capacity.
+ *
+ * All three are optional and all three render honestly when absent. A dispatcher
+ * whose manifest could not carry the roster must be told to go fetch it, not
+ * handed an empty `<roster/>` that reads as "there are no teammates" — the
+ * difference between "none" and "not loaded" is the difference between refusing
+ * to dispatch and dispatching blind.
+ */
+export interface DispatcherBootstrapControlFacts extends BootstrapControlFacts {
+  roster?: ReadonlyArray<{
+    teamMemberId: string;
+    name: string;
+    mode?: string | null;
+    model?: string | null;
+    role?: string | null;
+  }>;
+  memorySummary?: { total: number; disputed: number; superseded: number } | null;
+  capacity?: { used: number; total: number } | null;
+}
+
+function rosterBlock(f: DispatcherBootstrapControlFacts): string[] {
+  if (f.roster === undefined) {
+    return ['  <roster loaded="false">Read the roster with `tm8 entity list --kind team_member` before choosing.</roster>'];
+  }
+  if (f.roster.length === 0) {
+    return ['  <roster loaded="true" count="0">This space has no teammates to dispatch to. Say so; do not create one.</roster>'];
+  }
+  return [
+    `  <roster loaded="true" count="${f.roster.length}">`,
+    ...f.roster.map((r) =>
+      `    <teammate team_member_id="${attr(r.teamMemberId)}" name="${attr(r.name)}" mode="${attr(r.mode)}" model="${attr(r.model)}" role="${attr(r.role)}" />`),
+    '  </roster>',
+  ];
+}
+
+function memoryBlock(f: DispatcherBootstrapControlFacts): string {
+  const m = f.memorySummary;
+  if (!m) return '  <memory loaded="false">Read the memory graph before attaching context.</memory>';
+  return `  <memory loaded="true" total="${m.total}" disputed="${m.disputed}" superseded="${m.superseded}" />`;
+}
+
+function capacityBlock(f: DispatcherBootstrapControlFacts): string {
+  const c = f.capacity;
+  if (!c) return '  <capacity loaded="false" />';
+  return `  <capacity used="${c.used}" total="${c.total}" />`;
+}
+
+export function dispatcherBootstrapControl(f: DispatcherBootstrapControlFacts): string {
+  return [
+    '<trusted_control type="tm8.dispatcher-bootstrap" version="1">',
+    identityLine(f),
+    workspaceLine(f),
+    profileLine(f),
+    ...rosterBlock(f),
+    memoryBlock(f),
+    capacityBlock(f),
+    '  <verbs>Read teammates, memories and tasks. Attach memories to the task so they are injected into the session you spawn. Spawn with execution.spawn. Reply on the request thread.</verbs>',
+    '  <prohibition>Never do the dispatched work yourself. Never create, edit or delete a teammate, and never change a persona or model. Select from the roster as it is.</prohibition>',
+    '  <rule>Reply on the request thread with the teammate you chose, the memories you attached, and why. A dispatch nobody can see did not happen.</rule>',
+    '</trusted_control>',
+  ].join('\n');
+}
+
 // -- §14.3 task assignment ----------------------------------------------------
 
 export interface TaskAssignmentFacts {

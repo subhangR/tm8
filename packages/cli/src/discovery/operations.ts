@@ -801,7 +801,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'projects.create': {
     cmd: ['project', 'create'],
-    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|none] [--mutation-id <id>]',
+    syn: 'tm8 project create <name> --working-dir <absolute-path> [--repo-url <url|none>] [--trust trusted|untrusted] [--default-model <name|none>] [--default-agent-tool <name|none>] [--default-mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher|none] [--mutation-id <id>]',
     sum: 'Register a ProjectResource',
     authz: 'server',
     input: 'bound',
@@ -1027,7 +1027,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',

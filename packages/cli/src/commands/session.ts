@@ -54,7 +54,7 @@ const WORKDIRS = ['project', 'scratch'] as const;
 type WorkdirMode = (typeof WORKDIRS)[number];
 
 /** §4.13's closed session-mode set. */
-const SESSION_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator'] as const;
+const SESSION_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher'] as const;
 type SessionMode = (typeof SESSION_MODES)[number];
 
 /**
