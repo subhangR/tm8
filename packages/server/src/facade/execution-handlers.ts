@@ -124,6 +124,56 @@ interface TaskRow {
   acceptance_criteria: unknown;
 }
 
+interface MemoryRow {
+  entity_id: string;
+  statement: string;
+  version: number;
+  /** In the teammate's `remembers` working set (vs. only requested by id). */
+  remembered: boolean;
+  superseded: boolean;
+  disputed: boolean;
+  verified: boolean;
+  created_at: Date | string;
+}
+
+/**
+ * Memory entities → the manifest's `agent.memory` strings, with their
+ * epistemic state visible (design §4.2: the receiving agent must see what is
+ * verified vs disputed rather than trusting everything equally).
+ *
+ * Superseded memories are DROPPED from the working set — the 056 read rule is
+ * "reads resolve to the chain head", and the head is either also remembered or
+ * the working-set edge has not been moved yet, in which case injecting the
+ * stale predecessor would be injecting known-replaced context. An explicitly
+ * requested id is different: the caller named THAT memory, so it is injected
+ * with its `[superseded]` marker instead of second-guessing the request.
+ */
+function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
+  const render = (r: MemoryRow): string => {
+    const marks: string[] = [];
+    if (r.superseded) marks.push('superseded');
+    if (r.disputed) marks.push('disputed');
+    if (r.verified) marks.push('verified');
+    return marks.length > 0 ? `${r.statement} [${marks.join(', ')}]` : r.statement;
+  };
+  const emitted = new Set<string>();
+  const out: string[] = [];
+  for (const r of rows) {
+    if (!r.remembered || r.superseded) continue;
+    out.push(render(r));
+    emitted.add(r.entity_id);
+  }
+  // Requested extras follow the caller's order, after the working set.
+  for (const id of requestedIds) {
+    if (emitted.has(id)) continue;
+    const row = rows.find((r) => r.entity_id === id);
+    if (!row) continue; // absence already refused upstream
+    out.push(render(row));
+    emitted.add(id);
+  }
+  return out;
+}
+
 export class DbGraphPort implements GraphPort {
   constructor(
     private readonly db: Db,
@@ -165,6 +215,45 @@ export class DbGraphPort implements GraphPort {
       if (!member) {
         throw fail('not_found', `team member ${input.teamMemberId} not found in this space`);
       }
+
+      // The persona's working set lives in the graph: memory ENTITIES linked by
+      // `remembers` edges (056), not the legacy `team_members.memories` jsonb.
+      // Migration 084 moved the jsonb entries into the graph and emptied the
+      // column; any jsonb remainder (written by a not-yet-updated editor path)
+      // is still injected so a write never silently vanishes. Requested
+      // `memoryIds` (D3a) are validated hard — a spawn that names a memory the
+      // caller cannot read, or that is not a memory, must refuse rather than
+      // quietly inject less than was asked.
+      const requestedIds = input.memoryIds ?? [];
+      const memoryRows = await q.query<MemoryRow>(
+        `select m.entity_id, m.statement, e.version,
+                (r.dst_id is not null) as remembered,
+                exists (select 1 from public.edges s
+                         where s.type = 'supersedes' and s.dst_id = m.entity_id) as superseded,
+                exists (select 1 from public.edges d
+                         where d.type = 'disputes' and d.dst_id = m.entity_id
+                           and (d.props ->> 'pinnedVersion')::int = e.version) as disputed,
+                exists (select 1 from public.edges v
+                         where v.type = 'verifies' and v.dst_id = m.entity_id
+                           and (v.props ->> 'pinnedVersion')::int = e.version) as verified,
+                m.created_at
+           from public.memories m
+           join public.entities e on e.id = m.entity_id and e.deleted_at is null
+           left join public.edges r
+             on r.type = 'remembers' and r.src_id = $1 and r.dst_id = m.entity_id
+          where e.space_id = $2 and (r.dst_id is not null or m.entity_id = any($3::uuid[]))
+          order by m.created_at, m.entity_id`,
+        [input.teamMemberId, input.spaceId, requestedIds],
+      );
+      const foundIds = new Set(memoryRows.map((r) => r.entity_id));
+      const missing = requestedIds.filter((id) => !foundIds.has(id));
+      if (missing.length > 0) {
+        throw fail(
+          'not_found',
+          `memoryIds not found in this space (or not memory entities): ${missing.join(', ')}`,
+        );
+      }
+      const injectedMemories = renderMemories(memoryRows, requestedIds);
 
       let project: SpawnContext['project'] = null;
       if (input.projectId) {
@@ -213,7 +302,12 @@ export class DbGraphPort implements GraphPort {
           name: member.name,
           role: member.role,
           identity: member.identity,
-          memories: Array.isArray(member.memories) ? member.memories : [],
+          // Graph working set first; any legacy jsonb remainder (pre-084
+          // writers) rides along so no entry silently vanishes mid-cutover.
+          memories: [
+            ...injectedMemories,
+            ...(Array.isArray(member.memories) ? member.memories : []),
+          ],
           model: member.model,
           agentTool: member.agent_tool,
           mode: (member.mode as SpawnContext['teamMember']['mode']) ?? null,
@@ -1274,6 +1368,7 @@ function registerHandlers(
       accessMode: input.accessMode ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
+      ...(input.memoryIds?.length ? { memoryIds: input.memoryIds } : {}),
       clientMutationId: envelope.clientMutationId ?? null,
     };
 

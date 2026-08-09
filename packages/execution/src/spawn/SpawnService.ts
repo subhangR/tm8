@@ -357,6 +357,7 @@ export class SpawnService {
       teamMemberId: request.teamMemberId,
       projectId: request.projectId ?? null,
       taskIds,
+      ...(request.memoryIds?.length ? { memoryIds: request.memoryIds } : {}),
     });
 
     const inherited = await this.inheritedPosture(auth, request);
