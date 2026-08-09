@@ -204,6 +204,14 @@ export const OPERATIONS = [
   { name: 'execution.gitRollback',    method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/rollback',    kind: 'command', status: 'v1' },
   { name: 'execution.gitCommit',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/commit',      kind: 'command', status: 'v1' },
   { name: 'execution.gitMerge',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/merge',       kind: 'command', status: 'v1' },
+  // Tier 2 completion (same laws as the six above): cherry-pick and stash
+  // obey merge's abort-verify-surface contract — a conflict is DATA with the
+  // worktree restored clean; branch delete/rename refuse checked-out and
+  // protected branches, and the destructive gates (unmerged delete, stash
+  // drop) require an explicit force. Stash LIST rides on execution.gitStatus.
+  { name: 'execution.gitCherryPick',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/cherry-pick', kind: 'command', status: 'v1' },
+  { name: 'execution.gitBranch',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/branch',      kind: 'command', status: 'v1' },
+  { name: 'execution.gitStash',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/stash',       kind: 'command', status: 'v1' },
 
   // custom entity kinds (T-L4, R7–R9)
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },
