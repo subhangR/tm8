@@ -49,6 +49,8 @@ import { FILE_COMMANDS } from './file.js';
 import { MESSAGE_COMMANDS } from './message.js';
 import { HANDOFF_COMMANDS } from './handoff.js';
 import { SESSION_COMMANDS } from './session.js';
+import { SESSION_GIT_COMMANDS } from './session-git.js';
+import { WORKTREE_GIT_COMMANDS } from './worktree-git.js';
 import { INTERACTION_PROFILE_COMMANDS } from './interaction-profile.js';
 import { PROFILE_DEFAULT_COMMANDS } from './teammate.js';
 import { ENTITY_COMMANDS } from './entity.js';
@@ -118,6 +120,8 @@ export const COMMANDS: CommandModule[] = [
   ...MESSAGE_COMMANDS,
   ...HANDOFF_COMMANDS,
   ...SESSION_COMMANDS,
+  ...SESSION_GIT_COMMANDS,
+  ...WORKTREE_GIT_COMMANDS,
   ...INTERACTION_PROFILE_COMMANDS,
   ...PROFILE_DEFAULT_COMMANDS,
   ...ENTITY_COMMANDS,

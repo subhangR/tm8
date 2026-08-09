@@ -164,7 +164,8 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // operations. The command-path count moves and the CATALOG does not, which
     // is the very distinction this assertion is here to watch.
     // 126 -> 127: `project branches`.
-    expect(COMMAND_PATHS).toHaveLength(127);
+    // 127 -> 132 (2026-08-09): five Tier 2 git-verb ALIASES (catalog rows unmoved).
+    expect(COMMAND_PATHS).toHaveLength(132);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {
