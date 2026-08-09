@@ -282,7 +282,10 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       'editMessage',
       // Git UI wave (2026-08-09): the session git rail's four verbs — the #76
       // verbs behind the facade, for surfaces with no machine to run git on.
-      'gitCheckpoint', 'gitCommit', 'gitMerge', 'gitRollback',
+      // Amendment 8 (2026-08-09): Tier 2 completion — gitBranch,
+      // gitCherryPick, gitStash join the rail's verbs.
+      'gitBranch', 'gitCheckpoint', 'gitCherryPick', 'gitCommit', 'gitMerge', 'gitRollback',
+      'gitStash',
       'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
