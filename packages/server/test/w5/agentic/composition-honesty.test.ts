@@ -147,7 +147,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
   // wave: serverConnections, artifacts, attention, voice et al). Mechanical
   // denominator moves only — the two-world presence semantics this file
   // measures are untouched.
-  it('CONTROL — the denominator is the 131 unconditional v1 HTTP rows, by exact count and exact membership', () => {
+  it('CONTROL — the denominator is the 132 unconditional v1 HTTP rows, by exact count and exact membership', () => {
     // 118 -> 122 (2026-08-02): the four auth.* rows (Identity v2 Stage 1).
     // 122 -> 123 (2026-08-02): execution.launch.
     // The 123 literal was ALREADY red at 124 when this lane arrived; 125 adds
@@ -188,7 +188,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     expect(onlyWithout, `mounted only WITHOUT presence: ${onlyWithout.join(',')}`).toEqual([]);
   }, 15_000);
 
-  it('BOTH READINGS ARE CORRECT — 131/0 and 130/1 name the two compositions, not a defect', () => {
+  it('BOTH READINGS ARE CORRECT — 132/0 and 131/1 name the two compositions, not a defect', () => {
     // The sentence the frozen file could not say, wired to something that
     // fails. `test/w2/reserved-honesty.test.ts` composes WITHOUT presence
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that

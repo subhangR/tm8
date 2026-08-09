@@ -4,7 +4,6 @@ import {
   CollabError,
   FILE_MAX_SIZE_BYTES_DEFAULT,
   type ProjectFileAttachInput,
-  type ProjectFileContent,
   type ProjectFileListing,
 } from '@tm8/contract';
 
@@ -51,11 +50,33 @@ interface CompleteRpcResult extends RpcCommandResult {
   spaceId: string;
 }
 
+/**
+ * One audit record per node-filesystem access, INCLUDING refusals: a live
+ * project browser is a read primitive on the node, and "who asked for what
+ * and was it withheld" is the evidence a security review needs.
+ */
+export interface ProjectFileAuditEvent {
+  readonly op: 'projects.files.list' | 'projects.files.read' | 'projects.files.attach';
+  readonly projectId: string;
+  readonly path: string | null;
+  readonly identityId: string | null;
+  readonly outcome: 'allowed' | 'refused';
+  /** CollabError code on refusal. */
+  readonly code?: string;
+  readonly at: string;
+}
+
 export interface W2ProjectFilesServiceOptions {
   readonly blobStore: W2BlobStore;
   /** Effective deployment ceiling; must not exceed the injected blob store's. */
   readonly maxSizeBytes?: number;
   readonly now?: () => Date;
+  /** Defaults to one structured server log line per event. */
+  readonly audit?: (event: ProjectFileAuditEvent) => void;
+}
+
+function defaultAudit(event: ProjectFileAuditEvent): void {
+  console.info(`[tm8] project-files audit ${JSON.stringify(event)}`);
 }
 
 function tokenHash(token: string): string {
@@ -114,11 +135,13 @@ function requireAuthenticatedIdentity(ctx: RequestContext, ownerIdentityId: stri
 export class W2ProjectFilesService {
   private readonly now: () => Date;
   private readonly maxSizeBytes: number;
+  private readonly audit: (event: ProjectFileAuditEvent) => void;
 
   constructor(
     private readonly deps: FacadeDeps,
     private readonly options: W2ProjectFilesServiceOptions,
   ) {
+    this.audit = options.audit ?? defaultAudit;
     this.now = options.now ?? (() => new Date());
     this.maxSizeBytes = options.maxSizeBytes ?? FILE_MAX_SIZE_BYTES_DEFAULT;
     if (!Number.isSafeInteger(this.maxSizeBytes) || this.maxSizeBytes <= 0) {
@@ -131,43 +154,42 @@ export class W2ProjectFilesService {
 
   readonly listFiles: OperationHandler = async (ctx) => {
     const projectId = requireUuidParam(ctx, 'projectId');
-    const { workingDir } = await this.project(ctx, projectId);
-    const listing = await listProjectFiles(
-      workingDir,
-      ctx.query.get('path') ?? undefined,
-      this.maxSizeBytes,
-    );
-    return { projectId, ...listing } satisfies ProjectFileListing;
+    const path = ctx.query.get('path');
+    return this.audited(ctx, 'projects.files.list', projectId, path, async () => {
+      const { workingDir } = await this.project(ctx, projectId, false);
+      const listing = await listProjectFiles(workingDir, path ?? undefined, this.maxSizeBytes);
+      return { projectId, ...listing } satisfies ProjectFileListing;
+    });
   };
 
-  /**
-   * The VIEWER half of `listFiles`. Shares its authorization (`this.project`)
-   * and its containment, and mints nothing — reading a file creates no entity.
-   *
-   * A withholding rides IN the DTO as a named `refusal`, not as an HTTP error:
-   * the caller asked a legitimate question and deserves a named answer rather
-   * than a 4xx an offline client cannot tell from a network fault.
-   */
   readonly readFile: OperationHandler = async (ctx) => {
     const projectId = requireUuidParam(ctx, 'projectId');
     const path = ctx.query.get('path');
-    if (!path) {
-      throw new CollabError('invalid_input', 'path is required');
-    }
-    const { workingDir } = await this.project(ctx, projectId);
-    return { projectId, ...(await readProjectFile(workingDir, path)) } satisfies ProjectFileContent;
+    return this.audited(ctx, 'projects.files.read', projectId, path, async () => {
+      // A GET has no schema-gated body; requiring the query parameter here is
+      // the handler's own contract — guessing a default would read the wrong file.
+      if (!path?.trim()) {
+        throw new CollabError('invalid_input', 'the path query parameter is required');
+      }
+      const { workingDir } = await this.project(ctx, projectId, false);
+      const file = await readProjectFile(workingDir, path);
+      return { projectId, ...file };
+    });
   };
 
   readonly attachFile: OperationHandler = async (ctx) => {
     const projectId = requireUuidParam(ctx, 'projectId');
     const input = ctx.body as ProjectFileAttachInput;
-    const { workingDir, claims, viewerIdentityId } = await this.project(ctx, projectId, input.spaceId);
-    // Attaching is not just another read: it copies bytes from the node into a
-    // graph-owned blob and mints/updates graph state. Keep the coarse node
-    // privilege for that write even though list/read no longer need it.
-    if (claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to attach project files');
-    }
+    return this.audited(ctx, 'projects.files.attach', projectId, input.path ?? null, () =>
+      this.attach(ctx, projectId, input));
+  };
+
+  private async attach(
+    ctx: RequestContext,
+    projectId: string,
+    input: ProjectFileAttachInput,
+  ): Promise<unknown> {
+    const { workingDir, claims, viewerIdentityId } = await this.project(ctx, projectId, true);
     const file = await resolveProjectFile(workingDir, input.path, this.maxSizeBytes);
 
     const envelope = commandEnvelope(ctx);
@@ -233,7 +255,31 @@ export class W2ProjectFilesService {
       .remove(settled.result.storagePath, settled.result.spaceId)
       .catch(() => undefined);
     throw new CollabError('invalid_input', `upload slot is ${settled.result.outcome}`);
-  };
+  }
+
+  /** Run one handler with an audit record on BOTH outcomes. */
+  private async audited<T>(
+    ctx: RequestContext,
+    op: ProjectFileAuditEvent['op'],
+    projectId: string,
+    path: string | null,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const identityId = ctx.identity.kind === 'anonymous' ? null : ctx.identity.identityId ?? null;
+    const base = { op, projectId, path, identityId, at: this.now().toISOString() };
+    try {
+      const result = await run();
+      this.audit({ ...base, outcome: 'allowed' });
+      return result;
+    } catch (error) {
+      this.audit({
+        ...base,
+        outcome: 'refused',
+        code: error instanceof CollabError ? error.code : 'internal',
+      });
+      throw error;
+    }
+  }
 
   /**
    * Take the writer lease, stream the file into the blob store, and settle.
@@ -294,17 +340,17 @@ export class W2ProjectFilesService {
   }
 
   /**
-   * Resolve the project's configured directory through the same
-   * projects -> space_projects scope edge used by execution.spawn. The
-   * space_projects SELECT policy applies internal.is_space_member, so omitting
-   * scopeSpaceId for list/read means "any linked Space this caller can read";
-   * attach supplies its destination Space and must be linked there exactly.
+   * Resolve the project's configured directory under the caller's own claims,
+   * so an unreadable project is `not_found` before any filesystem work starts.
    *
-   * The joined lookup intentionally makes an unlinked project and a missing
-   * project the same not_found answer. A projects-only probe followed by a
-   * separate link check would disclose which project ids exist on this node.
+   * LIST and READ require only that the project row is VISIBLE to the caller —
+   * `projects_select` RLS already scopes that to linked-space members and node
+   * admins, and a member who can see a project can already spawn a shell in it
+   * (untrusted is a confirmation gate, not a refusal), so read-only browsing
+   * adds no capability. ATTACH keeps node-admin on top: it copies node-local
+   * bytes into a Space, which is a write with different blast radius.
    */
-  private async project(ctx: RequestContext, projectId: string, scopeSpaceId?: string): Promise<{
+  private async project(ctx: RequestContext, projectId: string, requireNodeAdmin: boolean): Promise<{
     workingDir: string;
     claims: DbClaims;
     viewerIdentityId: string;
@@ -317,27 +363,16 @@ export class W2ProjectFilesService {
       identityId: viewerIdentityId,
       nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
     };
+    if (requireNodeAdmin && claims.nodeAdmin !== true) {
+      throw new CollabError('forbidden', 'node-admin access is required to attach project files');
+    }
     const rows = await this.deps.db.query<WorkingDirRow>(
       claims,
-      `select p.working_dir
-         from public.projects p
-         join public.space_projects sp
-           on sp.project_id = p.id
-        where p.id = $1
-          and ($2::uuid is null or sp.space_id = $2)
-        order by sp.space_id
-        limit 1`,
-      [projectId, scopeSpaceId ?? null],
+      `select working_dir from public.projects where id = $1`,
+      [projectId],
     );
     const row = rows[0];
-    if (!row) {
-      throw new CollabError(
-        'not_found',
-        scopeSpaceId
-          ? `project ${projectId} is not linked to this space`
-          : `project ${projectId} is not linked to a readable space`,
-      );
-    }
+    if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
     return { workingDir: row.working_dir, claims, viewerIdentityId };
   }
 }
