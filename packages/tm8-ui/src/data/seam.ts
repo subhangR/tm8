@@ -133,7 +133,7 @@ import type {
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectFileAttachInput,
-  ProjectFileContent,
+  ProjectFileReadResult,
   ProjectFileListing,
   ProjectId,
   ProjectLinkInput,
@@ -366,7 +366,7 @@ export interface Seam {
      * `ProjectFileEntry.path` and `attach` consumes — a second, relative
      * vocabulary over one filesystem would invite passing one for the other.
      */
-    read(projectId: ProjectId, path: string): Promise<ProjectFileContent>;
+    read(projectId: ProjectId, path: string): Promise<ProjectFileReadResult>;
     attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
   };
   entity(id: EntityId): Promise<EntityDetail>;

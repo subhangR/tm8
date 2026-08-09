@@ -87,7 +87,7 @@ import {
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
-  type ProjectFileContent,
+  type ProjectFileReadResult,
   type ProjectFileListing,
   type ProjectId,
   type ProjectLinkInput,
@@ -299,8 +299,8 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      * document on the app origin. A withheld file arrives as a NAMED `refusal`
      * inside a 200, so a caller can tell it from a transport failure.
      */
-    readProjectFile(projectId: ProjectId, path: string): Promise<ProjectFileContent> {
-      return http.call<ProjectFileContent>('projects.files.read', {
+    readProjectFile(projectId: ProjectId, path: string): Promise<ProjectFileReadResult> {
+      return http.call<ProjectFileReadResult>('projects.files.read', {
         params: { projectId }, query: { path },
       });
     },
