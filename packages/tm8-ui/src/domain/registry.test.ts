@@ -71,6 +71,30 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
   });
 });
 
+describe('loop management is registry-declared and fully wired', () => {
+  it('selects staged create, typed edit, lifecycle controls, and the live Edit verb', () => {
+    const loop = getKind('loop');
+    expect(loop.list.quickCreate).toBe(true);
+    expect(loop.createForm).toBe('scheduled-work');
+    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual([
+      'title', 'schedule', 'teamMemberId', 'subjectId', 'prompt', 'config',
+    ]);
+    expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
+    expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
+    expect(loop.panel.primaries).toEqual(['edit']);
+    // RUNS is the third block on purpose: a loop's firing history IS its
+    // inbound `triggered_by` edges, so a panel without it hides the only
+    // record of what the loop has done.
+    expect(loop.panel.blocks?.map((block) => block.block)).toEqual([
+      'loop-controls', 'fields', 'peer-rows',
+    ]);
+    expect(loop.panel.blocks?.find((block) => block.block === 'peer-rows')?.params).toMatchObject({
+      edgeType: 'triggered_by',
+      direction: 'incoming',
+    });
+  });
+});
+
 describe('slugs, reserved words and route strategies (WLT §2.1 verbatim)', () => {
   const EXPECTED_SLUGS: Record<string, string | null> = {
     task: 'tasks',

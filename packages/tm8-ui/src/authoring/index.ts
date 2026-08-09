@@ -45,7 +45,9 @@ export {
 
 export {
   EditEntityDialog,
+  draftValueFor,
   editsFrom,
+  fieldProblem,
   fieldKey,
   missingRequired,
   type DialogField,
@@ -66,6 +68,7 @@ export {
   type MemoryWorkingSetPort,
 } from './useMemoryWorkingSet';
 export { NewTaskControl } from './NewTaskControl';
+export { EntityCreateControl } from './EntityCreateControl';
 export { RefusalCard, type RefusalMove } from './RefusalCard';
 export { AuthoringHost, SaveControls } from './SaveControls';
 export { StatusSelect, type StatusOption } from './StatusSelect';

@@ -4,13 +4,10 @@ import { render } from '@testing-library/react';
 import { allKinds, getKind } from '../../domain';
 import {
   fixtureDetails,
-  loopDreamer,
-  loopFailing,
   memberAda,
   memoryDisputed,
   memorySuperseded,
   memoryTokens,
-  taskGuideLines,
   teamMemberForge,
   teamMemberScout,
 } from '../../fixtures';
@@ -639,59 +636,10 @@ describe('the memory detail is a registry row, not a new body', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-
-/**
- * THE LOOP DETAIL — the profile archetype's fourth frame, and the second kind
- * to arrive as a registry row with no new body.
- *
- * The loop's RUN HISTORY is its inbound `triggered_by` edges and nothing else:
- * 086 §4.4 states there is no separate run table. So a panel that could not
- * render edge peers could not show a loop's runs at all, which is why the
- * generic `fields` block the kind shipped with was not enough.
+/*
+ * THE LOOP DETAIL used to be the profile archetype's fourth frame. It moved to
+ * `loops/loop-controls.test.tsx` with the panel itself: a loop's body follows
+ * its VERBS, and `loop-controls` mutates, so the kind is `generic` — the only
+ * archetype handed a command executor. Every fact those tests asserted is
+ * asserted there, against the blocks the registry actually ships.
  */
-const LOOP_PANEL = getKind('loop').panel.blocks ?? [];
-
-describe('the loop detail renders schedule and run history from one registry row', () => {
-  it('draws the instruction, the schedule, and the runs', () => {
-    const { getByTestId } = renderBody(loopDreamer.id, LOOP_PANEL as ProfileBlockRef[]);
-    expect(getByTestId('block-bio').textContent).toContain('remembers set');
-    const grid = getByTestId('block-field-grid').textContent ?? '';
-    expect(grid).toContain('Every');
-    expect(grid).toContain('every 1d');
-    expect(grid).toContain('Next run');
-    // Run history IS the edge neighbourhood — the count is of the same list.
-    const runs = getByTestId('block-peer-rows');
-    expect(runs.textContent).toContain('RUNS · 1');
-    expect(runs.textContent).toContain(taskGuideLines.title);
-  });
-
-  it('says an empty run list means it has not fired, not that runs are missing', () => {
-    const { getByTestId } = renderBody(loopFailing.id, LOOP_PANEL as ProfileBlockRef[]);
-    // A designed absence naming the mechanism, never a blank region.
-    expect(getByTestId('block-peer-rows').textContent).toContain('has not fired');
-  });
-
-  it('shows lastError beside enabled — "enabled" alone is not a health claim', () => {
-    /*
-     * The scheduler records a failed firing WITHOUT disabling the loop, so a
-     * panel that drew only `enabled` would render a broken loop as fine. Both
-     * facts, side by side.
-     */
-    const { getByTestId } = renderBody(loopFailing.id, LOOP_PANEL as ProfileBlockRef[]);
-    const grid = getByTestId('block-field-grid').textContent ?? '';
-    expect(grid).toContain('Enabled');
-    expect(grid).toContain('yes');
-    expect(grid).toContain('Last error');
-    expect(grid).toContain('no session slots free');
-  });
-
-  it('renders a dispatcher-routed loop without inventing a runner', () => {
-    // `teamMemberId: null` MEANS "route through the dispatcher" — it is not a
-    // missing value, and the grid must not print a name nobody chose.
-    const { getByTestId } = renderBody(loopDreamer.id, LOOP_PANEL as ProfileBlockRef[]);
-    const grid = getByTestId('block-field-grid').textContent ?? '';
-    expect(grid).toContain('Runs as');
-    expect(grid).toContain('—');
-  });
-});

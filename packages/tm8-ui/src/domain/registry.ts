@@ -1298,6 +1298,31 @@ const ROWS: readonly KindConfig[] = [
     labelPlural: 'Loops',
     icon: '↻',
     iconArt: KIND_ART.loop,
+    createForm: 'scheduled-work',
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Daily project sweep' },
+      {
+        target: 'content', source: 'schedule', label: 'Schedule', required: true,
+        placeholder: 'every 1d or 0 9 * * *', valueType: 'schedule',
+      },
+      {
+        target: 'content', source: 'teamMemberId', label: 'Runner entity ID',
+        placeholder: 'blank routes through Dispatcher', valueType: 'nullable-text',
+      },
+      {
+        target: 'content', source: 'subjectId', label: 'Subject entity ID',
+        placeholder: 'blank uses this loop', valueType: 'nullable-text',
+      },
+      {
+        target: 'content', source: 'prompt', label: 'Prompt',
+        placeholder: 'Instruction sent on every firing', multiline: true,
+      },
+      {
+        target: 'content', source: 'config', label: 'Spawn config (JSON)',
+        placeholder: '{"model":"…","accessMode":"…"}', multiline: true,
+        valueType: 'json-object',
+      },
+    ],
     slug: 'loops',
     strategy: 'collection',
     defaultMode: 'list',
@@ -1305,36 +1330,38 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '↻', tintBy: 'none' },
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
-      quickCreate: false,
+      // The scheduled-work form writes the required schedule and first
+      // `nextRunAt`; the placeholder-only generic flow cannot create a loop.
+      quickCreate: true,
       tile: { badges: [{ source: 'messages' }] },
     }),
     /*
-     * PROFILE, for the same reason `memory` is: the generic `fields` block
-     * cannot list edge peers, and a loop's RUN HISTORY *is* its inbound
-     * `triggered_by` edges (086 §4.4 — "there is no separate run table"). A
-     * loop panel that could not show its runs would be hiding the only record
-     * that exists.
+     * GENERIC, because a loop is the one kind a human OPERATES rather than
+     * reads: enable/disable and Run now are patch commands, and only the
+     * generic body is handed a command executor. `loop-controls` renders the
+     * schedule summary and those verbs together, so the fact and the control
+     * that changes it cannot drift apart.
+     *
+     * MERGE NOTE (integration): the memories/loops UI lane declared this panel
+     * `profile` — `bio`, a SCHEDULE `field-grid` and a `peer-rows` RUN HISTORY
+     * — while the controls lane declared it `generic` with `loop-controls`.
+     * Both were right about a fact the other dropped, and the archetype could
+     * not be both: `loop-controls` mutates, and `ProfileBody` is presentation
+     * that raises intent rather than holding an executor (its own header).
+     *
+     * So the body follows the VERBS and the read blocks came here instead:
+     * `peer-rows` is now drawn by `GenericBody` from the same extracted
+     * component `ProfileBody` and `SubtreeBody` use, and the two facts the
+     * profile grid carried — the null runner meaning "routed through the
+     * Dispatcher", and `lastError` beside `enabled` — moved into the controls
+     * summary itself. No fact either lane drew was dropped.
      */
     panel: {
-      archetype: 'profile',
+      archetype: 'generic',
+      primaries: ['edit'],
       blocks: [
-        /* The instruction each firing carries. Content, not state. */
-        { block: 'bio', params: { source: 'prompt' } },
-        /* Scheduling rides in STATE so a list can say "enabled, next at X"
-           without a second read (the contract's own note), which is also why
-           these render from the summary here. `teamMemberId` absent is
-           MEANINGFUL — it means firings route through the dispatcher rather
-           than naming a runner — so the grid shows it rather than hiding a
-           null. */
-        {
-          block: 'field-grid',
-          label: 'SCHEDULE',
-          params: {
-            fields: 'schedule=Every,enabled=Enabled,nextRunAt=Next run,lastRunAt=Last run,teamMemberId=Runs as,lastError=Last error',
-          },
-        },
-        /* RUN HISTORY. Inbound `triggered_by` from every task or session this
-           loop has fired — the loop's edge neighbourhood IS the history. */
+        { block: 'loop-controls', label: 'SCHEDULE' },
+        { block: 'fields', label: 'DETAILS' },
         {
           block: 'peer-rows',
           label: 'RUNS',

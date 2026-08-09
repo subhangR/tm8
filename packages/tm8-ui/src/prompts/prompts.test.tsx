@@ -97,9 +97,11 @@ describe('PromptsScreen', () => {
     const list = screen.getByLabelText('Prompts');
     // 4 → 5 when `dispatcher` became the FIFTH agent mode (Dreamer &
     // Dispatcher P3): this category holds one instruction per mode, so the
-    // count IS the mode enum's size seen from the prompts screen. Kept a
-    // literal rather than derived — deriving it would make the assertion
-    // tautological and let a mode lose its kernel unnoticed.
+    // count IS the mode enum's size seen from the prompts screen. Measured
+    // from the built catalog — worker, coordinator, both coordinated modes,
+    // and dispatcher — but kept a LITERAL rather than derived: deriving it
+    // would make the assertion tautological and let a mode lose its kernel
+    // unnoticed.
     expect(within(list).getAllByRole('button')).toHaveLength(5);
   });
 

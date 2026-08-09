@@ -48,9 +48,9 @@ import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attentio
 import {
   creatableKind,
   EditEntityDialog,
+  EntityCreateControl,
   MemoryComposer,
   MemoryMarkComposer,
-  NewTaskControl,
   placeholderTitleFor,
   useMemoryMarks,
   useMemoryWorkingSet,
@@ -663,7 +663,16 @@ export function EntityView(props: EntityViewProps) {
           ctx={ctx}
           createSlot={
             config.list.quickCreate ? (
-              <NewTaskControl flow={createFlow} label={config.palette?.createLabel ?? '＋ New'} />
+              <EntityCreateControl
+                config={config}
+                immediate={createFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  setSelectedId(id);
+                }}
+              />
             ) : undefined
           }
           liveIds={data.liveIds}
