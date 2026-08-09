@@ -106,7 +106,15 @@ export interface EntitySummary {
 export type CoreEntityState =
   | { kind: 'task'; workStatus: WorkStatus; priority: 'low'|'medium'|'high'|'urgent';
       axes: Record<string, string>; dueDate?: string | null; assignees: ActorSummary[];
-      acceptance: { total: number; completed: number } }
+      acceptance: { total: number; completed: number };
+      /**
+       * 082's opt-in completion gate, ADDITIVE and OPTIONAL. 'pr_merged'
+       * means `complete` will REFUSE while a tracked PR is unmerged or
+       * CI-red — projected so the UI can say that on the button
+       * (DisabledWithReason) instead of drawing a verb that bounces.
+       * Absent ⇒ an older node; render nothing, assume nothing.
+       */
+      completionGate?: 'none' | 'pr_merged' }
   | { kind: 'channel'; topic: string; members: ActorSummary[]; unreadCount: number;
       workingAgentCount: number }
   | { kind: 'doc'; format: 'markdown'|'mermaid'|'excalidraw'; childCount: number }

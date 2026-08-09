@@ -82,6 +82,12 @@ export interface SubtreeBodyProps {
    */
   livenessOf?: (sessionId: string) => SessionLiveness | undefined;
   onOpenEntity?: (id: string) => void;
+  /**
+   * The task's GIT section (tracked PRs/commits, provenance, gate verdict) —
+   * self-fetching, composed by the host like the panel's debug/git surfaces,
+   * because this body is presentational and never reaches for the seam.
+   */
+  gitSection?: ReactNode;
   /** Wired ⇒ `＋ add child…` is live; absent ⇒ it renders disabled (R7). */
   onAddChild?: () => void;
   /** Current staged value; undefined means use the persisted description. */
@@ -129,6 +135,7 @@ export function SubtreeBody({
   criteriaUnavailableReason,
   memoryAuthoring,
   membershipAuthoring,
+  gitSection,
 }: SubtreeBodyProps) {
   const children = [...detail.hierarchy.children.items];
   const childWork = children.filter((c) => !isRunKind(c));
@@ -219,6 +226,7 @@ export function SubtreeBody({
         </section>
       ) : null}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
+      {gitSection ?? null}
       {notices.length > 0 ? (
         <div className="sb-notices" data-testid="subtree-notices">
           {notices.map((block, i) => {
