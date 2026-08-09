@@ -163,7 +163,7 @@ function pathFor(operation: OperationBinding): string {
   return bindPath(operation.name as OperationName, params);
 }
 
-describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
+describe('W5.C schema-valid stub sweep — all v1 non-WS operations', () => {
   let server: SurfaceServer;
   const rows: Row[] = [];
 
@@ -296,9 +296,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 122 -> 123 on 2026-08-02: execution.launch.
     // The 123 literal was ALREADY red at 124 when this lane arrived (the
     // onboarding read landed without moving it); 125 adds execution.transcript.
-    expect(SURFACE).toHaveLength(125);
-    expect(rows).toHaveLength(125);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(125);
+    // 125 -> 127 (2026-08-09): files.browse + files.read (FILES-DESIGN §5.1).
+    // This file is red in ANY worktree for an unrelated reason (the INSTRUMENT
+    // 'measures src/' check), so a failing-FILE-set diff is BLIND to this pin.
+    // It was found by diffing the ASSERTION set, not the file set.
+    expect(SURFACE).toHaveLength(127);
+    expect(rows).toHaveLength(127);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(127);
   });
 
   /**

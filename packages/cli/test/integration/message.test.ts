@@ -251,7 +251,7 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+    expect(health.operations).toBe(129); // 126 -> 129 (2026-08-09): files.browse + files.read, plus one route this pin had ALREADY drifted past. MEASURED off /health, not previous-plus-two.
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

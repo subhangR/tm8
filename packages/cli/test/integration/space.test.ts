@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(126); // 125 -> 126 (2026-08-02): execution.launch, the one route that serves what a session was TOLD at spawn.
+    expect(health.operations).toBe(129); // 126 -> 129 (2026-08-09): files.browse + files.read, plus one route this pin had ALREADY drifted past. MEASURED off /health, not previous-plus-two.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });
