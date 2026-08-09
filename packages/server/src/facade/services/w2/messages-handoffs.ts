@@ -34,6 +34,7 @@ import {
 } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
 import { loadMessageViewsByIds } from '../../handlers/messages.js';
+import { dispatchSessionMessages, type MessageDeliveryPort } from './message-dispatch.js';
 
 export interface ReservedMessageDelivery {
   readonly deliveryId: string;
@@ -462,72 +463,18 @@ export class W2MessagesHandoffsService {
       // 019:468-474 writes `authored_from` for every message id it minted, or
       // for none of them, and every route below targets a message of this batch
       // (`w2_record_session_message_routes` selects only from `p_message_ids`).
-      const senderAttribution = senderAttributionFor(sourceWorkSessionId);
-      for (const route of stored.routes) {
-        if (!route.sessionInputAllowed || route.targetWorkSessionId === sourceWorkSessionId) continue;
-        const parent = route.threadParentMessageId
-          ? stored.parentsById.get(route.threadParentMessageId)
-          : undefined;
-        const render = (deliveryAttemptId: string) => incomingMessageInjection({
-          kind: route.addressingKind,
-          messageId: route.targetMessageId,
-          messageBatchId: route.messageBatchId,
-          deliveryAttemptId,
-          deliveryAttemptNo: 1,
-          senderActorId: route.senderActorId,
-          senderActorKind: route.senderActorKind,
-          senderAttribution,
-          // NOT "the session that called post" — `sourceWorkSessionId` is the
-          // output of `resolveAuthoredFromWorkSessionId`, the same value handed
-          // to `w2_post_message_batch` as its authored_from provenance, so it is
-          // the AUTHORING session and is null exactly when attribution is
-          // `recorded_only`. The two fields cannot disagree.
-          sourceSessionId: sourceWorkSessionId,
-          destinationSessionId: route.targetWorkSessionId,
-          sourceAnchorId: route.sourceAnchorId,
-          sourceAnchorKind: route.sourceAnchorKind,
-          sourceMessageId: route.sourceMessageId,
-          contextAnchors: route.contextAnchors,
-          threadParentMessageId: route.threadParentMessageId,
-          threadRootMessageId: route.threadRootMessageId,
-          body: route.body,
-          ...(parent
-            ? {
-                parentBody: parent.content.body,
-                parentAuthorDisplay: parent.state.author.displayName,
-              }
-            : {}),
-        });
-        try {
-          const preview = render('00000000-0000-4000-8000-000000000000');
-          if (utf8Bytes(preview) > route.rollingControlMaxBytes) continue;
-          const reservation = await this.options.messageDelivery.reserve({
-            messageId: route.targetMessageId,
-            targetWorkSessionId: route.targetWorkSessionId,
-            content: preview,
-            mode: 'send',
-            requestId: ctx.requestId,
-          });
-          if (!reservation) continue;
-          const content = render(reservation.deliveryId);
-          void this.options.messageDelivery.adapter
-            .dispatch({
-              ...reservation,
-              content,
-              requestId: ctx.requestId,
-              principal: this.options.messageDelivery.principalFor(reservation),
-            })
-            .catch(() => {
-              // Same posture as the try/catch this replaces: the durable row
-              // remains pending/dispatching for the existing maintenance owner
-              // to expire or recover. Stored-first means an adapter outage
-              // cannot roll back or disguise the message command.
-            });
-        } catch {
-          // reserve() itself failing is the one case still caught synchronously
-          // here; dispatch()'s own failures are caught on its own promise above.
-        }
-      }
+      //
+      // The loop itself now lives in message-dispatch.ts — unchanged, but no
+      // longer owned by this handler, because 084's forge watcher posts nudges
+      // from a background job and a second copy of a delivery loop would drift.
+      await dispatchSessionMessages({
+        routes: stored.routes,
+        parentsById: stored.parentsById,
+        requestId: ctx.requestId,
+        sourceWorkSessionId,
+        senderAttribution: senderAttributionFor(sourceWorkSessionId),
+        delivery: this.options.messageDelivery as unknown as MessageDeliveryPort,
+      });
     }
 
     return {

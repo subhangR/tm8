@@ -122,6 +122,27 @@ function route(over: {
   };
 }
 
+/** One row as 084 §K's drain read returns it. */
+function pendingRow(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    pendingId: 'pending-1',
+    spaceId: SPACE,
+    prEntityId: PR,
+    loopKind: 'ci_failure',
+    scopeKey: `build@${'a'.repeat(40)}`,
+    headSha: 'a'.repeat(40),
+    payload: { name: 'build', status: 'completed', conclusion: 'failure', externalId: '9001' },
+    attempts: 0,
+    repo: 'acme/forge',
+    number: 7,
+    headRef: 'feat/child',
+    baseRef: 'main',
+    taskId: '55555555-5555-7555-8555-555555555555',
+    owningSessionId: SESSION,
+    ...over,
+  };
+}
+
 function options(over: Partial<ForgeWatcherOptions> & { db: Db }): ForgeWatcherOptions {
   return { claims: async () => ({ identityId: 'i' }), ...over };
 }
@@ -193,7 +214,7 @@ describe('conditional requests are what make a watcher affordable', () => {
       'public.apply_pr_review_thread_facts': { newlyUnresolved: [] },
     });
     await runForgeWatchTick(options({ db, client: client(route({ pr: notModified })) }));
-    expect(calls(list, 'public.claim_session_nudge')).toEqual([]);
+    expect(calls(list, 'public.post_session_nudge')).toEqual([]);
   });
 
   it('stores the fresh validator on a 200', async () => {
@@ -229,14 +250,18 @@ describe('the CI loop', () => {
         ciStatus: 'failing',
       },
       'public.apply_pr_review_thread_facts': { newlyUnresolved: [] },
-      'public.claim_session_nudge': { claimed: true },
+      'public.claim_pending_nudges': { pending: [] },
       ...over,
     };
   }
 
-  it('posts the failure with the log tail inlined', async () => {
+  it('posts the failure with the log tail inlined, via the drain', async () => {
     const log = Array.from({ length: 300 }, (_, i) => `line ${String(i)}`).join('\n');
-    const { db, calls: list } = fakeDb(ciWorld());
+    const { db, calls: list } = fakeDb(ciWorld({
+      // The apply door queued this transition; the drain is what delivers it.
+      'public.claim_pending_nudges': { pending: [pendingRow()] },
+      'public.post_session_nudge': { posted: true, messageId: 'm1', workSessionId: SESSION },
+    }));
     const outcome = await runForgeWatchTick(options({
       db,
       client: client(route({
@@ -246,9 +271,8 @@ describe('the CI loop', () => {
       logTailLines: 100,
     }));
 
-    const post = calls(list, 'public.post_message')[0];
-    expect(post?.args[0]).toBe(SESSION);
-    const body = String(post?.args[1]);
+    const post = calls(list, 'public.post_session_nudge')[0];
+    const body = String(post?.args[2]);
     expect(body).toContain('CI FAILED');
     expect(body).toContain('line 299');
     expect(body).not.toContain('line 150');
@@ -268,15 +292,12 @@ describe('the CI loop', () => {
     expect(applies[1]?.args[4]).toBe('failing');
   });
 
-  it('does NOT fetch a job log when the nudge is going to be suppressed', async () => {
-    // Log fetching is the most expensive call in the tick. Doing it before the
-    // decision would spend it on every red check of every dead session.
+  it('does NOT fetch a job log when nothing is queued for delivery', async () => {
+    // The log is the most expensive call in the tick, and it is now fetched in
+    // the DRAIN — so a transition with no live addressee (not handed out by
+    // claim_pending_nudges) costs no provider quota at all.
     const seen: Seen[] = [];
-    const { db } = fakeDb(ciWorld({
-      'public.observer_watch_targets': {
-        targets: [watchTarget({ owningSessionStatus: 'exited', owningSessionLive: false })],
-      },
-    }));
+    const { db } = fakeDb(ciWorld({ 'public.claim_pending_nudges': { pending: [] } }));
     await runForgeWatchTick(options({
       db,
       client: client(route({ checks: () => json(JSON.stringify({ check_runs: [redRun] })) }), seen),
@@ -285,7 +306,10 @@ describe('the CI loop', () => {
   });
 
   it('still nudges when the log cannot be read', async () => {
-    const { db, calls: list } = fakeDb(ciWorld());
+    const { db, calls: list } = fakeDb(ciWorld({
+      'public.claim_pending_nudges': { pending: [pendingRow()] },
+      'public.post_session_nudge': { posted: true, messageId: 'm1', workSessionId: SESSION },
+    }));
     await runForgeWatchTick(options({
       db,
       client: client(route({
@@ -293,7 +317,8 @@ describe('the CI loop', () => {
         logs: () => json('nope', 500),
       })),
     }));
-    expect(String(calls(list, 'public.post_message')[0]?.args[1])).toContain('Log tail unavailable');
+    expect(String(calls(list, 'public.post_session_nudge')[0]?.args[2]))
+      .toContain('Log tail unavailable');
   });
 });
 
@@ -312,16 +337,26 @@ describe('the review-thread loop', () => {
       'public.provider_etag_lookup': {},
       'public.apply_pull_request_facts': { previousMergeableState: 'clean', mergeableState: 'clean' },
       'public.apply_pr_check_facts': { newlyFailing: [], ciStatus: null },
-      // The door saw RT_old last tick; only RT_new is news.
+      // The door saw RT_old last tick; only RT_new is news — and it queues it,
+      // carrying the excerpt so the drain needs no second GraphQL call.
       'public.apply_pr_review_thread_facts': { newlyUnresolved: [{ threadKey: 'RT_new' }] },
-      'public.claim_session_nudge': { claimed: true },
+      'public.claim_pending_nudges': {
+        pending: [pendingRow({
+          loopKind: 'review_thread',
+          scopeKey: 'RT_new',
+          headSha: null,
+          payload: { threadKey: 'RT_new', path: 'src/a.ts', line: 3, author: 'reviewer',
+                     bodyExcerpt: 'this leaks' },
+        })],
+      },
+      'public.post_session_nudge': { posted: true, messageId: 'm1', workSessionId: SESSION },
     });
     await runForgeWatchTick(options({ db, client: client(route({ graphql: () => json(graphql) })) }));
 
-    const posts = calls(list, 'public.post_message');
+    const posts = calls(list, 'public.post_session_nudge');
     expect(posts).toHaveLength(1);
-    expect(String(posts[0]?.args[1])).toContain('this leaks');
-    expect(String(posts[0]?.args[1])).not.toContain('told you already');
+    expect(String(posts[0]?.args[2])).toContain('this leaks');
+    expect(String(posts[0]?.args[2])).not.toContain('told you already');
   });
 
   it('a GraphQL 200-with-errors is a failure, not zero unresolved threads', async () => {
@@ -471,7 +506,8 @@ describe('the job log redirect must not carry our credential', () => {
         ciStatus: 'failing',
       },
       'public.apply_pr_review_thread_facts': { newlyUnresolved: [] },
-      'public.claim_session_nudge': { claimed: true },
+      'public.claim_pending_nudges': { pending: [pendingRow()] },
+      'public.post_session_nudge': { posted: true, messageId: 'm1', workSessionId: SESSION },
     });
 
     const BLOB = 'https://objects.githubusercontent.com/signed-blob?token=abc';

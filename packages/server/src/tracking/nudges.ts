@@ -70,7 +70,7 @@ export interface PullRequestDiff {
   mergeableState: string | null;
 }
 
-export interface PendingNudge {
+export interface NudgeCandidate {
   loop: NudgeLoop;
   sessionId: string;
   /** The axis a cap applies to. Per check for CI, per thread for review. */
@@ -89,7 +89,7 @@ export interface SuppressedNudge {
 }
 
 export interface NudgeDecision {
-  nudges: PendingNudge[];
+  nudges: NudgeCandidate[];
   suppressed: SuppressedNudge[];
 }
 
@@ -105,6 +105,40 @@ export const REVIEW_THREAD_NUDGE_CAP = 2;
 const MAX_COMMENT_BODY = 1500;
 
 /**
+ * 019's `w2_post_message_batch` REFUSES a body outside 1..10000 characters
+ * (22023). A hundred lines of CI log plus the untrusted-content banner and the
+ * fences goes past that easily, so an uncapped body is not a cosmetic problem —
+ * it is a nudge that raises instead of sending.
+ *
+ * Headroom below the limit so the fence, banner and truncation notice always
+ * fit around whatever is left of the log.
+ */
+const MAX_MESSAGE_BODY = 9500;
+
+/**
+ * Trim to fit by dropping LINES FROM THE TOP.
+ *
+ * The end of a failing build is where the error is; the top is setup noise. A
+ * tail-truncation would cut off the one thing the agent needs and leave the
+ * dependency install it does not. The cut is announced in the text, because a
+ * silently shortened log invites the reader to conclude the build stopped where
+ * the text stops.
+ */
+export function capBody(body: string, limit = MAX_MESSAGE_BODY): string {
+  if (body.length <= limit) return body;
+  const notice = '… earlier lines trimmed to fit the message limit; the END of the log is kept.\n';
+  const lines = body.split('\n');
+  let kept = lines;
+  while (kept.length > 1 && notice.length + kept.join('\n').length > limit) {
+    kept = kept.slice(1);
+  }
+  const joined = notice + kept.join('\n');
+  // A single line longer than the limit is still possible (a minified stack
+  // trace on one line), so the hard cut stays as the floor under the loop.
+  return joined.length <= limit ? joined : joined.slice(0, limit);
+}
+
+/**
  * The decision, with no I/O in it.
  *
  * `logTails` is keyed by check name and supplied by the caller because fetching
@@ -116,7 +150,7 @@ export function decideNudges(
   diff: PullRequestDiff,
   logTails: ReadonlyMap<string, string>,
 ): NudgeDecision {
-  const nudges: PendingNudge[] = [];
+  const nudges: NudgeCandidate[] = [];
   const suppressed: SuppressedNudge[] = [];
 
   const candidates: NudgeLoop[] = [];
@@ -276,12 +310,17 @@ function quoteInline(text: string): string {
 }
 
 function mergeConflictBody(target: WatchTarget, where: string): string {
+  // Backticks are legal in a git ref, so both refs go through `quoteInline` for
+  // the same reason check names do: an unescaped one ends the inline span early
+  // and the rest of the sentence renders as something nobody wrote.
+  const base = quoteInline(target.baseRef ?? 'the base branch');
+  const head = quoteInline(target.headRef ?? 'unknown');
   return [
-    `MERGE CONFLICT on ${where} — GitHub reports the branch as conflicted against \`${target.baseRef ?? 'the base branch'}\`.`,
-    `Branch: ${target.headRef ?? 'unknown'} @ ${target.headSha ?? 'unknown'}`,
+    `MERGE CONFLICT on ${where} — GitHub reports the branch as conflicted against \`${base}\`.`,
+    `Branch: ${head} @ ${target.headSha ?? 'unknown'}`,
     target.taskId ? `Task: ${target.taskId}` : '',
     '',
-    `Rebase or merge \`${target.baseRef ?? 'the base branch'}\` into this branch and resolve, then push.`,
+    `Rebase or merge \`${base}\` into this branch and resolve, then push.`,
   ]
     .filter((line) => line !== '')
     .join('\n');
@@ -321,6 +360,113 @@ function sign(parts: readonly string[]): string {
   return hash.digest('hex').slice(0, 32);
 }
 
+/**
+ * Turn ONE queued transition into a signed, rendered nudge — or decline it.
+ *
+ * Declining (returning null) leaves the row queued, which is the behaviour the
+ * outbox exists for: a suppression is a statement about right now, not about
+ * the transition. A conflict suppressed because the PR is stacked on an open
+ * parent must be delivered if that parent merges while the row is still
+ * waiting, and only re-evaluating it each drain can do that.
+ */
+export function renderPendingNudge(
+  row: PendingNudge,
+  context: { stackedOnOpenParent: boolean; logTail: string | null },
+): RenderedNudge | null {
+  const where = `${row.repo}#${String(row.number)}`;
+  const target: WatchTarget = {
+    prEntityId: row.prEntityId,
+    spaceId: row.spaceId,
+    provider: 'github',
+    repo: row.repo,
+    number: row.number,
+    state: 'open',
+    headSha: row.headSha,
+    headRef: row.headRef,
+    baseRef: row.baseRef,
+    mergeableState: null,
+    taskId: row.taskId,
+    owningSessionId: row.owningSessionId,
+    owningSessionStatus: null,
+    owningSessionLive: true,
+    stackedOnOpenParent: context.stackedOnOpenParent,
+  };
+
+  if (row.loopKind === 'ci_failure') {
+    const check = checkFromPayload(row.payload);
+    return {
+      signature: sign([
+        'ci',
+        check.name,
+        row.headSha ?? '',
+        `${check.status}/${check.conclusion ?? ''}`,
+        context.logTail === null ? 'no-log' : sign([context.logTail]),
+      ]),
+      body: ciFailureBody(target, where, check, context.logTail),
+      scopeCap: null,
+    };
+  }
+
+  if (row.loopKind === 'merge_conflict') {
+    // The one suppression that survives into the queue.
+    if (context.stackedOnOpenParent) return null;
+    return {
+      signature: sign(['conflict', String(row.number), row.headSha ?? '', row.baseRef ?? '']),
+      body: mergeConflictBody(target, where),
+      scopeCap: null,
+    };
+  }
+
+  const thread = threadFromPayload(row.payload, row.scopeKey);
+  return {
+    signature: sign([
+      'review',
+      thread.threadKey,
+      String(thread.comments.length),
+      thread.comments.map((c) => c.id).join(','),
+    ]),
+    body: reviewThreadBody(target, where, thread),
+    scopeCap: REVIEW_THREAD_NUDGE_CAP,
+  };
+}
+
+function checkFromPayload(payload: Record<string, unknown>): CheckRunFacts {
+  return {
+    name: typeof payload.name === 'string' ? payload.name : 'check',
+    status: typeof payload.status === 'string' ? payload.status : 'completed',
+    conclusion: typeof payload.conclusion === 'string' ? payload.conclusion : null,
+    externalId: typeof payload.externalId === 'string' ? payload.externalId : null,
+    detailsUrl: typeof payload.detailsUrl === 'string' ? payload.detailsUrl : null,
+    startedAt: null,
+    completedAt: null,
+  };
+}
+
+/**
+ * The queued payload holds ONE excerpt, not the whole conversation: it was
+ * captured at detection time from the diff door, which stores an excerpt rather
+ * than every comment. That is deliberate — re-fetching the thread at delivery
+ * time would spend a GraphQL call per queued row, and the excerpt is what the
+ * agent needs to know which conversation is meant.
+ */
+function threadFromPayload(payload: Record<string, unknown>, threadKey: string): ReviewThreadFacts {
+  const body = typeof payload.bodyExcerpt === 'string' ? payload.bodyExcerpt : '';
+  return {
+    threadKey: typeof payload.threadKey === 'string' ? payload.threadKey : threadKey,
+    path: typeof payload.path === 'string' ? payload.path : null,
+    line: typeof payload.line === 'number' ? payload.line : null,
+    isResolved: false,
+    isOutdated: payload.isOutdated === true,
+    comments: body === ''
+      ? []
+      : [{
+          id: String(payload.commentCount ?? 1),
+          author: typeof payload.author === 'string' ? payload.author : null,
+          body,
+        }],
+  };
+}
+
 export interface NudgeDelivery {
   delivered: number;
   duplicates: number;
@@ -329,75 +475,127 @@ export interface NudgeDelivery {
   failed: string[];
 }
 
+/** One row of 084 §K's outbox, joined with the pull request it is about. */
+export interface PendingNudge {
+  pendingId: string;
+  spaceId: string;
+  prEntityId: string;
+  loopKind: NudgeLoop;
+  scopeKey: string;
+  headSha: string | null;
+  payload: Record<string, unknown>;
+  attempts: number;
+  repo: string;
+  number: number;
+  headRef: string | null;
+  baseRef: string | null;
+  taskId: string | null;
+  owningSessionId: string | null;
+}
+
+/** What the caller must supply to turn one queued transition into a message. */
+export interface RenderedNudge {
+  signature: string;
+  body: string;
+  scopeCap: number | null;
+}
+
 /**
- * CLAIM, POST, RELEASE-ON-FAILURE.
- *
- * The order matters and it is argued in 084 §J: recording after posting
- * re-sends on any crash between the two, which is exactly what the durable
- * table exists to prevent. Claiming first can instead lose one message if the
- * process dies mid-post, and one lost message is a smaller harm than a restart
- * that re-delivers every red check in the space.
- *
- * The signature is ALSO the message's client mutation id, so `post_message`'s
- * own domain idempotency (007) is a second net under the first: even if the
- * dedup row were somehow rolled back, the same author posting the same cmid
- * gets the existing message back rather than a duplicate.
+ * Dispatch the routes a delivered nudge produced. Injected, because reserving a
+ * slot and writing to a PTY is the facade's machinery and this module must not
+ * grow a second copy of it (see facade/services/w2/message-dispatch.ts).
  */
-export async function deliverNudges(
+export type NudgeDispatcher = (posted: {
+  routes: unknown;
+  workSessionId: string;
+}) => Promise<void>;
+
+/**
+ * Drain: for each queued transition, post through 084 §K4 and dispatch.
+ *
+ * THE ORDERING IS THE DOOR'S, NOT OURS, and that is the point of the rewrite.
+ * The first version claimed a dedup signature, posted, and released on failure
+ * — three round trips with two windows in them. §K4 does the dedup claim, the
+ * `w2_post_message_batch` send and the queue settlement in ONE transaction, so
+ * a failure rolls all three back together and the transition stays queued for
+ * the next tick rather than being recorded as told.
+ *
+ * What remains here is only what SQL cannot do: rendering the body, and handing
+ * the resulting routes to the PTY dispatcher.
+ */
+export async function deliverPendingNudges(
   db: Db,
   claims: DbClaims,
-  nudges: readonly PendingNudge[],
+  pending: readonly PendingNudge[],
+  render: (row: PendingNudge) => Promise<RenderedNudge | null>,
+  dispatch?: NudgeDispatcher,
 ): Promise<NudgeDelivery> {
   const result: NudgeDelivery = { delivered: 0, duplicates: 0, capped: 0, notLive: 0, failed: [] };
 
-  for (const nudge of nudges) {
-    let claimed: { claimed?: unknown; reason?: unknown };
+  for (const row of pending) {
+    let rendered: RenderedNudge | null;
     try {
-      claimed = await db.rpc(claims, 'public.claim_session_nudge', [
-        nudge.sessionId,
-        nudge.loop,
-        nudge.scopeKey,
-        nudge.signature,
-        nudge.scopeCap,
-      ]);
+      rendered = await render(row);
     } catch (error) {
-      result.failed.push(`${nudge.loop}/${nudge.scopeKey}: claim failed: ${describe(error)}`);
+      result.failed.push(`${row.loopKind}/${row.scopeKey}: render failed: ${describe(error)}`);
       continue;
     }
+    // A renderer that declines (a suppression rule fired) leaves the row
+    // QUEUED rather than settling it — the rule may not hold next tick, and
+    // that is precisely the case the outbox exists for.
+    if (rendered === null) continue;
 
-    if (claimed.claimed !== true) {
-      if (claimed.reason === 'duplicate') result.duplicates += 1;
-      else if (claimed.reason === 'capped') result.capped += 1;
-      else if (claimed.reason === 'session_not_live') result.notLive += 1;
-      continue;
-    }
-
+    let posted: { posted?: unknown; reason?: unknown; messageId?: unknown; workSessionId?: unknown };
     try {
-      await db.rpc(claims, 'public.post_message', [
-        nudge.sessionId,
-        nudge.body,
-        null,
-        null,
-        '[]',
-        '[]',
-        `nudge:${nudge.loop}:${nudge.signature}`,
+      posted = await db.rpc(claims, 'public.post_session_nudge', [
+        row.pendingId,
+        rendered.signature,
+        capBody(rendered.body),
+        rendered.scopeCap,
+        // The signature doubles as the client mutation id, so 019's own domain
+        // idempotency is a second net under §J's dedup table.
+        `nudge:${row.loopKind}:${rendered.signature}`,
       ]);
-      result.delivered += 1;
     } catch (error) {
-      result.failed.push(`${nudge.loop}/${nudge.scopeKey}: post failed: ${describe(error)}`);
-      // Give the signature back. Without this the agent never hears about this
-      // failure — the dedup row says it was already told, and it was not.
+      result.failed.push(`${row.loopKind}/${row.scopeKey}: post failed: ${describe(error)}`);
+      // The post rolled back, so the row is still pending. Record WHY on it, or
+      // a repeatedly-poisonous nudge is invisible until someone reads the logs.
       try {
-        await db.rpc(claims, 'public.release_session_nudge', [
-          nudge.sessionId,
-          nudge.loop,
-          nudge.scopeKey,
-          nudge.signature,
+        await db.rpc(claims, 'public.record_pending_nudge_failure', [
+          row.pendingId,
+          describe(error),
         ]);
-      } catch (releaseError) {
-        result.failed.push(
-          `${nudge.loop}/${nudge.scopeKey}: release failed: ${describe(releaseError)}`,
-        );
+      } catch {
+        // Best effort: the attempt counter is diagnostics, not correctness.
+      }
+      continue;
+    }
+
+    if (posted.posted !== true) {
+      if (posted.reason === 'duplicate') result.duplicates += 1;
+      else if (posted.reason === 'capped') result.capped += 1;
+      else if (posted.reason === 'session_not_live' || posted.reason === 'no_owning_session') {
+        result.notLive += 1;
+      }
+      continue;
+    }
+
+    result.delivered += 1;
+    if (dispatch && typeof posted.workSessionId === 'string' && typeof posted.messageId === 'string') {
+      try {
+        // Recorded HERE, as tm8_app, because 072 grants this door to tm8_app
+        // and not to the role §K4 runs as. It is a delivery-shaping step, not
+        // part of what has to be atomic — see the door's header.
+        const routes = await db.rpc(claims, 'public.w2_record_session_message_routes', [
+          [posted.messageId],
+          null,
+        ]);
+        await dispatch({ routes, workSessionId: posted.workSessionId });
+      } catch (error) {
+        // The message IS stored and the queue row IS settled; only the terminal
+        // write failed, and 019's delivery rows own that retry. Reporting it
+        // without unwinding is the stored-first contract.
+        result.failed.push(`${row.loopKind}/${row.scopeKey}: dispatch failed: ${describe(error)}`);
       }
     }
   }

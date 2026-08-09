@@ -44,6 +44,11 @@ import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createSessionIdentityResolver } from './http/identity-resolver.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
 import {
+  dispatchSessionMessages,
+  type DispatchableRoute,
+  type MessageDeliveryPort,
+} from './facade/services/w2/message-dispatch.js';
+import {
   loadConfig,
   resolveClipboardDir,
   resolveServerDataDir,
@@ -696,6 +701,31 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             requestId: 'forge-watcher',
           };
         },
+        // The same delivery machinery the `messages.post` request path uses, so
+        // a nudge reaches an agent's terminal by exactly the route a human's
+        // message does. Absent when there is no execution runtime: the nudge is
+        // still stored, it is simply never injected — the honest degraded mode,
+        // and the same one `registerFacadeHandlers` takes above.
+        ...(delivery
+          ? {
+              dispatch: async ({ routes, workSessionId }: {
+                routes: unknown;
+                workSessionId: string;
+              }) => {
+                await dispatchSessionMessages({
+                  routes: Array.isArray(routes) ? (routes as DispatchableRoute[]) : [],
+                  parentsById: new Map(),
+                  requestId: `forge-watcher:${workSessionId}`,
+                  // The watcher is not a session, so there is no authoring
+                  // session and attribution is `recorded_only` — the same value
+                  // 019 derives for any writer that is not an agent.
+                  sourceWorkSessionId: null,
+                  senderAttribution: 'recorded_only',
+                  delivery: delivery.messageDelivery as unknown as MessageDeliveryPort,
+                });
+              },
+            }
+          : {}),
       }),
     );
     // The file-upload slot sweep — expiry + staged-byte cleanup (094). Only
