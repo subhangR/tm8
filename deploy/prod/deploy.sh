@@ -170,12 +170,27 @@ stop_prod() {
   ok "prod stopped ($TM8_UI_PORT and $TM8_PORT free)"
 }
 
+# TM8_NODE_BIN is PROBED for by env.sh (first candidate reporting major 22 wins)
+# and is EMPTY when the machine has no such node — which a `brew upgrade` moving
+# the bare node off 22 is enough to cause. Asserting it is not optional bookkeeping:
+# run-server.sh would otherwise `exec ""` and die at 127 on every supervised
+# restart. Kept as a function because the modes that skip preflight — --restart
+# and --rollback — start prod too, and used to start it straight into that loop.
+require_node() {
+  [[ -n "$TM8_NODE_BIN" && -x "$TM8_NODE_BIN" ]] \
+    || die "no node 22 found (server+execution load node-pty, which is broken under bun).
+       env.sh probes ~/.local/bin/node, the node@22 keg, then PATH. Install one:
+         brew install node@22
+       or point at it: TM8_NODE_BIN=/path/to/node $0"
+}
+
 start_prod() {
   mkdir -p "$LOGDIR"
   local ts; ts="$(date '+%Y-%m-%dT%H:%M:%S')"
 
   echo "=== deploy $ts ===" >> "$LOGDIR/server.log"
   nohup "$LIVE/deploy/prod/supervise.sh" run-server.sh >> "$LOGDIR/server.log" 2>&1 &
+  local server_sup=$!
   disown || true
   info "server supervisor started → $LOGDIR/server.log"
 
@@ -183,6 +198,14 @@ start_prod() {
   while (( waited < 90 )); do
     body="$(curl -fsS --max-time 3 "http://127.0.0.1:$TM8_PORT/health" 2>/dev/null || true)"
     if [[ "$body" == *'"db"'*'"ok"'* ]]; then break; fi
+    # A supervisor that is GONE has given up (child exited 78 — no build, no node).
+    # It never exits on its own otherwise, so waiting out the remaining timeout
+    # only delays the same failure and buries its cause under a health-check story.
+    if ! kill -0 "$server_sup" 2>/dev/null; then
+      echo "--- last 40 lines of $LOGDIR/server.log ---" >&2
+      tail -40 "$LOGDIR/server.log" >&2
+      die "the server supervisor gave up after ${waited}s — see the cause above"
+    fi
     sleep 1; waited=$((waited + 1))
   done
   [[ "$body" == *'"db"'*'"ok"'* ]] || {
@@ -194,12 +217,18 @@ start_prod() {
 
   echo "=== deploy $ts ===" >> "$LOGDIR/ui.log"
   nohup "$LIVE/deploy/prod/supervise.sh" run-ui.sh >> "$LOGDIR/ui.log" 2>&1 &
+  local ui_sup=$!
   disown || true
   info "ui supervisor started → $LOGDIR/ui.log"
 
   waited=0
   while (( waited < 60 )); do
     curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:$TM8_UI_PORT/" 2>/dev/null && break
+    if ! kill -0 "$ui_sup" 2>/dev/null; then
+      echo "--- last 40 lines of $LOGDIR/ui.log ---" >&2
+      tail -40 "$LOGDIR/ui.log" >&2
+      die "the ui supervisor gave up after ${waited}s — see the cause above"
+    fi
     sleep 1; waited=$((waited + 1))
   done
   curl -fsS --max-time 3 -o /dev/null "http://127.0.0.1:$TM8_UI_PORT/" 2>/dev/null || {
@@ -214,15 +243,25 @@ start_prod() {
 # 7777 and 8888 both answer "healthy tm8-server" and tell you nothing about which
 # build you reached. Identify by listener → process → script path.
 verify_prod() {
-  local fail=0 pid cmd
+  local fail=0 pid cmd cwd
   for port in "$TM8_PORT" "$TM8_UI_PORT"; do
     pid="$(port_pid "$port")"
     [[ -n "$pid" ]] || { warn "nothing listening on $port"; fail=1; continue; }
     cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+    # argv identifies the SERVER, whose command line carries an absolute
+    # …/packages/server/dist/index.js. It cannot identify the UI: run-ui.sh cds
+    # into the build and runs `node_modules/.bin/vite`, so every path in vite's
+    # argv is relative and no absolute path appears anywhere in it. Fall back to
+    # the process's cwd — the same evidence legacy_supervisor_pids() already uses
+    # for the same reason, and the only thing that distinguishes prod's vite from
+    # staging's, since both run byte-identical command lines.
+    cwd="$(lsof -a -d cwd -p "$pid" -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)"
     if [[ "$cmd" == *"$LIVE"* ]]; then
       ok "$port ← pid $pid ($LIVE)"
+    elif [[ -n "$cwd" && ( "$cwd" == "$LIVE" || "$cwd" == "$LIVE"/* ) ]]; then
+      ok "$port ← pid $pid (cwd $cwd)"
     else
-      warn "$port ← pid $pid is NOT the prod build: $cmd"
+      warn "$port ← pid $pid is NOT the prod build: $cmd${cwd:+  [cwd $cwd]}"
       fail=1
     fi
   done
@@ -270,6 +309,7 @@ case "$MODE" in
   restart)
     TOTAL_STEPS=3
     [[ -x "$LIVE/deploy/prod/supervise.sh" ]] || die "no deployable build at $LIVE (run a full deploy first)"
+    require_node          # before stopping: a restart that cannot start must not take prod down
     step "Stopping prod";  stop_prod "$LIVE"
     step "Starting prod";  start_prod
     step "Verifying";      verify_prod || die "prod restarted but did not verify"
@@ -279,6 +319,7 @@ case "$MODE" in
   rollback)
     TOTAL_STEPS=4
     [[ -d "$PREV" ]] || die "no previous build at $PREV"
+    require_node          # same reason as --restart: do not stop what cannot restart
     step "Stopping prod"; stop_prod "$LIVE"
     step "Swapping $PREV back in"
     tmp="$LIVE.rollback.$$"
@@ -307,10 +348,7 @@ printf '%stm8 prod deploy%s  %s → %s\n' "$BOLD" "$OFF" "$SRC" "$LIVE"
 
 # --- 1. preflight ------------------------------------------------------------
 step "Preflight"
-[[ -n "$TM8_NODE_BIN" && -x "$TM8_NODE_BIN" ]] \
-  || die "no node 22 found (server+execution load node-pty, which is broken under bun).
-       env.sh probes ~/.local/bin/node, the node@22 keg, then PATH. Install one,
-       or point at it: TM8_NODE_BIN=/path/to/node $0"
+require_node
 command -v bun   >/dev/null || die "bun not on PATH"
 command -v rsync >/dev/null || die "rsync not on PATH"
 
