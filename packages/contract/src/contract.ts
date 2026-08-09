@@ -1141,6 +1141,9 @@ export interface LinkPrInput extends CommandContext { clientMutationId: string; 
 /** POST /v2/entities/:id/commands/link-commit — analogous to link-pr (01 §6). */
 export interface LinkCommitInput extends CommandContext { clientMutationId: string; url: string; projectId?: ProjectId }
 
+/** POST /v2/entities/:id/commands/gate — 082's opt-in completion gate. 'pr_merged' makes complete refuse while a tracked PR is unmerged or CI-red. */
+export interface GateTaskInput extends CommandContext { expectedVersion: number; gate: 'none' | 'pr_merged' }
+
 export interface TaskAxisInput extends CommandContext {
   name: string;
   axisValues: string[];

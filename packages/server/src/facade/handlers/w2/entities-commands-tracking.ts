@@ -2,6 +2,7 @@ import { json } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import {
   commandsComplete,
+  commandsGate,
   commandsWork,
   entitiesPointsAdd,
 } from '../commands.js';
@@ -34,6 +35,7 @@ export function registerW2EntitiesCommandsTrackingHandlers(
     'entities.points.add': entitiesPointsAdd(deps),
     'entities.commands.complete': commandsComplete(deps),
     'entities.commands.work': commandsWork(deps),
+    'entities.commands.gate': commandsGate(deps),
     'entities.commands.pull': service.pull,
     'entities.commands.linkPr': service.linkPr,
     'entities.commands.linkCommit': service.linkCommit,

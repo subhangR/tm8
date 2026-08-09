@@ -39,6 +39,7 @@ import type {
   ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
+  GateTaskInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
@@ -1445,6 +1446,12 @@ export const LinkCommitInputSchema: z.ZodType<LinkCommitInput> = z.object({
   clientMutationId: z.string().min(1),
   url: z.string().url(),
   projectId: z.string().min(1).optional(),
+}).strict();
+
+export const GateTaskInputSchema: z.ZodType<GateTaskInput> = z.object({
+  ...commandContextShape,
+  expectedVersion: z.number().finite(),
+  gate: z.enum(['none', 'pr_merged']),
 }).strict();
 
 export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
