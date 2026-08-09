@@ -266,7 +266,11 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
       // ONE Amendment 5, not two. Sorts around `createEntity` / `deleteEntity`,
       // beside the entity verbs they mirror.
       'complete', 'createEdge', 'createEntity', 'createTask', 'deleteEdge', 'deleteEntity',
-      'editMessage', 'markRead',
+      'editMessage',
+      // Git UI wave (2026-08-09): the session git rail's four verbs — the #76
+      // verbs behind the facade, for surfaces with no machine to run git on.
+      'gitCheckpoint', 'gitCommit', 'gitMerge', 'gitRollback',
+      'markRead',
       'moveEntity', 'patchEntity', 'patchTask', 'postMessage',
       // Amendment 2 (2026-07-31): the artifacts preview decisions were
       // ratified, so the Run button gained its one command (seam.ts header).

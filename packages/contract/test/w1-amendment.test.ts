@@ -65,8 +65,13 @@ describe('W1 adopted catalog target', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
     // 131 -> 135: credentials.status (GET/read), delete (DELETE/command),
     // and two login-session POST commands. All four are v1 and human-only.
-    expect(OPERATIONS).toHaveLength(137);
-    expect(V1_OPERATIONS).toHaveLength(135);
+    // 135 -> 137: projects folders amendment (#49).
+    // 137 -> 143 (2026-08-09, Git UI wave): execution.gitStatus + gitDiff
+    // (GET reads) and gitCheckpoint/gitRollback/gitCommit/gitMerge (POST
+    // commands) — the session git rail behind the facade. MEASURED per PIN
+    // RULE v3, never carried.
+    expect(OPERATIONS).toHaveLength(143);
+    expect(V1_OPERATIONS).toHaveLength(141);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -82,12 +87,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 52, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 54, POST: 62, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 55, command: 81, stream: 1 });
+    }).toEqual({ read: 57, command: 85, stream: 1 });
   });
 });
 

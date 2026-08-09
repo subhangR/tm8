@@ -65,6 +65,7 @@ export const ENTITY_COLUMNS = `
   coalesce(ec.messages, 0) as messages,
   t.title as task_title, t.description as task_description, t.axes as task_axes,
   t.work_status, t.priority, t.acceptance_criteria, t.points_estimate, t.due_date,
+  t.completion_gate,
   d.title as doc_title, d.body as doc_body, d.format as doc_format,
   ch.name as channel_name, ch.topic as channel_topic,
   vc.name as voice_channel_name,
@@ -171,6 +172,7 @@ export interface EntityRow {
   task_axes: Record<string, string> | null;
   work_status: string | null;
   priority: string | null;
+  completion_gate: string | null;
   acceptance_criteria: AcceptanceCriterion[] | null;
   points_estimate: number | null;
   due_date: Date | string | null;
@@ -1087,6 +1089,7 @@ function stateOf(row: EntityRow, ctx: AssemblyContext): EntityState {
         dueDate: dateOnly(row.due_date),
         assignees: (ctx.relations.assignees.get(row.id) ?? []).map((id) => actorOf(ctx.actors, id)),
         acceptance: acceptanceOf(row),
+        completionGate: row.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
       };
     case 'channel':
       return {

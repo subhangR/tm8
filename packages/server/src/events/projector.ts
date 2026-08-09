@@ -175,6 +175,7 @@ interface SummaryRow {
   task_description: string | null;
   work_status: string | null;
   priority: string | null;
+  completion_gate: string | null;
   axes: Record<string, unknown> | null;
   due_date: Date | string | null;
   acceptance_criteria: unknown[] | null;
@@ -273,7 +274,7 @@ select
   c.likes, c.dislikes, c.stars, c.points, c.messages,
   t.title            as task_title,
   t.description      as task_description,
-  t.work_status, t.priority, t.axes, t.due_date, t.acceptance_criteria,
+  t.work_status, t.priority, t.axes, t.due_date, t.acceptance_criteria, t.completion_gate,
   d.title            as doc_title,
   d.body             as doc_body,
   d.format           as doc_format,
@@ -801,6 +802,7 @@ export class PgEntityProjector implements EntityProjector {
           dueDate: iso(r.due_date),
           assignees: assignees.map((id) => actors.get(id) ?? this.unknownActor(id)),
           acceptance: { total: criteria.length, completed },
+          completionGate: r.completion_gate === 'pr_merged' ? 'pr_merged' : 'none',
         };
       }
       case 'doc':
