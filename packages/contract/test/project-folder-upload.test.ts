@@ -109,6 +109,7 @@ describe('client-machine project folder upload contract', () => {
       fileCount: 1,
       directoryCount: 1,
       totalBytes: 0,
+      replacedCount: 0,
     }).success).toBe(true);
   });
 });

@@ -975,6 +975,39 @@ const ROWS: Record<OperationName, Row> = {
       '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
     ],
   },
+  'projects.folderUploads.init': {
+    cmd: null,
+    sum: 'Freeze a browser folder-upload manifest and issue per-file byte grants',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'the browser-originated half of R7 folder import; a CLI caller already holds the node filesystem and links a directory as a project directly',
+    ],
+  },
+  'projects.folderUploads.complete': {
+    cmd: null,
+    sum: 'Materialize a staged folder upload as a project working directory and link it to the Space',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      "mode 'merge' replaces matching paths in place and reports replacedCount (R8); 'create' reserves a new root exclusively",
+    ],
+  },
+  'projects.folderUploads.abort': {
+    cmd: null,
+    sum: 'Abort a pending folder upload and release its staged bytes',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'staged blobs and the frozen manifest are removed; nothing was materialized yet',
+    ],
+  },
 
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
@@ -1719,7 +1752,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
+  'sha256:8618d884cde016210c7b2e516d30fc3b922ac358b8017a61935da20bd595bbbb';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 import {
@@ -31,6 +31,13 @@ export interface MaterializeProjectFolderInput {
   manifest: NormalizedProjectFolderManifest;
   allowedRoots: string[];
   readBytes: (relativePath: string) => Promise<Uint8Array>;
+  /**
+   * 'create' (default) reserves a NEW root exclusively; 'merge' re-uploads
+   * into an EXISTING root (R8): every byte is staged and verified in a
+   * sibling temp directory first, then matching paths are replaced by atomic
+   * rename and new paths added. Nothing under the root is deleted.
+   */
+  mode?: 'create' | 'merge';
 }
 
 export interface MaterializedProjectFolder {
@@ -38,6 +45,8 @@ export interface MaterializedProjectFolder {
   fileCount: number;
   directoryCount: number;
   totalBytes: number;
+  /** Files that already existed and were replaced in place (0 for 'create'). */
+  replacedCount: number;
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -175,6 +184,11 @@ export async function materializeProjectFolder(
     throw new Error('destination root escapes its parent');
   }
 
+  const mode = input.mode ?? 'create';
+  if (mode === 'merge') {
+    return mergeProjectFolder(input, resolvedParent, workingDir);
+  }
+
   let ownsDestination = false;
   try {
     await mkdir(workingDir, { recursive: false });
@@ -185,15 +199,7 @@ export async function materializeProjectFolder(
     }
 
     for (const file of input.manifest.files) {
-      const bytes = await input.readBytes(file.relativePath);
-      if (bytes.byteLength !== file.sizeBytes) {
-        throw new Error(`size mismatch for ${file.relativePath}`);
-      }
-      const checksum = createHash('sha256').update(bytes).digest('hex');
-      if (checksum !== file.checksumSha256) {
-        throw new Error(`checksum mismatch for ${file.relativePath}`);
-      }
-
+      const bytes = await verifiedBytes(input, file);
       const segments = file.relativePath.split('/');
       if (segments.length > 1) {
         await mkdir(resolve(workingDir, ...segments.slice(0, -1)), { recursive: true });
@@ -211,9 +217,95 @@ export async function materializeProjectFolder(
       fileCount: input.manifest.files.length,
       directoryCount: input.manifest.directories.length,
       totalBytes: input.manifest.totalBytes,
+      replacedCount: 0,
     };
   } catch (error) {
     if (ownsDestination) await rm(workingDir, { recursive: true, force: true });
     throw error;
+  }
+}
+
+async function verifiedBytes(
+  input: MaterializeProjectFolderInput,
+  file: NormalizedProjectFolderFile,
+): Promise<Uint8Array> {
+  const bytes = await input.readBytes(file.relativePath);
+  if (bytes.byteLength !== file.sizeBytes) {
+    throw new Error(`size mismatch for ${file.relativePath}`);
+  }
+  const checksum = createHash('sha256').update(bytes).digest('hex');
+  if (checksum !== file.checksumSha256) {
+    throw new Error(`checksum mismatch for ${file.relativePath}`);
+  }
+  return bytes;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * R8 merge-and-replace. The existing root is REQUIRED. Every byte is written
+ * and verified inside a sibling staging directory first, so a size or
+ * checksum failure leaves the existing root byte-identical; only the apply
+ * phase (atomic per-file renames on one filesystem) touches it.
+ */
+async function mergeProjectFolder(
+  input: MaterializeProjectFolderInput,
+  resolvedParent: string,
+  workingDir: string,
+): Promise<MaterializedProjectFolder> {
+  const resolvedWorkingDir = await realpath(workingDir).catch(() => {
+    throw new Error('merge destination does not exist');
+  });
+  if (!isWithinRoot(resolvedWorkingDir, resolvedParent)) {
+    throw new Error('merge destination escapes its parent');
+  }
+
+  const stagingDir = resolve(resolvedParent, `.tm8-folder-upload-${input.folderUploadId}`);
+  let replacedCount = 0;
+  try {
+    await mkdir(stagingDir, { recursive: false });
+
+    for (const file of input.manifest.files) {
+      const bytes = await verifiedBytes(input, file);
+      const segments = file.relativePath.split('/');
+      if (segments.length > 1) {
+        await mkdir(resolve(stagingDir, ...segments.slice(0, -1)), { recursive: true });
+      }
+      await writeFile(resolve(stagingDir, ...segments), bytes, { flag: 'wx' });
+    }
+
+    // Everything verified; apply. Directories first, then per-file rename.
+    for (const directory of input.manifest.directories) {
+      await mkdir(resolve(workingDir, ...directory.split('/')), { recursive: true });
+    }
+    for (const file of input.manifest.files) {
+      const segments = file.relativePath.split('/');
+      const target = resolve(workingDir, ...segments);
+      if (segments.length > 1) {
+        await mkdir(resolve(workingDir, ...segments.slice(0, -1)), { recursive: true });
+      }
+      if (await exists(target)) replacedCount += 1;
+      await rename(resolve(stagingDir, ...segments), target);
+    }
+
+    const finalParent = await realpath(input.destinationParent);
+    if (finalParent !== resolvedParent) throw new Error('destination parent changed during upload');
+
+    return {
+      workingDir,
+      fileCount: input.manifest.files.length,
+      directoryCount: input.manifest.directories.length,
+      totalBytes: input.manifest.totalBytes,
+      replacedCount,
+    };
+  } finally {
+    await rm(stagingDir, { recursive: true, force: true });
   }
 }

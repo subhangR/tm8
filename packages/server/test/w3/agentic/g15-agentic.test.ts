@@ -32,7 +32,7 @@ import {
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
 // Re-derived 2026-08-09 at the dispatcher merge — the catalog is now 138 rows.
-const CATALOG_DIGEST = 'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
+const CATALOG_DIGEST = 'sha256:8618d884cde016210c7b2e516d30fc3b922ac358b8017a61935da20bd595bbbb';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {

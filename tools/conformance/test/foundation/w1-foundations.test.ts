@@ -44,23 +44,24 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // 131 -> 135: credentials.* (1 GET/read, 3 commands).
       // 137 -> 138 (2026-08-09, merge): execution.dispatch joins from
       // feat/dispatcher-loops.
-      total: 138,
-      v1: 136,
+      // 138 -> 141 (2026-08-10): projects.folderUploads.init/complete/abort.
+      total: 141,
+      v1: 139,
       reserved: 2,
-      http: 137,
+      http: 140,
       ws: 1,
-      registerableV1Http: 135,
-      methods: { GET: 52, POST: 59, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 },
-      kinds: { read: 55, command: 82, stream: 1 },
-      uniqueNames: 138,
-      uniqueBindings: 138,
+      registerableV1Http: 138,
+      methods: { GET: 52, POST: 62, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 },
+      kinds: { read: 55, command: 85, stream: 1 },
+      uniqueNames: 141,
+      uniqueBindings: 141,
     });
     expect(manifest.catalog.total).toBe(OPERATIONS.length);
     expect(manifest.catalog.v1).toBe(V1_OPERATIONS.length);
     expect(manifest.reservedOperations).toEqual(RESERVED_OPERATIONS.map(({ name }) => name));
     expect(manifest.additiveOperations.map(({ name }) => name)).toEqual(ADDITIVE_OPERATION_NAMES);
 
-    expect(manifest.routes.http).toHaveLength(137);
+    expect(manifest.routes.http).toHaveLength(140);
     expect(manifest.routes.ws).toEqual([{
       operation: 'events.subscribe',
       method: 'WS',
@@ -87,7 +88,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.serverRegistries.inputSchemas.bound).toHaveLength(36);
     expect(manifest.serverRegistries.inputSchemas.unboundCommands).toHaveLength(13);
     // 135 current registerable v1 HTTP ops minus the 28 W1-implemented.
-    expect(manifest.serverRegistries.unimplementedV1Http).toBe(107);
+    expect(manifest.serverRegistries.unimplementedV1Http).toBe(110);
     expect(manifest.additiveOperations.every(({ semanticStatus }) => semanticStatus === 'unimplemented')).toBe(true);
   });
 
@@ -113,7 +114,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
       // `credentials.*` operations raise this even though they ARE implemented
       // — this axis measures distance from the FROZEN W1 boundary, not from
       // what is mounted today. Read out of the failure, which said 100.
-      unimplementedV1Http: 107,
+      unimplementedV1Http: 110,
     });
   });
 
@@ -165,7 +166,7 @@ describe('W1.C generated catalog and reachability foundations', () => {
     expect(manifest.help.rejectedLegacyAliases).toEqual([
       'whoami', 'report', 'progress', 'session prompt',
     ]);
-    expect(manifest.help.operations).toHaveLength(138);
+    expect(manifest.help.operations).toHaveLength(141);
     for (const operation of OPERATIONS) {
       expect(exactOperationHelp(manifest, operation.name).operation).toBe(operation.name);
     }
@@ -330,7 +331,7 @@ describe('W2.C01 current mounted registry inventory', () => {
       readInputSchemaSourceInventory(),
     ]);
 
-    expect(handlers.facade).toHaveLength(123);
+    expect(handlers.facade).toHaveLength(126);
     // Tranche-v5 = tranche-v4 plus exactly SEVEN facade handlers, each in a
     // concurrent feature lane (not the W1 amendment set):
     //  - voice.token.create (voice-channels lane);
@@ -346,13 +347,15 @@ describe('W2.C01 current mounted registry inventory', () => {
     // projects.branches.list adds exactly one facade handler.
     // Tier 4 adds two facade handlers.
     // credentials.* add four facade handlers.
-    expect(handlers.all).toHaveLength(135);
+    // projects.folderUploads.* add three facade handlers (2026-08-10).
+    expect(handlers.all).toHaveLength(138);
     expect(handlers.all).toEqual([...new Set(handlers.all)].sort());
     expect(createHash('sha256').update(JSON.stringify(handlers.all)).digest('hex'))
-      .toBe('e9f005e519f4ae581386d2072f3cf9e791c9fda1d697548b6555417196afbd5f');
+      .toBe('158643fb5024a45009255d40483c6347a3189d56a335fd8acbaca87767819aed');
 
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its command body.
-    expect(inputSchemas.bound).toHaveLength(75);
+    // 75 -> 78 (2026-08-10): the three projects.folderUploads.* bodies bind.
+    expect(inputSchemas.bound).toHaveLength(78);
     expect(inputSchemas.unboundCommands).toEqual([
       'spaces.menu.update',
       'spaces.defaultChannel.set',
@@ -369,7 +372,7 @@ describe('W2.C01 current mounted registry inventory', () => {
     const registerableV1Http = OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
     );
-    expect(registerableV1Http).toHaveLength(135);
+    expect(registerableV1Http).toHaveLength(138);
     // Every registerable v1 HTTP op has a handler, including the six new
     // artifacts.* rows now that the artifacts server lane has mounted them.
     expect(registerableV1Http.filter(({ name }) => !mounted.has(name))).toHaveLength(0);

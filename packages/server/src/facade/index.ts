@@ -63,6 +63,10 @@ import {
   type W2MessagesHandoffsServiceOptions,
 } from './handlers/w2/messages-handoffs.js';
 import { registerW2ProjectFilesHandlers } from './handlers/w2/project-files.js';
+import {
+  registerW2ProjectFolderUploadHandlers,
+  type W2ProjectFolderUploadHandlerDeps,
+} from './handlers/w2/project-folder-uploads.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
@@ -78,6 +82,12 @@ export interface RegisterFacadeHandlersDeps {
   readonly config: ServerConfig;
   readonly owner?: FacadeDeps['owner'];
   readonly files?: W2FilesServiceOptions;
+  /**
+   * projects.folderUploads.* (R7 folder import). Separate from `files` because
+   * it also needs a node-local state directory for the frozen manifests; a
+   * node without one simply does not mount the family.
+   */
+  readonly folderUploads?: W2ProjectFolderUploadHandlerDeps;
   /**
    * W2 B2's live-delivery seam, and the ONE deliberate exception to the rule
    * `deps.ts` states in its own header.
@@ -165,6 +175,7 @@ export function registerFacadeHandlers(
   registerVoiceHandlers(registry, facade, deps.config.livekit);
   if (deps.files) registerW2FileHandlers(registry, facade, deps.files);
   if (deps.files) registerW2ProjectFilesHandlers(registry, facade, deps.files);
+  if (deps.folderUploads) registerW2ProjectFolderUploadHandlers(registry, facade, deps.folderUploads);
   if (deps.files) registerW2ArtifactHandlers(registry, facade, { blobStore: deps.files.blobStore });
   registerW2InboxReadMarksHandlers(registry, facade);
   registerW2SavedViewsActionsHandlers(registry, deps);
