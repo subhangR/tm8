@@ -27,7 +27,7 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 7;
+export const SHIPPED_DEFAULT_MENU_REVISION = 8;
 
 /**
  * WLT §2, encoded literally:
@@ -113,6 +113,11 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       id: 'library',
       label: 'Library',
       items: [
+        // Revision 8 (2026-08-10): the Files EXPLORER view — browse roots,
+        // folders, uploads. Distinct from the `file` KIND row below, which
+        // lists file ENTITIES; owner ruling R9 keeps BOTH (rail labels
+        // differ: "File browser" vs "Files").
+        { type: 'view', ref: 'files' },
         { type: 'kind', ref: 'file' },
         { type: 'kind', ref: 'spell' },
         { type: 'kind', ref: 'collection' },

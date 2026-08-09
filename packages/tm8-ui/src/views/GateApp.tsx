@@ -54,6 +54,7 @@ import { FilesScreen } from '../files-browser';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { FilesExplorerScreen, filesExplorerPortFromSeam } from '../files-explorer';
 import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
@@ -466,6 +467,13 @@ export function GateApp(props: GateAppProps = {}) {
   // The settings screen's one seam adapter (settings-space/port.ts). Memoized
   // on the same (seam, space) pair the shell booted with; null until a space
   // exists, which is also when the Settings rail row can first be clicked.
+  // The Files explorer's one seam adapter (files-explorer/port.ts) — the same
+  // host-wires-the-seam rule as settings below; null until a space exists.
+  const filesExplorerPort = useMemo(
+    () => (data.spaceId ? filesExplorerPortFromSeam(data.seam, data.spaceId) : null),
+    [data.seam, data.spaceId],
+  );
+
   const settingsPort = useMemo(
     () => (data.spaceId ? settingsPortFromSeam(data.seam, data.spaceId) : null),
     [data.seam, data.spaceId],
@@ -717,6 +725,26 @@ export function GateApp(props: GateAppProps = {}) {
               }}
               onLaunchSubmit={submitLaunch}
               onLaunchDispatch={submitDispatch}
+            />
+          ) : data.ready &&
+            activeTarget?.type === 'view' &&
+            activeTarget.ref === 'files' &&
+            filesExplorerPort ? (
+            /* ▤ File browser (Library group) — the dedicated Files explorer.
+               A VIEW ref, deliberately distinct from the `file` KIND row in
+               the same group (owner ruling R9: entity files and the file
+               browser are both first-class destinations). */
+            <FilesExplorerScreen
+              port={filesExplorerPort}
+              onNotice={(text) =>
+                notices.push({
+                  id: `fx:${Date.now()}`,
+                  tone: 'info',
+                  title: 'Files',
+                  body: text,
+                  ttlMs: 6000,
+                })
+              }
             />
           ) : data.ready && activeTarget?.type === 'view' && activeTarget.ref === 'dashboard' ? (
             /* T5-1 Home — the first void route dispatching to a real screen

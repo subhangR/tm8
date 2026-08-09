@@ -36,6 +36,8 @@ describe('the shipped default menu', () => {
   it('puts Files, Spells and Collections in Library as plain kind rows', () => {
     const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
     expect(library?.items).toEqual([
+      // Revision 8: the Files EXPLORER view row (distinct from the `file` kind).
+      { type: 'view', ref: 'files' },
       { type: 'kind', ref: 'file' },
       { type: 'kind', ref: 'spell' },
       { type: 'kind', ref: 'collection' },

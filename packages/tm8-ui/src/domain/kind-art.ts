@@ -213,14 +213,14 @@ export const VIEW_ART = {
   /** The hash, shared with the `channel` kind ON PURPOSE — it is that list. */
   channels: KIND_ART.channel,
   /**
-   * A FOLDER, deliberately NOT `KIND_ART.file`'s page glyph. This view browses
-   * a directory tree on DISK; the `file` kind lists file ENTITIES, which are
-   * references to files whose truth lives elsewhere. Two different promises, so
-   * two different silhouettes — sharing one would tell the reader the rail row
-   * and the kind list are the same place.
+   * An open folder — the Files EXPLORER view (2026-08-10). Deliberately NOT
+   * `KIND_ART.file`: the `file` kind row (Library → Files entities) and this
+   * browser are two different destinations (owner ruling R9) and must not
+   * share a silhouette in one rail.
    */
   files: [
-    'M2.6 4.6a1.2 1.2 0 0 1 1.2-1.2h2.3l1.4 1.8h4.7a1.2 1.2 0 0 1 1.2 1.2v5.4a1.2 1.2 0 0 1-1.2 1.2H3.8a1.2 1.2 0 0 1-1.2-1.2z',
+    'M2.4 4.2a1.2 1.2 0 0 1 1.2-1.2h2.6l1.2 1.6h4.6a1.2 1.2 0 0 1 1.2 1.2v.8H2.4z',
+    'M2.4 6.6h11l-1.1 5.4a1.2 1.2 0 0 1-1.18.98H4.7a1.2 1.2 0 0 1-1.18-.98z',
   ],
   /**
    * A gear, drawn as a real toothed outline rather than as radial ticks

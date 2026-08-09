@@ -1382,13 +1382,11 @@ export interface UpdateSpaceInput extends CommandContext {
 // W0 dossier: Space menu and shared settings revision
 // ---------------------------------------------------------------------------
 
-/** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view. */
-/**
- * `files` added 2026-08-09, same additive R4 posture as `graph`, for the Files
- * browser. It reads the node's real filesystem, so no `kind` ref could name it
- * — a kind ref lists ENTITIES and the browser mints none.
- */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings' | 'files';
+/** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view.
+ * `files` added 2026-08-10 (same R4 posture) for the dedicated Files explorer —
+ * a VIEW, distinct from the `file` KIND row (owner ruling R9, task 019fe5d6:
+ * entity files and the file browser are different and both stay reachable). */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -1732,79 +1730,6 @@ export interface ProjectCreateInput extends CommandContext {
   ensureWorkingDir?: boolean;
 }
 
-// --- browser-originated project folder upload ------------------------------
-
-/** Frozen deployment-independent ceilings carried by every folder grant. */
-export const PROJECT_FOLDER_UPLOAD_MAX_FILES = 1_000;
-export const PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES = 2_000;
-export const PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
-export const PROJECT_FOLDER_UPLOAD_MAX_PATH_BYTES = 1_024;
-
-/**
- * A source entry selected in the browser. `relativePath` always uses `/` and
- * is relative to the selected folder; an absolute client path has no field in
- * this contract. Hidden names are ordinary names. Symlinks have no member in
- * this union and are therefore rejected rather than dereferenced.
- */
-export type ProjectFolderUploadEntry =
-  | {
-      kind: 'directory';
-      relativePath: string;
-    }
-  | {
-      kind: 'file';
-      relativePath: string;
-      sizeBytes: number;
-      checksumSha256: string;
-      mime: string;
-    };
-
-/** POST /v2/spaces/:spaceId/project-folder-uploads */
-export interface ProjectFolderUploadInitInput extends CommandContext {
-  clientMutationId: string;
-  projectName: string;
-  /** Absolute path selected from the SERVER directory browser. */
-  destinationParent: string;
-  /** One new child name beneath destinationParent, never a path. */
-  rootName: string;
-  /** Off by default: importing bytes does not imply execution trust. */
-  trust?: ProjectTrustLevel;
-  entries: ProjectFolderUploadEntry[];
-}
-
-export interface ProjectFolderUploadFileGrant extends FileUploadGrant {
-  relativePath: string;
-}
-
-export interface ProjectFolderUploadGrant {
-  folderUploadId: string;
-  expiresAt: string;
-  maxFiles: number;
-  maxDirectories: number;
-  maxTotalBytes: number;
-  maxPathBytes: number;
-  files: ProjectFolderUploadFileGrant[];
-}
-
-export interface ProjectFolderUploadCompleteInput extends CommandContext {
-  clientMutationId: string;
-}
-
-export interface ProjectFolderUploadAbortInput extends CommandContext {
-  clientMutationId: string;
-}
-
-/** Confirmation returned after the root exists and its project is linked. */
-export interface ProjectFolderUploadResult {
-  folderUploadId: string;
-  spaceId: SpaceId;
-  project: ProjectResource;
-  rootName: string;
-  fileCount: number;
-  directoryCount: number;
-  totalBytes: number;
-}
-
 /** One local branch in a project's working directory. */
 export interface ProjectBranch {
   name: string;
@@ -1921,33 +1846,6 @@ export interface ProjectFileAttachInput extends CommandContext {
   /** Finalized `file -> attached_to -> target` edges, as in files.uploadComplete. */
   targets?: EntityId[];
 }
-
-/**
- * GET /v2/projects/:projectId/files/content?path=… — one file out of a
- * connected project folder, inline. This is a READ for a viewer, distinct from
- * `projects.files.attach`: nothing is copied into the Space and no entity is
- * minted. The inline ceiling is deliberately smaller than the attach ceiling —
- * a viewer never needs a whole blob buffered into a JSON body.
- */
-export interface ProjectFileReadResult {
-  projectId: string;
-  /** Canonical path — what was actually opened, after symlink resolution. */
-  path: string;
-  name: string;
-  /**
-   * Extension-derived, with `text/html` and `image/svg+xml` reported as
-   * `text/plain`: an inline read must never hand a UI a type it would render
-   * as active content.
-   */
-  mime: string;
-  sizeBytes: number;
-  /** `utf8` when the bytes decode cleanly as text; `base64` otherwise. */
-  encoding: 'utf8' | 'base64';
-  content: string;
-  /** True when `sizeBytes` exceeded the inline ceiling and `content` is a prefix. */
-  truncated: boolean;
-}
-
 
 /** The wrapper returned by spaces.create after its default member/channel saga. */
 export interface CreateSpaceResult {

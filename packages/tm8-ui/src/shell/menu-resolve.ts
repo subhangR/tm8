@@ -197,6 +197,10 @@ export const VIEW_PRESENTATION: Record<MenuViewRef, { label: string; icon: strin
   workspace: { label: 'Workspace', icon: '⌗', art: VIEW_ART.workspace },
   graph: { label: 'Graph', icon: '◉', art: VIEW_ART.graph },
   channels: { label: 'Channels', icon: '#', art: VIEW_ART.channels },
-  files: { label: 'Files', icon: '▤', art: VIEW_ART.files },
+  // 2026-08-10: the Files EXPLORER view. Label "File browser" rather than
+  // "Files" because the `file` KIND row in the same Library group already
+  // reads "Files" — two identical labels in one rail would read as a
+  // duplicate (the R9 follow-up recorded on task 019fe5d6).
+  files: { label: 'File browser', icon: '▤', art: VIEW_ART.files },
   settings: { label: 'Settings', icon: '⛭', art: VIEW_ART.settings },
 };
