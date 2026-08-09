@@ -480,7 +480,12 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
 
   // -- B2: the restart proof --------------------------------------------------
 
-  it('SURVIVES A PROCESS RESTART: a fresh process does not mint a fresh allowance', async () => {
+  it('SURVIVES A PROCESS RESTART: the durable pair counter continues across processes', async () => {
+    // 078 removed the refusal — no delivery is ever settled
+    // `automated_wake_limit` any more — but the TELEMETRY must still be
+    // durable: a restart that reset the counter would make the pair's history
+    // unmeasurable, which is the property this test now pins. The fifth and
+    // sixth wakes DELIVER, and the count reads 5 then 6 across two restarts.
     const source = await newSession(database, fx, 'G11 restart source');
     const target = await newSession(database, fx, 'G11 restart target');
     const messages: string[] = [];
@@ -504,38 +509,33 @@ describe('W2 G11 — B2 durable unordered pair budget, over the real delivery RP
     try {
       expect(second.pty.bytes).toBe(0);
 
-      // A fresh allowance would let all four through. The budget continues, so
-      // exactly two remain.
+      // A process-local counter would restart at zero here. The durable one
+      // continues: 3, 4 — and the FIFTH delivers too, because 078 removed the
+      // cap that used to refuse it.
       expect((await deliver(second, messages[2]!, target, 'three')).outcome).toBe('delivered');
       expect((await deliver(second, messages[3]!, target, 'four')).outcome).toBe('delivered');
       expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
 
-      // The fifth is refused, and refused BEFORE any byte: `reserve` returns
-      // null, so nothing is minted, claimed or written.
-      const bytesAtLimit = second.pty.bytes;
       const fifth = await deliver(second, messages[4]!, target, 'five');
-      expect(fifth).toEqual({ reserved: false, outcome: null });
-      expect(second.pty.bytes).toBe(bytesAtLimit);
-      expect(second.pty.deliveries).toHaveLength(2);
+      expect(fifth.outcome).toBe('delivered');
+      expect(second.pty.deliveries).toHaveLength(3);
+      expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 5 });
 
-      const refused = (await database.query<{ status: string; failure_reason: string }>(
+      const stored = (await database.query<{ status: string; failure_reason: string | null }>(
         `select status, failure_reason from public.session_message_deliveries
           where message_id = $1 and target_work_session_id = $2`,
         [messages[4]!, target],
       ))[0]!;
-      expect(refused).toEqual({
-        status: 'failed_permanent',
-        failure_reason: 'automated_wake_limit',
-      });
+      expect(stored).toEqual({ status: 'delivered', failure_reason: null });
 
-      // ── and once more, to close the loophole a restart-at-the-limit would be ──
+      // ── and once more across a second restart: 6, still counting ──
       await second.shutdown();
       const third = boot(deliveryUrl, [target]);
       try {
-        const afterRestartAtLimit = await deliver(third, messages[5]!, target, 'six');
-        expect(afterRestartAtLimit).toEqual({ reserved: false, outcome: null });
-        expect(third.pty.bytes).toBe(0);
-        expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 4 });
+        const sixth = await deliver(third, messages[5]!, target, 'six');
+        expect(sixth.outcome).toBe('delivered');
+        expect(third.pty.bytes).toBeGreaterThan(0);
+        expect(await budgetOf(source, target)).toMatchObject({ consecutive_agent_wakes: 6 });
       } finally {
         await third.shutdown();
       }
