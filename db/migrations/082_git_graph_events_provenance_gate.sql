@@ -199,9 +199,10 @@ begin
      where entity_id = artifact_id;
   end if;
 
-  insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
-  values (session_entity.space_id, artifact_id, p_work_session_id, 'created_in',
-          jsonb_build_object('origin', 'observed'), actor)
+  -- No props: `origin` is Server-owned (066's guard) and defaults to
+  -- 'client_claim'; supplying it here would be refused for every caller.
+  insert into public.edges(space_id, src_id, dst_id, type, created_by)
+  values (session_entity.space_id, artifact_id, p_work_session_id, 'created_in', actor)
   on conflict (src_id) where type = 'created_in' do nothing;
   select id into edge_id from public.edges
    where src_id = artifact_id and type = 'created_in';
@@ -315,8 +316,10 @@ begin
   update public.tasks set completion_gate = p_gate, updated_at = now()
    where entity_id = p_task_id;
 
-  activity_id := internal.record_activity(e.space_id, p_task_id, actor, 'gate_set', null,
-                   jsonb_build_object('gate', p_gate));
+  -- 'updated' is the closest member of 003's CLOSED verb set (062's
+  -- 'restored' precedent); the summary carries the precise action.
+  activity_id := internal.record_activity(e.space_id, p_task_id, actor, 'updated', null,
+                   jsonb_build_object('action', 'gate_set', 'gate', p_gate));
   return internal.ledger_record(p_client_mutation_id, 'entities.commands.gate',
            internal.command_result(p_task_id, null, activity_id, array[p_task_id]));
 end
