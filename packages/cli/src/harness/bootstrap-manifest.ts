@@ -75,7 +75,7 @@ export const DISCOVERY_ARGV = {
 
 // -- closed vocabularies ------------------------------------------------------
 
-export const IDENTITY_MODES = ['human-directed', 'worker', 'coordinator', 'background'] as const;
+export const IDENTITY_MODES = ['human-directed', 'worker', 'coordinator', 'background', 'dispatcher'] as const;
 export const WORKDIR_MODES = ['project', 'worktree', 'scratch'] as const;
 export const RUNTIME_MODES = ['native-interactive-pty'] as const;
 export const TRUST_LEVELS = ['trusted', 'untrusted'] as const;

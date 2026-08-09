@@ -34,6 +34,19 @@ export interface WorkspaceGridProps {
   onResetPanelWidth?(side: WorkspacePanelSide): void;
   /** Measured by the caller's ResizeObserver; drives the demotion loop. */
   centerRef?: React.RefCallback<HTMLDivElement>;
+  /**
+   * The side whose list is showing a BOARD, if either is. A board column has a
+   * 236px floor and the side tracks default to 240/319, so a board in a side
+   * track is one column wide; that panel spans the whole grid instead.
+   *
+   * THE CENTRE IS NOT UNMOUNTED AND NOT HIDDEN — it is COVERED. Unmounting it
+   * would destroy the terminal pool's DOM, and `visibility: hidden` would be
+   * overridden from inside anyway (CenterPane sets `visibility` per layer to
+   * drive its own LRU). A spanning, opaque panel above it in paint order
+   * leaves every terminal mounted, sized and running underneath, so switching
+   * back to the list costs no reconnect.
+   */
+  boardSide?: WorkspacePanelSide | null;
 }
 
 export type WorkspacePanelSide = 'left' | 'right';
@@ -51,6 +64,7 @@ export function WorkspaceGrid({
   onResizePanel,
   onResetPanelWidth,
   centerRef,
+  boardSide = null,
 }: WorkspaceGridProps) {
   const stacked = layout.stackMode !== 'columns';
   const [dragging, setDragging] = useState<WorkspacePanelSide | null>(null);
@@ -168,6 +182,7 @@ export function WorkspaceGrid({
       data-testid="workspace-grid"
       data-stack-mode={layout.stackMode}
       data-below-floors={layout.belowFloors || undefined}
+      data-board-side={boardSide ?? undefined}
     >
       {sidePanel('left', left)}
 

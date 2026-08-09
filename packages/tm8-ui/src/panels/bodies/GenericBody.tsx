@@ -2,15 +2,20 @@ import { useState } from 'react';
 import type {
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
+  CommandResult,
   EntityDetail,
   EntitySummary,
 } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { KindIcon, getKind } from '../../domain';
+import { KindIcon } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
 import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
+import type { AuthoringCommands } from '../../authoring';
+import { LoopControls } from '../../loops/LoopControls';
+import { PeerRowsBlock } from './PeerRowsBlock';
+import { edgesOf } from './MemorySetBlock';
 
 /**
  * The one command this body can execute (threaded from the host's seam
@@ -21,6 +26,10 @@ import { EmptyBody } from '../detail/PanelStates';
 export interface ArtifactPreviewCommands {
   previewArtifact(id: string, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
 }
+
+type GenericBodyCommands = Partial<
+  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'>
+>;
 
 /**
  * THE GENERIC ARCHETYPE — a renderer over an ORDERED LIST OF CONTENT BLOCKS.
@@ -44,12 +53,14 @@ export function GenericBody({
   blocks,
   onOpenEntity,
   commands,
+  onSaved,
   downloadHref,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
-  commands?: Partial<ArtifactPreviewCommands> | null;
+  commands?: GenericBodyCommands | null;
+  onSaved?: (result: CommandResult) => void;
   /**
    * Resolves a file entity's bytes URL, from the host's attachment port — the
    * SAME resolver the attachment strip uses, so a file previews here exactly
@@ -77,6 +88,7 @@ export function GenericBody({
           block={block}
           onOpenEntity={onOpenEntity}
           commands={commands}
+          onSaved={onSaved}
           downloadHref={downloadHref}
         />
       ))}
@@ -89,12 +101,14 @@ function ContentBlock({
   block,
   onOpenEntity,
   commands,
+  onSaved,
   downloadHref,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
   onOpenEntity?: (id: string) => void;
-  commands?: Partial<ArtifactPreviewCommands> | null;
+  commands?: GenericBodyCommands | null;
+  onSaved?: (result: CommandResult) => void;
   downloadHref?: DownloadHref;
 }) {
   const body = (() => {
@@ -107,6 +121,23 @@ function ContentBlock({
         return <FilePreviewBlock detail={detail} downloadHref={downloadHref} />;
       case 'artifact-preview':
         return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
+      case 'loop-controls':
+        return (
+          <LoopControls
+            detail={detail}
+            commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
+            onSaved={onSaved}
+          />
+        );
+      /* The same extracted block `ProfileBody` and `SubtreeBody` draw — one
+         implementation, three bodies. A `loop` is the reason it is here: its
+         RUN HISTORY *is* its inbound `triggered_by` edges (086 §4.4, "there is
+         no separate run table"), and a loop must live in this body because it
+         is the only one handed a command executor for its verbs. */
+      case 'peer-rows':
+        return (
+          <PeerRowsBlock detail={detail} params={block.params ?? {}} onOpenEntity={onOpenEntity} />
+        );
       case 'items':
         return <ItemsBlock detail={detail} block={block} onOpenEntity={onOpenEntity} />;
       case 'lifecycle':
@@ -118,9 +149,17 @@ function ContentBlock({
     }
   })();
   if (!body) return null;
+  /* `params.count` is honoured HERE too, the same way `ProfileBody` honours
+     it, and for the same reason: the count is of the very edges the block
+     draws below it, so the two can never disagree. A declared parameter this
+     body ignored would be a silent lie in registry data. */
+  const count = block.params?.count === true && typeof block.params.edgeType === 'string'
+    ? edgesOf(detail, block.params).length
+    : null;
+  const label = block.label != null && count != null ? `${block.label} · ${count}` : block.label;
   return (
     <section className="pn-section" data-testid={`block-${block.block}`}>
-      {block.label ? <Eyebrow faint>{block.label}</Eyebrow> : null}
+      {label ? <Eyebrow faint>{label}</Eyebrow> : null}
       {body}
     </section>
   );

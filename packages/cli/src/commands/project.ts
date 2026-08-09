@@ -56,7 +56,7 @@ import type { CommandContext, CommandModule } from '../run.js';
 const TRUST_LEVELS = ['trusted', 'untrusted'] as const;
 
 /** The contract's `ProjectDefaults['mode']`, plus the `|none` clear. */
-const SPAWN_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator'] as const;
+const SPAWN_MODES = ['worker', 'coordinator', 'coordinated-worker', 'coordinated-coordinator', 'dispatcher'] as const;
 
 function requireArg(raw: string | undefined, command: string, placeholder: string): string {
   if (raw === undefined || raw === '') {

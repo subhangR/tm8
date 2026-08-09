@@ -101,6 +101,7 @@ const AGENT_MODES: readonly AgentMode[] = [
   'coordinator',
   'coordinated-worker',
   'coordinated-coordinator',
+  'dispatcher',
 ];
 
 /**

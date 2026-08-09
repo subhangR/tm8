@@ -487,6 +487,139 @@ export const teamMemberForge = summary({
   },
 });
 
+// ---------------------------------------------------------------------------
+// memory — the 056 working set (084 moved it off jsonb, 085 widened the holder)
+// ---------------------------------------------------------------------------
+
+/**
+ * THREE MEMORIES, chosen to cover the three states a working set can be in,
+ * because the honest rendering of this surface is entirely about which state a
+ * row is in and a one-memory fixture proves none of it:
+ *
+ *   · CLEAN — no `staleness` badge. Which, per `contract.ts:174`, means
+ *     UNFLAGGED and specifically NOT verified: a verified-clean memory ships
+ *     exactly this same empty badge bag (`entity-read.ts:1326` drops the whole
+ *     badge when `reasons` is empty), so this row is also the fixture for "the
+ *     UI cannot tell verified from unexamined".
+ *   · DISPUTED — still injected at spawn, carrying its marker.
+ *   · SUPERSEDED — the one that matters. It is REMEMBERED and it is NOT
+ *     INJECTED (`execution-handlers.ts:162` skips it), and without this row
+ *     nothing in the suite can catch a working-set list that draws all rows
+ *     alike and thereby overstates the teammate's context.
+ *
+ * The scope fields live in `state` and not `content` on purpose — that is where
+ * the contract puts them (`contract.ts:141`) so they arrive with every summary.
+ */
+export const memoryTokens = summary({
+  id: 'ent-mem-tokens',
+  kind: 'memory',
+  title: 'tokens.css is verbatim — a byte-equality test guards it',
+  excerpt: 'tokens.css is verbatim — a byte-equality test guards it',
+  createdBy: forge,
+  state: {
+    kind: 'memory',
+    mechanism: 'Ran the tokens-verbatim suite and diffed the emitted file against the source bytes.',
+    subjectScope: 'packages/tm8-ui/src/styles/tokens.css on this branch',
+    doesNotEstablish: 'that the token VALUES are correct — only that nothing rewrites the file.',
+    measuredAt: T.old,
+  },
+});
+
+export const memoryDisputed = summary({
+  id: 'ent-mem-disputed',
+  kind: 'memory',
+  title: 'The fixture seam drops fields it does not know',
+  excerpt: 'The fixture seam drops fields it does not know',
+  createdBy: scout,
+  state: {
+    kind: 'memory',
+    mechanism: 'Traced groupBy from a component prop to the fixture seam and found no carrier.',
+    subjectScope: 'data/fixtures/seam-fixture.ts as of this revision',
+    doesNotEstablish: 'that the REAL seam drops them — it does not.',
+    measuredAt: T.old,
+  },
+  badges: {
+    staleness: {
+      reasons: ['disputed'],
+      disputed: { openCount: 2, latestAt: T.staleEdge },
+    },
+  },
+});
+
+export const memorySuperseded = summary({
+  id: 'ent-mem-superseded',
+  kind: 'memory',
+  title: 'Panels have a border-box reset',
+  excerpt: 'Panels have a border-box reset',
+  createdBy: forge,
+  state: {
+    kind: 'memory',
+    mechanism: 'Read panels.css and assumed the reset from the layout behaving.',
+    subjectScope: 'the panel stack as of an earlier revision',
+    doesNotEstablish: 'anything about the shell, which was never measured.',
+    measuredAt: T.older,
+  },
+  badges: {
+    staleness: {
+      reasons: ['superseded'],
+      superseded: { byId: memoryTokens.id, headId: memoryTokens.id, depthTruncated: false },
+    },
+  },
+});
+
+// ---------------------------------------------------------------------------
+// loop — a schedule plus a spawn config (086); run history IS its edges
+// ---------------------------------------------------------------------------
+
+/**
+ * The seeded Dreamer loop (P5) and a BROKEN one, because a fixture set where
+ * every loop is healthy renders a panel in which none of the honesty states
+ * can be seen.
+ *
+ * `teamMemberId: null` is MEANINGFUL and not merely absent — the contract says
+ * so: it means firings route through the dispatcher rather than naming a
+ * runner. `lastError` on the second is the state a scheduler leaves behind
+ * when a firing fails WITHOUT disabling the loop, which is the case a panel
+ * that only draws `enabled` would render as perfectly fine.
+ */
+export const loopDreamer = summary({
+  id: 'ent-loop-dreamer',
+  kind: 'loop',
+  title: 'Dreamer sweep',
+  excerpt: 'Walk every teammate\u2019s memories and mark what has gone stale.',
+  createdBy: ada,
+  state: {
+    kind: 'loop',
+    schedule: 'every 1d',
+    enabled: true,
+    teamMemberId: null,
+    subjectId: null,
+    nextRunAt: '2026-07-29T09:00:00.000Z',
+    lastRunAt: T.old,
+    lastError: null,
+  },
+});
+
+export const loopFailing = summary({
+  id: 'ent-loop-failing',
+  kind: 'loop',
+  title: 'Nightly conformance',
+  excerpt: 'Run the conformance suite against the node.',
+  createdBy: ada,
+  state: {
+    kind: 'loop',
+    schedule: 'every 12h',
+    enabled: true,
+    teamMemberId: teamMemberForge.id,
+    subjectId: null,
+    nextRunAt: '2026-07-28T21:00:00.000Z',
+    lastRunAt: T.staleEdge,
+    // Enabled AND failing — the scheduler records the error without disabling,
+    // so "enabled" alone is not a health claim.
+    lastError: 'spawn refused: no session slots free',
+  },
+});
+
 /**
  * scout's persona entity. Needed as the SUBJECT of the T5-5 capacity line
  * ("scout — 1 live session already"): a capacity statement needs a teammate
@@ -616,6 +749,8 @@ export const fixtureSummaries: EntitySummary[] = [
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
   messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
   teamMemberScout,
+  memoryTokens, memoryDisputed, memorySuperseded,
+  loopDreamer, loopFailing,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual,
@@ -734,7 +869,11 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     content: {
       kind: 'team_member',
       identity: 'You are the A0 foundation engineer for packages/tm8-ui.',
-      memories: ['tokens.css is verbatim — byte-equality test guards it'],
+      // EMPTY, and that is the fixture's point: migration 084 moved every
+      // entry into the graph and emptied this column on every real row. A
+      // fixture that kept a string here would let a jsonb reader look correct
+      // in jsdom forever. The working set is the `remembers` edges below.
+      memories: [],
       capabilities: { canSpawnSessions: true },
       commandPermissions: { bash: 'allow' },
       equipped: [spellDeploy, skillReview],
@@ -743,6 +882,143 @@ export const fixtureDetails: Record<string, EntityDetail> = {
     connections: {
       incoming: [
         { type: 'relates_to', direction: 'incoming', label: 'sessions', edges: [sessionTeammateEdges.forge] },
+      ],
+      // The working set, holder-side: `remembers` is OUTGOING from whoever
+      // holds it (056 registers src member|team_member|work_session → memory;
+      // 085 widened src to the wildcard). Three edges, three epistemic states
+      // — including one superseded memory that is remembered and will NOT be
+      // injected, which is the case the surface exists to tell apart.
+      outgoing: [
+        {
+          type: 'remembers',
+          direction: 'outgoing',
+          label: 'remembers',
+          edges: [
+            edge('edge-remembers-1', 'remembers', teamMemberForge, memoryTokens, forge),
+            edge('edge-remembers-2', 'remembers', teamMemberForge, memoryDisputed, forge),
+            edge('edge-remembers-3', 'remembers', teamMemberForge, memorySuperseded, forge),
+          ],
+        },
+      ],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [loopDreamer.id]: detail(loopDreamer, {
+    content: {
+      kind: 'loop',
+      schedule: 'every 1d',
+      enabled: true,
+      teamMemberId: null,
+      subjectId: null,
+      prompt: 'Walk every teammate\u2019s remembers set and mark what has gone stale.',
+      config: {},
+      nextRunAt: '2026-07-29T09:00:00.000Z',
+      lastRunAt: T.old,
+      lastError: null,
+    },
+    connections: {
+      // RUN HISTORY: inbound triggered_by is the only record 086 keeps.
+      incoming: [
+        {
+          type: 'triggered_by',
+          direction: 'incoming',
+          label: 'runs',
+          edges: [edge('edge-triggered-1', 'triggered_by', taskGuideLines, loopDreamer, ada)],
+        },
+      ],
+      outgoing: [],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [loopFailing.id]: detail(loopFailing, {
+    content: {
+      kind: 'loop',
+      schedule: 'every 12h',
+      enabled: true,
+      teamMemberId: teamMemberForge.id,
+      subjectId: null,
+      prompt: 'Run the conformance suite and report on the anchor.',
+      config: {},
+      nextRunAt: '2026-07-28T21:00:00.000Z',
+      lastRunAt: T.staleEdge,
+      lastError: 'spawn refused: no session slots free',
+    },
+  }),
+
+  [memoryTokens.id]: detail(memoryTokens, {
+    content: {
+      kind: 'memory',
+      statement: memoryTokens.title,
+      mechanism: memoryTokens.state.kind === 'memory' ? memoryTokens.state.mechanism : '',
+      subjectScope: memoryTokens.state.kind === 'memory' ? memoryTokens.state.subjectScope : '',
+      doesNotEstablish: memoryTokens.state.kind === 'memory' ? memoryTokens.state.doesNotEstablish : '',
+      measuredAt: T.old,
+    },
+    connections: {
+      // Holder-side edges arrive INCOMING on the memory: this is the "who
+      // remembers this" list the detail surface draws.
+      incoming: [
+        {
+          type: 'remembers',
+          direction: 'incoming',
+          label: 'remembered by',
+          edges: [edge('edge-remembers-1', 'remembers', teamMemberForge, memoryTokens, forge)],
+        },
+      ],
+      outgoing: [],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [memoryDisputed.id]: detail(memoryDisputed, {
+    content: {
+      kind: 'memory',
+      statement: memoryDisputed.title,
+      mechanism: memoryDisputed.state.kind === 'memory' ? memoryDisputed.state.mechanism : '',
+      subjectScope: memoryDisputed.state.kind === 'memory' ? memoryDisputed.state.subjectScope : '',
+      doesNotEstablish: memoryDisputed.state.kind === 'memory' ? memoryDisputed.state.doesNotEstablish : '',
+      measuredAt: T.old,
+    },
+    connections: {
+      incoming: [
+        {
+          type: 'remembers',
+          direction: 'incoming',
+          label: 'remembered by',
+          edges: [edge('edge-remembers-2', 'remembers', teamMemberForge, memoryDisputed, forge)],
+        },
+      ],
+      outgoing: [],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [memorySuperseded.id]: detail(memorySuperseded, {
+    content: {
+      kind: 'memory',
+      statement: memorySuperseded.title,
+      mechanism: memorySuperseded.state.kind === 'memory' ? memorySuperseded.state.mechanism : '',
+      subjectScope: memorySuperseded.state.kind === 'memory' ? memorySuperseded.state.subjectScope : '',
+      doesNotEstablish: memorySuperseded.state.kind === 'memory' ? memorySuperseded.state.doesNotEstablish : '',
+      measuredAt: T.older,
+    },
+    connections: {
+      incoming: [
+        {
+          type: 'remembers',
+          direction: 'incoming',
+          label: 'remembered by',
+          edges: [edge('edge-remembers-3', 'remembers', teamMemberForge, memorySuperseded, forge)],
+        },
+        // The mark that makes it superseded, from the successor's side.
+        {
+          type: 'supersedes',
+          direction: 'incoming',
+          label: 'superseded by',
+          edges: [edge('edge-supersedes-1', 'supersedes', memoryTokens, memorySuperseded, forge)],
+        },
       ],
       outgoing: [],
       unresolvedHardDependencyCount: 0,

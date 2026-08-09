@@ -19,7 +19,7 @@ import type {
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
-import type { ActionContext, ActionRef } from '../domain/types';
+import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
   PanelStack,
@@ -33,7 +33,7 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
-import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { EntityCreateControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -41,7 +41,7 @@ import { newLaunchMutationId } from '../domain/launch';
 import { useLaunchPort } from './useLaunchPort';
 import { composePanelActions, usePanelPrimaries } from './usePanelPrimaries';
 import { EmptyCenter } from './EmptyCenter';
-import { LaunchSheet, type LaunchSelection } from './LaunchSheet';
+import { LaunchSheet, type DispatchSelection, type LaunchSelection } from './LaunchSheet';
 import type { GateData } from './useGateData';
 import { openEntityAndResolve } from './open-entity';
 import { LazySessionChatSurface } from '../channel-screen/LazySessionChatSurface';
@@ -84,6 +84,8 @@ export interface WorkspaceViewProps {
   launchInFlight?: boolean;
   onLaunchCancel?(): void;
   onLaunchSubmit?(config: LaunchSelection): void;
+  /** D5 — hand the subject to the dispatcher instead of configuring a launch. */
+  onLaunchDispatch?(request: DispatchSelection): void;
   /** Esc must not pop the panel under an open sheet (A1a finding 1). */
   isModalOpen?(): boolean;
   /** THE DOOR: A1c's quick-config "full options ▸" opens the full sheet. */
@@ -106,6 +108,40 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const viewportWidth = useViewportWidth();
 
   const engine = usePanelEngine({ nav, centerWidth, onNotice: props.onNotice });
+
+  /**
+   * THE LAYOUT MODE OF EACH SIDE PANEL, held here rather than left to the
+   * panel's own local state — because the WORKSPACE has to know. A board is
+   * ~236px per column and the side tracks default to 240/319, so a board in a
+   * side panel is one column wide and useless; in board mode the panel spans
+   * the whole grid instead (`boardSide` below). The panel cannot arrange that
+   * for itself: it does not own the grid.
+   *
+   * Uncontrolled from the panel's point of view is not an option here for the
+   * same reason it was not in EntityView — two copies of the mode disagree the
+   * moment one of them changes.
+   */
+  const [leftMode, setLeftMode] = useState<CollectionMode>(() => getKind(leftKind).defaultMode);
+  const [rightMode, setRightMode] = useState<CollectionMode>(() => getKind(rightKind).defaultMode);
+
+  /**
+   * A mode the CURRENT kind hides is not a mode. Swapping a boarded panel to a
+   * kind with no board (`hiddenModes`) would otherwise leave the switcher
+   * claiming 'board' while the body drew a list — and, worse, leave the panel
+   * spanning the grid with a list in it. Derived rather than reset by an
+   * effect, so there is no frame in which the two disagree.
+   */
+  const effectiveMode = useCallback((kind: string, mode: CollectionMode): CollectionMode => {
+    const config = getKind(kind);
+    return config.hiddenModes.includes(mode) || config.list.board == null
+      ? config.defaultMode
+      : mode;
+  }, []);
+
+  const leftLayout = effectiveMode(leftKind, leftMode);
+  const rightLayout = effectiveMode(rightKind, rightMode);
+  /* Left wins if both are somehow boarded — one panel can own the grid. */
+  const boardSide = leftLayout === 'board' ? 'left' : rightLayout === 'board' ? 'right' : null;
 
   /* D67 — the expanded row's state dropdown and archive control, on BOTH side
      panels. The same executor EntityView mounts. */
@@ -457,6 +493,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     <WorkspaceGrid
       layout={layout}
       centerRef={centerRef}
+      boardSide={boardSide}
       leftLabel={leftConfig.label}
       rightLabel={rightConfig.label}
       onMovePanel={props.onMoveSidePanel}
@@ -466,10 +503,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         <EntityListPanel
           kind={leftKind}
           createSlot={
-            leftConfig.list.quickCreate && leftConfig.list.tile.anatomy === 'control-card' ? (
-              <NewTaskControl
-                flow={leftCreateFlow}
-                label={leftConfig.palette?.createLabel ?? '＋ New'}
+            leftConfig.list.quickCreate
+            && (leftConfig.createForm || leftConfig.list.tile.anatomy === 'control-card') ? (
+              <EntityCreateControl
+                config={leftConfig}
+                immediate={leftCreateFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  nav.push?.(id);
+                }}
               />
             ) : undefined
           }
@@ -482,9 +526,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           pageStateOf={data.pageStateOf(leftKind)}
           loadMore={data.loadMore(leftKind)}
           boardFor={data.boardFor(leftKind) as never}
+          mode={leftLayout}
+          onMode={setLeftMode}
           members={data.members}
           ctx={ctx}
-          compact={leftCompact}
+          /* A boarded panel owns the whole grid, so it is not compact any
+             more — keeping the dense chrome would shrink the filters and
+             search of a full-width surface for no reason. */
+          compact={boardSide === 'left' ? false : leftCompact}
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
@@ -543,10 +592,16 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               teammates={data.launch.teammates}
               projects={data.launch.projects}
               profiles={data.launch.profiles}
+              /* Undefined until the kind is hydrated, and the sheet draws that
+                 as "unknown" rather than "none" — see the picker's comment. */
+              memories={data.launch.memories}
               capacity={data.launch.capacity}
               loadCredentialStatus={data.seam.credentials.status}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}
+              /* Passed straight through, unbound to any sheet state — see the
+                 button's comment for why dispatch cannot carry a config. */
+              onDispatch={props.onLaunchDispatch}
             />
           )}
           {centreIsEmpty ? (
@@ -565,10 +620,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         <EntityListPanel
           kind={rightKind}
           createSlot={
-            rightConfig.list.quickCreate && rightConfig.list.tile.anatomy === 'control-card' ? (
-              <NewTaskControl
-                flow={rightCreateFlow}
-                label={rightConfig.palette?.createLabel ?? '＋ New'}
+            rightConfig.list.quickCreate
+            && (rightConfig.createForm || rightConfig.list.tile.anatomy === 'control-card') ? (
+              <EntityCreateControl
+                config={rightConfig}
+                immediate={rightCreateFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  nav.push?.(id);
+                }}
               />
             ) : undefined
           }
@@ -576,9 +638,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           pageStateOf={data.pageStateOf(rightKind)}
           loadMore={data.loadMore(rightKind)}
           boardFor={data.boardFor(rightKind) as never}
+          mode={rightLayout}
+          onMode={setRightMode}
           members={data.members}
           ctx={ctx}
-          compact={rightCompact}
+          compact={boardSide === 'right' ? false : rightCompact}
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}

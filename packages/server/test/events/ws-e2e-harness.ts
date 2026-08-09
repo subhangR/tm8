@@ -111,7 +111,10 @@ export interface WsE2eNode {
  */
 process.env['TM8_AGENT_CMD'] = 'echo-agent';
 
-export async function startWsE2eNode(label: string): Promise<WsE2eNode> {
+export async function startWsE2eNode(
+  label: string,
+  opts: { readonly startBackgroundJobs?: boolean } = {},
+): Promise<WsE2eNode> {
   const database = await createW1ScratchDatabase(`wse2e_${label}`);
   const dataDir = await mkdtemp(join(tmpdir(), 'tm8-wse2e-'));
   let production: BootstrappedServer | undefined;
@@ -130,7 +133,10 @@ export async function startWsE2eNode(label: string): Promise<WsE2eNode> {
     });
     // loadConfig rightly refuses port 0 from an operator; tests substitute it
     // after validation so the kernel picks an isolated ephemeral port.
-    production = await bootstrap({ config: { ...configured, port: 0 } });
+    production = await bootstrap({
+      config: { ...configured, port: 0 },
+      ...(opts.startBackgroundJobs === true ? { startBackgroundJobs: true } : {}),
+    });
     rpcDb = createTestDb(database.url);
   } catch (error) {
     await rpcDb?.end();

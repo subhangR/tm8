@@ -124,12 +124,15 @@ export function newEntityInput(
    * statement from an absence to a `.strict()` schema.
    */
   parentId?: EntityId | null,
+  /** Required detail-row members for staged create flows (for example loops). */
+  content?: Record<string, unknown>,
 ): CreateEntityInput {
   return {
     spaceId,
     kind,
     title,
     ...(parentId ? { parentId } : {}),
+    ...(content ? { content } : {}),
     clientMutationId: nextMutationId(),
   };
 }
@@ -309,4 +312,3 @@ export function classifyFailure(error: unknown, verb: string): AuthoringFailure 
     retryable: false,
   };
 }
-

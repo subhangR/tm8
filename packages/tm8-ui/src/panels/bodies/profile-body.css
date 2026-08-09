@@ -333,3 +333,183 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+
+/*
+ * MEMORY SET — the `remembers` working set (056/084/085).
+ *
+ * NO BORDER-BOX RESET IN THIS APP (panels.css states it): every padded box here
+ * is sized by its content, so paddings below are chosen knowing they ADD to the
+ * declared height rather than sit inside it. Nothing here sets an explicit
+ * height for exactly that reason.
+ */
+.cv2-root .pn-memory {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cv2-root .pn-memory__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/*
+ * A row is a GRID, not a flex line: the claim must be free to truncate while
+ * the marks and the forget control keep their intrinsic width. In a flex row
+ * the marks would be the first thing squeezed, and a badge reading "supersede…"
+ * is a status that has lost its meaning.
+ *
+ * THE CLAIM TRACK IS FLOORED AT 120px, NOT `minmax(0, 1fr)` — L4, enforced by
+ * `panels/no-branching.test.ts`. An unfloored track is how this app has been
+ * broken three separate times: the region collapses to zero and the content
+ * simply vanishes. 120px still truncates rather than pushing the marks out,
+ * and is wide enough that a statement never becomes an ellipsis alone.
+ */
+.cv2-root .pn-memory__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 7px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+}
+/*
+ * THE NOT-INJECTED ROW. Muted AND struck AND carrying the words "not injected"
+ * — three carriers, because this row's whole job is to say "this is in the set
+ * and the agent will still never see it", and a reader who takes only the tint
+ * would read it as merely decorative.
+ */
+.cv2-root .pn-memory__row[data-injected='no'] .pn-memory__statement {
+  text-decoration: line-through;
+  color: var(--pn-ink-3);
+}
+.cv2-root .pn-memory__claim {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.cv2-root .pn-memory__claim:hover .pn-memory__statement {
+  color: var(--pn-ink);
+}
+.cv2-root .pn-memory__statement {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cv2-root .pn-memory__marks {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.cv2-root .pn-memory__mark {
+  flex: none;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.cv2-root .pn-memory__mark[data-tone='block'] {
+  color: var(--pn-block);
+}
+.cv2-root .pn-memory__mark[data-tone='wait'] {
+  color: var(--pn-wait);
+}
+.cv2-root .pn-memory__mark[data-tone='idle'] {
+  color: var(--pn-ink-3);
+}
+/* The scope sits on its own line under the claim — it is the condition the
+   claim is true UNDER, so it must not compete with the claim for the eye. */
+.cv2-root .pn-memory__scope {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pn-ink-3);
+  font-size: 10.5px;
+}
+.cv2-root .pn-memory__forget,
+.cv2-root .pn-memory__add {
+  flex: none;
+  padding: 3px 8px;
+  background: none;
+  border: 1px solid var(--pn-line);
+  border-radius: 6px;
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pn-ink-3);
+  cursor: pointer;
+}
+.cv2-root .pn-memory__add {
+  align-self: flex-start;
+}
+.cv2-root .pn-memory__forget:hover,
+.cv2-root .pn-memory__add:hover {
+  color: var(--pn-ink);
+  background: var(--pn-hover);
+}
+/* Refused controls stay FOCUSABLE and keep their title — the reason is
+   unreachable if the control is not (L6/D28). Only the affordance dims. */
+.cv2-root .pn-memory__forget[aria-disabled='true'],
+.cv2-root .pn-memory__add[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/*
+ * EPISTEMICS — every mark standing against a memory.
+ *
+ * A LIST, not a single badge: `reasons` is ordered by display precedence and
+ * the server's own comment insists the order "never hides a reason". The detail
+ * panel is the one surface with room to honour that, so it draws all of them.
+ */
+.cv2-root .pn-memory__epistemics {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.cv2-root .pn-memory__reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cv2-root .pn-memory__reason {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  background: var(--pn-card);
+  border: 1px solid var(--pn-line);
+  border-radius: 7px;
+}
+/* The superseded row is the only one that changes what gets INJECTED, so it is
+   the only one that gets a heavier edge. The others are warnings about a claim
+   that is still being handed to agents. */
+.cv2-root .pn-memory__reason[data-reason='superseded'] {
+  border-color: var(--pn-block);
+}
+.cv2-root .pn-memory__reason-detail {
+  color: var(--pn-ink-3);
+  font-size: 10.5px;
+  text-wrap: pretty;
+}
+.cv2-root .pn-memory__marks-actions {
+  display: flex;
+  gap: 6px;
+}

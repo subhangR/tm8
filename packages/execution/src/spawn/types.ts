@@ -15,7 +15,12 @@
 //      makes that mistake impossible to make here.
 
 /** Agent execution mode — mirrors work_sessions.mode's CHECK constraint. */
-export type AgentMode = 'worker' | 'coordinator' | 'coordinated-worker' | 'coordinated-coordinator';
+export type AgentMode =
+  | 'worker'
+  | 'coordinator'
+  | 'coordinated-worker'
+  | 'coordinated-coordinator'
+  | 'dispatcher';
 
 /** work_sessions.status — the five states 001_core_graph.sql:703 allows. */
 export type WorkSessionStatus = 'spawning' | 'running' | 'idle' | 'exited' | 'failed';
@@ -139,6 +144,12 @@ export interface LoadSpawnContextInput {
   teamMemberId: string;
   projectId?: string | null;
   taskIds?: string[];
+  /**
+   * Memory entities explicitly named by the spawn request (D3a). The graph
+   * validates them (same space, kind `memory`, live) and folds them into the
+   * teammate's injected memory set for this session only.
+   */
+  memoryIds?: string[];
 }
 
 /**
@@ -664,6 +675,8 @@ export interface SpawnRequest {
   credentialSources?: CredentialSources | null;
   title?: string | null;
   promptExtra?: string | null;
+  /** Spawn-time memory hand-off (D3a); see `LoadSpawnContextInput.memoryIds`. */
+  memoryIds?: string[];
   /** S12: untrusted projects require per-spawn consent. */
   confirmUntrusted?: boolean;
   clientMutationId?: string | null;

@@ -1,16 +1,16 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:aa81fcc7f5d8cef5f915201b925c96d59ac79066273e999659fa0b20b2b623fe",
+  "catalogDigest": "sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96",
   "catalog": {
-    "total": 137,
-    "v1": 135,
+    "total": 138,
+    "v1": 136,
     "reserved": 2,
-    "http": 136,
+    "http": 137,
     "ws": 1,
-    "registerableV1Http": 134,
+    "registerableV1Http": 135,
     "methods": {
       "GET": 52,
-      "POST": 58,
+      "POST": 59,
       "PATCH": 10,
       "DELETE": 9,
       "PUT": 7,
@@ -18,11 +18,11 @@
     },
     "kinds": {
       "read": 55,
-      "command": 81,
+      "command": 82,
       "stream": 1
     },
-    "uniqueNames": 137,
-    "uniqueBindings": 137
+    "uniqueNames": 138,
+    "uniqueBindings": 138
   },
   "reservedOperations": [
     "search.query",
@@ -1151,6 +1151,13 @@
         "path": "/v2/work-sessions/:workSessionId/transcript",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "execution.dispatch",
+        "method": "POST",
+        "path": "/v2/execution/dispatch",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1363,7 +1370,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 106
+    "unimplementedV1Http": 107
   },
   "schemas": {
     "additive": {
@@ -3801,6 +3808,22 @@
         "actionDiscoverable": true,
         "reason": null,
         "publicComposite": null
+      },
+      {
+        "operation": "execution.dispatch",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.dispatch",
+        "intentTags": [
+          "execution",
+          "dispatch"
+        ],
+        "inputSchemaRef": "ExecutionDispatchInputSchema",
+        "resultSchemaRef": "ExecutionDispatchResultSchema",
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
       }
     ],
     "rejectedLegacyAliases": [
@@ -4466,6 +4489,39 @@
         },
         "migration": {
           "strategy": "artifact-detail"
+        }
+      },
+      "loop": {
+        "kind": "loop",
+        "entityKind": true,
+        "route": {
+          "strategy": "collection",
+          "slug": "loops"
+        },
+        "collection": {
+          "strategy": "typed-collection"
+        },
+        "projection": {
+          "strategy": "universal-typed"
+        },
+        "capabilities": {
+          "profile": "generic",
+          "genericCreate": true,
+          "genericPatch": true,
+          "genericMove": true,
+          "genericHierarchy": true,
+          "genericDeleteRestore": true,
+          "genericPoints": true,
+          "messages": true,
+          "reactions": true,
+          "connections": true,
+          "lifecycleOperations": []
+        },
+        "menu": {
+          "strategy": "registered-not-default"
+        },
+        "migration": {
+          "strategy": "loop-detail"
         }
       }
     },

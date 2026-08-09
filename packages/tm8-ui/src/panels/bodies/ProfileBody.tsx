@@ -1,6 +1,15 @@
-import type { EntityDetail, EntitySummary } from '@tm8/contract';
+import type { EdgeView, EntityDetail, EntitySummary } from '@tm8/contract';
 import type { SessionLiveness } from '../../data/seam';
 import { KindIcon, getKind } from '../../domain';
+import {
+  MEMORY_MARK_COPY,
+  memoryEpistemics,
+  memoryScopeOf,
+  VERIFIED_NOT_READABLE,
+  type MemoryMarkKind,
+} from '../../domain/memory';
+import { MemorySetBlock, edgesOf, type MemoryAuthoring } from './MemorySetBlock';
+import { PeerRowsBlock } from './PeerRowsBlock';
 import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 /*
  * MODULE-DEEP, not through `terminal/index.ts`, deliberately: the barrel also
@@ -69,6 +78,9 @@ export const PROFILE_BLOCKS = [
   'live-work',
   'session-rows',
   'org-tree',
+  'memory-set',
+  'epistemics',
+  'peer-rows',
 ] as const;
 
 export type ProfileBlockName = (typeof PROFILE_BLOCKS)[number];
@@ -109,9 +121,42 @@ export interface ProfileBodyProps {
    */
   now?: string;
   onOpenEntity?: (id: string) => void;
+  /**
+   * The ONE authoring seam in this body, and it deliberately raises INTENT
+   * rather than taking a seam handle.
+   *
+   * This file's header calls itself presentation, and every other block here
+   * reads a detail and draws it. Handing it `seam.commands` would make it the
+   * first body in the tree that mutates the graph (verified: no body imports
+   * createEntity/createEdge/deleteEdge). So `memory-set` calls back and the
+   * VIEW performs the write — the same shape `EntityControls` uses for state
+   * and assignment, and the same shape `GenericBody` uses for artifact
+   * preview.
+   *
+   * Absent means the host wired no authoring, and the block then renders the
+   * working set read-only rather than drawing dead controls.
+   */
+  memoryAuthoring?: MemoryAuthoring | null;
+  /**
+   * Begin authoring a `supersedes` or `disputes` mark against THIS memory.
+   * Same intent-raising split as `memoryAuthoring`: the block offers the verb,
+   * the view writes the edge. Absent ⇒ the marks render read-only.
+   */
+  onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
 }
 
-export function ProfileBody({ detail, blocks, livenessOf, now, onOpenEntity }: ProfileBodyProps) {
+
+export type { MemoryAuthoring } from './MemorySetBlock';
+
+export function ProfileBody({
+  detail,
+  blocks,
+  livenessOf,
+  now,
+  onOpenEntity,
+  memoryAuthoring,
+  onMarkMemory,
+}: ProfileBodyProps) {
   if (blocks.length === 0) {
     return (
       /* The tabpanel identity rides on BOTH branches: a Content tab whose
@@ -148,6 +193,8 @@ export function ProfileBody({ detail, blocks, livenessOf, now, onOpenEntity }: P
           livenessOf={livenessOf}
           now={nowIso}
           onOpenEntity={onOpenEntity}
+          memoryAuthoring={memoryAuthoring}
+          onMarkMemory={onMarkMemory}
         />
       ))}
     </div>
@@ -160,12 +207,16 @@ function ProfileBlock({
   livenessOf,
   now,
   onOpenEntity,
+  memoryAuthoring,
+  onMarkMemory,
 }: {
   detail: EntityDetail;
   block: ProfileBlockRef;
   livenessOf?: (id: string) => SessionLiveness;
   now: string;
   onOpenEntity?: (id: string) => void;
+  memoryAuthoring?: MemoryAuthoring | null;
+  onMarkMemory?: ((mark: MemoryMarkKind) => void) | null;
 }) {
   const params = block.params ?? {};
   const body = (() => {
@@ -184,6 +235,19 @@ function ProfileBlock({
         return <LiveWorkBlock detail={detail} params={params} now={now} onOpenEntity={onOpenEntity} />;
       case 'org-tree':
         return <OrgTreeBlock detail={detail} params={params} onOpenEntity={onOpenEntity} />;
+      case 'memory-set':
+        return (
+          <MemorySetBlock
+            detail={detail}
+            params={params}
+            onOpenEntity={onOpenEntity}
+            authoring={memoryAuthoring}
+          />
+        );
+      case 'epistemics':
+        return <EpistemicsBlock detail={detail} onMark={onMarkMemory} />;
+      case 'peer-rows':
+        return <PeerRowsBlock detail={detail} params={params} onOpenEntity={onOpenEntity} />;
       case 'session-rows':
         return (
           <SessionRowsBlock
@@ -211,7 +275,13 @@ function ProfileBlock({
    * components. `.pn-section`'s bottom rule would be a hairline the canvas
    * does not draw.
    */
-  const count = params.count === true ? summariesOf(detail, params).length : null;
+  /* An edge-backed block counts its EDGES, a content-backed one counts its
+     list. Same rule either way — the count is of the very thing the block
+     draws below it, so the two can never disagree. */
+  const count =
+    params.count === true
+      ? (typeof params.edgeType === 'string' ? edgesOf(detail, params) : summariesOf(detail, params)).length
+      : null;
   const label = block.label != null && count != null ? `${block.label} · ${count}` : block.label;
 
   return (
@@ -685,6 +755,111 @@ function SessionRowsBlock({
   );
 }
 
+/**
+ * EPISTEMICS — every mark standing against this entity, and the two verbs that
+ * can add one.
+ *
+ * IT LISTS ALL REASONS, NOT JUST THE HEADLINE. `badges.staleness.reasons`
+ * arrives ordered by display precedence and the server's own comment is
+ * explicit that the order "ORDERS the array — it never hides a reason". A
+ * detail panel that showed only `reasons[0]` would hide the rest at the one
+ * place a reader came specifically to find them; the working-set ROW shows the
+ * headline because a row has one line, a panel has no such excuse.
+ *
+ * THE VERIFIED CAVEAT IS DRAWN, not omitted. Absent staleness is UNFLAGGED and
+ * this build cannot tell it from verified (see `domain/memory.ts`), so the
+ * panel says that in words. Leaving it blank would let "no badge" read as a
+ * clean bill of health, which is the precise inference `contract.ts:174`
+ * forbids.
+ */
+function EpistemicsBlock({
+  detail,
+  onMark,
+}: {
+  detail: EntityDetail;
+  onMark?: ((mark: MemoryMarkKind) => void) | null;
+}) {
+  const staleness = detail.badges.staleness;
+  const reasons = staleness?.reasons ?? [];
+  const verified = staleness?.verified;
+
+  return (
+    <div className="pn-memory__epistemics">
+      {reasons.length === 0 ? (
+        <p className="pn-section__empty" data-testid="epistemics-unflagged">
+          Unflagged — nothing is marked against this memory. That is not the
+          same as verified: this build omits the badge entirely when nothing is
+          wrong, so a verified memory and an unexamined one look identical here.
+          Spawn-time injection can see the difference and marks it [verified].
+        </p>
+      ) : (
+        <ul className="pn-memory__reasons" data-testid="epistemics-reasons">
+          {reasons.map((reason) => (
+            <li key={reason} className="pn-memory__reason" data-reason={reason}>
+              <span className="pn-memory__mark" data-tone={reason === 'superseded' ? 'block' : 'wait'}>
+                {reason === 'basisDeleted'
+                  ? 'basis deleted'
+                  : reason === 'basisMoved'
+                    ? 'basis moved'
+                    : reason}
+              </span>
+              <span className="pn-memory__reason-detail">{reasonDetail(detail, reason)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* A verification is only ever reported ALONGSIDE a reason, and it is
+          reported with its version, because a clear of version N stops clearing
+          the moment the content moves to N+1. */}
+      {verified ? (
+        <p className="pn-memory__reason-detail" data-testid="epistemics-verified">
+          {verified.current
+            ? `Verified at version ${String(verified.atVersion)}, which is still the current version — independence basis: ${verified.independenceBasis}.`
+            : `Verified at version ${String(verified.atVersion)}, but the content has moved past it, so the verification no longer applies.`}
+        </p>
+      ) : null}
+
+      {onMark ? (
+        <div className="pn-memory__marks-actions">
+          {(['supersede', 'dispute'] as const).map((mark) => (
+            <button
+              key={mark}
+              type="button"
+              className="pn-memory__add"
+              data-testid={`memory-mark-${mark}`}
+              title={MEMORY_MARK_COPY[mark].permanence}
+              onClick={() => onMark(mark)}
+            >
+              {mark}
+            </button>
+          ))}
+        </div>
+      ) : (
+        /* No verb wired is stated, not hidden: a panel that simply omits the
+           controls claims this memory cannot be marked, which is false. */
+        <p className="pn-section__empty">
+          Marking is not wired on this surface. {VERIFIED_NOT_READABLE}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function reasonDetail(detail: EntityDetail, reason: string): string {
+  const staleness = detail.badges.staleness;
+  switch (reason) {
+    case 'superseded':
+      return 'A newer memory replaces this one. Reads resolve to the chain head, and spawn drops it from working sets — though naming it explicitly by id still injects it.';
+    case 'disputed':
+      return `${String(staleness?.disputed?.openCount ?? 0)} open dispute(s), unanswered at the current version. Still injected, marked [disputed].`;
+    case 'basisDeleted':
+      return `${String(staleness?.basisDeleted?.count ?? 0)} entity this memory was based on has been deleted.`;
+    default:
+      return `${String(staleness?.basisMoved?.count ?? 0)} entity this memory was based on has changed since it was pinned.`;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Structural readers — they ask what the data HAS, never what it IS (§15.2)
 // ---------------------------------------------------------------------------
@@ -752,6 +927,7 @@ function summariesOf(detail: EntityDetail, params: Params): readonly EntitySumma
   const raw = record(detail.content)[key];
   return Array.isArray(raw) ? raw.filter(isSummary) : [];
 }
+
 
 /**
  * Elapsed time as the oracle writes it: `2m`, `3h`, `2d` (line 479 composes

@@ -415,6 +415,49 @@ test('the whole loop produced one ordered, gapless event stream for the space', 
   }
 });
 
+test('a loop entity resolves its content — the standing rule at the top of this file', () => {
+  // "If a new core kind is added, assert its content here." `loop` (086) is
+  // that kind. This is not a formality: internal.entity_content falls through
+  // to '{}'::jsonb for a kind it does not know, which is a valid jsonb object
+  // and therefore invisible to any assertion that only checks for success —
+  // the exact hole migration 011 exists to close.
+  const created = json(
+    `select public.create_loop(${uuid(w.spaceA)}, 'Nightly dreamer', ${uuid(w.personaA)},
+       'every 1d', null, null, 'sweep the memory graph', '{"model":"claude-opus-5"}'::jsonb,
+       true, null, null, null, ${literal(cmid('loop-kind'))})`,
+    { claims: w.claimsA },
+  );
+  const loop = created.entity;
+
+  assert.equal(loop.kind, 'loop');
+  assert.equal(loop.content.title, 'Nightly dreamer', 'loop content must resolve (011)');
+  assert.equal(loop.content.schedule, 'every 1d');
+  assert.equal(loop.content.enabled, true);
+  assert.equal(loop.content.prompt, 'sweep the memory graph');
+  assert.deepEqual(JSON.parse(JSON.stringify(loop.content.config)), { model: 'claude-opus-5' });
+  // MEASURED, and it contradicts the obvious expectation, so it is pinned:
+  // `internal.command_result` (007:53) runs `jsonb_strip_nulls`, which is
+  // RECURSIVE — so every null column is ABSENT from this envelope, not null.
+  // `team_member_id` is the one that matters: null means "route through the
+  // dispatcher" (§4.4), and here that value is indistinguishable from "no such
+  // field". This is exactly why `loop` needs hand projections in the two HTTP
+  // read arms (facade/entity-read.ts and events/projector.ts) instead of
+  // riding this jsonb — those select the column explicitly and DO emit null.
+  assert.equal('team_member_id' in loop.content, false,
+    'command_result strip-nulls drops null columns; the HTTP arms are what preserve them');
+  assert.equal(loop.content.subject_id, undefined);
+
+  // The doors refuse a cross-space runner: a loop is a standing grant of its
+  // creator's authority on a timer, and one that could name an entity in
+  // another space would be a scheduled confused deputy.
+  denied(
+    'create_loop: a subject from another space',
+    `select public.create_loop(${uuid(w.spaceA)}, 'Cross-space', null, 'every 1d',
+       null, ${uuid(w.channelB)})`,
+    { claims: w.claimsA, expect: '23503' },
+  );
+});
+
 test('entity_tree walks the task hierarchy the composer renders', () => {
   const root = json(`select public.create_task(${uuid(w.spaceA)}, 'epic')`, { claims: w.claimsA }).entity;
   const child = json(

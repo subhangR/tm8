@@ -52,6 +52,8 @@ import {
   type EntityState,
   type EntitySummary,
   type ExecutionPromptInput,
+  type ExecutionDispatchInput,
+  type ExecutionDispatchResult,
   type ExecutionSpawnInput,
   type ExecutionResumeInput,
   type ExecutionTerminateInput,
@@ -400,6 +402,16 @@ function synthesizeContent(s: EntitySummary): EntityContent {
         kind: 'worktree', projectId: state.projectId, path: `/data/worktrees/${state.branch}`,
         branch: state.branch, baseRef: state.baseRef, baseCommitOid: state.baseCommitOid,
         status: state.status, statusChangedAt: null,
+      };
+    case 'loop':
+      // The loop content arm is CLOSED (every field required), so the fixture
+      // has to produce a whole one rather than falling through to the open
+      // `{ kind }` variant below.
+      return {
+        kind: 'loop', schedule: state.schedule, enabled: state.enabled,
+        teamMemberId: state.teamMemberId, subjectId: state.subjectId,
+        prompt: '', config: {},
+        nextRunAt: state.nextRunAt, lastRunAt: state.lastRunAt, lastError: state.lastError,
       };
     default:
       // pull_request | commit | file | spell | skill — the open content variant
@@ -758,6 +770,20 @@ export function createFixtureSeam(): FixtureSeam {
         };
       case 'collection':
         return { kind: 'collection', collectionType: (c.collectionType as string) ?? 'manual', itemCount: 0 };
+      // The 056 scope fields ride in STATE, not content, so that a memory's
+      // conditions arrive on every summary read in the same payload as its
+      // title. `create_memory` (056) takes them off `content` on the wire and
+      // the read projects them back into state — this mirrors both halves,
+      // because a fixture that stored them only in content would let a working
+      // set render its scope in jsdom and lose it against the node.
+      case 'memory':
+        return {
+          kind: 'memory',
+          mechanism: (c.mechanism as string) ?? '',
+          subjectScope: (c.subjectScope as string) ?? '',
+          doesNotEstablish: (c.doesNotEstablish as string) ?? '',
+          measuredAt: (c.measuredAt as string | null) ?? null,
+        };
       default:
         throw new CollabError('invalid_input', `kind ${kind} is not client-creatable`);
     }
@@ -1381,13 +1407,27 @@ export function createFixtureSeam(): FixtureSeam {
     commands: {
       async createEntity(input) {
         if (input.parentId) requireSummary(input.parentId);
+        /*
+         * `create_memory` (056) takes NO title argument — the title IS the
+         * statement, derived server-side. Mirroring that here is not cosmetic:
+         * a fixture that kept the caller's title would let a composer send a
+         * separate title and look correct in jsdom while the node overwrote it.
+         * The excerpt carries the statement for the same reason the server
+         * does — summaries are how a memory's claim travels.
+         */
+        const statement = (input.content as Record<string, unknown> | undefined)?.statement;
+        const derivedTitle =
+          input.kind === 'memory' && typeof statement === 'string' && statement.length > 0
+            ? statement
+            : input.title;
         const s = insertSummary({
           id: nextId(input.kind),
           kind: input.kind,
-          title: input.title,
+          title: derivedTitle,
           spaceId: input.spaceId,
           parentId: input.parentId ?? null,
           ...(input.position !== undefined ? { position: input.position } : {}),
+          ...(input.kind === 'memory' ? { excerpt: derivedTitle } : {}),
           state: defaultStateFor(input),
         });
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
@@ -1753,6 +1793,129 @@ export function createFixtureSeam(): FixtureSeam {
         setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), s.id], snap?.nodeBootId);
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+      /**
+       * `execution.dispatch` — the fixture mirror of the resident-dispatcher
+       * saga (DESIGN §4.3).
+       *
+       * IT MODELS THE PARTS A UI CAN GET WRONG:
+       *   · a dispatcher may have to be SPAWNED first, so `dispatcherSpawned`
+       *     is sometimes true and a surface that ignores it cannot claim it
+       *     "reused the existing dispatcher";
+       *   · the answer is a DELIVERY VERDICT, not a session — dispatch is
+       *     asynchronous by construction and there is nothing to open;
+       *   · the request MESSAGE IS REALLY STORED, anchored to the derived task.
+       *     `requestMessageId` therefore resolves to an entity that exists.
+       *
+       * RESIDENCY IS DECIDED BY LIVENESS, NOT BY STORED STATUS — §5's hazard,
+       * stated as a rule the design repeats twice: "never trust
+       * `work_sessions.status` for is-the-dispatcher-alive; sessions die in
+       * 40ms with a NULL exit_code, so probe, don't read." A fixture that
+       * matched on `state.status === 'running'` would reproduce exactly the bug
+       * the design forbids, and would do it invisibly, so it reads the same
+       * liveness snapshot the rest of this seam serves.
+       *
+       * WHAT IT DOES NOT MODEL, said plainly rather than implied: `delivery` is
+       * always `'delivered'` here. A fixture session becomes live the moment it
+       * is inserted — there is no boot latency to lose a request to — so the
+       * `'undelivered'` branch is NOT reachable through this seam. On a real
+       * node it happens when the dispatcher has not settled or has died between
+       * resolution and delivery, and the request is stored anyway. An earlier
+       * revision of this comment claimed the branch was reachable while the
+       * code returned `'delivered'` unconditionally; that claim was false and
+       * is corrected here rather than made true by inventing a failure mode
+       * this seam has no honest way to produce.
+       *
+       * It deliberately does NOT invent the dispatcher's DECISION: no teammate
+       * is chosen and no session is spawned for the work, because on a real
+       * node that happens later, in another agent, and a fixture that faked it
+       * would let a surface render a launch that never happened.
+       */
+      async dispatch(input: ExecutionDispatchInput): Promise<ExecutionDispatchResult> {
+        const subject = requireSummary(input.subjectId);
+        // 064 derives a task for any launchable subject before dispatch; a
+        // subject that IS a task is its own derivation.
+        const task = subject.state.kind === 'task'
+          ? subject
+          : insertSummary({
+              id: nextId('task'),
+              kind: 'task',
+              title: subject.title,
+              spaceId: subject.spaceId,
+              parentId: subject.id,
+              state: {
+                kind: 'task', workStatus: 'open', priority: 'medium', axes: {},
+                dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
+              },
+            });
+        const live = new Set(livenessBySpace.get(input.spaceId)?.liveEntityIds ?? []);
+        const existing = [...summaries.values()].find(
+          (row) => row.spaceId === input.spaceId
+            && row.state.kind === 'work_session'
+            && row.title.startsWith('dispatcher')
+            // LIVENESS, not `state.status` — see the docblock. A dispatcher row
+            // that is merely recorded as running is not a dispatcher.
+            && live.has(row.id),
+        );
+        const dispatcher = existing ?? insertSummary({
+          id: nextId('ws'),
+          kind: 'work_session',
+          title: 'dispatcher',
+          spaceId: input.spaceId,
+          state: {
+            kind: 'work_session', status: 'running', agentTool: 'claude-code',
+            model: null, shareMode: 'space', startedAt: tick(), exitedAt: null,
+          },
+        });
+        if (!existing) {
+          extras.set(dispatcher.id, {
+            content: {
+              kind: 'work_session', nodeId: 'node-fixture', launchProjectId: null,
+              workingOn: [], transcriptDoc: null,
+            },
+            connections: clone(NO_CONNECTIONS),
+            capabilities: { ...CAPS_FULL },
+          });
+          const snap = livenessBySpace.get(input.spaceId);
+          setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), dispatcher.id], snap?.nodeBootId);
+          emit(dispatcher.spaceId, { type: 'entity.upsert', entity: clone(dispatcher) }, input);
+        }
+        /*
+         * THE DURABLE REQUEST, stored for real. The handler posts the dispatch
+         * request as a message on the derived task, and it survives whether or
+         * not delivery lands — that is what makes `undelivered` a non-fatal
+         * outcome. Minting a bare id here (the previous behaviour) handed
+         * callers an identifier that resolved to nothing.
+         */
+        const request = insertSummary({
+          id: nextId('msg'),
+          kind: 'message',
+          title: input.note ?? `dispatch request \u00b7 ${task.title}`,
+          spaceId: task.spaceId,
+          parentId: task.id,
+          state: {
+            kind: 'message', anchorId: task.id, rootMessageId: null,
+            author: viewerActor, messageBatchId: null, editedAt: null,
+          },
+        });
+        extras.set(request.id, {
+          content: {
+            kind: 'message',
+            body: input.note ?? `Dispatch requested for ${task.title}.`,
+            mentions: [], attachments: [],
+          },
+          connections: clone(NO_CONNECTIONS),
+          capabilities: { ...CAPS_FULL },
+        });
+        emit(task.spaceId, { type: 'entity.upsert', entity: clone(request) }, input);
+
+        return {
+          taskId: task.id,
+          dispatcherSessionId: dispatcher.id,
+          dispatcherSpawned: existing === undefined,
+          requestMessageId: request.id,
+          delivery: 'delivered',
+        };
       },
       async prompt(id, _input: ExecutionPromptInput) {
         const s = requireSummary(id);

@@ -157,6 +157,8 @@ export const KIND_ART = {
   ],
 
   /** A bookmark — a memory is a claim deliberately kept. */
+  // A closed circular arrow — the shape every scheduler in the world uses.
+  loop: ['M8 3.2a4.8 4.8 0 1 0 4.53 3.2M12.8 3.2v3.2h-3.2'],
   memory: ['M4.4 3.4a1.4 1.4 0 0 1 1.4-1.4h4.4a1.4 1.4 0 0 1 1.4 1.4v10.2L8 11.2l-3.6 2.4z'],
 
   /** A sealed package — an artifact is a published bundle, bytes and all. */
