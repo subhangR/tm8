@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MENU_GROUP_SPINE,
+  DEFAULT_MENU_LIBRARY_SPINE,
   DEFAULT_MENU_WORKSPACE_KIND_SPINE,
   MenuConfigSchema,
   type MenuConfig,
@@ -66,13 +67,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
     expect(library).toEqual({
       id: 'library',
       label: 'Library',
-      items: [
-        // Revision 8: the Files EXPLORER view row precedes the entity rows.
-        { type: 'view', ref: 'files' },
-        { type: 'kind', ref: 'file' },
-        { type: 'kind', ref: 'spell' },
-        { type: 'kind', ref: 'collection' },
-      ],
+      items: DEFAULT_MENU_LIBRARY_SPINE,
     });
   });
 

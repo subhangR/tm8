@@ -17,7 +17,7 @@
  * deferred features out of the shipped MenuConfig — they surface only as
  * disabled palette-discovery rows (§4.2).
  */
-import type { MenuConfig } from '@tm8/contract';
+import { DEFAULT_MENU_LIBRARY_SPINE, type MenuConfig } from '@tm8/contract';
 import { getKind } from './registry';
 import { CUSTOM_KIND_FALLBACK } from './types';
 
@@ -112,16 +112,12 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
     {
       id: 'library',
       label: 'Library',
-      items: [
-        // Revision 8 (2026-08-10): the Files EXPLORER view — browse roots,
-        // folders, uploads. Distinct from the `file` KIND row below, which
-        // lists file ENTITIES; owner ruling R9 keeps BOTH (rail labels
-        // differ: "File browser" vs "Files").
-        { type: 'view', ref: 'files' },
-        { type: 'kind', ref: 'file' },
-        { type: 'kind', ref: 'spell' },
-        { type: 'kind', ref: 'collection' },
-      ],
+      // Revision 8 (2026-08-10): the Files EXPLORER view — browse roots,
+      // folders, uploads. Distinct from the `file` KIND row below, which
+      // lists file ENTITIES; owner ruling R9 keeps BOTH (rail labels
+      // differ: "File browser" vs "Files"). The shared spine prevents the
+      // client fallback and persisted server default from drifting again.
+      items: [...DEFAULT_MENU_LIBRARY_SPINE],
     },
     {
       id: 'tracking',

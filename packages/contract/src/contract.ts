@@ -1444,6 +1444,21 @@ export const DEFAULT_MENU_WORKSPACE_KIND_SPINE = [
 ] as const satisfies readonly MenuKindRef[];
 
 /**
+ * The ordered rows in the default Library group.
+ *
+ * This joins the client fallback and the database seeder at the exact seam
+ * that caused the production flash-and-disappear regression: revision 8 added
+ * the Files explorer to the client default, while migration 094 still served
+ * the older three-kind Library group from persisted Space menus.
+ */
+export const DEFAULT_MENU_LIBRARY_SPINE = [
+  { type: 'view', ref: 'files' },
+  { type: 'kind', ref: 'file' },
+  { type: 'kind', ref: 'spell' },
+  { type: 'kind', ref: 'collection' },
+] as const satisfies readonly MenuItem[];
+
+/**
  * The default menu's group spine — ONE shared truth for its two twins.
  *
  * The server seeder (`internal.w1_default_menu_payload()`, last redefined in
