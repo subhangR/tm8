@@ -113,6 +113,15 @@ else
   skip "typecheck packages/ui" "UI arrives at W3/M2"
 fi
 
+# The production UI owns the launch builder. Keep it in the merge gate after
+# the contract build so additions such as execution.spawn credential provenance
+# cannot land on one side of the seam without the other.
+if [ -f packages/tm8-ui/tsconfig.json ]; then
+  run_stage "typecheck packages/tm8-ui" ./node_modules/.bin/tsc -p packages/tm8-ui/tsconfig.json --noEmit
+else
+  skip "typecheck packages/tm8-ui" "production UI is absent"
+fi
+
 # --- 3. tests ---------------------------------------------------------------
 # The conformance suite is THE merge gate from G1 onward. Before G1 it runs against
 # tools/conformance's own stub and is red by design — that red run IS gate G0's
