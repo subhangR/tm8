@@ -39,7 +39,7 @@ const PROJECTOR_SRC = join(SERVER_ROOT, 'src', 'events', 'projector.ts');
  * files, in the same change as its contract entry; shrinking this list is the
  * only edit it should ever see.
  */
-const FROZEN_LEGACY_ENTITY_READ_GAP = new Set(['spell', 'skill', 'pull_request', 'commit']);
+const FROZEN_LEGACY_ENTITY_READ_GAP = new Set(['spell', 'skill', 'commit']);
 
 /**
  * Kinds whose contract entry has landed but whose dispatch arms are still
