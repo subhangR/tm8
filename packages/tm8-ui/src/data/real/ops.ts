@@ -87,6 +87,12 @@ import {
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
+  type ProjectFileReadResult,
+  type ProjectFolderUploadAbortInput,
+  type ProjectFolderUploadCompleteInput,
+  type ProjectFolderUploadGrant,
+  type ProjectFolderUploadInitInput,
+  type ProjectFolderUploadResult,
   type ProjectFileListing,
   type ProjectId,
   type ProjectLinkInput,
@@ -291,8 +297,40 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<ProjectFileListing>('projects.files.list', { params: { projectId }, query: { path } });
     },
 
+    /**
+     * One file's CONTENT out of a connected project folder — the viewer half of
+     * `projectFiles`. Answers a DTO, deliberately NOT an href like
+     * `fileDownloadHref`: a project's disk must never reach the browser as a
+     * document on the app origin. A withheld file arrives as a NAMED `refusal`
+     * inside a 200, so a caller can tell it from a transport failure.
+     */
+    readProjectFile(projectId: ProjectId, path: string): Promise<ProjectFileReadResult> {
+      return http.call<ProjectFileReadResult>('projects.files.read', {
+        params: { projectId }, query: { path },
+      });
+    },
+
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {
       return http.call<CommandResult>('projects.files.attach', { params: { projectId }, body: input });
+    },
+
+    /** Folder import lifecycle (seam Amendment 8, owner ruling R7). */
+    folderUploadInit(spaceId: SpaceId, input: ProjectFolderUploadInitInput): Promise<ProjectFolderUploadGrant> {
+      return http.call<ProjectFolderUploadGrant>('projects.folderUploads.init', { params: { spaceId }, body: input });
+    },
+
+    folderUploadComplete(
+      folderUploadId: string,
+      input: ProjectFolderUploadCompleteInput,
+    ): Promise<ProjectFolderUploadResult> {
+      return http.call<ProjectFolderUploadResult>('projects.folderUploads.complete', {
+        params: { folderUploadId },
+        body: input,
+      });
+    },
+
+    async folderUploadAbort(folderUploadId: string, input: ProjectFolderUploadAbortInput): Promise<void> {
+      await http.call('projects.folderUploads.abort', { params: { folderUploadId }, body: input });
     },
 
     /** Branch topology for a project's working directory — seam Amendment 5. */

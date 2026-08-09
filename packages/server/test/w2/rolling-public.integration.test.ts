@@ -246,6 +246,12 @@ const PROJECT_FOLDER_NET_NEW_OPERATIONS = [
   'projects.directories.list',
   'projects.files.list',
   'projects.files.attach',
+  'projects.files.read',
+  // 2026-08-10: browser-originated folder import (R7). Net-new; mounts only
+  // where the node passes the folderUploads seam (file storage + state dir).
+  'projects.folderUploads.init',
+  'projects.folderUploads.complete',
+  'projects.folderUploads.abort',
 ] as const;
 
 /**
@@ -339,6 +345,12 @@ function composeTrancheV2(
       blobStore: createW2BlobStore({ dataDir, maxSizeBytes: config.fileMaxSizeBytes }),
       maxSizeBytes: config.fileMaxSizeBytes,
     },
+    // Mirrors src/main.ts: folderUploads mounts beside files in production.
+    folderUploads: {
+      blobStore: createW2BlobStore({ dataDir, maxSizeBytes: config.fileMaxSizeBytes }),
+      maxSizeBytes: config.fileMaxSizeBytes,
+      stateDir: join(dataDir, 'folder-uploads'),
+    },
   });
   return registry;
 }
@@ -389,7 +401,9 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 114 -> 115 (2026-08-09): projects.branches.list.
     // 115 -> 117: entities.commands.gate + projects.contention (Tier 4 git x graph).
     // 117 -> 119: projects.files.list + projects.files.attach.
-    expect(registry.size).toBe(119);
+    // 119 -> 122: projects.folderUploads.init/complete/abort.
+    // 122 -> 123: projects.files.read (the viewer half).
+    expect(registry.size).toBe(123);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
@@ -546,7 +560,8 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
     // 70 -> 73: the three credentials.* command bodies are bound.
     // 74 -> 75 (2026-08-09, merge): execution.dispatch binds its body.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(75);
+    // 75 -> 78 (2026-08-10): the three projects.folderUploads.* bodies bind.
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(78);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -694,8 +709,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 130/128 -> 134/132: the four credentials.* routes, all mounted.
     // 136/134 -> 137/135 (2026-08-09, merge): execution.dispatch, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 137, implemented: 135 });
-    expect(harness.production.server.registry.size).toBe(135);
+    expect(health).toMatchObject({ ok: true, operations: 141, implemented: 139 });
+    expect(harness.production.server.registry.size).toBe(139);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -713,7 +728,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 125 -> 126 (2026-08-09): `projects.branches.list`.
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
-    expect(registered.size + residual.length).toBe(135);
+    expect(registered.size + residual.length).toBe(139);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

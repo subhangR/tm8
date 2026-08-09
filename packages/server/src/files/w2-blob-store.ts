@@ -71,6 +71,12 @@ export interface VerifiedBlob {
   readonly checksumSha256: string;
 }
 
+export interface BlobReadStream {
+  /** The blob's TOTAL size on disk, regardless of any range applied. */
+  readonly sizeBytes: number;
+  readonly stream: import('node:fs').ReadStream;
+}
+
 /**
  * The one filesystem authority for G07.
  *
@@ -217,6 +223,55 @@ export class W2BlobStore {
       const info = await handle.stat();
       if (!info.isFile()) throw new CollabError('not_found', 'blob is not a regular file');
       return await handle.readFile();
+    } catch (error) {
+      if (isErrno(error, 'ENOENT')) throw new CollabError('not_found', 'blob bytes are not available');
+      if (isErrno(error, 'ELOOP')) throw new CollabError('invalid_input', 'blob path may not be a symbolic link');
+      throw error;
+    } finally {
+      await handle?.close().catch(() => undefined);
+    }
+  }
+
+  /**
+   * Open a blob for STREAMING. Returns the file's true size and a byte stream,
+   * optionally limited to an inclusive `[start, end]` range. The caller is
+   * responsible for consuming or destroying the stream; the underlying file
+   * handle auto-closes with it either way.
+   */
+  async openRead(
+    storagePath: string,
+    expectedSpaceId: string,
+    range?: { readonly start: number; readonly end: number },
+  ): Promise<BlobReadStream> {
+    const path = await this.resolveStoragePath(storagePath, expectedSpaceId);
+    let handle: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      const info = await handle.stat();
+      if (!info.isFile()) throw new CollabError('not_found', 'blob is not a regular file');
+      if (range !== undefined) {
+        if (
+          !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end)
+          || range.start < 0 || range.end < range.start || range.end >= info.size
+        ) {
+          throw new CollabError('invalid_input', 'blob byte range is out of bounds');
+        }
+      }
+      const stream = handle.createReadStream(
+        range === undefined ? { autoClose: true } : { autoClose: true, start: range.start, end: range.end },
+      );
+      const opened = handle;
+      handle = undefined; // the stream now owns the fd
+      let closed = false;
+      const closeHandle = () => {
+        if (closed) return;
+        closed = true;
+        void opened.close().catch(() => undefined);
+      };
+      stream.once('close', closeHandle);
+      stream.once('end', closeHandle);
+      stream.once('error', closeHandle);
+      return { sizeBytes: info.size, stream };
     } catch (error) {
       if (isErrno(error, 'ENOENT')) throw new CollabError('not_found', 'blob bytes are not available');
       if (isErrno(error, 'ELOOP')) throw new CollabError('invalid_input', 'blob path may not be a symbolic link');

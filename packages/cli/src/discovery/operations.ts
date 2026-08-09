@@ -975,7 +975,53 @@ const ROWS: Record<OperationName, Row> = {
       '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
     ],
   },
+  'projects.files.read': {
+    cmd: null,
+    sum: 'Read one file content inside a connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'view', 'read', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'confined to the project working directory AND to TM8_PROJECT_ROOTS; symlinks are refused rather than followed',
+      'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
+  'projects.folderUploads.init': {
+    cmd: null,
+    sum: 'Freeze a browser folder-upload manifest and issue per-file byte grants',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'the browser-originated half of R7 folder import; a CLI caller already holds the node filesystem and links a directory as a project directly',
+    ],
+  },
+  'projects.folderUploads.complete': {
+    cmd: null,
+    sum: 'Materialize a staged folder upload as a project working directory and link it to the Space',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      "mode 'merge' replaces matching paths in place and reports replacedCount (R8); 'create' reserves a new root exclusively",
+    ],
+  },
+  'projects.folderUploads.abort': {
+    cmd: null,
+    sum: 'Abort a pending folder upload and release its staged bytes',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'staged blobs and the frozen manifest are removed; nothing was materialized yet',
+    ],
+  },
 
+  // ── files ────────────────────────────────────────────────────────────────
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
     cmd: ['file', 'upload'],
@@ -1719,7 +1765,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
+  'sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf';
 
 export const GRAMMAR_VERSION = '2';
 

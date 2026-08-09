@@ -67,6 +67,8 @@ describe('SHIPPED_DEFAULT_MENU', () => {
       id: 'library',
       label: 'Library',
       items: [
+        // Revision 8: the Files EXPLORER view row precedes the entity rows.
+        { type: 'view', ref: 'files' },
         { type: 'kind', ref: 'file' },
         { type: 'kind', ref: 'spell' },
         { type: 'kind', ref: 'collection' },
@@ -134,7 +136,7 @@ describe('SHIPPED_DEFAULT_MENU', () => {
   });
 
   it('stamps a revision so a rendered menu is attributable', () => {
-    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(7);
+    expect(SHIPPED_DEFAULT_MENU_REVISION).toBe(8);
     expect(SHIPPED_DEFAULT_MENU.revision).toBe(SHIPPED_DEFAULT_MENU_REVISION);
   });
 });

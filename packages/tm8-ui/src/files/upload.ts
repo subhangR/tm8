@@ -49,8 +49,14 @@ export interface FileUploadTaskOptions {
   files: Seam['files'];
   file: File;
   spaceId: SpaceId | string;
-  /** The entity the finished file is attached to, via an `attached_to` edge. */
-  anchorId: EntityId;
+  /**
+   * The entity the finished file is attached to, via an `attached_to` edge.
+   * OPTIONAL since 2026-08-10 (files-explorer lane): `FileUploadInitInput.entityId`
+   * has always been optional on the contract — an anchor-less upload lands in
+   * the space library attached to nothing, which is exactly what the Files
+   * explorer's Library root means. Additive; every existing caller passes one.
+   */
+  anchorId?: EntityId;
   newMutationId?: () => string;
   checksum?: (file: Blob) => Promise<string>;
 }
@@ -95,7 +101,7 @@ export function createFileUploadTask({
       grant = await files.uploadInit({
         clientMutationId: newMutationId(),
         spaceId,
-        entityId: anchorId,
+        ...(anchorId !== undefined ? { entityId: anchorId } : {}),
         name: file.name,
         mime: file.type || 'application/octet-stream',
         sizeBytes: file.size,

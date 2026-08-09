@@ -84,7 +84,9 @@ describe('reorder', () => {
     // asserted where there are siblings to preserve: the Tracking group.
     const d = moveItem(startDraft(BASE), 'tracking', 0, 2);
     const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
-    expect(tracking?.items.map((i) => i.ref)).toEqual(['pull_request', 'worktree', 'project']);
+    // Tracking gained the `files` VIEW row 2026-08-09 (FILES-DESIGN §5.3);
+    // moving index 0 to 2 still only touches the three it passes.
+    expect(tracking?.items.map((i) => i.ref)).toEqual(['pull_request', 'worktree', 'project', 'files']);
   });
 
   it('an out-of-range index is a no-op, not a crash or a dropped row', () => {
@@ -115,7 +117,7 @@ describe('remove', () => {
   it('removes an item', () => {
     const d = removeItem(startDraft(BASE), 'tracking', 1);
     const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
-    expect(tracking?.items.map((i) => i.ref)).toEqual(['project', 'worktree']);
+    expect(tracking?.items.map((i) => i.ref)).toEqual(['project', 'worktree', 'files']);
   });
 
   it('removes a caret child without removing its parent', () => {

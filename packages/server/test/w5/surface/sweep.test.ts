@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 135 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 136 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -301,9 +301,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(135);
-    expect(rows).toHaveLength(135);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(135);
+    expect(SURFACE).toHaveLength(139);
+    expect(rows).toHaveLength(139);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(139);
   });
 
   /**
@@ -452,10 +452,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
     // 79 -> 80: 083 (per-member credential sessions).
     // 80 -> 81: 086 (manifest credential-shape guard), merged via #87.
-    // Measured on the production-lineage integration tree on 2026-08-10: 89
-    // files through 094. This keeps production's already-applied 093 account
-    // credentials immutable and moves the Loops menu migration to 094.
-    expect(server.appliedMigrations.length).toBe(89);
+    // Measured on the consolidated Files tree 2026-08-10: 90 files through
+    // 095 — production-lineage 093 credentials + 094 Loops menu (main #145)
+    // plus this wave's 095 file upload slot sweep. Measured by
+    // `ls db/migrations/*.sql | wc -l`, never previous-plus-one.
+    expect(server.appliedMigrations.length).toBe(90);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
@@ -689,6 +690,11 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   'interactionProfiles.retire',
   'interactionProfiles.updateDraft',
   'interactionProfiles.validate',
+  // 2026-08-10 (files consolidation): projects.files.read validates its `path`
+  // query in-handler, and folderUploads.init validates its manifest in-handler;
+  // the sweep's synthetic bodies reach both refusals.
+  'projects.files.read',
+  'projects.folderUploads.init',
   'savedViews.create',
   'savedViews.update',
   'spaces.create',

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
 import { open, readdir, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 
@@ -8,6 +8,7 @@ import {
   type ProjectDirectoryEntry,
   type ProjectFileEntry,
   type ProjectFileListing,
+  type ProjectFileReadResult,
 } from '@tm8/contract';
 
 import {
@@ -16,9 +17,21 @@ import {
   containedBy,
   requireAllowed,
 } from './project-directories.js';
+import {
+  EXCLUDED_DIRECTORY_NAMES,
+  secretReason,
+  withinTm8DataDir,
+} from './project-file-policy.js';
 
 /** A picker should stay responsive even when opened on a very wide directory. */
 export const MAX_PROJECT_FILES = 500;
+
+/**
+ * Inline read ceiling, deliberately distinct from — and smaller than — the
+ * attach ceiling: an attach streams to the blob store, an inline read buffers
+ * into a JSON body.
+ */
+export const MAX_INLINE_READ_BYTES = 5 * 1_024 * 1_024;
 
 /**
  * Deliberately small and closed. Everything unlisted is
@@ -117,7 +130,7 @@ export async function listProjectFiles(
   }
 
   const directories: ProjectDirectoryEntry[] = entries
-    .filter((entry) => entry.isDirectory())
+    .filter((entry) => entry.isDirectory() && !EXCLUDED_DIRECTORY_NAMES.has(entry.name))
     .map((entry) => ({ name: entry.name, path: join(current, entry.name) }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -125,6 +138,10 @@ export async function listProjectFiles(
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const path = join(current, entry.name);
+    // A secret row is OMITTED rather than flagged: a picker must not offer
+    // what read and attach will refuse. `path` here is already canonical up to
+    // the entry name (readdir of a canonical dir, symlink entries excluded).
+    if (secretReason(root, path) !== null || (await withinTm8DataDir(path))) continue;
     let info;
     try {
       info = await stat(path);
@@ -200,6 +217,7 @@ export async function resolveProjectFile(
   if (!containedBy(root, canonical) || canonical === root) {
     throw new CollabError('forbidden', 'file is outside the project working directory');
   }
+  await refuseSecrets(root, canonical);
 
   const info = await statRegularFile(canonical);
   if (info.size === 0) {
@@ -216,6 +234,120 @@ export async function resolveProjectFile(
     sizeBytes: info.size,
     checksumSha256: await hashFile(canonical),
   };
+}
+
+/**
+ * The secret check runs on the RESOLVED path — an innocently named symlink to
+ * `.env` is refused by what it points at, not admitted by what it is called.
+ * The message names the file WITHHELD, distinct from empty and from absent.
+ */
+async function refuseSecrets(root: string, canonical: string): Promise<void> {
+  const reason = secretReason(root, canonical);
+  if (reason) throw new CollabError('forbidden', `file is withheld: ${reason}`);
+  if (await withinTm8DataDir(canonical)) {
+    throw new CollabError('forbidden', 'file is withheld: tm8 data directory');
+  }
+}
+
+/**
+ * MIME for an INLINE read. Never a type a UI would render as active content:
+ * SVG scripts and HTML both execute in the viewer's origin if inlined.
+ */
+function inlineSafeMime(path: string): string {
+  const mime = mimeForPath(path);
+  return mime === 'image/svg+xml' || mime === 'text/html' ? 'text/plain' : mime;
+}
+
+/**
+ * Read one file inline for a viewer.
+ *
+ * TOCTOU: the containment and secret checks run on the realpath-resolved
+ * canonical path, and the subsequent open uses `O_NOFOLLOW` with every read
+ * going through that ONE handle. A swap-to-symlink between resolve and open —
+ * the classic race — makes the open fail instead of silently following the
+ * new target; a swap AFTER open is harmless because the handle pins the inode
+ * that was checked.
+ */
+export async function readProjectFile(
+  workingDir: string,
+  requestedPath: string,
+  inlineMaxBytes: number = MAX_INLINE_READ_BYTES,
+  rawRoots?: readonly string[],
+): Promise<Omit<ProjectFileReadResult, 'projectId'>> {
+  if (!isAbsolute(requestedPath)) {
+    throw new CollabError('invalid_input', 'project file path must be absolute');
+  }
+  const { root } = await browsableWorkingDir(workingDir, rawRoots);
+
+  let canonical: string;
+  try {
+    canonical = await realpath(requestedPath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') throw new CollabError('not_found', `no such file: ${requestedPath}`);
+    if (code === 'EACCES' || code === 'EPERM') {
+      throw new CollabError('forbidden', `file is not readable: ${requestedPath}`);
+    }
+    throw new CollabError('upstream_unavailable', `could not read file: ${requestedPath}`);
+  }
+  if (!containedBy(root, canonical) || canonical === root) {
+    throw new CollabError('forbidden', 'file is outside the project working directory');
+  }
+  await refuseSecrets(root, canonical);
+
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    try {
+      handle = await open(canonical, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ELOOP' || code === 'EMLINK') {
+        // The final component became a symlink after it was resolved — the
+        // race this flag exists to catch.
+        throw new CollabError('forbidden', 'file changed to a symlink while being read');
+      }
+      if (code === 'ENOENT') throw new CollabError('not_found', `no such file: ${requestedPath}`);
+      if (code === 'EACCES' || code === 'EPERM') {
+        throw new CollabError('forbidden', `file is not readable: ${requestedPath}`);
+      }
+      throw new CollabError('upstream_unavailable', `could not read file: ${requestedPath}`);
+    }
+
+    const info = await handle.stat();
+    if (!info.isFile()) {
+      throw new CollabError('invalid_input', `not a regular file: ${requestedPath}`);
+    }
+    const truncated = info.size > inlineMaxBytes;
+    const buffer = Buffer.alloc(Math.min(info.size, inlineMaxBytes));
+    let filled = 0;
+    while (filled < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, filled, buffer.length - filled, filled);
+      if (bytesRead === 0) break;
+      filled += bytesRead;
+    }
+    const bytes = filled === buffer.length ? buffer : buffer.subarray(0, filled);
+
+    return {
+      path: canonical,
+      name: basename(canonical),
+      mime: inlineSafeMime(canonical),
+      sizeBytes: info.size,
+      ...encodeContent(bytes),
+      truncated,
+    };
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+function encodeContent(bytes: Buffer): { encoding: 'utf8' | 'base64'; content: string } {
+  try {
+    const content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    if (!content.includes('\u0000')) return { encoding: 'utf8', content };
+  } catch {
+    // Fall through to base64.
+  }
+  return { encoding: 'base64', content: bytes.toString('base64') };
 }
 
 async function statRegularFile(path: string): Promise<{ size: number }> {
