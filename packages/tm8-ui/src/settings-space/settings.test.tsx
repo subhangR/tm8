@@ -434,13 +434,9 @@ describe('T2-3 — the menu editor', () => {
 
   it('the child cap control states its own numbers when full', () => {
     render(<MenuEditor menu={MENU} spaceName="atelier" />);
-    // Workspace ships 4 of 8 children, so the live control is offered first.
-    expect(screen.getByRole('button', { name: '＋ add child' })).toBeTruthy();
-    for (let i = 0; i < 8; i += 1) {
-      const live = screen.queryByRole('button', { name: '＋ add child' });
-      if (!live) break;
-      fireEvent.click(live);
-    }
+    // Revision 7 fills the frozen Workspace cap with Loop, so the control is
+    // honest about being unavailable from the first render.
+    expect(screen.queryByRole('button', { name: '＋ add child' })).toBeNull();
     const capped = screen.getByRole('button', { name: 'add child' });
     expect(capped.getAttribute('aria-disabled')).toBe('true');
     expect(capped.textContent).toMatch(/this row has 8 of 8/);

@@ -122,8 +122,8 @@ describe('remove', () => {
     const d = removeChild(startDraft(BASE), 'workspace', 0, 0);
     const item = draftConfig(d).groups.find((g) => g.id === 'workspace')?.items[0];
     expect(item?.type).toBe('view');
-    // Revision 6 ships seven caret children; removing one leaves six.
-    expect(item?.type === 'view' ? item.children : []).toHaveLength(6);
+    // Revision 7 ships eight caret children; removing one leaves seven.
+    expect(item?.type === 'view' ? item.children : []).toHaveLength(7);
   });
 
   it('removing the settings row makes the draft UNRENDERABLE and says so', () => {
@@ -182,12 +182,19 @@ describe('add', () => {
   });
 
   it('adds a caret child under a view item', () => {
-    const free = availableKindRefs(startDraft(BASE));
-    const d = addChild(startDraft(BASE), 'workspace', 0, { type: 'kind', ref: free[0] });
+    // Revision 7 ships at the 8-child cap, so remove Loop and add it back. This
+    // still proves the editor operation without inventing a ninth default row.
+    const workspace = BASE.groups.find((group) => group.id === 'workspace')?.items[0];
+    const loopIndex = workspace?.type === 'view'
+      ? (workspace.children ?? []).findIndex((child) => child.ref === 'loop')
+      : -1;
+    expect(loopIndex).toBe(7);
+    const withRoom = removeChild(startDraft(BASE), 'workspace', 0, loopIndex);
+    expect(availableKindRefs(withRoom)).toContain('loop');
+    const d = addChild(withRoom, 'workspace', 0, { type: 'kind', ref: 'loop' });
     const item = draftConfig(d).groups.find((g) => g.id === 'workspace')?.items[0];
-    // Seven shipped children (revision 6) plus the added one — which is the
-    // cap, so this test now also sits exactly at the boundary.
     expect(item?.type === 'view' ? item.children : []).toHaveLength(8);
+    expect(item?.type === 'view' ? item.children?.at(-1)?.ref : null).toBe('loop');
     expect(draftIssue(d)).toBeNull();
   });
 });
@@ -216,9 +223,9 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
     const d = startDraft(BASE);
     const cap = childCapacity(d, 'workspace', 0);
     expect(cap.max).toBe(MENU_CAPS.children);
-    // Revision 6: task, work_session, doc, channel, team_member, memory, artifact.
-    expect(cap.used).toBe(7);
-    expect(cap.full).toBe(false);
+    // Revision 7 fills the frozen eight-child rail cap with Loop.
+    expect(cap.used).toBe(8);
+    expect(cap.full).toBe(true);
   });
 
   it('reports group and item capacity too', () => {
