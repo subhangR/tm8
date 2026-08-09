@@ -30,9 +30,9 @@ describe.sequential('W3 production-Server public harness', () => {
     expect(body).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      // The pin was ALREADY red at 124 when this lane arrived (the four auth.*
-      // rows landed without moving it); 125 adds `execution.launch`, and
-      // 126 adds `execution.transcript`.
+      // The pin was ALREADY red at 124 when this lane arrived: the four auth.*
+      // rows and `execution.launch` landed without moving it, so main MEASURED
+      // 126 against a pin of 124. `execution.transcript` makes it 127.
       operations: 127,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
@@ -45,8 +45,9 @@ describe.sequential('W3 production-Server public harness', () => {
     // number about a configuration production does not use.
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
-    // Already red at 122 when this lane arrived (auth.*); 123 adds execution.launch,
-    // and 124 adds execution.transcript.
+    // Already red at 122 when this lane arrived: auth.* and execution.launch
+    // landed without moving it, so main MEASURED 124 against a pin of 122.
+    // `execution.transcript` makes it 125.
     expect(body.implemented).toBe(125);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
