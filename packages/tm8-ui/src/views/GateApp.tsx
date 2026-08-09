@@ -217,11 +217,19 @@ export function GateApp(props: GateAppProps = {}) {
      closes only on success; the refusal state lives here because the sheet
      is stateless about outcomes by design. */
   const [launchRefusal, setLaunchRefusal] = useState<{ cause: string; detail: string } | null>(null);
+  // A disabled button only takes effect after React commits the next render.
+  // The ref closes the smaller same-tick window too, so a double click cannot
+  // open two concurrent spawn transactions for the same launch.
+  const launchInFlight = useRef(false);
+  const [launching, setLaunching] = useState(false);
 
   // D44: the sheet's Launch PERFORMS — one submit path for EVERY host of the
   // sheet (workspace centre AND the kind screens), so a refusal renders in
   // the sheet identically wherever it was opened.
   const submitLaunch = (config: LaunchSelection) => {
+    if (launchInFlight.current) return;
+    launchInFlight.current = true;
+    setLaunching(true);
     setLaunchRefusal(null);
     void data
       .spawn(
@@ -254,7 +262,11 @@ export function GateApp(props: GateAppProps = {}) {
           cause: 'Launch refused',
           detail: String((error as { message?: string })?.message ?? error),
         }),
-      );
+      )
+      .finally(() => {
+        launchInFlight.current = false;
+        setLaunching(false);
+      });
   };
 
   /* GraphScreen takes its launch sources as a PROP (its data port is
@@ -648,6 +660,7 @@ export function GateApp(props: GateAppProps = {}) {
               onLaunchOpen={(id) => launch.open(id)}
               launchSubjectId={launch.subjectId}
               launchRefusal={launchRefusal}
+              launchInFlight={launching}
               onLaunchCancel={() => {
                 setLaunchRefusal(null);
                 launch.close();
@@ -724,6 +737,7 @@ export function GateApp(props: GateAppProps = {}) {
               onLaunchOpen={(id) => launch.open(id)}
               launchSubjectId={launch.subjectId}
               launchRefusal={launchRefusal}
+              launchInFlight={launching}
               isModalOpen={launch.isModalOpen}
               onLaunchCancel={() => {
                 setLaunchRefusal(null);

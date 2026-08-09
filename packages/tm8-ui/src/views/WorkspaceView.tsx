@@ -80,6 +80,8 @@ export interface WorkspaceViewProps {
   launchSubjectId?: EntityId | null;
   /** T5-5 annotation 6: a spawn refusal renders IN the sheet, never a toast. */
   launchRefusal?: { cause: string; detail: string } | null;
+  /** True while the one permitted spawn request is unsettled. */
+  launchInFlight?: boolean;
   onLaunchCancel?(): void;
   onLaunchSubmit?(config: LaunchSelection): void;
   /** Esc must not pop the panel under an open sheet (A1a finding 1). */
@@ -529,6 +531,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           {props.launchSubjectId && (
             <LaunchSheet
               refusal={props.launchRefusal}
+              launching={props.launchInFlight}
               subjectId={props.launchSubjectId}
               fromChip="◔ Run ▸"
               // Not "task pre-associated" any more: the subject can be a doc, a

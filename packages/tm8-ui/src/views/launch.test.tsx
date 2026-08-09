@@ -317,6 +317,28 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     expect(alert.textContent).toContain('Nothing was started');
   });
 
+  it('locks every commit and dismiss path while the spawn request is unsettled', () => {
+    const onLaunch = vi.fn();
+    const onCancel = vi.fn();
+    const { getByRole, getByText } = renderSheet({ launching: true, onLaunch, onCancel });
+
+    const launch = getByRole('button', { name: 'Launching…' });
+    const cancel = getByRole('button', { name: 'Cancel' });
+    const close = getByRole('button', { name: 'Close launch sheet' });
+    expect(launch).toHaveProperty('disabled', true);
+    expect(launch.getAttribute('aria-busy')).toBe('true');
+    expect(cancel).toHaveProperty('disabled', true);
+    expect(close).toHaveProperty('disabled', true);
+
+    fireEvent.click(launch);
+    fireEvent.click(cancel);
+    fireEvent.click(close);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onLaunch).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(getByText('Launching…')).toBeTruthy();
+  });
+
   it('states node capacity before commitment', () => {
     const { container } = renderSheet();
     expect(container.querySelector('.ls__capacity')?.textContent).toContain('8 slots, 3 in use');

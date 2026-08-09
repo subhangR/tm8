@@ -52,6 +52,7 @@ import {
   type WorktreeReconcileReport,
 } from '@tm8/execution';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
+import { BudgetExceededError } from '@tm8/prompt';
 import type {
   ExecutionLiveness,
   ExecutionPromptInput,
@@ -1144,7 +1145,14 @@ export function registerExecutionHandlers(
 // --- handlers ----------------------------------------------------------------
 
 /** SpawnService speaks its own error vocabulary; the wire speaks the taxonomy. */
-function toCollabError(error: unknown): unknown {
+export function toCollabError(error: unknown): unknown {
+  if (error instanceof BudgetExceededError) {
+    return fail('payload_too_large', error.message, {
+      material: error.material,
+      bytes: error.bytes,
+      cap: error.cap,
+    });
+  }
   if (!(error instanceof SpawnError)) return error;
   switch (error.code) {
     case 'invalid_input':

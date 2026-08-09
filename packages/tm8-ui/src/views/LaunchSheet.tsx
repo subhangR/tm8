@@ -53,6 +53,8 @@ export interface LaunchSheetProps {
   capacity?: LaunchCapacity;
   /** A refusal renders IN the sheet, never as a toast (T5-5 annotation 6). */
   refusal?: { cause: string; detail: string } | null;
+  /** One spawn may be outstanding; the sheet cannot submit or dismiss it. */
+  launching?: boolean;
   onLaunch(config: LaunchSelection): void;
   onCancel(): void;
 }
@@ -86,17 +88,17 @@ export function LaunchSheet(props: LaunchSheetProps) {
    * listeners, and `stopPropagation` so exactly one surface consumes it — the
    * §7 layer law: whoever handles the event consumes it.
    */
-  const { onCancel } = props;
+  const { onCancel, launching = false } = props;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || launching) return;
       event.preventDefault();
       event.stopPropagation();
       onCancel();
     };
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [onCancel]);
+  }, [onCancel, launching]);
 
   const [teammateId, setTeammateId] = useState(() => teammates[0]?.id ?? '');
   const initialTeammate = teammates[0];
@@ -183,7 +185,13 @@ export function LaunchSheet(props: LaunchSheetProps) {
         <span className="ls__title">Launch session</span>
         <span className="ls__hint">sheet on the stack · esc closes</span>
         <div className="ls__spacer" />
-        <button type="button" className="ls__x" onClick={props.onCancel} aria-label="Close launch sheet">
+        <button
+          type="button"
+          className="ls__x"
+          disabled={launching}
+          onClick={props.onCancel}
+          aria-label="Close launch sheet"
+        >
           ✕
         </button>
       </header>
@@ -559,15 +567,16 @@ export function LaunchSheet(props: LaunchSheetProps) {
           </span>
         </span>
         <div className="ls__spacer" />
-        <button type="button" className="ls__cancel" onClick={props.onCancel}>
+        <button type="button" className="ls__cancel" disabled={launching} onClick={props.onCancel}>
           Cancel
         </button>
         <button
           type="button"
           className="ls__launch"
-          disabled={!teammate || atCapacity}
+          disabled={!teammate || atCapacity || launching}
+          aria-busy={launching || undefined}
           onClick={() => {
-            if (!teammate || atCapacity) return;
+            if (!teammate || atCapacity || launching) return;
             props.onLaunch({
               subjectId: props.subjectId,
               teamMemberId: teammate.id,
@@ -582,7 +591,7 @@ export function LaunchSheet(props: LaunchSheetProps) {
             });
           }}
         >
-          Launch ▸
+          {launching ? 'Launching…' : 'Launch ▸'}
         </button>
       </footer>
     </div>

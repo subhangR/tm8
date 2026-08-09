@@ -96,6 +96,7 @@ export interface EntityViewProps {
   onLaunchOpen?(id: EntityId): void;
   launchSubjectId?: EntityId | null;
   launchRefusal?: { cause: string; detail: string } | null;
+  launchInFlight?: boolean;
   onLaunchCancel?(): void;
   onLaunchSubmit?(config: LaunchSelection): void;
   /**
@@ -545,6 +546,7 @@ export function EntityView(props: EntityViewProps) {
       {props.launchSubjectId && (
         <LaunchSheet
           refusal={props.launchRefusal}
+          launching={props.launchInFlight}
           subjectId={props.launchSubjectId}
           fromChip="◔ Run ▸"
           fromCaption="subject pre-associated — the session links to it"
