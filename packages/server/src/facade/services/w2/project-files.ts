@@ -1,13 +1,15 @@
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { open, readdir, realpath, stat } from 'node:fs/promises';
+import { open, readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 
 import {
   CollabError,
   type ProjectDirectoryEntry,
+  type ProjectFileContent,
   type ProjectFileEntry,
   type ProjectFileListing,
+  type ProjectFileRefusalReason,
 } from '@tm8/contract';
 
 import {
@@ -257,4 +259,203 @@ async function hashFile(path: string): Promise<string> {
 /** Bytes for the blob store, read from the canonical path resolved above. */
 export function projectFileStream(path: string): AsyncIterable<Uint8Array> {
   return createReadStream(path);
+}
+
+// --- reading one file's CONTENT (FILES-DESIGN) ------------------------------
+
+/**
+ * The inline VIEW ceiling, which is NOT the attach ceiling.
+ *
+ * `maxSizeBytes` above governs what may be copied into the blob store (512 MiB
+ * by default). Rendering that inline would be a denial of service against the
+ * browser, so viewing gets its own, much smaller bound. Two different questions,
+ * two different limits.
+ */
+export const MAX_INLINE_BYTES = 5 * 1024 * 1024;
+
+/** A NUL in the first few KiB is the standard, cheap binary tell. */
+const BINARY_SNIFF_BYTES = 8192;
+
+/**
+ * Files whose bytes are withheld even though they sit inside the project.
+ *
+ * DEFENSE IN DEPTH, not a security boundary, and not claimed as one: the
+ * boundary is the working-directory containment `resolveProjectFile` and
+ * `directoryInProject` already enforce. What this buys is that a VIEWER does
+ * not turn "spawn an agent and cat the file" into one click — which matters
+ * more here than for the attach picker, because reading is the whole point.
+ *
+ * Matched case-insensitively on each path segment, so `.ssh/id_rsa` is caught
+ * by the directory as well as by the file.
+ */
+const SECRET_SEGMENTS: RegExp[] = [
+  /^\.env(\..*)?$/i,
+  /^\.ssh$/i,
+  /^\.aws$/i,
+  /^\.gnupg$/i,
+  /^\.netrc$/i,
+  /^\.npmrc$/i,
+  /^\.pypirc$/i,
+  /^\.pgpass$/i,
+  /^\.git-credentials$/i,
+  /^id_(rsa|dsa|ecdsa|ed25519)$/i,
+  /\.(pem|key|p12|pfx|keystore|jks)$/i,
+  /^.*(secret|credential)s?\.(json|ya?ml|toml|ini|txt|env)$/i,
+  /^(secrets?|credentials?)$/i,
+];
+
+/**
+ * `.git/config` carries push URLs, which routinely embed access tokens. The
+ * whole `.git` directory is NOT withheld — history metadata is useful and
+ * harmless — so these match on a trailing path shape, not on a segment.
+ */
+const SECRET_TAILS: RegExp[] = [
+  /(^|[/\\])\.git[/\\]config$/i,
+  /(^|[/\\])\.git[/\\]credentials$/i,
+];
+
+export function isSecretProjectPath(path: string): boolean {
+  if (SECRET_TAILS.some((pattern) => pattern.test(path))) return true;
+  return path
+    .split(/[/\\]+/)
+    .filter((segment) => segment.length > 0)
+    .some((segment) => SECRET_SEGMENTS.some((pattern) => pattern.test(segment)));
+}
+
+function looksBinary(buffer: Buffer): boolean {
+  const limit = Math.min(buffer.length, BINARY_SNIFF_BYTES);
+  for (let index = 0; index < limit; index += 1) {
+    if (buffer[index] === 0) return true;
+  }
+  return false;
+}
+
+export type ProjectFileReadResult = Omit<ProjectFileContent, 'projectId'>;
+
+function withheld(
+  path: string,
+  reason: ProjectFileRefusalReason,
+  detail: string,
+  sizeBytes = 0,
+): ProjectFileReadResult {
+  return {
+    path,
+    mime: mimeForPath(path),
+    sizeBytes,
+    encoding: 'none',
+    text: null,
+    base64: null,
+    refusal: { reason, detail },
+    maxInlineBytes: MAX_INLINE_BYTES,
+  };
+}
+
+/**
+ * Read one file inside a connected project folder, or answer a NAMED refusal.
+ *
+ * Containment is `browsableWorkingDir` + `containedBy` on the CANONICAL path —
+ * the same pair `resolveProjectFile` uses, deliberately reused rather than
+ * reimplemented, so there is exactly one jail in this module and it cannot
+ * drift into two that disagree.
+ */
+export async function readProjectFile(
+  workingDir: string,
+  requestedPath: string,
+  rawRoots?: readonly string[],
+): Promise<ProjectFileReadResult> {
+  if (!isAbsolute(requestedPath)) {
+    throw new CollabError('invalid_input', 'project file path must be absolute');
+  }
+  // Checked BEFORE the path is resolved, so a secret file's existence is never
+  // confirmed or denied by the shape of the failure.
+  if (isSecretProjectPath(requestedPath)) {
+    return withheld(requestedPath, 'secret-pattern', 'this file is withheld by the secret-name policy');
+  }
+
+  const { root } = await browsableWorkingDir(workingDir, rawRoots);
+
+  let canonical: string;
+  try {
+    canonical = await realpath(requestedPath);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return withheld(requestedPath, 'not-a-file', 'no such file in this project');
+    if (code === 'ELOOP') return withheld(requestedPath, 'outside-root', 'path is a symlink loop');
+    return withheld(requestedPath, 'unreadable', 'the file could not be resolved');
+  }
+  if (!containedBy(root, canonical) || canonical === root) {
+    // Deliberately does NOT echo `canonical`: telling a caller where their
+    // symlink landed is a filesystem oracle for paths outside the project.
+    return withheld(requestedPath, 'outside-root', 'path resolves outside the project working directory');
+  }
+  // Re-checked on the RESOLVED path: a symlink named innocently must not be a
+  // way to read `.env` through the policy above.
+  if (isSecretProjectPath(canonical)) {
+    return withheld(requestedPath, 'secret-pattern', 'this file is withheld by the secret-name policy');
+  }
+
+  let info: { size: number };
+  try {
+    info = await statRegularFile(canonical);
+  } catch (error) {
+    if (error instanceof CollabError && error.code === 'invalid_input') {
+      return withheld(requestedPath, 'not-a-file', 'that path is not a regular file');
+    }
+    if (error instanceof CollabError && error.code === 'forbidden') {
+      return withheld(requestedPath, 'unreadable', 'the node cannot read that file');
+    }
+    return withheld(requestedPath, 'not-a-file', 'no such file in this project');
+  }
+  if (info.size > MAX_INLINE_BYTES) {
+    return withheld(
+      requestedPath, 'too-large',
+      `file is ${info.size} bytes; the inline ceiling is ${MAX_INLINE_BYTES}`,
+      info.size,
+    );
+  }
+
+  let buffer: Buffer;
+  try {
+    buffer = await readFile(canonical);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return withheld(
+      requestedPath, 'unreadable',
+      code === 'EACCES' ? 'the node cannot read that file' : 'the file could not be read',
+      info.size,
+    );
+  }
+
+  const mime = mimeForPath(requestedPath);
+  if (looksBinary(buffer)) {
+    // Renderable media still travels — base64 into an <img>/<audio> gives the
+    // bytes no document context. SVG is excluded because it IS a document.
+    if (/^(image|audio|video)\//.test(mime) && mime !== 'image/svg+xml') {
+      return {
+        path: requestedPath,
+        mime,
+        sizeBytes: info.size,
+        encoding: 'base64',
+        text: null,
+        base64: buffer.toString('base64'),
+        refusal: null,
+        maxInlineBytes: MAX_INLINE_BYTES,
+      };
+    }
+    return withheld(
+      requestedPath, 'binary-not-previewable',
+      'this file is binary and has no inline preview', info.size,
+    );
+  }
+
+  return {
+    path: requestedPath,
+    mime,
+    sizeBytes: info.size,
+    encoding: 'utf8',
+    text: buffer.toString('utf8'),
+    base64: null,
+    refusal: null,
+    maxInlineBytes: MAX_INLINE_BYTES,
+  };
 }

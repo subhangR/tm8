@@ -278,6 +278,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     },
     projectFiles: {
       list: (projectId, path) => ops.projectFiles(projectId, path),
+      read: (projectId, path) => ops.readProjectFile(projectId, path),
       attach: (projectId, input) => ops.attachProjectFile(projectId, input),
     },
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
