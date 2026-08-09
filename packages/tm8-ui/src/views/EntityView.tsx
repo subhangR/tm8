@@ -156,8 +156,8 @@ export function EntityView(props: EntityViewProps) {
   }, [data, kind]);
 
   const ctx = useMemo<ActionContext>(
-    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActorId }),
-    [data.spaceId, data.viewerActorId],
+    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActor?.id }),
+    [data.spaceId, data.viewerActor],
   );
 
   /*

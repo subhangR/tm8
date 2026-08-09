@@ -151,8 +151,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   );
 
   const ctx = useMemo<ActionContext>(
-    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActorId }),
-    [data.spaceId, data.viewerActorId],
+    () => ({ spaceId: data.spaceId, viewerActorId: data.viewerActor?.id }),
+    [data.spaceId, data.viewerActor],
   );
   /* Memoized on `data` so the port identity is stable — the feed hook's effects
      key on it, and a fresh object each render would re-read on every keystroke
