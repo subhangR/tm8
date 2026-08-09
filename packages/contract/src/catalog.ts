@@ -122,6 +122,14 @@ export const OPERATIONS = [
   // disk gets a document context on the app origin (FILES-DESIGN §4.4).
   { name: 'projects.files.read',     method: 'GET',    path: '/v2/projects/:projectId/files/content',       kind: 'read',    status: 'v1' },
 
+  // Browser-originated project folder import. Unlike projects.files.*, these
+  // operations never read a path on the browser's machine: init freezes a
+  // relative-path manifest and returns raw-byte grants, complete reconstructs
+  // it beneath a server-authorized destination, and abort removes staging.
+  { name: 'projects.folderUploads.init',     method: 'POST', path: '/v2/spaces/:spaceId/project-folder-uploads',            kind: 'command', status: 'v1' },
+  { name: 'projects.folderUploads.complete', method: 'POST', path: '/v2/project-folder-uploads/:folderUploadId/complete',  kind: 'command', status: 'v1' },
+  { name: 'projects.folderUploads.abort',    method: 'POST', path: '/v2/project-folder-uploads/:folderUploadId/abort',     kind: 'command', status: 'v1' },
+
   // files.* blob lifecycle (AM-2 §2, 03 §6); download returns bytes, not the JSON envelope
   { name: 'files.uploadInit',        method: 'POST',   path: '/v2/files/uploads',                           kind: 'command', status: 'v1' },
   { name: 'files.uploadComplete',    method: 'POST',   path: '/v2/files/uploads/:uploadId/complete',        kind: 'command', status: 'v1' },

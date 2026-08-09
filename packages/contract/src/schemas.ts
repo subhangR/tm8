@@ -13,7 +13,14 @@
 import { z } from 'zod';
 import { isOperationName } from './catalog.js';
 import type { OperationName } from './catalog.js';
-import { MAX_CONTROL_FRAME_SPACES, SHA256_HEX_RE } from './contract.js';
+import {
+  MAX_CONTROL_FRAME_SPACES,
+  PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES,
+  PROJECT_FOLDER_UPLOAD_MAX_FILES,
+  PROJECT_FOLDER_UPLOAD_MAX_PATH_BYTES,
+  PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES,
+  SHA256_HEX_RE,
+} from './contract.js';
 import { ArtifactManifestSchema } from './artifact-manifest.js';
 import type {
   ArtifactsCreateInput, ArtifactsPreviewStartInput,
@@ -59,6 +66,9 @@ import type {
   ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
   ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing,
+  ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
+  ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
+  ProjectFolderUploadInitInput, ProjectFolderUploadResult,
   ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
   PullInput, PullState, ReactionInput, RemoveMessageAttachmentsInput,
@@ -1712,6 +1722,92 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   trust: ProjectTrustLevelSchema.optional(),
   defaults: ProjectDefaultsSchema.optional(),
   ensureWorkingDir: z.boolean().optional(),
+}).strict();
+
+const ProjectFolderRelativePathSchema = z.string().min(1).superRefine((value, context) => {
+  if (new TextEncoder().encode(value).byteLength > PROJECT_FOLDER_UPLOAD_MAX_PATH_BYTES) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'relative path exceeds the byte limit' });
+  }
+  if (value.includes('\0')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'relative path contains NUL' });
+  }
+  if (value.startsWith('/') || value.startsWith('\\') || /^[A-Za-z]:/.test(value)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'relative path must not be absolute' });
+  }
+  if (value.includes('\\')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'relative path must use POSIX separators' });
+  }
+  const parts = value.split('/');
+  if (parts.some((part) => part === '' || part === '.' || part === '..')) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'relative path contains an empty, dot, or dot-dot segment' });
+  }
+});
+
+export const ProjectFolderUploadEntrySchema: z.ZodType<ProjectFolderUploadEntry> = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('directory'),
+    relativePath: ProjectFolderRelativePathSchema,
+  }).strict(),
+  z.object({
+    kind: z.literal('file'),
+    relativePath: ProjectFolderRelativePathSchema,
+    sizeBytes: z.number().int().nonnegative(),
+    checksumSha256: z.string().regex(SHA256_HEX_RE, 'must be a lowercase sha-256 hex digest'),
+    mime: z.string().min(1).max(255),
+  }).strict(),
+]);
+
+export const ProjectFolderUploadInitInputSchema: z.ZodType<ProjectFolderUploadInitInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  projectName: z.string().trim().min(1).max(500),
+  destinationParent: z.string().min(1),
+  rootName: z.string().trim().min(1).max(255).refine(
+    (value) => value !== '.' && value !== '..' && !/[\\/\u0000]/.test(value),
+    'rootName must be one directory name',
+  ),
+  trust: ProjectTrustLevelSchema.optional(),
+  entries: z.array(ProjectFolderUploadEntrySchema)
+    .max(PROJECT_FOLDER_UPLOAD_MAX_FILES + PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES),
+}).strict();
+
+export const ProjectFolderUploadFileGrantSchema: z.ZodType<ProjectFolderUploadFileGrant> = z.object({
+  uploadId: z.string().uuid(),
+  uploadUrl: z.string().min(1),
+  token: z.string().nullable().optional(),
+  expiresAt: IsoTimestamp,
+  maxSizeBytes: z.number().int().positive(),
+  relativePath: ProjectFolderRelativePathSchema,
+}).strict();
+
+export const ProjectFolderUploadGrantSchema: z.ZodType<ProjectFolderUploadGrant> = z.object({
+  folderUploadId: z.string().uuid(),
+  expiresAt: IsoTimestamp,
+  maxFiles: z.number().int().positive(),
+  maxDirectories: z.number().int().positive(),
+  maxTotalBytes: z.number().int().positive(),
+  maxPathBytes: z.number().int().positive(),
+  files: z.array(ProjectFolderUploadFileGrantSchema).max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
+}).strict();
+
+export const ProjectFolderUploadCompleteInputSchema: z.ZodType<ProjectFolderUploadCompleteInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const ProjectFolderUploadAbortInputSchema: z.ZodType<ProjectFolderUploadAbortInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+}).strict();
+
+export const ProjectFolderUploadResultSchema: z.ZodType<ProjectFolderUploadResult> = z.object({
+  folderUploadId: z.string().uuid(),
+  spaceId: SpaceIdSchema,
+  project: ProjectResourceSchema,
+  rootName: z.string().min(1),
+  fileCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
+  directoryCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES),
+  totalBytes: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES),
 }).strict();
 
 export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
