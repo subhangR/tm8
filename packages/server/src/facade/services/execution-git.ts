@@ -24,16 +24,24 @@
  * Reads cap their output — digest+partial, the transcript precedent: the
  * numstat digest is always complete, the unified diff text is byte-capped.
  */
-import { CollabError, type SessionGitCheckpointResult, type SessionGitCommitResult, type SessionGitDiff, type SessionGitDiffFile, type SessionGitMergeResult, type SessionGitRollbackResult, type SessionGitStatus, type ExecutionGitCheckpointInput, type ExecutionGitCommitInput, type ExecutionGitMergeInput, type ExecutionGitRollbackInput } from '@tm8/contract';
+import { CollabError, type SessionGitBranchResult, type SessionGitCheckpointResult, type SessionGitCherryPickResult, type SessionGitCommitResult, type SessionGitDiff, type SessionGitDiffFile, type SessionGitMergeResult, type SessionGitRollbackResult, type SessionGitStashResult, type SessionGitStatus, type ExecutionGitBranchInput, type ExecutionGitCheckpointInput, type ExecutionGitCherryPickInput, type ExecutionGitCommitInput, type ExecutionGitMergeInput, type ExecutionGitRollbackInput, type ExecutionGitStashInput } from '@tm8/contract';
 import {
   WorktreeError,
+  branchCreate,
+  branchDelete,
+  branchRename,
   checkpoint,
+  cherryPick,
   commit,
   mergeFromRef,
   resolveCommitish,
   rollback,
   runGit,
   stage,
+  stashDrop,
+  stashList,
+  stashPop,
+  stashPush,
 } from '@tm8/execution';
 
 import type { RequestContext } from '../../http/types.js';
@@ -244,6 +252,15 @@ export class ExecutionGitService {
       }
     }
 
+    // The stash LIST rides on this read (Tier 2 completion) — a failed list
+    // degrades to an absent field, never a failed status.
+    let stashes: SessionGitStatus['stashes'];
+    try {
+      stashes = await stashList(path);
+    } catch {
+      stashes = undefined;
+    }
+
     return {
       sessionId: lane.session_id,
       available: true,
@@ -258,6 +275,7 @@ export class ExecutionGitService {
       dirty: { staged, unstaged, untracked, total },
       files: files.slice(0, STATUS_FILES_CAP),
       filesTruncated: files.length > STATUS_FILES_CAP,
+      ...(stashes === undefined ? {} : { stashes }),
       checkedAt: new Date().toISOString(),
     };
   };
@@ -451,6 +469,98 @@ export class ExecutionGitService {
       liftWorktreeError(error);
     }
   };
+
+  // ── Tier 2 completion: cherry-pick / branch / stash ───────────────────────
+
+  /**
+   * Branches the branch verbs must never touch: the session's recorded base
+   * (with and without a remote prefix — the graph records what the spawn was
+   * given, the local branch is what a delete would destroy). The
+   * checked-out-in-any-worktree refusal lives in the core and needs no graph.
+   */
+  private static protectedBranches(lane: SessionLaneRow): string[] {
+    const out = new Set<string>();
+    if (lane.base_ref !== null && lane.base_ref !== '') {
+      out.add(lane.base_ref);
+      const stripped = lane.base_ref.replace(/^[^/]+\//, '');
+      if (stripped !== lane.base_ref) out.add(stripped);
+    }
+    return [...out];
+  }
+
+  readonly cherryPick = async (ctx: RequestContext): Promise<SessionGitCherryPickResult> => {
+    const lane = await this.resolveLane(ctx);
+    const { worktreeId, path, branch } = ExecutionGitService.requireActiveLane(lane);
+    const input = ctx.body as ExecutionGitCherryPickInput;
+    try {
+      const result = await cherryPick({ worktreePath: path, expectedBranch: branch, commits: input.commits });
+      return result.status === 'conflict'
+        ? { sessionId: lane.session_id, worktreeId, status: 'conflict', branch: result.branch, fromOids: result.fromOids, conflictedPaths: result.conflictedPaths }
+        : { sessionId: lane.session_id, worktreeId, status: 'picked', branch: result.branch, fromOids: result.fromOids, newOids: result.newOids };
+    } catch (error) {
+      liftWorktreeError(error);
+    }
+  };
+
+  readonly branch = async (ctx: RequestContext): Promise<SessionGitBranchResult> => {
+    const lane = await this.resolveLane(ctx);
+    const { worktreeId, path } = ExecutionGitService.requireActiveLane(lane);
+    const input = ctx.body as ExecutionGitBranchInput;
+    const protectedBranches = ExecutionGitService.protectedBranches(lane);
+    try {
+      if (input.action === 'create') {
+        const r = await branchCreate({ worktreePath: path, name: input.name, ...(input.from === undefined ? {} : { from: input.from }) });
+        return { sessionId: lane.session_id, worktreeId, action: 'create', name: r.name, oid: r.oid };
+      }
+      if (input.action === 'rename') {
+        const r = await branchRename({ worktreePath: path, from: input.from, to: input.to, protectedBranches });
+        return { sessionId: lane.session_id, worktreeId, action: 'rename', from: r.from, to: r.to, oid: r.oid };
+      }
+      const r = await branchDelete({
+        worktreePath: path, name: input.name, protectedBranches,
+        ...(input.force === undefined ? {} : { force: input.force }),
+      });
+      return {
+        sessionId: lane.session_id, worktreeId, action: 'delete',
+        name: r.name, deletedOid: r.deletedOid, measuredAgainst: r.measuredAgainst, forced: r.forced,
+      };
+    } catch (error) {
+      liftWorktreeError(error);
+    }
+  };
+
+  readonly stash = async (ctx: RequestContext): Promise<SessionGitStashResult> => {
+    const lane = await this.resolveLane(ctx);
+    const { worktreeId, path, branch } = ExecutionGitService.requireActiveLane(lane);
+    const input = ctx.body as ExecutionGitStashInput;
+    try {
+      if (input.action === 'push') {
+        const r = await stashPush({
+          worktreePath: path, expectedBranch: branch,
+          ...(input.message === undefined ? {} : { message: input.message }),
+        });
+        return r.status === 'stashed'
+          ? { sessionId: lane.session_id, worktreeId, action: 'push', status: 'stashed', oid: r.oid, branch: r.branch, files: r.files }
+          : { sessionId: lane.session_id, worktreeId, action: 'push', status: 'clean', branch: r.branch };
+      }
+      if (input.action === 'pop') {
+        const r = await stashPop({
+          worktreePath: path, expectedBranch: branch,
+          ...(input.index === undefined ? {} : { index: input.index }),
+        });
+        return r.status === 'conflict'
+          ? { sessionId: lane.session_id, worktreeId, action: 'pop', status: 'conflict', oid: r.oid, branch: r.branch, conflictedPaths: r.conflictedPaths }
+          : { sessionId: lane.session_id, worktreeId, action: 'pop', status: 'popped', oid: r.oid, branch: r.branch, files: r.files };
+      }
+      const r = await stashDrop({
+        worktreePath: path, index: input.index,
+        ...(input.force === undefined ? {} : { force: input.force }),
+      });
+      return { sessionId: lane.session_id, worktreeId, action: 'drop', droppedOid: r.droppedOid, subject: r.subject };
+    } catch (error) {
+      liftWorktreeError(error);
+    }
+  };
 }
 
 export function registerExecutionGitHandlers(registry: HandlerRegistry, deps: FacadeDeps): void {
@@ -462,5 +572,8 @@ export function registerExecutionGitHandlers(registry: HandlerRegistry, deps: Fa
     'execution.gitRollback': service.rollback,
     'execution.gitCommit': service.commit,
     'execution.gitMerge': service.merge,
+    'execution.gitCherryPick': service.cherryPick,
+    'execution.gitBranch': service.branch,
+    'execution.gitStash': service.stash,
   });
 }

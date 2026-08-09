@@ -51,6 +51,7 @@ import type {
   ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput,
   ExecutionGitCheckpointInput, ExecutionGitRollbackInput, ExecutionGitCommitInput, ExecutionGitMergeInput,
+  ExecutionGitCherryPickInput, ExecutionGitBranchInput, ExecutionGitStashInput,
   FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GateTaskInput,
@@ -2186,6 +2187,23 @@ export const ExecutionGitMergeInputSchema: z.ZodType<ExecutionGitMergeInput> = z
   fromRef: z.string().min(1).optional(),
   message: z.string().min(1).optional(),
 }).strict();
+
+export const ExecutionGitCherryPickInputSchema: z.ZodType<ExecutionGitCherryPickInput> = z.object({
+  ...commandContextShape,
+  commits: z.array(z.string().min(1)).min(1),
+}).strict();
+
+export const ExecutionGitBranchInputSchema: z.ZodType<ExecutionGitBranchInput> = z.discriminatedUnion('action', [
+  z.object({ ...commandContextShape, action: z.literal('create'), name: z.string().min(1), from: z.string().min(1).optional() }).strict(),
+  z.object({ ...commandContextShape, action: z.literal('rename'), from: z.string().min(1), to: z.string().min(1) }).strict(),
+  z.object({ ...commandContextShape, action: z.literal('delete'), name: z.string().min(1), force: z.boolean().optional() }).strict(),
+]);
+
+export const ExecutionGitStashInputSchema: z.ZodType<ExecutionGitStashInput> = z.discriminatedUnion('action', [
+  z.object({ ...commandContextShape, action: z.literal('push'), message: z.string().min(1).optional() }).strict(),
+  z.object({ ...commandContextShape, action: z.literal('pop'), index: z.number().int().nonnegative().optional() }).strict(),
+  z.object({ ...commandContextShape, action: z.literal('drop'), index: z.number().int().nonnegative(), force: z.boolean().optional() }).strict(),
+]);
 
 export const StreamAttachGrantSchema: z.ZodType<StreamAttachGrant> = z.object({
   workSessionId: EntityIdSchema,
