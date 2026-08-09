@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114",
+  "catalogDigest": "sha256:122353f9e53c3f22e05c4c0666e07c5df13d309190ef0131f0f89a054a167abb",
   "catalog": {
-    "total": 127,
-    "v1": 125,
+    "total": 129,
+    "v1": 127,
     "reserved": 2,
-    "http": 126,
+    "http": 128,
     "ws": 1,
-    "registerableV1Http": 124,
+    "registerableV1Http": 126,
     "methods": {
-      "GET": 47,
-      "POST": 54,
+      "GET": 48,
+      "POST": 55,
       "PATCH": 10,
       "DELETE": 8,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 50,
-      "command": 76,
+      "read": 51,
+      "command": 77,
       "stream": 1
     },
-    "uniqueNames": 127,
-    "uniqueBindings": 127
+    "uniqueNames": 129,
+    "uniqueBindings": 129
   },
   "reservedOperations": [
     "search.query",
@@ -523,6 +523,13 @@
         "source": "server-router"
       },
       {
+        "operation": "entities.commands.gate",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/gate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "tracking.refresh",
         "method": "POST",
         "path": "/v2/tracking/refresh",
@@ -652,6 +659,13 @@
         "operation": "projects.get",
         "method": "GET",
         "path": "/v2/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.contention",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/contention",
         "status": "registered",
         "source": "server-router"
       },
@@ -1293,7 +1307,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 96
+    "unimplementedV1Http": 98
   },
   "schemas": {
     "additive": {
@@ -2226,6 +2240,23 @@
         "publicComposite": null
       },
       {
+        "operation": "entities.commands.gate",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.gate",
+        "intentTags": [
+          "entities",
+          "commands",
+          "gate"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "tracking.refresh",
         "noun": "tracking",
         "exposure": "public",
@@ -2523,6 +2554,22 @@
         "intentTags": [
           "projects",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.contention",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.contention",
+        "intentTags": [
+          "projects",
+          "contention"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

@@ -31,7 +31,7 @@ import {
 // already gone stale on the tree (several amendments landed without moving
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-02 alongside execution.launch — the catalog is now 126 rows.
-const CATALOG_DIGEST = 'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+const CATALOG_DIGEST = 'sha256:122353f9e53c3f22e05c4c0666e07c5df13d309190ef0131f0f89a054a167abb';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
