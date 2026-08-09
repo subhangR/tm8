@@ -698,6 +698,38 @@
   display: none;
 }
 
+/* --- A BOARDED SIDE PANEL TAKES THE GRID ---------------------------------
+   A board column has a 236px floor and the side tracks default to 240/319, so
+   a board in a side track is ONE column wide. In board mode that panel spans
+   every track instead — the same `grid-column: 1 / -1` the stack modes above
+   already use, so this is not a new geometry, only a new trigger for it.
+
+   COVERED, NOT UNMOUNTED AND NOT `visibility: hidden`. The centre holds the
+   terminal pool: unmounting kills its DOM and every socket with it, and
+   hiding it by visibility would not work anyway, because CenterPane drives
+   `visibility` per layer from the inside and its visible layer would paint
+   straight through. Both side panels are already opaque (`--pn-surface`), so
+   a span plus a stacking order is the whole mechanism — every terminal
+   underneath stays mounted, sized and connected, and switching back to the
+   list costs no reconnect. */
+.cv2-root .shell-ws[data-board-side] .shell-ws__side {
+  grid-row: 1;
+}
+.cv2-root .shell-ws[data-board-side='left'] .shell-ws__side--left,
+.cv2-root .shell-ws[data-board-side='right'] .shell-ws__side--right {
+  grid-column: 1 / -1;
+  z-index: 2;
+}
+/* The panel the board is NOT in, and the resize handles, sit under the span.
+   Hidden rather than merely covered so they leave the tab order — a focusable
+   separator you cannot see is a keyboard trap. The CENTRE is deliberately
+   absent from this rule. */
+.cv2-root .shell-ws[data-board-side='left'] .shell-ws__side--right,
+.cv2-root .shell-ws[data-board-side='right'] .shell-ws__side--left,
+.cv2-root .shell-ws[data-board-side] .shell-ws__gap {
+  visibility: hidden;
+}
+
 /* --- Panel stack (§5.3) --------------------------------------------------- */
 /* USER RULING 2026-07-31 — "the padding or space to the left and right panel
    should be decreased a bit … i want more space for the terminal." 8px → 3px

@@ -19,7 +19,7 @@ import type {
 import { EntityDetailPanel, EntityListPanel, type DetailReasons } from '../panels';
 import { useRowLifecycle } from './useRowLifecycle';
 import { EntityVerbs } from './EntityVerbs';
-import type { ActionContext, ActionRef } from '../domain/types';
+import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import {
   LEFT_PANEL_DEFAULT,
   PanelStack,
@@ -108,6 +108,40 @@ export function WorkspaceView(props: WorkspaceViewProps) {
   const viewportWidth = useViewportWidth();
 
   const engine = usePanelEngine({ nav, centerWidth, onNotice: props.onNotice });
+
+  /**
+   * THE LAYOUT MODE OF EACH SIDE PANEL, held here rather than left to the
+   * panel's own local state — because the WORKSPACE has to know. A board is
+   * ~236px per column and the side tracks default to 240/319, so a board in a
+   * side panel is one column wide and useless; in board mode the panel spans
+   * the whole grid instead (`boardSide` below). The panel cannot arrange that
+   * for itself: it does not own the grid.
+   *
+   * Uncontrolled from the panel's point of view is not an option here for the
+   * same reason it was not in EntityView — two copies of the mode disagree the
+   * moment one of them changes.
+   */
+  const [leftMode, setLeftMode] = useState<CollectionMode>(() => getKind(leftKind).defaultMode);
+  const [rightMode, setRightMode] = useState<CollectionMode>(() => getKind(rightKind).defaultMode);
+
+  /**
+   * A mode the CURRENT kind hides is not a mode. Swapping a boarded panel to a
+   * kind with no board (`hiddenModes`) would otherwise leave the switcher
+   * claiming 'board' while the body drew a list — and, worse, leave the panel
+   * spanning the grid with a list in it. Derived rather than reset by an
+   * effect, so there is no frame in which the two disagree.
+   */
+  const effectiveMode = useCallback((kind: string, mode: CollectionMode): CollectionMode => {
+    const config = getKind(kind);
+    return config.hiddenModes.includes(mode) || config.list.board == null
+      ? config.defaultMode
+      : mode;
+  }, []);
+
+  const leftLayout = effectiveMode(leftKind, leftMode);
+  const rightLayout = effectiveMode(rightKind, rightMode);
+  /* Left wins if both are somehow boarded — one panel can own the grid. */
+  const boardSide = leftLayout === 'board' ? 'left' : rightLayout === 'board' ? 'right' : null;
 
   /* D67 — the expanded row's state dropdown and archive control, on BOTH side
      panels. The same executor EntityView mounts. */
@@ -459,6 +493,7 @@ export function WorkspaceView(props: WorkspaceViewProps) {
     <WorkspaceGrid
       layout={layout}
       centerRef={centerRef}
+      boardSide={boardSide}
       leftLabel={leftConfig.label}
       rightLabel={rightConfig.label}
       onMovePanel={props.onMoveSidePanel}
@@ -491,9 +526,14 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           pageStateOf={data.pageStateOf(leftKind)}
           loadMore={data.loadMore(leftKind)}
           boardFor={data.boardFor(leftKind) as never}
+          mode={leftLayout}
+          onMode={setLeftMode}
           members={data.members}
           ctx={ctx}
-          compact={leftCompact}
+          /* A boarded panel owns the whole grid, so it is not compact any
+             more — keeping the dense chrome would shrink the filters and
+             search of a full-width surface for no reason. */
+          compact={boardSide === 'left' ? false : leftCompact}
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
@@ -597,9 +637,11 @@ export function WorkspaceView(props: WorkspaceViewProps) {
           pageStateOf={data.pageStateOf(rightKind)}
           loadMore={data.loadMore(rightKind)}
           boardFor={data.boardFor(rightKind) as never}
+          mode={rightLayout}
+          onMode={setRightMode}
           members={data.members}
           ctx={ctx}
-          compact={rightCompact}
+          compact={boardSide === 'right' ? false : rightCompact}
           liveIds={data.liveIds}
           livenessOf={data.livenessOf}
           activity={data.activity}
