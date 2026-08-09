@@ -109,6 +109,7 @@ import type {
   ResolveEntityAttentionInput,
   SessionJournalPage,
   SessionLaunchRecord,
+  SessionTranscriptPage,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -217,6 +218,16 @@ export interface JournalOpts {
   before?: number;
 }
 
+/**
+ * The DEBUG transcript read's window. There is NO cursor: the server reads a
+ * tail, so "older" is not a page you can walk — asking for more turns widens
+ * the same window rather than stepping back through history.
+ */
+export interface TranscriptOpts {
+  /** Newest turns to return; server default is 20, max 200. */
+  last?: number;
+}
+
 export interface Seam {
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -317,6 +328,20 @@ export interface Seam {
    * apart. Environment VALUES are structurally absent, never merely hidden.
    */
   launch(workSessionId: EntityId): Promise<SessionLaunchRecord>;
+  /**
+   * What the session's agent SAID — the third face of the DEBUG surface, after
+   * TOLD (`launch`) and DID (`journal`).
+   *
+   * Read from the agent's OWN transcript file, so it carries model prose the
+   * journal structurally cannot hold. Polled like the journal, because unlike
+   * the launch record it grows.
+   *
+   * `stats` describes the RETURNED WINDOW, not the session's lifetime — the
+   * server reads a tail — and `stats.partial` says which. `stuck` is a
+   * HEURISTIC over tool calls without prose and must never be rendered as a
+   * liveness claim; `execution.liveness` is the authority on that.
+   */
+  transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage>;
   /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter

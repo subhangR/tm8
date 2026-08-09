@@ -20,9 +20,13 @@
  *  - CLOSED SETS ARE CHECKED LOCALLY, OPEN QUESTIONS ARE NOT. `--workdir` and
  *    `--mode` name closed enumerations, so a typo is caught here with the set
  *    spelled out (exit 2, nothing sent). Whether a Project is trusted, whether
- *    this caller may spawn, and project trust are Server decisions. Worktree is
- *    not in the public contract until the node can create and clean one safely,
- *    so the CLI neither advertises nor sends it.
+ *    this caller may spawn, and project trust are Server decisions.
+ *    `worktree` joined the set when the node gained the manager, the
+ *    provisioning saga and the reconciler — the discipline the design asks for
+ *    is that a mode is not offered before it can be serviced, and this file
+ *    kept it by omitting rather than sending-and-hoping. A node that cannot
+ *    service the mode still refuses BY NAME; it never silently downgrades to
+ *    the shared project directory.
  *  - TERMINATE IS DESTRUCTIVE. `--yes` is required (§7.5). `--force` changes
  *    HOW the process is stopped, never WHO may stop it, so it is an ordinary
  *    optional flag and adds no confirmation of its own.
@@ -46,11 +50,11 @@ import { InterruptedError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
 import { refuseMutationId, resolveMutationId } from '../mutation.js';
 import { clientFor, observedInvoke } from '../discovery/observe.js';
-import type { SessionJournalPage, SessionLaunchRecord } from '@tm8/contract';
+import type { SessionJournalPage, SessionLaunchRecord, SessionTranscriptPage } from '@tm8/contract';
 import type { CommandContext, CommandModule } from '../run.js';
 
 /** §4.13's closed workdir set. Kept as a tuple so the diagnostic renders it. */
-const WORKDIRS = ['project', 'scratch'] as const;
+const WORKDIRS = ['project', 'scratch', 'worktree'] as const;
 type WorkdirMode = (typeof WORKDIRS)[number];
 
 /** §4.13's closed session-mode set. */
@@ -256,6 +260,99 @@ function renderLaunch(record: SessionLaunchRecord): string {
   return lines.join('\n');
 }
 
+/**
+ * `tm8 session transcript <id>` — what a session's agent SAID.
+ *
+ * The third face of a session: `launch` is what it was TOLD, `journal` is what
+ * it DID through tm8, and this is what it actually said back. The bytes are the
+ * agent's OWN transcript file on the node — not the terminal, whose scrollback
+ * is ANSI repaints, and not the journal, which records no model output at all.
+ */
+async function sessionTranscript(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('session transcript', cmd.options.value('mutation-id'));
+  const workSessionId = cmd.args[0];
+  if (workSessionId === undefined) {
+    throw new CliError('tm8 session transcript requires a work-session id', EXIT_USAGE, {
+      hint: 'find one with `tm8 session liveness` or `tm8 entity query`',
+    });
+  }
+  const query: Record<string, string> = {};
+  const last = cmd.options.value('last');
+  if (last !== undefined) query.last = last;
+
+  const page = await observedInvoke<SessionTranscriptPage>(
+    clientFor(cmd.ctx),
+    'execution.transcript',
+    { params: { workSessionId }, query },
+  );
+  cmd.out.data(page, renderTranscript);
+  return EXIT_OK;
+}
+
+function renderTranscript(page: SessionTranscriptPage): string {
+  if (!page.available) {
+    // Four different facts, four different sentences. "No transcript" and "this
+    // agent does not write one" lead to opposite next actions.
+    const why = {
+      no_native_session_id:
+        'its native session id was never recorded, so its transcript cannot be located',
+      unsupported_agent_tool:
+        'it runs an agent tool that writes no transcript tm8 can read',
+      no_transcript_file:
+        'its agent has not written a transcript yet, or the file has been removed',
+      unreadable: 'its transcript file could not be read',
+    }[page.unavailableReason ?? 'no_transcript_file'];
+    return `no transcript for ${page.sessionId}: ${why}`;
+  }
+
+  const lines: string[] = [];
+  const s = page.stats;
+  if (s === null) {
+    lines.push('(no statistics recorded for this transcript)');
+    return lines.join('\n');
+  }
+  const tokens = [
+    s.inputTokens === null ? null : `${String(s.inputTokens)} in`,
+    s.outputTokens === null ? null : `${String(s.outputTokens)} out`,
+    s.cacheReadTokens === null ? null : `${String(s.cacheReadTokens)} cache read`,
+  ].filter((p): p is string => p !== null);
+
+  lines.push(
+    `${page.agentTool ?? 'agent'}${s.models.length > 0 ? ` (${s.models.join(', ')})` : ''}`,
+    `${String(s.userMessages)} user / ${String(s.assistantMessages)} assistant turns, ` +
+      `${String(s.toolCalls)} tool calls`,
+    tokens.length > 0 ? `tokens: ${tokens.join(', ')}` : 'tokens: not reported',
+  );
+  if (s.tools.length > 0) {
+    lines.push(`tools: ${s.tools.map((t) => `${t.name}×${String(t.count)}`).join(' ')}`);
+  }
+  if (s.partial) {
+    // The counts describe the WINDOW, not the session. Saying so is the
+    // difference between a statistic and a wrong statistic.
+    lines.push('(tail only — these counts cover the part of the transcript that was read, not the whole session)');
+  }
+  if (page.malformed > 0) {
+    lines.push(`${String(page.malformed)} unreadable records were skipped`);
+  }
+  if (page.stuck !== null) {
+    lines.push(
+      `POSSIBLY STUCK: ${String(page.stuck.toolCallsSinceText)} tool calls with no prose` +
+        (page.stuck.silentMs > 0
+          ? `, silent ${String(Math.round(page.stuck.silentMs / 1000))}s`
+          : '') +
+        ' — a heuristic, not a liveness check (`tm8 session liveness`)',
+    );
+  }
+
+  lines.push('');
+  for (const e of page.entries) {
+    const when = e.at === null ? '        ' : e.at.slice(11, 19);
+    lines.push(`${when}  ${e.source}: ${e.text}${e.truncated ? ' …' : ''}`);
+  }
+  if (page.entries.length === 0) lines.push('(no turns in the read window)');
+  return lines.join('\n');
+}
+
 interface ExecutionLivenessDto {
   liveEntityIds?: unknown;
   nodeBootId?: unknown;
@@ -295,7 +392,23 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
   if (taskIds.length > 0) body.taskIds = taskIds;
   if (projectId !== undefined) body.projectId = projectId;
   // `SpawnWorkdir` is a discriminated union, not a bare string.
-  if (workdir !== undefined) body.workdir = { mode: workdir };
+  //
+  // `--base-ref` is a SYMBOLIC ref and belongs only to the worktree variant,
+  // whose members are `.strict()`: sending it alongside project or scratch
+  // would be a parse failure at the facade, so it is refused here with the
+  // reason spelled out rather than as a 400 the caller has to decode. There is
+  // deliberately no `--path` flag of any kind — the server computes every
+  // checkout path, and a CLI that accepted one would be arguing with that.
+  const baseRef = cmd.options.value('base-ref');
+  if (baseRef !== undefined && workdir !== 'worktree') {
+    throw new CliError('--base-ref applies only to --workdir worktree', EXIT_USAGE, {
+      hint: 'project and scratch sessions have no base ref to resolve',
+    });
+  }
+  if (workdir !== undefined) {
+    body.workdir =
+      workdir === 'worktree' && baseRef !== undefined ? { mode: workdir, baseRef } : { mode: workdir };
+  }
   if (cmd.options.bool('confirm-untrusted')) body.confirmUntrusted = true;
   // A human-principal question the SERVER owns: supplying this as an agent or
   // through `--as` is refused there, not pre-judged here.
@@ -552,6 +665,7 @@ export const SESSION_COMMANDS: CommandModule[] = [
   { path: ['session', 'liveness'], run: sessionLiveness },
   { path: ['session', 'journal'], run: sessionJournal },
   { path: ['session', 'launch'], run: sessionLaunch },
+  { path: ['session', 'transcript'], run: sessionTranscript },
   { path: ['session', 'spawn'], run: sessionSpawn },
   { path: ['session', 'resume'], run: sessionResume },
   { path: ['session', 'terminate'], run: sessionTerminate },

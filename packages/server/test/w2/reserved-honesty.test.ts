@@ -122,24 +122,27 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // one POST command.
     // 121 -> 126 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
     // 126 -> 127 (2026-08-02): execution.launch, one GET read.
-    // 127 -> 128 (2026-08-09): projects.branches.list, one GET read.
-    expect(OPERATIONS).toHaveLength(128);
-    expect(V1_OPERATIONS).toHaveLength(126);
+    // 127 -> 128 (2026-08-07): execution.transcript, one GET read.
+    // 128 -> 129 (2026-08-09): projects.branches.list, one GET read.
+    expect(OPERATIONS).toHaveLength(129);
+    expect(V1_OPERATIONS).toHaveLength(127);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(127);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(128);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
-    // STALE ON MAIN, corrected here rather than left beside numbers this
-    // change just moved: the tree already carried 124 registerable v1 HTTP
-    // rows against a 123 pin (execution.launch + projects.directories.list
-    // landed without it). 124 -> 125 with projects.branches.list.
+    // 123 -> 124 (2026-08-02): execution.launch again. It is the same +1 as the
+    // 126 -> 127 above, and this pin was the one line of the four that did not get
+    // bumped with it. The three assertions above FORCE this number: 125 v1 rows
+    // minus the single v1 WS row (events.subscribe, asserted immediately above)
+    // is 124 — a 123 here contradicts them rather than measuring anything.
+    // execution.transcript moved it to 125; projects.branches.list moves it to 126.
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(125);
+    )).toHaveLength(126);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

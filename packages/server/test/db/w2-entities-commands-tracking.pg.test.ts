@@ -140,12 +140,31 @@ async function asApp<T>(
       query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> => (
         await client.query(sql, [...params])
       ).rows as R[],
+      /*
+       * MIRRORS `unwrapRpc` in src/db/client.ts, deliberately, down to the SQL.
+       *
+       * This shim used to be `select public.f(...) result` unwrapped with
+       * `.rows[0]!.result`, which models only ONE of the 007 catalog's two
+       * return shapes. The command RPCs return a single `jsonb` and survive it;
+       * the `returns table(...)` reads do not — they come back as N rows of one
+       * COMPOSITE column, so the caller's `row.anchor_id` is undefined, and at
+       * zero rows the non-null assertion throws outright.
+       *
+       * That gap was invisible until a test drove `buildUniversalDetail` on a
+       * `channel`, because `loadUnreadCounts` short-circuits for every other
+       * kind and no earlier test in this file reached the RPC. A harness that
+       * models one shape passes for the wrong reason until the day it does not.
+       */
       rpc: async <TResult>(name: string, args: readonly unknown[] = []): Promise<TResult> => {
         if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error(`unsafe test RPC ${name}`);
         const placeholders = args.map((_, index) => `$${index + 1}`).join(',');
-        return (await client.query<{ result: TResult }>(
-          `select public.${name}(${placeholders}) result`, [...args],
-        )).rows[0]!.result;
+        const result = await client.query(`select * from public.${name}(${placeholders})`, [...args]);
+        if (result.rows.length === 1 && result.fields.length === 1) {
+          const row = result.rows[0] as Record<string, unknown>;
+          const field = result.fields[0];
+          return (field ? row[field.name] : undefined) as TResult;
+        }
+        return result.rows as unknown as TResult;
       },
     };
     return fn(q, client);
@@ -536,6 +555,76 @@ describe.sequential('W2.G02 entities, commands, and tracking PostgreSQL semantic
       buildUniversalDetail(q, fixture.taskId, fixture.identityId));
     expect(cyclic.hierarchy.path).toHaveLength(1);
     expect(cyclic.hierarchy.path[0]?.id).toBe(fixture.childTaskId);
+  });
+
+  /**
+   * CHANNEL MEMBERS ON CREATE — acceptance criterion 2 of
+   * `docs/features/channels/CHANNEL-MEMBERS-DESIGN.md`, and the half of the
+   * ticket a UI test cannot reach: "add members WHILE CREATING a channel".
+   *
+   * This runs against a real PostgreSQL with the whole applied migration chain,
+   * so `has_member` here is the type migration 080 registered and the guard
+   * that admits it is `internal.validate_edge` itself. Nothing is stubbed and
+   * no row is hand-inserted — the edges asserted below are the ones
+   * `create_channel` + `attachInitialConnections` actually wrote.
+   *
+   * The rollback case is the one that earns the words "in one transaction".
+   * `createEntity` opens a single `db.tx` around the create RPC AND the
+   * connection loop, so a connection the edge guard refuses must take the
+   * channel with it. Without that, a half-created channel with a missing member
+   * would be the silent outcome, and the happy path alone would never show it.
+   */
+  it('creates a channel and its members in ONE transaction, and rolls the channel back with a bad member', async () => {
+    const created = await service.createEntity(request('entities.create', { body: {
+      clientMutationId: 'g02-channel-members-create',
+      spaceId: fixture.spaceId,
+      kind: 'channel',
+      title: 'members-atomic',
+      content: { topic: 'created with a roster' },
+      // A HUMAN AND AN AGENT in the same call: 080 registers dst_kinds
+      // {member, team_member}, and a create path that quietly admitted only
+      // people would still satisfy a one-actor test.
+      connections: [
+        { type: 'has_member', targetId: fixture.memberId },
+        { type: 'has_member', targetId: fixture.teamMemberId, props: { role: 'owner' } },
+      ],
+    } }));
+    const channelId = created.entity!.id;
+
+    const members = await database.query<{ dstId: string; role: string | null }>(
+      `select dst_id::text "dstId", props->>'role' role
+         from public.edges where src_id=$1 and type='has_member' order by dst_id`,
+      [channelId],
+    );
+    expect(new Set(members.map((row) => row.dstId)))
+      .toEqual(new Set([fixture.memberId, fixture.teamMemberId]));
+    // `role` is a plain string by design — the edge-type registry has no enum
+    // keyword, so this asserts what is stored, not what is enforced.
+    expect(members.find((row) => row.dstId === fixture.teamMemberId)?.role).toBe('owner');
+
+    // The roster is readable back through the GENERIC connections projection —
+    // no per-type whitelist was added anywhere for this feature.
+    const detail = await asApp(database, fixture.identityId, (q) =>
+      buildUniversalDetail(q, channelId, fixture.identityId));
+    expect(EntityDetailSchema.safeParse(detail).success).toBe(true);
+    const group = detail.connections.outgoing.find((g) => g.type === 'has_member');
+    expect(group?.edges.map((edge) => edge.target.id).sort())
+      .toEqual([fixture.memberId, fixture.teamMemberId].sort());
+
+    // ROLLBACK. A task is not a legal member; `internal.validate_edge` refuses
+    // it, and the channel must not survive the refusal.
+    await expect(service.createEntity(request('entities.create', { body: {
+      clientMutationId: 'g02-channel-members-rollback',
+      spaceId: fixture.spaceId,
+      kind: 'channel',
+      title: 'members-rollback',
+      content: { topic: 'should not exist' },
+      connections: [{ type: 'has_member', targetId: fixture.taskId }],
+    } }))).rejects.toBeTruthy();
+    const orphans = await database.query<{ total: number }>(
+      `select count(*)::integer total from public.channels where name='members-rollback'`,
+    );
+    expect(orphans[0]!.total).toBe(0);
   });
 });
 

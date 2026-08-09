@@ -24,6 +24,7 @@ import {
   SpawnService,
   PtyHostService,
   PromptSettlementWaiter,
+  readSessionTranscript,
   type CreateWorkSessionInput,
   type CreateWorkSessionResult,
   type GraphAuth,
@@ -43,6 +44,10 @@ import {
   type WorkdirMode,
   type WorkSessionResumeInfo,
   type WorkSessionStatus,
+  WorktreeManager,
+  type WorktreeAllocationRow,
+  type WorktreeAllocationState,
+  type WorktreeReconcileReport,
 } from '@tm8/execution';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
 import type {
@@ -57,6 +62,7 @@ import type {
 } from '@tm8/contract';
 import { createReadStream } from 'node:fs';
 import { realpath } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
 import { isAbsolute, relative, resolve as resolvePath, sep } from 'node:path';
 import type { Db, DbClaims } from '../db/types.js';
@@ -545,6 +551,167 @@ export class DbGraphPort implements GraphPort {
     return rows.map((r) => ({ sessionId: r.entity_id, status: r.status as WorkSessionStatus }));
   }
 
+  // --- worktree provisioning (design §4) --------------------------------------
+  //
+  // Six writes and two reads, one door call each. They are separate for the
+  // reason the port declares them separately: every gap between two of them is
+  // a crash boundary the reconciler has a named repair for, and collapsing them
+  // into one RPC would erase the states rather than avoid them.
+  //
+  // NONE of these takes the per-project Git lock. The caller holds it,
+  // in-process, OUTSIDE these calls — `internal.ledger_replay` is the first
+  // statement of every ledgered door and already holds an advisory lock;
+  // nesting beneath it is the documented deadlock (design §5.1).
+
+  async reserveWorktreeAllocation(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      spaceId: string;
+      projectId: string;
+      nodeId: string;
+      path: string;
+      branch: string;
+      cap: number;
+    },
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.reserve_worktree_allocation', [
+      input.worktreeId,
+      input.spaceId,
+      input.projectId,
+      input.nodeId,
+      input.path,
+      input.branch,
+      input.cap,
+    ]);
+  }
+
+  async setWorktreeAllocationState(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      state: WorktreeAllocationState;
+      failureCode?: string | null;
+      failureDetail?: Record<string, unknown> | null;
+      countAttempt?: boolean;
+    },
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.set_worktree_allocation_state', [
+      input.worktreeId,
+      input.state,
+      input.failureCode ?? null,
+      input.failureDetail ? JSON.stringify(input.failureDetail) : null,
+      input.countAttempt ?? false,
+    ]);
+  }
+
+  async createWorktreeEntity(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      spaceId: string;
+      projectId: string;
+      path: string;
+      branch: string;
+      baseRef: string;
+      baseCommitOid: string;
+    },
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.create_worktree', [
+      input.spaceId,
+      input.projectId,
+      input.path,
+      input.branch,
+      input.baseRef,
+      input.baseCommitOid,
+      null, // p_actor_id — resolve_actor derives it from the claims
+      // Deliberately NOT the spawn's mutation id: the ledger binds one cmid to
+      // one operation (DEV-9), and `execution_spawn` is about to claim it. The
+      // worktree create is made idempotent by its own unique constraints
+      // instead, which is what turns a retry into a 23505 rather than a
+      // duplicate checkout.
+      null,
+      input.worktreeId,
+    ]);
+  }
+
+  async acquireWorktreeLease(
+    auth: GraphAuth,
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.acquire_worktree_lease', [worktreeId, sessionId]);
+  }
+
+  async releaseWorktreeLease(auth: GraphAuth, worktreeId: string): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.release_worktree_lease', [worktreeId]);
+  }
+
+  /**
+   * The `in_worktree` edge, through its OWN door rather than generic
+   * `write_edge`.
+   *
+   * 052 added `in_worktree` to the origin-stamping branch and minted a
+   * `worktree_manager` writer token so that "a spawn-created association is
+   * distinguishable from a hand-drawn one". `write_edge` sets no token, so an
+   * edge written through it stamps `origin = 'user'` — right for a human
+   * drawing the edge, wrong for this, and it would have quietly made 052's
+   * token dead code. `props` is still never supplied: `origin` is Server-owned
+   * and the trigger is what writes it.
+   */
+  async linkSessionToWorktree(
+    auth: GraphAuth,
+    input: { spaceId: string; sessionId: string; worktreeId: string },
+  ): Promise<void> {
+    await this.db.rpc(this.claims(auth), 'public.link_session_worktree', [
+      input.sessionId,
+      input.worktreeId,
+    ]);
+  }
+
+  async listNodeWorktreeAllocations(
+    auth: GraphAuth,
+    nodeId: string,
+  ): Promise<WorktreeAllocationRow[]> {
+    const rows = await this.db.query<{
+      worktree_entity_id: string;
+      project_id: string | null;
+      state: string;
+      path: string | null;
+      branch: string | null;
+      lease_session_id: string | null;
+      attempts: number;
+      failure_code: string | null;
+      entity_exists: boolean;
+      worktree_status: string | null;
+      lease_session_status: string | null;
+      updated_at: string | null;
+    }>(this.claims(auth), 'select * from public.node_worktree_allocations($1)', [nodeId]);
+    return rows.map((r) => ({
+      worktreeId: r.worktree_entity_id,
+      projectId: r.project_id,
+      state: r.state as WorktreeAllocationState,
+      path: r.path,
+      branch: r.branch,
+      leaseSessionId: r.lease_session_id,
+      attempts: Number(r.attempts),
+      failureCode: r.failure_code,
+      entityExists: r.entity_exists === true,
+      worktreeStatus: r.worktree_status,
+      leaseSessionStatus: r.lease_session_status,
+      updatedAt: r.updated_at === null ? null : String(r.updated_at),
+    }));
+  }
+
+  async loadProjectWorkingDir(auth: GraphAuth, projectId: string): Promise<string | null> {
+    const rows = await this.db.query<{ working_dir: string }>(
+      this.claims(auth),
+      'select working_dir from public.projects where id = $1',
+      [projectId],
+    );
+    return rows[0]?.working_dir ?? null;
+  }
+
   async recordCommand(auth: GraphAuth, input: RecordCommandInput): Promise<unknown> {
     return this.db.rpc(this.claims(auth), 'public.record_execution_command', [
       input.sessionId,
@@ -663,6 +830,14 @@ export interface ExecutionRuntime {
    * retired and NEVER rejects — see `SpawnService.reconcileNodeGhosts`.
    */
   reconcileGhosts(): Promise<number>;
+  /**
+   * §6 — reconcile this node's worktree ALLOCATIONS. A sibling of
+   * `reconcileGhosts`, called at the same point and with the same posture: the
+   * composition root owns the ordering, and it never rejects. Kept separate
+   * because they answer different questions (a stuck row versus a leaked Git
+   * checkout) and a node with no worktree area still wants the first.
+   */
+  reconcileWorktrees(): Promise<WorktreeReconcileReport>;
 }
 
 /**
@@ -701,6 +876,13 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     onPromptSettled: promptSettlement.resolve,
   });
 
+  // The node's worktree area lives beside manifests/journals/scratch under the
+  // same data root, so one confidentiality and backup boundary covers all four.
+  // Its PRESENCE is what makes `workdir.mode:'worktree'` serviceable; a node
+  // built without a data root simply does not advertise it (§7.4), rather than
+  // quietly handing back the shared project directory.
+  const worktrees = resolveWorktreeManager(deps.dataDir);
+
   spawnService = new SpawnService({
     graph,
     pty,
@@ -708,6 +890,8 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: deps.nodeId ?? `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
+    ...(worktrees ? { worktrees } : {}),
+    worktreeCap: resolveWorktreeCap(process.env),
   });
 
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
@@ -740,7 +924,53 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
         return 0;
       }
     },
+    reconcileWorktrees: async () => {
+      // Same identity story as ghost reconciliation and for the same reason:
+      // the doors below go through `require_space_member`, which has no
+      // node-admin bypass, and the node's owner is the honest actor — they are
+      // whose node left the checkouts behind.
+      try {
+        const o = await owner();
+        return await spawnService.reconcileNodeWorktrees({
+          identityId: o.identityId,
+          nodeAdmin: o.isNodeAdmin,
+          requestId: 'startup-reconcile-worktrees',
+        });
+      } catch (error) {
+        deps.logger?.warn?.('execution: worktree reconciliation skipped', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return { examined: 0, repaired: [], quarantined: [], errors: [] };
+      }
+    },
   };
+}
+
+/**
+ * `<dataDir>/worktrees`, or nothing.
+ *
+ * Returning null rather than defaulting to a path under `homedir()` is
+ * deliberate: a node that was not told where its data lives should not start
+ * inventing checkout locations in a user's home directory, and §7.4 would
+ * rather the capability be absent than approximate.
+ */
+function resolveWorktreeManager(dataDir: string | undefined): WorktreeManager | null {
+  if (!dataDir) return null;
+  return new WorktreeManager({ worktreeRoot: resolvePath(dataDir, 'worktrees') });
+}
+
+/**
+ * §5.2's worktree cap. Separate from the session cap because it bounds a
+ * different scarce resource — disk and `.git/worktrees` metadata — and one
+ * worktree outlives many sessions. Absent or unparseable means unbounded, which
+ * matches the shipped posture for the session cap and keeps a typo from
+ * silently throttling a node to zero.
+ */
+function resolveWorktreeCap(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.TM8_WORKTREE_CAP?.trim();
+  if (!raw) return 0;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 /**
@@ -772,6 +1002,7 @@ export function registerExecutionHandlers(
   },
 ): ExecutionRuntime {
   const graph = new DbGraphPort(deps.db);
+  const worktrees = resolveWorktreeManager(deps.dataDir);
   const spawnService = new SpawnService({
     graph,
     pty: deps.pty,
@@ -779,6 +1010,8 @@ export function registerExecutionHandlers(
     ...(deps.dataDir ? { dataDir: deps.dataDir } : {}),
     nodeId: `${deps.config.host}:${deps.config.port}`,
     ...(deps.logger ? { logger: deps.logger } : {}),
+    ...(worktrees ? { worktrees } : {}),
+    worktreeCap: resolveWorktreeCap(process.env),
   });
   const owner = deps.owner ?? createLoopbackOwnerResolver(deps.db);
   registerHandlers(registry, spawnService, graph, deps.db, owner, deps.pty, resolveSessionCap(), deps.dataDir);
@@ -801,6 +1034,18 @@ export function registerExecutionHandlers(
         });
       } catch {
         return 0;
+      }
+    },
+    reconcileWorktrees: async () => {
+      try {
+        const o = await owner();
+        return await spawnService.reconcileNodeWorktrees({
+          identityId: o.identityId,
+          nodeAdmin: o.isNodeAdmin,
+          requestId: 'startup-reconcile-worktrees',
+        });
+      } catch {
+        return { examined: 0, repaired: [], quarantined: [], errors: [] };
       }
     },
   };
@@ -923,6 +1168,14 @@ async function resolveAssignmentAnchors(
 
 const JOURNAL_LIMIT_DEFAULT = 100;
 const JOURNAL_LIMIT_MAX = 500;
+
+// --- execution.transcript (read) ---------------------------------------------
+// Far smaller than the journal's window because a transcript TURN is prose, not
+// a fixed-size record: 500 of them is a wall of text no debug surface renders
+// and no coordinator reads. The reader's own tail window bounds the bytes; this
+// bounds the turns.
+const TRANSCRIPT_LAST_DEFAULT = 20;
+const TRANSCRIPT_LAST_MAX = 200;
 
 /**
  * `relative()`-based containment: true iff `candidate` is at or beneath `root`.
@@ -1242,6 +1495,73 @@ function registerHandlers(
         row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
     };
     return json(result);
+  });
+  /**
+   * execution.transcript — what the agent SAID, completing told/did/said beside
+   * `execution.launch` and `execution.journal`.
+   *
+   * Authorized exactly like `execution.journal`, and for the same reason: the
+   * payload comes from the FILESYSTEM, where RLS cannot reach, so the
+   * work_session entity read under the caller's claims IS the gate. Every
+   * component of the path is then derived from that row's own columns — the
+   * request contributes nothing but a uuid.
+   *
+   * A scratch session's `workdir_path` is the pre-mint scratch ROOT, not its
+   * final directory (SpawnService re-resolves once the session id exists), so
+   * `workdir_mode` decides which of the two is the real cwd. Reading the stale
+   * column for a projectless session would point claude's project-directory
+   * encoder at a directory that has never existed.
+   */
+  registry.register('execution.transcript', async (ctx) => {
+    const owner = await resolveOwner();
+    const claims = claimsFor(owner, ctx);
+    const sessionId = requireUuidParam(ctx, 'workSessionId');
+
+    const rows = await db.query<{
+      native_session_id: string | null;
+      workdir_path: string | null;
+      workdir_mode: string | null;
+      agent_tool: string | null;
+    }>(
+      claims,
+      `select ws.native_session_id, ws.workdir_path, ws.workdir_mode, ws.agent_tool
+         from public.entities e
+         join public.work_sessions ws on ws.entity_id = e.id
+        where e.id = $1 and e.kind = 'work_session' and e.deleted_at is null`,
+      [sessionId],
+    );
+    const session = rows[0];
+    if (!session) {
+      throw new CollabError('not_found', `no such work session: ${sessionId}`);
+    }
+
+    const rawLast = ctx.query.get('last');
+    let last = TRANSCRIPT_LAST_DEFAULT;
+    if (rawLast !== null && rawLast !== '') {
+      const parsed = Number.parseInt(rawLast, 10);
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        throw new CollabError('invalid_input', `last must be a positive integer, got ${rawLast}`);
+      }
+      last = Math.min(parsed, TRANSCRIPT_LAST_MAX);
+    }
+
+    const cwd =
+      session.workdir_mode === 'scratch'
+        ? dataDir === undefined
+          ? null
+          : resolvePath(dataDir, 'scratch', sessionId)
+        : session.workdir_path;
+
+    return json(
+      await readSessionTranscript({
+        sessionId,
+        agentTool: session.agent_tool,
+        nativeSessionId: session.native_session_id,
+        cwd,
+        home: process.env.HOME ?? homedir(),
+        last,
+      }),
+    );
   });
   registry.register('execution.spawn', async (ctx) => {
     const input = ctx.body as ExecutionSpawnInput;

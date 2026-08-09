@@ -22,6 +22,8 @@ import type {
   TransitionInput,
   WorkSessionResumeInfo,
   WorkSessionStatus,
+  WorktreeAllocationRow,
+  WorktreeAllocationState,
 } from '../src/spawn/types.js';
 
 export interface FakeGraphOptions {
@@ -280,5 +282,128 @@ export class FakeGraph implements GraphPort {
     this.postureQueries.push(sessionId);
     if (this.postureError) throw this.postureError;
     return this.postures.get(sessionId) ?? null;
+  }
+
+  // --- worktree provisioning seam ---------------------------------------------
+  //
+  // An ordered LOG rather than a reimplemented state machine, deliberately: the
+  // saga's assertions are about which calls happened and in what order relative
+  // to the work_session row, and a fake that re-derived the design would let a
+  // test pass against the fake's opinion of it.
+
+  readonly worktreeCalls: Array<{ call: string; worktreeId: string; detail?: unknown }> = [];
+  readonly worktreeAllocations = new Map<string, WorktreeAllocationRow>();
+  /** Make the next reservation / entity create / lease blow up, per saga boundary. */
+  failWorktreeReserve: Error | null = null;
+  failWorktreeEntity: Error | null = null;
+  failWorktreeLease: Error | null = null;
+  /** What `listNodeWorktreeAllocations` answers. Set by the reconciliation tests. */
+  nodeWorktreeAllocations: WorktreeAllocationRow[] = [];
+  readonly projectWorkingDirs = new Map<string, string>();
+
+  async reserveWorktreeAllocation(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      spaceId: string;
+      projectId: string;
+      nodeId: string;
+      path: string;
+      branch: string;
+      cap: number;
+    },
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    if (this.failWorktreeReserve) throw this.failWorktreeReserve;
+    this.worktreeCalls.push({ call: 'reserve', worktreeId: input.worktreeId, detail: input });
+    this.worktreeAllocations.set(input.worktreeId, {
+      worktreeId: input.worktreeId,
+      projectId: input.projectId,
+      state: 'preparing',
+      path: input.path,
+      branch: input.branch,
+      leaseSessionId: null,
+      attempts: 0,
+      failureCode: null,
+      entityExists: false,
+      worktreeStatus: null,
+      leaseSessionStatus: null,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async setWorktreeAllocationState(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      state: WorktreeAllocationState;
+      failureCode?: string | null;
+      failureDetail?: Record<string, unknown> | null;
+      countAttempt?: boolean;
+    },
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    this.worktreeCalls.push({
+      call: `state:${input.state}`,
+      worktreeId: input.worktreeId,
+      detail: input,
+    });
+    const row = this.worktreeAllocations.get(input.worktreeId);
+    if (row) {
+      row.state = input.state;
+      row.failureCode = input.failureCode ?? row.failureCode;
+      if (input.countAttempt) row.attempts += 1;
+    }
+  }
+
+  async createWorktreeEntity(
+    auth: GraphAuth,
+    input: { worktreeId: string; spaceId: string; projectId: string; path: string; branch: string },
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    if (this.failWorktreeEntity) throw this.failWorktreeEntity;
+    this.worktreeCalls.push({ call: 'createEntity', worktreeId: input.worktreeId, detail: input });
+    const row = this.worktreeAllocations.get(input.worktreeId);
+    if (row) row.entityExists = true;
+  }
+
+  async acquireWorktreeLease(
+    auth: GraphAuth,
+    worktreeId: string,
+    sessionId: string,
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    if (this.failWorktreeLease) throw this.failWorktreeLease;
+    this.worktreeCalls.push({ call: 'lease', worktreeId, detail: sessionId });
+    const row = this.worktreeAllocations.get(worktreeId);
+    if (row) row.leaseSessionId = sessionId;
+  }
+
+  async releaseWorktreeLease(auth: GraphAuth, worktreeId: string): Promise<void> {
+    this.authSeen.push(auth);
+    this.worktreeCalls.push({ call: 'unlease', worktreeId });
+    const row = this.worktreeAllocations.get(worktreeId);
+    if (row) row.leaseSessionId = null;
+  }
+
+  async linkSessionToWorktree(
+    auth: GraphAuth,
+    input: { spaceId: string; sessionId: string; worktreeId: string },
+  ): Promise<void> {
+    this.authSeen.push(auth);
+    this.worktreeCalls.push({ call: 'edge', worktreeId: input.worktreeId, detail: input.sessionId });
+  }
+
+  async listNodeWorktreeAllocations(
+    auth: GraphAuth,
+    _nodeId: string,
+  ): Promise<WorktreeAllocationRow[]> {
+    this.authSeen.push(auth);
+    return this.nodeWorktreeAllocations;
+  }
+
+  async loadProjectWorkingDir(auth: GraphAuth, projectId: string): Promise<string | null> {
+    this.authSeen.push(auth);
+    return this.projectWorkingDirs.get(projectId) ?? null;
   }
 }

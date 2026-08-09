@@ -1039,7 +1039,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -1127,6 +1127,21 @@ const ROWS: Record<OperationName, Row> = {
       'environment variable NAMES are recorded; VALUES are structurally absent and cannot be recovered here',
       'a session launched before prompt capture answers `prompts.unavailableReason: not_recorded` rather than an empty prompt',
       'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
+    ],
+  },
+  'execution.transcript': {
+    cmd: ['session', 'transcript'],
+    syn: 'tm8 session transcript <work-session-id> [--last <count>]',
+    sum: "Read what a session's agent SAID: the newest turns of its own native transcript, plus tool and token totals",
+    authz: 'entity',
+    input: 'none',
+    tags: ['transcript', 'history', 'output', 'agent', 'debug', 'stuck', 'tokens'],
+    notes: [
+      'these are the agent’s OWN turns, read from the transcript the agent itself writes — not the terminal, whose bytes are ANSI repaints, and not the CLI journal, which holds no model output at all',
+      'the tail of the transcript is read, so `stats` describes the RETURNED WINDOW and not the session’s lifetime; `stats.partial` says which one you are looking at',
+      'tool ARGUMENTS and tool OUTPUT are never returned — only that a tool was called and its name — because tool bodies are where file contents and secrets travel',
+      'a session whose agent has not written a transcript yet answers `available: false` with a reason, never an empty conversation',
+      '`stuck` is a HEURISTIC over tool calls without prose, not a liveness signal; `session liveness` is the authority on whether anything is running',
     ],
   },
   'execution.liveness': {
@@ -1567,7 +1582,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:bc784809f209ecce563bd2b347688e5791c9d0cbce967a1318b0658a3e4b0713';
+  'sha256:391f5ee638dc2dc5cc53842e07602ef0d103c1a369862709d9bb5b4eeed2f716';
 
 export const GRAMMAR_VERSION = '2';
 
@@ -1731,10 +1746,39 @@ const COMMAND_ALIASES = new Map<string, {
     ],
     examples: ["tm8 message reply <message-id> '<body>' --mutation-id <uuid>"],
   }],
+  // `worktree list|status` are SUGAR over operations that already exist, which
+  // is what keeps the catalog closed while the grammar grows. They are aliases
+  // for exactly that reason: an alias declares a second spelling of an existing
+  // operation, and a new catalog row would have been a second way to ask a
+  // question `collections.query` already answers.
+  ['worktree list', {
+    path: ['worktree', 'list'],
+    syntax: 'tm8 worktree list [--space <space-id>] [--status active|merged|abandoned|deleted] [--limit <count>] [--cursor <cursor>]',
+    summary: 'Isolated Git checkouts in this Space, with branch, status, and the base commit',
+    notes: [
+      'sugar over collections.query with kinds:[worktree] — it adds no catalog operation',
+      '--status narrows the returned page CLIENT-SIDE (CollectionQuery names no worktree status filter), so a page can come back emptier than --limit',
+      'the checkout path is not in the collection projection; read it with `tm8 worktree status <id>`',
+    ],
+    examples: ['tm8 worktree list --space <space-id> --status active'],
+  }],
+  ['worktree status', {
+    path: ['worktree', 'status'],
+    syntax: 'tm8 worktree status <worktree-id> [--space <space-id>]',
+    summary: 'One worktree in full — status, branch, resolved base commit, and its path on disk',
+    notes: [
+      'sugar over entities.get; the path lives in the hydrated detail row, which entities.context only excerpts',
+      'the base COMMIT is shown beside the ref because refs move and the ref alone is not what the session got',
+    ],
+    examples: ['tm8 worktree status <worktree-id>'],
+  }],
 ]);
 COMMAND_OPS.set('message reply', ['messages.post']);
 const messageSendIndex = COMMAND_ORDER.indexOf('message send');
 COMMAND_ORDER.splice(messageSendIndex < 0 ? COMMAND_ORDER.length : messageSendIndex + 1, 0, 'message reply');
+COMMAND_OPS.set('worktree list', ['collections.query']);
+COMMAND_OPS.set('worktree status', ['entities.get']);
+COMMAND_ORDER.push('worktree list', 'worktree status');
 
 /**
  * A command is as available as its LEAST available stage. `file upload` that

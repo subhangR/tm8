@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:bc784809f209ecce563bd2b347688e5791c9d0cbce967a1318b0658a3e4b0713",
+  "catalogDigest": "sha256:391f5ee638dc2dc5cc53842e07602ef0d103c1a369862709d9bb5b4eeed2f716",
   "catalog": {
-    "total": 128,
-    "v1": 126,
+    "total": 129,
+    "v1": 127,
     "reserved": 2,
-    "http": 127,
+    "http": 128,
     "ws": 1,
-    "registerableV1Http": 125,
+    "registerableV1Http": 126,
     "methods": {
-      "GET": 48,
+      "GET": 49,
       "POST": 54,
       "PATCH": 10,
       "DELETE": 8,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 51,
+      "read": 52,
       "command": 76,
       "stream": 1
     },
-    "uniqueNames": 128,
-    "uniqueBindings": 128
+    "uniqueNames": 129,
+    "uniqueBindings": 129
   },
   "reservedOperations": [
     "search.query",
@@ -1088,6 +1088,13 @@
         "path": "/v2/auth/session",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "execution.transcript",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/transcript",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1300,7 +1307,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 97
+    "unimplementedV1Http": 98
   },
   "schemas": {
     "additive": {
@@ -3580,6 +3587,22 @@
           "auth",
           "session",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.transcript",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.transcript",
+        "intentTags": [
+          "execution",
+          "transcript"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

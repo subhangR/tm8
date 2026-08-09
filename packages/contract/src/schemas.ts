@@ -66,6 +66,8 @@ import type {
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
+  SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
+  SessionTranscriptStuck,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
@@ -173,6 +175,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
   z.object({
     kind: z.literal('channel'),
     topic: z.string(),
+    members: z.array(ActorSummarySchema),
     unreadCount: z.number().int().nonnegative(),
     workingAgentCount: z.number().int().nonnegative(),
   }).strict(),
@@ -1658,9 +1661,19 @@ export const FileUploadAbortInputSchema = CommandContextSchema;
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
 
+/**
+ * `.strict()` on every member is the load-bearing part: it is what makes
+ * `{ mode: 'worktree', path: '/etc' }` a parse failure rather than a field the
+ * server quietly ignores. "Intent in, never paths" is structural here.
+ *
+ * The `baseRef` bound is politeness; the security control is that it reaches
+ * Git as an element of an argv array, never a shell string, and is shape-checked
+ * by `assertSafeRefName` on the way.
+ */
 export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('project') }).strict(),
   z.object({ mode: z.literal('scratch') }).strict(),
+  z.object({ mode: z.literal('worktree'), baseRef: z.string().min(1).max(255).optional() }).strict(),
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
@@ -1821,6 +1834,64 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unavailableReason: z.enum(['not_recorded']).nullable(),
   }).strict(),
   recordedAt: z.string().nullable(),
+}).strict();
+
+/**
+ * execution.transcript. Strict everywhere, unlike the journal above: nothing in
+ * this page is a foreign record passed through — every field is computed by the
+ * server from the native JSONL, so an unknown key here is a tm8 bug, not an
+ * older CLI. The native records' own shape drift is absorbed in the reader,
+ * which counts what it cannot parse as `malformed` and keeps going.
+ */
+export const SessionTranscriptEntrySchema: z.ZodType<SessionTranscriptEntry> = z.object({
+  at: IsoTimestamp.nullable(),
+  source: z.enum(['user', 'assistant']),
+  text: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
+export const SessionTranscriptStatsSchema: z.ZodType<SessionTranscriptStats> = z.object({
+  partial: z.boolean(),
+  userMessages: z.number().int().nonnegative(),
+  assistantMessages: z.number().int().nonnegative(),
+  toolCalls: z.number().int().nonnegative(),
+  // Nullable, not zero-defaulted: an agent that has not reported usage yet is
+  // not an agent that used no tokens, and a debug surface must show the
+  // difference.
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable(),
+  cacheReadTokens: z.number().int().nonnegative().nullable(),
+  cacheCreationTokens: z.number().int().nonnegative().nullable(),
+  tools: z.array(z.object({
+    name: z.string(),
+    count: z.number().int().positive(),
+  }).strict()),
+  models: z.array(z.string()),
+}).strict();
+
+export const SessionTranscriptStuckSchema: z.ZodType<SessionTranscriptStuck> = z.object({
+  silentMs: z.number().int().nonnegative(),
+  toolCallsSinceText: z.number().int().nonnegative(),
+}).strict();
+
+export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum([
+    'no_native_session_id',
+    'unsupported_agent_tool',
+    'no_transcript_file',
+    'unreadable',
+  ]).nullable(),
+  agentTool: z.enum(['claude-code', 'codex']).nullable(),
+  entries: z.array(SessionTranscriptEntrySchema),
+  // Nullable for the same reason `entries` is empty on an unavailable page:
+  // there are no statistics about a transcript that was never found, and a
+  // zeroed object would read as "this agent did nothing".
+  stats: SessionTranscriptStatsSchema.nullable(),
+  stuck: SessionTranscriptStuckSchema.nullable(),
+  lastActivityAt: IsoTimestamp.nullable(),
+  malformed: z.number().int().nonnegative(),
 }).strict();
 
 // ---------------------------------------------------------------------------

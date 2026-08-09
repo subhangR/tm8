@@ -53,7 +53,45 @@ export interface CommandNetworkPolicy {
 }
 
 /** Working-directory semantics (contract `SpawnWorkdir`). */
-export type WorkdirMode = 'project' | 'scratch';
+export type WorkdirMode = 'project' | 'scratch' | 'worktree';
+
+/**
+ * The OPERATIONAL state of a checkout on disk — `worktree_allocations.state`.
+ *
+ * Deliberately NOT the vocabulary of the worktree ENTITY's status
+ * (active/merged/abandoned/deleted). Two state machines, two tables: one
+ * records what was decided, the other what has actually happened on disk.
+ * Conflating them is how `deleted` comes to mean "we meant to delete it"
+ * (worktree design §3.1).
+ */
+export type WorktreeAllocationState =
+  | 'preparing'
+  | 'ready'
+  | 'cleanup_pending'
+  | 'missing'
+  | 'failed';
+
+/** One row of `public.node_worktree_allocations` — reconciliation's DB-side source. */
+export interface WorktreeAllocationRow {
+  worktreeId: string;
+  projectId: string | null;
+  state: WorktreeAllocationState;
+  path: string | null;
+  branch: string | null;
+  leaseSessionId: string | null;
+  attempts: number;
+  failureCode: string | null;
+  /** False for a reservation whose step-6 transaction never committed. */
+  entityExists: boolean;
+  worktreeStatus: string | null;
+  leaseSessionStatus: string | null;
+  /**
+   * When the allocation last changed. Reconciliation needs it to leave a
+   * reservation that a live spawn is mid-way through ALONE — see the grace
+   * period in `worktree-reconcile.ts`.
+   */
+  updatedAt: string | null;
+}
 
 /**
  * Opaque per-request authorization, passed straight through to the graph
@@ -346,6 +384,92 @@ export interface GraphPort {
     auth: GraphAuth,
     nodeId: string,
   ): Promise<Array<{ sessionId: string; status: WorkSessionStatus }>>;
+
+  // --- worktree provisioning (design §4) --------------------------------------
+  //
+  // Six calls, in saga order. They are separate rather than one `provision()`
+  // because each is a distinct crash boundary: the reconciler's whole job is
+  // the states you land in when the process dies between two of them, and a
+  // port that hid the boundaries would hide the states.
+  //
+  // NONE of them takes the per-project Git lock. That lock lives in
+  // WorktreeManager, OUTSIDE the ledgered transaction, because
+  // `internal.ledger_replay` is the first statement of every ledgered door and
+  // already holds an advisory lock — nesting beneath it is the documented
+  // deadlock (§5.1).
+
+  /**
+   * §4.5 step 4 — reserve. Inserts `worktree_allocations` in `preparing` under
+   * the caller's pre-generated id. Nothing exists on disk yet; a `preparing`
+   * row with no directory is the canonical safe partial (§6.2 row 1).
+   */
+  reserveWorktreeAllocation(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      spaceId: string;
+      projectId: string;
+      nodeId: string;
+      path: string;
+      branch: string;
+      /** §5.2's separate worktree cap. 0 means unbounded. */
+      cap: number;
+    },
+  ): Promise<void>;
+
+  /** The one writer of `worktree_allocations.state`. Saga steps 5-8 and every §6.2 repair. */
+  setWorktreeAllocationState(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      state: WorktreeAllocationState;
+      failureCode?: string | null;
+      failureDetail?: Record<string, unknown> | null;
+      /** Bounded-backoff bookkeeping for `cleanup_pending` retries (§5.3). */
+      countAttempt?: boolean;
+    },
+  ): Promise<void>;
+
+  /**
+   * §4.7 step 6 — `public.create_worktree`, carrying the node-generated id so
+   * the entity and the reservation are the same row's two halves.
+   */
+  createWorktreeEntity(
+    auth: GraphAuth,
+    input: {
+      worktreeId: string;
+      spaceId: string;
+      projectId: string;
+      path: string;
+      branch: string;
+      baseRef: string;
+      baseCommitOid: string;
+      clientMutationId: string | null;
+    },
+  ): Promise<void>;
+
+  /** §3.4 — one write-capable live session per worktree. Contention is a refusal, never a queue. */
+  acquireWorktreeLease(auth: GraphAuth, worktreeId: string, sessionId: string): Promise<void>;
+  releaseWorktreeLease(auth: GraphAuth, worktreeId: string): Promise<void>;
+
+  /** The `in_worktree` edge — the mutable association, origin-stamped `system`. */
+  linkSessionToWorktree(
+    auth: GraphAuth,
+    input: { spaceId: string; sessionId: string; worktreeId: string },
+  ): Promise<void>;
+
+  /** §6.1 — this node's allocations, with the facts only SQL can answer. */
+  listNodeWorktreeAllocations(auth: GraphAuth, nodeId: string): Promise<WorktreeAllocationRow[]>;
+
+  /**
+   * `public.projects.working_dir` for one project.
+   *
+   * Reconciliation needs a repository root to run `git worktree list/remove/
+   * prune` against, and an allocation carries only a project id. `null` when
+   * the project is gone or unreadable — which narrows the sweep, and must
+   * never widen a repair.
+   */
+  loadProjectWorkingDir(auth: GraphAuth, projectId: string): Promise<string | null>;
 }
 
 // --- the manifest ------------------------------------------------------------

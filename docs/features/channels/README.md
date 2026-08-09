@@ -19,7 +19,7 @@ wearing a task's clothes, plus three things a channel does not have yet.
 | 1 | No State, Priority, Assigned when creating a channel | **Fixed by [#42]** — see below |
 | 2 | Archiving comes after creating, not during | **Already true** — see below |
 | 3 | Task description makes no sense for a channel | **Shipped** — replaced by an optional Topic |
-| 4 | A channel has members, addable on create/update | **Deferred** → `CHANNEL-MEMBERS-DESIGN.md` |
+| 4 | A channel has members, addable on create/update | **Shipped** — `has_member` edge, migration 080; see `CHANNEL-MEMBERS-DESIGN.md` |
 | 5 | No acceptance criteria, subtree, Runs | **Fixed by [#42]** |
 | 6 | No "attach a file" when creating | **Fixed by [#42]** |
 | 7 | "Copy the exact flow of channel creation for a channel" | **Shipped** — instant create + a Slack-style edit dialog |
@@ -51,13 +51,16 @@ BUTTONS: Channel · Discussion · Connections · Activity · ⤢ · ✕
 No state, no priority, no assignee, no acceptance, no subtree, no Run, no
 attachment strip. Items 1, 5 and 6 need no further work.
 
+Item 4 has since added a **Members** control to this panel — an assign control,
+not a state or value one. The distinction is the whole point: a member belongs
+to a channel, an assignee is accountable for a task. See the note under item 2.
+
 ### Item 2 was already true
 
 "Archiving a channel comes after creating the channel." It does. Archive is the
 shared tombstone (`entities.delete` / `deletedAt`), it lives in
-`EntityControlStrip` on the expanded list row, and the channel panel does not
-mount that strip at all — `controlsFor()` is false for a kind with no state,
-value or assign control. A probe of the row strip at `7631e08`:
+`EntityControlStrip` on the expanded list row. A probe of the row strip at
+`7631e08`:
 
 ```
 State — no state · "Channel has no state to set on this node …"   (disabled)
@@ -65,7 +68,16 @@ Archive                                                            (live)
 ```
 
 So archive is reachable on an existing channel and absent from the create flow,
-which is exactly what the item asked for. The `State — no state` line above it
+which is exactly what the item asked for.
+
+> **Superseded in one detail by item 4.** This section used to add that "the
+> channel panel does not mount that strip at all — `controlsFor()` is false for
+> a kind with no state, value or assign control." That was true at `7631e08`
+> and is no longer. Giving the channel an **assign** control (the members
+> roster) makes `controlsFor()` true, so the channel panel now mounts a control
+> strip for the first time. It is still empty of State and Priority, and
+> `packages/tm8-ui/src/panels/detail/channel-members.test.tsx` asserts exactly
+> that, so items 1 and 5 stay fixed by test rather than by this paragraph. The `State — no state` line above it
 is what prompted the follow-up ruling that channels should have real statuses —
 see `CHANNEL-STATUS-DESIGN.md`.
 
