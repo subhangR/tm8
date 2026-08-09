@@ -91,7 +91,7 @@ function pollutedParentEnv(): NodeJS.ProcessEnv {
 
 describe('composeCredentialEnv — acceptance criterion 1: the exact key set', () => {
   it.each(CREDENTIAL_PROVIDERS)(
-    'returns exactly seven keys for %s, and the provider variable is the only vendor key',
+    'returns exactly the provider key set for %s, and the config variable is the only vendor credential key',
     (provider) => {
       const env = composeCredentialEnv({
         provider,
@@ -109,6 +109,7 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
         'SHELL',
         'TERM',
         'XDG_CONFIG_HOME',
+        ...(provider === 'github' ? ['GH_PROMPT_DISABLED'] : []),
       ].sort());
 
       // The exported helper must agree with the function it describes; the
@@ -122,6 +123,20 @@ describe('composeCredentialEnv — acceptance criterion 1: the exact key set', (
       expect(env[CREDENTIAL_CONFIG_DIR_VAR[provider]]).toBe(CONFIG_DIR(provider));
     },
   );
+
+  it('makes GitHub device login non-interactive without changing the other providers', () => {
+    for (const provider of CREDENTIAL_PROVIDERS) {
+      const env = composeCredentialEnv({
+        provider,
+        homeDir: HOME_DIR,
+        configDir: CONFIG_DIR(provider),
+        parentEnv: pollutedParentEnv(),
+      });
+
+      if (provider === 'github') expect(env['GH_PROMPT_DISABLED']).toBe('1');
+      else expect(env).not.toHaveProperty('GH_PROMPT_DISABLED');
+    }
+  });
 
   /**
    * Secondary, and named rather than generic. Each of these is a measured
