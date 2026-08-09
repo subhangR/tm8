@@ -1,11 +1,11 @@
 /**
- * 084 + the spawn-time memory read (Dreamer/Dispatcher P1, design §4.1–4.2).
+ * 088 + the spawn-time memory read (Dreamer/Dispatcher P1, design §4.1–4.2).
  *
  * Two facts under test, each against the REAL chain and the REAL reader:
- *  1. Migration 084 converts every `team_members.memories` jsonb entry into a
+ *  1. Migration 088 converts every `team_members.memories` jsonb entry into a
  *     056 memory entity + `remembers` edge and EMPTIES the column — so the
  *     suite applies the chain up to 083's position first, seeds jsonb the way
- *     a pre-084 node would have, and only then applies 084.
+ *     a pre-088 node would have, and only then applies 088.
  *  2. `DbGraphPort.loadSpawnContext` composes the injected set from the graph:
  *     the `remembers` working set (superseded entries dropped, disputed ones
  *     marked), requested `memoryIds` appended in caller order, refused loudly
@@ -21,7 +21,7 @@ vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
 // Resolved by SUFFIX, not number: the ordinal is the one part of a migration
 // filename that is not stable (this wave renumbers at integration because
-// main took 085/086), and a literal pin fails at beforeAll, SKIPPING the
+// main took 085–087), and a literal pin fails at beforeAll, SKIPPING the
 // whole suite. Exactly-one-match keeps an accidental duplicate loud.
 function migrationBySuffix(files: readonly string[], suffix: string): string {
   const matches = files.filter((f) => f.endsWith(suffix));
@@ -39,7 +39,7 @@ interface Fixture {
 let database: W1ScratchDatabase;
 let fixture: Fixture;
 
-async function seedPre084(db: W1ScratchDatabase): Promise<Fixture> {
+async function seedPre088(db: W1ScratchDatabase): Promise<Fixture> {
   return db.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
     const f = (await client.query<Fixture>(
@@ -66,7 +66,7 @@ async function seedPre084(db: W1ScratchDatabase): Promise<Fixture> {
        values($1,$2,$3,'owner','Working set owner')`,
       [f.memberId, f.spaceId, f.identityId],
     );
-    // The pre-084 world: a persona carrying jsonb memories, exactly what the
+    // The pre-088 world: a persona carrying jsonb memories, exactly what the
     // teammate editor wrote. One non-string entry proves the conversion does
     // not choke on shapes the column's array check never forbade.
     await client.query(
@@ -150,7 +150,7 @@ async function injectedMemories(
   return context.teamMember.memories;
 }
 
-/** A bare task entity + detail row — a `remembers` HOLDER under D9 (085). */
+/** A bare task entity + detail row — a `remembers` HOLDER under D9 (089). */
 async function mintTask(title: string): Promise<string> {
   return database.transaction(async (client) => {
     await client.query('set local role tm8_graph_owner');
@@ -195,7 +195,7 @@ beforeAll(async () => {
   // exactly as an upgrade would (working-set first: any-holder replaces its
   // create_memory and widens its edge type).
   database.apply(files.filter((f) => f !== workingSetMigration && f !== anyHolderMigration));
-  fixture = await seedPre084(database);
+  fixture = await seedPre088(database);
   database.apply([workingSetMigration, anyHolderMigration]);
 });
 
@@ -203,7 +203,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('084 jsonb → entity conversion', () => {
+describe('088 jsonb → entity conversion', () => {
   it('converts each non-blank jsonb entry into a memory entity with a remembers edge', async () => {
     const rows = await database.query<{ statement: string }>(
       `select m.statement
@@ -305,7 +305,7 @@ describe('loadSpawnContext memory composition', () => {
   });
 });
 
-describe('085 D9 — any holder, task working sets at spawn', () => {
+describe('089 D9 — any holder, task working sets at spawn', () => {
   it('widens remembers src_kinds to the any-kind wildcard', async () => {
     const rows = await database.query<{ src_kinds: string[] }>(
       `select src_kinds from public.edge_types where type = 'remembers'`,
@@ -313,10 +313,10 @@ describe('085 D9 — any holder, task working sets at spawn', () => {
     expect(rows[0]!.src_kinds).toEqual(['*']);
   });
 
-  it('accepts remembers(task → memory) — refused before 085', async () => {
+  it('accepts remembers(task → memory) — refused before 089', async () => {
     const task = await mintTask('holder task');
     const memory = await mintMemory('what the task knows', false);
-    // Would raise via internal.validate_edge pre-085 (src task not in
+    // Would raise via internal.validate_edge pre-089 (src task not in
     // {member,team_member,work_session}); passing IS the widening proof.
     await drawEdge(task, memory, 'remembers', {});
     const rows = await database.query<{ count: string }>(
@@ -359,17 +359,17 @@ describe('085 D9 — any holder, task working sets at spawn', () => {
   });
 });
 
-describe('085 D10 — the authoring session remembers', () => {
+describe('089 D10 — the authoring session remembers', () => {
   async function createViaDoor(statement: string, sessionId: string | null): Promise<string> {
     return database.transaction(async (client) => {
       await client.query('set local role tm8_app');
       await client.query(
         `select set_config('tm8.identity_id',$1,true), set_config('tm8.actor_id','',true),
-                set_config('tm8.node_admin','false',true), set_config('tm8.request_id','mem-085-pg',true)`,
+                set_config('tm8.node_admin','false',true), set_config('tm8.request_id','mem-089-pg',true)`,
         [fixture.identityId],
       );
       const rows = (await client.query(
-        `select public.create_memory($1,$2,'measured in this test','the 085 suite',
+        `select public.create_memory($1,$2,'measured in this test','the 089 suite',
                 'anything beyond this scratch db',null,$3,null,$4,null) as result`,
         [fixture.spaceId, statement, fixture.teamMemberId, sessionId],
       )).rows as Array<{ result: { entity: { id: string } } }>;

@@ -1,11 +1,11 @@
 -- =============================================================================
--- 084 — Memory working set: move `team_members.memories` jsonb into 056 memory
+-- 088 — Memory working set: move `team_members.memories` jsonb into 056 memory
 -- ENTITIES linked by `remembers` edges, and empty the jsonb.
 --
 -- Design: docs/features/dreamer-dispatcher/DESIGN.md §4.1 (decision D1: the
 -- 056 memory entities are the ONE substrate; the per-teammate jsonb column is
 -- retired). This is step one of a two-step retirement:
---   084 (this file)  — copy every jsonb entry into a memory entity + a
+--   088 (this file)  — copy every jsonb entry into a memory entity + a
 --                      `remembers` edge (team_member → memory), then set the
 --                      column to '[]'. The COLUMN survives, because frozen
 --                      binaries (:7777/:7778) still select it, and the
@@ -65,7 +65,7 @@ begin
       values (
         memory_id,
         stmt,
-        'unrecorded — migrated from the legacy team_members.memories jsonb column (084)',
+        'unrecorded — migrated from the legacy team_members.memories jsonb column (088)',
         format('working note carried by teammate %s', tm.name),
         'independent verification; the legacy column recorded no mechanism or evidence'
       );
@@ -73,7 +73,7 @@ begin
 
       insert into public.edges(space_id, src_id, dst_id, type, props, created_by)
       values (tm.space_id, tm.entity_id, memory_id, 'remembers',
-              jsonb_build_object('note', 'migrated from team_members.memories (084)'),
+              jsonb_build_object('note', 'migrated from team_members.memories (088)'),
               tm.entity_id)
       on conflict (src_id, dst_id, type) do nothing;
     end loop;
