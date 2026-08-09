@@ -61,6 +61,8 @@ export const CREDENTIAL_PROBE_COMMANDS = {
  * Comparing the two is what makes that impossible to miss.
  */
 const GH_API_USER_COMMAND = ['gh', 'api', 'user', '--jq', '.login'] as const;
+/** Extract only after the independent status/API identity cross-check passed. */
+export const GH_AUTH_TOKEN_COMMAND = ['gh', 'auth', 'token'] as const;
 
 /** Names that must not exist in a probe environment. See D6 above. */
 export const GH_TOKEN_ENV_NAMES = ['GH_TOKEN', 'GITHUB_TOKEN'] as const;
@@ -152,6 +154,27 @@ export function assertNoGitHubTokenEnv(env: Record<string, string>): void {
         'report the wrong account as a success (finding D6)',
     );
   }
+}
+
+/**
+ * Read the token written by `gh auth login` from the same scrubbed identity
+ * home the login terminal used. The value is never included in an error.
+ */
+export async function readGitHubCredentialToken(input: {
+  env: Record<string, string>;
+  cwd: string;
+  run?: CommandRunner;
+}): Promise<string> {
+  assertNoGitHubTokenEnv(input.env);
+  const outcome = await (input.run ?? execFileRunner)(GH_AUTH_TOKEN_COMMAND, {
+    env: input.env,
+    cwd: input.cwd,
+  });
+  const token = outcome.stdout.trim();
+  if (outcome.exitCode !== 0 || token.length === 0 || token.length > 4_000 || /[\r\n]/.test(token)) {
+    throw new Error('gh auth token did not return one valid credential');
+  }
+  return token;
 }
 
 /**

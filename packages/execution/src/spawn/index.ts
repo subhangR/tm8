@@ -74,6 +74,8 @@ export type {
   CommandNetworkPolicy,
   CreateWorkSessionInput,
   CreateWorkSessionResult,
+  GitCredential,
+  GitCredentialPort,
   GraphAuth,
   GraphPort,
   LoadSpawnContextInput,

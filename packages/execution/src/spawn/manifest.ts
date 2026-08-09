@@ -24,6 +24,7 @@ import type {
   AgentMode,
   CommandNetworkPolicy,
   CredentialSource,
+  GitCredential,
   PermissionMode,
   ReasoningEffort,
   SessionLaunchPosture,
@@ -789,6 +790,33 @@ const SAFE_BASE_ENV_KEYS = [
   'XDG_CACHE_HOME',
 ] as const;
 
+/** Secret-free helper: it reads GH_TOKEN only when git asks for credentials. */
+const GIT_CREDENTIAL_HELPER =
+  '!f() { test "$1" = get && printf '
+  + '"username=%s\\npassword=%s\\n" "${TM8_GIT_LOGIN:-x-access-token}" "$GH_TOKEN"; }; f';
+
+/**
+ * Inject staging's existing per-account GitHub delivery mechanism. The empty
+ * first helper resets node-global helpers before the per-process helper runs.
+ */
+function applyGitCredential(env: Record<string, string>, credential: GitCredential): void {
+  env.GH_TOKEN = credential.token;
+  env.GITHUB_TOKEN = credential.token;
+  env.GIT_TERMINAL_PROMPT = '0';
+  env.GIT_CONFIG_COUNT = '2';
+  env.GIT_CONFIG_KEY_0 = 'credential.https://github.com.helper';
+  env.GIT_CONFIG_VALUE_0 = '';
+  env.GIT_CONFIG_KEY_1 = 'credential.https://github.com.helper';
+  env.GIT_CONFIG_VALUE_1 = GIT_CREDENTIAL_HELPER;
+  if (credential.login) {
+    env.TM8_GIT_LOGIN = credential.login;
+    env.GIT_AUTHOR_NAME = credential.login;
+    env.GIT_COMMITTER_NAME = credential.login;
+    env.GIT_AUTHOR_EMAIL = `${credential.login}@users.noreply.github.com`;
+    env.GIT_COMMITTER_EMAIL = env.GIT_AUTHOR_EMAIL;
+  }
+}
+
 /**
  * Compose the agent's environment.
  *
@@ -833,6 +861,8 @@ export function composeEnv(
    * behaviour, where the agent uses whatever credential the node itself has.
    */
   credentialHome?: AgentCredentialHome,
+  /** The spawning human's encrypted-at-rest GitHub credential, if selected. */
+  gitCredential?: GitCredential | null,
 ): Record<string, string> {
   const env: Record<string, string> = {
     TM8_SESSION_ID: manifest.sessionId,
@@ -886,6 +916,10 @@ export function composeEnv(
       delete env[key];
     }
   }
+
+  // Applied after every parent-env copy. A node token can never overwrite it,
+  // and the value has no path back into the already-composed manifest.
+  if (gitCredential) applyGitCredential(env, gitCredential);
 
   // Explicit empty strings also defend wrappers that interpret presence.
   env.CLAUDE_CODE_ENTRYPOINT = '';

@@ -166,14 +166,12 @@ export interface W2CredentialCatalogServiceOptions {
     provider: CredentialProviderName;
   }) => Promise<void>;
   /**
-   * Revoke a GitHub credential from 079's string-shaped table.
+   * Revoke a GitHub credential from 090's string-shaped table.
    *
-   * OPTIONAL AND ABSENT ON THIS LINE, mirroring PR2's `storeGitCredential`
-   * exactly and for the same reason: the table it would write to is not
-   * reachable from any local git object. Faking it would produce a Disconnect
-   * that reports success having revoked nothing, which is the worst possible
-   * lie for this particular button. Absent, `credentials.delete('github')`
-   * reports `revoked: false` and names the reason.
+   * This remains injected for testability and rolling-deploy honesty. If the
+   * production composition has no store, `credentials.delete('github')`
+   * reports `revoked: false` and names the reason instead of claiming it
+   * revoked something.
    */
   revokeGitCredential?: (input: {
     principal: CredentialPrincipal;
