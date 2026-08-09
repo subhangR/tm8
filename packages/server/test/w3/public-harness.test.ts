@@ -37,13 +37,10 @@ describe.sequential('W3 production-Server public harness', () => {
     expect(body).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      // The pin was ALREADY red at 124 when this lane arrived (the four auth.*
-      // rows landed without moving it); 125 adds `execution.launch`.
-      // 125 -> 126: projects.directories.list, the onboarding GET. Two other
-      // pins on the same number were moved with it and this one was not —
-      // test/w2/rolling-public.integration.test.ts:660 and
-      // test/w3/g15-public.test.ts:70 have read 126 since that commit.
-      operations: 126,
+      // The pin was ALREADY red at 124 when this lane arrived: the four auth.*
+      // rows and `execution.launch` landed without moving it, so main MEASURED
+      // 126 against a pin of 124. `execution.transcript` makes it 127.
+      operations: 127,
     });
     // Re-pinned at I02 (tranche-v2, G02 composed): 62 -> 73. Exact literal by
     // design so it keeps catching the next drift; never a range or a live value.
@@ -55,11 +52,10 @@ describe.sequential('W3 production-Server public harness', () => {
     // number about a configuration production does not use.
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
-    // Already red at 122 when this lane arrived (auth.*); 123 adds execution.launch.
-    // 123 -> 124: projects.directories.list. Same commit, same omission as the
-    // `operations` pin above; rolling-public.integration.test.ts:660 already
-    // reads `implemented: 124`.
-    expect(body.implemented).toBe(124);
+    // Already red at 122 when this lane arrived: auth.* and execution.launch
+    // landed without moving it, so main MEASURED 124 against a pin of 122.
+    // `execution.transcript` makes it 125.
+    expect(body.implemented).toBe(125);
     expect(harness.production.server.registry.size).toBe(body.implemented);
     expect(harness.production.db).toBeDefined();
   });

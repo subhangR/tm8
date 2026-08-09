@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 124 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 125 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -295,10 +295,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    // 123 -> 124: projects.directories.list, the onboarding GET.
-    expect(SURFACE).toHaveLength(124);
-    expect(rows).toHaveLength(124);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(124);
+    // The 123 literal was ALREADY red at 124 when this lane arrived (the
+    // onboarding read landed without moving it); 125 adds execution.transcript.
+    expect(SURFACE).toHaveLength(125);
+    expect(rows).toHaveLength(125);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(125);
   });
 
   /**
@@ -408,10 +409,41 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 72 -> 73 on 2026-08-05: 077 (anchor-watcher notification fan-out). This
     // lane authored it as 076 in parallel with the reply-delivery lane; both
     // claimed the same free number, so it renumbered to 077 on landing.
-    // 73 -> 75 on 2026-08-08: 078 (derived_from props_schema) and 079 (core-draft
-    // promptPolicy repair), the two defects the CI gate was hiding for as long as
-    // it had no database to run these suites against.
-    expect(server.appliedMigrations.length).toBe(75);
+    // 73 -> 74 on 2026-08-07: 080 (channel members, `has_member`). The COUNT
+    // moves by one while the highest number moves by three, and that gap is
+    // deliberate: `public.applied_migrations` keys on FILENAME, so an unused
+    // number costs nothing, while renaming an already-applied file makes it
+    // re-apply — which is why the gap was taken rather than the next number.
+    // WHAT IS ACTUALLY KNOWN about 078/079, since this block is the ledger the
+    // next author will read as fact — and note the DATES, because this is the
+    // kind of claim that goes stale in hours:
+    //   · measured 2026-08-07, when the gap was taken: nothing on :5442 and
+    //     nothing on origin/main was past 077. The reservation was an
+    //     inherited claim with no evidence either way.
+    //   · re-measured 2026-08-09 at review: no longer true. 078 (worktree
+    //     provisioning) is applied in seven databases on :5442, and tm8_stable
+    //     is at 083 — a number in no branch visible from here.
+    // The DECISION still holds, and holds harder: 080 was free then and is free
+    // now, and 078 turned out to be genuinely spoken for. What does NOT hold is
+    // writing a falsifiable measurement into a ledger in the present tense.
+    // Date what you measured, or the next author inherits your claim as fact —
+    // which is exactly what cost the previous lanes a number.
+    // This assertion is on the LENGTH and not on the maximum, which is why a
+    // gap — reserved or merely skipped — cannot make it lie.
+    // 74 -> 75 on 2026-08-09: 085 (rename_work_session). This lane branched
+    // from a main that was 100 commits stale, where the pin read 69 and this
+    // change moved it to 70. NEITHER literal survives the rebase, and the 75
+    // here was OBTAINED BY RUNNING THE MERGED TREE, not by adding one to 74 —
+    // delta arithmetic across a rebase is exactly how a pin lands on a number
+    // no tree ever produced.
+    // On the number 085 rather than 081: measured 2026-08-09, origin/main tops
+    // out at 080 and 081-084 are claimed by unmerged branches. Same reasoning
+    // as the 078/079 gap above, and the same caveat — that is a dated
+    // measurement, not a standing fact.
+    // 75 -> 77 on 2026-08-09: 078 (derived_from props_schema) and 079
+    // (core-draft promptPolicy repair), the two defects the CI gate had hidden
+    // while the check job ran without a database.
+    expect(server.appliedMigrations.length).toBe(77);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

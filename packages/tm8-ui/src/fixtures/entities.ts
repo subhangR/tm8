@@ -93,7 +93,13 @@ export const channelDesign = summary({
   kind: 'channel',
   title: 'design',
   excerpt: 'Where the tm8-ui build coordinates.',
-  state: { kind: 'channel', topic: 'tm8-ui build', unreadCount: 12, workingAgentCount: 2 },
+  // A HUMAN AND AN AGENT, deliberately. `has_member` (migration 080) admits
+  // both, and a roster fixture with only people would let a members row that
+  // silently drops agents look correct here.
+  state: {
+    kind: 'channel', topic: 'tm8-ui build', members: [ada, forge],
+    unreadCount: 12, workingAgentCount: 2,
+  },
   counters: counters({ messages: 148 }),
 });
 

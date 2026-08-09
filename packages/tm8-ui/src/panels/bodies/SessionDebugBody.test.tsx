@@ -15,7 +15,12 @@
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import type { SessionJournalPage, SessionJournalRecord, SessionLaunchRecord } from '@tm8/contract';
+import type {
+  SessionJournalPage,
+  SessionJournalRecord,
+  SessionLaunchRecord,
+  SessionTranscriptPage,
+} from '@tm8/contract';
 import { SessionDebugBody } from './SessionDebugBody.js';
 import type { Seam } from '../../data/seam.js';
 
@@ -89,10 +94,40 @@ function launched(over: Partial<SessionLaunchRecord> = {}): SessionLaunchRecord 
   };
 }
 
-function seamWith(p: SessionJournalPage, l: SessionLaunchRecord = launched()): Seam {
+function spoken(over: Partial<SessionTranscriptPage> = {}): SessionTranscriptPage {
+  return {
+    sessionId: SESSION,
+    available: true,
+    unavailableReason: null,
+    agentTool: 'claude-code',
+    entries: [
+      { at: '2026-08-01T14:21:00.000Z', source: 'user', text: 'Fix the resize race.', truncated: false },
+      { at: '2026-08-01T14:21:40.000Z', source: 'assistant', text: 'Reading the PTY resize path.', truncated: false },
+    ],
+    stats: {
+      partial: true,
+      userMessages: 1, assistantMessages: 1, toolCalls: 3,
+      inputTokens: 4820, outputTokens: 640,
+      cacheReadTokens: 18200, cacheCreationTokens: 1100,
+      tools: [{ name: 'Read', count: 3 }],
+      models: ['claude-opus-4-6'],
+    },
+    stuck: null,
+    lastActivityAt: '2026-08-01T14:21:40.000Z',
+    malformed: 0,
+    ...over,
+  };
+}
+
+function seamWith(
+  p: SessionJournalPage,
+  l: SessionLaunchRecord = launched(),
+  t: SessionTranscriptPage = spoken(),
+): Seam {
   return {
     journal: vi.fn().mockResolvedValue(p),
     launch: vi.fn().mockResolvedValue(l),
+    transcript: vi.fn().mockResolvedValue(t),
   } as unknown as Seam;
 }
 
@@ -253,10 +288,102 @@ describe('spawn configuration', () => {
     const seam = {
       journal: vi.fn().mockResolvedValue(page()),
       launch: vi.fn().mockRejectedValue(new Error('launch read exploded')),
+      transcript: vi.fn().mockResolvedValue(spoken()),
     } as unknown as Seam;
     render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
     const err = await screen.findByTestId('session-debug-launch-error');
     expect(err.textContent).toMatch(/launch read exploded/i);
+    expect(screen.getByTestId('session-debug-table')).toBeTruthy();
+  });
+});
+
+/**
+ * WHAT THE AGENT SAID — the third face, read from the agent's own native JSONL.
+ *
+ * These pin the honesty rules that make the section safe to read, because each
+ * one is a claim the data cannot support if it is stated carelessly: a tail's
+ * token count is not a session's spend, a stuck heuristic is not a liveness
+ * verdict, and a missing transcript is a real and common state rather than a
+ * session that said nothing.
+ */
+describe('the agent transcript section', () => {
+  it('renders the agent’s own turns, oldest-first as the server sends them', async () => {
+    render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
+    const turns = await screen.findByTestId('session-debug-turns');
+    const texts = [...turns.querySelectorAll('.pn-debug__turn')].map((n) => n.textContent ?? '');
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toMatch(/Fix the resize race/);
+    expect(texts[1]).toMatch(/Reading the PTY resize path/);
+  });
+
+  // The counts describe the WINDOW. Presenting a tail's tokens as a session's
+  // spend is the exact dishonesty `partial` exists to prevent.
+  it('says the counts cover only the window when the read was partial', async () => {
+    render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
+    const note = await screen.findByTestId('session-debug-transcript-boundary');
+    expect(note.textContent).toMatch(
+      /only the newest part of the transcript that was read, not the whole session/i,
+    );
+    // …and states that tool bodies are structurally absent, so their absence
+    // cannot read as a display choice someone could ask to have turned on.
+    expect(note.textContent).toMatch(/tool arguments and tool output are never returned/i);
+  });
+
+  it('says the counts cover everything when the whole file fit', async () => {
+    const whole = spoken();
+    const seam = seamWith(page(), launched(), spoken({
+      stats: whole.stats === null ? null : { ...whole.stats, partial: false },
+    }));
+    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
+    const note = await screen.findByTestId('session-debug-transcript-boundary');
+    expect(note.textContent).toMatch(/entire session/i);
+  });
+
+  // A stuck badge that read as a verdict would be a claim over a heuristic.
+  it('reports stuck as a heuristic with its raw numbers, deferring to liveness', async () => {
+    const seam = seamWith(page(), launched(), spoken({
+      stuck: { silentMs: 420_000, toolCallsSinceText: 9 },
+    }));
+    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
+    const stuck = await screen.findByTestId('session-debug-transcript-stuck');
+    expect(stuck.textContent).toMatch(/9 tool calls/);
+    expect(stuck.textContent).toMatch(/420s/);
+    expect(stuck.textContent).toMatch(/heuristic/i);
+    expect(stuck.textContent).toMatch(/liveness/i);
+  });
+
+  it('never renders a stuck badge when the heuristic does not fire', async () => {
+    render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
+    await screen.findByTestId('session-debug-turns');
+    expect(screen.queryByTestId('session-debug-transcript-stuck')).toBeNull();
+  });
+
+  // Four distinct dead ends, four distinct sentences: collapsing them would
+  // misattribute a data-model gap to an agent that produced nothing.
+  it.each([
+    ['no_native_session_id', /cannot be identified/i],
+    ['unsupported_agent_tool', /no transcript tm8 can read/i],
+    ['no_transcript_file', /has not written its first turn/i],
+    ['unreadable', /could not be read/i],
+  ] as const)('explains %s rather than showing an empty conversation', async (reason, matcher) => {
+    const seam = seamWith(page(), launched(), spoken({
+      available: false, unavailableReason: reason, agentTool: null, stats: null, entries: [],
+    }));
+    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
+    const empty = await screen.findByTestId('session-debug-transcript-empty');
+    expect(empty.textContent).toMatch(matcher);
+    expect(screen.queryByTestId('session-debug-turns')).toBeNull();
+  });
+
+  it('a failed transcript read does not blank the journal', async () => {
+    const seam = {
+      journal: vi.fn().mockResolvedValue(page()),
+      launch: vi.fn().mockResolvedValue(launched()),
+      transcript: vi.fn().mockRejectedValue(new Error('transcript read exploded')),
+    } as unknown as Seam;
+    render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
+    const err = await screen.findByTestId('session-debug-transcript-error');
+    expect(err.textContent).toMatch(/transcript read exploded/i);
     expect(screen.getByTestId('session-debug-table')).toBeTruthy();
   });
 });
@@ -269,6 +396,9 @@ describe('polling', () => {
       render(<SessionDebugBody seam={seam} sessionId={SESSION} live={false} />);
       await vi.advanceTimersByTimeAsync(30_000);
       expect((seam.journal as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
+      // The transcript grows like the journal does, so it obeys the same rule:
+      // an exited session's transcript is finished, and polling it is waste.
+      expect((seam.transcript as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
     } finally {
       vi.useRealTimers();
     }
@@ -283,6 +413,7 @@ describe('polling', () => {
       render(<SessionDebugBody seam={seam} sessionId={SESSION} live />);
       await vi.advanceTimersByTimeAsync(30_000);
       expect((seam.journal as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1);
+      expect((seam.transcript as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1);
       expect((seam.launch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1);
     } finally {
       vi.useRealTimers();

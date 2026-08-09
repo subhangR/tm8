@@ -1996,6 +1996,7 @@ function Tile({
             props={props}
             openFlow={flowRef}
             onFlow={setFlowRef}
+            onOpenLaunch={props.launch?.onFullOptions}
           />
         ))}
         detailsExpanded={controlExpanded}
@@ -2175,6 +2176,7 @@ function Tile({
                 props={props}
                 openFlow={flowRef}
                 onFlow={setFlowRef}
+                onOpenLaunch={props.launch?.onFullOptions}
               />
             ))}
             {/* D67 — the details disclosure, on EVERY standard tile.

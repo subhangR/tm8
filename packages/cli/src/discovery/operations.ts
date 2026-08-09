@@ -1117,6 +1117,21 @@ const ROWS: Record<OperationName, Row> = {
       'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
     ],
   },
+  'execution.transcript': {
+    cmd: ['session', 'transcript'],
+    syn: 'tm8 session transcript <work-session-id> [--last <count>]',
+    sum: "Read what a session's agent SAID: the newest turns of its own native transcript, plus tool and token totals",
+    authz: 'entity',
+    input: 'none',
+    tags: ['transcript', 'history', 'output', 'agent', 'debug', 'stuck', 'tokens'],
+    notes: [
+      'these are the agent’s OWN turns, read from the transcript the agent itself writes — not the terminal, whose bytes are ANSI repaints, and not the CLI journal, which holds no model output at all',
+      'the tail of the transcript is read, so `stats` describes the RETURNED WINDOW and not the session’s lifetime; `stats.partial` says which one you are looking at',
+      'tool ARGUMENTS and tool OUTPUT are never returned — only that a tool was called and its name — because tool bodies are where file contents and secrets travel',
+      'a session whose agent has not written a transcript yet answers `available: false` with a reason, never an empty conversation',
+      '`stuck` is a HEURISTIC over tool calls without prose, not a liveness signal; `session liveness` is the authority on whether anything is running',
+    ],
+  },
   'execution.liveness': {
     cmd: ['session', 'liveness'],
     syn: 'tm8 session liveness [--space <space-id>]',
@@ -1555,7 +1570,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:8bd14e1574ae5d8f85a971d06893815d16c73aaa97eb158d9df9c8a7081a3430';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -137,25 +137,22 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
   // wave: serverConnections, artifacts, attention, voice et al). Mechanical
   // denominator moves only — the two-world presence semantics this file
   // measures are untouched.
-  it('CONTROL — the denominator is the 124 v1 HTTP rows, by exact count and exact membership', () => {
+  it('CONTROL — the denominator is the 125 v1 HTTP rows, by exact count and exact membership', () => {
     // 118 -> 122 (2026-08-02): the four auth.* rows (Identity v2 Stage 1).
     // 122 -> 123 (2026-08-02): execution.launch.
-    // 123 -> 124: projects.directories.list, the GET added by the onboarding
-    // "local project setup from Spaces" wave. That commit bumped the OPERATIONS /
-    // V1_OPERATIONS pins and left every v1-HTTP denominator behind, here and at
-    // test/w2/reserved-honesty.test.ts. `OPERATIONS` is 127 = 125 v1 + 2 reserved
-    // with exactly one v1 WS row (events.subscribe), which fixes this denominator
-    // at 125 - 1 = 124 — the old 123 contradicted those pins rather than measuring
-    // anything independent.
-    expect(REGISTERABLE).toHaveLength(124);
-    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(124);
+    // The 123 literal was ALREADY red at 124 when this lane arrived; 125 adds
+    // execution.transcript.
+    // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
+    // execution.journal, identity.profile.update.
+    expect(REGISTERABLE).toHaveLength(125);
+    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(125);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
   it('KNOWN-GOOD world — WITH a presence source, residual is the EMPTY SET', () => {
     const residual = REGISTERABLE.filter((name) => !withPresence.has(name));
     expect(residual, `residual with presence: ${residual.join(',')}`).toEqual([]);
-    expect(withPresence.size).toBe(124);
+    expect(withPresence.size).toBe(125);
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -165,7 +162,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // a substitution — a different operation going missing while presence.get
     // mounts would keep the count at 1 and this assertion would still catch it.
     expect(residual, `residual without presence: ${residual.join(',')}`).toEqual([PRESENCE_GATED]);
-    expect(withoutPresence.size).toBe(123);
+    expect(withoutPresence.size).toBe(124);
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -180,14 +177,14 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     expect(onlyWithout, `mounted only WITHOUT presence: ${onlyWithout.join(',')}`).toEqual([]);
   }, 15_000);
 
-  it('BOTH READINGS ARE CORRECT — 124/0 and 123/1 name the two compositions, not a defect', () => {
+  it('BOTH READINGS ARE CORRECT — 125/0 and 124/1 name the two compositions, not a defect', () => {
     // The sentence the frozen file could not say, wired to something that
     // fails. `test/w2/reserved-honesty.test.ts` composes WITHOUT presence
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that
     // BOTH of those numbers are reachable from the SAME production code, which
     // is what makes "the frozen file drifted" the wrong diagnosis.
-    expect([withPresence.size, 124 - withPresence.size]).toEqual([124, 0]);
-    expect([withoutPresence.size, 124 - withoutPresence.size]).toEqual([123, 1]);
+    expect([withPresence.size, 125 - withPresence.size]).toEqual([125, 0]);
+    expect([withoutPresence.size, 125 - withoutPresence.size]).toEqual([124, 1]);
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {
