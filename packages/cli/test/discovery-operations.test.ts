@@ -53,7 +53,7 @@ import { createOutput } from '../src/output.js';
 // 131 -> 135: credentials.* Tier B.
 // 135 -> 137: projects.files.list/attach (public, UI-only, commandless).
 // 137 -> 138: execution.dispatch.
-const EXPECTED_ROWS = 138;
+const EXPECTED_ROWS = 142;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -133,7 +133,7 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
   });
 
   it('agrees on the reserved set exactly', () => {
-    expect(manifest.reservedOperations.sort()).toEqual(['bridge.fetchBlob', 'search.query']);
+    expect(manifest.reservedOperations.sort()).toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(manifest.reservedOperations.sort());
     expect(DISCOVERY.filter((d) => d.exposure === 'reserved').map((d) => d.operation).sort()).toEqual(
       manifest.reservedOperations.sort(),
@@ -165,7 +165,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 134, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 135, composite: 1, internal: 1, reserved: 5 });
   });
 });
 
@@ -187,6 +187,10 @@ describe('the CLI command projection', () => {
       'projects.directories.list',
       'projects.files.attach',
       'projects.files.list',
+      'projects.files.read',
+      'projects.folderUploads.abort',
+      'projects.folderUploads.complete',
+      'projects.folderUploads.init',
     ]);
   });
 
@@ -206,8 +210,8 @@ describe('the CLI command projection', () => {
       for (const seg of d.command) expect(seg, d.operation).toMatch(/^[a-z][a-z-]*$/);
       counted++;
     }
-    // Minus the NINE commandless rows named exactly in the test above.
-    expect(counted).toBe(EXPECTED_ROWS - 9);
+    // Minus the THIRTEEN commandless rows named exactly in the test above.
+    expect(counted).toBe(EXPECTED_ROWS - 13);
   });
 
   it('a command that maps several operations reports all of them (file upload)', () => {

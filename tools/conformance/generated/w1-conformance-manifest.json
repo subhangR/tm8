@@ -1,31 +1,34 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96",
+  "catalogDigest": "sha256:4aaecf286c6e7ef358359adfec979233080997442c97e88cfd485847c7c7545b",
   "catalog": {
-    "total": 138,
-    "v1": 136,
-    "reserved": 2,
-    "http": 137,
+    "total": 142,
+    "v1": 137,
+    "reserved": 5,
+    "http": 141,
     "ws": 1,
-    "registerableV1Http": 135,
+    "registerableV1Http": 136,
     "methods": {
-      "GET": 52,
-      "POST": 59,
+      "GET": 53,
+      "POST": 62,
       "PATCH": 10,
       "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 55,
-      "command": 82,
+      "read": 56,
+      "command": 85,
       "stream": 1
     },
-    "uniqueNames": 138,
-    "uniqueBindings": 138
+    "uniqueNames": 142,
+    "uniqueBindings": 142
   },
   "reservedOperations": [
     "search.query",
+    "projects.folderUploads.init",
+    "projects.folderUploads.complete",
+    "projects.folderUploads.abort",
     "bridge.fetchBlob"
   ],
   "additiveOperations": [
@@ -712,6 +715,34 @@
         "source": "server-router"
       },
       {
+        "operation": "projects.files.read",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/files/content",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.folderUploads.init",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/project-folder-uploads",
+        "status": "reserved",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.folderUploads.complete",
+        "method": "POST",
+        "path": "/v2/project-folder-uploads/:folderUploadId/complete",
+        "status": "reserved",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.folderUploads.abort",
+        "method": "POST",
+        "path": "/v2/project-folder-uploads/:folderUploadId/abort",
+        "status": "reserved",
+        "source": "server-router"
+      },
+      {
         "operation": "files.uploadInit",
         "method": "POST",
         "path": "/v2/files/uploads",
@@ -1370,7 +1401,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 107
+    "unimplementedV1Http": 108
   },
   "schemas": {
     "additive": {
@@ -2738,6 +2769,77 @@
         "invocationSyntax": null,
         "actionDiscoverable": true,
         "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.files.read",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.files.read",
+        "intentTags": [
+          "projects",
+          "files",
+          "read"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.folderUploads.init",
+        "noun": "project",
+        "exposure": "reserved",
+        "helpRef": "tm8://help/operation/projects.folderUploads.init",
+        "intentTags": [
+          "projects",
+          "folder",
+          "uploads",
+          "init"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": false,
+        "reason": "not_implemented",
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.folderUploads.complete",
+        "noun": "project",
+        "exposure": "reserved",
+        "helpRef": "tm8://help/operation/projects.folderUploads.complete",
+        "intentTags": [
+          "projects",
+          "folder",
+          "uploads",
+          "complete"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": false,
+        "reason": "not_implemented",
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.folderUploads.abort",
+        "noun": "project",
+        "exposure": "reserved",
+        "helpRef": "tm8://help/operation/projects.folderUploads.abort",
+        "intentTags": [
+          "projects",
+          "folder",
+          "uploads",
+          "abort"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": false,
+        "reason": "not_implemented",
         "publicComposite": null
       },
       {

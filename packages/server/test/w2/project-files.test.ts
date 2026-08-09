@@ -24,6 +24,9 @@ const IDS = {
   target: '00000000-0000-7000-8000-000000000703',
 };
 
+const MEMBER_IDENTITY = 'project-files-member';
+const OUTSIDER_IDENTITY = 'project-files-outsider';
+
 const OWNER = {
   identityId: 'project-files-owner',
   accountId: '00000000-0000-7000-8000-000000000799',
@@ -50,6 +53,13 @@ afterEach(async () => {
 
 class FakeDb implements Db {
   readonly calls: Array<{ fn: string; args: readonly unknown[] }> = [];
+  readonly projectQueries: Array<{
+    claims: DbClaims;
+    sql: string;
+    params: readonly unknown[];
+  }> = [];
+  readonly readableProjectIdentities = new Set([OWNER.identityId]);
+  projectExists = true;
   storagePath = `spaces/${IDS.space}/${randomUUID()}`;
   /** Lets a test make one ledger step answer something other than the happy path. */
   outcomes: Record<string, unknown> = {};
@@ -80,18 +90,30 @@ class FakeDb implements Db {
     throw new Error(`unexpected rpc ${fn}`);
   };
 
-  queryImpl: <R>(sql: string, params: readonly unknown[]) => Promise<R[]> = async (sql) =>
-    (/from public\.projects/.test(sql) ? [{ working_dir: workingDir }] : []) as never;
+  queryImpl = async <R>(claims: DbClaims, sql: string, params: readonly unknown[]): Promise<R[]> => {
+    if (!/from public\.projects/.test(sql)) return [];
+    this.projectQueries.push({ claims, sql, params });
+    if (!this.projectExists || params[0] !== IDS.project) return [];
+
+    // Model the production RLS vocabulary at its actual seam: only a query
+    // that joins space_projects is narrowed to links in a caller-readable
+    // Space. The old projects-only query sees the row for every identity and
+    // makes the cross-Space regression test fail as an existence leak.
+    const scopeJoin = /join public\.space_projects\s+sp/i.test(sql);
+    if (scopeJoin && !this.readableProjectIdentities.has(claims.identityId ?? '')) return [];
+    if (scopeJoin && params[1] != null && params[1] !== IDS.space) return [];
+    return [{ working_dir: workingDir }] as R[];
+  };
 
   tx<T>(_claims: DbClaims, fn: (q: Querier) => Promise<T>): Promise<T> {
     return fn({
-      query: <R>(sql: string, params: readonly unknown[] = []) => this.queryImpl<R>(sql, params),
+      query: <R>(sql: string, params: readonly unknown[] = []) => this.queryImpl<R>(_claims, sql, params),
       rpc: <T>(name: string, args: readonly unknown[] = []) => this.rpcImpl<T>(name, args),
     });
   }
 
-  query<R>(_claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> {
-    return this.queryImpl<R>(sql, params);
+  query<R>(claims: DbClaims, sql: string, params: readonly unknown[] = []): Promise<R[]> {
+    return this.queryImpl<R>(claims, sql, params);
   }
 
   rpc<T>(_claims: DbClaims, fn: string, args: readonly unknown[] = []): Promise<T> {
@@ -240,26 +262,118 @@ describe('resolving one file for attachment', () => {
 describe('W2 connected project folder facade', () => {
   it('exports one registration seam for exactly the two project-file operations', async () => {
     const { registry } = await registered(new FakeDb());
-    expect(registry.implemented()).toEqual(['projects.files.attach', 'projects.files.list']);
+    // 2 -> 3 (2026-08-09): `projects.files.read`, the viewer half — same jail,
+    // same authorization, and it mints nothing.
+    expect(registry.implemented()).toEqual([
+      'projects.files.attach', 'projects.files.list', 'projects.files.read',
+    ]);
   });
 
-  it('requires node-admin claims to read or attach node-local files', async () => {
-    const { registry } = await registered(new FakeDb());
+  it('lets a Space member list and read through the registered handlers without node-admin', async () => {
+    await writeFile(join(workingDir, 'notes.md'), 'member-readable');
+    process.env.TM8_PROJECT_ROOTS = scratch;
+    try {
+      const db = new FakeDb();
+      db.readableProjectIdentities.add(MEMBER_IDENTITY);
+      const { registry } = await registered(db);
+      const identity = {
+        kind: 'bearer' as const,
+        identityId: MEMBER_IDENTITY,
+        token: 'member-token',
+        nodeAdmin: false,
+      };
+
+      const listing = await handler(registry, 'projects.files.list')(
+        request('projects.files.list', { identity }),
+      ) as { files: Array<{ name: string }> };
+      const content = await handler(registry, 'projects.files.read')(
+        request('projects.files.read', { identity, query: `path=${encodeURIComponent(join(workingDir, 'notes.md'))}` }),
+      ) as { text: string | null };
+
+      expect(listing.files.map((file) => file.name)).toEqual(['notes.md']);
+      expect(content.text).toBe('member-readable');
+      expect(db.projectQueries).toHaveLength(2);
+      expect(db.projectQueries.every(({ sql }) => /join public\.space_projects\s+sp/i.test(sql))).toBe(true);
+      expect(db.projectQueries.every(({ claims }) => claims.nodeAdmin === false)).toBe(true);
+    } finally {
+      delete process.env.TM8_PROJECT_ROOTS;
+    }
+  });
+
+  it('makes a cross-Space project byte-identical to a nonexistent project', async () => {
+    const db = new FakeDb();
+    const { registry } = await registered(db);
     const identity = {
       kind: 'bearer' as const,
-      identityId: 'ordinary-user',
-      token: 'test-token',
+      identityId: OUTSIDER_IDENTITY,
+      token: 'outsider-token',
       nodeAdmin: false,
     };
+
+    const capture = async (
+      target: HandlerRegistry,
+      opName: 'projects.files.list' | 'projects.files.read',
+    ): Promise<{ code?: string; message: string }> => {
+      try {
+        await handler(target, opName)(
+          request(opName, {
+            identity,
+            ...(opName === 'projects.files.read'
+              ? { query: `path=${encodeURIComponent(join(workingDir, 'notes.md'))}` }
+              : {}),
+          }),
+        );
+        throw new Error('expected project lookup to be refused');
+      } catch (error) {
+        return error as { code?: string; message: string };
+      }
+    };
+
+    const missingDb = new FakeDb();
+    missingDb.projectExists = false;
+    const { registry: missingRegistry } = await registered(missingDb);
+    for (const opName of ['projects.files.list', 'projects.files.read'] as const) {
+      const crossSpace = await capture(registry, opName);
+      const nonexistent = await capture(missingRegistry, opName);
+      expect(crossSpace.code).toBe('not_found');
+      expect({ code: crossSpace.code, message: crossSpace.message }).toEqual({
+        code: nonexistent.code,
+        message: nonexistent.message,
+      });
+    }
+  });
+
+  it('refuses an unauthenticated caller before querying project scope', async () => {
+    const db = new FakeDb();
+    const { registry } = await registered(db);
     await expect(handler(registry, 'projects.files.list')(
-      request('projects.files.list', { identity }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+      request('projects.files.list', { identity: { kind: 'anonymous' } }),
+    )).rejects.toMatchObject({ code: 'unauthenticated', message: 'authentication is required' });
+    expect(db.projectQueries).toEqual([]);
+  });
+
+  it('keeps node-admin mandatory for attach because it writes node bytes into the graph', async () => {
+    const db = new FakeDb();
+    db.readableProjectIdentities.add(MEMBER_IDENTITY);
+    const { registry } = await registered(db);
+    const identity = {
+      kind: 'bearer' as const,
+      identityId: MEMBER_IDENTITY,
+      token: 'member-token',
+      nodeAdmin: false,
+    };
     await expect(handler(registry, 'projects.files.attach')(
       request('projects.files.attach', {
         identity,
         body: { clientMutationId: 'm-1', spaceId: IDS.space, path: join(workingDir, 'notes.md') },
       }),
-    )).rejects.toMatchObject({ code: 'forbidden' });
+    )).rejects.toMatchObject({
+      code: 'forbidden',
+      message: 'node-admin access is required to attach project files',
+    });
+    expect(db.projectQueries).toHaveLength(1);
+    expect(db.projectQueries[0]?.params).toEqual([IDS.project, IDS.space]);
+    expect(db.calls).toEqual([]);
   });
 
   it('answers the listing for the project the path parameter names', async () => {

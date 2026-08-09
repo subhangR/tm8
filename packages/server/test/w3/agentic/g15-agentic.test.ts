@@ -32,7 +32,7 @@ import {
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
 // Re-derived 2026-08-09 at the dispatcher merge — the catalog is now 138 rows.
-const CATALOG_DIGEST = 'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
+const CATALOG_DIGEST = 'sha256:4aaecf286c6e7ef358359adfec979233080997442c97e88cfd485847c7c7545b';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -93,7 +93,7 @@ afterAll(async () => {
 });
 
 describe('G15 reserved and residual honesty, via generated discovery only', () => {
-  it('navigates root -> noun -> operation and finds exactly two reserved operations', async () => {
+  it('navigates root -> noun -> operation and finds exactly five reserved operations', async () => {
     const root = digestChecked(await queryW3Discovery({ kind: 'root' }));
     // 101 -> 117 on 2026-07-31: the consolidation wave (voice, artifacts,
     // attention, memories, worktrees) grew the catalog.
@@ -104,8 +104,8 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // The 126 literal was ALREADY red at 127 when this lane arrived (the
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
-    expect(root.catalog.total).toBe(138);
-    expect(root.catalog.reserved).toBe(2);
+    expect(root.catalog.total).toBe(142);
+    expect(root.catalog.reserved).toBe(5);
     expect(root.nouns.length).toBeGreaterThan(0);
 
     const summaries: Array<{ noun: string; operation: string; exposure: string }> = [];
@@ -147,7 +147,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     }
 
     reserved = catalog.filter((entry) => entry.exposure === 'reserved');
-    expect(reserved.map((entry) => entry.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
+    expect(reserved.map((entry) => entry.operation).sort()).toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
     for (const entry of reserved) {
       // Discovery is itself honest: it advertises the reason rather than hiding it.
       expect(entry.reason, `${entry.operation} reason`).toBe('not_implemented');
@@ -155,8 +155,8 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     }
   }, 120_000);
 
-  it('A: both reserved operations answer with a standard closed 501 not_implemented envelope', async () => {
-    expect(reserved.length).toBe(2);
+  it('A: all reserved operations answer with a standard closed 501 not_implemented envelope', async () => {
+    expect(reserved.length).toBe(5);
     for (const entry of reserved) {
       const response = await harness.request(entry.method, concretePath(entry.path));
       expectHonest501(response, entry.operation);

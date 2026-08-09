@@ -301,9 +301,9 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // and 126 adds projects.branches.list.
     // Tier 4 adds projects.contention and entities.commands.gate.
     // credentials.* add four mounted operations.
-    expect(SURFACE).toHaveLength(135);
-    expect(rows).toHaveLength(135);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(135);
+    expect(SURFACE).toHaveLength(136);
+    expect(rows).toHaveLength(136);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(136);
   });
 
   /**

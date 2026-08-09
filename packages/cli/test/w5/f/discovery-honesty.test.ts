@@ -99,14 +99,14 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 131 -> 135: credentials.* Tier B.
     // 137 -> 138 (2026-08-09): execution.dispatch (public, `session dispatch`).
-    expect(rows).toHaveLength(138);
+    expect(rows).toHaveLength(142);
 
     const earned = rows.filter((r) => r.availabilitySource === 'contract');
     const unknownRows = rows.filter((r) => r.availability === 'unknown');
 
     // EXACT SETS, not counts (§3c — a count cannot detect a substitution).
     // `contract` now appears exactly where the contract ANSWERED.
-    expect(earned.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
+    expect(earned.map((r) => r.operation).sort()).toEqual(['bridge.fetchBlob', 'projects.folderUploads.abort', 'projects.folderUploads.complete', 'projects.folderUploads.init', 'search.query']);
     expect(earned.every((r) => r.availability === 'unavailable')).toBe(true);
     // And the rows nothing looked at all say so, uniformly.
     // 123 -> 125 (2026-08-02): execution.launch is a v1 row, so the cold ledger
@@ -116,7 +116,7 @@ describe('W5.F PIN 1 (CONVERTED) — availabilitySource names a source that prod
     // 127 -> 129 (2026-08-09): projects.contention + entities.commands.gate.
     // 129 -> 133: the four credentials.* v1 rows join the `none` population.
     // 135 -> 136: execution.dispatch, a v1 row, joins `none` too.
-    expect(unknownRows).toHaveLength(136);
+    expect(unknownRows).toHaveLength(137);
     expect(unknownRows.every((r) => r.availabilitySource === 'none')).toBe(true);
   }, 15_000);
 });

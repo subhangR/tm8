@@ -155,15 +155,15 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // 114 -> 118 (2026-08-01): execution.resume, spaces.counts,
     // execution.journal, identity.profile.update.
     // 130 -> 131 (2026-08-09, merge): execution.dispatch.
-    expect(REGISTERABLE).toHaveLength(131);
-    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(131);
+    expect(REGISTERABLE).toHaveLength(132);
+    expect(new Set(REGISTERABLE).size, 'no duplicate names in the denominator').toBe(132);
     expect(REGISTERABLE).toContain(PRESENCE_GATED);
   }, 15_000);
 
   it('KNOWN-GOOD world — WITH a presence source, residual is the EMPTY SET', () => {
     const residual = REGISTERABLE.filter((name) => !withPresence.has(name));
     expect(residual, `residual with presence: ${residual.join(',')}`).toEqual([]);
-    expect(withPresence.size).toBe(131);
+    expect(withPresence.size).toBe(132);
     expect(withPresence.has(PRESENCE_GATED)).toBe(true);
   }, 15_000);
 
@@ -173,7 +173,7 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // a substitution — a different operation going missing while presence.get
     // mounts would keep the count at 1 and this assertion would still catch it.
     expect(residual, `residual without presence: ${residual.join(',')}`).toEqual([PRESENCE_GATED]);
-    expect(withoutPresence.size).toBe(130);
+    expect(withoutPresence.size).toBe(131);
     expect(withoutPresence.has(PRESENCE_GATED)).toBe(false);
   }, 15_000);
 
@@ -194,8 +194,8 @@ describe('W5.F composition honesty — the presence source is the whole delta', 
     // (its `:66`); `src/main.ts:148` composes WITH it. This test asserts that
     // BOTH of those numbers are reachable from the SAME production code, which
     // is what makes "the frozen file drifted" the wrong diagnosis.
-    expect([withPresence.size, 131 - withPresence.size]).toEqual([131, 0]);
-    expect([withoutPresence.size, 131 - withoutPresence.size]).toEqual([130, 1]);
+    expect([withPresence.size, 132 - withPresence.size]).toEqual([132, 0]);
+    expect([withoutPresence.size, 132 - withoutPresence.size]).toEqual([131, 1]);
   }, 15_000);
 
   it('NO MOUNT ESCAPES THE DENOMINATOR — neither world mounts a WS or reserved row', () => {

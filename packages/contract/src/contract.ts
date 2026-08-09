@@ -1383,7 +1383,12 @@ export interface UpdateSpaceInput extends CommandContext {
 // ---------------------------------------------------------------------------
 
 /** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings';
+/**
+ * `files` added 2026-08-09, same additive R4 posture as `graph`, for the Files
+ * browser. It reads the node's real filesystem, so no `kind` ref could name it
+ * — a kind ref lists ENTITIES and the browser mints none.
+ */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings' | 'files';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -1727,6 +1732,79 @@ export interface ProjectCreateInput extends CommandContext {
   ensureWorkingDir?: boolean;
 }
 
+// --- browser-originated project folder upload ------------------------------
+
+/** Frozen deployment-independent ceilings carried by every folder grant. */
+export const PROJECT_FOLDER_UPLOAD_MAX_FILES = 1_000;
+export const PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES = 2_000;
+export const PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+export const PROJECT_FOLDER_UPLOAD_MAX_PATH_BYTES = 1_024;
+
+/**
+ * A source entry selected in the browser. `relativePath` always uses `/` and
+ * is relative to the selected folder; an absolute client path has no field in
+ * this contract. Hidden names are ordinary names. Symlinks have no member in
+ * this union and are therefore rejected rather than dereferenced.
+ */
+export type ProjectFolderUploadEntry =
+  | {
+      kind: 'directory';
+      relativePath: string;
+    }
+  | {
+      kind: 'file';
+      relativePath: string;
+      sizeBytes: number;
+      checksumSha256: string;
+      mime: string;
+    };
+
+/** POST /v2/spaces/:spaceId/project-folder-uploads */
+export interface ProjectFolderUploadInitInput extends CommandContext {
+  clientMutationId: string;
+  projectName: string;
+  /** Absolute path selected from the SERVER directory browser. */
+  destinationParent: string;
+  /** One new child name beneath destinationParent, never a path. */
+  rootName: string;
+  /** Off by default: importing bytes does not imply execution trust. */
+  trust?: ProjectTrustLevel;
+  entries: ProjectFolderUploadEntry[];
+}
+
+export interface ProjectFolderUploadFileGrant extends FileUploadGrant {
+  relativePath: string;
+}
+
+export interface ProjectFolderUploadGrant {
+  folderUploadId: string;
+  expiresAt: string;
+  maxFiles: number;
+  maxDirectories: number;
+  maxTotalBytes: number;
+  maxPathBytes: number;
+  files: ProjectFolderUploadFileGrant[];
+}
+
+export interface ProjectFolderUploadCompleteInput extends CommandContext {
+  clientMutationId: string;
+}
+
+export interface ProjectFolderUploadAbortInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/** Confirmation returned after the root exists and its project is linked. */
+export interface ProjectFolderUploadResult {
+  folderUploadId: string;
+  spaceId: SpaceId;
+  project: ProjectResource;
+  rootName: string;
+  fileCount: number;
+  directoryCount: number;
+  totalBytes: number;
+}
+
 /** One local branch in a project's working directory. */
 export interface ProjectBranch {
   name: string;
@@ -1842,6 +1920,56 @@ export interface ProjectFileAttachInput extends CommandContext {
   mime?: string;
   /** Finalized `file -> attached_to -> target` edges, as in files.uploadComplete. */
   targets?: EntityId[];
+}
+
+/** Why a project file's bytes are withheld. Never a silent empty body. */
+export type ProjectFileRefusalReason =
+  | 'secret-pattern'
+  | 'too-large'
+  | 'binary-not-previewable'
+  | 'not-a-file'
+  | 'outside-root'
+  | 'unreadable';
+
+export interface ProjectFileRefusal {
+  reason: ProjectFileRefusalReason;
+  detail: string;
+}
+
+/**
+ * GET /v2/projects/:projectId/files/content?path=<absolute> — one file's
+ * CONTENT out of a connected project folder. The viewer half of
+ * `projects.files.list`, which lists a directory but never reads one.
+ *
+ * `path` is ABSOLUTE and inside the project's working directory, the same
+ * vocabulary `ProjectFileEntry.path` and `ProjectFileAttachInput.path` already
+ * use — a second, relative path vocabulary for the same filesystem would be a
+ * standing invitation to pass one where the other is meant.
+ *
+ * This answers a DTO, deliberately NOT raw bytes like `files.download`: a
+ * project's disk must never reach the browser as something it might execute.
+ * Text rides `text` and the UI renders it into a `<pre>`.
+ *
+ * `encoding` says which field carries the content — 'utf8' fills `text`,
+ * 'base64' fills `base64` for renderable media, and 'none' means `refusal` is
+ * set and both are null. An EMPTY file is `encoding: 'utf8'` with `text: ''`
+ * and NO refusal: "this file is empty" and "you may not read this" are
+ * different facts and a caller must be able to tell them apart.
+ *
+ * Reading mints NOTHING. A `file` entity is a reference to a file whose truth
+ * lives on disk; `projects.files.attach` is the operation that makes one.
+ */
+export interface ProjectFileContent {
+  projectId: ProjectId;
+  path: string;
+  mime: string;
+  sizeBytes: number;
+  encoding: 'utf8' | 'base64' | 'none';
+  text: string | null;
+  base64: string | null;
+  refusal: ProjectFileRefusal | null;
+  /** The inline ceiling this deployment applied, so a refusal can explain itself. */
+  maxInlineBytes: number;
 }
 
 /** The wrapper returned by spaces.create after its default member/channel saga. */

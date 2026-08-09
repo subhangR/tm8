@@ -133,6 +133,7 @@ import type {
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectFileAttachInput,
+  ProjectFileContent,
   ProjectFileListing,
   ProjectId,
   ProjectLinkInput,
@@ -356,6 +357,16 @@ export interface Seam {
    */
   projectFiles?: {
     list(projectId: ProjectId, path?: string): Promise<ProjectFileListing>;
+    /**
+     * Amendment 8 (2026-08-09, Files browser): `read` — one file's CONTENT,
+     * `projects.files.read`. The group could LIST a directory and ATTACH a file
+     * but never SHOW one, so a viewer had nothing to render.
+     *
+     * `path` is ABSOLUTE, the same vocabulary `list` answers in
+     * `ProjectFileEntry.path` and `attach` consumes — a second, relative
+     * vocabulary over one filesystem would invite passing one for the other.
+     */
+    read(projectId: ProjectId, path: string): Promise<ProjectFileContent>;
     attach(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult>;
   };
   entity(id: EntityId): Promise<EntityDetail>;

@@ -975,6 +975,52 @@ const ROWS: Record<OperationName, Row> = {
       '`tm8 file upload <path> --attach-to` is the CLI surface for the same outcome and carries the same ledger',
     ],
   },
+  'projects.files.read': {
+    cmd: null,
+    sum: 'Read one file content inside a connected project working directory',
+    authz: 'project',
+    input: 'none',
+    tags: ['file', 'view', 'read', 'local', 'browse'],
+    reason: 'ui_project_browser_only',
+    notes: [
+      'confined to the project working directory AND to TM8_PROJECT_ROOTS; symlinks are refused rather than followed',
+      'a CLI caller already holds the node filesystem and reaches these bytes with shell tools',
+    ],
+  },
+  'projects.folderUploads.init': {
+    cmd: null,
+    sum: 'Freeze a relative-path manifest for a browser folder import and hand back raw-byte grants',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'import', 'project'],
+    reason: 'not_implemented',
+    notes: [
+      'browser-originated lifecycle: the node never reads a path on the browser machine',
+      'a CLI caller already holds the node filesystem — link the directory as a project instead',
+    ],
+  },
+  'projects.folderUploads.complete': {
+    cmd: null,
+    sum: 'Materialize a completed folder import beneath a server-authorized destination',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'import', 'project'],
+    reason: 'not_implemented',
+    notes: [
+      'verifies size and sha256 for every entry before writes; cleans its newly reserved root on failure',
+    ],
+  },
+  'projects.folderUploads.abort': {
+    cmd: null,
+    sum: 'Abort a folder import and remove its staged bytes',
+    authz: 'space',
+    input: 'bound',
+    tags: ['file', 'folder', 'upload', 'import', 'project'],
+    reason: 'not_implemented',
+    notes: [
+      'idempotent teardown of the staging area reserved by init',
+    ],
+  },
 
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
@@ -1719,7 +1765,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:aa2d9f631a76c647cc59868cd692dd15cff75aec47ed4eb176041c196d9e1c96';
+  'sha256:4aaecf286c6e7ef358359adfec979233080997442c97e88cfd485847c7c7545b';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -87,6 +87,7 @@ import {
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectFileAttachInput,
+  type ProjectFileContent,
   type ProjectFileListing,
   type ProjectId,
   type ProjectLinkInput,
@@ -289,6 +290,19 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
 
     projectFiles(projectId: ProjectId, path?: string): Promise<ProjectFileListing> {
       return http.call<ProjectFileListing>('projects.files.list', { params: { projectId }, query: { path } });
+    },
+
+    /**
+     * One file's CONTENT out of a connected project folder — the viewer half of
+     * `projectFiles`. Answers a DTO, deliberately NOT an href like
+     * `fileDownloadHref`: a project's disk must never reach the browser as a
+     * document on the app origin. A withheld file arrives as a NAMED `refusal`
+     * inside a 200, so a caller can tell it from a transport failure.
+     */
+    readProjectFile(projectId: ProjectId, path: string): Promise<ProjectFileContent> {
+      return http.call<ProjectFileContent>('projects.files.read', {
+        params: { projectId }, query: { path },
+      });
     },
 
     attachProjectFile(projectId: ProjectId, input: ProjectFileAttachInput): Promise<CommandResult> {

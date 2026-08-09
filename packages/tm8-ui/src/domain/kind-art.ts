@@ -213,6 +213,16 @@ export const VIEW_ART = {
   /** The hash, shared with the `channel` kind ON PURPOSE — it is that list. */
   channels: KIND_ART.channel,
   /**
+   * A FOLDER, deliberately NOT `KIND_ART.file`'s page glyph. This view browses
+   * a directory tree on DISK; the `file` kind lists file ENTITIES, which are
+   * references to files whose truth lives elsewhere. Two different promises, so
+   * two different silhouettes — sharing one would tell the reader the rail row
+   * and the kind list are the same place.
+   */
+  files: [
+    'M2.6 4.6a1.2 1.2 0 0 1 1.2-1.2h2.3l1.4 1.8h4.7a1.2 1.2 0 0 1 1.2 1.2v5.4a1.2 1.2 0 0 1-1.2 1.2H3.8a1.2 1.2 0 0 1-1.2-1.2z',
+  ],
+  /**
    * A gear, drawn as a real toothed outline rather than as radial ticks
    * around a circle. The tick version is the shape a sun/brightness control
    * uses, and this app HAS a theme toggle — "settings" and "brightness" are

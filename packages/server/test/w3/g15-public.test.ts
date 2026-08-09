@@ -11,7 +11,7 @@ import {
   type W3PublicServer,
 } from './public-harness.js';
 
-const RESERVED = new Set(['search.query', 'bridge.fetchBlob']);
+const RESERVED = new Set(['search.query', 'bridge.fetchBlob', 'projects.folderUploads.init', 'projects.folderUploads.complete', 'projects.folderUploads.abort']);
 
 function publicPath(operation: OperationBinding): string {
   return operation.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, () => randomUUID());
@@ -73,14 +73,14 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // 128 -> 129 (2026-08-09): projects.branches.list.
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 131 -> 135: credentials.*; all four are mounted.
-    expect(OPERATIONS).toHaveLength(138);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(137);
+    expect(OPERATIONS).toHaveLength(142);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(141);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
       // /health.operations counts ROUTES, not catalog rows (WS never mounts).
-      operations: 137,
-      implemented: 135,
+      operations: 141,
+      implemented: 136,
     });
   });
 
@@ -119,7 +119,7 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
     // are mounted, so none answers 501).
     // The four credentials.* rows bring the mounted set to 132.
-    expect(implemented).toHaveLength(135);
+    expect(implemented).toHaveLength(136);
   });
 
   /**
