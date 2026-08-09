@@ -642,7 +642,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       }),
     );
     // Tier 3 forge closed loops: the WATCHER, which is the complement of the
-    // queue drainer above. It decides for itself what to poll (083's watch
+    // queue drainer above. It decides for itself what to poll (084's watch
     // list) and turns semantic changes into messages in the owning session.
     // `runOnStart` is false — it makes provider calls, and a node that restarts
     // three times during a deploy should not make three rounds of them.

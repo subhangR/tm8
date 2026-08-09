@@ -4,7 +4,7 @@
  * 081's observer drains a queue: somebody asked, so it looked. That is a
  * state-fetcher, and a state-fetcher cannot close a loop, because nobody is
  * asking. This tick is the complement: it decides for itself what to look at
- * (083 §G's watch list — open PRs a task tracks), computes a SEMANTIC DIFF
+ * (084 §G's watch list — open PRs a task tracks), computes a SEMANTIC DIFF
  * against stored facts, and turns the diff into messages in the owning
  * session's inbox.
  *
@@ -17,7 +17,7 @@
  *
  *   * THE DIFF IS COMPUTED IN POSTGRES, not here. `apply_pr_check_facts` and
  *     `apply_pr_review_thread_facts` compare against the previous observation
- *     in the same statement that overwrites it (083 §H). Doing it here would
+ *     in the same statement that overwrites it (084 §H). Doing it here would
  *     mean reading the old facts, comparing, then writing — three round trips
  *     with a window in the middle where two observer nodes both decide the same
  *     check "just went red" and both nudge.
@@ -142,11 +142,15 @@ async function watchOne(
     return 'ok';
   }
 
+  // The sha the watch list carried. Kept because `target.headSha` is updated
+  // below when the pull request read reports a push, and the ETag batched here
+  // was keyed on the OLD one.
+  const listedSha = target.headSha;
   const prKey = `gh:pr:${target.repo}#${String(target.number)}`;
   const etags = await options.db.rpc<Record<string, string>>(
     claims,
     'public.provider_etag_lookup',
-    [target.spaceId, [prKey, checksKey(target, target.headSha)]],
+    [target.spaceId, [prKey, checksKey(target, listedSha)]],
   );
 
   // ---- 1. The pull request itself.
@@ -203,10 +207,23 @@ async function watchOne(
   target.headSha = headSha;
 
   // ---- 2. CI checks for the head commit.
+  //
+  // The ETag is looked up AFTER the pull request read, because the read is what
+  // tells us the sha. Looking it up in the batch above — keyed on the sha the
+  // watch list carried — misses on the exact tick a push landed, which is the
+  // one tick where the checks matter most, and turns that fetch unconditional.
+  // One extra cheap round trip buys a conditional request on every tick.
   let newlyFailing: CheckRunFacts[] = [];
   if (headSha !== null) {
     const key = checksKey(target, headSha);
-    const runs = await client.checkRuns(target.repo, headSha, signal, etags[key] ?? null);
+    const checkEtags = headSha === listedSha
+      ? etags
+      : await options.db.rpc<Record<string, string>>(
+          claims,
+          'public.provider_etag_lookup',
+          [target.spaceId, [key]],
+        );
+    const runs = await client.checkRuns(target.repo, headSha, signal, checkEtags[key] ?? null);
     if (!runs.ok) {
       if (runs.reason === 'rate_limited') return 'rate_limited';
       detail.problems.push(`${target.repo}#${String(target.number)} checks: ${runs.reason}: ${runs.detail}`);
@@ -400,7 +417,7 @@ export function createForgeWatcherJob(options: ForgeWatcherOptions): ScheduledJo
     name: FORGE_WATCHER_JOB_NAME,
     // Ninety seconds, with `minAgeSeconds` as the real throttle. The interval
     // governs how quickly a NEW pull request enters the watch list; how often
-    // any one of them is re-read is 083 §G's floor, and separating the two is
+    // any one of them is re-read is 084 §G's floor, and separating the two is
     // what lets the loop feel responsive without multiplying provider traffic.
     intervalMs: options.intervalMs ?? 90_000,
     jitterRatio: 0.1,
