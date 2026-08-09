@@ -95,11 +95,17 @@ import {
   type ExecutionGitCheckpointInput,
   type ExecutionGitCommitInput,
   type ExecutionGitMergeInput,
+  type ExecutionGitCherryPickInput,
+  type ExecutionGitBranchInput,
+  type ExecutionGitStashInput,
   type ExecutionGitRollbackInput,
   type SessionGitCheckpointResult,
   type SessionGitCommitResult,
   type SessionGitDiff,
   type SessionGitMergeResult,
+  type SessionGitCherryPickResult,
+  type SessionGitBranchResult,
+  type SessionGitStashResult,
   type SessionGitRollbackResult,
   type SessionGitStatus,
   type SessionJournalPage,
@@ -415,6 +421,24 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     },
     gitMerge(workSessionId: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult> {
       return http.call<SessionGitMergeResult>('execution.gitMerge', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitCherryPick(workSessionId: EntityId, input: ExecutionGitCherryPickInput): Promise<SessionGitCherryPickResult> {
+      return http.call<SessionGitCherryPickResult>('execution.gitCherryPick', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitBranch(workSessionId: EntityId, input: ExecutionGitBranchInput): Promise<SessionGitBranchResult> {
+      return http.call<SessionGitBranchResult>('execution.gitBranch', {
+        params: { workSessionId },
+        body: input,
+      });
+    },
+    gitStash(workSessionId: EntityId, input: ExecutionGitStashInput): Promise<SessionGitStashResult> {
+      return http.call<SessionGitStashResult>('execution.gitStash', {
         params: { workSessionId },
         body: input,
       });

@@ -59,6 +59,17 @@
  * caller churn. Filed by the branch-topology-ui lane for dual re-consensus
  * recording alongside the catalog row it consumes (PR #74).
  *
+ * Amendment 8 (2026-08-09, Tier 2 completion): commands gain
+ * `gitCherryPick` / `gitBranch` / `gitStash` — the contract's
+ * `execution.gitCherryPick|gitBranch|gitStash` (POST, catalog v1), and
+ * `SessionGitStatus` gains the additive optional `stashes` list the server
+ * now returns. Same conflict law as `gitMerge`: a conflict RESOLVES with
+ * `status:'conflict'` + the conflicted paths, worktree restored clean
+ * (verified server-side); the destructive gates (unmerged branch delete,
+ * stash drop) refuse without `force`. Additive, zero caller churn. Filed by
+ * the tier2-completion lane for dual re-consensus recording alongside the
+ * three catalog rows it consumes.
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -141,11 +152,17 @@ import type {
   ExecutionGitCheckpointInput,
   ExecutionGitCommitInput,
   ExecutionGitMergeInput,
+  ExecutionGitCherryPickInput,
+  ExecutionGitBranchInput,
+  ExecutionGitStashInput,
   ExecutionGitRollbackInput,
   SessionGitCheckpointResult,
   SessionGitCommitResult,
   SessionGitDiff,
   SessionGitMergeResult,
+  SessionGitCherryPickResult,
+  SessionGitBranchResult,
+  SessionGitStashResult,
   SessionGitRollbackResult,
   SessionGitStatus,
   SessionJournalPage,
@@ -586,6 +603,15 @@ export interface Seam {
     gitRollback(id: EntityId, input: ExecutionGitRollbackInput): Promise<SessionGitRollbackResult>;
     gitCommit(id: EntityId, input: ExecutionGitCommitInput): Promise<SessionGitCommitResult>;
     gitMerge(id: EntityId, input: ExecutionGitMergeInput): Promise<SessionGitMergeResult>;
+    /**
+     * Tier 2 completion (Amendment 8). Cherry-pick's direction is fixed by
+     * construction — FROM the named commits ONTO the session branch; branch
+     * delete/rename refuse checked-out and protected branches server-side;
+     * stash drop and an unmerged branch delete gate on `force`.
+     */
+    gitCherryPick(id: EntityId, input: ExecutionGitCherryPickInput): Promise<SessionGitCherryPickResult>;
+    gitBranch(id: EntityId, input: ExecutionGitBranchInput): Promise<SessionGitBranchResult>;
+    gitStash(id: EntityId, input: ExecutionGitStashInput): Promise<SessionGitStashResult>;
   };
 
   /**
