@@ -95,7 +95,9 @@ describe('PromptsScreen', () => {
     render(<PromptsScreen />);
     fireEvent.click(screen.getByRole('button', { name: /Mode identity/ }));
     const list = screen.getByLabelText('Prompts');
-    expect(within(list).getAllByRole('button')).toHaveLength(4);
+    // Measured from the built catalog: worker, coordinator, both coordinated
+    // modes, and the Dreamer/Dispatcher wave's dispatcher identity.
+    expect(within(list).getAllByRole('button')).toHaveLength(5);
   });
 
   it('renders every entry without throwing', () => {

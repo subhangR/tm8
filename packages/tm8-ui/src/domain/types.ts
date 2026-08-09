@@ -722,6 +722,9 @@ export type ContentBlockKind =
   | 'field-rows'
   | 'restrictions'
   | 'pin-provenance'
+  // Scheduled-work management. The block owns enable/disable and queue-now;
+  // its presence is registry data, so GenericBody never asks for a kind.
+  | 'loop-controls'
   // Profile wave: the six blocks ProfileBody draws (T0-4 MEMBER lines 400–448,
   // AGENT lines 452–496). `items` above is reused deliberately — one block
   // name, one meaning, two renderers (GenericBody and ProfileBody).
@@ -809,6 +812,15 @@ export interface EditFieldSpec {
   placeholder?: string;
   /** Draw a textarea rather than an input. */
   multiline?: boolean;
+  /**
+   * The wire value represented by the draft string.
+   *
+   * `nullable-text` turns an empty draft into an explicit `null` (the loop
+   * door's clear flag); `json-object` parses before Save and refuses arrays or
+   * invalid JSON visibly; `schedule` validates against the executor grammar
+   * and recomputes `nextRunAt` only when this field changed.
+   */
+  valueType?: 'text' | 'nullable-text' | 'json-object' | 'schedule';
 }
 
 export interface KindConfig {
@@ -862,6 +874,13 @@ export interface KindConfig {
    * opens onto nothing.
    */
   editFields?: readonly EditFieldSpec[];
+  /**
+   * A kind whose required create payload cannot be produced by the immediate
+   * placeholder flow. Presence selects the staged, scheduler-aware form while
+   * `list.quickCreate` continues to decide whether the header has a create
+   * affordance at all.
+   */
+  createForm?: 'scheduled-work';
   /** WLT §2.1; null for channel (special — reserved word) AND message (anchored). */
   slug: string | null;
   strategy: RouteStrategy;

@@ -30,6 +30,7 @@ import { useCallback, useMemo } from 'react';
 import type { EntityDetail, EntityId, SpaceId } from '@tm8/contract';
 import {
   editsFrom,
+  draftValueFor,
   fieldKey,
   useEntityEdit,
   useNewTask,
@@ -108,6 +109,7 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
       required: field.required,
       placeholder: field.placeholder,
       multiline: field.multiline,
+      valueType: field.valueType,
       /*
        * The grammar is resolved HERE because `titleNormalizerFor` reads a
        * `KindConfig`, and `src/authoring/` may not hold one — the dialog takes
@@ -157,7 +159,7 @@ export function useEntityVerbs(options: EntityVerbsOptions): EntityVerbsHandle {
     const seed: Record<string, string> = {};
     for (const field of editFields) {
       const raw = field.target === 'title' ? detail.title : content[field.source ?? ''];
-      seed[fieldKey(field)] = typeof raw === 'string' ? raw : '';
+      seed[fieldKey(field)] = draftValueFor(field, raw);
     }
     edit.begin(seed);
   }, [detail, edit, editFields]);

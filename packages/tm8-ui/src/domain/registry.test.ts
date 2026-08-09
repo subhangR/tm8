@@ -44,14 +44,15 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     for (const kind of CORE_KINDS) expect(rows.has(kind)).toBe(true);
   });
 
-  it('measures 16 core kinds plus exactly one c:* fallback row', () => {
+  it('measures 20 core kinds plus exactly one c:* fallback row', () => {
     // The count is measured from the contract, never asserted from a doc (D11).
     // 15 → 16 on 2026-07-31 when `voice_channel` joined CoreEntityKindSchema;
-    // then `memory`, `worktree` and `artifact` landed the same day → 19.
+    // then `memory`, `worktree` and `artifact` landed the same day → 19;
+    // `loop` joined from the Dreamer/Dispatcher wave → measured 20.
     // The literal stays a LITERAL on purpose: writing `CoreEntityKindSchema
     // .options.length` here would make the assertion tautological and the row
     // below could silently drift from the contract again.
-    expect(CORE_KINDS.length).toBe(19);
+    expect(CORE_KINDS.length).toBe(20);
     expect(allKinds()).toHaveLength(CORE_KINDS.length + 1);
     expect(allKinds().filter((r) => r.kind === CUSTOM_KIND_FALLBACK)).toHaveLength(1);
   });
@@ -67,6 +68,21 @@ describe('totality over the frozen core-kind set (WLT §2.1)', () => {
     expect(customKindSlug('c:incident')).toBe('c-incident');
     expect(slugOfKind('c:incident')).toBe('c-incident');
     expect(kindOfSlug('c-incident')).toBe('c:incident');
+  });
+});
+
+describe('loop management is registry-declared and fully wired', () => {
+  it('selects staged create, typed edit, lifecycle controls, and the live Edit verb', () => {
+    const loop = getKind('loop');
+    expect(loop.list.quickCreate).toBe(true);
+    expect(loop.createForm).toBe('scheduled-work');
+    expect(loop.editFields?.map((field) => field.source ?? field.target)).toEqual([
+      'title', 'schedule', 'teamMemberId', 'subjectId', 'prompt', 'config',
+    ]);
+    expect(loop.editFields?.find((field) => field.source === 'schedule')?.valueType).toBe('schedule');
+    expect(loop.editFields?.find((field) => field.source === 'config')?.valueType).toBe('json-object');
+    expect(loop.panel.primaries).toEqual(['edit']);
+    expect(loop.panel.blocks?.map((block) => block.block)).toEqual(['loop-controls', 'fields']);
   });
 });
 

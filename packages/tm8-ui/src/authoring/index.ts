@@ -45,13 +45,16 @@ export {
 
 export {
   EditEntityDialog,
+  draftValueFor,
   editsFrom,
+  fieldProblem,
   fieldKey,
   missingRequired,
   type DialogField,
 } from './EditEntityDialog';
 export { InlineTitleEditor } from './InlineTitleEditor';
 export { NewTaskControl } from './NewTaskControl';
+export { EntityCreateControl } from './EntityCreateControl';
 export { RefusalCard, type RefusalMove } from './RefusalCard';
 export { AuthoringHost, SaveControls } from './SaveControls';
 export { StatusSelect, type StatusOption } from './StatusSelect';

@@ -45,7 +45,7 @@ import type { ActionContext, ActionRef, CollectionMode } from '../domain/types';
 import { getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
-import { EditEntityDialog, NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { EditEntityDialog, EntityCreateControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { useEntityVerbs } from './useEntityVerbs';
 import { screenKeyOf, useScreenStack } from '../stores/screenStackStore';
 import type { Notice } from '../shell/notices';
@@ -571,7 +571,16 @@ export function EntityView(props: EntityViewProps) {
           ctx={ctx}
           createSlot={
             config.list.quickCreate ? (
-              <NewTaskControl flow={createFlow} label={config.palette?.createLabel ?? '＋ New'} />
+              <EntityCreateControl
+                config={config}
+                immediate={createFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  setSelectedId(id);
+                }}
+              />
             ) : undefined
           }
           liveIds={data.liveIds}

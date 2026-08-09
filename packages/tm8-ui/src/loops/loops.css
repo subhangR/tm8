@@ -1,0 +1,44 @@
+.cv2-root .loop-create {
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+}
+
+.cv2-root .loop-create__toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-create__hint,
+.cv2-root .loop-create__truth {
+  font-family: var(--pn-mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .loop-create__truth {
+  margin: 0;
+}
+
+.cv2-root .loop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cv2-root .loop-controls__summary,
+.cv2-root .loop-controls__status {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--pn-ink-2);
+}
+
+.cv2-root .loop-controls__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

@@ -1192,6 +1192,31 @@ const ROWS: readonly KindConfig[] = [
     labelPlural: 'Loops',
     icon: '↻',
     iconArt: KIND_ART.loop,
+    createForm: 'scheduled-work',
+    editFields: [
+      { target: 'title', label: 'Title', required: true, placeholder: 'Daily project sweep' },
+      {
+        target: 'content', source: 'schedule', label: 'Schedule', required: true,
+        placeholder: 'every 1d or 0 9 * * *', valueType: 'schedule',
+      },
+      {
+        target: 'content', source: 'teamMemberId', label: 'Runner entity ID',
+        placeholder: 'blank routes through Dispatcher', valueType: 'nullable-text',
+      },
+      {
+        target: 'content', source: 'subjectId', label: 'Subject entity ID',
+        placeholder: 'blank uses this loop', valueType: 'nullable-text',
+      },
+      {
+        target: 'content', source: 'prompt', label: 'Prompt',
+        placeholder: 'Instruction sent on every firing', multiline: true,
+      },
+      {
+        target: 'content', source: 'config', label: 'Spawn config (JSON)',
+        placeholder: '{"model":"…","accessMode":"…"}', multiline: true,
+        valueType: 'json-object',
+      },
+    ],
     slug: 'loops',
     strategy: 'collection',
     defaultMode: 'list',
@@ -1199,13 +1224,17 @@ const ROWS: readonly KindConfig[] = [
     chip: { glyph: '↻', tintBy: 'none' },
     card: { fields: ['excerpt', 'activityAt', 'createdBy'] },
     list: baseList({
-      quickCreate: false,
+      // The scheduled-work form writes the required schedule and first
+      // `nextRunAt`; the placeholder-only generic flow cannot create a loop.
+      quickCreate: true,
       tile: { badges: [{ source: 'messages' }] },
     }),
     panel: {
       archetype: 'generic',
+      primaries: ['edit'],
       blocks: [
-        { block: 'fields', label: 'SCHEDULE' },
+        { block: 'loop-controls', label: 'SCHEDULE' },
+        { block: 'fields', label: 'DETAILS' },
       ],
     },
     palette: { createLabel: 'New loop' },

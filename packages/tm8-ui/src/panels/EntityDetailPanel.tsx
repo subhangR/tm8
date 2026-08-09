@@ -986,6 +986,7 @@ function PanelBody(
       blocks={config.panel.blocks ?? DEFAULT_BLOCKS}
       onOpenEntity={onOpenEntity}
       commands={props.commands}
+      onSaved={props.onSaved}
       downloadHref={props.attachments?.downloadHref}
     />
   );

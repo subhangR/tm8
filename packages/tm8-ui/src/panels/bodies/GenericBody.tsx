@@ -2,15 +2,18 @@ import { useState } from 'react';
 import type {
   ArtifactPreviewSession,
   ArtifactsPreviewStartInput,
+  CommandResult,
   EntityDetail,
   EntitySummary,
 } from '@tm8/contract';
 import type { ContentBlockRef } from '../../domain';
-import { KindIcon, getKind } from '../../domain';
+import { KindIcon } from '../../domain';
 import { Chip, Eyebrow, Markdown } from '../../kit';
 import { canThumbnail } from '../../files/AttachmentStrip';
 import type { DownloadHref } from '../../files/FilesScreen';
 import { EmptyBody } from '../detail/PanelStates';
+import type { AuthoringCommands } from '../../authoring';
+import { LoopControls } from '../../loops/LoopControls';
 
 /**
  * The one command this body can execute (threaded from the host's seam
@@ -21,6 +24,10 @@ import { EmptyBody } from '../detail/PanelStates';
 export interface ArtifactPreviewCommands {
   previewArtifact(id: string, input: ArtifactsPreviewStartInput): Promise<ArtifactPreviewSession>;
 }
+
+type GenericBodyCommands = Partial<
+  ArtifactPreviewCommands & Pick<AuthoringCommands, 'patchEntity'>
+>;
 
 /**
  * THE GENERIC ARCHETYPE — a renderer over an ORDERED LIST OF CONTENT BLOCKS.
@@ -44,12 +51,14 @@ export function GenericBody({
   blocks,
   onOpenEntity,
   commands,
+  onSaved,
   downloadHref,
 }: {
   detail: EntityDetail;
   blocks: readonly ContentBlockRef[];
   onOpenEntity?: (id: string) => void;
-  commands?: Partial<ArtifactPreviewCommands> | null;
+  commands?: GenericBodyCommands | null;
+  onSaved?: (result: CommandResult) => void;
   /**
    * Resolves a file entity's bytes URL, from the host's attachment port — the
    * SAME resolver the attachment strip uses, so a file previews here exactly
@@ -77,6 +86,7 @@ export function GenericBody({
           block={block}
           onOpenEntity={onOpenEntity}
           commands={commands}
+          onSaved={onSaved}
           downloadHref={downloadHref}
         />
       ))}
@@ -89,12 +99,14 @@ function ContentBlock({
   block,
   onOpenEntity,
   commands,
+  onSaved,
   downloadHref,
 }: {
   detail: EntityDetail;
   block: ContentBlockRef;
   onOpenEntity?: (id: string) => void;
-  commands?: Partial<ArtifactPreviewCommands> | null;
+  commands?: GenericBodyCommands | null;
+  onSaved?: (result: CommandResult) => void;
   downloadHref?: DownloadHref;
 }) {
   const body = (() => {
@@ -107,6 +119,14 @@ function ContentBlock({
         return <FilePreviewBlock detail={detail} downloadHref={downloadHref} />;
       case 'artifact-preview':
         return <ArtifactPreviewBlock detail={detail} previewArtifact={commands?.previewArtifact} />;
+      case 'loop-controls':
+        return (
+          <LoopControls
+            detail={detail}
+            commands={commands?.patchEntity ? { patchEntity: commands.patchEntity } : null}
+            onSaved={onSaved}
+          />
+        );
       case 'items':
         return <ItemsBlock detail={detail} block={block} onOpenEntity={onOpenEntity} />;
       case 'lifecycle':

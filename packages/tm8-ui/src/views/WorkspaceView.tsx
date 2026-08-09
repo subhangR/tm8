@@ -33,7 +33,7 @@ import {
 import type { NavPort } from '../shell/nav-port';
 import type { Notice } from '../shell/notices';
 import { toSessionRow } from '../terminal';
-import { NewTaskControl, placeholderTitleFor, useNewTask } from '../authoring';
+import { EntityCreateControl, placeholderTitleFor, useNewTask } from '../authoring';
 import { allKinds, getKind } from '../domain/registry';
 import { placeholderNameFor } from '../domain/title-grammar';
 import { QUIET_SESSION_DETAIL, needsAttentionOf } from '../domain/needs-attention';
@@ -466,10 +466,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         <EntityListPanel
           kind={leftKind}
           createSlot={
-            leftConfig.list.quickCreate && leftConfig.list.tile.anatomy === 'control-card' ? (
-              <NewTaskControl
-                flow={leftCreateFlow}
-                label={leftConfig.palette?.createLabel ?? '＋ New'}
+            leftConfig.list.quickCreate
+            && (leftConfig.createForm || leftConfig.list.tile.anatomy === 'control-card') ? (
+              <EntityCreateControl
+                config={leftConfig}
+                immediate={leftCreateFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  nav.push?.(id);
+                }}
               />
             ) : undefined
           }
@@ -564,10 +571,17 @@ export function WorkspaceView(props: WorkspaceViewProps) {
         <EntityListPanel
           kind={rightKind}
           createSlot={
-            rightConfig.list.quickCreate && rightConfig.list.tile.anatomy === 'control-card' ? (
-              <NewTaskControl
-                flow={rightCreateFlow}
-                label={rightConfig.palette?.createLabel ?? '＋ New'}
+            rightConfig.list.quickCreate
+            && (rightConfig.createForm || rightConfig.list.tile.anatomy === 'control-card') ? (
+              <EntityCreateControl
+                config={rightConfig}
+                immediate={rightCreateFlow}
+                spaceId={data.spaceId}
+                commands={data.seam.commands}
+                onCreated={(id, result) => {
+                  data.reconcileCommand(result);
+                  nav.push?.(id);
+                }}
               />
             ) : undefined
           }
