@@ -421,7 +421,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // which is exactly what cost the previous lanes a number.
     // This assertion is on the LENGTH and not on the maximum, which is why a
     // gap — reserved or merely skipped — cannot make it lie.
-    expect(server.appliedMigrations.length).toBe(74);
+    // 74 -> 75 on 2026-08-09: 085 (rename_work_session). This lane branched
+    // from a main that was 100 commits stale, where the pin read 69 and this
+    // change moved it to 70. NEITHER literal survives the rebase, and the 75
+    // here was OBTAINED BY RUNNING THE MERGED TREE, not by adding one to 74 —
+    // delta arithmetic across a rebase is exactly how a pin lands on a number
+    // no tree ever produced.
+    // On the number 085 rather than 081: measured 2026-08-09, origin/main tops
+    // out at 080 and 081-084 are claimed by unmerged branches. Same reasoning
+    // as the 078/079 gap above, and the same caveat — that is a dated
+    // measurement, not a standing fact.
+    expect(server.appliedMigrations.length).toBe(75);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
