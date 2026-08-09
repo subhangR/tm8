@@ -79,6 +79,7 @@ export const OPERATIONS = [
   { name: 'entities.commands.pull',       method: 'POST', path: '/v2/entities/:id/commands/pull',           kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkPr',     method: 'POST', path: '/v2/entities/:id/commands/link-pr',        kind: 'command', status: 'v1' },
   { name: 'entities.commands.linkCommit', method: 'POST', path: '/v2/entities/:id/commands/link-commit',    kind: 'command', status: 'v1' },
+  { name: 'entities.commands.gate',       method: 'POST', path: '/v2/entities/:id/commands/gate',           kind: 'command', status: 'v1' },
   { name: 'tracking.refresh',        method: 'POST',   path: '/v2/tracking/refresh',                        kind: 'command', status: 'v1' },
 
   // edges
@@ -108,6 +109,7 @@ export const OPERATIONS = [
   { name: 'projects.create',         method: 'POST',   path: '/v2/projects',                                kind: 'command', status: 'v1' },
   { name: 'projects.directories.list', method: 'GET',  path: '/v2/project-directories',                     kind: 'read',    status: 'v1' },
   { name: 'projects.get',            method: 'GET',    path: '/v2/projects/:projectId',                     kind: 'read',    status: 'v1' },
+  { name: 'projects.contention',     method: 'GET',    path: '/v2/projects/:projectId/contention',          kind: 'read',    status: 'v1' },
   { name: 'projects.update',         method: 'PATCH',  path: '/v2/projects/:projectId',                     kind: 'command', status: 'v1' },
   { name: 'projects.link',           method: 'POST',   path: '/v2/spaces/:spaceId/projects',                kind: 'command', status: 'v1' },
   { name: 'projects.unlink',         method: 'DELETE', path: '/v2/spaces/:spaceId/projects/:projectId',     kind: 'command', status: 'v1' },
