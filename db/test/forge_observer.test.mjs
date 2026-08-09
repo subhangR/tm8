@@ -17,21 +17,38 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { OWNER_URL, buildWorld, json, literal, ok, scalar, uuid } from './helpers.mjs';
+import { OWNER_URL, buildWorld, json, literal, ok, rows, run, scalar, uuid } from './helpers.mjs';
 
 const w = buildWorld('forge');
 
 const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);
 
-/** Spawn a live session in space A. Returns the work_session entity id. */
-function spawnSession(title) {
+/**
+ * Spawn a live session in space A. Returns the work_session entity id.
+ *
+ * Retires the previously spawned one first: 006's concurrency cap is 8 per
+ * space and this suite needs more sessions than that over its life, but never
+ * more than two at once. The exit is also free realism — a session that ended
+ * is the normal case these doors have to handle.
+ */
+const spawned = [];
+function spawnSession(title, { keepPrevious = false } = {}) {
+  if (!keepPrevious) {
+    for (const previous of spawned.splice(0)) {
+      run(`select public.work_session_transition(${uuid(previous)}, 'exited', 0)`, {
+        claims: w.claimsA,
+      });
+    }
+  }
   const res = json(
     `select public.execution_spawn(${uuid(w.spaceA)}, ${uuid(w.personaA)}, array[${uuid(w.taskA)}]::uuid[],
        ${uuid(w.projectId)}, 'project', null, null, 'worker', null, null, ${literal(title)})`,
     { claims: w.claimsA },
   );
-  return res.entity?.id ?? res.sessionId ?? res.entityId;
+  const id = res.entity?.id ?? res.sessionId ?? res.entityId;
+  spawned.push(id);
+  return id;
 }
 
 /** Link a PR to the suite's task and return its entity id. */
@@ -291,68 +308,113 @@ test('an untracked pull request is never watched', () => {
 
 // -----------------------------------------------------------------------------
 
-test('a nudge signature is claimable exactly once', () => {
+/**
+ * Queue a CI transition and hand back its pending id, so the dedup tests can
+ * exercise the door without re-deriving the whole observation each time.
+ */
+function queueCiNudge(number, sessionId, sha, checkName = 'build') {
+  const pr = linkPrOwnedBy(number, sessionId, sha);
+  applyChecks(pr, sha, [{ name: checkName, status: 'completed', conclusion: 'failure' }]);
+  const claimed = json(`select public.claim_pending_nudges(20, 48)`, { claims: w.claimsA }).pending;
+  const row = claimed.find((r) => r.prEntityId === pr && r.scopeKey === `${checkName}@${sha}`);
+  assert.ok(row, 'a live agent addressee means the transition is handed out');
+  return { pr, pendingId: row.pendingId };
+}
+
+test('identical content is never said to the same session twice', () => {
   const session = spawnSession('lane-a-dedup');
-  const claim = (sig, cap = null) =>
-    json(
-      `select public.claim_session_nudge(${uuid(session)}, 'ci_failure', 'build@abc', ${literal(sig)},
-         ${cap === null ? 'null' : cap})`,
-      { claims: w.claimsA },
-    );
+  const first = queueCiNudge(701, session, '6'.repeat(40));
+  assert.equal(
+    json(`select public.post_session_nudge(${uuid(first.pendingId)}, 'sig-1', 'body', null, 'cmid-d1')`,
+      { claims: w.claimsA }).posted,
+    true,
+  );
 
-  assert.equal(claim('sig-1').claimed, true);
-  const again = claim('sig-1');
-  assert.equal(again.claimed, false);
-  assert.equal(again.reason, 'duplicate', 'this is the anti-respam invariant, durably');
+  // Fixed, then broken again at the same commit: a NEW transition, so a new
+  // queue row — the partial index is what allows that.
+  applyChecks(first.pr, '6'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'success' }]);
+  applyChecks(first.pr, '6'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  const again = json(`select public.claim_pending_nudges(20, 48)`, { claims: w.claimsA })
+    .pending.find((r) => r.prEntityId === first.pr);
+  assert.ok(again, 'a re-break queues again');
 
-  // A DIFFERENT signature on the same scope still gets through: the job failed
-  // again for a different reason, and that is a second thing to fix.
-  assert.equal(claim('sig-2').claimed, true);
+  // Same signature ⇒ same words ⇒ refused, and the queue row is settled so it
+  // is not retried forever.
+  const dup = json(
+    `select public.post_session_nudge(${uuid(again.pendingId)}, 'sig-1', 'body', null, 'cmid-d2')`,
+    { claims: w.claimsA },
+  );
+  assert.equal(dup.posted, false);
+  assert.equal(dup.reason, 'duplicate');
+  assert.equal(
+    rows(`select status, retire_reason from public.pending_session_nudges where id = ${uuid(again.pendingId)}`,
+      { url: OWNER_URL })[0].retire_reason,
+    'duplicate',
+  );
 });
 
-test('the per-scope cap stops a review thread from being re-announced forever', () => {
+test('a DIFFERENT signature on the same scope still gets through', () => {
+  // The job failed again for a different reason. That is a second thing to fix.
+  const session = spawnSession('lane-a-dedup-2');
+  const first = queueCiNudge(702, session, '7'.repeat(40));
+  json(`select public.post_session_nudge(${uuid(first.pendingId)}, 'sig-a', 'body a', null, 'cmid-d3')`,
+    { claims: w.claimsA });
+  applyChecks(first.pr, '7'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'success' }]);
+  applyChecks(first.pr, '7'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  const again = json(`select public.claim_pending_nudges(20, 48)`, { claims: w.claimsA })
+    .pending.find((r) => r.prEntityId === first.pr);
+  assert.equal(
+    json(`select public.post_session_nudge(${uuid(again.pendingId)}, 'sig-b', 'body b', null, 'cmid-d4')`,
+      { claims: w.claimsA }).posted,
+    true,
+  );
+});
+
+test('the per-scope cap stops a thread from being re-announced forever', () => {
   const session = spawnSession('lane-a-cap');
-  const claim = (sig) =>
-    json(
-      `select public.claim_session_nudge(${uuid(session)}, 'review_thread', 'RT_capped', ${literal(sig)}, 2)`,
-      { claims: w.claimsA },
-    );
-  assert.equal(claim('r1').claimed, true);
-  assert.equal(claim('r2').claimed, true);
-  const third = claim('r3');
-  assert.equal(third.claimed, false);
+  const pr = linkPrOwnedBy(703, session, '8'.repeat(40));
+  const open = [{ threadKey: 'RT_cap', path: 'a.ts', isResolved: false, commentCount: 1,
+                  author: 'r', bodyExcerpt: 'fix this' }];
+  const queueThread = () => {
+    applyThreads(pr, open);
+    return json(`select public.claim_pending_nudges(20, 48)`, { claims: w.claimsA })
+      .pending.find((r) => r.prEntityId === pr && r.loopKind === 'review_thread');
+  };
+
+  let row = queueThread();
+  assert.equal(json(`select public.post_session_nudge(${uuid(row.pendingId)}, 'rt-1', 'b1', 2, 'cmid-c1')`,
+    { claims: w.claimsA }).posted, true);
+  applyThreads(pr, [{ ...open[0], isResolved: true }]);
+  row = queueThread();
+  assert.equal(json(`select public.post_session_nudge(${uuid(row.pendingId)}, 'rt-2', 'b2', 2, 'cmid-c2')`,
+    { claims: w.claimsA }).posted, true);
+  applyThreads(pr, [{ ...open[0], isResolved: true }]);
+  row = queueThread();
+  const third = json(`select public.post_session_nudge(${uuid(row.pendingId)}, 'rt-3', 'b3', 2, 'cmid-c3')`,
+    { claims: w.claimsA });
+  assert.equal(third.posted, false);
   assert.equal(third.reason, 'capped');
-  assert.equal(third.scopeCount, 2);
 });
 
-test('releasing a claim makes it claimable again', () => {
-  // The post failed. Without the release the agent is never told, because the
-  // dedup row asserts it already was.
-  const session = spawnSession('lane-a-release');
-  const args = `${uuid(session)}, 'merge_conflict', 'conflict@abc', 'sig-r'`;
-  assert.equal(json(`select public.claim_session_nudge(${args}, null)`, { claims: w.claimsA }).claimed, true);
-  assert.equal(json(`select public.release_session_nudge(${args})`, { claims: w.claimsA }).released, true);
-  assert.equal(json(`select public.claim_session_nudge(${args}, null)`, { claims: w.claimsA }).claimed, true);
-});
-
-test('the door itself refuses a session that is not live', () => {
-  const session = spawnSession('lane-a-dead');
+test('the door refuses a session that is not live', () => {
+  const session = spawnSession('lane-a-dead-door');
+  const queued = queueCiNudge(704, session, '9'.repeat(40));
   ok(`select public.work_session_transition(${uuid(session)}, 'exited', 0)`, { claims: w.claimsA });
   const res = json(
-    `select public.claim_session_nudge(${uuid(session)}, 'ci_failure', 's', 'sig', null)`,
+    `select public.post_session_nudge(${uuid(queued.pendingId)}, 'sig-dead', 'body', null, 'cmid-dead')`,
     { claims: w.claimsA },
   );
-  assert.equal(res.claimed, false);
-  assert.equal(res.reason, 'session_not_live');
-  assert.equal(res.sessionStatus, 'exited');
+  assert.equal(res.posted, false);
+  // Either answer is correct and both mean "nobody can act": the session may
+  // resolve as not-live, or stop resolving as the owner at all.
+  assert.ok(['session_not_live', 'no_owning_session'].includes(res.reason), res.reason);
 });
 
-test('nudge signatures survive as rows — this is what a restart reads', () => {
+test('delivered signatures survive as rows — this is what a restart reads', () => {
   const session = spawnSession('lane-a-durable');
-  json(
-    `select public.claim_session_nudge(${uuid(session)}, 'ci_failure', 'build@xyz', 'durable-sig', null)`,
-    { claims: w.claimsA },
-  );
+  const queued = queueCiNudge(705, session, 'a1'.repeat(20));
+  json(`select public.post_session_nudge(${uuid(queued.pendingId)}, 'durable-sig', 'body', null, 'cmid-dur')`,
+    { claims: w.claimsA });
   assert.equal(
     Number(scalar(
       `select count(*) from public.session_nudge_signatures
@@ -363,8 +425,6 @@ test('nudge signatures survive as rows — this is what a restart reads', () => 
     'in-memory dedup is dedup a deploy erases',
   );
 });
-
-// -----------------------------------------------------------------------------
 
 test('the etag cache stores, returns and counts its 304s', () => {
   const key = 'gh:pr:acme/forge#501';
@@ -444,22 +504,34 @@ test('a credential login terminal is never nudged and never owns a PR', (t) => {
     { url: OWNER_URL },
   );
 
-  const res = json(
-    `select public.claim_session_nudge(${uuid(session)}, 'ci_failure', 's', 'sig-cred', null)`,
-    { claims: w.claimsA },
-  );
-  assert.equal(res.claimed, false);
-  assert.equal(res.reason, 'not_an_agent_session', 'live by status is not the same as able to act');
-
-  // And it must not be selected as an owner in the first place.
+  // It must not be selected as an owner in the first place, which is the
+  // check that matters — the door's own refusal is the belt under it.
   const pr = linkPr(501);
-  ok(`select public.record_session_commit(${uuid(session)}, 'acme/forge', ${literal('c'.repeat(40))})`, {
+  ok(`select public.record_session_commit(${uuid(session)}, 'acme/forge', ${literal('cc'.repeat(20))})`, {
     claims: w.claimsA,
   });
-  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, null, ${literal('c'.repeat(40))})`, {
+  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, null, ${literal('cc'.repeat(20))})`, {
     claims: w.claimsA,
   });
   assert.equal(targetFor(pr).owningSessionId, null, 'a credential terminal is not a candidate owner');
+
+  // And the door refuses one directly, so a caller that resolved an addressee
+  // some other way still cannot deliver into a login terminal.
+  applyChecks(pr, 'cc'.repeat(20), [
+    { name: 'build', status: 'completed', conclusion: 'failure' },
+  ]);
+  const queued = rows(
+    `select id from public.pending_session_nudges where pr_entity_id = ${uuid(pr)} and status = 'pending'`,
+    { url: OWNER_URL },
+  );
+  assert.equal(queued.length, 1, 'the transition is queued even with no valid addressee');
+  const refused = json(
+    `select public.post_session_nudge(${uuid(queued[0].id)}, 'sig-cred', 'body', null, 'cmid-cred')`,
+    { claims: w.claimsA },
+  );
+  assert.equal(refused.posted, false);
+  assert.equal(refused.reason, 'no_owning_session',
+    'a credential terminal is not an addressee, so there is no owner at all');
 });
 
 test('an agent session is still selected once 083 is in the chain', (t) => {
@@ -479,4 +551,209 @@ test('an agent session is still selected once 083 is in the chain', (t) => {
   });
   assert.equal(targetFor(pr).owningSessionId, session);
   assert.equal(targetFor(pr).owningSessionLive, true);
+});
+
+// =============================================================================
+// THE TEST THAT WOULD HAVE CAUGHT THE BLOCKER.
+//
+// Every nudge assertion before this one drove a MOCKED db.rpc, so they proved
+// what arguments the observer passes and nothing about whether the call can
+// succeed. It could not: migration 019 revoked `post_message` from tm8_app, and
+// the delivery path called it. A mock cannot fail a grant.
+//
+// So these run AS tm8_app — the role PgDb actually connects as — against a
+// chain-built database, and assert the message ROW LANDS. The inverse is
+// pinned too: the raw door must still be refused, because the day someone
+// "fixes" this by re-granting it is the day nudges silently stop being
+// delivered to terminals (019 mints the delivery intent, post_message does not).
+// =============================================================================
+
+/** Link a PR the way production does, so `created_in` provenance exists. */
+function linkPrOwnedBy(number, sessionId, sha) {
+  const pr = linkPr(number);
+  ok(`select public.record_session_commit(${uuid(sessionId)}, 'acme/forge', ${literal(sha)})`, {
+    claims: w.claimsA,
+  });
+  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, 'open', ${literal(sha)})`, {
+    claims: w.claimsA,
+  });
+  return pr;
+}
+
+const pendingFor = (prId) =>
+  rows(
+    `select id, loop_kind, scope_key, status, retire_reason, head_sha
+       from public.pending_session_nudges where pr_entity_id = ${uuid(prId)}`,
+    { url: OWNER_URL },
+  );
+
+test('BLOCKING REGRESSION — tm8_app cannot call post_message directly', () => {
+  // 019 closed the message write surface deliberately: w2_post_message_batch is
+  // the only door that mints a delivery intent for a work_session anchor. If
+  // this assertion ever fails, check WHY the grant came back before celebrating.
+  const session = spawnSession('lane-a-grant-pin');
+  const res = run(`select public.post_message(${uuid(session)}, 'direct')`, {
+    claims: w.claimsA,
+    verbose: true,
+  });
+  assert.equal(res.ok, false, 'post_message must stay revoked from tm8_app');
+  assert.match(res.stderr, /permission denied/i);
+});
+
+test('BLOCKING REGRESSION — a nudge posts AS tm8_app and the message row lands', () => {
+  const session = spawnSession('lane-a-real-delivery');
+  const pr = linkPrOwnedBy(601, session, 'e'.repeat(40));
+
+  // A red check enqueues a transition in the same statement as the facts.
+  applyChecks(pr, 'e'.repeat(40), [
+    { name: 'build', status: 'completed', conclusion: 'failure', externalId: '9001' },
+  ]);
+  const queued = pendingFor(pr);
+  assert.equal(queued.length, 1, 'the transition is durable, not just returned');
+  assert.equal(queued[0].status, 'pending');
+
+  const claimed = json(`select public.claim_pending_nudges(10, 48)`, { claims: w.claimsA }).pending;
+  const mine = claimed.find((row) => row.prEntityId === pr);
+  assert.ok(mine, 'a live agent addressee means the row is handed out');
+  assert.equal(mine.owningSessionId, session);
+
+  // THE CALL THAT USED TO ANSWER 42501.
+  const posted = json(
+    `select public.post_session_nudge(${uuid(mine.pendingId)}, 'sig-real', 'CI FAILED on acme/forge#601', null, 'cmid-nudge-real-1')`,
+    { claims: w.claimsA },
+  );
+  assert.equal(posted.posted, true, 'the door must succeed as tm8_app');
+  assert.ok(posted.messageId, 'a message id comes back');
+
+  // The row is really there, on the session anchor, readable.
+  const message = json(
+    `select to_jsonb(m) from public.messages m where m.entity_id = ${uuid(posted.messageId)}`,
+    { url: OWNER_URL },
+  );
+  assert.equal(message.anchor_id, session);
+  assert.match(message.body, /CI FAILED/);
+
+  // And the queue row is settled, so it is not delivered twice.
+  assert.equal(pendingFor(pr)[0].status, 'delivered');
+});
+
+test('the same signature is refused, and the queue row says why', () => {
+  const session = spawnSession('lane-a-real-dedup');
+  const pr = linkPrOwnedBy(602, session, 'f'.repeat(40));
+  applyChecks(pr, 'f'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  let mine = json(`select public.claim_pending_nudges(10, 48)`, { claims: w.claimsA })
+    .pending.find((row) => row.prEntityId === pr);
+  json(
+    `select public.post_session_nudge(${uuid(mine.pendingId)}, 'sig-dup', 'body one', null, 'cmid-dup-1')`,
+    { claims: w.claimsA },
+  );
+
+  // Re-enqueue the same transition by re-detecting it after a resolve/re-break.
+  applyChecks(pr, 'f'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'success' }]);
+  applyChecks(pr, 'f'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  mine = json(`select public.claim_pending_nudges(10, 48)`, { claims: w.claimsA })
+    .pending.find((row) => row.prEntityId === pr);
+  assert.ok(mine, 'the re-break is a new queued transition');
+
+  const again = json(
+    `select public.post_session_nudge(${uuid(mine.pendingId)}, 'sig-dup', 'body one', null, 'cmid-dup-2')`,
+    { claims: w.claimsA },
+  );
+  assert.equal(again.posted, false);
+  assert.equal(again.reason, 'duplicate', 'identical content is not said twice');
+});
+
+test('BLOCKING — a transition detected with NO live session survives to be told later', () => {
+  // This is the integrator rig's shape, and the reason the outbox exists: the
+  // old code suppressed the nudge and the fact was already stored, so nothing
+  // ever re-announced it.
+  const session = spawnSession('lane-a-no-addressee');
+  const pr = linkPrOwnedBy(603, session, '1'.repeat(40));
+  ok(`select public.work_session_transition(${uuid(session)}, 'exited', 0)`, { claims: w.claimsA });
+
+  applyChecks(pr, '1'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  assert.equal(pendingFor(pr).length, 1, 'detected with nobody to tell');
+
+  // Nobody live ⇒ not handed out, and CRUCIALLY still pending.
+  const none = json(`select public.claim_pending_nudges(10, 48)`, { claims: w.claimsA })
+    .pending.filter((row) => row.prEntityId === pr);
+  assert.deepEqual(none, [], 'no addressee means no delivery');
+  assert.equal(pendingFor(pr)[0].status, 'pending', 'and the transition is NOT consumed');
+
+  // A NEW session picks the lane back up. Note it cannot inherit the commit —
+  // 082 gives a commit exactly one birth session, deliberately — so ownership
+  // arrives by the branch route (081 §A6): the session is working in a worktree
+  // checked out on this PR's head branch. That is what resuming a lane looks
+  // like in production.
+  const revived = spawnSession('lane-a-revived', { keepPrevious: true });
+  ok(
+    `select public.apply_pull_request_facts(${uuid(pr)}, null, null, null, null, 'feat/pr-603', 'main', null)`,
+    { claims: w.claimsA },
+  );
+  const worktree = scalar(
+    `select internal.create_envelope(${uuid(w.spaceA)}, 'worktree', ${uuid(w.memberA)}, null, null)`,
+    { url: OWNER_URL },
+  );
+  ok(
+    `insert into public.worktrees(entity_id, project_id, path, branch, base_ref, base_commit_oid)
+     values (${uuid(worktree)}, ${uuid(w.projectId)}, '/tmp/tm8-lane-a-603', 'feat/pr-603', 'main', ${literal('9'.repeat(40))})`,
+    { url: OWNER_URL },
+  );
+  ok(`select public.link_session_worktree(${uuid(revived)}, ${uuid(worktree)})`, {
+    claims: w.claimsA,
+  });
+  const now = json(`select public.claim_pending_nudges(10, 48)`, { claims: w.claimsA })
+    .pending.filter((row) => row.prEntityId === pr);
+  assert.equal(now.length, 1, 'the transition is told when an addressee appears');
+  assert.equal(now[0].owningSessionId, revived);
+});
+
+test('a queued nudge is retired when the head moves past it', () => {
+  const session = spawnSession('lane-a-stale-head');
+  const pr = linkPrOwnedBy(604, session, '2'.repeat(40));
+  applyChecks(pr, '2'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  assert.equal(pendingFor(pr)[0].status, 'pending');
+
+  // The agent pushed a fix. The old red check no longer describes the code, so
+  // announcing it now would send them to fix a build that no longer exists.
+  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, null, ${literal('3'.repeat(40))})`, {
+    claims: w.claimsA,
+  });
+  json(`select public.retire_stale_pending_nudges(48)`, { claims: w.claimsA });
+  const row = pendingFor(pr).find((r) => r.head_sha === '2'.repeat(40));
+  assert.equal(row.status, 'retired');
+  assert.equal(row.retire_reason, 'head_moved');
+});
+
+test('a merged pull request retires everything queued for it', () => {
+  const session = spawnSession('lane-a-settled');
+  const pr = linkPrOwnedBy(605, session, '4'.repeat(40));
+  applyChecks(pr, '4'.repeat(40), [{ name: 'build', status: 'completed', conclusion: 'failure' }]);
+  ok(`select public.apply_pull_request_facts(${uuid(pr)}, null, 'merged')`, { claims: w.claimsA });
+  json(`select public.retire_stale_pending_nudges(48)`, { claims: w.claimsA });
+  assert.equal(pendingFor(pr)[0].retire_reason, 'pr_settled');
+});
+
+test('a conflict transition is queued by the fact door itself', () => {
+  const session = spawnSession('lane-a-conflict-queue');
+  const pr = linkPrOwnedBy(606, session, '5'.repeat(40));
+  ok(
+    `select public.apply_pull_request_facts(${uuid(pr)}, null, null, null, null, 'feat/x', 'main', 'clean')`,
+    { claims: w.claimsA },
+  );
+  assert.deepEqual(pendingFor(pr).filter((r) => r.loop_kind === 'merge_conflict'), []);
+
+  ok(
+    `select public.apply_pull_request_facts(${uuid(pr)}, null, null, null, null, null, null, 'dirty')`,
+    { claims: w.claimsA },
+  );
+  const conflict = pendingFor(pr).filter((r) => r.loop_kind === 'merge_conflict');
+  assert.equal(conflict.length, 1, 'clean -> dirty is a queued transition');
+
+  // Staying dirty is not a second transition.
+  ok(
+    `select public.apply_pull_request_facts(${uuid(pr)}, null, null, null, null, null, null, 'dirty')`,
+    { claims: w.claimsA },
+  );
+  assert.equal(pendingFor(pr).filter((r) => r.loop_kind === 'merge_conflict').length, 1);
 });

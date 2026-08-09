@@ -40,6 +40,11 @@ import { Scheduler } from './scheduler/scheduler.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
 import { createForgeWatcherJob } from './tracking/loops.js';
+import {
+  dispatchSessionMessages,
+  type DispatchableRoute,
+  type MessageDeliveryPort,
+} from './facade/services/w2/message-dispatch.js';
 import { TOKEN_PREFIX } from './identity/crypto.js';
 import { resolveBearerIdentity } from './identity/pg-auth.js';
 import {
@@ -674,6 +679,31 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
             requestId: 'forge-watcher',
           };
         },
+        // The same delivery machinery the `messages.post` request path uses, so
+        // a nudge reaches an agent's terminal by exactly the route a human's
+        // message does. Absent when there is no execution runtime: the nudge is
+        // still stored, it is simply never injected — the honest degraded mode,
+        // and the same one `registerFacadeHandlers` takes above.
+        ...(delivery
+          ? {
+              dispatch: async ({ routes, workSessionId }: {
+                routes: unknown;
+                workSessionId: string;
+              }) => {
+                await dispatchSessionMessages({
+                  routes: Array.isArray(routes) ? (routes as DispatchableRoute[]) : [],
+                  parentsById: new Map(),
+                  requestId: `forge-watcher:${workSessionId}`,
+                  // The watcher is not a session, so there is no authoring
+                  // session and attribution is `recorded_only` — the same value
+                  // 019 derives for any writer that is not an agent.
+                  sourceWorkSessionId: null,
+                  senderAttribution: 'recorded_only',
+                  delivery: delivery.messageDelivery as unknown as MessageDeliveryPort,
+                });
+              },
+            }
+          : {}),
       }),
     );
     scheduler.start();
