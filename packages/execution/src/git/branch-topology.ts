@@ -186,11 +186,12 @@ export async function readBranchTopology(
     const { ahead, behind } = isDefault
       ? { ahead: 0, behind: 0 }
       : await aheadBehind(run, workingDir, defaultBranch, name);
-    const at = new Date(date);
+    const raw = date ?? '';
+    const at = new Date(raw);
     branches.push({
       name,
       head: head ?? '',
-      lastCommitAt: Number.isNaN(at.getTime()) ? date : at.toISOString(),
+      lastCommitAt: Number.isNaN(at.getTime()) ? raw : at.toISOString(),
       subject: rest.join(FS),
       upstream: upstream ? upstream : null,
       ahead,
