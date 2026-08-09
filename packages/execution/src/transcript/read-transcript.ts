@@ -332,11 +332,35 @@ function extractCodexEntries(lines: unknown[], maxChars: number): SessionTranscr
 
 // ── stats ───────────────────────────────────────────────────────────────────
 
-function collectStats(lines: unknown[], codex: boolean, partial: boolean): SessionTranscriptStats {
+/**
+ * `entries` is the FULL extraction for the window, before the caller's `last`
+ * slice — it is what defines a "turn" here.
+ *
+ * `userMessages` and `assistantMessages` count SPEECH, not JSONL records, and
+ * they mean the same thing in both dialects. A record count cannot be used: in
+ * claude's dialect a tool RESULT arrives as a `type:'user'` record and a tool
+ * CALL as a `type:'assistant'` record with no text block, so counting records
+ * reported 32 user / 52 assistant on a real transcript whose window held 2
+ * human turns and 12 prose replies — and those numbers render directly above
+ * the entry list they claim to describe. Codex's own tool traffic is
+ * `function_call` / `function_call_output`, which are not messages, so a record
+ * count also made one field mean two different quantities across the two
+ * dialects this reader exists to normalise.
+ *
+ * Deriving them from `entries` makes the invariant structural rather than
+ * remembered: userMessages + assistantMessages === entries.length for the
+ * window, always, in both dialects.
+ */
+function collectStats(
+  lines: unknown[],
+  entries: SessionTranscriptEntry[],
+  codex: boolean,
+  partial: boolean,
+): SessionTranscriptStats {
   const tools = new Map<string, number>();
   const models: string[] = [];
-  let userMessages = 0;
-  let assistantMessages = 0;
+  const userMessages = entries.filter((e) => e.source === 'user').length;
+  const assistantMessages = entries.length - userMessages;
   let toolCalls = 0;
   let inputTokens: number | null = null;
   let outputTokens: number | null = null;
@@ -357,9 +381,6 @@ function collectStats(lines: unknown[], codex: boolean, partial: boolean): Sessi
 
     if (codex) {
       if (isCodexToolCall(rec)) addTool(codexToolName(rec));
-      const message = getCodexMessage(rec);
-      if (message?.role === 'user') userMessages += 1;
-      else if (message?.role === 'assistant') assistantMessages += 1;
       const payload = asRecord(rec.payload);
       // Codex reports usage as a RUNNING TOTAL per token_count event, so the
       // newest wins — summing them would multiply-count the whole conversation.
@@ -379,9 +400,7 @@ function collectStats(lines: unknown[], codex: boolean, partial: boolean): Sessi
 
     // Claude
     const message = asRecord(rec.message);
-    if (rec.type === 'user') userMessages += 1;
     if (rec.type === 'assistant') {
-      assistantMessages += 1;
       // `<synthetic>` is claude's marker for a locally-fabricated assistant turn
       // (interrupts, "no response requested"), not a model anyone chose.
       // Measured on a live transcript: it lands in `models` beside the real id
@@ -660,7 +679,7 @@ export async function readSessionTranscript(
     unavailableReason: null,
     agentTool,
     entries: last > 0 ? all.slice(-last) : all,
-    stats: collectStats(tail.lines, codex, tail.partial),
+    stats: collectStats(tail.lines, all, codex, tail.partial),
     stuck: detectStuck(tail.lines, codex, now),
     lastActivityAt: iso(lastActivity),
     malformed: tail.malformed,

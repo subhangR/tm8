@@ -325,7 +325,7 @@ function renderTranscript(page: SessionTranscriptPage): string {
   if (s.partial) {
     // The counts describe the WINDOW, not the session. Saying so is the
     // difference between a statistic and a wrong statistic.
-    lines.push('(tail only — these counts cover the returned window, not the whole session)');
+    lines.push('(tail only — these counts cover the part of the transcript that was read, not the whole session)');
   }
   if (page.malformed > 0) {
     lines.push(`${String(page.malformed)} unreadable records were skipped`);

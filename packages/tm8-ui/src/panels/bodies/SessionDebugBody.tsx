@@ -488,6 +488,9 @@ function TranscriptSection({ state }: { state: TranscriptState }) {
         {s === null ? null : (
           <>
             <div className="pn-debug__stats">
+              {/* Turns spoken, not records written: a tool result is a `user`
+                  record in claude's JSONL and is not a turn anybody took, so
+                  these are the same turns the list below is drawn from. */}
               <Stat label="Turns by agent" value={String(s.assistantMessages)} />
               <Stat label="Turns by user" value={String(s.userMessages)} />
               <Stat label="Tool calls" value={String(s.toolCalls)} />
@@ -502,7 +505,7 @@ function TranscriptSection({ state }: { state: TranscriptState }) {
             </div>
             <p className="pn-debug__boundary" data-testid="session-debug-transcript-boundary">
               {s.partial
-                ? 'These counts describe only the newest turns shown below, not the whole session — the transcript is read as a tail.'
+                ? 'These counts describe only the newest part of the transcript that was read, not the whole session — the transcript is read as a tail.'
                 : 'The whole transcript fit in one read, so these counts cover the entire session.'}
               {' '}Tool arguments and tool output are never returned — only that a tool ran, and its name.
             </p>

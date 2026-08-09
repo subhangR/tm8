@@ -1901,8 +1901,21 @@ export interface SessionTranscriptEntry {
 export interface SessionTranscriptStats {
   /** False only when the whole file fit inside the read budget. */
   partial: boolean;
+  /**
+   * SPEECH turns in the parsed window, counted on the same rule in both
+   * dialects: exactly the `entries` this window produced, before the caller's
+   * `last` slice. So `userMessages + assistantMessages` is the number of turns
+   * the window held, and never disagrees with the list rendered beside it.
+   *
+   * NOT a count of native records. A claude tool result is a `type:'user'`
+   * record and a claude tool call is a `type:'assistant'` record with no text
+   * block; counting records reported 32/52 for a window holding 2 human turns
+   * and 12 prose replies, and meant something different again on the codex
+   * side, where tool traffic is `function_call` rather than a message.
+   */
   userMessages: number;
   assistantMessages: number;
+  /** Tool invocations in the window. These are NOT turns — see above. */
   toolCalls: number;
   /**
    * Provider-reported usage summed over the parsed window, when the transcript

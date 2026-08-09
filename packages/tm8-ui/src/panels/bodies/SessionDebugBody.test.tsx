@@ -321,7 +321,9 @@ describe('the agent transcript section', () => {
   it('says the counts cover only the window when the read was partial', async () => {
     render(<SessionDebugBody seam={seamWith(page())} sessionId={SESSION} live={false} />);
     const note = await screen.findByTestId('session-debug-transcript-boundary');
-    expect(note.textContent).toMatch(/only the newest turns shown below, not the whole session/i);
+    expect(note.textContent).toMatch(
+      /only the newest part of the transcript that was read, not the whole session/i,
+    );
     // …and states that tool bodies are structurally absent, so their absence
     // cannot read as a display choice someone could ask to have turned on.
     expect(note.textContent).toMatch(/tool arguments and tool output are never returned/i);
