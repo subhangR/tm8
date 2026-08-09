@@ -102,6 +102,23 @@ export interface FacadeServerOptions {
    * its honest health is the 501s it serves.
    */
   readonly healthProbe?: () => Promise<void>;
+  /**
+   * Background-job observability. Late-bound because the scheduler starts
+   * after the server; absent (or returning undefined) simply omits the field.
+   */
+  readonly jobsStatus?: () => {
+    running: boolean;
+    jobs: ReadonlyArray<{
+      name: string;
+      state: string;
+      lastRunAt: string | null;
+      lastError: string | null;
+      runs: number;
+      failures: number;
+      overruns: number;
+      nextRunAt: string | null;
+    }>;
+  } | undefined;
 }
 
 export interface FacadeServer {
@@ -203,6 +220,10 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
             dbOk = false;
           }
         }
+        // Background jobs ride along so `doctor` and an operator's curl can
+        // see whether the sweeps actually run — a scheduler whose only
+        // observable surface is a boot-time console line is not observable.
+        const jobs = opts.jobsStatus?.();
         sendRaw(res, dbOk === false ? 503 : 200, requestId, {
           ok: dbOk !== false,
           server: 'tm8-server',
@@ -210,6 +231,18 @@ export function createFacadeServer(opts: FacadeServerOptions): FacadeServer {
           operations: router.mounted().length,
           implemented: registry.size,
           ...(dbOk === undefined ? {} : { db: dbOk ? 'ok' : 'unavailable' }),
+          ...(jobs === undefined ? {} : {
+            jobs: jobs.jobs.map((job) => ({
+              name: job.name,
+              state: job.state,
+              lastRunAt: job.lastRunAt,
+              lastError: job.lastError,
+              runs: job.runs,
+              failures: job.failures,
+              overruns: job.overruns,
+              nextRunAt: job.nextRunAt,
+            })),
+          }),
         });
         return;
       }
@@ -351,6 +384,26 @@ function writeResult(res: ServerResponse, requestId: string, result: HandlerResu
         'x-tm8-request-id': requestId,
       });
       res.end(result.body);
+      return;
+    }
+    if (result.kind === 'raw-stream') {
+      res.writeHead(result.status, {
+        ...BASE_SECURITY_HEADERS,
+        ...result.headers,
+        'x-tm8-request-id': requestId,
+      });
+      const { stream } = result;
+      // Headers are already on the wire, so a mid-stream read failure cannot
+      // become a JSON error envelope — the honest move is to cut the
+      // connection so the client sees a short body, never a corrupt 200.
+      stream.on('error', () => {
+        res.destroy();
+      });
+      // A departed client must not leave the source stream (and its fd) open.
+      res.on('close', () => {
+        stream.destroy?.();
+      });
+      stream.pipe(res);
       return;
     }
     sendJson(res, result.status ?? 200, requestId, result.data, result.headers);
