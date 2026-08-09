@@ -1869,7 +1869,7 @@ export interface ProjectFileContent {
 //
 // THE SECOND KIND OF FILE ROOT, AND NOT AN ALTERNATIVE TO THE FIRST. A LINKED
 // PROJECT (`projects.files.*` above) is a LIVE directory on the node, read
-// through a filesystem jail. A SPACE FOLDER is an IMMUTABLE SNAPSHOT the user
+// through a filesystem jail. A SPACE FOLDER is a STORED SNAPSHOT the user
 // uploaded and named; it has no directory anywhere. The two answer different
 // questions and a UI must never present them as one list.
 //
@@ -1905,6 +1905,15 @@ export interface SpaceFolderCreateInput extends CommandContext {
    * case- and whitespace-insensitively, so "Docs" and "docs " collide.
    */
   name: string;
+}
+
+/** POST /v2/space-folders/:folderId/uploads */
+export interface SpaceFolderUploadInitInput extends CommandContext {
+  clientMutationId: string;
+  /** Size of the ZIP archive sent to the raw upload endpoint. */
+  sizeBytes: number;
+  /** SHA-256 of the complete ZIP archive, lowercase hexadecimal. */
+  checksumSha256: string;
 }
 
 /** A directory inside an uploaded folder. Carries no bytes. */
@@ -2019,6 +2028,7 @@ export interface SpaceFolderSkippedMember {
  * 8 MiB JSON ceiling. This body names the slot those bytes were staged into.
  */
 export interface SpaceFolderIngestInput extends CommandContext {
+  clientMutationId: string;
   /** The `files.uploadInit` slot the archive was PUT into. */
   uploadId: string;
   /**

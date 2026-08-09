@@ -202,6 +202,40 @@ describe('ops: canonical file upload lifecycle', () => {
   });
 });
 
+describe('ops: uploaded Space folders', () => {
+  it('binds all six lifecycle operations through the catalog', async () => {
+    const { ops, f } = harness({});
+    await ops.spaceFolders('space-1');
+    await ops.createSpaceFolder('space-1', 'Design docs');
+    await ops.initSpaceFolderUpload('folder-1', 42, 'a'.repeat(64));
+    await ops.ingestSpaceFolder('folder-1', '00000000-0000-4000-8000-000000000001', 'docs');
+    await ops.browseSpaceFolder('folder-1', 'docs');
+    await ops.readSpaceFolder('folder-1', 'docs/readme.md');
+
+    expect(f.calls.map(({ method, url }) => [method, url])).toEqual([
+      ['GET', '/v2/spaces/space-1/folders'],
+      ['POST', '/v2/spaces/space-1/folders'],
+      ['POST', '/v2/space-folders/folder-1/uploads'],
+      ['POST', '/v2/space-folders/folder-1/ingest'],
+      ['GET', '/v2/space-folders/folder-1/entries?path=docs'],
+      ['GET', '/v2/space-folders/folder-1/content?path=docs%2Freadme.md'],
+    ]);
+    expect(f.calls[1]?.body).toEqual({
+      name: 'Design docs', clientMutationId: 'space-folder-create_fixed',
+    });
+    expect(f.calls[2]?.body).toEqual({
+      sizeBytes: 42,
+      checksumSha256: 'a'.repeat(64),
+      clientMutationId: 'space-folder-upload_fixed',
+    });
+    expect(f.calls[3]?.body).toEqual({
+      uploadId: '00000000-0000-4000-8000-000000000001',
+      destPath: 'docs',
+      clientMutationId: 'space-folder-ingest_fixed',
+    });
+  });
+});
+
 describe('ops: graph hydration', () => {
   it('posts the complete graph lens through the catalog operation', async () => {
     const result = { nodes: [], edges: [], clusters: [] };

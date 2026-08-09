@@ -203,6 +203,46 @@ describe('seam-real: commands that adapt the server shape', () => {
   });
 });
 
+describe('seam-real: Space-folder upload composition', () => {
+  it('checksums, grants, PUTs, and ingests one archive behind the seam method', async () => {
+    const folder = {
+      id: 'folder-1', spaceId: 'space-1', name: 'Docs', entryCount: 1,
+      totalSizeBytes: 3, createdBy: 'member-1', createdAt: '2026-08-09T00:00:00.000Z',
+      updatedAt: '2026-08-09T00:00:00.000Z',
+    };
+    const result = { folder, added: 1, replaced: 0, directories: 0, skipped: [] };
+    const { seam, f } = mk((url, method) => {
+      if (method === 'POST' && url.endsWith('/uploads')) {
+        return ok({
+          uploadId: '00000000-0000-4000-8000-000000000001',
+          uploadUrl: '/v2/files/uploads/00000000-0000-4000-8000-000000000001/content',
+          token: 'grant', expiresAt: '2026-08-09T00:15:00.000Z', maxSizeBytes: 1024,
+        });
+      }
+      if (method === 'PUT') return { status: 204, raw: '' };
+      if (method === 'POST' && url.endsWith('/ingest')) return ok(result);
+      return ok({});
+    }, { newClientMutationId: (prefix) => `${prefix}_fixed` });
+    const progress: Array<[number, number]> = [];
+
+    await expect(seam.spaceFolders?.upload(
+      'folder-1', '', new Blob(['zip']),
+      { onProgress: (sent, total) => progress.push([sent, total]) },
+    )).resolves.toEqual(result);
+
+    expect(f.calls.map(({ method, url }) => [method, url])).toEqual([
+      ['POST', '/v2/space-folders/folder-1/uploads'],
+      ['PUT', '/v2/files/uploads/00000000-0000-4000-8000-000000000001/content'],
+      ['POST', '/v2/space-folders/folder-1/ingest'],
+    ]);
+    expect(f.calls[0]?.body).toMatchObject({
+      sizeBytes: 3,
+      checksumSha256: '4a70fe9aa6436e02c2dea340fbd1e352e4ef2d8ce6ca52ad25d4b95471fc8bf2',
+    });
+    expect(progress).toEqual([[0, 3], [3, 3]]);
+  });
+});
+
 describe('seam-real: wsUrl derivation refuses to guess', () => {
   it('derives ws:// and wss:// from an absolute base, using the catalog path', () => {
     expect(deriveWsUrl('http://127.0.0.1:4610')).toBe('ws://127.0.0.1:4610/v2/ws');
@@ -292,6 +332,9 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     // Locked here so the file group cannot grow a verb in silence.
     expect(Object.keys(seam.files).sort()).toEqual([
       'abort', 'complete', 'downloadHref', 'putBytes', 'uploadInit',
+    ]);
+    expect(Object.keys(seam.spaceFolders ?? {}).sort()).toEqual([
+      'browse', 'create', 'list', 'read', 'upload',
     ]);
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',

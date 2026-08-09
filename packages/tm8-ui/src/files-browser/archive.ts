@@ -59,6 +59,7 @@ export const SKIP_REASON_TEXT: Record<string, string> = {
   'name-too-long': 'the name is longer than an archive entry can record (65,535 bytes)',
   'too-deep': 'the tree is nested deeper than 32 levels here, which is a link cycle rather than a folder',
   unreadable: 'the browser would not hand this entry over',
+  'duplicate-name': 'another selected file has the same name, so this one was refused instead of replacing it silently',
 };
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

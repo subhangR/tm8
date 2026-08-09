@@ -4,7 +4,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Seam } from '../data/seam';
+import { FolderUpload } from './FolderUpload';
 import { FilesScreen } from './FilesScreen';
+import { filesFromInput } from './picked-folder';
+import type { SpaceFoldersPort } from './space-folders';
 
 /**
  * FILES-DESIGN §8. These are RENDER claims, which jsdom can settle. Layout
@@ -318,6 +321,66 @@ describe('FilesScreen — two kinds of root, never one anonymous tree', () => {
     await waitFor(() => {
       expect(upload.textContent).toContain('Folders upload into a Space folder, not into a project');
     });
+  });
+});
+
+describe('Files upload — standalone local files', () => {
+  function fileList(...files: File[]): FileList {
+    return {
+      length: files.length,
+      item: (index: number) => files[index] ?? null,
+      ...files,
+    } as unknown as FileList;
+  }
+
+  function localFile(name: string, text: string): File {
+    const file = new File([text], name, { type: 'text/plain' });
+    Object.defineProperty(file, 'arrayBuffer', {
+      value: async () => new TextEncoder().encode(text).buffer,
+    });
+    return file;
+  }
+
+  it('turns a flat file selection into root-level archive members', () => {
+    const picked = filesFromInput(fileList(localFile('notes.txt', 'hello')));
+    expect(picked).toMatchObject({
+      rootName: 'Uploaded files',
+      source: 'files',
+      directories: [],
+      skipped: [],
+    });
+    expect(picked?.files.map((entry) => entry.path)).toEqual(['notes.txt']);
+  });
+
+  it('creates a Space folder and uploads selected files through the same archive pipeline', async () => {
+    const folder = {
+      id: 'sf-new', spaceId: 'sp-1', name: 'Uploaded files', entryCount: 1,
+      totalSizeBytes: 5, createdBy: null, createdAt: null, updatedAt: null,
+    };
+    const port: SpaceFoldersPort = {
+      list: vi.fn(async () => []),
+      create: vi.fn(async () => folder),
+      upload: vi.fn(async () => ({
+        folder, added: 1, replaced: 0, directories: 0, skipped: [],
+      })),
+      browse: vi.fn(),
+      read: vi.fn(),
+    };
+    render(<FolderUpload port={port} spaceId="sp-1" destination={null} />);
+
+    fireEvent.change(screen.getByTestId('files-pick-input'), {
+      target: { files: fileList(localFile('notes.txt', 'hello')) },
+    });
+
+    await waitFor(() => expect(port.create).toHaveBeenCalledWith('sp-1', 'Uploaded files'));
+    await waitFor(() => expect(port.upload).toHaveBeenCalledWith(
+      'sf-new',
+      '',
+      expect.any(Blob),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    ));
+    expect((await screen.findByTestId('upload-files-flat')).textContent)
+      .toContain('no local directory structure');
   });
 });
 

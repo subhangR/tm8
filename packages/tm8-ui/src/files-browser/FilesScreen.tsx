@@ -29,7 +29,7 @@ import './files-browser.css';
  *
  * THE CENTRAL UX DEFECT THIS SCREEN IS SHAPED TO AVOID is drawing its two root
  * kinds as one anonymous tree. A LINKED PROJECT is a live directory on the node
- * that changes under you; a SPACE FOLDER is an immutable snapshot the user
+ * that changes under you; a SPACE FOLDER is a stored snapshot the user
  * uploaded. Their staleness runs in opposite directions and so does the remedy
  * when something looks wrong — re-read one, re-upload the other. So the kind is
  * STATED, in the picker's group labels and again in a banner over the panes.
@@ -308,7 +308,13 @@ export function FilesScreen({ seam, projects, spaceId }: FilesScreenProps) {
       ) : null}
 
       {folderPort ? (
-        <FolderUpload port={folderPort} destination={destination} onUploaded={loadFolders} />
+        <FolderUpload
+          port={folderPort}
+          spaceId={spaceId}
+          destination={destination}
+          projectRootSelected={activeRoot?.kind === 'project'}
+          onUploaded={loadFolders}
+        />
       ) : (
         <div className="fb-upload fb-upload-off" data-testid="files-space-folders-off">
           <DisabledAction reason={SPACE_FOLDERS_UNAVAILABLE} label="Space folders">

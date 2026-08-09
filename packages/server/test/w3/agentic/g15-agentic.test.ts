@@ -31,7 +31,7 @@ import {
 // already gone stale on the tree (several amendments landed without moving
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
-const CATALOG_DIGEST = 'sha256:79ba655ef4e5f5395d5366d4604df07835d469e09688095cfe78bdfd40208b90';
+const CATALOG_DIGEST = 'sha256:4cc9e28bf4601cc2918b6c7d0fb6fd3290f78ea2538d447e46d6c1c3a4c8f764';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -103,7 +103,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // The 126 literal was ALREADY red at 127 when this lane arrived (the
     // onboarding read landed without moving it); 128 adds execution.transcript.
     // 129 adds projects.branches.list.
-    expect(root.catalog.total).toBe(138);
+    expect(root.catalog.total).toBe(144);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

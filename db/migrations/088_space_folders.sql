@@ -6,7 +6,7 @@
 --   1. A LINKED PROJECT is a LIVE directory on the node. It is read through
 --      `projects.files.list` / `projects.files.read`, which jail every path
 --      inside the project's working directory. Nothing here touches that.
---   2. A SPACE FOLDER is an IMMUTABLE SNAPSHOT the user uploaded. It has no
+--   2. A SPACE FOLDER is a STORED SNAPSHOT the user uploaded. It has no
 --      directory on the node at all. That is what this file builds.
 --
 -- WHY THE SNAPSHOT IS NOT EXPANDED ONTO THE FILESYSTEM.
@@ -233,15 +233,18 @@ begin
   end if;
 
   begin
-    insert into public.space_folders(space_id, name, created_by)
-    values (p_space_id, btrim(p_name), actor)
-    returning * into folder;
+  insert into public.space_folders(space_id, name, created_by)
+  values (p_space_id, btrim(p_name), actor)
+  returning * into folder;
   exception when unique_violation then
     -- A NAMED conflict, never a silent reuse of somebody else's folder: two
     -- trees under one name would be indistinguishable to every later reader.
     raise exception 'a folder with that name already exists in this Space'
       using errcode = '23505', detail = 'duplicate_folder_name';
   end;
+
+  insert into public.space_folder_dirs(folder_id, path, parent_path)
+  values (folder.id, '', null);
 
   return internal.ledger_record(p_client_mutation_id, 'spaceFolders.create',
     jsonb_build_object(
@@ -282,8 +285,10 @@ grant execute on function public.create_space_folder(uuid, text, uuid, text) to 
 -- -----------------------------------------------------------------------------
 create or replace function public.ingest_space_folder(
   p_folder_id uuid,
+  p_upload_id uuid,
   p_dirs jsonb,
   p_entries jsonb,
+  p_skipped jsonb,
   p_actor_id uuid default null,
   p_client_mutation_id text default null
 ) returns jsonb language plpgsql security definer
@@ -306,6 +311,7 @@ begin
   if replay is not null then
     perform internal.require_replay_principal(p_client_mutation_id);
     perform internal.require_replay_subject(replay ->> 'folderId', p_folder_id::text, 'entity');
+    perform internal.require_replay_subject(replay ->> 'uploadId', p_upload_id::text, 'upload');
     return replay;
   end if;
 
@@ -385,14 +391,70 @@ begin
   return internal.ledger_record(p_client_mutation_id, 'spaceFolders.ingest',
     jsonb_build_object(
       'folderId', p_folder_id,
+      'uploadId', p_upload_id,
       'added', added,
       'replaced', replaced,
+      'directories', jsonb_array_length(coalesce(p_dirs, '[]'::jsonb)),
+      'skipped', coalesce(p_skipped, '[]'::jsonb),
       'entryCount', resolved_count,
       'totalSizeBytes', resolved_total));
 end
 $$;
 
-revoke all on function public.ingest_space_folder(uuid, jsonb, jsonb, uuid, text) from public;
-grant execute on function public.ingest_space_folder(uuid, jsonb, jsonb, uuid, text) to tm8_app;
+revoke all on function public.ingest_space_folder(uuid, uuid, jsonb, jsonb, jsonb, uuid, text) from public;
+grant execute on function public.ingest_space_folder(uuid, uuid, jsonb, jsonb, jsonb, uuid, text) to tm8_app;
+
+-- A retry may arrive after the consumed archive slot has been removed. Expose
+-- only the caller-bound ledger result so the service can return that replay
+-- without requiring the raw bytes to still exist.
+create or replace function public.lookup_space_folder_ingest(
+  p_folder_id uuid,
+  p_upload_id uuid,
+  p_client_mutation_id text
+) returns jsonb language plpgsql security definer
+set search_path = public, internal, pg_temp as $$
+declare replay jsonb;
+begin
+  perform internal.require_replay_principal(p_client_mutation_id);
+  replay := internal.ledger_replay(p_client_mutation_id, 'spaceFolders.ingest');
+  if replay is null then return null; end if;
+  perform internal.require_replay_subject(replay ->> 'folderId', p_folder_id::text, 'folder');
+  perform internal.require_replay_subject(replay ->> 'uploadId', p_upload_id::text, 'upload');
+  return replay;
+end
+$$;
+
+revoke all on function public.lookup_space_folder_ingest(uuid, uuid, text) from public;
+grant execute on function public.lookup_space_folder_ingest(uuid, uuid, text) to tm8_app;
+
+-- Reference accounting for the shared content-addressed store. Replacing or
+-- deleting the last entry marks a blob eligible for the grace-period sweep;
+-- inserting/reusing a blob clears the marker in the ingest/register RPCs.
+create or replace function internal.mark_stored_blob_unreferenced()
+returns trigger language plpgsql security definer
+set search_path = public, internal, pg_temp as $$
+declare candidate uuid := old.blob_id;
+begin
+  if tg_op = 'UPDATE' and old.blob_id = new.blob_id then return new; end if;
+  if not exists (select 1 from public.artifact_bundle_entries where blob_id = candidate)
+     and not exists (select 1 from public.space_folder_entries where blob_id = candidate) then
+    update public.stored_blobs
+       set unreferenced_since = coalesce(unreferenced_since, now())
+     where id = candidate;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end
+$$;
+
+create trigger artifact_bundle_entries_mark_blob_unreferenced
+after delete or update of blob_id on public.artifact_bundle_entries
+for each row execute function internal.mark_stored_blob_unreferenced();
+
+create trigger space_folder_entries_mark_blob_unreferenced
+after delete or update of blob_id on public.space_folder_entries
+for each row execute function internal.mark_stored_blob_unreferenced();
+
+revoke all on function internal.mark_stored_blob_unreferenced() from public;
 
 reset role;

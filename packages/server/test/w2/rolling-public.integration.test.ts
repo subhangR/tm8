@@ -261,6 +261,15 @@ const GIT_NET_NEW_OPERATIONS = [
   'projects.branches.list',
 ] as const;
 
+const SPACE_FOLDER_NET_NEW_OPERATIONS = [
+  'spaceFolders.list',
+  'spaceFolders.create',
+  'spaceFolders.uploadInit',
+  'spaceFolders.ingest',
+  'spaceFolders.browse',
+  'spaceFolders.read',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
@@ -268,6 +277,7 @@ const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...PROJECT_FOLDER_NET_NEW_OPERATIONS,
   ...GIT_NET_NEW_OPERATIONS,
+  ...SPACE_FOLDER_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -549,7 +559,7 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // auth.session.get is a GET and binds nothing.
     // 69 -> 70 (2026-08-09): entities.commands.gate (Tier 4 git x graph).
     // 70 -> 73: the three credentials.* command bodies are bound.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(74);
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(77);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -699,8 +709,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 136/134 -> 137/135 (2026-08-09): projects.files.read, mounted. NOTE
     // `operations` counts HTTP ROUTES, so it trails OPERATIONS.length by the
     // single WS row: 138 rows -> 137 routes.
-    expect(health).toMatchObject({ ok: true, operations: 137, implemented: 135 });
-    expect(harness.production.server.registry.size).toBe(135);
+    expect(health).toMatchObject({ ok: true, operations: 143, implemented: 141 });
+    expect(harness.production.server.registry.size).toBe(141);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -719,7 +729,7 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 126 -> 128 (2026-08-09): entities.commands.gate + projects.contention.
     // 128 -> 132: credentials.*.
     // 134 -> 135 (2026-08-09): projects.files.read.
-    expect(registered.size + residual.length).toBe(135);
+    expect(registered.size + residual.length).toBe(141);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

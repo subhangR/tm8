@@ -375,7 +375,7 @@ export interface Seam {
   /**
    * The OTHER file root: a directory tree the user UPLOADED, named by them and
    * owned by the Space. `projectFiles` above reads a LIVE directory on the
-   * node; this reads an IMMUTABLE SNAPSHOT that exists nowhere on any
+   * node; this reads a STORED SNAPSHOT that exists nowhere on any
    * filesystem. They are not alternatives and a UI must not merge them.
    *
    * Optional for the same reason `projectFiles` is: a fixture seam has no

@@ -22,12 +22,12 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {135/133/134/132}: the four credentials.* rows.
         // -> {137/135/136/134}: projects.files.list/attach.
         // -> {138/136/137/135}: projects.files.read, the viewer half.
-        total: 138,
-        v1: 136,
+        total: 144,
+        v1: 142,
         reserved: 2,
-        http: 137,
+        http: 143,
         ws: 1,
-        registerableV1Http: 135,
+        registerableV1Http: 141,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

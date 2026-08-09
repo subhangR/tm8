@@ -150,6 +150,15 @@ export function deriveWsUrl(baseUrl: string, origin?: string): string {
   return `${abs.replace(/\/$/, '')}${path}`.replace(/^http/i, 'ws');
 }
 
+async function sha256Hex(blob: Blob): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    throw new CollabError('upstream_unavailable', 'this browser cannot checksum a folder archive');
+  }
+  const digest = await subtle.digest('SHA-256', await blob.arrayBuffer());
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export function createRealSeam(options: RealSeamOptions): RealSeam {
   const baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
   const onError = options.onError ?? (() => {});
@@ -298,6 +307,30 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       ops.attentionRequests(input),
     feed: (id: EntityId, opts?: FeedOpts): Promise<EntityFeedPage> => ops.feed(id, opts),
     delivery: (messageId: EntityId): Promise<MessageDeliveryView> => ops.delivery(messageId),
+
+    spaceFolders: {
+      list: (spaceId) => ops.spaceFolders(spaceId),
+      create: (spaceId, name) => ops.createSpaceFolder(spaceId, name),
+      async upload(folderId, destPath, archive, uploadOptions) {
+        uploadOptions?.signal?.throwIfAborted();
+        const total = archive.size;
+        uploadOptions?.onProgress?.(0, total);
+        const checksum = await sha256Hex(archive);
+        uploadOptions?.signal?.throwIfAborted();
+        const grant = await ops.initSpaceFolderUpload(folderId, total, checksum);
+        try {
+          await ops.fileUploadBytes(grant, archive, uploadOptions?.signal);
+          uploadOptions?.onProgress?.(total, total);
+          uploadOptions?.signal?.throwIfAborted();
+          return await ops.ingestSpaceFolder(folderId, grant.uploadId, destPath);
+        } catch (error) {
+          await ops.fileUploadAbort(grant.uploadId, {}).catch(() => undefined);
+          throw error;
+        }
+      },
+      browse: (folderId, path) => ops.browseSpaceFolder(folderId, path),
+      read: (folderId, path) => ops.readSpaceFolder(folderId, path),
+    },
 
     files: {
       uploadInit: (input) => ops.fileUploadInit(input),

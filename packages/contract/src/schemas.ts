@@ -69,7 +69,7 @@ import type {
   CreateAttentionRequestInput, UpdateAttentionRequestInput, ResolveEntityAttentionInput,
   KindCounts, SpaceKindCounts,
   SetTeammateProfileDefaultInput, ShareProjectionEnvelope,
-  SpaceFolderCreateInput, SpaceFolderIngestInput,
+  SpaceFolderCreateInput, SpaceFolderIngestInput, SpaceFolderUploadInitInput,
   SpaceNavigation,
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
@@ -1812,6 +1812,13 @@ const spaceFolderRelativePath = z.string().max(1024).refine(
 export const SpaceFolderCreateInputSchema: z.ZodType<SpaceFolderCreateInput> = z.object({
   ...commandContextShape,
   name: z.string().trim().min(1).max(200),
+}).strict();
+
+export const SpaceFolderUploadInitInputSchema: z.ZodType<SpaceFolderUploadInitInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  sizeBytes: z.number().int().positive(),
+  checksumSha256: z.string().regex(SHA256_HEX_RE, 'must be a lowercase sha-256 hex digest'),
 }).strict();
 
 export const SpaceFolderIngestInputSchema: z.ZodType<SpaceFolderIngestInput> = z.object({

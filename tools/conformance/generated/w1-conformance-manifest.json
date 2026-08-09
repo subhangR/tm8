@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:79ba655ef4e5f5395d5366d4604df07835d469e09688095cfe78bdfd40208b90",
+  "catalogDigest": "sha256:4cc9e28bf4601cc2918b6c7d0fb6fd3290f78ea2538d447e46d6c1c3a4c8f764",
   "catalog": {
-    "total": 138,
-    "v1": 136,
+    "total": 144,
+    "v1": 142,
     "reserved": 2,
-    "http": 137,
+    "http": 143,
     "ws": 1,
-    "registerableV1Http": 135,
+    "registerableV1Http": 141,
     "methods": {
-      "GET": 53,
-      "POST": 58,
+      "GET": 56,
+      "POST": 61,
       "PATCH": 10,
       "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 56,
-      "command": 81,
+      "read": 59,
+      "command": 84,
       "stream": 1
     },
-    "uniqueNames": 138,
-    "uniqueBindings": 138
+    "uniqueNames": 144,
+    "uniqueBindings": 144
   },
   "reservedOperations": [
     "search.query",
@@ -719,6 +719,48 @@
         "source": "server-router"
       },
       {
+        "operation": "spaceFolders.list",
+        "method": "GET",
+        "path": "/v2/spaces/:spaceId/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceFolders.create",
+        "method": "POST",
+        "path": "/v2/spaces/:spaceId/folders",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceFolders.uploadInit",
+        "method": "POST",
+        "path": "/v2/space-folders/:folderId/uploads",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceFolders.ingest",
+        "method": "POST",
+        "path": "/v2/space-folders/:folderId/ingest",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceFolders.browse",
+        "method": "GET",
+        "path": "/v2/space-folders/:folderId/entries",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "spaceFolders.read",
+        "method": "GET",
+        "path": "/v2/space-folders/:folderId/content",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "files.uploadInit",
         "method": "POST",
         "path": "/v2/files/uploads",
@@ -1370,7 +1412,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 107
+    "unimplementedV1Http": 113
   },
   "schemas": {
     "additive": {
@@ -2748,6 +2790,109 @@
         "intentTags": [
           "projects",
           "files",
+          "read"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceFolders.list",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceFolders.list",
+        "intentTags": [
+          "space",
+          "folders",
+          "list"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceFolders.create",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceFolders.create",
+        "intentTags": [
+          "space",
+          "folders",
+          "create"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceFolders.uploadInit",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceFolders.uploadInit",
+        "intentTags": [
+          "space",
+          "folders",
+          "upload",
+          "init"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceFolders.ingest",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceFolders.ingest",
+        "intentTags": [
+          "space",
+          "folders",
+          "ingest"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceFolders.browse",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceFolders.browse",
+        "intentTags": [
+          "space",
+          "folders",
+          "browse"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "spaceFolders.read",
+        "noun": "file",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/spaceFolders.read",
+        "intentTags": [
+          "space",
+          "folders",
           "read"
         ],
         "inputSchemaRef": null,

@@ -191,7 +191,7 @@ export function SpaceFolderStep(props: SpaceFolderStepProps) {
       {enabled && !unavailable ? (
         <div className="space-folder__body">
           <p className="space-folder__note">
-            The folder is stored as an immutable snapshot owned by this Space. It is not a
+            The folder is stored as a snapshot owned by this Space. It is not a
             connected project folder on disk, and editing files here later will not change it.
           </p>
 

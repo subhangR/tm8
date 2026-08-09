@@ -64,6 +64,8 @@ export interface WriteUploadInput {
   readonly expectedSpaceId: string;
   readonly expectedSizeBytes: number;
   readonly expectedChecksumSha256: string;
+  /** Internal content-addressed stores may preserve a zero-byte file. */
+  readonly allowEmpty?: boolean;
 }
 
 export interface VerifiedBlob {
@@ -112,8 +114,13 @@ export class W2BlobStore {
 
   async writeUpload(input: WriteUploadInput): Promise<VerifiedBlob> {
     const expectedSize = input.expectedSizeBytes;
-    if (!Number.isSafeInteger(expectedSize) || expectedSize <= 0) {
-      throw new CollabError('invalid_input', 'declared upload size must be a positive integer');
+    if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || (!input.allowEmpty && expectedSize === 0)) {
+      throw new CollabError(
+        'invalid_input',
+        input.allowEmpty
+          ? 'declared upload size must be a non-negative integer'
+          : 'declared upload size must be a positive integer',
+      );
     }
     if (expectedSize > this.maxSizeBytes) {
       throw new CollabError('payload_too_large', 'declared upload exceeds the file size limit');

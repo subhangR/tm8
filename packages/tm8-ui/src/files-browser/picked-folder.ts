@@ -211,6 +211,38 @@ export function folderFromInput(list: FileList | null): PickedFolder | null {
   };
 }
 
+/**
+ * The FLAT-FILES button path. Unlike `folderFromInput`, a normal multi-file
+ * picker does not carry `webkitRelativePath`; every selected file therefore
+ * lands at the destination folder root under its unchanged basename. A
+ * duplicate basename is refused explicitly instead of letting archive order
+ * decide which local file wins.
+ */
+export function filesFromInput(list: FileList | null): PickedFolder | null {
+  if (!list || list.length === 0) return null;
+  const files: PickedFile[] = [];
+  const skipped: PickedFolder['skipped'] = [];
+  const names = new Set<string>();
+
+  for (let i = 0; i < list.length; i += 1) {
+    const file = list[i];
+    if (names.has(file.name)) {
+      skipped.push({ path: file.name, reason: 'duplicate-name' });
+      continue;
+    }
+    names.add(file.name);
+    files.push({ path: file.name, file });
+  }
+
+  return {
+    rootName: 'Uploaded files',
+    source: 'files',
+    files,
+    directories: [],
+    skipped,
+  };
+}
+
 export function totalBytesOf(files: readonly PickedFile[]): number {
   return files.reduce((sum, picked) => sum + picked.file.size, 0);
 }

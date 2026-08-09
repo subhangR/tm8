@@ -122,6 +122,15 @@ export const OPERATIONS = [
   // disk gets a document context on the app origin (FILES-DESIGN §4.4).
   { name: 'projects.files.read',     method: 'GET',    path: '/v2/projects/:projectId/files/content',       kind: 'read',    status: 'v1' },
 
+  // Space-owned uploaded folder snapshots. Archive bytes use a scoped raw
+  // upload grant; only validated paths and content-addressed blobs survive.
+  { name: 'spaceFolders.list',       method: 'GET',    path: '/v2/spaces/:spaceId/folders',                 kind: 'read',    status: 'v1' },
+  { name: 'spaceFolders.create',     method: 'POST',   path: '/v2/spaces/:spaceId/folders',                 kind: 'command', status: 'v1' },
+  { name: 'spaceFolders.uploadInit', method: 'POST',   path: '/v2/space-folders/:folderId/uploads',         kind: 'command', status: 'v1' },
+  { name: 'spaceFolders.ingest',     method: 'POST',   path: '/v2/space-folders/:folderId/ingest',          kind: 'command', status: 'v1' },
+  { name: 'spaceFolders.browse',     method: 'GET',    path: '/v2/space-folders/:folderId/entries',         kind: 'read',    status: 'v1' },
+  { name: 'spaceFolders.read',       method: 'GET',    path: '/v2/space-folders/:folderId/content',         kind: 'read',    status: 'v1' },
+
   // files.* blob lifecycle (AM-2 §2, 03 §6); download returns bytes, not the JSON envelope
   { name: 'files.uploadInit',        method: 'POST',   path: '/v2/files/uploads',                           kind: 'command', status: 'v1' },
   { name: 'files.uploadComplete',    method: 'POST',   path: '/v2/files/uploads/:uploadId/complete',        kind: 'command', status: 'v1' },

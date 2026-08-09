@@ -9,13 +9,22 @@ import {
   packFolder,
   type PackProgress,
 } from './archive';
-import { folderFromDataTransfer, folderFromInput, type PickedFolder } from './picked-folder';
-import { FOLDER_UPLOAD_UNAVAILABLE, UPLOAD_NEEDS_SPACE } from './reasons';
+import {
+  filesFromInput,
+  folderFromDataTransfer,
+  folderFromInput,
+  type PickedFolder,
+} from './picked-folder';
+import {
+  FOLDER_UPLOAD_UNAVAILABLE,
+  UPLOAD_INTO_PROJECT_REFUSED,
+  UPLOAD_NEEDS_SPACE,
+} from './reasons';
 import type { SpaceFoldersPort, SpaceFolderUploadResult } from './space-folders';
 import { ZipTooLargeError } from './zip';
 
 /**
- * FOLDER UPLOAD, AND PROGRESS THAT DOES NOT LIE.
+ * FILE OR FOLDER UPLOAD, AND PROGRESS THAT DOES NOT LIE.
  *
  * THE DROP BUG THIS DOES NOT REPRODUCE: `event.dataTransfer.files` is EMPTY for
  * a dropped directory, so the obvious implementation accepts the drop and does
@@ -55,7 +64,7 @@ const DIRECTORY_ATTRS = {
 
 type Stage =
   | { phase: 'idle' }
-  | { phase: 'scanning' }
+  | { phase: 'scanning'; source: PickedFolder['source'] }
   | { phase: 'packing'; progress: PackProgress }
   | { phase: 'creating'; name: string }
   | { phase: 'sending'; files: number; dirs: number; archiveBytes: number; sent: number | null }
@@ -102,7 +111,8 @@ export function FolderUpload({
   const [over, setOver] = useState(false);
   const [newName, setNewName] = useState('');
   const abort = useRef<AbortController | null>(null);
-  const input = useRef<HTMLInputElement | null>(null);
+  const folderInput = useRef<HTMLInputElement | null>(null);
+  const filesInput = useRef<HTMLInputElement | null>(null);
 
   const run = useCallback(
     async (picked: PickedFolder | null) => {
@@ -114,7 +124,7 @@ export function FolderUpload({
       const controller = new AbortController();
       abort.current = controller;
       try {
-        setStage({ phase: 'scanning' });
+        setStage({ phase: 'scanning', source: picked.source });
         const packed = await packFolder(picked, {
           signal: controller.signal,
           onProgress: (progress) => setStage({ phase: 'packing', progress }),
@@ -138,7 +148,7 @@ export function FolderUpload({
           sent: null,
         });
         /* destPath is '' — the coordinator's seam ruling, 2026-08-09: an
-           immutable Space-folder root expands at its own root and the picked
+           stored Space-folder root expands at its own root and the picked
            folder's NAME is not part of the destination. Archive members are
            already folder-relative (`picked-folder.ts` strips the root segment),
            so the tree lands where the user named it rather than one level
@@ -190,8 +200,8 @@ export function FolderUpload({
   if (!port) {
     return (
       <div className="fb-upload fb-upload-off" data-testid="folder-upload">
-        <DisabledAction reason={FOLDER_UPLOAD_UNAVAILABLE} label="Upload a folder">
-          Upload a folder
+        <DisabledAction reason={FOLDER_UPLOAD_UNAVAILABLE} label="Upload files or a folder">
+          Upload files or a folder
         </DisabledAction>
       </div>
     );
@@ -200,8 +210,8 @@ export function FolderUpload({
   if (destination === null && spaceId === undefined) {
     return (
       <div className="fb-upload fb-upload-off" data-testid="folder-upload">
-        <DisabledAction reason={UPLOAD_NEEDS_SPACE} label="Upload a folder">
-          Upload a folder
+        <DisabledAction reason={UPLOAD_NEEDS_SPACE} label="Upload files or a folder">
+          Upload files or a folder
         </DisabledAction>
       </div>
     );
@@ -222,20 +232,21 @@ export function FolderUpload({
       >
         {destination ? (
           <span className="fb-drop-text" data-testid="folder-dest-existing">
-            Drop a folder here to add it to the Space folder{' '}
-            <strong>{destination.name}</strong>
+            Drop a folder here, or choose local files, to add them to the Space
+            folder <strong>{destination.name}</strong>
           </span>
         ) : (
           <>
             <span className="fb-drop-text" data-testid="folder-dest-new">
-              Drop a folder here to upload it as a NEW Space folder — a snapshot
-              this Space owns.
+              Drop a folder here, or choose local files, to upload them as a NEW
+              Space folder — a snapshot this Space owns.
               {projectRootSelected ? (
                 /* Stated where the user would otherwise assume the drop lands in
                    the project they are looking at. */
                 <span data-testid="folder-not-into-project">
-                  {' '}It is not written into the linked project you are browsing;
-                  that folder is live disk the agents are using.
+                  {' '}{UPLOAD_INTO_PROJECT_REFUSED.cause}. It is not written
+                  into the linked project you are browsing; that folder is live
+                  disk the agents are using.
                 </span>
               ) : null}
             </span>
@@ -252,7 +263,7 @@ export function FolderUpload({
           </>
         )}
         <input
-          ref={input}
+          ref={folderInput}
           type="file"
           multiple
           className="fb-drop-input"
@@ -264,14 +275,35 @@ export function FolderUpload({
             event.target.value = '';
           }}
         />
+        <input
+          ref={filesInput}
+          type="file"
+          multiple
+          className="fb-drop-input"
+          data-testid="files-pick-input"
+          onChange={(event) => {
+            void run(filesFromInput(event.target.files));
+            // Re-picking the same files must fire `change` again.
+            event.target.value = '';
+          }}
+        />
         <button
           type="button"
           className="fb-btn"
           data-testid="folder-pick-button"
           disabled={busy}
-          onClick={() => input.current?.click()}
+          onClick={() => folderInput.current?.click()}
         >
           Choose a folder…
+        </button>
+        <button
+          type="button"
+          className="fb-btn"
+          data-testid="files-pick-button"
+          disabled={busy}
+          onClick={() => filesInput.current?.click()}
+        >
+          Choose files…
         </button>
         {busy ? (
           <button
@@ -298,7 +330,9 @@ function UploadStage({ stage }: { stage: Stage }) {
     case 'scanning':
       return (
         <p className="fb-note" data-testid="upload-progress" aria-live="polite">
-          Reading the folder off the disk…
+          {stage.source === 'files'
+            ? 'Reading the selected files off the disk…'
+            : 'Reading the folder off the disk…'}
         </p>
       );
 
@@ -347,7 +381,8 @@ function UploadStage({ stage }: { stage: Stage }) {
       return (
         <p className="fb-note fb-note-bad" data-testid="upload-not-a-folder">
           That was not a folder. This control uploads a whole directory tree —
-          drop a folder, or use “Choose a folder…”.
+          drop a folder, use “Choose a folder…”, or use “Choose files…” for
+          individual files.
         </p>
       );
 
@@ -414,6 +449,13 @@ function UploadResult({
           Chosen with the folder button: this browser API lists files only, so
           any EMPTY folder in the tree could not be seen and was not uploaded.
           Drag the folder onto this area instead to include them.
+        </p>
+      ) : null}
+
+      {source === 'files' ? (
+        <p className="fb-note" data-testid="upload-files-flat">
+          Chosen as individual files: they were added at this Space folder's
+          root, with no local directory structure.
         </p>
       ) : null}
 

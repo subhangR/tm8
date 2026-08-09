@@ -174,7 +174,12 @@ export interface HttpClient {
    */
   callPath<T>(method: string, path: string, opts?: RequestOptions): Promise<T>;
   /** Raw upload to the server-minted grant URL, authorized by its bearer token. */
-  putGrantedBytes(uploadUrl: string, token: string | null | undefined, body: BodyInit): Promise<void>;
+  putGrantedBytes(
+    uploadUrl: string,
+    token: string | null | undefined,
+    body: BodyInit,
+    signal?: AbortSignal,
+  ): Promise<void>;
   readonly baseUrl: string;
 }
 
@@ -190,17 +195,26 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
    * one AbortController. Headers-then-stalled-body is the same wedge as
    * never-connected as far as a caller awaiting `data` is concerned.
    */
-  function armTimeout(ms: number): { signal: AbortSignal; timedOut: () => boolean; disarm: () => void } {
+  function armTimeout(
+    ms: number,
+    externalSignal?: AbortSignal,
+  ): { signal: AbortSignal; timedOut: () => boolean; disarm: () => void } {
     const controller = new AbortController();
     let fired = false;
     const timer = setTimeout(() => {
       fired = true;
       controller.abort();
     }, ms);
+    const abortFromExternal = () => controller.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) abortFromExternal();
+    else externalSignal?.addEventListener('abort', abortFromExternal, { once: true });
     return {
       signal: controller.signal,
       timedOut: () => fired,
-      disarm: () => clearTimeout(timer),
+      disarm: () => {
+        clearTimeout(timer);
+        externalSignal?.removeEventListener('abort', abortFromExternal);
+      },
     };
   }
 
@@ -288,6 +302,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     uploadUrl: string,
     token: string | null | undefined,
     body: BodyInit,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (token === null || token === undefined || token === '') {
       throw new CollabError('unauthenticated', 'the upload grant has no bearer token');
@@ -304,7 +319,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
     const url = foreign
       ? uploadUrl
       : `${baseUrl}${uploadUrl.startsWith('/') ? uploadUrl : `/${uploadUrl}`}`;
-    const guard = armTimeout(UPLOAD_TIMEOUT_MS);
+    const guard = armTimeout(UPLOAD_TIMEOUT_MS, signal);
     let res: Response;
     try {
       res = await doFetch(url, {
@@ -317,6 +332,7 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
         signal: guard.signal,
       });
     } catch (cause) {
+      if (signal?.aborted) throw signal.reason ?? new DOMException('Upload aborted', 'AbortError');
       onTransport?.(false);
       throw new CollabError(
         'upstream_unavailable',

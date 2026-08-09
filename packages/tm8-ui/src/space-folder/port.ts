@@ -10,7 +10,7 @@ import type { SpaceId } from '@tm8/contract';
  * commit lands, delete them and import the real types from `@tm8/contract`;
  * only this file changes.
  *
- * The uploaded tree is an IMMUTABLE SPACE FOLDER SNAPSHOT — space-owned bytes.
+ * The uploaded tree is a STORED SPACE FOLDER SNAPSHOT — space-owned bytes.
  * It is deliberately NOT a linked live Project and NOT one entity per file, and
  * the step says so on screen so a user cannot mistake it for connected disk.
  */
