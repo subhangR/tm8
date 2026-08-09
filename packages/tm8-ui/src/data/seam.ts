@@ -146,6 +146,7 @@ import type {
   ProjectResource,
   ReactionInput,
   ResolveEntityAttentionInput,
+  ContentionReport,
   ExecutionGitCheckpointInput,
   ExecutionGitCommitInput,
   ExecutionGitMergeInput,
@@ -364,6 +365,14 @@ export interface Seam {
    * project, not as a seam fault.
    */
   projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology>;
+  /**
+   * The file-contention map over one project's ACTIVE worktrees (Git UI
+   * wave): which lanes exist, what each touched beyond its base, and which
+   * PAIRS overlap — the read that sees a silent-revert collision while both
+   * lanes are still alive, not after the second merge. Lanes the node cannot
+   * read are SKIPPED with a reason, never silently omitted.
+   */
+  projectContention(projectId: string): Promise<ContentionReport>;
   /**
    * Node-local onboarding is optional because fixture seams have no filesystem.
    * The real seam exposes the complete contract-backed saga surface; its

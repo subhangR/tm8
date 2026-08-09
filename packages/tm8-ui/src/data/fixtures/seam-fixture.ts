@@ -79,6 +79,7 @@ import {
   type PatchTaskInput,
   type PostMessageInput,
   type CredentialsStatusView,
+  type ContentionReport,
   type ProjectBranchTopology,
   type ProjectResource,
   type ReactionInput,
@@ -1168,6 +1169,61 @@ export function createFixtureSeam(): FixtureSeam {
      * fixture dates (never Date.now()), so a caller's threshold visibly
      * changes the answer the way the server's would.
      */
+    /**
+     * The contention map (Git UI wave), deterministic and honest by design:
+     * two readable lanes that OVERLAP on one path (the same file SAMPLE_DIFF
+     * changes, so the project screen and the session rail narrate one story),
+     * plus one lane the node cannot read, reported SKIPPED with its reason —
+     * the state a careless screen silently drops.
+     */
+    async projectContention(projectId): Promise<ContentionReport> {
+      if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
+        throw new CollabError('not_found', `project ${projectId} not found`);
+      }
+      const overlap = 'packages/server/src/facade/handlers/projects.ts';
+      return clone({
+        projectId,
+        generatedAt: FIXTURE_NOW,
+        lanes: [
+          {
+            worktreeId: 'fx-worktree-1',
+            branch: gitLane.branch,
+            path: '/fixture/worktrees/proj-tm8ui/fx-worktree-1',
+            sessionId: sessionLive.id,
+            touchedCount: 2,
+            touchedPaths: [overlap, 'notes/scratch.md'],
+            skipped: null,
+          },
+          {
+            worktreeId: 'fx-worktree-2',
+            branch: 'tm8/sweep-lane',
+            path: '/fixture/worktrees/proj-tm8ui/fx-worktree-2',
+            sessionId: sessionStale.id,
+            touchedCount: 3,
+            touchedPaths: [overlap, 'packages/cli/src/commands/task.ts', 'docs/notes.md'],
+            skipped: null,
+          },
+          {
+            worktreeId: 'fx-worktree-3',
+            branch: 'tm8/orphan-lane',
+            path: '/fixture/worktrees/proj-tm8ui/fx-worktree-3',
+            sessionId: null,
+            touchedCount: 0,
+            touchedPaths: [],
+            skipped: 'worktree is not readable on this node',
+          },
+        ],
+        pairs: [
+          {
+            aWorktreeId: 'fx-worktree-1',
+            bWorktreeId: 'fx-worktree-2',
+            aBranch: gitLane.branch,
+            bBranch: 'tm8/sweep-lane',
+            overlappingPaths: [overlap],
+          },
+        ],
+      });
+    },
     async projectBranches(projectId, opts): Promise<ProjectBranchTopology> {
       if (projectId !== FIXTURE_BRANCH_TOPOLOGY.projectId) {
         throw new CollabError('not_found', `project ${projectId} not found`);

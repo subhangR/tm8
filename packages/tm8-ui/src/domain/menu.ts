@@ -123,6 +123,10 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       id: 'tracking',
       label: 'Tracking',
       items: [
+        // Git UI wave (2026-08-09): the project git screen — topology,
+        // worktree lanes and contention, elevated out of Settings to live
+        // beside the git-adjacent kinds it surveys.
+        { type: 'view', ref: 'git' },
         { type: 'kind', ref: 'project' },
         { type: 'kind', ref: 'pull_request' },
         // Revision 4 (2026-07-31): Worktrees live with the git-adjacent rows.
