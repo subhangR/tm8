@@ -130,6 +130,8 @@ interface MemoryRow {
   version: number;
   /** In the teammate's `remembers` working set (vs. only requested by id). */
   remembered: boolean;
+  /** In some spawn task's `remembers` working set (D9: remembers(task → memory)). */
+  task_remembered: boolean;
   superseded: boolean;
   disputed: boolean;
   verified: boolean;
@@ -158,12 +160,21 @@ function renderMemories(rows: MemoryRow[], requestedIds: string[]): string[] {
   };
   const emitted = new Set<string>();
   const out: string[] = [];
+  // 1. The persona's own working set.
   for (const r of rows) {
     if (!r.remembered || r.superseded) continue;
     out.push(render(r));
     emitted.add(r.entity_id);
   }
-  // Requested extras follow the caller's order, after the working set.
+  // 2. Task working sets (D9): what the spawn tasks remember, after the
+  //    persona's set — the persona's standing knowledge frames task context,
+  //    not the other way round. Same superseded-drop rule as the working set.
+  for (const r of rows) {
+    if (!r.task_remembered || r.superseded || emitted.has(r.entity_id)) continue;
+    out.push(render(r));
+    emitted.add(r.entity_id);
+  }
+  // 3. Requested extras follow the caller's order, after both sets.
   for (const id of requestedIds) {
     if (emitted.has(id)) continue;
     const row = rows.find((r) => r.entity_id === id);
@@ -220,14 +231,20 @@ export class DbGraphPort implements GraphPort {
       // `remembers` edges (056), not the legacy `team_members.memories` jsonb.
       // Migration 084 moved the jsonb entries into the graph and emptied the
       // column; any jsonb remainder (written by a not-yet-updated editor path)
-      // is still injected so a write never silently vanishes. Requested
+      // is still injected so a write never silently vanishes. Task working
+      // sets (D9: remembers(task → memory)) ride the same query — what a
+      // spawn task remembers reaches the session automatically. Requested
       // `memoryIds` (D3a) are validated hard — a spawn that names a memory the
       // caller cannot read, or that is not a memory, must refuse rather than
       // quietly inject less than was asked.
       const requestedIds = input.memoryIds ?? [];
+      const spawnTaskIds = input.taskIds ?? [];
       const memoryRows = await q.query<MemoryRow>(
         `select m.entity_id, m.statement, e.version,
                 (r.dst_id is not null) as remembered,
+                exists (select 1 from public.edges t
+                         where t.type = 'remembers' and t.src_id = any($4::uuid[])
+                           and t.dst_id = m.entity_id) as task_remembered,
                 exists (select 1 from public.edges s
                          where s.type = 'supersedes' and s.dst_id = m.entity_id) as superseded,
                 exists (select 1 from public.edges d
@@ -241,9 +258,14 @@ export class DbGraphPort implements GraphPort {
            join public.entities e on e.id = m.entity_id and e.deleted_at is null
            left join public.edges r
              on r.type = 'remembers' and r.src_id = $1 and r.dst_id = m.entity_id
-          where e.space_id = $2 and (r.dst_id is not null or m.entity_id = any($3::uuid[]))
+          where e.space_id = $2
+            and (r.dst_id is not null
+                 or m.entity_id = any($3::uuid[])
+                 or exists (select 1 from public.edges t2
+                             where t2.type = 'remembers' and t2.src_id = any($4::uuid[])
+                               and t2.dst_id = m.entity_id))
           order by m.created_at, m.entity_id`,
-        [input.teamMemberId, input.spaceId, requestedIds],
+        [input.teamMemberId, input.spaceId, requestedIds, spawnTaskIds],
       );
       const foundIds = new Set(memoryRows.map((r) => r.entity_id));
       const missing = requestedIds.filter((id) => !foundIds.has(id));
