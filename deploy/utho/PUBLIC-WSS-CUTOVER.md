@@ -14,7 +14,10 @@ rollback is a stop condition.
    once and the database backup target has free space.
 2. Confirm `tm8-prod` still binds only `127.0.0.1:17777`, runs as the unprivileged
    `tm8` account, has `TM8_DISABLE_AUTO_OWNER=1`, and will receive
-   `TM8_ALLOWED_HOSTNAMES=tm8.sh` plus `TM8_ALLOWED_ORIGINS=https://tm8.sh`.
+   `TM8_ALLOWED_HOSTNAMES=tm8-server.tail28ac62.ts.net,tm8.sh` plus exact
+   `TM8_ALLOWED_ORIGINS=https://tm8.sh,https://tm8-server.tail28ac62.ts.net:7777`.
+   The public origin is the end state; the exact tailnet origin remains only as
+   a tested rollback path while the private node continues to use Tailscale.
 3. Confirm public DNS still resolves to this host; the Let's Encrypt certificate
    covers `tm8.sh`, is currently valid, and TLS 1.2/1.3 succeed. Confirm public
    app/DB high ports remain externally closed.
