@@ -23,6 +23,7 @@ import type {
   AccessMode,
   AgentMode,
   CommandNetworkPolicy,
+  CredentialSource,
   PermissionMode,
   ReasoningEffort,
   SessionLaunchPosture,
@@ -149,6 +150,8 @@ export interface ResolvedLaunchConfig {
   permissionMode: PermissionMode;
   accessMode: AccessMode;
   reasoningEffort: ReasoningEffort | null;
+  /** Launch-time credential choice; null = auto (member when connected). */
+  credentialSource: CredentialSource | null;
 }
 
 /**
@@ -292,7 +295,21 @@ export function resolveLaunchConfig(
   const accessMode = requestedAccessMode ?? accessModeForPermissionMode(permissionMode);
   const reasoningEffort = asReasoningEffort(request.reasoningEffort);
 
-  return { mode, model, agentTool, permissionMode, accessMode, reasoningEffort };
+  // Explicit request first, then the recorded posture (which is how a resume
+  // honours the choice its spawn was made with, and how a child inherits its
+  // parent's). `asCredentialSource` and not a cast: `inherited` is read back
+  // out of a stored JSON document, and an unrecognised value must fall through
+  // to auto, not launch on a string nothing maps.
+  const credentialSource =
+    asCredentialSource(request.credentialSource) ??
+    asCredentialSource(inherited?.credentialSource) ??
+    null;
+
+  return { mode, model, agentTool, permissionMode, accessMode, reasoningEffort, credentialSource };
+}
+
+function asCredentialSource(value: unknown): CredentialSource | null {
+  return value === 'member' || value === 'node' ? value : null;
 }
 
 /**
@@ -1108,6 +1125,7 @@ export function composeManifest(input: ComposeManifestInput): Tm8Manifest {
       permissionMode: launch.permissionMode,
       accessMode: launch.accessMode,
       reasoningEffort: launch.reasoningEffort,
+      credentialSource: launch.credentialSource,
       commandNetwork: input.commandNetwork ?? resolveCommandNetworkPolicy(launch, {}),
       sandboxDegraded: input.sandboxDegraded ?? null,
       command,

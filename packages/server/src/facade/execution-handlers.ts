@@ -521,10 +521,15 @@ export class DbGraphPort implements GraphPort {
     auth: GraphAuth,
     sessionId: string,
   ): Promise<SessionLaunchPosture | null> {
-    const rows = await this.db.query<{ access_mode: string | null; permission_mode: string | null }>(
+    const rows = await this.db.query<{
+      access_mode: string | null;
+      permission_mode: string | null;
+      credential_source: string | null;
+    }>(
       this.claims(auth),
-      `select sm.manifest #>> '{launch,accessMode}'     as access_mode,
-              sm.manifest #>> '{launch,permissionMode}' as permission_mode
+      `select sm.manifest #>> '{launch,accessMode}'       as access_mode,
+              sm.manifest #>> '{launch,permissionMode}'   as permission_mode,
+              sm.manifest #>> '{launch,credentialSource}' as credential_source
          from public.session_manifests sm
         where sm.work_session_id = $1`,
       [sessionId],
@@ -538,6 +543,7 @@ export class DbGraphPort implements GraphPort {
     return {
       accessMode: row.access_mode as SessionLaunchPosture['accessMode'],
       permissionMode: row.permission_mode as SessionLaunchPosture['permissionMode'],
+      credentialSource: row.credential_source as SessionLaunchPosture['credentialSource'],
     };
   }
 
@@ -1676,6 +1682,7 @@ function registerHandlers(
       agentTool: input.agentTool ?? null,
       reasoningEffort: input.reasoningEffort ?? null,
       accessMode: input.accessMode ?? null,
+      credentialSource: input.credentialSource ?? null,
       title: input.title ?? null,
       promptExtra: input.promptExtra ?? null,
       clientMutationId: envelope.clientMutationId ?? null,

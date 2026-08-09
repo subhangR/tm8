@@ -461,4 +461,92 @@ describe('SpawnService injects the resolved credential home into a real spawn', 
       service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID }),
     ).rejects.toThrow('credential index unavailable');
   }, 30000);
+
+  // -------------------------------------------------------------------------
+  // 5. The launch-time choice: credentialSource.
+  //
+  // Three values, three different obligations. Auto (absent) is the behaviour
+  // every assertion above already pins. 'node' must not even ASK the port —
+  // a member who chose the node account may not have a credential to leak,
+  // but the lookup is an RLS-scoped read and skipping it is what makes the
+  // choice legible in the code. 'member' must REFUSE rather than fall back:
+  // running a member as the node after they explicitly asked to run as
+  // themselves is the misattribution this store exists to end.
+  // -------------------------------------------------------------------------
+
+  it("credentialSource 'node' skips the port entirely and injects nothing", async () => {
+    let asked = 0;
+    const service = serviceWith({
+      async resolve() {
+        asked += 1;
+        return {
+          provider: 'anthropic',
+          homeDir: `${dataDir}/credentials/identity-alice`,
+          configDir: `${dataDir}/credentials/identity-alice/anthropic`,
+        };
+      },
+    });
+
+    const result = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      credentialSource: 'node',
+    });
+
+    expect(asked).toBe(0);
+    expect(result.envVarNames).not.toContain('CLAUDE_CONFIG_DIR');
+    // The choice is durable: a resume or a child spawn reads it back from here.
+    expect(graph.manifests[0]?.manifest.launch.credentialSource).toBe('node');
+  }, 30000);
+
+  it("credentialSource 'member' injects the member credential and records the choice", async () => {
+    const service = serviceWith({
+      async resolve() {
+        return {
+          provider: 'anthropic',
+          homeDir: `${dataDir}/credentials/identity-alice`,
+          configDir: `${dataDir}/credentials/identity-alice/anthropic`,
+        };
+      },
+    });
+
+    const result = await service.spawn(AUTH, {
+      spaceId: SPACE_ID,
+      teamMemberId: MEMBER_ID,
+      credentialSource: 'member',
+    });
+
+    expect(result.envVarNames).toContain('CLAUDE_CONFIG_DIR');
+    expect(graph.manifests[0]?.manifest.launch.credentialSource).toBe('member');
+  }, 30000);
+
+  it("credentialSource 'member' REFUSES the launch when no credential is connected", async () => {
+    const service = serviceWith({ async resolve() { return null; } });
+
+    await expect(
+      service.spawn(AUTH, {
+        spaceId: SPACE_ID,
+        teamMemberId: MEMBER_ID,
+        credentialSource: 'member',
+      }),
+    ).rejects.toMatchObject({ name: 'SpawnError', code: 'conflict' });
+  }, 30000);
+
+  it("credentialSource 'member' refuses on a node with no credential wiring at all", async () => {
+    const service = serviceWith();
+
+    await expect(
+      service.spawn(AUTH, {
+        spaceId: SPACE_ID,
+        teamMemberId: MEMBER_ID,
+        credentialSource: 'member',
+      }),
+    ).rejects.toMatchObject({ name: 'SpawnError', code: 'conflict' });
+  }, 30000);
+
+  it('auto (absent) still records what it did, as null', async () => {
+    const service = serviceWith({ async resolve() { return null; } });
+    await service.spawn(AUTH, { spaceId: SPACE_ID, teamMemberId: MEMBER_ID });
+    expect(graph.manifests[0]?.manifest.launch.credentialSource).toBeNull();
+  }, 30000);
 });

@@ -422,6 +422,16 @@ export interface LaunchConfig {
   model: string | null;
   reasoningEffort: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null;
   accessMode: 'safe' | 'acceptEdits' | 'auto' | 'plan' | 'fullAccess' | null;
+  /**
+   * Which vendor credential the session runs on. `'member'` requires the
+   * launcher's OWN connected credential and the node REFUSES the spawn when
+   * none is connected; `'node'` skips member injection. Absent/null is auto —
+   * the member credential when one is connected, the node account otherwise.
+   * OPTIONAL like `interactionProfileId`: it can only ever name the caller's
+   * own credential (the lookup is RLS-scoped server-side), so there is no
+   * roster to pick from and no cross-member value to represent.
+   */
+  credentialSource?: 'member' | 'node' | null;
   mode: LaunchMode;
   target: LaunchTarget;
   /**
@@ -608,6 +618,7 @@ export function buildSpawnInput(args: {
   };
   if (config.reasoningEffort) input.reasoningEffort = config.reasoningEffort;
   if (config.accessMode) input.accessMode = config.accessMode;
+  if (config.credentialSource) input.credentialSource = config.credentialSource;
   if (args.taskIds?.length) input.taskIds = [...args.taskIds];
   if (args.title) input.title = args.title;
   if (config.interactionProfileId) input.interactionProfileId = config.interactionProfileId;

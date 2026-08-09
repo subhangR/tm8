@@ -34,11 +34,16 @@ import {
 } from './manifest.js';
 import { resolveCodexNativeSessionId } from './native-session.js';
 import { probeCodexSandbox } from './sandbox-probe.js';
-import type { AgentCredentialHome, AgentCredentialHomePort } from './agent-credentials.js';
+import {
+  agentCredentialProviderFor,
+  type AgentCredentialHome,
+  type AgentCredentialHomePort,
+} from './agent-credentials.js';
 import type { WorktreeManager } from '../worktree/WorktreeManager.js';
 import { provisionWorktree, type ProvisionedWorktree } from './worktree-provisioning.js';
 import { reconcileNodeWorktrees, type WorktreeReconcileReport } from './worktree-reconcile.js';
 import type {
+  CredentialSource,
   GraphAuth,
   GraphPort,
   InteractionProfilePinContext,
@@ -248,13 +253,32 @@ export class SpawnService {
    *
    * ERRORS ARE NOT SWALLOWED: silently falling back to the node's machine
    * account would make a session run under the wrong identity.
+   *
+   * `source` is the launch-time choice. `'node'` skips the lookup entirely.
+   * `'member'` REFUSES the launch when no active credential exists — the
+   * member asked to run as themselves, and quietly running them as the node
+   * instead is the exact lie the credential store exists to stop. Auto (null)
+   * keeps the pre-field behaviour byte for byte.
    */
   private async resolveCredentialHome(
     auth: GraphAuth,
     agentTool: string,
+    source: CredentialSource | null = null,
   ): Promise<AgentCredentialHome | null> {
-    if (!this.credentialHome) return null;
-    return this.credentialHome.resolve(auth, { agentTool });
+    if (source === 'node') return null;
+    const home = this.credentialHome
+      ? await this.credentialHome.resolve(auth, { agentTool })
+      : null;
+    if (source === 'member' && !home && agentCredentialProviderFor(agentTool)) {
+      throw new SpawnError(
+        `credentialSource 'member' was requested but no active ${agentCredentialProviderFor(agentTool)} ` +
+          'credential is connected for your account — connect it under Settings → Connections, ' +
+          "or launch with the node credential ('node')",
+        'conflict',
+        { agentTool, provider: agentCredentialProviderFor(agentTool) },
+      );
+    }
+    return home;
   }
 
   /**
@@ -809,7 +833,7 @@ export class SpawnService {
         this.env,
       );
 
-      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool);
+      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource);
       const env = composeEnv(
         manifest,
         manifestPath,
@@ -1167,7 +1191,7 @@ export class SpawnService {
       // credential on the way back up, and one that has been disconnected must
       // stop being injected. A resume that kept the launch-time answer would be
       // the one path where Ruling 3's "disconnect terminates" could be undone.
-      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool);
+      const credentialHome = await this.resolveCredentialHome(auth, launch.agentTool, launch.credentialSource);
       const env = composeEnv(
         manifest,
         manifestPath,
