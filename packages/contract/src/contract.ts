@@ -1954,6 +1954,91 @@ export interface ProjectBranchTopology {
   staleAfterDays: number;
 }
 
+/**
+ * The tm8 work session a commit's `created_in` provenance edge names
+ * (082's `record_session_commit` mints the edge; this type is the read side).
+ *
+ * ABSENT FACTS ARE ABSENT CLAIMS: consumers receive `null` when no edge
+ * exists — the commit was not made by a tm8 session, and nothing here is ever
+ * inferred from an author-name or timestamp match.
+ */
+export interface CommitSessionAttribution {
+  /** The commit-mirror entity the sha resolved to. */
+  commitEntityId: string;
+  sessionId: EntityId;
+  sessionTitle: string;
+  agentTool: string | null;
+  /** The teammate the session was spawned as, when the graph names one. */
+  teamMemberId: string | null;
+  teamMemberName: string | null;
+}
+
+/** One revision of a path, with its provenance join. */
+export interface ProjectFileRevision {
+  /** Full commit oid. */
+  oid: string;
+  author: string;
+  authorEmail: string;
+  /** Committer date, ISO-8601. */
+  committedAt: string;
+  subject: string;
+  /** Lines added for this path at this revision; null for binary. */
+  additions: number | null;
+  deletions: number | null;
+  /** The path AT that revision — history follows renames. */
+  path: string;
+  /** `created_in` join; null = no tm8 session recorded this commit. */
+  session: CommitSessionAttribution | null;
+}
+
+/**
+ * GET /v2/projects/:projectId/file-history?path= — the revisions of one path
+ * in the project's working directory, argv-only git, path from the QUERY but
+ * the directory always from the project row (the branches read's law).
+ */
+export interface ProjectFileHistory {
+  projectId: ProjectId;
+  workingDir: string;
+  path: string;
+  revisions: ProjectFileRevision[];
+  /** True when the revision cap cut the walk short — the read is bounded. */
+  truncated: boolean;
+}
+
+/** A contiguous run of lines last touched by one commit. */
+export interface ProjectBlameHunk {
+  /** Full commit oid; the all-zero oid marks not-yet-committed lines. */
+  oid: string;
+  /** 1-based first line in the CURRENT file. */
+  startLine: number;
+  lineCount: number;
+  author: string;
+  /** ISO-8601; empty for uncommitted lines. */
+  committedAt: string;
+  summary: string;
+  uncommitted: boolean;
+  /** `created_in` join; null = no tm8 session recorded this commit. */
+  session: CommitSessionAttribution | null;
+}
+
+/**
+ * GET /v2/projects/:projectId/blame?path= — working-tree blame of one path,
+ * line-ranges grouped into hunks, each joined to the session provenance graph.
+ *
+ * Bounded: `blamedLines` ≤ the line cap; `totalLines` is MEASURED, so a cut
+ * can say exactly how many lines it holds back (`totalLines - blamedLines`).
+ * The cap bounds rendering, never disclosure.
+ */
+export interface ProjectFileBlame {
+  projectId: ProjectId;
+  workingDir: string;
+  path: string;
+  hunks: ProjectBlameHunk[];
+  blamedLines: number;
+  totalLines: number;
+  truncated: boolean;
+}
+
 /** One selectable child in the node-local project directory browser. */
 export interface ProjectDirectoryEntry {
   name: string;
