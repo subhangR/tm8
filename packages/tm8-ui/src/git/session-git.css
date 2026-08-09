@@ -215,3 +215,54 @@
 .cv2-root .pn-git__empty {
   margin: var(--pn-space-4);
 }
+
+/* ── Tier 2 completion: cherry-pick / branch ops / stash ─────────────────── */
+
+.cv2-root .pn-git__branch-create,
+.cv2-root .pn-git__branch-rename,
+.cv2-root .pn-git__branch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+}
+
+.cv2-root .pn-git__force {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--pn-space-1);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__stash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-git__stash .pn-git__verb {
+  align-self: flex-start;
+}
+
+.cv2-root .pn-git__stash-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-1);
+}
+
+.cv2-root .pn-git__stash-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-2);
+  flex-wrap: wrap;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-git__stash-subject {
+  color: var(--pn-ink-2);
+}

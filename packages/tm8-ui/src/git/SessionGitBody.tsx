@@ -10,8 +10,10 @@ import { DisabledAction } from '../panels/honesty/DisabledWithReason';
 import './session-git.css';
 
 /**
- * THE SESSION GIT RAIL — where is this lane, what did it change, and the four
- * verbs that move it (checkpoint / rollback / commit / merge-base-in).
+ * THE SESSION GIT RAIL — where is this lane, what did it change, and the
+ * verbs that move it: checkpoint / rollback / commit / merge-base-in, plus
+ * the Tier 2 completion verbs — cherry-pick, branch create/rename/delete,
+ * and stash push/pop/drop (the stash LIST rides on the status read).
  *
  * SELF-FETCHING like SessionDebugBody: it receives the seam and does its own
  * reads. The host mounts it only while the Git chip is selected, so unmounting
@@ -32,6 +34,14 @@ import './session-git.css';
  * MERGE DIRECTION, spelled out in the UI: base → session branch only. The
  * other direction is deliberately absent at every layer (base is checked out
  * in the user's primary tree or nowhere); landing on base goes through a PR.
+ * CHERRY-PICK has a direction too, and it is spelled out the same way: the
+ * named commits are copied ONTO this session's branch, in this session's
+ * worktree — no other checkout is ever touched.
+ *
+ * The Tier 2 destructive gates surface here as the confirm captions: an
+ * unmerged branch delete and a stash drop both require force server-side,
+ * and the receipts repeat the recoverable oid the server answers, because
+ * reversibility is part of the answer.
  */
 
 const POLL_MS = 5_000;
@@ -54,11 +64,15 @@ type DiffState =
   | { phase: 'error'; message: string }
   | { phase: 'ready'; diff: SessionGitDiff };
 
-type Verb = 'checkpoint' | 'rollback' | 'commit' | 'merge';
+type Verb =
+  | 'checkpoint' | 'rollback' | 'commit' | 'merge'
+  | 'cherry-pick' | 'branch' | 'stash-push' | 'stash-pop' | 'stash-drop';
 
 interface Conflict {
-  fromRef: string;
+  /** The full first line of the banner — each verb states its own facts. */
+  title: string;
   paths: string[];
+  remedy: string;
 }
 
 const UNAVAILABLE_CAUSE: Record<string, string> = {
@@ -83,12 +97,18 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
   const [status, setStatus] = useState<StatusState>({ phase: 'loading' });
   const [diff, setDiff] = useState<DiffState>({ phase: 'closed' });
   const [busy, setBusy] = useState<Verb | null>(null);
-  const [confirming, setConfirming] = useState<'rollback' | 'merge' | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
   const [receipt, setReceipt] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState('');
   const [rollbackTo, setRollbackTo] = useState('');
+  const [cherryRefs, setCherryRefs] = useState('');
+  const [branchName, setBranchName] = useState('');
+  const [renameFrom, setRenameFrom] = useState('');
+  const [renameTo, setRenameTo] = useState('');
+  const [deleteName, setDeleteName] = useState('');
+  const [deleteForce, setDeleteForce] = useState(false);
   const hasLoaded = useRef(false);
   const diffOpen = useRef(false);
 
@@ -229,17 +249,13 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
       {/* -- conflict banner -------------------------------------------------- */}
       {conflict ? (
         <div className="pn-git__conflict" role="alert" data-testid="session-git-conflict">
-          <p className="pn-git__conflict-title">
-            Merge of {conflict.fromRef} CONFLICTED — the worktree was restored clean; nothing was merged.
-          </p>
+          <p className="pn-git__conflict-title">{conflict.title}</p>
           <ul>
             {conflict.paths.map((p) => (
               <li key={p}><code>{p}</code></li>
             ))}
           </ul>
-          <p className="pn-git__remedy">
-            Resolve by merging {conflict.fromRef} in a checkout you control, or land this lane through a PR.
-          </p>
+          <p className="pn-git__remedy">{conflict.remedy}</p>
         </div>
       ) : null}
 
@@ -371,7 +387,11 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
                 void runVerb('merge', async () => {
                   const r = await seam.commands.gitMerge(sessionId, {});
                   if (r.status === 'conflict') {
-                    setConflict({ fromRef: r.fromRef, paths: r.conflictedPaths });
+                    setConflict({
+                      title: `Merge of ${r.fromRef} CONFLICTED — the worktree was restored clean; nothing was merged.`,
+                      paths: r.conflictedPaths,
+                      remedy: `Resolve by merging ${r.fromRef} in a checkout you control, or land this lane through a PR.`,
+                    });
                     return `merge of ${r.fromRef} conflicted on ${r.conflictedPaths.length} path(s) — worktree restored clean`;
                   }
                   setConflict(null);
@@ -397,6 +417,304 @@ export function SessionGitBody({ seam, sessionId, live }: SessionGitBodyProps) {
           >
             {busy === 'merge' ? 'Merging…' : 'Merge base in…'}
           </button>
+        )}
+      </div>
+
+      {/* -- cherry-pick ------------------------------------------------------ */}
+      <div className="pn-git__actions" data-testid="session-git-cherry-group">
+        <input
+          className="pn-git__ref-input"
+          placeholder="commit(s) to pick, oldest first"
+          value={cherryRefs}
+          data-testid="session-git-cherry-refs"
+          onChange={(e) => setCherryRefs(e.target.value)}
+        />
+        {!clean ? (
+          <DisabledAction reason={{ cause: 'Cherry-pick refuses while the worktree is dirty — a conflicted pick must be able to abort to a clean state.', remedy: 'checkpoint or commit first' }}>
+            Cherry-pick
+          </DisabledAction>
+        ) : cherryRefs.trim() === '' ? (
+          <DisabledAction reason={{ cause: 'Cherry-pick needs at least one commit ref.' }}>Cherry-pick</DisabledAction>
+        ) : confirming === 'cherry-pick' ? (
+          <span className="pn-git__confirm" data-testid="session-git-cherry-confirm">
+            <span className="pn-git__confirm-text">
+              Copy {cherryRefs.trim().split(/\s+/).join(', ')} ONTO {s.branch}, in this session’s worktree? No other checkout is touched; a conflict aborts the whole sequence and restores the worktree clean.
+            </span>
+            <button
+              type="button"
+              className="pn-git__verb"
+              disabled={busy !== null}
+              data-testid="session-git-cherry-go"
+              onClick={() =>
+                void runVerb('cherry-pick', async () => {
+                  const commits = cherryRefs.trim().split(/\s+/);
+                  const r = await seam.commands.gitCherryPick(sessionId, { commits });
+                  if (r.status === 'conflict') {
+                    setConflict({
+                      title: `Cherry-pick onto ${r.branch} CONFLICTED — the whole sequence was aborted and the worktree was restored clean; nothing was applied.`,
+                      paths: r.conflictedPaths,
+                      remedy: 'Resolve in a checkout you control, or pick a different commit range.',
+                    });
+                    return `cherry-pick conflicted on ${r.conflictedPaths.length} path(s) — worktree restored clean`;
+                  }
+                  setConflict(null);
+                  setCherryRefs('');
+                  return `picked ${r.newOids.length} commit(s) onto ${r.branch} (${r.newOids.map((o) => o.slice(0, 10)).join(', ')})`;
+                })
+              }
+            >
+              Confirm cherry-pick
+            </button>
+            <button type="button" className="pn-git__verb" onClick={() => setConfirming(null)}>
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="pn-git__verb"
+            disabled={busy !== null}
+            data-testid="session-git-cherry"
+            onClick={() => setConfirming('cherry-pick')}
+          >
+            {busy === 'cherry-pick' ? 'Picking…' : 'Cherry-pick…'}
+          </button>
+        )}
+      </div>
+
+      {/* -- branch ops ------------------------------------------------------- */}
+      <div className="pn-git__actions" data-testid="session-git-branch-group">
+        <span className="pn-git__branch-create">
+          <input
+            className="pn-git__ref-input"
+            placeholder="new branch name"
+            value={branchName}
+            data-testid="session-git-branch-name"
+            onChange={(e) => setBranchName(e.target.value)}
+          />
+          {branchName.trim() === '' ? (
+            <DisabledAction reason={{ cause: 'Creating a branch needs a name.' }}>New branch</DisabledAction>
+          ) : (
+            <button
+              type="button"
+              className="pn-git__verb"
+              disabled={busy !== null}
+              data-testid="session-git-branch-create"
+              onClick={() =>
+                void runVerb('branch', async () => {
+                  const r = await seam.commands.gitBranch(sessionId, { action: 'create', name: branchName.trim() });
+                  if (r.action !== 'create') return 'branch created';
+                  setBranchName('');
+                  return `created ${r.name} at ${shortOid(r.oid)} (not checked out anywhere)`;
+                })
+              }
+            >
+              New branch
+            </button>
+          )}
+        </span>
+        <span className="pn-git__branch-rename">
+          <input
+            className="pn-git__ref-input"
+            placeholder="rename: old name"
+            value={renameFrom}
+            data-testid="session-git-branch-rename-from"
+            onChange={(e) => setRenameFrom(e.target.value)}
+          />
+          <input
+            className="pn-git__ref-input"
+            placeholder="new name"
+            value={renameTo}
+            data-testid="session-git-branch-rename-to"
+            onChange={(e) => setRenameTo(e.target.value)}
+          />
+          {renameFrom.trim() === '' || renameTo.trim() === '' ? (
+            <DisabledAction reason={{ cause: 'Renaming needs both the old and the new name.', remedy: 'a branch checked out in any worktree, or the project base, will refuse' }}>
+              Rename
+            </DisabledAction>
+          ) : (
+            <button
+              type="button"
+              className="pn-git__verb"
+              disabled={busy !== null}
+              data-testid="session-git-branch-rename"
+              onClick={() =>
+                void runVerb('branch', async () => {
+                  const r = await seam.commands.gitBranch(sessionId, { action: 'rename', from: renameFrom.trim(), to: renameTo.trim() });
+                  if (r.action !== 'rename') return 'branch renamed';
+                  setRenameFrom('');
+                  setRenameTo('');
+                  return `renamed ${r.from} → ${r.to}`;
+                })
+              }
+            >
+              Rename
+            </button>
+          )}
+        </span>
+        <span className="pn-git__branch-delete">
+          <input
+            className="pn-git__ref-input"
+            placeholder="branch to delete"
+            value={deleteName}
+            data-testid="session-git-branch-delete-name"
+            onChange={(e) => setDeleteName(e.target.value)}
+          />
+          {deleteName.trim() === '' ? (
+            <DisabledAction reason={{ cause: 'Deleting a branch needs its name.', remedy: 'checked-out and base branches refuse; an unmerged delete needs force' }}>
+              Delete branch
+            </DisabledAction>
+          ) : confirming === 'branch-delete' ? (
+            <span className="pn-git__confirm" data-testid="session-git-branch-delete-confirm">
+              <span className="pn-git__confirm-text">
+                Delete {deleteName.trim()}? A branch checked out in ANY worktree, or the project base, refuses. An unmerged delete (measured against {s.branch}) refuses without force — the deleted tip stays reachable by its oid until gc.
+              </span>
+              <label className="pn-git__force">
+                <input
+                  type="checkbox"
+                  checked={deleteForce}
+                  data-testid="session-git-branch-delete-force"
+                  onChange={(e) => setDeleteForce(e.target.checked)}
+                />
+                force (delete even if unmerged)
+              </label>
+              <button
+                type="button"
+                className="pn-git__verb pn-git__verb--danger"
+                disabled={busy !== null}
+                data-testid="session-git-branch-delete-go"
+                onClick={() =>
+                  void runVerb('branch', async () => {
+                    const r = await seam.commands.gitBranch(sessionId, {
+                      action: 'delete', name: deleteName.trim(), ...(deleteForce ? { force: true } : {}),
+                    });
+                    if (r.action !== 'delete') return 'branch deleted';
+                    setDeleteName('');
+                    setDeleteForce(false);
+                    return `deleted ${r.name} (tip ${shortOid(r.deletedOid)} stays reachable until gc${r.forced ? `; it was unmerged relative to ${r.measuredAgainst}` : ''})`;
+                  })
+                }
+              >
+                Confirm delete
+              </button>
+              <button type="button" className="pn-git__verb" onClick={() => setConfirming(null)}>
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="pn-git__verb"
+              disabled={busy !== null}
+              data-testid="session-git-branch-delete"
+              onClick={() => setConfirming('branch-delete')}
+            >
+              Delete branch…
+            </button>
+          )}
+        </span>
+      </div>
+
+      {/* -- stash ------------------------------------------------------------ */}
+      <div className="pn-git__stash" data-testid="session-git-stash-group">
+        {clean ? (
+          <DisabledAction reason={{ cause: 'The worktree is clean — there is nothing to stash.' }}>Stash WIP</DisabledAction>
+        ) : (
+          <button
+            type="button"
+            className="pn-git__verb"
+            disabled={busy !== null}
+            data-testid="session-git-stash-push"
+            onClick={() =>
+              void runVerb('stash-push', async () => {
+                const r = await seam.commands.gitStash(sessionId, { action: 'push' });
+                return r.action === 'push' && r.status === 'stashed'
+                  ? `stashed ${r.files.length} file(s) as ${shortOid(r.oid)} — untracked files included (stored, not lost)`
+                  : 'worktree already clean; nothing stashed';
+              })
+            }
+          >
+            {busy === 'stash-push' ? 'Stashing…' : 'Stash WIP'}
+          </button>
+        )}
+        {(s.stashes ?? []).length > 0 ? (
+          <ul className="pn-git__stash-list" data-testid="session-git-stash-list">
+            {(s.stashes ?? []).map((entry) => (
+              <li key={entry.oid} className="pn-git__stash-entry">
+                <code>stash@{'{'}{entry.index}{'}'}</code>
+                <span className="pn-git__stash-subject">{entry.subject}</span>
+                {!clean ? (
+                  <DisabledAction reason={{ cause: 'Pop refuses while the worktree is dirty — a conflicted pop must be able to abort to a clean state.', remedy: 'checkpoint, commit, or stash first' }}>
+                    Pop
+                  </DisabledAction>
+                ) : (
+                  <button
+                    type="button"
+                    className="pn-git__verb"
+                    disabled={busy !== null}
+                    data-testid={`session-git-stash-pop-${entry.index}`}
+                    onClick={() =>
+                      void runVerb('stash-pop', async () => {
+                        const r = await seam.commands.gitStash(sessionId, { action: 'pop', index: entry.index });
+                        if (r.action === 'pop' && r.status === 'conflict') {
+                          setConflict({
+                            title: `Stash pop of ${shortOid(r.oid)} CONFLICTED — the apply was aborted, the worktree was restored clean, and the stash entry was RETAINED.`,
+                            paths: r.conflictedPaths,
+                            remedy: 'Resolve in a checkout you control; the entry is still in the stash list.',
+                          });
+                          return `stash pop conflicted on ${r.conflictedPaths.length} path(s) — worktree restored clean, entry retained`;
+                        }
+                        setConflict(null);
+                        return r.action === 'pop' && r.status === 'popped'
+                          ? `popped ${shortOid(r.oid)}: ${r.files.length} file(s) back in the worktree`
+                          : 'stash popped';
+                      })
+                    }
+                  >
+                    Pop
+                  </button>
+                )}
+                {confirming === `stash-drop:${entry.index}` ? (
+                  <span className="pn-git__confirm" data-testid={`session-git-stash-drop-confirm-${entry.index}`}>
+                    <span className="pn-git__confirm-text">
+                      Drop stash@{'{'}{entry.index}{'}'}? This DESTROYS the entry — its content stays reachable only by oid, and only until gc.
+                    </span>
+                    <button
+                      type="button"
+                      className="pn-git__verb pn-git__verb--danger"
+                      disabled={busy !== null}
+                      data-testid={`session-git-stash-drop-go-${entry.index}`}
+                      onClick={() =>
+                        void runVerb('stash-drop', async () => {
+                          const r = await seam.commands.gitStash(sessionId, { action: 'drop', index: entry.index, force: true });
+                          return r.action === 'drop'
+                            ? `dropped ${r.subject} — content reachable as ${shortOid(r.droppedOid)} until gc`
+                            : 'stash entry dropped';
+                        })
+                      }
+                    >
+                      Confirm drop
+                    </button>
+                    <button type="button" className="pn-git__verb" onClick={() => setConfirming(null)}>
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="pn-git__verb"
+                    disabled={busy !== null}
+                    data-testid={`session-git-stash-drop-${entry.index}`}
+                    onClick={() => setConfirming(`stash-drop:${entry.index}`)}
+                  >
+                    Drop…
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span className="pn-git__note" data-testid="session-git-stash-empty">no stash entries</span>
         )}
       </div>
 
