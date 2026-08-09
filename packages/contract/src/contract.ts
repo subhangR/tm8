@@ -1439,6 +1439,11 @@ export const DEFAULT_MENU_GROUP_SPINE = [
   // removes rail rows, not features.
   { serverId: 'home', clientId: 'home' },
   { serverId: 'work', clientId: 'workspace' },
+  // 2026-08-09: Files, Spells and Collections graduated from palette-only
+  // reachability into the shipped rail. They get their own group because the
+  // Workspace caret is contract-capped at eight children and already carries
+  // seven collection destinations.
+  { serverId: 'library', clientId: 'library' },
   { serverId: 'tracking', clientId: 'tracking' },
   { serverId: 'collab', clientId: 'collab' },
   // items-empty on both sides BY NECESSITY: MenuViewRef is a closed enum with
