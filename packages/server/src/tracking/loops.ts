@@ -38,7 +38,14 @@
 import type { Db, DbClaims } from '../db/types.js';
 import type { JobContext, JobOutcome, ScheduledJob } from '../scheduler/types.js';
 import { GithubClient, resolveGithubToken, type CheckRunFacts, type ReviewThreadFacts } from './github.js';
-import { decideNudges, deliverNudges, type PendingNudge, type WatchTarget } from './nudges.js';
+import {
+  decideNudges,
+  deliverPendingNudges,
+  renderPendingNudge,
+  type NudgeDispatcher,
+  type PendingNudge,
+  type WatchTarget,
+} from './nudges.js';
 
 export const FORGE_WATCHER_JOB_NAME = 'tracking.forge-watcher';
 
@@ -57,12 +64,25 @@ export interface ForgeWatcherOptions {
   minAgeSeconds?: number;
   /** Log lines inlined into a CI failure nudge. */
   logTailLines?: number;
+  /** Queued transitions delivered per tick. */
+  nudgeBudget?: number;
+  /** How long an undelivered transition waits for an addressee before retiring. */
+  maxPendingAgeHours?: number;
+  /**
+   * Puts a delivered nudge on the agent's terminal. Injected from the
+   * composition root, because reserving a delivery slot and writing to a PTY is
+   * the facade's machinery — see facade/services/w2/message-dispatch.ts. Absent
+   * on a node with no execution runtime, where the message is still stored and
+   * simply never injected.
+   */
+  dispatch?: NudgeDispatcher;
   intervalMs?: number;
   runOnStart?: boolean;
 }
 
 export interface ForgeWatchTickDetail extends Record<string, unknown> {
   targets: number;
+  pendingDrained: number;
   notModified: number;
   nudgesDelivered: number;
   nudgesDeduped: number;
@@ -92,12 +112,10 @@ export async function runForgeWatchTick(
     [budget, options.minAgeSeconds ?? 0],
   );
   const targets = normalizeTargets(listed?.targets);
-  if (targets.length === 0) {
-    return { skipped: true, reason: 'no watched pull requests' };
-  }
 
   const detail: ForgeWatchTickDetail = {
     targets: targets.length,
+    pendingDrained: 0,
     notModified: 0,
     nudgesDelivered: 0,
     nudgesDeduped: 0,
@@ -107,6 +125,11 @@ export async function runForgeWatchTick(
     problems: [],
   };
 
+  // NOTE the absence of an early return for an empty watch list. There may be
+  // nothing to observe and still something to deliver: a transition detected
+  // ticks ago, queued for want of a live session, whose session just came back.
+  // Returning early here would make the queue drain only as a side effect of
+  // having something else to do.
   for (const target of targets) {
     if (signal?.aborted) break;
     try {
@@ -123,9 +146,23 @@ export async function runForgeWatchTick(
     }
   }
 
+  // DELIVERY RUNS EVEN IF OBSERVATION STOPPED. A rate limit or an abort ends
+  // the polling above, but the queue may still hold transitions detected on an
+  // earlier tick whose addressee has only just come back — and draining it
+  // costs no provider quota unless a CI log is needed.
+  try {
+    await drainPendingNudges(options, claims, client, detail, signal);
+  } catch (error) {
+    detail.problems.push(`nudge drain: ${describe(error)}`);
+    log?.(`tracking.forge-watcher: nudge drain: ${describe(error)}`);
+  }
+
   // Bounded: this rides in a job outcome that gets logged, and an unbounded
   // list of provider errors is how a log becomes unreadable.
   detail.problems = detail.problems.slice(0, 10);
+  if (targets.length === 0 && detail.pendingDrained === 0) {
+    return { skipped: true, reason: 'no watched pull requests and no queued nudges' };
+  }
   return { affected: detail.nudgesDelivered, detail };
 }
 
@@ -277,57 +314,96 @@ async function watchOne(
   }
 
   // ---- 4. Decide, fetch only the logs a decision actually needs, deliver.
-  const diff = {
-    newlyFailing,
-    newlyUnresolved,
-    previousMergeableState: previousMergeable,
-    mergeableState: mergeable,
-  };
-
-  // TWO PASSES, and the order is the saving. The first decides with no logs,
-  // which is enough to know WHICH nudges survive suppression and dedup shape;
-  // the log fetch — the most expensive call in the tick — then happens only for
-  // those, and the second pass folds the tails into the bodies. Fetching first
-  // would spend a log download on every red check of every exited session.
-  const decision = decideNudges(target, diff, new Map());
+  // ---- 4. Detection ONLY. The transitions were made durable by the apply
+  // doors (084 §K) in the same statement that stored the facts; delivery is a
+  // separate pass over that queue, so a tick that finds no addressee — or dies
+  // here — does not consume what it detected.
+  //
+  // `decideNudges` still runs, purely to report what WOULD be suppressed. That
+  // is diagnostics, not control flow: the queue and the renderer make the real
+  // decision, and they make it again on every drain.
+  const decision = decideNudges(
+    target,
+    {
+      newlyFailing,
+      newlyUnresolved,
+      previousMergeableState: previousMergeable,
+      mergeableState: mergeable,
+    },
+    new Map(),
+  );
   detail.suppressed += decision.suppressed.length;
-  if (decision.nudges.length === 0) return 'ok';
+  return 'ok';
+}
 
-  const tails = await fetchLogTails(client, target, newlyFailing, decision.nudges, options, signal);
-  const finalDecision = tails.size === 0 ? decision : decideNudges(target, diff, tails);
+/**
+ * The delivery pass: drain 084 §K's queue, render each row, post and dispatch.
+ *
+ * Separate from the observation pass on purpose. Observation is rate-limited by
+ * a provider; delivery is rate-limited by whether anybody is listening, and
+ * tying them together is what made a transition detected during a quiet moment
+ * disappear.
+ */
+async function drainPendingNudges(
+  options: ForgeWatcherOptions,
+  claims: DbClaims,
+  client: GithubClient,
+  detail: ForgeWatchTickDetail,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  const claimed = await options.db.rpc<{ pending?: unknown }>(
+    claims,
+    'public.claim_pending_nudges',
+    [options.nudgeBudget ?? 20, options.maxPendingAgeHours ?? 48],
+  );
+  const pending = normalizePending(claimed?.pending);
+  detail.pendingDrained = pending.length;
+  if (pending.length === 0) return;
 
-  const delivery = await deliverNudges(options.db, claims, finalDecision.nudges);
+  // One lookup for the whole drain rather than one per row: stacked-ness is a
+  // property of the pull request, and several queued rows can share one.
+  const stacked = new Map<string, boolean>();
+
+  const delivery = await deliverPendingNudges(
+    options.db,
+    claims,
+    pending,
+    async (row) => {
+      if (signal?.aborted) return null;
+      let isStacked = stacked.get(row.prEntityId);
+      if (isStacked === undefined) {
+        const answer = await options.db.rpc<{ stacked?: boolean }>(
+          claims,
+          'public.pr_is_stacked_on_open_parent',
+          [row.prEntityId],
+        );
+        isStacked = answer?.stacked === true;
+        stacked.set(row.prEntityId, isStacked);
+      }
+      // The log is fetched HERE, once a delivery is actually going to happen —
+      // not at detection time, when there may have been nobody to send it to.
+      let logTail: string | null = null;
+      if (row.loopKind === 'ci_failure') {
+        const jobId = row.payload.externalId;
+        if (typeof jobId === 'string' && jobId !== '') {
+          const res = await client.jobLogTail(
+            row.repo,
+            jobId,
+            options.logTailLines ?? 100,
+            signal,
+          );
+          if (res.ok && res.notModified !== true) logTail = res.value;
+        }
+      }
+      return renderPendingNudge(row, { stackedOnOpenParent: isStacked, logTail });
+    },
+    options.dispatch,
+  );
+
   detail.nudgesDelivered += delivery.delivered;
   detail.nudgesDeduped += delivery.duplicates;
   detail.nudgesCapped += delivery.capped;
   for (const problem of delivery.failed) detail.problems.push(problem);
-  return 'ok';
-}
-
-async function fetchLogTails(
-  client: GithubClient,
-  target: WatchTarget,
-  checks: readonly CheckRunFacts[],
-  nudges: readonly PendingNudge[],
-  options: ForgeWatcherOptions,
-  signal: AbortSignal | undefined,
-): Promise<Map<string, string>> {
-  const wanted = new Set(nudges.filter((n) => n.loop === 'ci_failure').map((n) => n.scopeKey));
-  const tails = new Map<string, string>();
-  for (const check of checks) {
-    if (check.externalId === null) continue;
-    if (!wanted.has(`${check.name}@${target.headSha ?? 'unknown'}`)) continue;
-    const res = await client.jobLogTail(
-      target.repo,
-      check.externalId,
-      options.logTailLines ?? 100,
-      signal,
-    );
-    // A missing log is not a reason to withhold the nudge — the agent still
-    // needs to know the check went red. `decideNudges` says so in the body.
-    if (res.ok && res.notModified !== true) tails.set(check.name, res.value);
-  }
-  return tails;
 }
 
 function checksKey(target: { repo: string }, sha: string | null): string {
@@ -345,6 +421,41 @@ function toThreadFact(thread: ReviewThreadFacts): Record<string, unknown> {
     author: thread.comments[0]?.author ?? null,
     bodyExcerpt: thread.comments[0]?.body ?? '',
   };
+}
+
+function normalizePending(raw: unknown): PendingNudge[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PendingNudge[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const row = entry as Record<string, unknown>;
+    if (typeof row.pendingId !== 'string' || typeof row.spaceId !== 'string') continue;
+    if (typeof row.repo !== 'string' || typeof row.number !== 'number') continue;
+    const loopKind = row.loopKind;
+    if (loopKind !== 'ci_failure' && loopKind !== 'merge_conflict' && loopKind !== 'review_thread') {
+      continue;
+    }
+    out.push({
+      pendingId: row.pendingId,
+      spaceId: row.spaceId,
+      prEntityId: typeof row.prEntityId === 'string' ? row.prEntityId : '',
+      loopKind,
+      scopeKey: typeof row.scopeKey === 'string' ? row.scopeKey : '',
+      headSha: typeof row.headSha === 'string' ? row.headSha : null,
+      payload:
+        typeof row.payload === 'object' && row.payload !== null
+          ? (row.payload as Record<string, unknown>)
+          : {},
+      attempts: typeof row.attempts === 'number' ? row.attempts : 0,
+      repo: row.repo,
+      number: row.number,
+      headRef: typeof row.headRef === 'string' ? row.headRef : null,
+      baseRef: typeof row.baseRef === 'string' ? row.baseRef : null,
+      taskId: typeof row.taskId === 'string' ? row.taskId : null,
+      owningSessionId: typeof row.owningSessionId === 'string' ? row.owningSessionId : null,
+    });
+  }
+  return out;
 }
 
 /** The doors return jsonb; parse defensively rather than casting and hoping. */

@@ -37,6 +37,15 @@
 -- `apply_pull_request_facts`. A watcher that emitted its own parallel event
 -- stream would give the ledger two vocabularies for one fact.
 --
+-- ORDER-INDEPENDENCE WAS CHECKED, and this is a decision rather than an
+-- accident. 084 gap-fills BELOW ordinals that deployed nodes have already
+-- applied (085 rename_work_session, 086 manifest_guard_token_boundary), so on
+-- those nodes it runs out of numeric order. That is safe here because 084
+-- shares no table, function or trigger with either: 085 touches only
+-- work_sessions.title, 086 only the manifest guard token surface. The one real
+-- coupling in this file is to 083 (credential sessions), which every node has
+-- applied before this can run, and it is handled explicitly in §F0.
+--
 -- ⚠ NO TABLE HERE IS A CLIENT SURFACE. Every one of them is reached only
 -- through the security-definer doors below, which run as the owner; that is why
 -- there are no table grants. Observation churn is operational truth, not a
@@ -139,6 +148,23 @@ begin
          fetched_at      = now(),
          updated_at      = now()
    where entity_id = p_entity_id;
+
+  -- §K: a clean/unknown -> dirty transition is enqueued here for the same
+  -- reason H1 enqueues a red check — it is detected by comparing against the
+  -- row we are overwriting, so it exists exactly once unless it is made
+  -- durable. `row` still holds the PRE-update values.
+  if coalesce(p_mergeable_state, row.mergeable_state) = 'dirty'
+     and row.mergeable_state is distinct from 'dirty' then
+    insert into public.pending_session_nudges(
+      space_id, pr_entity_id, loop_kind, scope_key, head_sha, payload)
+    values (row.space_id, p_entity_id, 'merge_conflict',
+            'conflict@' || coalesce(lower(coalesce(p_head_sha, row.head_sha)), 'unknown'),
+            lower(coalesce(p_head_sha, row.head_sha)),
+            jsonb_build_object('baseRef', coalesce(p_base_ref, row.base_ref),
+                               'headRef', coalesce(p_head_ref, row.head_ref)))
+    on conflict (pr_entity_id, loop_kind, scope_key, coalesce(head_sha, ''))
+    where status = 'pending' do nothing;
+  end if;
 
   -- The SEMANTIC diff, not "did any byte move". `previousState` and
   -- `previousMergeableState` ride along because the caller decides whether to
@@ -461,29 +487,28 @@ $$;
 -- reason to stay quiet; §I's durable signature is what stops that from
 -- repeating.
 --
--- ⚠ KNOWN AND ACCEPTED: THE LOST-TRANSITION WINDOW.
+-- ⚠ THE TRANSITION IS ENQUEUED (§K), NOT JUST RETURNED — and the correction
+-- that forced it is worth writing down, because the first version of this
+-- header argued the opposite and was wrong.
 --
--- This call COMMITS the new facts and RETURNS the transition in one step. If
--- the process dies after that commit and before the nudge is claimed and
--- posted, that transition is gone: the dedup table never saw the signature, and
--- the next tick compares red against red and correctly reports no change. The
--- agent is never told about that particular transition. `newlyUnresolved` in H2
--- has the same shape.
+-- The original reasoning: the only way to lose a transition is a crash between
+-- this commit and the nudge post, which is microseconds wide and self-healing,
+-- so an outbox is not worth its own failure modes. The integrator's live rig
+-- then reproduced a loss in the wild, and it was not that shape at all: a check
+-- went red while the PR had NO LIVE OWNING SESSION, the caller suppressed the
+-- nudge for having no addressee, and the fact was already stored — so when a
+-- session did come back, the next observation compared red against red and
+-- correctly reported nothing. The transition was consumed by being observed.
 --
--- Not fixed here, and the reason is a judgement about which failure mode to
--- prefer rather than an oversight. Closing it properly means an OUTBOX: the
--- diff door writes pending nudges in the same transaction as the facts, and
--- delivery drains them with its own retry and its own poison handling. That is
--- a second queue with a second set of failure modes, bought to cover a window
--- that is (a) microseconds wide, (b) only reachable by a crash in exactly that
--- gap, and (c) SELF-HEALING for everything that still matters — a check that is
--- still red re-fires the moment it is re-run or the head moves, and a still-
--- unresolved thread re-fires on the reviewer's next comment. What is genuinely
--- lost is the announcement of a failure that then stays red and untouched
--- forever, which is a state the PR itself already advertises.
+-- That does NOT self-heal, and that is the whole point: nothing about the check
+-- changes when the addressee appears. The original argument only held for
+-- failures that some LATER event re-announces; a suppression is not one.
 --
--- Revisit if the outbox is ever wanted for a second reason. Building it for
--- this one alone is not worth its own failure modes.
+-- So the transition is now durable the moment it is detected, in the SAME
+-- statement that stores the facts, and it stays pending until it is either
+-- delivered or explicitly retired (§K). `newlyFailing` is still returned, for a
+-- caller that wants to act within the tick; the queue is what makes the answer
+-- survive not acting on it.
 -- -----------------------------------------------------------------------------
 create or replace function public.apply_pr_check_facts(
   p_pr_entity_id uuid, p_head_sha text, p_checks jsonb
@@ -565,6 +590,16 @@ begin
      returning 1
   )
   select v into newly from diff;
+
+  -- §K: the transition becomes DURABLE here, in the same transaction as the
+  -- facts it was derived from. Without this the answer above is single-use, and
+  -- a caller that suppresses it (no live addressee) consumes it forever.
+  insert into public.pending_session_nudges(
+    space_id, pr_entity_id, loop_kind, scope_key, head_sha, payload)
+  select pr.space_id, p_pr_entity_id, 'ci_failure', (c ->> 'name') || '@' || sha, sha, c
+    from jsonb_array_elements(newly) c
+  on conflict (pr_entity_id, loop_kind, scope_key, coalesce(head_sha, ''))
+    where status = 'pending' do nothing;
 
   select count(*) filter (where internal.check_conclusion_is_failure(conclusion)),
          count(*) filter (where status <> 'completed'),
@@ -676,6 +711,15 @@ begin
   )
   select v into newly from diff;
 
+  -- §K, same reasoning as H1. `head_sha` is NULL: a conversation is not tied to
+  -- a commit, so a push does not make an unanswered reviewer stale.
+  insert into public.pending_session_nudges(
+    space_id, pr_entity_id, loop_kind, scope_key, head_sha, payload)
+  select pr.space_id, p_pr_entity_id, 'review_thread', t ->> 'threadKey', null, t
+    from jsonb_array_elements(newly) t
+  on conflict (pr_entity_id, loop_kind, scope_key, coalesce(head_sha, ''))
+    where status = 'pending' do nothing;
+
   select count(*) into unresolved_count
     from public.pr_review_thread_facts
    where pr_entity_id = p_pr_entity_id and is_resolved = false;
@@ -755,7 +799,18 @@ revoke all on function public.provider_etag_record(uuid,text,text,boolean) from 
 grant execute on function public.provider_etag_record(uuid,text,text,boolean) to tm8_app;
 
 -- =============================================================================
--- J. Durable nudge dedup.
+-- J. Durable nudge dedup — "has this exact text already been sent here".
+--
+-- Distinct from §K's outbox, and the pair is the whole delivery story: §K
+-- answers "is there a transition nobody has been told about", this answers "has
+-- this particular sentence already been said to this session". A transition can
+-- outlive many failed delivery attempts; a delivered sentence must never repeat.
+--
+-- There is no claim/release pair here any more. The first version of this lane
+-- had one, because posting happened OUTSIDE the claim and the gap needed
+-- papering over. §K4 posts inside the same transaction as the signature insert,
+-- so a failed send rolls the claim back by itself — the release door existed
+-- only to compensate for an ordering that no longer exists.
 --
 -- The signature is the CONTENT of what would be said — for CI, check name +
 -- commit sha + status + a hash of the log tail. Two identical signatures are
@@ -786,114 +841,375 @@ comment on table public.session_nudge_signatures is
   'One row per nudge actually delivered. Durable so a server restart does not '
   're-spam a live session with facts it has already been told (084 §J).';
 
--- CLAIM BEFORE POSTING, and release if the post fails.
+-- =============================================================================
+-- K. THE OUTBOX — a detected transition survives having nobody to tell.
 --
--- The other order — post, then record — re-sends on any crash between the two,
--- which is the exact failure this table exists to prevent. Claiming first can
--- instead LOSE a nudge if the process dies before the post, and losing one
--- message is a smaller harm than a restart loop that re-delivers every red
--- check in the space. `release_session_nudge` closes the gap for the ordinary
--- case where the post merely errors.
+-- WHY THIS EXISTS, precisely. §H1 detects "this check just went red" by
+-- comparing against the previous observation and then STORING the new one. That
+-- makes the detection single-use: whoever holds the return value is the only
+-- one who will ever see it, because the next call compares red against red.
 --
--- The advisory lock makes the cap check and the insert one decision: without
--- it, two observer nodes both read count = cap-1 and both post.
-create or replace function public.claim_session_nudge(
-  p_work_session_id uuid, p_loop_kind text, p_scope_key text, p_signature text,
-  p_scope_cap integer default null
-) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare
-  session_entity public.entities;
-  session_status text;
-  scope_count integer;
+-- Which is fine exactly as long as the caller always acts. It does not, and the
+-- integrator's live rig proved it: a check went red while the pull request had
+-- no live owning session, the caller suppressed the nudge for having no
+-- addressee, and the fact was already stored. When a session came back, nothing
+-- re-announced it. The transition was consumed by being observed.
+--
+-- So detection now WRITES A ROW, in the same statement as the facts it was
+-- derived from, and that row stays `pending` until something either delivers it
+-- or retires it for a stated reason. The queue is small and self-limiting: one
+-- row per (pull request, loop, scope, head sha), retired the moment the head
+-- moves past it.
+--
+-- IDENTITY IS THE TRANSITION, NOT THE MESSAGE. The delivered-content signature
+-- (§J) includes a hash of the CI log tail, which does not exist until the log
+-- has been fetched — long after detection. So the outbox keys on what IS known
+-- at detection time, and §J still guards the eventual send. Two tables, two
+-- questions: "is there an untold transition" and "has this exact text been sent
+-- to this session before".
+-- =============================================================================
+create table if not exists public.pending_session_nudges (
+  id             uuid primary key default internal.new_id(),
+  space_id       uuid not null references public.spaces(id) on delete cascade,
+  pr_entity_id   uuid not null references public.pull_requests(entity_id) on delete cascade,
+  loop_kind      text not null check (loop_kind in ('ci_failure','merge_conflict','review_thread')),
+  scope_key      text not null,
+  -- NULL for review threads, which are not tied to a commit. Present for CI and
+  -- conflicts, and it is what makes "the head moved, this is stale" decidable.
+  head_sha       text,
+  -- Everything needed to RENDER the nudge later, because the renderer runs in a
+  -- different process at a different time and the provider will not be asked
+  -- again for facts we already had.
+  payload        jsonb not null default '{}'::jsonb,
+  status         text not null default 'pending'
+                   check (status in ('pending', 'delivered', 'retired')),
+  detected_at    timestamptz not null default now(),
+  attempts       integer not null default 0,
+  last_error     text,
+  settled_at     timestamptz,
+  retire_reason  text,
+  message_id     uuid
+);
+
+-- One UNTOLD row per transition, and PARTIAL ON `pending` for a reason worth
+-- stating: the uniqueness must stop a tick loop from re-enqueuing something
+-- nobody has been told yet, and must NOT stop a genuinely new occurrence from
+-- queuing later. A check that goes red, is fixed, and breaks again is two
+-- incidents; a thread that is resolved and reopened is two conversations. An
+-- unconditional index would swallow the second of each forever, because the
+-- settled row would sit there as a permanent conflict target.
+--
+-- Whether the second occurrence is actually SAID is then §J's decision, on
+-- content — which is the right place for it, because only content can tell
+-- "broke again for the same reason" from "broke again for a new one".
+--
+-- `coalesce(head_sha,'')` because a review thread has no sha, and NULL columns
+-- do not conflict with each other.
+create unique index if not exists pending_session_nudges_transition_idx
+  on public.pending_session_nudges(pr_entity_id, loop_kind, scope_key, coalesce(head_sha, ''))
+  where status = 'pending';
+create index if not exists pending_session_nudges_pending_idx
+  on public.pending_session_nudges(detected_at) where status = 'pending';
+
+comment on table public.pending_session_nudges is
+  'Detected-but-untold semantic transitions. Written in the same statement as '
+  'the facts they were derived from (084 K), so a transition detected while no '
+  'addressee was live is delivered when one appears instead of being consumed.';
+
+-- -----------------------------------------------------------------------------
+-- K1. "Is this pull request stacked on an OPEN parent?"
+--
+-- §G computes the same predicate for the watch list; the delivery drain needs
+-- it per row, and re-evaluated at DELIVERY time rather than detection time.
+-- That difference is the point: a conflict queued while the parent was open
+-- must be delivered once the parent merges, and a suppression stored as a fact
+-- could never do that.
+-- -----------------------------------------------------------------------------
+create or replace function public.pr_is_stacked_on_open_parent(p_pr_entity_id uuid)
+returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare pr public.pull_requests; answer boolean;
 begin
   perform internal.require_identity();
-  select * into session_entity from public.entities
-   where id = p_work_session_id and kind = 'work_session' and deleted_at is null;
+  select * into pr from public.pull_requests where entity_id = p_pr_entity_id;
   if not found then
-    raise exception 'no work session %', p_work_session_id using errcode = 'P0002';
+    raise exception 'no pull request %', p_pr_entity_id using errcode = 'P0002';
   end if;
-  perform internal.require_space_member(session_entity.space_id);
-  if p_loop_kind not in ('ci_failure','merge_conflict','review_thread') then
-    raise exception 'invalid nudge loop kind: %', p_loop_kind using errcode = '22023';
+  perform internal.require_space_member(pr.space_id);
+  select exists (
+    select 1 from public.pull_requests parent
+     where parent.space_id = pr.space_id and parent.repo = pr.repo
+       and parent.entity_id <> pr.entity_id
+       and parent.head_ref is not null and parent.head_ref = pr.base_ref
+       and parent.state in ('open', 'draft')
+  ) into answer;
+  return jsonb_build_object('stacked', answer);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- K2. Retirement. A pending nudge is not kept forever waiting for a session
+--     that may never come back — but every removal states WHY, because a queue
+--     that silently empties is indistinguishable from one that silently fails.
+--
+--     * head_moved  — the PR advanced past the commit this was about. The red
+--                     check no longer describes the code, and re-announcing it
+--                     would send the agent to fix a build that no longer exists.
+--     * pr_settled  — merged or closed. Nothing left to act on.
+--     * thread_gone — the review thread was resolved or deleted by someone else.
+--     * expired     — older than the age-out. The catch-all for a PR whose
+--                     session never returns, so the queue cannot grow forever.
+-- -----------------------------------------------------------------------------
+create or replace function public.retire_stale_pending_nudges(
+  p_max_age_hours integer default 48
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare retired integer;
+begin
+  perform internal.require_identity();
+  with settled as (
+    update public.pending_session_nudges q
+       set status = 'retired', settled_at = now(),
+           retire_reason = case
+             when pr.state not in ('open', 'draft') then 'pr_settled'
+             when q.head_sha is not null and pr.head_sha is not null
+                  and lower(q.head_sha) <> lower(pr.head_sha) then 'head_moved'
+             when q.loop_kind = 'review_thread' and not exists (
+                    select 1 from public.pr_review_thread_facts f
+                     where f.pr_entity_id = q.pr_entity_id
+                       and f.thread_key = q.scope_key and f.is_resolved = false
+                  ) then 'thread_gone'
+             else 'expired' end
+      from public.pull_requests pr
+     where pr.entity_id = q.pr_entity_id
+       and q.status = 'pending'
+       and internal.is_space_member(q.space_id)
+       and (
+         pr.state not in ('open', 'draft')
+         or (q.head_sha is not null and pr.head_sha is not null
+             and lower(q.head_sha) <> lower(pr.head_sha))
+         or (q.loop_kind = 'review_thread' and not exists (
+               select 1 from public.pr_review_thread_facts f
+                where f.pr_entity_id = q.pr_entity_id
+                  and f.thread_key = q.scope_key and f.is_resolved = false))
+         or q.detected_at < now() - make_interval(hours => greatest(coalesce(p_max_age_hours, 48), 1))
+       )
+     returning 1
+  )
+  select count(*)::integer into retired from settled;
+  return jsonb_build_object('retired', retired);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- K3. The drain read. Returns only rows that HAVE a live agent addressee right
+--     now; everything else stays pending, which is the entire point of the
+--     table. Retirement runs first so a stale row is never handed out.
+-- -----------------------------------------------------------------------------
+create or replace function public.claim_pending_nudges(
+  p_limit integer default 20, p_max_age_hours integer default 48
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare result jsonb;
+begin
+  perform internal.require_identity();
+  perform public.retire_stale_pending_nudges(p_max_age_hours);
+
+  select coalesce(jsonb_agg(t.payload order by t.detected_at), '[]'::jsonb) into result
+    from (
+      select q.detected_at,
+        jsonb_build_object(
+          'pendingId', q.id,
+          'spaceId', q.space_id,
+          'prEntityId', q.pr_entity_id,
+          'loopKind', q.loop_kind,
+          'scopeKey', q.scope_key,
+          'headSha', q.head_sha,
+          'payload', q.payload,
+          'attempts', q.attempts,
+          'repo', pr.repo,
+          'number', pr.number,
+          'headRef', pr.head_ref,
+          'baseRef', pr.base_ref,
+          'taskId', (select ed.src_id from public.edges ed
+                      where ed.dst_id = pr.entity_id and ed.type = 'tracks'
+                      order by ed.created_at limit 1),
+          'owningSessionId', sess.id
+        ) as payload
+        from public.pending_session_nudges q
+        join public.pull_requests pr on pr.entity_id = q.pr_entity_id
+        join lateral (select internal.pr_owning_session(q.pr_entity_id) as id) sess on true
+        join public.work_sessions ws on ws.entity_id = sess.id
+       where q.status = 'pending'
+         and internal.is_space_member(q.space_id)
+         -- The addressee test. No live agent ⇒ not returned ⇒ still pending.
+         and ws.status in ('spawning', 'running', 'idle')
+         and internal.is_agent_session(sess.id)
+       order by q.detected_at
+       limit greatest(coalesce(p_limit, 20), 1)
+    ) t;
+
+  return jsonb_build_object('pending', result);
+end
+$$;
+
+-- -----------------------------------------------------------------------------
+-- K4. post_session_nudge — dedup, send and settle, in ONE transaction.
+--
+-- ⚠ WHY THIS DOOR EXISTS AT ALL, rather than the observer calling a message
+-- door directly: migration 019 CLOSED the message write surface. It revoked
+-- `post_message` from tm8_app and made `w2_post_message_batch` the only way in,
+-- and that is not bureaucracy — the batch door is what mints the DELIVERY
+-- INTENT for a work_session anchor (019:461). A message posted through the raw
+-- door reaches the graph and never reaches the agent's terminal. The first
+-- version of this lane called `post_message` and would have done exactly that,
+-- behind a 42501 that hid it.
+--
+-- So this door calls `w2_post_message_batch` like every other writer, as the
+-- owner. It does not re-grant the revoked door and it does not reimplement the
+-- insert; 019's validation, its ledger identity binding and its delivery
+-- intents all still apply. The ONLY thing added is that the dedup claim, the
+-- send and the queue settlement commit together — which is what makes a crash
+-- mid-send lose nothing instead of recording a nudge that never left.
+--
+-- ⚠ IT DOES NOT RECORD THE SESSION ROUTES, and that is a constraint rather
+-- than a choice: `w2_record_session_message_routes` (072) is owned by the
+-- migration role and grants EXECUTE to tm8_app only, so this function — which
+-- runs as tm8_graph_owner — cannot call it. Widening 072's grant to make it
+-- reachable would quietly broaden a surface that lane does not own, so the
+-- caller makes that call instead, as tm8_app, immediately after this returns.
+-- Nothing is lost: route recording shapes DELIVERY, and delivery already
+-- cannot be transactional (reserving a slot and writing to a PTY are not
+-- things SQL does). What must be atomic — the dedup claim, the send and the
+-- queue settlement — still is.
+-- -----------------------------------------------------------------------------
+create or replace function public.post_session_nudge(
+  p_pending_id uuid, p_signature text, p_body text,
+  p_scope_cap integer default null, p_client_mutation_id text default null
+) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
+declare
+  q public.pending_session_nudges;
+  session_id uuid;
+  session_status text;
+  scope_count integer;
+  posted jsonb;
+  -- NOT `message_id`: that is also a column of pending_session_nudges, and
+  -- `set message_id = message_id` in the settlement below resolves to the
+  -- column on both sides — a self-assignment Postgres rejects as ambiguous.
+  new_message_id uuid;
+begin
+  perform internal.require_identity();
+  select * into q from public.pending_session_nudges where id = p_pending_id for update;
+  if not found then
+    raise exception 'no pending nudge %', p_pending_id using errcode = 'P0002';
   end if;
-  if nullif(btrim(coalesce(p_scope_key, '')), '') is null
-     or nullif(btrim(coalesce(p_signature, '')), '') is null then
-    raise exception 'nudge scope key and signature are required' using errcode = '22023';
+  perform internal.require_space_member(q.space_id);
+  if q.status <> 'pending' then
+    return jsonb_build_object('posted', false, 'reason', 'already_settled',
+                              'status', q.status);
+  end if;
+  if nullif(btrim(coalesce(p_signature, '')), '') is null
+     or nullif(btrim(coalesce(p_body, '')), '') is null then
+    raise exception 'nudge signature and body are required' using errcode = '22023';
+  end if;
+  if p_client_mutation_id is null or btrim(p_client_mutation_id) = '' then
+    raise exception 'clientMutationId is required' using errcode = '22023';
   end if;
 
-  -- Liveness is enforced HERE and not only in the caller, because this is the
-  -- door: a nudge to an exited session is a message with no reader, and one
-  -- refusal in the schema beats the same check written in every call site.
-  select status into session_status from public.work_sessions where entity_id = p_work_session_id;
+  -- Re-resolved HERE, not trusted from the drain read: the session that owned
+  -- this pull request when the row was handed out may have exited since, and a
+  -- nudge is only worth sending to somebody who can still act on it.
+  session_id := internal.pr_owning_session(q.pr_entity_id);
+  if session_id is null then
+    return jsonb_build_object('posted', false, 'reason', 'no_owning_session');
+  end if;
+  select status into session_status from public.work_sessions where entity_id = session_id;
   if session_status is null or session_status not in ('spawning','running','idle') then
-    return jsonb_build_object('claimed', false, 'reason', 'session_not_live',
+    return jsonb_build_object('posted', false, 'reason', 'session_not_live',
                               'sessionStatus', session_status);
   end if;
-  -- F0 again, at the door. A credential login terminal (083) is a work_sessions
-  -- row with no agent behind it: live by status, and still nobody to read this.
-  if not internal.is_agent_session(p_work_session_id) then
-    return jsonb_build_object('claimed', false, 'reason', 'not_an_agent_session',
-                              'sessionStatus', session_status);
+  if not internal.is_agent_session(session_id) then
+    return jsonb_build_object('posted', false, 'reason', 'not_an_agent_session');
   end if;
 
   perform pg_advisory_xact_lock(hashtextextended(
-    p_work_session_id::text || ':nudge:' || p_loop_kind || ':' || p_scope_key, 0));
+    session_id::text || ':nudge:' || q.loop_kind || ':' || q.scope_key, 0));
 
   if exists (
     select 1 from public.session_nudge_signatures
-     where space_id = session_entity.space_id and work_session_id = p_work_session_id
-       and loop_kind = p_loop_kind and scope_key = p_scope_key and signature = p_signature
+     where space_id = q.space_id and work_session_id = session_id
+       and loop_kind = q.loop_kind and scope_key = q.scope_key and signature = p_signature
   ) then
-    return jsonb_build_object('claimed', false, 'reason', 'duplicate');
+    -- Already told. The transition is answered, so the queue row is done too.
+    update public.pending_session_nudges
+       set status = 'retired', settled_at = now(), retire_reason = 'duplicate'
+     where id = p_pending_id;
+    return jsonb_build_object('posted', false, 'reason', 'duplicate');
   end if;
 
   select count(*) into scope_count from public.session_nudge_signatures
-   where space_id = session_entity.space_id and work_session_id = p_work_session_id
-     and loop_kind = p_loop_kind and scope_key = p_scope_key;
-
+   where space_id = q.space_id and work_session_id = session_id
+     and loop_kind = q.loop_kind and scope_key = q.scope_key;
   if p_scope_cap is not null and scope_count >= greatest(p_scope_cap, 0) then
-    return jsonb_build_object('claimed', false, 'reason', 'capped', 'scopeCount', scope_count);
+    update public.pending_session_nudges
+       set status = 'retired', settled_at = now(), retire_reason = 'capped'
+     where id = p_pending_id;
+    return jsonb_build_object('posted', false, 'reason', 'capped', 'scopeCount', scope_count);
   end if;
 
   insert into public.session_nudge_signatures(
     space_id, work_session_id, loop_kind, scope_key, signature)
-  values (session_entity.space_id, p_work_session_id, p_loop_kind, p_scope_key, p_signature);
+  values (q.space_id, session_id, q.loop_kind, q.scope_key, p_signature);
 
-  return jsonb_build_object('claimed', true, 'scopeCount', scope_count + 1,
-                            'spaceId', session_entity.space_id);
+  -- 019's door, as the owner. If it raises — body too long, anchor unreadable —
+  -- the signature insert and the settlement below roll back with it, so the
+  -- transition stays pending and is retried rather than silently swallowed.
+  posted := public.w2_post_message_batch(
+    array[session_id], p_body, null, '{}'::uuid[], '{}'::uuid[], null, null, p_client_mutation_id);
+  new_message_id := (posted -> 'messageIds' ->> 0)::uuid;
+
+  update public.pending_session_nudges
+     set status = 'delivered', settled_at = now(), message_id = new_message_id,
+         attempts = attempts + 1
+   where id = p_pending_id;
+
+  return jsonb_build_object(
+    'posted', true, 'messageId', new_message_id, 'workSessionId', session_id,
+    'scopeCount', scope_count + 1,
+    'messageBatchId', posted ->> 'messageBatchId');
 end
 $$;
 
-create or replace function public.release_session_nudge(
-  p_work_session_id uuid, p_loop_kind text, p_scope_key text, p_signature text
+-- -----------------------------------------------------------------------------
+-- K5. Failure record. A send that threw leaves the row pending (the transaction
+--     rolled back), so this exists for the caller to record WHY without
+--     resurrecting anything — an attempts counter nobody can read is the same
+--     decoration `attempts` was on 006's queue before 081 gave it a budget.
+-- -----------------------------------------------------------------------------
+create or replace function public.record_pending_nudge_failure(
+  p_pending_id uuid, p_error text
 ) returns jsonb language plpgsql security definer set search_path = public, internal, pg_temp as $$
-declare session_entity public.entities;
+declare q public.pending_session_nudges;
 begin
   perform internal.require_identity();
-  -- The same kind check `claim_session_nudge` makes, and for the same reason:
-  -- two doors onto one table that disagree about what a valid subject is hand
-  -- a caller the looser of the two.
-  --
-  -- Deliberately NOT filtered on `deleted_at`, where claim is: a signature
-  -- claimed against a session that has since been deleted must still be
-  -- releasable, or a failed post strands the row forever and the agent is
-  -- permanently recorded as having been told something it never heard.
-  select * into session_entity from public.entities
-   where id = p_work_session_id and kind = 'work_session';
+  select * into q from public.pending_session_nudges where id = p_pending_id;
   if not found then
-    raise exception 'no work session %', p_work_session_id using errcode = 'P0002';
+    raise exception 'no pending nudge %', p_pending_id using errcode = 'P0002';
   end if;
-  perform internal.require_space_member(session_entity.space_id);
-  delete from public.session_nudge_signatures
-   where space_id = session_entity.space_id and work_session_id = p_work_session_id
-     and loop_kind = p_loop_kind and scope_key = p_scope_key and signature = p_signature;
-  return jsonb_build_object('released', found);
+  perform internal.require_space_member(q.space_id);
+  update public.pending_session_nudges
+     set attempts = attempts + 1, last_error = left(coalesce(p_error, ''), 500)
+   where id = p_pending_id and status = 'pending';
+  return jsonb_build_object('pendingId', p_pending_id);
 end
 $$;
 
-revoke all on function public.claim_session_nudge(uuid,text,text,text,integer) from public;
-grant execute on function public.claim_session_nudge(uuid,text,text,text,integer) to tm8_app;
-revoke all on function public.release_session_nudge(uuid,text,text,text) from public;
-grant execute on function public.release_session_nudge(uuid,text,text,text) to tm8_app;
+revoke all on function public.pr_is_stacked_on_open_parent(uuid) from public;
+grant execute on function public.pr_is_stacked_on_open_parent(uuid) to tm8_app;
+revoke all on function public.claim_pending_nudges(integer,integer) from public;
+grant execute on function public.claim_pending_nudges(integer,integer) to tm8_app;
+revoke all on function public.retire_stale_pending_nudges(integer) from public;
+grant execute on function public.retire_stale_pending_nudges(integer) to tm8_app;
+revoke all on function public.post_session_nudge(uuid,text,text,integer,text) from public;
+grant execute on function public.post_session_nudge(uuid,text,text,integer,text) to tm8_app;
+revoke all on function public.record_pending_nudge_failure(uuid,text) from public;
+grant execute on function public.record_pending_nudge_failure(uuid,text) to tm8_app;
 
 reset role;
