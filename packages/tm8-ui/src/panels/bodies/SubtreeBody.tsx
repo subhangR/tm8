@@ -7,6 +7,7 @@ import { Avatar, Chip, Eyebrow, Markdown } from '../../kit';
 import { DisabledIconControl, NOT_WIRED_REASON, toReason } from '../honesty/DisabledWithReason';
 import { HollowInline } from '../honesty/HollowValue';
 import { MemorySetBlock, type MemoryAuthoring } from './MemorySetBlock';
+import { PeerRowsBlock } from './PeerRowsBlock';
 import './subtree-body.css';
 
 /**
@@ -138,6 +139,13 @@ export function SubtreeBody({
    * exists to fix, reintroduced one level up.
    */
   const memorySet = (blocks ?? []).find((b) => b.block === 'memory-set');
+  /*
+   * Provenance rows — today the loop that fired this task (`triggered_by`).
+   * A SECOND named case, not a generic renderer: the body still knows every
+   * block it draws by name, and `RENDERED_BLOCKS` in the test holds the two
+   * lists together.
+   */
+  const peerRows = (blocks ?? []).filter((b) => b.block === 'peer-rows');
 
   return (
     <div
@@ -178,6 +186,12 @@ export function SubtreeBody({
           />
         </section>
       ) : null}
+      {peerRows.map((block, i) => (
+        <section className="sb-section" data-testid="peer-rows-section" key={`${block.block}:${i}`}>
+          <Eyebrow faint>{block.label ?? 'RELATED'}</Eyebrow>
+          <PeerRowsBlock detail={detail} params={block.params ?? {}} onOpenEntity={onOpenEntity} />
+        </section>
+      ))}
       <LinkedSection linked={linked} onOpenEntity={onOpenEntity} />
       {notices.length > 0 ? (
         <div className="sb-notices" data-testid="subtree-notices">
@@ -851,26 +865,31 @@ function isRunKind(summary: EntitySummary): boolean {
 }
 
 /**
- * The edge type MEMORY SET owns, and the one group `peersOf` must not sweep up.
+ * THE EDGE TYPES THAT HAVE THEIR OWN SECTION, and therefore must not also be
+ * swept into LINKED.
  *
- * This function used to push every endpoint of every group with no type filter,
- * which was harmless until 085 widened `remembers.src_kinds` to the wildcard and
- * P2 began auto-injecting a task's remembered memories at spawn. From that
- * point a `remembers(task → memory)` edge rendered here as an undifferentiated
- * LINKED chip — visually identical to a `blocks` or `references` peer, with no
- * epistemic marker, no statement that the task now injects that claim into
- * every session spawned on it, and no way to detach it.
+ * THE FAILURE CLASS THIS SET EXISTS FOR — worth stating once, because it has
+ * now recurred: `peersOf` pushes every endpoint of every group, which is
+ * correct only while the edge registry is narrow. Twice a migration has widened
+ * it underneath this function and given an edge BEHAVIOURAL semantics without
+ * this file knowing:
  *
- * That is the one link type on a task that changes what an agent is TOLD, so it
- * gets its own section (`memory-set`) and is excluded here. Exactly this group
- * and nothing broader: every other edge type still belongs in LINKED.
+ *   · `remembers` (085 + P2) — a task's remembered memories are injected into
+ *     every session spawned on it. It rendered as an anonymous LINKED chip.
+ *   · `triggered_by` (086) — "this task exists because that loop fired". Run
+ *     history and provenance, and it would have rendered the same way.
+ *
+ * A type-blind sweep cannot see either, and no declared-block guard can catch
+ * it because nothing is declared. So each type that carries meaning gets a
+ * NAMED SECTION and joins this set. Exactly these groups and nothing broader:
+ * every other edge type still belongs in LINKED, which is what the test holds.
  */
-const MEMORY_SET_EDGE = 'remembers';
+const OWN_SECTION_EDGES: ReadonlySet<string> = new Set(['remembers', 'triggered_by']);
 
 function peersOf(detail: EntityDetail): EntitySummary[] {
   const out: EntitySummary[] = [];
   for (const group of [...detail.connections.outgoing, ...detail.connections.incoming]) {
-    if (group.type === MEMORY_SET_EDGE) continue;
+    if (OWN_SECTION_EDGES.has(group.type)) continue;
     for (const edge of group.edges) {
       out.push(edge.source.id === detail.id ? edge.target : edge.source);
     }

@@ -531,6 +531,59 @@ export const memorySuperseded = summary({
   },
 });
 
+// ---------------------------------------------------------------------------
+// loop — a schedule plus a spawn config (086); run history IS its edges
+// ---------------------------------------------------------------------------
+
+/**
+ * The seeded Dreamer loop (P5) and a BROKEN one, because a fixture set where
+ * every loop is healthy renders a panel in which none of the honesty states
+ * can be seen.
+ *
+ * `teamMemberId: null` is MEANINGFUL and not merely absent — the contract says
+ * so: it means firings route through the dispatcher rather than naming a
+ * runner. `lastError` on the second is the state a scheduler leaves behind
+ * when a firing fails WITHOUT disabling the loop, which is the case a panel
+ * that only draws `enabled` would render as perfectly fine.
+ */
+export const loopDreamer = summary({
+  id: 'ent-loop-dreamer',
+  kind: 'loop',
+  title: 'Dreamer sweep',
+  excerpt: 'Walk every teammate\u2019s memories and mark what has gone stale.',
+  createdBy: ada,
+  state: {
+    kind: 'loop',
+    schedule: 'every 1d',
+    enabled: true,
+    teamMemberId: null,
+    subjectId: null,
+    nextRunAt: '2026-07-29T09:00:00.000Z',
+    lastRunAt: T.old,
+    lastError: null,
+  },
+});
+
+export const loopFailing = summary({
+  id: 'ent-loop-failing',
+  kind: 'loop',
+  title: 'Nightly conformance',
+  excerpt: 'Run the conformance suite against the node.',
+  createdBy: ada,
+  state: {
+    kind: 'loop',
+    schedule: 'every 12h',
+    enabled: true,
+    teamMemberId: teamMemberForge.id,
+    subjectId: null,
+    nextRunAt: '2026-07-28T21:00:00.000Z',
+    lastRunAt: T.staleEdge,
+    // Enabled AND failing — the scheduler records the error without disabling,
+    // so "enabled" alone is not a health claim.
+    lastError: 'spawn refused: no session slots free',
+  },
+});
+
 /**
  * scout's persona entity. Needed as the SUBJECT of the T5-5 capacity line
  * ("scout — 1 live session already"): a capacity statement needs a teammate
@@ -661,6 +714,7 @@ export const fixtureSummaries: EntitySummary[] = [
   messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
+  loopDreamer, loopFailing,
   prTransplant, commitFoundation, fileScreenshot,
   spellDeploy, skillReview, collectionInbox, collectionEmpty, projectTm8Ui,
   profileHouseStyle, customRitual,
@@ -811,6 +865,49 @@ export const fixtureDetails: Record<string, EntityDetail> = {
         },
       ],
       unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [loopDreamer.id]: detail(loopDreamer, {
+    content: {
+      kind: 'loop',
+      schedule: 'every 1d',
+      enabled: true,
+      teamMemberId: null,
+      subjectId: null,
+      prompt: 'Walk every teammate\u2019s remembers set and mark what has gone stale.',
+      config: {},
+      nextRunAt: '2026-07-29T09:00:00.000Z',
+      lastRunAt: T.old,
+      lastError: null,
+    },
+    connections: {
+      // RUN HISTORY: inbound triggered_by is the only record 086 keeps.
+      incoming: [
+        {
+          type: 'triggered_by',
+          direction: 'incoming',
+          label: 'runs',
+          edges: [edge('edge-triggered-1', 'triggered_by', taskGuideLines, loopDreamer, ada)],
+        },
+      ],
+      outgoing: [],
+      unresolvedHardDependencyCount: 0,
+    },
+  }),
+
+  [loopFailing.id]: detail(loopFailing, {
+    content: {
+      kind: 'loop',
+      schedule: 'every 12h',
+      enabled: true,
+      teamMemberId: teamMemberForge.id,
+      subjectId: null,
+      prompt: 'Run the conformance suite and report on the anchor.',
+      config: {},
+      nextRunAt: '2026-07-28T21:00:00.000Z',
+      lastRunAt: T.staleEdge,
+      lastError: 'spawn refused: no session slots free',
     },
   }),
 

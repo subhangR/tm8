@@ -451,6 +451,20 @@ const ROWS: readonly KindConfig[] = [
           label: 'MEMORIES',
           params: { edgeType: 'remembers', direction: 'outgoing', dstKind: 'memory' },
         },
+        /* WHY THIS TASK EXISTS, when a loop made it (086 `triggered_by`,
+           src task|work_session → dst loop). Provenance, not a generic link:
+           without its own row it would fall through `peersOf` into LINKED as
+           an anonymous chip — the same defect `remembers` had, which is why
+           both edge types now sit in `OWN_SECTION_EDGES`. */
+        {
+          block: 'peer-rows',
+          label: 'TRIGGERED BY',
+          params: {
+            edgeType: 'triggered_by',
+            direction: 'outgoing',
+            empty: 'Not triggered by a loop — this task was created directly.',
+          },
+        },
       ],
       // The detail header keeps one task action: Run. Coordinate and Complete
       // remain available from their task-specific surfaces, not this compact
@@ -1216,10 +1230,43 @@ const ROWS: readonly KindConfig[] = [
       quickCreate: false,
       tile: { badges: [{ source: 'messages' }] },
     }),
+    /*
+     * PROFILE, for the same reason `memory` is: the generic `fields` block
+     * cannot list edge peers, and a loop's RUN HISTORY *is* its inbound
+     * `triggered_by` edges (086 §4.4 — "there is no separate run table"). A
+     * loop panel that could not show its runs would be hiding the only record
+     * that exists.
+     */
     panel: {
-      archetype: 'generic',
+      archetype: 'profile',
       blocks: [
-        { block: 'fields', label: 'SCHEDULE' },
+        /* The instruction each firing carries. Content, not state. */
+        { block: 'bio', params: { source: 'prompt' } },
+        /* Scheduling rides in STATE so a list can say "enabled, next at X"
+           without a second read (the contract's own note), which is also why
+           these render from the summary here. `teamMemberId` absent is
+           MEANINGFUL — it means firings route through the dispatcher rather
+           than naming a runner — so the grid shows it rather than hiding a
+           null. */
+        {
+          block: 'field-grid',
+          label: 'SCHEDULE',
+          params: {
+            fields: 'schedule=Every,enabled=Enabled,nextRunAt=Next run,lastRunAt=Last run,teamMemberId=Runs as,lastError=Last error',
+          },
+        },
+        /* RUN HISTORY. Inbound `triggered_by` from every task or session this
+           loop has fired — the loop's edge neighbourhood IS the history. */
+        {
+          block: 'peer-rows',
+          label: 'RUNS',
+          params: {
+            edgeType: 'triggered_by',
+            direction: 'incoming',
+            count: true,
+            empty: 'No firings recorded yet. Each firing derives a task and edges back here, so this list IS the run history — an empty one means it has not fired.',
+          },
+        },
       ],
     },
     palette: { createLabel: 'New loop' },

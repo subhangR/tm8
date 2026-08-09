@@ -95,9 +95,10 @@ describe('the files port reaches real data through a real seam', () => {
   /**
    * MEASURED, 2026-07-29, not assumed — and the measurement is a FINDING.
    *
-   * `seam.entity(id).connections` on the fixture dataset carries exactly five
-   * edge types across every entity: `references`, `blocks`, `relates_to`, and
-   * — since the memory working set landed — `remembers` and `supersedes`.
+   * `seam.entity(id).connections` on the fixture dataset carries exactly six
+   * edge types across every entity: `references`, `blocks`, `relates_to`,
+   * `remembers` and `supersedes` (the memory working set), and `triggered_by`
+   * (a loop's run history, 086).
    * There is still NO `attached_to` group, which is the finding this test
    * exists for. Meanwhile `src/fixtures/graph.ts:116` DOES define
    * `fileScreenshot -attached_to-> taskGuideLines` — but that edge lives in the
@@ -132,9 +133,9 @@ describe('the files port reaches real data through a real seam', () => {
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
-    // The measurement itself, pinned: five edge types, none of them ours.
+    // The measurement itself, pinned: six edge types, none of them ours.
     expect([...types].sort()).toEqual([
-      'blocks', 'references', 'relates_to', 'remembers', 'supersedes',
+      'blocks', 'references', 'relates_to', 'remembers', 'supersedes', 'triggered_by',
     ]);
   });
 });

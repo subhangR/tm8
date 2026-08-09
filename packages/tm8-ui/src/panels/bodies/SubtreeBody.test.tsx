@@ -510,13 +510,16 @@ describe('the registry seam this body reads through', () => {
    * registry row declaring a block it does not draw would render NOTHING and
    * nobody would be red. This is that red.
    *
-   * IT WORKED. Adding `memory-set` to the task row turned this test red before
-   * the section existed, which is exactly the failure it was written for. The
-   * SET below grows only when the body genuinely grows a renderer — widening it
-   * to make a red go away would retire the guard while leaving it looking
-   * green, which is the one edit this test must never receive.
+   * IT HAS WORKED TWICE. Adding `memory-set` to the task row turned this red
+   * before the section existed; adding `peer-rows` for `triggered_by` did the
+   * same. Both times the block was written because the test refused the
+   * declaration, which is exactly the failure it exists for.
+   *
+   * The SET grows ONLY when the body genuinely grows a renderer. Widening it to
+   * make a red go away would retire the guard while leaving it looking green —
+   * the one edit this test must never receive.
    */
-  const RENDERED_BLOCKS = new Set(['notice', 'memory-set']);
+  const RENDERED_BLOCKS = new Set(['notice', 'memory-set', 'peer-rows']);
 
   it('every subtree-archetype registry row declares only blocks this body renders', () => {
     const rows = allSubtreeRows();
@@ -624,5 +627,94 @@ describe('a task holds a memory working set, and a declared block must draw', ()
     // Absent blocks must not conjure an empty MEMORIES heading on every task.
     const { queryByTestId } = renderBody({ detail: taskWithMemory() });
     expect(queryByTestId('memory-set-section')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * LOOP PROVENANCE — the second edge type to grow behavioural meaning under a
+ * type-blind sweep, and the reason `OWN_SECTION_EDGES` is a set rather than the
+ * single constant it started as.
+ *
+ * `triggered_by` (086, src task|work_session → dst loop) answers "why does this
+ * task exist". Left to `peersOf` it would render as an anonymous LINKED chip —
+ * identical to `references` — which is precisely the defect `remembers` had.
+ * The failure class is a type-blind traversal meeting a widened edge registry,
+ * and no declared-block guard can see it because nothing is declared. These
+ * tests are what can see it.
+ */
+const TRIGGERED_BY_LOOP = {
+  id: 'edge-task-triggered-1',
+  type: 'triggered_by',
+  props: {},
+  createdBy: ada,
+  createdAt: '2026-07-20T09:00:00.000Z',
+  updatedAt: '2026-07-28T09:15:00.000Z',
+};
+
+const loopSummary: EntitySummary = {
+  ...taskGuideLines,
+  id: 'ent-loop-dreamer',
+  kind: 'loop',
+  title: 'Dreamer sweep',
+  state: {
+    kind: 'loop', schedule: 'every 1d', enabled: true, teamMemberId: null,
+    subjectId: null, nextRunAt: null, lastRunAt: null, lastError: null,
+  },
+};
+
+function taskFiredByLoop(): EntityDetail {
+  const base = taskDetail();
+  return {
+    ...base,
+    connections: {
+      ...base.connections,
+      outgoing: [
+        ...base.connections.outgoing,
+        {
+          type: 'triggered_by',
+          direction: 'outgoing' as const,
+          label: 'triggered by',
+          edges: [{ ...TRIGGERED_BY_LOOP, source: base as EntitySummary, target: loopSummary }],
+        },
+      ],
+    },
+  };
+}
+
+describe('a loop-fired task says which loop fired it', () => {
+  it('draws the loop in its own section, named by kind', () => {
+    const { getByTestId } = renderBody({
+      detail: taskFiredByLoop(),
+      blocks: getKind('task').panel.blocks,
+    });
+    const section = getByTestId('peer-rows-section');
+    expect(section.textContent).toContain('TRIGGERED BY');
+    expect(section.textContent).toContain('Dreamer sweep');
+    // The KIND in words — a glyph alone cannot tell a loop from a task.
+    expect(section.textContent).toContain('Loop');
+  });
+
+  it('keeps the loop OUT of LINKED, and leaves ordinary links alone', () => {
+    const { getByTestId } = renderBody({
+      detail: taskFiredByLoop(),
+      blocks: getKind('task').panel.blocks,
+    });
+    const linked = getByTestId('linked-section').textContent ?? '';
+    expect(linked).not.toContain('Dreamer sweep');
+    // The filter is exactly two group types wide, not "anything unfamiliar".
+    expect(linked).toContain(docLayoutSpec.title);
+  });
+
+  it('states the absence when no loop fired it, rather than drawing nothing', () => {
+    // Most tasks are made by hand, and that is a fact worth rendering — an
+    // empty region reads as a loading bug.
+    const { getByTestId } = renderBody({
+      detail: taskDetail(),
+      blocks: getKind('task').panel.blocks,
+    });
+    expect(getByTestId('peer-rows-section').textContent)
+      .toContain('this task was created directly');
   });
 });
