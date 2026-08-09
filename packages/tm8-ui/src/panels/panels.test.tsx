@@ -205,10 +205,10 @@ describe('EntityDetailPanel — the fixed anatomy', () => {
     expect(bar!.contains(surfaceSwitch)).toBe(true);
     expect(surfaceSwitch.className).toContain('pn-surface-switch--bar');
     // Still switchable in the bar — relocating a control may not quietly cost
-    // it its behaviour. Debug is the always-present third chip (it does not
-    // depend on the chat pin), so a chat-enabled session shows all three.
+    // it its behaviour. Debug and Graph are always present (neither depends on
+    // the chat pin), so a chat-enabled session shows all four.
     const tabs = [...surfaceSwitch.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
-    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug']);
+    expect(tabs).toEqual(['Terminal', 'Chat', 'Debug', 'Graph']);
   });
 
   it('D7.2: the viewers footer is HOLLOW — a dash, never "0 viewing"', () => {

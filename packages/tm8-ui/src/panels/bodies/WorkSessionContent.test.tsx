@@ -228,9 +228,14 @@ describe('WorkSessionContent', () => {
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Terminal' }), { key: 'ArrowRight' });
     expect(screen.getByText('chat-preserved')).toBeTruthy();
     expect(chatScroll.scrollTop).toBe(123);
-    // End now jumps to the LAST surface — Debug, the always-present third chip.
+    // End jumps to the LAST surface — Graph, the always-present fourth chip.
     // The chat pane stays mounted (its scroll survives), the terminal too.
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Chat' }), { key: 'End' });
+    expect(onSurfaceChange).toHaveBeenLastCalledWith('graph');
+    expect(screen.getByRole('tab', { name: 'Graph' }).getAttribute('aria-selected')).toBe('true');
+    // ArrowLeft walks back onto Debug, so the walk still covers the chip that
+    // used to be last.
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Graph' }), { key: 'ArrowLeft' });
     expect(onSurfaceChange).toHaveBeenLastCalledWith('debug');
     expect(screen.getByRole('tab', { name: 'Debug' }).getAttribute('aria-selected')).toBe('true');
     expect(chatScroll.scrollTop).toBe(123);
