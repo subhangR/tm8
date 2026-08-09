@@ -49,9 +49,9 @@ export interface PullRequestFacts {
   /** Mapped onto the four states `public.pull_requests` allows. */
   state: 'open' | 'merged' | 'closed' | 'draft';
   headSha: string | null;
-  /** 083 §A: the branch, which is also how the owning session is resolved. */
+  /** 084 §A: the branch, which is also how the owning session is resolved. */
   headRef: string | null;
-  /** 083 §G: a base that is another open PR's head means STACKED. */
+  /** 084 §G: a base that is another open PR's head means STACKED. */
   baseRef: string | null;
   /** GitHub's own word. `dirty` is the conflict; `unknown` is "still computing". */
   mergeableState: MergeableState | null;
@@ -139,7 +139,12 @@ export class GithubClient {
 
   private async send(
     path: string,
-    init: { method?: string; body?: string; headers?: Record<string, string> },
+    init: {
+      method?: string;
+      body?: string;
+      headers?: Record<string, string>;
+      redirect?: RequestRedirect;
+    },
     signal?: AbortSignal,
   ): Promise<{ ok: true; response: Response } | { ok: false; reason: 'unavailable'; detail: string }> {
     const timeout = AbortSignal.timeout(this.timeoutMs);
@@ -149,6 +154,7 @@ export class GithubClient {
         method: init.method ?? 'GET',
         headers: this.headers(init.headers),
         ...(init.body === undefined ? {} : { body: init.body }),
+        ...(init.redirect === undefined ? {} : { redirect: init.redirect }),
         signal: composed,
       });
       return { ok: true, response };
@@ -333,6 +339,15 @@ export class GithubClient {
    * It also REQUIRES a token — GitHub's GraphQL API refuses anonymous requests
    * outright — so an unauthenticated node gets `unauthorized` here and simply
    * runs the other two loops.
+   *
+   * ⚠ BOUNDED AT 50 THREADS AND 10 COMMENTS PER THREAD, WITH NO PAGINATION.
+   * A pull request past those bounds is silently truncated, and the review
+   * signature (comment count + ids) is computed over the truncated view — so a
+   * 51st thread is never announced, and a reply past the 10th does not re-arm
+   * the nudge. Accepted for v1: a PR with fifty open conversations has a
+   * problem this loop is not going to solve, and paginating would let one
+   * pathological PR spend the tick's whole GraphQL budget. Named here rather
+   * than discovered later.
    */
   async reviewThreads(
     repo: string,
@@ -416,7 +431,18 @@ export class GithubClient {
    * The reader below keeps a rolling window of the trailing bytes and discards
    * everything before it as it streams.
    *
-   * The endpoint 302s to a signed blob; `fetch` follows that on its own.
+   * ⚠ THE REDIRECT IS FOLLOWED BY HAND, AND THAT IS A SECURITY REQUIREMENT.
+   *
+   * This endpoint answers 302 to a signed blob on objects.githubusercontent.com.
+   * Letting `fetch` auto-follow it means the request to that host is built by
+   * undici, and whether undici strips the `authorization` header on a
+   * cross-origin redirect is version-dependent. If it does not, this call posts
+   * the node's GitHub token to a third-party host on every CI failure — the
+   * worst possible place for a credential to leak, because nothing in the logs
+   * would ever show it. `redirect: 'manual'` plus an explicit unauthenticated
+   * follow makes the answer OURS instead of undici's, and costs nothing: the
+   * signed URL carries its own authorization in the query string and REFUSES a
+   * request that also presents a bearer token.
    */
   async jobLogTail(
     repo: string,
@@ -432,21 +458,72 @@ export class GithubClient {
     }
     const sent = await this.send(
       `/repos/${repo}/actions/jobs/${jobId}/logs`,
-      { headers: { accept: 'application/vnd.github.raw+json' } },
+      { headers: { accept: 'application/vnd.github.raw+json' }, redirect: 'manual' },
       signal,
     );
     if (!sent.ok) return sent;
-    const failure = classifyFailure(sent.response);
+
+    let response = sent.response;
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (location === null) {
+        return { ok: false, reason: 'unavailable', detail: 'log redirect carried no location' };
+      }
+      const followed = await this.fetchUnauthenticated(location, signal);
+      if (!followed.ok) return followed;
+      response = followed.response;
+    }
+
+    const failure = classifyFailure(response);
     if (failure) return failure;
 
     try {
-      const tail = await readTrailingBytes(sent.response, LOG_TAIL_BYTES);
+      const tail = await readTrailingBytes(response, LOG_TAIL_BYTES);
       return { ok: true, value: lastLines(tail.text, lines, tail.truncated), etag: null };
     } catch (error) {
       return {
         ok: false,
         reason: 'unavailable',
         detail: `unreadable log: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+  }
+
+  /**
+   * Follow an absolute URL with NO credential of ours attached.
+   *
+   * `https:` only, and the scheme check is load-bearing rather than defensive
+   * tidiness: the location comes from a response header, so honouring `file:`
+   * or a redirect back to a host that would see our headers is exactly the hole
+   * the manual follow exists to close.
+   */
+  private async fetchUnauthenticated(
+    location: string,
+    signal?: AbortSignal,
+  ): Promise<{ ok: true; response: Response } | { ok: false; reason: 'unavailable'; detail: string }> {
+    let url: URL;
+    try {
+      url = new URL(location);
+    } catch {
+      return { ok: false, reason: 'unavailable', detail: 'log redirect location is not a url' };
+    }
+    if (url.protocol !== 'https:') {
+      return { ok: false, reason: 'unavailable', detail: `refusing ${url.protocol} log redirect` };
+    }
+
+    const timeout = AbortSignal.timeout(this.timeoutMs);
+    const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    try {
+      const response = await this.fetchImpl(url.toString(), {
+        headers: { 'user-agent': 'tm8-tracking-observer' },
+        signal: composed,
+      });
+      return { ok: true, response };
+    } catch (error) {
+      return {
+        ok: false,
+        reason: 'unavailable',
+        detail: error instanceof Error ? error.message : String(error),
       };
     }
   }
