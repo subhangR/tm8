@@ -29,6 +29,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_MENU_GROUP_SPINE,
+  DEFAULT_MENU_LIBRARY_SPINE,
   DEFAULT_MENU_WORKSPACE_KIND_SPINE,
 } from '@tm8/contract';
 
@@ -37,12 +38,23 @@ import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from 
 const DATABASE_URL = process.env.TM8_DATABASE_URL;
 const describeDb = DATABASE_URL ? describe : describe.skip;
 const LOOPS_MENU_MIGRATION_SUFFIX = '_menu_loops_row.sql';
+const FILES_MENU_MIGRATION_SUFFIX = '_menu_files_view.sql';
 
 function loopsMenuMigration(files: readonly string[]): string {
   const matches = files.filter((file) => file.endsWith(LOOPS_MENU_MIGRATION_SUFFIX));
   if (matches.length !== 1) {
     throw new Error(
       `expected exactly one *${LOOPS_MENU_MIGRATION_SUFFIX} migration, found ${matches.length}: ${matches.join(', ')}`,
+    );
+  }
+  return matches[0]!;
+}
+
+function filesMenuMigration(files: readonly string[]): string {
+  const matches = files.filter((file) => file.endsWith(FILES_MENU_MIGRATION_SUFFIX));
+  if (matches.length !== 1) {
+    throw new Error(
+      `expected exactly one *${FILES_MENU_MIGRATION_SUFFIX} migration, found ${matches.length}: ${matches.join(', ')}`,
     );
   }
   return matches[0]!;
@@ -96,14 +108,110 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.refs).toHaveLength(8);
   });
 
-  it('names Files, Spells and Collections as first-class Library rows', async () => {
-    const rows = await db.query<{ refs: string[] }>(
-      `select array_agg(item->>'ref' order by item_ord) as refs
+  it('names the Files explorer before the Library entity rows', async () => {
+    const rows = await db.query<{ items: Array<{ type: string; ref: string }> }>(
+      `select jsonb_agg(jsonb_build_object('type', item->>'type', 'ref', item->>'ref') order by item_ord) as items
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
               jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
         where g->>'id' = 'library'`,
     );
-    expect(rows[0]?.refs).toEqual(['file', 'spell', 'collection']);
+    expect(rows[0]?.items).toEqual(DEFAULT_MENU_LIBRARY_SPINE);
+  });
+});
+
+describeDb('Files explorer default-menu saved-row compatibility', () => {
+  let db: W1ScratchDatabase;
+  let oldDefault: unknown;
+  let customized: unknown;
+
+  beforeAll(async () => {
+    const files = migrationFiles();
+    const migration = filesMenuMigration(files);
+    const migrationIndex = files.indexOf(migration);
+    if (migrationIndex < 0) throw new Error(`${migration} is missing from the migration chain`);
+
+    db = await createW1ScratchDatabase('menu-files-upgrade');
+    db.apply(files.slice(0, migrationIndex));
+
+    oldDefault = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+    const oldLibraryRefs = await db.query<{ refs: string[] }>(
+      `select array_agg(item->>'ref' order by item_ord) as refs
+         from jsonb_array_elements($1::jsonb->'groups') g,
+              jsonb_array_elements(g->'items') with ordinality items(item, item_ord)
+        where g->>'id' = 'library'`,
+      [oldDefault],
+    );
+    expect(oldLibraryRefs[0]?.refs).toEqual(['file', 'spell', 'collection']);
+    customized = (await db.query<{ payload: unknown }>(
+      `select jsonb_set($1::jsonb, '{groups,0,label}', to_jsonb('My Home'::text)) payload`,
+      [oldDefault],
+    ))[0]!.payload;
+
+    await db.transaction(async (client) => {
+      await client.query('set local role tm8_graph_owner');
+      const ids = (await client.query<{ untouched: string; custom: string }>(
+        `select internal.new_id()::text untouched, internal.new_id()::text custom`,
+      )).rows[0]!;
+      await client.query(
+        `insert into public.user_profiles(identity_id, display_name)
+         values ('menu-files-owner', 'Menu files owner')`,
+      );
+      await client.query(
+        `insert into public.spaces(id, name, created_by_identity)
+         values ($1, 'Untouched default', 'menu-files-owner'),
+                ($2, 'Customized menu', 'menu-files-owner')`,
+        [ids.untouched, ids.custom],
+      );
+      await client.query(
+        `insert into public.space_menu_configs(space_id, schema_version, revision, payload)
+         values ($1, 1, 41, $2::jsonb), ($3, 1, 73, $4::jsonb)`,
+        [ids.untouched, oldDefault, ids.custom, customized],
+      );
+    });
+
+    db.apply([migration]);
+  }, 120_000);
+
+  afterAll(async () => {
+    await db?.destroy();
+  }, 30_000);
+
+  it('upgrades the untouched default and leaves an authored menu unchanged', async () => {
+    const rows = await db.query<{ name: string; revision: number; payload: unknown }>(
+      `select s.name, menu.revision, menu.payload
+         from public.spaces s
+         join public.space_menu_configs menu on menu.space_id = s.id
+        order by s.name`,
+    );
+    const seeded = (await db.query<{ payload: unknown }>(
+      `select internal.w1_default_menu_payload() payload`,
+    ))[0]!.payload;
+
+    expect(rows).toEqual([
+      { name: 'Customized menu', revision: 73, payload: customized },
+      { name: 'Untouched default', revision: 42, payload: seeded },
+    ]);
+  });
+
+  it('registers the Files view as implemented and menu-eligible', async () => {
+    const rows = await db.query<{
+      route_template: string;
+      menu_eligible: boolean;
+      implemented: boolean;
+    }>(
+      `select route_template, menu_eligible, implemented
+         from public.menu_view_registry
+        where ref = 'files'`,
+    );
+    expect(rows).toEqual([
+      {
+        route_template: '#/s/{s}/files',
+        menu_eligible: true,
+        implemented: true,
+      },
+    ]);
   });
 });
 
