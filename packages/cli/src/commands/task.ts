@@ -122,6 +122,12 @@ async function taskComplete(cmd: CommandContext): Promise<ExitCode> {
  * the acting MEMBER but not the acting SESSION, so without this claim a PR
  * linked by an agent has no owning session and a CI-failure nudge has no
  * addressee — found live by the Tier 3 E2E rig, not by any mock.
+ *
+ * ROUTING POLICY, chosen not accidental: this edge makes the LINKER outrank a
+ * branch-coding session (`created_in` beats `in_worktree` in
+ * `pr_owning_session`'s confidence order). The linker declared interest in
+ * the PR as a tracked object; the coder may be one of several sessions on
+ * the branch. Liveness still outranks both.
  */
 async function claimLinkedArtifactSession(
   cmd: CommandContext,
