@@ -448,7 +448,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 77 -> 78 on 2026-08-09: 081 (worktree provisioning + tracking observer).
     // Authored as 078, then renumbered on merge because #71 had landed 078/079.
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
-    expect(server.appliedMigrations.length).toBe(79);
+    // 79 -> 80: 083 (forge observer facts and nudges). MEASURED on this lane's
+    // tree, not derived — and this lane is one of several in flight, so the
+    // integrator re-measures on the merged tree rather than adding to 80.
+    expect(server.appliedMigrations.length).toBe(80);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });
