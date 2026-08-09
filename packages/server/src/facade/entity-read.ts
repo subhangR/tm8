@@ -1390,7 +1390,10 @@ export function capabilitiesOf(row: EntityRow): EntityCapabilities {
   // Worktree "edit" is exactly one thing — the status transition through
   // update_worktree; every other field is immutable. canEdit mirrors that the
   // patch door will accept SOMETHING, which is the contract of this flag.
-  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree']);
+  // Work-session "edit" is likewise exactly one thing: the display title, via
+  // rename_work_session (085). Everything else on that row belongs to the
+  // execution block, which is why it is still not deletable or hierarchical.
+  const editable = new Set(['task', 'doc', 'channel', 'collection', 'team_member', 'spell', 'skill', 'memory', 'worktree', 'work_session']);
   const hierarchical = new Set(['task', 'doc', 'channel', 'collection']);
   const pullable = new Set(['channel', 'task', 'doc', 'file', 'spell', 'skill', 'collection']);
 

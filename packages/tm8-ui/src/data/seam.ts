@@ -38,6 +38,19 @@
  * authorization input — nothing in the UI may gate on it. Filed by the
  * identity-display lane for dual re-consensus recording.
  *
+ * Amendment 5 (2026-08-09, edges): commands gain `createEdge`/`deleteEdge` —
+ * the generic `edges.create`/`edges.delete` catalog rows. Reached by the
+ * assignment and attachment features at once; one amendment, not two (see the
+ * op's own note below).
+ *
+ * Amendment 6 (2026-08-09, branch topology): reads gain `projectBranches` —
+ * the contract's `projects.branches.list` (`GET /v2/projects/:projectId/branches`,
+ * catalog v1). A READ over a linked project's working directory: local
+ * branches with ahead/behind vs the default branch, stale and merged flags.
+ * Contract-shaped (`ProjectBranchTopology` verbatim) and additive, zero
+ * caller churn. Filed by the branch-topology-ui lane for dual re-consensus
+ * recording alongside the catalog row it consumes (PR #74).
+ *
  * Two implementations, drop-in interchangeable (LLD §10):
  *   - createFixtureSeam()  — backed by the shared fixture dataset (LLD C-5)
  *   - createRealSeam()     — HTTP + WS against the tm8 node (LLD §5–§6)
@@ -106,6 +119,7 @@ import type {
   PatchMessageInput,
   PatchTaskInput,
   PostMessageInput,
+  ProjectBranchTopology,
   ProjectCreateInput,
   ProjectDirectoryListing,
   ProjectLinkInput,
@@ -114,6 +128,7 @@ import type {
   ResolveEntityAttentionInput,
   SessionJournalPage,
   SessionLaunchRecord,
+  SessionTranscriptPage,
   SpaceId,
   SpaceKindCounts,
   SpaceSettingsView,
@@ -222,6 +237,27 @@ export interface JournalOpts {
   before?: number;
 }
 
+/**
+ * The DEBUG transcript read's window. There is NO cursor: the server reads a
+ * tail, so "older" is not a page you can walk — asking for more turns widens
+ * the same window rather than stepping back through history.
+ */
+export interface TranscriptOpts {
+  /** Newest turns to return; server default is 20, max 200. */
+  last?: number;
+}
+
+/**
+ * `projectBranches` options — both bounded SERVER-side (limit caps at 200;
+ * each branch costs a rev-list, so the cap is a process budget, not taste).
+ */
+export interface BranchTopologyOpts {
+  /** Days without a commit before a branch is flagged stale. Server default: 30. */
+  staleAfterDays?: number;
+  /** Max branches returned; the DTO's `truncated` says when this cut the list. */
+  limit?: number;
+}
+
 export interface Seam {
   // -- lifecycle -------------------------------------------------------------
   /** Subscribe the space's event stream and start the liveness cadence. Idempotent. */
@@ -278,6 +314,15 @@ export interface Seam {
   /** Linked project resources, including trust and graph-owned cwd. */
   projects(spaceId: SpaceId): Promise<ProjectResource[]>;
   /**
+   * Branch topology for one linked project's working directory (Amendment 6):
+   * local branches with ahead/behind vs the default branch, stale and merged
+   * flags. A READ — the server runs git argv-only and checks nothing out.
+   * `invalid_input` is a real, expected rejection (the project's workingDir is
+   * not a git repository) and consumers must render it as a fact about the
+   * project, not as a seam fault.
+   */
+  projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology>;
+  /**
    * Node-local onboarding is optional because fixture seams have no filesystem.
    * The real seam exposes the complete contract-backed saga surface; its
    * absence keeps the Add Space control disabled-with-reason.
@@ -322,6 +367,20 @@ export interface Seam {
    * apart. Environment VALUES are structurally absent, never merely hidden.
    */
   launch(workSessionId: EntityId): Promise<SessionLaunchRecord>;
+  /**
+   * What the session's agent SAID — the third face of the DEBUG surface, after
+   * TOLD (`launch`) and DID (`journal`).
+   *
+   * Read from the agent's OWN transcript file, so it carries model prose the
+   * journal structurally cannot hold. Polled like the journal, because unlike
+   * the launch record it grows.
+   *
+   * `stats` describes the RETURNED WINDOW, not the session's lifetime — the
+   * server reads a tail — and `stats.partial` says which. `stuck` is a
+   * HEURISTIC over tool calls without prose and must never be rendered as a
+   * liveness claim; `execution.liveness` is the authority on that.
+   */
+  transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage>;
   /**
    * The space-wide attention queue — the ONLY way to discover *which* entities
    * are waiting on a human. `collections.query` has neither an attention filter

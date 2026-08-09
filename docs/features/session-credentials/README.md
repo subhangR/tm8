@@ -58,7 +58,7 @@ Each is recorded with its reasoning in doc 11.
 
 This PR is the **code**. It is not a shipped feature:
 
-- The full stack has **never run against a live server**. Migration 082 has not been applied
+- The full stack has **never run against a live server**. Migration 083 has not been applied
   to any database.
 - **openai/Codex is unproven** — the login verb is in the fixed command table, but
   `codex login status` output has never been captured on any node. The probe says so in its

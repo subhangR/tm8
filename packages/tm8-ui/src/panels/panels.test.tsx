@@ -1303,6 +1303,17 @@ describe('EntityListPanel — behaviour is registry DATA', () => {
         reasons={REASONS}
         ctx={{ ...ctx, capabilities: detail.capabilities, liveness: 'stale' }}
         liveness="stale"
+        /*
+         * WIRED, and that is what the `Save` assertion below now measures.
+         * A session title became editable (085), so this panel mounts the save
+         * flow exactly as a task's does — and `SaveControls` renders NOTHING
+         * while the draft is clean. Mounted WITHOUT an executor it renders a
+         * permanent disabled-with-reason instead, which is the state that
+         * squeezed Discussion/Connections/Activity out of this row and the
+         * reason the registry flag was false. Both halves are real; the
+         * unwired one stays pinned for tasks in save-wiring.test.tsx.
+         */
+        commands={{ createEntity: vi.fn(), patchTask: vi.fn() }}
         onAction={() => {}}
         onPromote={() => {}}
         onClose={() => {}}

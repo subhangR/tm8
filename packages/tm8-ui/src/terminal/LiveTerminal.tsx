@@ -3,7 +3,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import '@xterm/xterm/css/xterm.css';
 
-import { isTerminalBlurChord } from '../keyboard/contract';
+import { isTerminalBlurChord, isTerminalPasteChord } from '../keyboard/contract';
 import { dataTransferHasFiles } from './clipboardImages.js';
 import { dispatchClipboardData } from './clipboardPaste.js';
 import { uploadClipboardImage } from './clipboardUpload.js';
@@ -328,6 +328,13 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
         return false;
       }
       if (event.type !== 'keydown') return true;
+      // Hand Ctrl+V / Cmd+V (and Ctrl+Shift+V) back to the browser: returning
+      // false here returns from xterm's _keyDown BEFORE its preventDefault, so
+      // the native paste fires and `handlePaste` below receives it. Without
+      // this, xterm encodes Ctrl+V as 0x16 and cancels the event, and no paste
+      // ever reaches the PTY. See isTerminalPasteChord for why we must not
+      // read the clipboard ourselves (http:// is not a secure context).
+      if (!readOnlyRef.current && isTerminalPasteChord(event)) return false;
       const copy =
         (event.metaKey || (event.ctrlKey && event.shiftKey)) &&
         !event.altKey &&

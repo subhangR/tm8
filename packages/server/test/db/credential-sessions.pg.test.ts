@@ -1,9 +1,9 @@
 /**
- * 082 — per-member agent credentials, proved against a REAL PostgreSQL.
+ * 083 — per-member agent credentials, proved against a REAL PostgreSQL.
  *
  * WHY THIS FILE CANNOT BE A FakeDb TEST, STATED UP FRONT.
  *
- * Everything 082 adds is invisible to the in-memory test double. Row-level
+ * Everything 083 adds is invisible to the in-memory test double. Row-level
  * security is a Postgres feature; a column-level GRANT is a Postgres privilege;
  * `security definer` and plpgsql are Postgres execution semantics; a partial
  * unique index and a composite foreign key are Postgres constraints. A FakeDb
@@ -23,7 +23,7 @@
  * `public.account_git_credentials` are NOT reachable from `origin/main` — they
  * live in `078_private_projects` / `079_account_git_credentials` on the deployed
  * staging line, renumbered to 080/081 on `origin/feat/per-user-private-workspaces`.
- * 082 carries its own byte-identical copy of `current_account_id()` so it is
+ * 083 carries its own byte-identical copy of `current_account_id()` so it is
  * order-independent, but the git-credential TABLE it does not create. The one
  * assertion that needs that table is therefore gated on its existence and says
  * so loudly when it skips, rather than silently passing.
@@ -67,7 +67,7 @@ let gitCredentialTablePresent = false;
 /**
  * Runs `fn` as the application role with a full, honest claim envelope.
  *
- * `tm8.auth_kind` is the fifth claim 082 introduces. It defaults to 'browser'
+ * `tm8.auth_kind` is the fifth claim 083 introduces. It defaults to 'browser'
  * here because that is what a human request carries; the tests that prove the
  * gate fails closed pass an explicit empty or 'agent' value.
  */
@@ -82,7 +82,7 @@ async function asApp<T>(
       `select set_config('tm8.identity_id', $1, true),
               set_config('tm8.actor_id', '', true),
               set_config('tm8.node_admin', $2, true),
-              set_config('tm8.request_id', 'req-082-pg', true),
+              set_config('tm8.request_id', 'req-083-pg', true),
               set_config('tm8.auth_kind', $3, true)`,
       [identity, String(options.nodeAdmin ?? false), options.authKind ?? 'browser'],
     );
@@ -155,7 +155,7 @@ async function seed(): Promise<Fixture> {
 
 beforeAll(async () => {
   database = await createW1ScratchDatabase('cred_082');
-  // The WHOLE chain, in order, exactly as db/migrate.mjs would apply it. If 082
+  // The WHOLE chain, in order, exactly as db/migrate.mjs would apply it. If 083
   // broke anything upstream this throws here and no assertion below runs.
   database.apply(migrationFiles());
   gitCredentialTablePresent =
@@ -171,7 +171,7 @@ afterAll(async () => {
   await database?.destroy();
 });
 
-describe('082 — the migration applies and its objects exist', () => {
+describe('083 — the migration applies and its objects exist', () => {
   it('adds session_kind as NOT NULL DEFAULT agent, so no existing insert path changes', async () => {
     const [column] = await database.query<{
       is_nullable: string;
@@ -230,7 +230,7 @@ describe('082 — the migration applies and its objects exist', () => {
   });
 });
 
-describe('082 — isolation between two distinct principals', () => {
+describe('083 — isolation between two distinct principals', () => {
   it("never returns Alice's credential row to Bob, and vice versa", async () => {
     await asApp(fixture.aliceIdentity, async (client) => {
       await client.query(`select public.set_account_agent_credential('anthropic', null, 'claude.ai')`);
@@ -268,7 +268,7 @@ describe('082 — isolation between two distinct principals', () => {
   });
 
   it('gives a NODE ADMIN no bypass — an operator has no business reading a member identity', async () => {
-    // 079's header states this explicitly and 082 copies it. A node admin claim
+    // 079's header states this explicitly and 083 copies it. A node admin claim
     // is honoured all over this schema; here it must buy nothing.
     const rows = await asApp(
       fixture.bobIdentity,
@@ -301,7 +301,7 @@ describe('082 — isolation between two distinct principals', () => {
   });
 });
 
-describe('082 — privileges, not policies', () => {
+describe('083 — privileges, not policies', () => {
   it('gives tm8_app no insert, update or delete on either credential table', async () => {
     const rows = await database.query<{ table_name: string; privilege_type: string }>(
       `select table_name, privilege_type from information_schema.role_table_grants
@@ -345,13 +345,13 @@ describe('082 — privileges, not policies', () => {
   it('still refuses `select *` on the SHIPPED git-credential table with 42501', async () => {
     if (!gitCredentialTablePresent) {
       // NOT a silent pass. This assertion needs `public.account_git_credentials`,
-      // which 082 does not create: it ships in `079_account_git_credentials` on
+      // which 083 does not create: it ships in `079_account_git_credentials` on
       // the deployed staging line (`origin/deploy/channels-on-staging`), and as
       // `081_account_git_credentials` on `origin/feat/per-user-private-workspaces`.
       // Neither is reachable from `origin/main`. When one of them merges this
       // gate opens by itself and the assertion below runs for real.
       console.warn(
-        '[082] SKIPPED the git-credential 42501 check: public.account_git_credentials ' +
+        '[083] SKIPPED the git-credential 42501 check: public.account_git_credentials ' +
           'is absent from this migration chain (079/081 are not on origin/main).',
       );
       expect(gitCredentialTablePresent).toBe(false);
@@ -359,7 +359,7 @@ describe('082 — privileges, not policies', () => {
     }
     // The column-level grant omits token_ciphertext and token_nonce, so `select
     // *` asks for a privilege that DOES NOT EXIST — which is strictly stronger
-    // than a policy a future `using (true)` could widen. 082 must not have
+    // than a policy a future `using (true)` could widen. 083 must not have
     // weakened it.
     await expectRefusal(
       () =>
@@ -378,7 +378,7 @@ describe('082 — privileges, not policies', () => {
   });
 });
 
-describe('082 — the human-only gate fails closed', () => {
+describe('083 — the human-only gate fails closed', () => {
   it('refuses every credential RPC when tm8.auth_kind is missing', async () => {
     for (const statement of [
       `select public.start_credential_session($1, 'anthropic')`,
@@ -412,7 +412,7 @@ describe('082 — the human-only gate fails closed', () => {
   });
 });
 
-describe('082 — D3: a live credential session does not move the spawn cap', () => {
+describe('083 — D3: a live credential session does not move the spawn cap', () => {
   it('leaves live_work_session_count unchanged and lets a spawn through at cap 1', async () => {
     const countBefore = await asOwner(async (client) =>
       (await client.query<{ live: number }>(
@@ -530,7 +530,7 @@ describe('082 — D3: a live credential session does not move the spawn cap', ()
   });
 });
 
-describe('082 — existing insert paths are untouched', () => {
+describe('083 — existing insert paths are untouched', () => {
   it('defaults an insert that never mentions session_kind to agent, and counts it', async () => {
     const countBefore = await asOwner(async (client) =>
       (await client.query<{ live: number }>(
@@ -573,7 +573,7 @@ describe('082 — existing insert paths are untouched', () => {
   });
 });
 
-describe('082 — a credential_sessions row over an agent work_session is unproducible', () => {
+describe('083 — a credential_sessions row over an agent work_session is unproducible', () => {
   it('refuses the insert as the app role, which holds no insert privilege', async () => {
     const agentSession = await asOwner(async (client) =>
       (await client.query<{ entity_id: string }>(
@@ -640,7 +640,7 @@ describe('082 — a credential_sessions row over an agent work_session is unprod
   });
 });
 
-describe('082 — finish stamps, it does not exit', () => {
+describe('083 — finish stamps, it does not exit', () => {
   it('sets finished_at and leaves work_sessions.status exactly where it was', async () => {
     const target = await asOwner(async (client) =>
       (await client.query<{ work_session_id: string }>(
@@ -707,7 +707,7 @@ describe('082 — finish stamps, it does not exit', () => {
   });
 });
 
-describe('082 — maintenance and rail counters ignore login terminals', () => {
+describe('083 — maintenance and rail counters ignore login terminals', () => {
   it('emits no participant_backfill_unresolved audit for a credential session', async () => {
     const credentialSession = await asOwner(async (client) =>
       (await client.query<{ work_session_id: string }>(

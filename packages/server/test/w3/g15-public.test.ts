@@ -45,9 +45,16 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     }
   }, 120_000);
 
+  // 30s -> 120s. `harness.close()` ends with `database.destroy()`, which DROPS a
+  // scratch database, and a drop is exactly the operation that slows down under
+  // the parallel load this suite runs in — w2-execution.pg.test.ts measured the
+  // same thing and raised its own teardown budget for it. All twenty w3 suites
+  // shared this 30s, so whichever one lost the race reported `Hook timed out in
+  // 30000ms` and the identity of the loser rotated between runs. A larger budget
+  // costs nothing when teardown is fast.
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+  }, 120_000);
 
   it('reports the frozen HTTP catalog and implementation counts from production health', async () => {
     // /health is the infrastructure liveness route, not a catalog operation, so it
@@ -62,14 +69,17 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     };
     // 121 -> 127 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
     // 127 -> 127 (2026-08-02): execution.launch.
-    // 127 -> 131 (2026-08-07): the four credentials.* rows, all MOUNTED.
-    expect(OPERATIONS).toHaveLength(131);
-    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(130);
+    // 127 -> 128 (2026-08-07): execution.transcript.
+    // 128 -> 129 (2026-08-09): projects.branches.list.
+    // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
+    // 131 -> 135: credentials.*; all four are mounted.
+    expect(OPERATIONS).toHaveLength(135);
+    expect(OPERATIONS.filter((operation) => operation.method !== 'WS')).toHaveLength(134);
     expect(health).toMatchObject({
       ok: true,
       server: 'tm8-server',
-      operations: 130,
-      implemented: 128,
+      operations: 134,
+      implemented: 132,
     });
   });
 
@@ -106,9 +116,9 @@ describe.sequential('W3.G15 public reserved and residual honesty', () => {
     // `execution.liveness` joined `OPERATIONS`, the 101->102 family) -> 108
     // (voice.token.create joined `OPERATIONS`, the 110->111 family) -> 114
     // (the six artifacts rows joined `OPERATIONS`, the 111->117 family; all six
-    // are mounted, so none answers 501) -> 128 (the four credentials.* rows,
-    // likewise all mounted — the seam is wired in main.ts).
-    expect(implemented).toHaveLength(128);
+    // are mounted, so none answers 501).
+    // The four credentials.* rows bring the mounted set to 132.
+    expect(implemented).toHaveLength(132);
   });
 
   /**

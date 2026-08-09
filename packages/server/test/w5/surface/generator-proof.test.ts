@@ -176,9 +176,7 @@ describe('W5.C generator proof', () => {
     // 64 -> 65 on 2026-08-01: execution.journal bound its query schema.
     // 65 -> 66 on 2026-08-01: identity.profile.update bound its input DTO.
     // 66 -> 69 on 2026-08-02: auth.signup/login/logout bound their input DTOs.
-    // 69 -> 72 (2026-08-07): the three credentials.* command bodies are
-    //   BOUND rather than listed unbound — strictness is a security control
-    //   here, since no credential DTO declares actorId (finding D2).
-    expect(ENTRIES).toHaveLength(72);
+    // 69 -> 70: entities.commands.gate; 70 -> 73: credentials.* command bodies.
+    expect(ENTRIES).toHaveLength(73);
   });
 });

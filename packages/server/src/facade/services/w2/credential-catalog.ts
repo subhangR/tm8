@@ -16,7 +16,7 @@
  * ruling R6):
  *
  *   * FILE-shaped credentials — anthropic, openai — are a 0600 file in a
- *     per-account config directory. `account_agent_credentials` (082) indexes
+ *     per-account config directory. `account_agent_credentials` (083) indexes
  *     them and holds no secret column at all.
  *   * A GitHub token is a STRING, and its home is `account_git_credentials`,
  *     which shipped in migration 079 — on the DEPLOYED STAGING LINE. It is
@@ -346,7 +346,7 @@ export class W2CredentialCatalogService {
    * Step 1. The index row AND the bytes on disk.
    *
    * `delete_account_agent_credential` removes the metadata row only — its own
-   * comment at `082:656-663` says the file and the sessions are the caller's
+   * comment at `083:656-663` says the file and the sessions are the caller's
    * job. Deleting the row alone would leave the credential fully usable by
    * every future spawn while the UI showed "Not connected", which is the exact
    * inverse of an honest disconnect.

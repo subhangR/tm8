@@ -20,3 +20,27 @@ export {
   type GitResult,
   type GitRunOptions,
 } from './git-invoker.js';
+// Tier 2 — the mutating verbs (checkpoint/rollback/stage/commit/merge).
+// Exposed through the `@tm8/execution/worktree` subpath so the CLI can load
+// them WITHOUT importing the package root, whose module graph pulls node-pty.
+export {
+  assertMutableWorktree,
+  assertSafeMessage,
+  assertSafePathspec,
+  assertWorktreeDir,
+  changedFiles,
+  checkpoint,
+  commit,
+  currentBranch,
+  mergeFromRef,
+  resolveCommitish,
+  rollback,
+  stage,
+  stagedFiles,
+  type ChangedFile,
+  type CheckpointResult,
+  type CommitResult,
+  type GitIdentity,
+  type MergeResult,
+  type RollbackResult,
+} from './git-mutations.js';

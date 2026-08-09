@@ -48,7 +48,7 @@ export interface RequestIdentity {
    *
    * SERVER-RESOLVED, never client-asserted: it comes out of the session row
    * `resolveBearerIdentity` looked up by token hash. Becomes
-   * `SET LOCAL tm8.auth_kind` (082, R11), which `credentials.*` reads to refuse
+   * `SET LOCAL tm8.auth_kind` (083, R11), which `credentials.*` reads to refuse
    * an agent holding its owner's credential. Absent ⇒ refused.
    */
   authKind?: 'browser' | 'cli' | 'agent';

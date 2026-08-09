@@ -4,8 +4,15 @@
 # locally via `bun run check` (and optionally as a pre-push hook: `bun run hooks:install`).
 #
 # Two jobs on purpose:
-#   check       — install + per-package scoped `tsc -b` + vitest. No database needed.
+#   check       — install + per-package scoped `tsc -b` + vitest, against a real Postgres.
 #   migrations  — the same script against a real Postgres service container.
+#
+# The `check` job carried "No database needed" from the day it was written, and it
+# stopped being true long before anyone noticed: ~92 test files across
+# packages/server and packages/cli create a scratch database per suite and had been
+# dying on `ECONNREFUSED 127.0.0.1:5442` on EVERY commit, main included. They are
+# the tests that see plpgsql rules a FakeDb cannot, so skipping them is not an
+# option — the job gets the same service container the migrations job has.
 #
 # Deliberately NOT here: any parallel vite build. The UI (W3/M2) gets ONE build step
 # inside the `check` job when it lands — concurrent vite builds SIGTERM each other.
@@ -31,7 +38,36 @@ jobs:
   check:
     name: typecheck + tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 20 -> 45. The suites this job could never run are DB-backed: each creates a
+    # scratch database and applies the whole migration chain before it asserts
+    # anything. The full gate measures ~12 minutes of tests on a fast local box
+    # with a warm cluster; a 2-core runner is several times that, and a job
+    # killed by its own timeout is a red that reads exactly like a real failure.
+    timeout-minutes: 45
+    services:
+      postgres:
+        # Same pin as the `migrations` job below — see the note there.
+        image: postgres:17
+        env:
+          # TRUST, not a password — unlike the `migrations` job, which only ever
+          # connects as the one role in its own URL. These suites connect as
+          # roles the MIGRATIONS create (`tm8_app`, `tm8_delivery_worker`) to
+          # prove the grant boundary, and they build those connections with an
+          # EMPTY password on purpose: db/migrations/015 grants CONNECT and never
+          # sets one, so a trust cluster is the configuration they describe
+          # (packages/server/test/db/delivery-principal.ts:70). Under scram every
+          # one of those probes dies as `SASL: client password must be a string`
+          # — a red that says nothing about the grant it meant to test.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: tm8
+          POSTGRES_DB: postgres
+        ports:
+          - 5442:5432
+        options: >-
+          --health-cmd "pg_isready -U tm8"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +78,48 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      # The scratch-database helpers shell out to `psql` to apply migrations
+      # (packages/server/test/db/w1-pg.ts, packages/cli/test/integration/harness.ts).
+      - name: Install postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # packages/execution's worktree-manager suite runs `git merge` in a scratch
+      # repository. A bare runner has no committer identity, so the merge dies with
+      # "empty ident name" — a red test that says nothing about the code.
+      - name: Configure git identity for worktree tests
+        run: |
+          git config --global user.email "ci@tm8.invalid"
+          git config --global user.name "tm8 CI"
+
+      # ONCE, SINGLE-THREADED, BEFORE ANY SUITE RUNS. Roles are CLUSTER-global
+      # while scratch databases are per-suite, and `001_core_graph.sql:37` guards
+      # its `create role` with `if not exists` — which is check-then-act, not
+      # atomic. A dozen vitest workers applying 001 at the same moment on a FRESH
+      # cluster all pass the check and one loses the insert:
+      #   ERROR: duplicate key value violates unique constraint "pg_authid_rolname_index"
+      # It cannot be fixed in 001: that file is applied on every existing database
+      # and `db/migrate.mjs` refuses a checksum that moved after it was applied.
+      # Creating the roles up front satisfies the `if not exists` guard for every
+      # worker, which is exactly the state a developer's long-lived cluster is
+      # already in — and why this never reproduced off a fresh one.
+      - name: Pre-create cluster-global roles (001/015) to de-race parallel suites
+        run: |
+          psql "postgres://tm8@127.0.0.1:5442/postgres" -v ON_ERROR_STOP=1 -c "
+            do \$\$
+            begin
+              if not exists (select 1 from pg_roles where rolname = 'tm8_graph_owner') then
+                create role tm8_graph_owner nologin noinherit;
+              end if;
+              if not exists (select 1 from pg_roles where rolname = 'tm8_app') then
+                create role tm8_app login;
+              end if;
+              if not exists (select 1 from pg_roles where rolname = 'tm8_delivery_worker') then
+                create role tm8_delivery_worker login noinherit nosuperuser nocreatedb
+                  nocreaterole noreplication nobypassrls;
+              end if;
+            end
+            \$\$;"
 
       - name: Cache bun install
         uses: actions/cache@v4
@@ -60,6 +138,12 @@ jobs:
         run: bash tools/ci/check.sh --no-migrations
         env:
           CI: "1"
+          # Read by BOTH scratch-database helpers: packages/server's w1-pg.ts
+          # (2nd of 3 fallbacks) and packages/cli's integration harness. It is
+          # deliberately NOT TM8_DATABASE_URL — several suites skip themselves by
+          # name on that variable, and setting it would silently enlist tests that
+          # are meant to be opt-in. No password, matching the trust cluster above.
+          TM8_MIGRATION_DATABASE_URL: postgres://tm8@127.0.0.1:5442/postgres
 
   migrations:
     name: migrations apply clean

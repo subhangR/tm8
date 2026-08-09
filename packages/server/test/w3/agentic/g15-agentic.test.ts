@@ -30,8 +30,8 @@ import {
 // Frozen digest of the current 121-row catalog. The previous literal had
 // already gone stale on the tree (several amendments landed without moving
 // it); re-derived 2026-08-01 alongside identity.profile.update.
-// Re-derived 2026-08-02 alongside execution.launch — the catalog is now 126 rows.
-const CATALOG_DIGEST = 'sha256:448c1ad17325ba74dfb415d421c191335adb57330d999f3a968ad1c060e830eb';
+// Re-derived 2026-08-09 after execution.transcript + projects.branches.list.
+const CATALOG_DIGEST = 'sha256:5f195f4923e3dd6437adcd17be146b12801880894893cfd470160d11e116dd54';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -100,7 +100,10 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // execution.journal, identity.profile.update.
     // 121 -> 125 (2026-08-02): auth.signup/login/logout/session.get.
     // 125 -> 126 (2026-08-02): execution.launch.
-    expect(root.catalog.total).toBe(126);
+    // The 126 literal was ALREADY red at 127 when this lane arrived (the
+    // onboarding read landed without moving it); 128 adds execution.transcript.
+    // 129 adds projects.branches.list.
+    expect(root.catalog.total).toBe(135);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

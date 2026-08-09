@@ -64,6 +64,7 @@ import {
 } from './handlers/w2/messages-handoffs.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
+import { registerContentionHandlers } from './services/contention.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
 import {
   registerCredentialHandlers,
@@ -156,6 +157,8 @@ export function registerFacadeHandlers(
   registerW2EdgesPlacementsHandlers(registry, facade);
   registerW2CollectionsGraphUndoHandlers(registry, facade);
   registerW2ProjectsAssociationsHandlers(registry, facade);
+  // Tier 4 git×graph: the read-only file-contention map over active worktrees.
+  registerContentionHandlers(registry, facade);
   // Voice reads its LiveKit deployment off the already-resolved config rather
   // than the environment: one place decides what this node is pointed at.
   registerVoiceHandlers(registry, facade, deps.config.livekit);

@@ -74,6 +74,7 @@ import {
   type OperationBinding,
   type OperationName,
 } from '@tm8/contract';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ZodTypeAny } from 'zod';
 
@@ -286,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 123 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 126 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -294,14 +295,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    // 2026-08-07: this pin was ALREADY RED on the base of the credentials
-    // branch — it read 123 while the surface was 124 — so previous-plus-four
-    // would have carried that pre-existing error forward. 128 is READ OUT OF
-    // THE FAILURE, which is also 123 + 1 (the unreconciled row) + 4 (the
-    // credentials.* family).
-    expect(SURFACE).toHaveLength(128);
-    expect(rows).toHaveLength(128);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(128);
+    // The 123 literal was ALREADY red at 124 when this lane arrived (the
+    // onboarding read landed without moving it); 125 adds execution.transcript,
+    // and 126 adds projects.branches.list.
+    // Tier 4 adds projects.contention and entities.commands.gate.
+    // credentials.* add four mounted operations.
+    expect(SURFACE).toHaveLength(132);
+    expect(rows).toHaveLength(132);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(132);
   });
 
   /**
@@ -344,9 +345,17 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // frames live under `node_modules/.bun/@vitest+runner/dist/`, so the
     // unscoped form went red on the test harness while the thing it was
     // actually asserting about was already correct.
+    //
+    // DERIVED from this file's own location, never a literal. The scope used to
+    // read `/Projects/tm8/packages/`, which is one developer's macOS checkout
+    // path: anywhere else it matched zero frames, so `tm8Frames.length` was 0
+    // and the assertion below failed for a reason that has nothing to do with
+    // src-vs-dist. `node_modules` is excluded explicitly because a checkout
+    // could legitimately sit under a path containing the repo name twice.
+    const packagesDir = fileURLToPath(new URL('../../../../', import.meta.url));
     const tm8Frames = stack
       .split('\n')
-      .filter((line) => line.includes('/Projects/tm8/packages/'));
+      .filter((line) => line.includes(packagesDir) && !line.includes('/node_modules/'));
     expect(tm8Frames.length).toBeGreaterThan(0);
     expect(tm8Frames.filter((line) => line.includes('/dist/'))).toEqual([]);
   });
@@ -424,7 +433,24 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // which is exactly what cost the previous lanes a number.
     // This assertion is on the LENGTH and not on the maximum, which is why a
     // gap — reserved or merely skipped — cannot make it lie.
-    expect(server.appliedMigrations.length).toBe(74);
+    // 74 -> 75 on 2026-08-09: 085 (rename_work_session). This lane branched
+    // from a main that was 100 commits stale, where the pin read 69 and this
+    // change moved it to 70. NEITHER literal survives the rebase, and the 75
+    // here was OBTAINED BY RUNNING THE MERGED TREE, not by adding one to 74 —
+    // delta arithmetic across a rebase is exactly how a pin lands on a number
+    // no tree ever produced.
+    // On the number 085 rather than 081: measured 2026-08-09, origin/main tops
+    // out at 080 and 081-084 are claimed by unmerged branches. Same reasoning
+    // as the 078/079 gap above, and the same caveat — that is a dated
+    // measurement, not a standing fact.
+    // 75 -> 77 on 2026-08-09: 078 (derived_from props_schema) and 079
+    // (core-draft promptPolicy repair), the two defects the CI gate had hidden
+    // while the check job ran without a database.
+    // 77 -> 78 on 2026-08-09: 081 (worktree provisioning + tracking observer).
+    // Authored as 078, then renumbered on merge because #71 had landed 078/079.
+    // 78 -> 79: 082 (git graph events, provenance and completion gate).
+    // 79 -> 80: 083 (per-member credential sessions).
+    expect(server.appliedMigrations.length).toBe(80);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

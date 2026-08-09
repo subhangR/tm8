@@ -17,7 +17,7 @@ it('starts a real Server and reports an un-enveloped /health', async () => {
   const h = await server.health();
   expect(h.ok).toBe(true);
   expect(h.server).toBe('tm8-server');
-  expect(h.operations).toBe(130); // 126 -> 130 (2026-08-07): credentials.* Tier B, 4 ops
+  expect(h.operations).toBe(133); // 129 -> 133: credentials.* Tier B.
   expect(h.implemented).toBeGreaterThan(0);
   console.log(`[harness] ${server.baseUrl} operations=${h.operations} registered=${h.implemented}`);
 });

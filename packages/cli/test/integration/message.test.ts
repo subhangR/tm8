@@ -251,7 +251,7 @@ describe('the node this suite measured', () => {
         `bind ${server.bindStart.files}/${server.bindStart.digest}`,
     );
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(130); // 126 -> 130 (2026-08-07): the four credentials.* HTTP routes, Tier B per-member vendor credentials.
+    expect(health.operations).toBe(133); // 129 -> 133: credentials.* Tier B.
     // `implemented` is `registry.size` — REGISTERED, never "behaviourally
     // implemented". It is reported, never re-labelled.
     expect(health.implemented).toBeGreaterThan(0);

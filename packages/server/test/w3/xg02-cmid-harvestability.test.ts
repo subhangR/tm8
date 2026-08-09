@@ -67,9 +67,16 @@ describe.sequential('W3.XG02 clientMutationId harvestability through composed re
     messageId = posted.body.data?.messages?.[0]?.id ?? '';
   }, 180_000);
 
+  // 30s -> 120s. `harness.close()` ends with `database.destroy()`, which DROPS a
+  // scratch database, and a drop is exactly the operation that slows down under
+  // the parallel load this suite runs in — w2-execution.pg.test.ts measured the
+  // same thing and raised its own teardown budget for it. All twenty w3 suites
+  // shared this 30s, so whichever one lost the race reported `Hook timed out in
+  // 30000ms` and the identity of the loser rotated between runs. A larger budget
+  // costs nothing when teardown is fast.
   afterAll(async () => {
     await harness?.close();
-  }, 30_000);
+  }, 120_000);
 
   it('CONTROL: the message path is live and the cmid really is stored against the message', async () => {
     // Without this, an empty exposure list below would be indistinguishable from
@@ -122,6 +129,21 @@ describe.sequential('W3.XG02 clientMutationId harvestability through composed re
     //
     // The pin is the exact route SET that projects the message DTO — a sixth
     // exposure (or a lost one) is a surface change someone must look at.
+    //
+    // THE SIXTH ARRIVED, and it was looked at rather than absorbed.
+    // `GET /v2/entities/:anchorId` is the anchor's OWN read, which publishes no
+    // message field of its own. It exposes the cmid through `connections`:
+    // 065_derived_edges_phase1.sql made every message carry a derived
+    // `anchored_to` edge to its anchor, so the anchor's `connections.incoming`
+    // now lists that edge — and an edge endpoint is projected as a FULL entity
+    // summary, whose `state.messageBatchId` is the clientMutationId. Verified by
+    // dumping the body, not inferred: the value appears at
+    // connections.incoming[anchored_to].edges[].source.state.messageBatchId.
+    //
+    // It is the same disposition as the five above and not a new one: the field
+    // is published by contract, and the route reaches it through a derived edge
+    // that is itself a published relationship. Nothing became reachable that a
+    // caller could not already read from `GET /v2/entities/:messageId`.
     const exposedRoutes = exposures.map((label) =>
       label
         .replace(messageId, ':messageId')
@@ -129,6 +151,7 @@ describe.sequential('W3.XG02 clientMutationId harvestability through composed re
     expect(exposedRoutes).toEqual([
       'GET /v2/entities/:messageId',
       'GET /v2/entities/:anchorId/messages',
+      'GET /v2/entities/:anchorId',
       'GET /v2/entities/:anchorId/feed',
       'GET /v2/entities/:anchorId/context',
       'POST /v2/collections/query',

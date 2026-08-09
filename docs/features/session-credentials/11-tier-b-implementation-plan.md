@@ -573,7 +573,7 @@ Keep `claude setup-token` (measured choice, sub-doc 15). The card ships as:
 ## Ruling 5 — the credential session row's remaining externalities (D5/D8)
 
 > **AMENDED by Ruling 10 (below):** the cross-account boot+interval sweep ordered here is
-> unimplementable under 082's deliberate self-select-only RLS (measured by PR2). The replacement
+> unimplementable under 083's deliberate self-select-only RLS (measured by PR2). The replacement
 > mechanism — in-memory registry sweep + self-scoped reclaim at start + an expiry-based cap
 > predicate — is in Ruling 10. D5/D8 dispositions stand.
 
@@ -608,7 +608,7 @@ may still be live is exactly the false-`'exited'` lie `SpawnService.terminate` r
 terminate PTY → normal exit reconciliation → stamp `finished_at`. The Ruling-5 sweep uses the
 same division.
 
-## Ruling 8 — migration number is **082**, and the union rule is ALL origin refs (2026-08-07)
+## Ruling 8 — migration number is **083**, and the union rule is ALL origin refs (2026-08-07)
 
 PR1 measured (all-refs `git ls-tree` scan, quoted on the architect thread,
 msg `019fdcf6-6551-74f0-86ff-71e75797c50b`): **080 and 081 are already held** —
@@ -617,23 +617,23 @@ deliberately renumbered its run into `078–081` (incl. `081_account_git_credent
 "080 is free" ground truth was a union over `origin/main` + both deployed ledgers only — real but
 incomplete. **Rules:**
 - "Next free" = max over **every origin ref's** `db/migrations` tree + `applied_migrations` on
-  both deployed DBs (5442, 5443) + the local worktree, plus one. Today that is **082**.
+  both deployed DBs (5442, 5443) + the local worktree, plus one. Today that is **083**.
   Re-run the all-refs scan immediately before commit and quote it in the PR.
 - Never take a number a live lane already holds; joining a known collision taxes other lanes with
   a `migrate.mjs` hard-fail that only surfaces at merge and then blocks every line.
-- **Order-independence over sequencing:** 082 depends on `internal.current_account_id()`, which
+- **Order-independence over sequencing:** 083 depends on `internal.current_account_id()`, which
   main does not have (defined in staging's `078_private_projects`, unreachable from `origin/main`
-  — measured by PR1). 082 must not couple its mergeability to another lane's merge schedule:
-  copy the function body **byte-exact** from staging's 078 into 082 as `create or replace` with a
+  — measured by PR1). 083 must not couple its mergeability to another lane's merge schedule:
+  copy the function body **byte-exact** from staging's 078 into 083 as `create or replace` with a
   provenance comment — identical bodies make merge order irrelevant.
   **RESOLVED by measurement 2026-08-07** (`ssh utho "grep -n -A20 'current_account_id'
   /opt/tm8/staging/db/migrations/078_private_projects.sql"`): the function is **self-contained**,
   lines 157–164 — a `create or replace … security definer` selecting from `public.accounts` keyed
   on `internal.identity_id()` and `status = 'active'`, followed by `revoke all … from public;
-  grant execute … to tm8_app`. The STOP condition does not apply. 082 copies **only** those lines
+  grant execute … to tm8_app`. The STOP condition does not apply. 083 copies **only** those lines
   plus the revoke/grant pair. **Hard warning:** 078 ALSO create-or-replaces
   `internal.entity_readable` and `internal.entity_row_visible` — shared multi-arm bodies whose
-  main-lineage arms live in the 070 line. Copying either into 082 silently clobbers another
+  main-lineage arms live in the 070 line. Copying either into 083 silently clobbers another
   lane's arm; they are out of bounds regardless of how convenient the file is to copy from.
 - Dev DB may apply staging's 078+079 uncommitted; committed real-DB tests must gate any assertion
   on tables main's chain does not create (the git-table 42501 check), with a comment naming the
@@ -661,7 +661,7 @@ redefined once (002 → 075); no third copy.
 
 ## Ruling 10 — R5's cross-account sweep is DEAD; replaced by registry sweep + self-reclaim + an expiry-based cap predicate (amends R5)
 
-**PR2's measurement is accepted:** 082's `credential_sessions` RLS is self-select only with a
+**PR2's measurement is accepted:** 083's `credential_sessions` RLS is self-select only with a
 deliberately absent node-admin bypass, the server's background identity resolves to one account,
 and `node_id` is NULL by construction — so the sweep R5 ordered cannot be run by any role the
 server actually runs as. I will not widen the RLS posture to save my own ruling's wording: the
@@ -682,13 +682,13 @@ usefulness in a way that costs anyone anything — survives; the mechanism is re
 a crashed node's credential `work_sessions` row stays `status='running'` **forever** — the
 PTY-exit path died with the process, the reaper excludes it (`node_id` NULL, R5/D5), and
 `finish_credential_session` stamps `finished_at` only (R7). `internal.credential_session_count`
-(082:217-226) counts by `ws.status in ('spawning','running','idle')` node-wide, and
-`start_credential_session` refuses at the cap (default 2, 082:490-495). **Two crash-orphans and
-no member on the node can ever open a login again.** Evidence class: read from source (082 as
+(083:217-226) counts by `ws.status in ('spawning','running','idle')` node-wide, and
+`start_credential_session` refuses at the cap (default 2, 083:490-495). **Two crash-orphans and
+no member on the node can ever open a login again.** Evidence class: read from source (083 as
 committed at `a5bd8f7`), inference on the lifecycle chain — each link is a prior ruling or a
 measured reaper predicate.
 
-**Therefore, third element — amend 082 in place** (legal: `a5bd8f7` is unpushed and 082 has never
+**Therefore, third element — amend 083 in place** (legal: `a5bd8f7` is unpushed and 083 has never
 been applied to any deployed ledger; re-init dev/test DBs): `internal.credential_session_count`
 counts from the credential table's own lifecycle columns, not `work_sessions.status`:
 
@@ -707,7 +707,7 @@ all. The comment on the function must state why `status` is NOT the predicate: n
 writer exists for a crashed node's credential row, so `status` can read `running` forever and
 must not gate admission. A live-but-expired PTY is undercounted for at most one sweep interval —
 element 1 terminates it. Carry the amendment as **one commit on PR2's stacked branch** (it
-contains 082), re-running PR1's 22-test suite and fixing any test that pins the status-based
+contains 083), re-running PR1's 22-test suite and fixing any test that pins the status-based
 count; coordinator sequences the merge so `feat/credential-env-launcher` supersedes
 `feat/credential-schema`.
 
@@ -738,7 +738,7 @@ Why PR2 and not PR3:
 
 **Required proof in PR2, through the real `Db` with no hand-binding:** browser-kind principal →
 `start_credential_session` succeeds; agent-kind → 42501 `credentials are human-only`; principal
-with no kind → refused (fail-closed, no `is null` escape — 082:133-138 already asserts this at
+with no kind → refused (fail-closed, no `is null` escape — 083:133-138 already asserts this at
 the RPC). The existing suite re-run green shows the fifth GUC perturbs nothing else (no other
 object reads it).
 
@@ -933,7 +933,7 @@ the seam has a measured history of silently dropping fields it does not know.
 
 **Addendum (PR4 follow-up, same day, measured):** two facts folded in as binding.
 1. **The `to_jsonb(ws)` free-publishing claim circulating in the wave is FALSE at the HTTP
-   boundary.** 082's header (082:168) says 057's `to_jsonb(ws)` publishes new columns to the
+   boundary.** 083's header (083:168) says 057's `to_jsonb(ws)` publishes new columns to the
    read models automatically; that is true of the DB function and false of everything a client
    can reach — `entity-read.ts:80` (state arm) is an explicit column list without
    `ws.session_kind`, and `entity-read.ts:1482-1499` (content arm) is a hand projection the

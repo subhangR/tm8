@@ -17,7 +17,7 @@
  *
  *   * `credential_sessions`'s only policy is `account_id =
  *     internal.current_account_id()` — self-select, with the absence of a
- *     node-admin bypass called out in 082's header as DELIBERATE;
+ *     node-admin bypass called out in 083's header as DELIBERATE;
  *   * the node's background identity is the loopback owner
  *     (`execution-handlers.ts`, `reconcileGhosts`), which resolves to exactly
  *     ONE account and is therefore blind to every other member's rows;
@@ -25,7 +25,7 @@
  *     predicate to sweep on either.
  *
  * A cross-account sweep would need a `security definer` function (a migration),
- * a node-admin policy (082 forbids it on purpose), or `tm8_graph_owner` at
+ * a node-admin policy (083 forbids it on purpose), or `tm8_graph_owner` at
  * runtime (no such path exists). R10 replaced the mechanism with three parts,
  * all implemented here:
  *
@@ -37,7 +37,7 @@
  *      claims, and finishes their own stale rows. RLS-legal, and it heals the
  *      only person the one-live-per-pair index can block: you, against your own
  *      row from a previous boot.
- *   3. THE CAP PREDICATE was amended in 082 to count from
+ *   3. THE CAP PREDICATE was amended in 083 to count from
  *      `credential_sessions.finished_at`/`expires_at` rather than
  *      `work_sessions.status`, so a crash-orphan ages out of the cap on its own.
  *      Without that, two crashes would have blocked every login on the node
@@ -64,7 +64,7 @@ import {
 
 /**
  * The credential cap is ITS OWN, and disjoint from the agent cap by
- * construction (082 §3). Two separate counts mean a node full of agents can
+ * construction (083 §3). Two separate counts mean a node full of agents can
  * still admit a login — otherwise a member could never connect an account on a
  * busy node — and a stuck login can never starve a spawn.
  */
@@ -94,7 +94,7 @@ function assertKnownProvider(provider: string): asserts provider is CredentialPr
 
 /** Who is asking. Both fields are SERVER-RESOLVED; neither is client-asserted. */
 export interface CredentialPrincipal {
-  /** Includes `authKind`, which 082's RPCs require and which fails closed. */
+  /** Includes `authKind`, which 083's RPCs require and which fails closed. */
   claims: DbClaims;
   /** The auth principal's identity row id — the credential home's directory. */
   identityId: string;

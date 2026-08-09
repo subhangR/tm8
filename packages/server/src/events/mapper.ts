@@ -98,6 +98,14 @@ export const WORKSPACE_EVENT_COLUMNS =
  *    {type, channelId|null, settingsRevision, clientMutationId?}. Space-level
  *    setting; mutation table public.spaces is not trigger-covered. Space-wide
  *    safe.
+ *  - 'git.commit_recorded' / 'git.pr_state_changed' /
+ *    'git.worktree_status_changed' (authors: 082's capture triggers on
+ *    public.commits / public.pull_requests / public.worktrees): payloads are
+ *    built contract-shaped in the trigger, `type` included. The facts tables
+ *    are NOT 003-trigger-covered (only the entities-row version bump is, which
+ *    is a different mutation on a different table — no double delivery of THIS
+ *    payload). Space-wide safe: repo/sha/PR state are the same facts every
+ *    member reads via the entity views; recipient_member_id is NULL.
  *
  * NOT members (verified against every insert site, 2026-07-28 — do not add
  * without a write-side fix): handoff.*, message.delivery_reserved/_settled,
@@ -109,6 +117,9 @@ export const WORKSPACE_EVENT_COLUMNS =
 export const RPC_AUTHORED_PASSTHROUGH: ReadonlySet<string> = new Set([
   'menu.updated',
   'space.default_channel.updated',
+  'git.commit_recorded',
+  'git.pr_state_changed',
+  'git.worktree_status_changed',
 ]);
 
 function str(v: unknown): string | null {

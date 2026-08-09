@@ -81,6 +81,7 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type ProjectBranchTopology,
   type ProjectCreateInput,
   type ProjectDirectoryListing,
   type ProjectLinkInput,
@@ -89,6 +90,7 @@ import {
   type ResolveEntityAttentionInput,
   type SessionJournalPage,
   type SessionLaunchRecord,
+  type SessionTranscriptPage,
   type SpaceId,
   type SpaceKindCounts,
   type SpaceSettingsView,
@@ -96,7 +98,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -280,6 +282,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<ProjectDirectoryListing>('projects.directories.list', { query: { path } });
     },
 
+    /** Branch topology for a project's working directory — seam Amendment 5. */
+    projectBranches(projectId: string, opts?: BranchTopologyOpts): Promise<ProjectBranchTopology> {
+      return http.call<ProjectBranchTopology>('projects.branches.list', {
+        params: { projectId },
+        query: { staleAfterDays: opts?.staleAfterDays, limit: opts?.limit },
+      });
+    },
+
     createSpace(input: CreateSpaceInput): Promise<CreateSpaceResult> {
       return http.call<CreateSpaceResult>('spaces.create', { body: input });
     },
@@ -342,6 +352,14 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
     launch(workSessionId: EntityId): Promise<SessionLaunchRecord> {
       // No query at all: the launch record is a whole document, not a window.
       return http.call<SessionLaunchRecord>('execution.launch', { params: { workSessionId } });
+    },
+    transcript(workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> {
+      // One optional key; http.ts drops `undefined`, so the default read sends
+      // a bare path and lets the server own the window size.
+      return http.call<SessionTranscriptPage>('execution.transcript', {
+        params: { workSessionId },
+        query: { last: opts?.last },
+      });
     },
 
     inbox(opts?: PageOpts): Promise<Page<NotificationItem>> {

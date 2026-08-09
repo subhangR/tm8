@@ -55,7 +55,12 @@ import { SettingsShell, settingsPortFromSeam } from '../settings-space';
 import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
-import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
+import {
+  NewSpaceProjectDialog,
+  ProjectBranchesSection,
+  type ProjectBranchesPort,
+  type ProjectOnboardingPort,
+} from '../projects';
 
 /**
  * §5.1's ruled side-panel defaults: left=tasks, right=sessions. These are the
@@ -374,6 +379,21 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  // The branch-topology section for the shell's externally-owned `projects`
+  // slot (seam Amendment 5). The spaceId is closed over HERE so the section's
+  // port stays two reads and nothing else — the same host-wires-the-seam rule
+  // the settings port follows.
+  const branchesPort = useMemo<ProjectBranchesPort | null>(
+    () =>
+      data.spaceId
+        ? {
+            projects: () => data.seam.projects(data.spaceId!),
+            branches: (projectId) => data.seam.projectBranches(projectId),
+          }
+         : null,
+    [data.seam, data.spaceId],
+  );
+
   const reasons = useMemo<DetailReasons>(
     () => ({
       presenceHollow: presenceHollowReason,
@@ -602,19 +622,22 @@ export function GateApp(props: GateAppProps = {}) {
             <SettingsShell
               port={settingsPort}
               nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
-              /* Agent credentials, injected through the shell's section slot.
-                 The screen and this mount ship in the same commit on purpose —
-                 four surfaces in this repo are built, tested and unreachable
-                 because that did not happen. */
               sections={
-                credentialsPort
+                credentialsPort || branchesPort
                   ? {
-                      credentials: (
-                        <CredentialsSection
-                          port={credentialsPort}
-                          serverBaseUrl={activeServer.routeBaseUrl}
-                        />
-                      ),
+                      ...(branchesPort
+                        ? { projects: <ProjectBranchesSection port={branchesPort} /> }
+                        : {}),
+                      ...(credentialsPort
+                        ? {
+                            credentials: (
+                              <CredentialsSection
+                                port={credentialsPort}
+                                serverBaseUrl={activeServer.routeBaseUrl}
+                              />
+                            ),
+                          }
+                        : {}),
                     }
                   : undefined
               }

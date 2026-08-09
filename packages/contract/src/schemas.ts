@@ -43,6 +43,7 @@ import type {
   ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
+  GateTaskInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
   Hierarchy, HomeSnapshot, IdentityProfileUpdateInput, IdentityProfileView,
   InboxListQuery, InboxMarkReadInput, InboxRecipient,
@@ -55,6 +56,7 @@ import type {
   PatchMessageInput, PatchTaskInput, PlacementInput, PointEventView,
   PostMessageInput, PostMessageWireInput, PresenceSnapshot,
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
+  ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
   ProjectLinkInput, ProjectResource,
   ProjectTrustLevel, ProjectUpdateInput, ProposeInteractionProfileInput,
@@ -69,6 +71,8 @@ import type {
   SpaceProfileDefaultView, SpaceSettings, SpaceSettingsView, SpaceSummary,
   ExecutionLiveness, SessionJournalCall, SessionJournalPage, SessionJournalRecord,
   SessionLaunchRecord,
+  SessionTranscriptEntry, SessionTranscriptPage, SessionTranscriptStats,
+  SessionTranscriptStuck,
   SpawnWorkdir, StreamAttachGrant, TaskAxis, TaskAxisInput,
   TeammateProfileDefaultView, ToolDiscoveryPolicy, TrackingRefreshInput,
   UndoToken, UpdateInteractionProfileDraftInput, UpdateMenuInput,
@@ -121,7 +125,7 @@ export const WorkSessionStatusSchema: z.ZodType<WorkSessionStatus> =
   z.enum(['spawning', 'running', 'idle', 'exited', 'failed']);
 export const WorkSessionShareModeSchema: z.ZodType<WorkSessionShareMode> =
   z.enum(['none', 'space', 'explicit']);
-/** Mirrors 082's `work_sessions.session_kind` CHECK exactly. */
+/** Mirrors 083's `work_sessions.session_kind` CHECK exactly. */
 export const WorkSessionKindSchema: z.ZodType<WorkSessionKind> =
   z.enum(['agent', 'credential']);
 export const WorktreeStatusSchema: z.ZodType<WorktreeStatus> =
@@ -245,7 +249,7 @@ export const EntityStateSchema: z.ZodType<EntityState> = z.lazy(() => z.union([
     shareMode: WorkSessionShareModeSchema,
     startedAt: z.string().nullable(),
     exitedAt: z.string().nullable(),
-    // OPTIONAL, not nullable: a pre-082 node omits it entirely, and callers
+    // OPTIONAL, not nullable: a pre-083 node omits it entirely, and callers
     // read that absence as `agent` so a frozen server keeps today's behaviour.
     // Clients filter with `!== 'credential'`; see the DTO note in contract.ts.
     sessionKind: WorkSessionKindSchema.optional(),
@@ -810,6 +814,39 @@ export const WorkspaceEventSchema: z.ZodType<WorkspaceEvent> = z.lazy(() => z.un
     settingsRevision: z.number().int().positive(),
     clientMutationId: z.string().optional(),
   }).strict(),
+  // Git facts (Tier 4 git×graph): RPC-authored passthrough — SQL authors in
+  // db/migrations/083 build these payloads contract-shaped. STRICT, like every
+  // passthrough arm, so an off-contract stored row fails the tripwire.
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.commit_recorded'),
+    commitEntityId: EntityIdSchema,
+    repo: z.string(),
+    sha: z.string(),
+    provider: z.string(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.pr_state_changed'),
+    prEntityId: EntityIdSchema,
+    repo: z.string(),
+    number: z.number().int().positive(),
+    previousState: z.enum(['open', 'merged', 'closed', 'draft']),
+    state: z.enum(['open', 'merged', 'closed', 'draft']),
+    headSha: z.string().nullable().optional(),
+    clientMutationId: z.string().optional(),
+  }).strict(),
+  z.object({
+    ...workspaceEventEnvelopeShape,
+    type: z.literal('git.worktree_status_changed'),
+    worktreeEntityId: EntityIdSchema,
+    projectId: z.string(),
+    branch: z.string(),
+    previousStatus: z.enum(['active', 'merged', 'abandoned', 'deleted']),
+    status: z.enum(['active', 'merged', 'abandoned', 'deleted']),
+    clientMutationId: z.string().optional(),
+  }).strict(),
   z.object({
     ...workspaceEventEnvelopeShape,
     type: z.literal('project.association.corrected'),
@@ -1106,11 +1143,11 @@ export const AuthSessionGetResultSchema: z.ZodType<AuthSessionGetResult> = z.obj
 // ledger is enabled.
 // ---------------------------------------------------------------------------
 
-/** All three login-terminal providers. Wider than what 082 will STORE (R6). */
+/** All three login-terminal providers. Wider than what 083 will STORE (R6). */
 export const CredentialProviderNameSchema: z.ZodType<CredentialProviderName> =
   z.enum(['anthropic', 'openai', 'github']);
 
-/** Mirrors 082's `account_agent_credentials.status` CHECK exactly. */
+/** Mirrors 083's `account_agent_credentials.status` CHECK exactly. */
 const CredentialStatusSchema = z.enum(['active', 'stale', 'revoked']);
 
 export const CredentialConnectionViewSchema: z.ZodType<CredentialConnectionView> = z.object({
@@ -1527,6 +1564,12 @@ export const LinkCommitInputSchema: z.ZodType<LinkCommitInput> = z.object({
   projectId: z.string().min(1).optional(),
 }).strict();
 
+export const GateTaskInputSchema: z.ZodType<GateTaskInput> = z.object({
+  ...commandContextShape,
+  expectedVersion: z.number().finite(),
+  gate: z.enum(['none', 'pr_merged']),
+}).strict();
+
 export const TaskAxisInputSchema: z.ZodType<TaskAxisInput> = z.object({
   ...commandContextShape,
   name: z.string().min(1),
@@ -1670,6 +1713,30 @@ export const ProjectCreateInputSchema: z.ZodType<ProjectCreateInput> = z.object(
   ensureWorkingDir: z.boolean().optional(),
 }).strict();
 
+export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({
+  name: z.string().min(1),
+  head: z.string(),
+  lastCommitAt: z.string().min(1),
+  subject: z.string(),
+  upstream: z.string().nullable(),
+  ahead: z.number().int().nonnegative(),
+  behind: z.number().int().nonnegative(),
+  isDefault: z.boolean(),
+  isCurrent: z.boolean(),
+  merged: z.boolean(),
+  stale: z.boolean(),
+}).strict();
+
+export const ProjectBranchTopologySchema: z.ZodType<ProjectBranchTopology> = z.object({
+  projectId: ProjectIdSchema,
+  workingDir: z.string().min(1),
+  defaultBranch: z.string().min(1),
+  defaultBranchSource: z.enum(['origin_head', 'local_conventional', 'current_branch']),
+  branches: z.array(ProjectBranchSchema),
+  truncated: z.boolean(),
+  staleAfterDays: z.number().int().positive(),
+}).strict();
+
 export const ProjectDirectoryEntrySchema: z.ZodType<ProjectDirectoryEntry> = z.object({
   name: z.string().min(1),
   path: z.string().min(1),
@@ -1747,9 +1814,19 @@ export const FileUploadAbortInputSchema = CommandContextSchema;
 // execution.* inputs (R16)
 // ---------------------------------------------------------------------------
 
+/**
+ * `.strict()` on every member is the load-bearing part: it is what makes
+ * `{ mode: 'worktree', path: '/etc' }` a parse failure rather than a field the
+ * server quietly ignores. "Intent in, never paths" is structural here.
+ *
+ * The `baseRef` bound is politeness; the security control is that it reaches
+ * Git as an element of an argv array, never a shell string, and is shape-checked
+ * by `assertSafeRefName` on the way.
+ */
 export const SpawnWorkdirSchema: z.ZodType<SpawnWorkdir> = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('project') }).strict(),
   z.object({ mode: z.literal('scratch') }).strict(),
+  z.object({ mode: z.literal('worktree'), baseRef: z.string().min(1).max(255).optional() }).strict(),
 ]);
 
 const SpawnUuidSchema = z.string().uuid();
@@ -1910,6 +1987,64 @@ export const SessionLaunchRecordSchema: z.ZodType<SessionLaunchRecord> = z.objec
     unavailableReason: z.enum(['not_recorded']).nullable(),
   }).strict(),
   recordedAt: z.string().nullable(),
+}).strict();
+
+/**
+ * execution.transcript. Strict everywhere, unlike the journal above: nothing in
+ * this page is a foreign record passed through — every field is computed by the
+ * server from the native JSONL, so an unknown key here is a tm8 bug, not an
+ * older CLI. The native records' own shape drift is absorbed in the reader,
+ * which counts what it cannot parse as `malformed` and keeps going.
+ */
+export const SessionTranscriptEntrySchema: z.ZodType<SessionTranscriptEntry> = z.object({
+  at: IsoTimestamp.nullable(),
+  source: z.enum(['user', 'assistant']),
+  text: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
+export const SessionTranscriptStatsSchema: z.ZodType<SessionTranscriptStats> = z.object({
+  partial: z.boolean(),
+  userMessages: z.number().int().nonnegative(),
+  assistantMessages: z.number().int().nonnegative(),
+  toolCalls: z.number().int().nonnegative(),
+  // Nullable, not zero-defaulted: an agent that has not reported usage yet is
+  // not an agent that used no tokens, and a debug surface must show the
+  // difference.
+  inputTokens: z.number().int().nonnegative().nullable(),
+  outputTokens: z.number().int().nonnegative().nullable(),
+  cacheReadTokens: z.number().int().nonnegative().nullable(),
+  cacheCreationTokens: z.number().int().nonnegative().nullable(),
+  tools: z.array(z.object({
+    name: z.string(),
+    count: z.number().int().positive(),
+  }).strict()),
+  models: z.array(z.string()),
+}).strict();
+
+export const SessionTranscriptStuckSchema: z.ZodType<SessionTranscriptStuck> = z.object({
+  silentMs: z.number().int().nonnegative(),
+  toolCallsSinceText: z.number().int().nonnegative(),
+}).strict();
+
+export const SessionTranscriptPageSchema: z.ZodType<SessionTranscriptPage> = z.object({
+  sessionId: EntityIdSchema,
+  available: z.boolean(),
+  unavailableReason: z.enum([
+    'no_native_session_id',
+    'unsupported_agent_tool',
+    'no_transcript_file',
+    'unreadable',
+  ]).nullable(),
+  agentTool: z.enum(['claude-code', 'codex']).nullable(),
+  entries: z.array(SessionTranscriptEntrySchema),
+  // Nullable for the same reason `entries` is empty on an unavailable page:
+  // there are no statistics about a transcript that was never found, and a
+  // zeroed object would read as "this agent did nothing".
+  stats: SessionTranscriptStatsSchema.nullable(),
+  stuck: SessionTranscriptStuckSchema.nullable(),
+  lastActivityAt: IsoTimestamp.nullable(),
+  malformed: z.number().int().nonnegative(),
 }).strict();
 
 // ---------------------------------------------------------------------------

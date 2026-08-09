@@ -35,7 +35,7 @@ export interface SessionState {
   model?: string | null;
   startedAt?: string | null;
   exitedAt?: string | null;
-  /** 082's discriminator. Optional — a pre-082 node omits it. See `isWork`. */
+  /** 083's discriminator. Optional — a pre-083 node omits it. See `isWork`. */
   sessionKind?: string | null;
 }
 
@@ -87,14 +87,14 @@ export function groupSessions(sessions: EntitySummary[]): SessionGroups {
 /**
  * IS THIS SESSION WORK, or a private credential login terminal?
  *
- * 082 mints the login terminals `credentials.loginSessions.start` opens with
+ * 083 mints the login terminals `credentials.loginSessions.start` opens with
  * `session_kind='credential'`. They are a member authenticating an agent tool
  * against their own account — not work — and they must not sit in the session
  * lists this module feeds (architect Ruling 16).
  *
  * PHRASED AS THE INVERSE OF THE SQL, ON PURPOSE. The database column is NOT
  * NULL so server SQL tests `session_kind = 'agent'` directly; here the field is
- * OPTIONAL and a session read from a node predating 082 carries none. Testing
+ * OPTIONAL and a session read from a node predating 083 carries none. Testing
  * `=== 'agent'` would drop every one of those from the list — a bug that
  * reproduces on no fresh local data and blanks the list for users on an older
  * node. An absent field is WORK.

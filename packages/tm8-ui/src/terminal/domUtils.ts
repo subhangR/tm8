@@ -2,8 +2,16 @@ import { notifyUser } from './notifications.js';
 
 export async function copyToClipboard(text: string): Promise<boolean> {
   if (!text) return false;
+  // Skip the async Clipboard API when the page is KNOWN to be insecure —
+  // tm8 is routinely served over plain http:// on a LAN/tailnet address, where
+  // `navigator.clipboard` is either absent or present-but-always-rejecting.
+  // Awaiting a rejection there costs a microtask turn against the transient
+  // user activation that the execCommand fallback below depends on, so we go
+  // straight to the fallback instead. `=== false` deliberately: only an
+  // explicit "not secure" skips: unknown (older/embedded/test) still tries.
+  const insecure = typeof window !== 'undefined' && window.isSecureContext === false;
   try {
-    if (navigator.clipboard?.writeText) {
+    if (!insecure && navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
       return true;
     }

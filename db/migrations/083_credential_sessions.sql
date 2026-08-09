@@ -1,5 +1,5 @@
 -- =============================================================================
--- 082 — per-member agent credentials: the metadata index, the login terminal,
+-- 083 — per-member agent credentials: the metadata index, the login terminal,
 -- and the discriminator that keeps a login terminal from being mistaken for an
 -- agent.
 --
@@ -174,8 +174,8 @@ alter table public.work_sessions
 
 comment on column public.work_sessions.session_kind is
   'agent = a real agent session. credential = an interactive vendor-login '
-  'terminal (082). Anything that assumed a work_sessions row is an agent must '
-  'narrow on this. Read the 082 header before adding a third value.';
+  'terminal (083). Anything that assumed a work_sessions row is an agent must '
+  'narrow on this. Read the 083 header before adding a third value.';
 
 -- The target half of `credential_sessions`'s composite foreign key. `entity_id`
 -- is already the primary key, so this adds no new uniqueness — it exists purely
@@ -208,7 +208,7 @@ $$;
 
 comment on function internal.live_work_session_count(uuid) is
   'Live AGENT sessions, for execution.spawn/resume''s concurrency cap. The '
-  'session_kind predicate is load-bearing (082 D3): without it a credential '
+  'session_kind predicate is load-bearing (083 D3): without it a credential '
   'login terminal consumes a node-wide agent spawn slot.';
 
 -- -----------------------------------------------------------------------------
@@ -244,7 +244,7 @@ create table public.account_agent_credentials (
 comment on table public.account_agent_credentials is
   'Per-account FILE-shaped agent credentials — metadata index only. The secret '
   'is a 0600 file in a per-account config directory on the node, never a column '
-  'here. Read the 082 header before adding a column, a policy, or a grant.';
+  'here. Read the 083 header before adding a column, a policy, or a grant.';
 
 alter table public.account_agent_credentials enable row level security;
 
@@ -353,7 +353,7 @@ revoke all on function internal.credential_session_count(uuid) from public;
 grant execute on function internal.credential_session_count(uuid) to tm8_app;
 
 comment on table public.credential_sessions is
-  'One row per interactive vendor-login terminal (082). The work session it '
+  'One row per interactive vendor-login terminal (083). The work session it '
   'points at always has session_kind = ''credential'' and node_id NULL. '
   'Lifecycle is owned by the credential-sessions service, not by SpawnService''s '
   'ghost reconciliation.';
@@ -383,7 +383,7 @@ create or replace function internal.w1_backfill_participant(target_session uuid)
 returns integer language plpgsql set search_path = public, internal, pg_temp as $$
 declare session_space uuid; candidate uuid; candidate_count integer; actor uuid;
 begin
-  -- ADDED IN 082. A credential session has no team_member and never will, so
+  -- ADDED IN 083. A credential session has no team_member and never will, so
   -- there is no participant to backfill. Returning 0 rather than falling
   -- through matters: the fall-through path ends at a
   -- `participant_backfill_unresolved` audit row, which every maintenance pass
@@ -451,7 +451,7 @@ begin
   for session_id in
     select ws.entity_id from public.work_sessions ws
     join public.entities e on e.id = ws.entity_id
-    -- ADDED IN 082: `and ws.session_kind = 'agent'`. A login terminal is not an
+    -- ADDED IN 083: `and ws.session_kind = 'agent'`. A login terminal is not an
     -- agent session and maintenance has nothing to repair on it. This is
     -- belt-and-braces over the guard inside w1_backfill_participant; it also
     -- keeps `ensure_core_interaction_pin` off the row.
@@ -734,7 +734,7 @@ language sql stable security definer set search_path = public, internal, pg_temp
      and e.deleted_at is null
      and internal.is_space_member(p_space_id)
      and internal.entity_readable(e.id)
-     -- ADDED IN 082. See the block comment above.
+     -- ADDED IN 083. See the block comment above.
      and not exists (select 1 from public.work_sessions ws
                       where ws.entity_id = e.id and ws.session_kind <> 'agent')
    group by e.kind

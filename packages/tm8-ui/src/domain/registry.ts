@@ -510,9 +510,19 @@ const ROWS: readonly KindConfig[] = [
       sort: [BY_ACTIVITY, BY_CREATED],
       needsAttentionGroup: sessionNeedsAttention,
       liveTreatment: sessionLiveTreatment,
-      // Session titles are runtime records, not an authoring surface. Keeping
-      // this true mounted a refused Save control whose full reason squeezed
-      // Discussion/Connections/Activity out of the compact panel row.
+      // A session title IS an authoring surface, as of 085 — the spawn-time
+      // default (the first linked task's title) is a guess, and two sessions on
+      // one task were called the same thing forever.
+      //
+      // WHY THIS WAS FALSE BEFORE, and what actually changed: keeping it true
+      // mounted a REFUSED Save control whose full reason squeezed
+      // Discussion/Connections/Activity out of the compact panel row. That
+      // refusal was `capabilities.canEdit === false` — the node had no patch
+      // door for a work_session — and `SaveControls` renders a permanent
+      // disabled-with-reason in exactly that state. With the door open the
+      // control renders NULL while clean, so the compact row is unaffected and
+      // the earlier ruling's premise no longer holds.
+      inlineEdit: { title: true },
       rowActions: ['complete', 'terminate'],
       stateControl: SESSION_STATE_CONTROL,
     }),

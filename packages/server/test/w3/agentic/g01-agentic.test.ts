@@ -150,5 +150,13 @@ describe("W3.G01 agentic discovery workflow", () => {
     } finally {
       await harness.close();
     }
-  });
+    // 120s, the same budget every other DB-backed suite in this tree uses
+    // (g15-agentic:88 and :212, public-harness, the w2 pg suites). This `it`
+    // calls startW3PublicServer ITSELF rather than in a beforeAll, so the test
+    // timeout — not a hook timeout — has to cover creating a scratch database
+    // and applying the whole migration chain before the workflow starts. On
+    // vitest's 5s default that was never survivable once the chain passed ~70
+    // files, and this suite died at `Test timed out in 5000ms` with nothing to
+    // say which assertion was at fault.
+  }, 120_000);
 });

@@ -48,7 +48,10 @@ import { createOutput } from '../src/output.js';
 
 // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
 // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-const EXPECTED_ROWS = 131;
+// 128 -> 129 (2026-08-09): projects.branches.list (public, with a command).
+// 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
+// 131 -> 135: credentials.* Tier B.
+const EXPECTED_ROWS = 135;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -114,7 +117,7 @@ describe('the projection is TOTAL over the catalog', () => {
 });
 
 describe('cross-check: the projection agrees with the W1 conformance manifest', () => {
-  it('sweeps all 127 manifest help rows and agrees on noun and exposure', () => {
+  it('sweeps all 131 manifest help rows and agrees on noun and exposure', () => {
     expect(manifest.help.operations).toHaveLength(EXPECTED_ROWS);
     const checked = new Set<string>();
     for (const row of manifest.help.operations) {
@@ -153,14 +156,14 @@ describe('cross-check: the projection agrees with the W1 conformance manifest', 
 });
 
 describe('the exposure histogram is the one the catalog freeze specifies', () => {
-  it('127 public, 1 composite, 1 internal, 2 reserved', () => {
+  it('131 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
     // +4 public from the `credentials.*` family. They are PUBLIC despite having
     // no CLI command: exposure describes who may call the operation, and the
     // absent command is a scope decision (see the rows' own notes), not a
     // refusal — a human `cli` session is admitted by the R2 guard.
-    expect(histogram).toEqual({ public: 127, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 131, composite: 1, internal: 1, reserved: 2 });
   });
 });
 
@@ -230,6 +233,7 @@ describe('the CLI command projection', () => {
     expect(NOUNS).toContain('task');
     expect(commandsForNoun('task').map((c) => c.command).sort()).toEqual([
       'task complete',
+      'task gate',
       'task link-commit',
       'task link-pr',
       'task transition',
@@ -494,6 +498,7 @@ const DTO_BY_OPERATION: Partial<Record<OperationName, string>> = {
   'entities.patch': 'PatchEntityInputSchema',
   'entities.move': 'MoveEntityInputSchema',
   'entities.commands.complete': 'CompleteTaskInputSchema',
+  'entities.commands.gate': 'GateTaskInputSchema',
   'messages.edit': 'PatchMessageInputSchema',
   'messages.delete': 'DeleteMessageInputSchema',
   'messages.attachments.add': 'AddMessageAttachmentsInputSchema',
@@ -622,7 +627,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       if (!flags.some((f) => f.required)) missing.push(operation);
     }
     // Every mapped guard DTO is required.
-    expect(swept).toBe(19);
+    expect(swept).toBe(20);
     expect(missing.sort()).toEqual([...PENDING_AMENDMENT].sort());
   });
 
@@ -673,6 +678,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
     ['entities.patch', '--expect-version', 'expectedVersion'],
     ['entities.move', '--expect-version', 'expectedVersion'],
     ['entities.commands.complete', '--expect-version', 'expectedVersion'],
+    ['entities.commands.gate', '--expect-version', 'expectedVersion'],
     ['messages.edit', '--expect-version', 'expectedVersion'],
     ['messages.delete', '--expect-version', 'expectedVersion'],
     ['messages.attachments.add', '--expect-version', 'expectedVersion'],
@@ -727,7 +733,7 @@ describe('version guards: the projection and the frozen DTOs agree, both directi
       rows.map((r) => r.join(' -> ')).sort();
     // Non-vacuity: an empty derivation would equal an empty table.
     expect(actual.length).toBe(GUARD_PIN.length);
-    expect(actual.length).toBe(19);
+    expect(actual.length).toBe(20);
     expect(norm(actual)).toEqual(norm(GUARD_PIN));
   });
 

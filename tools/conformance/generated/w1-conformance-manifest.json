@@ -1,28 +1,28 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:448c1ad17325ba74dfb415d421c191335adb57330d999f3a968ad1c060e830eb",
+  "catalogDigest": "sha256:5f195f4923e3dd6437adcd17be146b12801880894893cfd470160d11e116dd54",
   "catalog": {
-    "total": 131,
-    "v1": 129,
+    "total": 135,
+    "v1": 133,
     "reserved": 2,
-    "http": 130,
+    "http": 134,
     "ws": 1,
-    "registerableV1Http": 128,
+    "registerableV1Http": 132,
     "methods": {
-      "GET": 48,
-      "POST": 56,
+      "GET": 51,
+      "POST": 57,
       "PATCH": 10,
       "DELETE": 9,
       "PUT": 7,
       "WS": 1
     },
     "kinds": {
-      "read": 51,
-      "command": 79,
+      "read": 54,
+      "command": 80,
       "stream": 1
     },
-    "uniqueNames": 131,
-    "uniqueBindings": 131
+    "uniqueNames": 135,
+    "uniqueBindings": 135
   },
   "reservedOperations": [
     "search.query",
@@ -523,6 +523,13 @@
         "source": "server-router"
       },
       {
+        "operation": "entities.commands.gate",
+        "method": "POST",
+        "path": "/v2/entities/:id/commands/gate",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
         "operation": "tracking.refresh",
         "method": "POST",
         "path": "/v2/tracking/refresh",
@@ -652,6 +659,20 @@
         "operation": "projects.get",
         "method": "GET",
         "path": "/v2/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.contention",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/contention",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.branches.list",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/branches",
         "status": "registered",
         "source": "server-router"
       },
@@ -1109,6 +1130,13 @@
         "path": "/v2/identity/credentials/login-sessions/:id/finish",
         "status": "registered",
         "source": "server-router"
+      },
+      {
+        "operation": "execution.transcript",
+        "method": "GET",
+        "path": "/v2/work-sessions/:workSessionId/transcript",
+        "status": "registered",
+        "source": "server-router"
       }
     ],
     "ws": [
@@ -1321,7 +1349,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 100
+    "unimplementedV1Http": 104
   },
   "schemas": {
     "additive": {
@@ -2254,6 +2282,23 @@
         "publicComposite": null
       },
       {
+        "operation": "entities.commands.gate",
+        "noun": "entity",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/entities.commands.gate",
+        "intentTags": [
+          "entities",
+          "commands",
+          "gate"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
         "operation": "tracking.refresh",
         "noun": "tracking",
         "exposure": "public",
@@ -2551,6 +2596,39 @@
         "intentTags": [
           "projects",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.contention",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.contention",
+        "intentTags": [
+          "projects",
+          "contention"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.branches.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.branches.list",
+        "intentTags": [
+          "projects",
+          "branches",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,
@@ -3652,6 +3730,22 @@
           "login",
           "sessions",
           "finish"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "execution.transcript",
+        "noun": "session",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/execution.transcript",
+        "intentTags": [
+          "execution",
+          "transcript"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

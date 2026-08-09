@@ -107,22 +107,22 @@ describe('noun shards — 12 KiB HARD (conformance D3)', () => {
       return e === 'public' || e === 'composite';
     }).map((o) => o.name);
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
+    // 127 -> 128 (2026-08-07): execution.transcript (public).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-    // 124 -> 128: the four credentials.* rows are reachable-by-name even
-    //   though none is invocable, which is the point — discoverable, not hidden.
-    expect(wanted).toHaveLength(128);
+    // 128 -> 129 (2026-08-09): projects.branches.list (public, with a command).
+    // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
+    // 128 -> 132: credentials.* are reachable-by-name though not CLI-invocable.
+    expect(wanted).toHaveLength(132);
     for (const op of wanted) expect(reachable.has(op), `${op} is unreachable from any noun shard`).toBe(true);
   });
 
-  it('D3: every one of the 127 operations has intent tags', () => {
+  it('D3: every one of the 135 operations has intent tags', () => {
     let swept = 0;
     for (const op of OPERATIONS) {
       expect(discoveryFor(op.name).intentTags.length, op.name).toBeGreaterThan(0);
       swept++;
     }
-    // 127 -> 131 (2026-08-07): credentials.* Tier B (4 ops, all public,
-    //   none with a CLI command — settings-screen operations, R2 human-only).
-    expect(swept).toBe(131);
+    expect(swept).toBe(135);
   });
 
   it('a family noun whose command lives elsewhere still resolves', () => {
@@ -197,7 +197,7 @@ describe('command shards — tm8.help.command.v1, 16 KiB HARD', () => {
   });
 });
 
-describe('exact operation lookup — TOTAL over all 127 (conformance D2)', () => {
+describe('exact operation lookup — TOTAL over all 135 (conformance D2)', () => {
   it('succeeds for every catalog operation and returns ONE digest', () => {
     const digests = new Set<string>();
     const seen = new Set<string>();
@@ -209,7 +209,7 @@ describe('exact operation lookup — TOTAL over all 127 (conformance D2)', () =>
       digests.add(shard?.catalogDigest as string);
       seen.add(op.name);
     }
-    expect(seen.size).toBe(131);
+    expect(seen.size).toBe(135);
     expect([...digests]).toEqual([CATALOG_DIGEST]);
   });
 
