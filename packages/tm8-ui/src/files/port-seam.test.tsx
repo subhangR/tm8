@@ -126,8 +126,10 @@ describe('the files port reaches real data through a real seam', () => {
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
-    // The measurement itself, pinned: three edge types, none of them ours.
-    expect([...types].sort()).toEqual(['blocks', 'references', 'relates_to']);
+    // The measurement itself, pinned: five edge types, none of them ours.
+    // (`tracks` and `created_in` came alive with the Git UI wave fixtures —
+    // task-detail git section — exactly the tripwire this pin exists to be.)
+    expect([...types].sort()).toEqual(['blocks', 'created_in', 'references', 'relates_to', 'tracks']);
   });
 });
 

@@ -761,6 +761,12 @@ export interface PanelConfig {
   /** work_session only. */
   contentSurfaces?: ContentSurfaces;
   /**
+   * Git UI wave: the subtree body mounts the git section (tracked PRs,
+   * commit provenance, completion-gate honesty) when the REGISTRY says so —
+   * archetype law, never `kind === 'task'` in a component (§15.2).
+   */
+  gitSection?: boolean;
+  /**
    * 'chat': the content body is a conversation that ENDS at its composer —
    * the panel mounts no AttachmentStrip (the composer's + owns attach) and no
    * PanelFooter below it. Terminal panels already skip both via the archetype

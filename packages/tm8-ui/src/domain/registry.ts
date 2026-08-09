@@ -509,6 +509,9 @@ const ROWS: readonly KindConfig[] = [
       // remain available from their task-specific surfaces, not this compact
       // panel toolbar.
       primaries: ['run'],
+      // Git UI wave: tasks carry the git section (tracked PRs, provenance,
+      // gate honesty). A registry field, so the panel never asks the kind.
+      gitSection: true,
       statusPill: {
         source: 'workStatus',
         tones: {
