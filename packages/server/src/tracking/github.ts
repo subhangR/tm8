@@ -479,7 +479,17 @@ export class GithubClient {
 
     try {
       const tail = await readTrailingBytes(response, LOG_TAIL_BYTES);
-      return { ok: true, value: lastLines(tail.text, lines, tail.truncated), etag: null };
+      const text = lastLines(tail.text, lines, tail.truncated);
+      // BYTE-BOUNDED AS WELL AS LINE-BOUNDED. A hundred lines says nothing
+      // about how long a line is, and a job that prints one enormous line — or
+      // a hundred of them — is something anyone who can edit a workflow can
+      // arrange. Consumers budget this again before fencing it; this is the
+      // bound that stops it being carried around at all.
+      return {
+        ok: true,
+        value: text.length > LOG_TAIL_CHARS ? text.slice(-LOG_TAIL_CHARS) : text,
+        etag: null,
+      };
     } catch (error) {
       return {
         ok: false,
@@ -642,6 +652,13 @@ interface GraphqlReviewThreadsResponse {
  * hundred lines anybody reads and still a constant.
  */
 const LOG_TAIL_BYTES = 256 * 1024;
+
+/**
+ * And a character bound on what comes BACK, because a line count says nothing
+ * about line length. Comfortably above any real hundred-line tail, and well
+ * under the message limit the caller then budgets against.
+ */
+const LOG_TAIL_CHARS = 16 * 1024;
 
 /**
  * Stream the body, keeping only the last `maxBytes`.
