@@ -1068,6 +1068,29 @@
   padding: 12px 14px; display: flex; flex-direction: column; gap: 13px;
 }
 .cv2-root .ls__section { display: flex; flex-direction: column; gap: 5px; }
+/* The teammate roster is UNBOUNDED, so it gets a filter plus a scroll cap —
+   it may never push the model / effort / permission controls below the fold. */
+.cv2-root .ls__search {
+  width: 100%; padding: 6px 10px;
+  background: var(--pn-card); border: 1px solid var(--pn-line);
+  border-radius: 8px; font-family: var(--pn-ui); font-size: 12px;
+  color: var(--pn-ink);
+}
+.cv2-root .ls__search:focus { outline: none; border-color: var(--pn-brand); }
+.cv2-root .ls__search::placeholder { color: var(--pn-ink-4); }
+.cv2-root .ls__roster {
+  display: flex; flex-direction: column; gap: 5px;
+  max-height: 218px; overflow-y: auto;
+  /* Room for the --on ring, which a scroll container would otherwise clip. */
+  padding: 2px;
+  scrollbar-width: thin;
+}
+.cv2-root .ls__roster-empty {
+  margin: 0; padding: 8px 10px;
+  border: 1px dashed var(--pn-line-2); border-radius: 8px;
+  font-family: var(--pn-mono); font-size: 9px; line-height: 1.5;
+  color: var(--pn-ink-3); background: var(--pn-hover);
+}
 .cv2-root .ls__row {
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 7px 10px; text-align: left;
