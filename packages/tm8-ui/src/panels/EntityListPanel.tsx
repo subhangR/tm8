@@ -35,6 +35,7 @@ import {
   ALL_MODES,
   KindIcon,
   REASONS,
+  toRowFacts,
   VIEWER_ACTOR,
   collectionKinds,
   countLabel,
@@ -1900,17 +1901,6 @@ function splitAttention(
     (row.badges.attention || derivedAttention ? attention : rest).push(row);
   }
   return { attention, rest };
-}
-
-function toRowFacts(row: EntitySummary): ListRowFacts {
-  const state = row.state as unknown as Record<string, unknown>;
-  return {
-    id: row.id,
-    kind: row.kind,
-    activityAt: row.activityAt,
-    status: typeof state.status === 'string' ? state.status : null,
-    blockedCount: row.badges.blocked?.unresolvedHardDependencyCount ?? 0,
-  };
 }
 
 /**

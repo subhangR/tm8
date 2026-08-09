@@ -298,7 +298,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 128 -> 129 (2026-08-09): projects.branches.list.
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate.
     // 131 -> 135: credentials.* Tier B.
-    expect(rows.length).toBe(135);
+    expect(rows.length).toBe(137);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

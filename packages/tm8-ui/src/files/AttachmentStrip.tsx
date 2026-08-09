@@ -29,6 +29,8 @@ import { Eyebrow } from '../kit';
 import { formatSizeChip, glyphFor, previewKindOf, type FileRow } from './model';
 import { safeUploadReason, type FileUploadTask } from './upload';
 import type { DownloadHref } from './FilesScreen';
+import type { ProjectFolderPort } from './port';
+import { ProjectFolderPicker } from './ProjectFolderPicker';
 import './attachment-strip.css';
 
 export interface AttachmentStripProps {
@@ -48,6 +50,12 @@ export interface AttachmentStripProps {
    * worse than no dropzone, because the user believes the file landed.
    */
   startUpload?: (file: File, anchorId: EntityId) => FileUploadTask;
+  /**
+   * Browsing a connected project folder on the node. Absent ⇒ no folder
+   * affordance is drawn, for the same reason `startUpload`'s absence removes
+   * the dropzone: an inert browse button is worse than none.
+   */
+  projectFolder?: ProjectFolderPort;
   /** An upload finished. The host refetches the anchor so the new edge shows. */
   onUploaded?: () => void;
   /**
@@ -108,6 +116,7 @@ export function AttachmentStrip({
   files,
   downloadHref,
   startUpload,
+  projectFolder,
   onUploaded,
   onDetach,
   onDetached,
@@ -121,6 +130,7 @@ export function AttachmentStrip({
      failure erased the first row's explanation, leaving a row that had visibly
      failed and no longer said why. */
   const [detachErrors, setDetachErrors] = useState<Readonly<Record<string, string>>>({});
+  const [picking, setPicking] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   /**
@@ -191,7 +201,7 @@ export function AttachmentStrip({
    * wired here. With an uploader present, the dropzone alone is the empty
    * state: it is the invitation, so it needs no separate "no attachments" row.
    */
-  if (files.length === 0 && pending.length === 0 && !startUpload) return null;
+  if (files.length === 0 && pending.length === 0 && !startUpload && !projectFolder) return null;
 
   return (
     <section
@@ -270,6 +280,31 @@ export function AttachmentStrip({
           </button>
           <span className="fn-strip__hint">or drop files here</span>
         </div>
+      ) : null}
+
+      {/* A SECOND, DIFFERENT SOURCE — not a second way to do the same thing.
+          The input above sends bytes from this machine; this one names a file
+          already sitting in a project folder on the node, which the input
+          cannot reach because it never learns an absolute path. */}
+      {projectFolder ? (
+        <div className="fn-strip__drop">
+          <button type="button" className="fn-strip__btn" onClick={() => setPicking(true)}>
+            ▱ From a project folder
+          </button>
+          <span className="fn-strip__hint">read on the node, not uploaded</span>
+        </div>
+      ) : null}
+
+      {picking && projectFolder ? (
+        <ProjectFolderPicker
+          port={projectFolder}
+          anchorId={anchorId}
+          onDismiss={() => setPicking(false)}
+          onAttached={() => {
+            setPicking(false);
+            onUploaded?.();
+          }}
+        />
       ) : null}
     </section>
   );

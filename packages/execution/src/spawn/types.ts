@@ -189,6 +189,23 @@ export interface SpawnContext {
   project: ProjectContext | null;
   teamMember: TeamMemberContext;
   tasks: TaskContext[];
+  /**
+   * Skills resolved across the team member's ancestor chain, nearest-first, and
+   * already de-duplicated — see `resolveSkills` in ./skills.ts. Optional only so
+   * that existing SpawnContext producers (the fake graph in tests, and any
+   * caller predating row #11) stay valid; absent is read as "none".
+   */
+  skills?: ManifestSkillContext[];
+  /**
+   * Skills the resolver dropped to stay inside its cap. Carried through to the
+   * manifest so a truncated persona is visible rather than merely smaller.
+   */
+  droppedSkills?: string[];
+}
+
+export interface ManifestSkillContext {
+  name: string;
+  body: string;
 }
 
 export interface CreateWorkSessionInput {
@@ -533,6 +550,20 @@ export interface Tm8Manifest {
     reasoningEffort: ReasoningEffort | null;
     /** Effective shell-command networking, independent of filesystem posture. */
     commandNetwork: CommandNetworkPolicy;
+    /**
+     * Set when `permissionMode` asked for OS-level confinement and the node
+     * could not provide it, so the agent was launched UNCONFINED. Holds the
+     * one-sentence reason; null when the posture was honoured as written.
+     *
+     * It exists because the manifest is otherwise a liar in exactly this case:
+     * `permissionMode` records what was ASKED FOR, and on a node whose sandbox
+     * cannot start that is not what happened. Reading the two fields together
+     * is the only way to tell a confined codex session from an unconfined one,
+     * and before this there was no way at all — the deployed node had codex
+     * agents running with no filesystem confinement and no approval gate, and
+     * nothing in the graph, the manifest or the session row said so.
+     */
+    sandboxDegraded?: string | null;
     /** The exact shell command line the PTY runs. Reproducibility, not decoration. */
     command: string;
   };

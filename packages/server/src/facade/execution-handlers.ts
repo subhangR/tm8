@@ -24,6 +24,7 @@ import {
   SpawnService,
   PtyHostService,
   PromptSettlementWaiter,
+  resolveSkills,
   readSessionTranscript,
   type CreateWorkSessionInput,
   type CreateWorkSessionResult,
@@ -31,6 +32,7 @@ import {
   type GraphPort,
   type LoadSpawnContextInput,
   type Logger,
+  type PtyActivity,
   type PtyExitInfo,
   type PtySessionStatus,
   type RecordCommandInput,
@@ -131,6 +133,22 @@ interface TaskRow {
   acceptance_criteria: unknown;
 }
 
+interface SkillRow {
+  entity_id: string;
+  name: string;
+  content: string;
+  /** pg returns `min(...)` over an int as a string via node-postgres. */
+  depth: string | number;
+}
+
+/**
+ * How far the skill resolver will walk up a team member hierarchy. These are
+ * org charts, not trees, so this is a runaway guard rather than a real product
+ * limit — but it is also what stops a recursive CTE spinning if the hierarchy's
+ * acyclicity trigger is ever bypassed (a restore, a direct write).
+ */
+const MAX_HIERARCHY_DEPTH = 16;
+
 export class DbGraphPort implements GraphPort {
   constructor(
     private readonly db: Db,
@@ -198,6 +216,50 @@ export class DbGraphPort implements GraphPort {
         };
       }
 
+      // Row #11. Walk the persona's ancestor chain and collect what each level
+      // equips. In the SAME transaction as the persona read for the reason
+      // given above: a skill unequipped between the two reads would otherwise
+      // produce a manifest describing capability the persona no longer has.
+      //
+      // `depth` is hops from the invoked member (0 = itself). The recursion is
+      // bounded by MAX_HIERARCHY_DEPTH rather than trusting the hierarchy to be
+      // acyclic: 001_core_graph.sql's trigger does enforce acyclicity, but a
+      // recursive CTE that meets a cycle anyway spins until it exhausts memory,
+      // and this query runs on the spawn path.
+      const skillRows = await q.query<SkillRow>(
+        `with recursive chain as (
+             select e.id, e.parent_id, 0 as depth
+               from public.entities e
+              where e.id = $1 and e.space_id = $2
+                and e.kind = 'team_member' and e.deleted_at is null
+             union all
+             select p.id, p.parent_id, c.depth + 1
+               from chain c
+               join public.entities p on p.id = c.parent_id
+              where p.space_id = $2 and p.kind = 'team_member'
+                and p.deleted_at is null and c.depth < $3
+           )
+         select s.entity_id, s.name, s.content, min(chain.depth) as depth
+           from chain
+           join public.edges ed
+             on ed.src_id = chain.id and ed.type = 'equips' and ed.space_id = $2
+           join public.entities se
+             on se.id = ed.dst_id and se.kind = 'skill' and se.deleted_at is null
+           join public.skills s on s.entity_id = se.id
+          group by s.entity_id, s.name, s.content
+          order by depth, s.name`,
+        [input.teamMemberId, input.spaceId, MAX_HIERARCHY_DEPTH],
+      );
+
+      const resolution = resolveSkills(
+        skillRows.map((r) => ({
+          entityId: r.entity_id,
+          name: r.name,
+          body: r.content,
+          depth: Number(r.depth),
+        })),
+      );
+
       const taskIds = input.taskIds ?? [];
       const tasks =
         taskIds.length === 0
@@ -242,6 +304,8 @@ export class DbGraphPort implements GraphPort {
             workStatus: t.work_status,
             acceptanceCriteria: Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [],
           })),
+        skills: resolution.skills,
+        droppedSkills: resolution.dropped,
       };
     });
   }
@@ -875,6 +939,12 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     onSessionStatus: (sessionId: string, status: PtySessionStatus, exitInfo: PtyExitInfo) =>
       spawnService.handlePtyExit(sessionId, status, exitInfo),
     onPromptSettled: promptSettlement.resolve,
+    // Same lazy-closure reason as onSessionStatus above: the activity sink also
+    // needs the SpawnService that holds the spawner's claims, and for the same
+    // identity reason — an idle transition is written by the same RPC, through
+    // the same require_identity path, as an exit transition.
+    onActivityChange: (sessionId: string, activity: PtyActivity) =>
+      spawnService.handlePtyActivity(sessionId, activity),
   });
 
   // The node's worktree area lives beside manifests/journals/scratch under the

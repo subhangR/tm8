@@ -155,7 +155,7 @@ describe('what this node is, measured rather than assumed', () => {
       `[g06] ${server.baseUrl} operations=${h.operations} registered=${h.implemented} ` +
         `bind-start ${server.bindStart.files}/${server.bindStart.digest}`,
     );
-    expect(h.operations).toBe(133); // 129 -> 133: credentials.* Tier B.
+    expect(h.operations).toBe(135); // +2: connected project folder file routes.
     // `implemented` is registry.size — MOUNTED handlers, not behaviourally
     // implemented. Asserted as a floor only, never quoted as an implemented count.
     expect(h.implemented).toBeGreaterThan(0);

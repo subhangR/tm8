@@ -142,7 +142,7 @@ describe('the node itself', () => {
     // "implemented" here without the word "registered".
     const health = await server.health();
     expect(health.ok).toBe(true);
-    expect(health.operations).toBe(133); // 129 -> 133: credentials.* Tier B.
+    expect(health.operations).toBe(135); // +2: connected project folder file routes.
     console.log(`[g2] /health operations=${health.operations} registered=${health.implemented}`);
   });
 });

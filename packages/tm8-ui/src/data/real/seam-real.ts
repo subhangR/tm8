@@ -276,6 +276,10 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       createProject: (input) => ops.createProject(input),
       linkProject: (spaceId, input) => ops.linkProject(spaceId, input),
     },
+    projectFiles: {
+      list: (projectId, path) => ops.projectFiles(projectId, path),
+      attach: (projectId, input) => ops.attachProjectFile(projectId, input),
+    },
     entity: (id: EntityId): Promise<EntityDetail> => ops.entity(id),
     children: (id: EntityId, opts?: PageOpts): Promise<Page<EntitySummary>> => ops.children(id, opts),
     connections: (id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>> => ops.connections(id, opts),

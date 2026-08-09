@@ -48,7 +48,7 @@ describe('W1 adopted catalog target', () => {
     expect(OPERATIONS.slice(start, start + ADDITIVE_OPERATIONS.length)).toEqual(ADDITIVE_OPERATIONS);
   });
 
-  it('reconciles the additive 131-row target without changing reserved honesty', () => {
+  it('reconciles the additive 137-row target without changing reserved honesty', () => {
     // 119 -> 120 (2026-08-01): `execution.journal` joined the catalog without
     // this pin moving — the tree carried a red literal until the next
     // amendment (identity.profile.update, also 2026-08-01) reconciled both.
@@ -65,8 +65,8 @@ describe('W1 adopted catalog target', () => {
     // 129 -> 131 (2026-08-09): projects.contention + entities.commands.gate (Tier 4 git x graph).
     // 131 -> 135: credentials.status (GET/read), delete (DELETE/command),
     // and two login-session POST commands. All four are v1 and human-only.
-    expect(OPERATIONS).toHaveLength(135);
-    expect(V1_OPERATIONS).toHaveLength(133);
+    expect(OPERATIONS).toHaveLength(137);
+    expect(V1_OPERATIONS).toHaveLength(135);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -82,12 +82,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 51, POST: 57, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 52, POST: 58, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 54, command: 80, stream: 1 });
+    }).toEqual({ read: 55, command: 81, stream: 1 });
   });
 });
 

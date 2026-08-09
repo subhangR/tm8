@@ -123,6 +123,42 @@ describe('ops: launch resources', () => {
       body: { projectId: 'project-1', clientMutationId: 'link-1' },
     });
   });
+
+  it('uses catalog bindings for reading and attaching from a connected project folder', async () => {
+    const listing = {
+      projectId: 'project-1',
+      workingDir: '/srv/projects/website',
+      path: '/srv/projects/website/docs',
+      parentPath: '/srv/projects/website',
+      separator: '/' as const,
+      directories: [],
+      files: [],
+      truncated: false,
+      maxSizeBytes: 1024,
+    };
+    const { ops, f } = harness(listing);
+
+    await expect(ops.projectFiles('project-1', '/srv/projects/website/docs')).resolves.toEqual(listing);
+    expect(f.last().method).toBe('GET');
+    expect(f.last().url).toBe('/v2/projects/project-1/files?path=%2Fsrv%2Fprojects%2Fwebsite%2Fdocs');
+
+    await ops.attachProjectFile('project-1', {
+      clientMutationId: 'attach-1',
+      spaceId: 'space-1',
+      path: '/srv/projects/website/docs/guide.md',
+      targets: ['task-1'],
+    });
+    expect(f.last()).toMatchObject({
+      method: 'POST',
+      url: '/v2/projects/project-1/files/attach',
+      body: {
+        clientMutationId: 'attach-1',
+        spaceId: 'space-1',
+        path: '/srv/projects/website/docs/guide.md',
+        targets: ['task-1'],
+      },
+    });
+  });
 });
 
 describe('ops: canonical file upload lifecycle', () => {
