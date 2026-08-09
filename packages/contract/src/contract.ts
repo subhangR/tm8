@@ -1922,55 +1922,32 @@ export interface ProjectFileAttachInput extends CommandContext {
   targets?: EntityId[];
 }
 
-/** Why a project file's bytes are withheld. Never a silent empty body. */
-export type ProjectFileRefusalReason =
-  | 'secret-pattern'
-  | 'too-large'
-  | 'binary-not-previewable'
-  | 'not-a-file'
-  | 'outside-root'
-  | 'unreadable';
-
-export interface ProjectFileRefusal {
-  reason: ProjectFileRefusalReason;
-  detail: string;
-}
-
 /**
- * GET /v2/projects/:projectId/files/content?path=<absolute> — one file's
- * CONTENT out of a connected project folder. The viewer half of
- * `projects.files.list`, which lists a directory but never reads one.
- *
- * `path` is ABSOLUTE and inside the project's working directory, the same
- * vocabulary `ProjectFileEntry.path` and `ProjectFileAttachInput.path` already
- * use — a second, relative path vocabulary for the same filesystem would be a
- * standing invitation to pass one where the other is meant.
- *
- * This answers a DTO, deliberately NOT raw bytes like `files.download`: a
- * project's disk must never reach the browser as something it might execute.
- * Text rides `text` and the UI renders it into a `<pre>`.
- *
- * `encoding` says which field carries the content — 'utf8' fills `text`,
- * 'base64' fills `base64` for renderable media, and 'none' means `refusal` is
- * set and both are null. An EMPTY file is `encoding: 'utf8'` with `text: ''`
- * and NO refusal: "this file is empty" and "you may not read this" are
- * different facts and a caller must be able to tell them apart.
- *
- * Reading mints NOTHING. A `file` entity is a reference to a file whose truth
- * lives on disk; `projects.files.attach` is the operation that makes one.
+ * GET /v2/projects/:projectId/files/content?path=… — one file out of a
+ * connected project folder, inline. This is a READ for a viewer, distinct from
+ * `projects.files.attach`: nothing is copied into the Space and no entity is
+ * minted. The inline ceiling is deliberately smaller than the attach ceiling —
+ * a viewer never needs a whole blob buffered into a JSON body.
  */
-export interface ProjectFileContent {
-  projectId: ProjectId;
+export interface ProjectFileReadResult {
+  projectId: string;
+  /** Canonical path — what was actually opened, after symlink resolution. */
   path: string;
+  name: string;
+  /**
+   * Extension-derived, with `text/html` and `image/svg+xml` reported as
+   * `text/plain`: an inline read must never hand a UI a type it would render
+   * as active content.
+   */
   mime: string;
   sizeBytes: number;
-  encoding: 'utf8' | 'base64' | 'none';
-  text: string | null;
-  base64: string | null;
-  refusal: ProjectFileRefusal | null;
-  /** The inline ceiling this deployment applied, so a refusal can explain itself. */
-  maxInlineBytes: number;
+  /** `utf8` when the bytes decode cleanly as text; `base64` otherwise. */
+  encoding: 'utf8' | 'base64';
+  content: string;
+  /** True when `sizeBytes` exceeded the inline ceiling and `content` is a prefix. */
+  truncated: boolean;
 }
+
 
 /** The wrapper returned by spaces.create after its default member/channel saga. */
 export interface CreateSpaceResult {
