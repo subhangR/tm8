@@ -72,7 +72,9 @@ export {
 export {
   readFileBlame,
   readFileHistory,
+  readFileRevisionDiff,
   UNCOMMITTED_OID,
+  type RevisionDiffResult,
   type BlameHunk,
   type FileBlameOptions,
   type FileBlameResult,

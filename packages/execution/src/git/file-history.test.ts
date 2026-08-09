@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { runGit, WorktreeError } from '../worktree/git-invoker.js';
-import { UNCOMMITTED_OID, readFileBlame, readFileHistory } from './file-history.js';
+import { UNCOMMITTED_OID, readFileBlame, readFileHistory, readFileRevisionDiff } from './file-history.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
@@ -114,6 +114,35 @@ describe('readFileHistory — against real git', () => {
     expect(err).toBeInstanceOf(WorktreeError);
     expect((err as WorktreeError).code).toBe('invalid_input');
     expect((err as WorktreeError).reason).toBe('not_a_git_repository');
+  });
+});
+
+describe('readFileRevisionDiff — against real git', () => {
+  it('answers the patch one revision applied to the path', async () => {
+    const result = await readFileRevisionDiff(repo, 'story.txt', oid2);
+    expect(result.oid).toBe(oid2);
+    expect(result.truncated).toBe(false);
+    expect(result.diff).toContain('+TWO');
+    expect(result.diff).toContain('+four');
+    expect(result.diff).toContain('-two');
+  });
+
+  it('the initial commit diffs against the empty tree', async () => {
+    const result = await readFileRevisionDiff(repo, 'story.txt', oid1);
+    expect(result.diff).toContain('+one');
+  });
+
+  it('honours maxBytes and says so', async () => {
+    const result = await readFileRevisionDiff(repo, 'story.txt', oid2, { maxBytes: 16 });
+    expect(result.truncated).toBe(true);
+    expect(Buffer.byteLength(result.diff, 'utf8')).toBeLessThanOrEqual(16);
+  });
+
+  it('refuses a non-oid by name before git runs', async () => {
+    await expect(readFileRevisionDiff(repo, 'story.txt', 'HEAD')).rejects.toMatchObject({
+      code: 'invalid_input',
+      reason: 'invalid_oid',
+    });
   });
 });
 
