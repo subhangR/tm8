@@ -498,6 +498,7 @@ export function EntityView(props: EntityViewProps) {
       }
       messages={messages}
       connections={data.connectionsOf(selectedId)}
+      linkedPullRequests={data.linkedPullRequestsOf?.(selectedId) ?? []}
       onPostMessage={(body) => data.postMessage({ clientMutationId: `post:${selectedId}:${Date.now()}`, anchorIds: [selectedId], body })}
       /* GAP-2 (data-wiring handover): the save path — inline title + Save +
          conflict card, and now the doc editor behind the reader archetype —
@@ -576,6 +577,7 @@ export function EntityView(props: EntityViewProps) {
           livenessOf={data.livenessOf}
           activity={data.activity}
           messagePulses={data.messagePulses}
+          linkedPullRequestsOf={data.linkedPullRequestsOf}
           // Capability truth comes from the DETAIL, never the summary: a row
           // whose detail is not hydrated genuinely has unknown capabilities
           // and correctly stays refused (WorkspaceView states the same rule).
@@ -659,6 +661,7 @@ export function EntityView(props: EntityViewProps) {
                 viewerMemberId={props.viewerMemberId}
                 messages={data.messagesOf(aux.id)}
                 connections={data.connectionsOf(aux.id)}
+                linkedPullRequests={data.linkedPullRequestsOf?.(aux.id) ?? []}
                 commands={data.seam.commands}
                 onSaved={data.reconcileCommand}
                 // Drilling from the aux REPLACES the aux, it does not open a
