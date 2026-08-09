@@ -78,6 +78,7 @@ import { toCommandResult, type RpcCommandResult } from './handlers/entities.js';
 import { createLoopbackOwnerResolver, type LoopbackOwner } from '../identity/loopback.js';
 import type { HandlerRegistry } from './registry.js';
 import { refusePublicExecutionPrompt } from './services/w2/execution.js';
+import { issuePtyGrantToken } from '../pty/grant-token.js';
 import {
   recordInteractionProfilePin as persistInteractionProfilePin,
   resolveInteractionProfileForLaunch,
@@ -799,14 +800,17 @@ export class DbGraphPort implements GraphPort {
     auth: GraphAuth,
     sessionId: string,
     mode: 'view' | 'drive',
-    clientMutationId: string | null,
+    tokenHash: string,
   ): Promise<Record<string, unknown>> {
     return this.db.rpc<Record<string, unknown>>(this.claims(auth), 'public.grant_stream_attach', [
       sessionId,
       mode,
-      null, // p_token_hash — bearer tokens for streams are post-G1A (AM-4)
-      '15 minutes',
-      clientMutationId,
+      tokenHash,
+      '30 seconds',
+      // A capability cannot be ledger-replayed: the bearer is returned once
+      // and never stored, while replaying the old row with a freshly generated
+      // bearer would return a token whose hash is not in the database.
+      null,
     ]);
   }
 }
@@ -1759,11 +1763,12 @@ function registerHandlers(
     const claims = claimsFor(owner, ctx, envelope);
     const input = ctx.body as ExecutionStreamsAttachInput;
     const sessionId = requireUuidParam(ctx, 'id');
+    const issued = issuePtyGrantToken();
     const granted = await graph.grantStreamAttach(
       claims,
       sessionId,
       input.mode,
-      envelope.clientMutationId ?? null,
+      issued.tokenHash,
     );
 
     // NOT an EntityDetail — `StreamAttachGrant` is its own small contract DTO,
@@ -1772,12 +1777,24 @@ function registerHandlers(
     // (snake_case, token_hash already stripped), and the URL is transport that
     // only the server knows. Bytes never flow through this response (T-L10).
     const grant = (granted.grant ?? {}) as { expires_at?: string; mode?: string };
+    if (typeof grant.expires_at !== 'string' || grant.mode !== input.mode) {
+      throw fail('upstream_unavailable', 'stream grant mint returned an invalid scope');
+    }
+    const expiresAt = new Date(grant.expires_at);
+    if (!Number.isFinite(expiresAt.getTime())) {
+      throw fail('upstream_unavailable', 'stream grant mint returned an invalid expiration');
+    }
     return json({
       workSessionId: sessionId,
-      url: `/v2/ws?sessionId=${encodeURIComponent(sessionId)}`,
+      url: `/v2/ws?sessionId=${encodeURIComponent(sessionId)}&mode=${grant.mode}`,
       protocol: 'ws',
-      mode: input.mode,
-      ...(grant.expires_at ? { expiresAt: new Date(grant.expires_at).toISOString() } : {}),
+      mode: grant.mode,
+      token: issued.token,
+      expiresAt: expiresAt.toISOString(),
+    }, {
+      // The response contains a short-lived bearer capability. Browsers and
+      // intermediary caches must never retain it for a later attach/replay.
+      headers: { 'cache-control': 'no-store' },
     });
   });
 }

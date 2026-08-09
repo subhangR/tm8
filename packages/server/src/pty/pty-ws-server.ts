@@ -47,8 +47,10 @@ import type { PtyHostService } from '@tm8/execution';
 
 import type { WsSocket } from '../events/ws-connection.js';
 import { CLOSE_CODE } from '../events/ws-frame.js';
-import { computeAcceptKey } from '../events/ws-server.js';
-import { PtyWsConnection } from './pty-ws-connection.js';
+import { computeAcceptKey, WS_PATH } from '../events/ws-server.js';
+import { WsAdmissionController, wsClientKey } from '../http/ws-admission.js';
+import { PtyWsConnection, type PtyWsConnectionOptions } from './pty-ws-connection.js';
+import { PTY_PROTOCOL } from './grant-token.js';
 
 /** Minimal logger seam, structurally compatible with the execution block's. */
 export interface PtyWsLogger {
@@ -79,8 +81,8 @@ const NOOP_LOGGER: PtyWsLogger = {
  * one decision in one place.
  */
 export type PtyAttachVerdict =
-  | { ok: true; canDrive: boolean }
-  | { ok: false; status: 401 | 403 | 404; message: string };
+  | { ok: true; canDrive: boolean; subjectIdentity?: string }
+  | { ok: false; status: 401 | 403 | 404 | 429 | 503; message: string };
 
 export type PtyAttachAuthorizer = (
   req: IncomingMessage,
@@ -107,6 +109,10 @@ export interface PtyWsServerOptions {
   /** Forwarded to each connection's heartbeat; injectable so tests need not wait 30s. */
   heartbeatMs?: number;
   missedPongLimit?: number;
+  /** Frame/rate/backpressure/lifetime policy; injectable for focused tests. */
+  connection?: PtyWsConnectionOptions;
+  /** Shared with the event server so all upgrade paths have one cap. */
+  admission?: WsAdmissionController;
 }
 
 export interface PtyWsServer {
@@ -122,7 +128,8 @@ export interface PtyWsServer {
  */
 export function isPtyUpgrade(req: IncomingMessage): boolean {
   try {
-    return new URL(req.url ?? '/', 'http://tm8.invalid').searchParams.has('sessionId');
+    const url = new URL(req.url ?? '/', 'http://tm8.invalid');
+    return url.pathname === WS_PATH && url.searchParams.has('sessionId');
   } catch {
     return false;
   }
@@ -165,6 +172,7 @@ function parseOffset(url: URL): number {
 export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
   const { pty } = opts;
   const logger = opts.logger ?? NOOP_LOGGER;
+  const admission = opts.admission ?? new WsAdmissionController();
   const connections = new Set<PtyWsConnection>();
   const connectionsBySession = new Map<string, Set<PtyWsConnection>>();
 
@@ -192,7 +200,14 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     if (!canDrive) return;
     const cols = Number(frame.cols);
     const rows = Number(frame.rows);
-    if (Number.isFinite(cols) && Number.isFinite(rows)) {
+    if (
+      Number.isSafeInteger(cols) &&
+      Number.isSafeInteger(rows) &&
+      cols >= 2 &&
+      cols <= 1000 &&
+      rows >= 1 &&
+      rows <= 500
+    ) {
       const previous = pty.getSize(sessionId);
       // This equality check terminates client echo loops. A peer that merely
       // reasserts the current geometry produces no PTY signal and no broadcast.
@@ -263,6 +278,10 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     head: Buffer,
   ): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://tm8.invalid');
+    if (url.pathname !== WS_PATH) {
+      refuse(socket, 400, 'Bad Request', 'no PTY websocket operation at this path');
+      return;
+    }
     const sessionId = url.searchParams.get('sessionId');
     if (!sessionId) {
       refuse(socket, 400, 'Bad Request', 'missing sessionId');
@@ -282,6 +301,18 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
       return;
     }
 
+    const clientKey = wsClientKey(req);
+    const preflight = admission.preflight(clientKey);
+    if (preflight) {
+      refuse(
+        socket,
+        preflight.status,
+        preflight.status === 429 ? 'Too Many Requests' : 'Service Unavailable',
+        preflight.message,
+      );
+      return;
+    }
+
     // AUTHORIZATION AND EXISTENCE, BEFORE THE 101 (trap 5). The old order
     // wrote the 101 first, which (a) let anyone drive any terminal they could
     // name and (b) oracled session ids by answering "no live PTY" only over
@@ -290,20 +321,28 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
     // only sound behind the loopback bind — that case stays fully interactive.
     // With an authorizer, drive is whatever it says and nothing else.
     let canDrive = true;
+    let subjectIdentity = 'auto-owner';
     if (opts.authorize) {
       const verdict = await opts.authorize(req, sessionId);
       if (!verdict.ok) {
-        const statusText =
-          verdict.status === 401 ? 'Unauthorized' : verdict.status === 403 ? 'Forbidden' : 'Not Found';
+        const statusText = verdict.status === 401
+          ? 'Unauthorized'
+          : verdict.status === 403
+            ? 'Forbidden'
+            : verdict.status === 404
+              ? 'Not Found'
+              : verdict.status === 429
+                ? 'Too Many Requests'
+                : 'Service Unavailable';
         logger.warn('PtyWsServer: attach refused', {
           sessionId,
           status: verdict.status,
-          message: verdict.message,
         });
         refuse(socket, verdict.status, statusText, verdict.message);
         return;
       }
       canDrive = verdict.canDrive;
+      subjectIdentity = verdict.subjectIdentity ?? 'authenticated';
     }
     // Existence check for the authorized caller. The replay computed here is
     // discarded — the authoritative getReplay below must stay synchronous with
@@ -313,10 +352,22 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
       return;
     }
 
+    const lease = admission.admit(clientKey, subjectIdentity);
+    if (!('ok' in lease)) {
+      refuse(
+        socket,
+        lease.status,
+        lease.status === 429 ? 'Too Many Requests' : 'Service Unavailable',
+        lease.message,
+      );
+      return;
+    }
+
     socket.write(
       'HTTP/1.1 101 Switching Protocols\r\n' +
         'upgrade: websocket\r\n' +
         'connection: Upgrade\r\n' +
+        `sec-websocket-protocol: ${PTY_PROTOCOL}\r\n` +
         `sec-websocket-accept: ${computeAcceptKey(key)}\r\n\r\n`,
     );
 
@@ -336,6 +387,7 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
         },
         onControl: (text) => handleControl(sessionId, conn, text, canDrive),
         onClose: () => {
+          lease.release();
           connections.delete(conn);
           const peers = connectionsBySession.get(sessionId);
           peers?.delete(conn);
@@ -345,6 +397,7 @@ export function createPtyWsServer(opts: PtyWsServerOptions): PtyWsServer {
         },
       },
       {
+        ...opts.connection,
         ...(opts.heartbeatMs === undefined ? {} : { heartbeatMs: opts.heartbeatMs }),
         ...(opts.missedPongLimit === undefined ? {} : { missedPongLimit: opts.missedPongLimit }),
       },

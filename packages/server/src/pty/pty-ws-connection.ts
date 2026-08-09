@@ -86,19 +86,48 @@ export interface PtyWsConnectionOptions {
   heartbeatMs?: number;
   /** Missed heartbeats tolerated before the peer is presumed dead and reaped. */
   missedPongLimit?: number;
+  idleTimeoutMs?: number;
+  absoluteTimeoutMs?: number;
+  maxBufferedBytes?: number;
+  maxInputBytes?: number;
+  maxControlBytes?: number;
+  maxMessagesPerWindow?: number;
+  maxInboundBytesPerWindow?: number;
+  messageWindowMs?: number;
+  now?: () => number;
 }
+
+export const DEFAULT_PTY_IDLE_TIMEOUT_MS = 15 * 60_000;
+export const DEFAULT_PTY_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60_000;
+export const DEFAULT_PTY_MAX_BUFFERED_BYTES = 1024 * 1024;
+export const DEFAULT_PTY_MAX_INPUT_BYTES = 64 * 1024;
+export const DEFAULT_PTY_MAX_CONTROL_BYTES = 4 * 1024;
 
 export class PtyWsConnection {
   readonly id = randomUUID();
 
   private readonly socket: WsSocket;
-  private readonly decoder = new FrameDecoder();
+  private readonly decoder: FrameDecoder;
   private readonly handlers: PtyWsConnectionHandlers;
 
   private readonly heartbeatMs: number;
   private readonly missedPongLimit: number;
   private heartbeat: NodeJS.Timeout | null = null;
   private missedPongs = 0;
+  private idleTimer: NodeJS.Timeout | null = null;
+  private absoluteTimer: NodeJS.Timeout | null = null;
+  private readonly idleTimeoutMs: number;
+  private readonly absoluteTimeoutMs: number;
+  private readonly maxBufferedBytes: number;
+  private readonly maxInputBytes: number;
+  private readonly maxControlBytes: number;
+  private readonly maxMessagesPerWindow: number;
+  private readonly maxInboundBytesPerWindow: number;
+  private readonly messageWindowMs: number;
+  private readonly now: () => number;
+  private rateWindowStartedAt: number;
+  private rateMessages = 0;
+  private rateBytes = 0;
 
   private state: number = PTY_SOCKET_STATE.open;
   private closeFired = false;
@@ -112,6 +141,17 @@ export class PtyWsConnection {
     this.handlers = handlers;
     this.heartbeatMs = opts.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
     this.missedPongLimit = opts.missedPongLimit ?? DEFAULT_MISSED_PONG_LIMIT;
+    this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_PTY_IDLE_TIMEOUT_MS;
+    this.absoluteTimeoutMs = opts.absoluteTimeoutMs ?? DEFAULT_PTY_ABSOLUTE_TIMEOUT_MS;
+    this.maxBufferedBytes = opts.maxBufferedBytes ?? DEFAULT_PTY_MAX_BUFFERED_BYTES;
+    this.maxInputBytes = opts.maxInputBytes ?? DEFAULT_PTY_MAX_INPUT_BYTES;
+    this.maxControlBytes = opts.maxControlBytes ?? DEFAULT_PTY_MAX_CONTROL_BYTES;
+    this.decoder = new FrameDecoder(Math.max(this.maxInputBytes, this.maxControlBytes));
+    this.maxMessagesPerWindow = opts.maxMessagesPerWindow ?? 256;
+    this.maxInboundBytesPerWindow = opts.maxInboundBytesPerWindow ?? 512 * 1024;
+    this.messageWindowMs = opts.messageWindowMs ?? 1_000;
+    this.now = opts.now ?? Date.now;
+    this.rateWindowStartedAt = this.now();
 
     // PTY output is latency-sensitive and already coalesced into 16ms frames by
     // PtyHostService, so Nagle would only add delay to frames that are
@@ -122,6 +162,7 @@ export class PtyWsConnection {
     socket.on('close', () => this.finish());
 
     this.startHeartbeat();
+    this.startLifetimeTimers();
   }
 
   /**
@@ -153,11 +194,7 @@ export class PtyWsConnection {
     if (this.state !== PTY_SOCKET_STATE.open) return;
     const frame =
       typeof data === 'string' ? encodeTextFrame(data) : encodeFrame(OPCODE.binary, data);
-    try {
-      this.socket.write(frame);
-    } catch {
-      // Best effort: the socket's own close handler detaches this sink.
-    }
+    if (this.writeBounded(frame)) this.touchIdle();
   }
 
   /** FrameSink.close — send a close frame, then let the socket teardown finish. */
@@ -165,6 +202,7 @@ export class PtyWsConnection {
     if (this.state !== PTY_SOCKET_STATE.open) return;
     this.state = PTY_SOCKET_STATE.closing;
     this.stopHeartbeat();
+    this.stopLifetimeTimers();
     try {
       this.socket.write(encodeCloseFrame(code, reason));
       this.socket.end();
@@ -193,10 +231,40 @@ export class PtyWsConnection {
     for (const frame of frames) {
       switch (frame.opcode) {
         case OPCODE.binary:
+          if (
+            frame.payload.length > this.maxInputBytes ||
+            !this.consumeRate(frame.payload.length)
+          ) {
+            this.close(
+              frame.payload.length > this.maxInputBytes
+                ? CLOSE_CODE.messageTooBig
+                : CLOSE_CODE.policyViolation,
+              'input limit exceeded',
+            );
+            this.socket.destroy();
+            this.finish();
+            return;
+          }
+          this.touchIdle();
           // Keystrokes. Straight to the PTY — never parsed, never transcoded.
           this.handlers.onInput?.(frame.payload);
           break;
         case OPCODE.text:
+          if (
+            frame.payload.length > this.maxControlBytes ||
+            !this.consumeRate(frame.payload.length)
+          ) {
+            this.close(
+              frame.payload.length > this.maxControlBytes
+                ? CLOSE_CODE.messageTooBig
+                : CLOSE_CODE.policyViolation,
+              'control limit exceeded',
+            );
+            this.socket.destroy();
+            this.finish();
+            return;
+          }
+          this.touchIdle();
           this.handlers.onControl?.(frame.payload.toString('utf8'));
           break;
         case OPCODE.ping:
@@ -266,10 +334,75 @@ export class PtyWsConnection {
     }
   }
 
+  private writeBounded(frame: Buffer): boolean {
+    if ((this.socket.writableLength ?? 0) + frame.length > this.maxBufferedBytes) {
+      this.close(CLOSE_CODE.policyViolation, 'slow consumer');
+      this.socket.destroy();
+      this.finish();
+      return false;
+    }
+    try {
+      if (this.socket.write(frame) === false) {
+        this.close(CLOSE_CODE.policyViolation, 'slow consumer');
+        this.socket.destroy();
+        this.finish();
+        return false;
+      }
+      return true;
+    } catch {
+      this.socket.destroy();
+      this.finish();
+      return false;
+    }
+  }
+
+  private consumeRate(bytes: number): boolean {
+    const now = this.now();
+    if (now - this.rateWindowStartedAt >= this.messageWindowMs) {
+      this.rateWindowStartedAt = now;
+      this.rateMessages = 0;
+      this.rateBytes = 0;
+    }
+    this.rateMessages += 1;
+    this.rateBytes += bytes;
+    return this.rateMessages <= this.maxMessagesPerWindow
+      && this.rateBytes <= this.maxInboundBytesPerWindow;
+  }
+
+  private startLifetimeTimers(): void {
+    this.touchIdle();
+    const absolute = setTimeout(() => {
+      this.close(CLOSE_CODE.goingAway, 'absolute timeout');
+      this.socket.destroy();
+      this.finish();
+    }, this.absoluteTimeoutMs);
+    absolute.unref?.();
+    this.absoluteTimer = absolute;
+  }
+
+  private touchIdle(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    const timer = setTimeout(() => {
+      this.close(CLOSE_CODE.goingAway, 'idle timeout');
+      this.socket.destroy();
+      this.finish();
+    }, this.idleTimeoutMs);
+    timer.unref?.();
+    this.idleTimer = timer;
+  }
+
+  private stopLifetimeTimers(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    if (this.absoluteTimer !== null) clearTimeout(this.absoluteTimer);
+    this.idleTimer = null;
+    this.absoluteTimer = null;
+  }
+
   /** Terminal state transition; `onClose` fires at most once. */
   private finish(): void {
     this.state = PTY_SOCKET_STATE.closed;
     this.stopHeartbeat();
+    this.stopLifetimeTimers();
     if (this.closeFired) return;
     this.closeFired = true;
     this.handlers.onClose?.();

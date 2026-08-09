@@ -431,7 +431,7 @@ export interface LaunchConfig {
    * own credential (the lookup is RLS-scoped server-side), so there is no
    * roster to pick from and no cross-member value to represent.
    */
-  credentialSource?: 'member' | 'node' | null;
+  credentialSource?: NonNullable<ExecutionSpawnInput['credentialSource']> | null;
   mode: LaunchMode;
   target: LaunchTarget;
   /**

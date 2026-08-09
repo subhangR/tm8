@@ -133,12 +133,17 @@ export function decodeClosePayload(payload: Buffer): { code: number; reason: str
  * per-chunk implementation is the classic bug here.
  */
 export class FrameDecoder {
+  private readonly maxPayloadBytes: number;
   private buf: Buffer = Buffer.alloc(0);
 
   /** Opcode of the message currently being reassembled, if any. */
   private fragmentOpcode: typeof OPCODE.text | typeof OPCODE.binary | null = null;
   private fragments: Buffer[] = [];
   private fragmentLength = 0;
+
+  constructor(maxPayloadBytes: number = MAX_PAYLOAD_BYTES) {
+    this.maxPayloadBytes = maxPayloadBytes;
+  }
 
   /**
    * Feed bytes; returns every complete message/control frame now available.
@@ -194,15 +199,15 @@ export class FrameDecoder {
       if (buf.length < 10) return null;
       const big = buf.readBigUInt64BE(2);
       // Refuse from the header. Do not wait for, or allocate, the bytes.
-      if (big > BigInt(MAX_PAYLOAD_BYTES)) {
-        throw new FrameProtocolError(`frame payload ${big} exceeds ${MAX_PAYLOAD_BYTES}`, CLOSE_CODE.messageTooBig);
+      if (big > BigInt(this.maxPayloadBytes)) {
+        throw new FrameProtocolError(`frame payload ${big} exceeds ${this.maxPayloadBytes}`, CLOSE_CODE.messageTooBig);
       }
       length = Number(big);
       offset = 10;
     }
 
-    if (length > MAX_PAYLOAD_BYTES) {
-      throw new FrameProtocolError(`frame payload ${length} exceeds ${MAX_PAYLOAD_BYTES}`, CLOSE_CODE.messageTooBig);
+    if (length > this.maxPayloadBytes) {
+      throw new FrameProtocolError(`frame payload ${length} exceeds ${this.maxPayloadBytes}`, CLOSE_CODE.messageTooBig);
     }
 
     if (isControl(opcode)) {
@@ -256,9 +261,9 @@ export class FrameDecoder {
   }
 
   private appendFragment(payload: Buffer): void {
-    if (this.fragmentLength + payload.length > MAX_PAYLOAD_BYTES) {
+    if (this.fragmentLength + payload.length > this.maxPayloadBytes) {
       this.resetFragments();
-      throw new FrameProtocolError(`reassembled message exceeds ${MAX_PAYLOAD_BYTES}`, CLOSE_CODE.messageTooBig);
+      throw new FrameProtocolError(`reassembled message exceeds ${this.maxPayloadBytes}`, CLOSE_CODE.messageTooBig);
     }
     this.fragments.push(payload);
     this.fragmentLength += payload.length;

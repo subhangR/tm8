@@ -7,5 +7,7 @@
  * why the two sockets are kept apart.
  */
 export * from './attach-authz.js';
+export * from './grant-token.js';
+export * from './audit-logger.js';
 export * from './pty-ws-connection.js';
 export * from './pty-ws-server.js';

@@ -2,6 +2,11 @@
 
 **Status:** working notes, 2026-07-31. Captures what came out of the auth/identity investigation and the identity design pass that is **recorded nowhere else** — including one gap in `IDENTITY-DESIGN.md` itself.
 
+> **Implementation update (2026-08-09):** WebSocket transport findings in these
+> working notes describe the audited 2026-07-31 tree. The implemented design
+> uses an HttpOnly cookie for events and an unselected one-shot subprotocol grant
+> for PTY; credentials no longer appear in WebSocket URLs.
+
 **Companions (same directory, read in this order):**
 1. `AUTH-AND-IDENTITY-VERIFIED-STATE.md` — what auth/identity actually is in the tree, `file:line`, rev 3
 2. `REMOTE-DEEP-REPORT-A.md` / `-B.md` — two independent deep passes on remote

@@ -92,10 +92,10 @@ export interface RealSeamOptions {
   origin?: string;
   /**
    * The viewer's `tm8s_…` pass for THIS server, read per request. Absent ⇒ no
-   * Authorization header and no socket token, which a loopback node resolves
-   * to the auto-owner (T-L7). Browser WebSockets cannot set Authorization, so
-   * the same pass is put in the server's supported `token` query parameter.
-   * Supplied by the host from the per-server pass store.
+   * Authorization header; a loopback node may then resolve the auto-owner
+   * (T-L7). Browser WebSockets authenticate independently with the Secure,
+   * HttpOnly cookie and never receive this pass in their URL. Supplied by the
+   * host from the per-server pass store for authenticated HTTP requests.
    */
   getAuthToken?: () => string | null;
   timers?: Timers;
@@ -153,11 +153,11 @@ export function deriveWsUrl(baseUrl: string, origin?: string): string {
 export function createRealSeam(options: RealSeamOptions): RealSeam {
   const baseUrl = (options.baseUrl ?? '').replace(/\/$/, '');
   const onError = options.onError ?? (() => {});
-  const plainWsUrl = options.wsUrl ?? deriveWsUrl(baseUrl, options.origin);
-  const authToken = options.getAuthToken?.();
-  const wsUrl = authToken
-    ? `${plainWsUrl}${plainWsUrl.includes('?') ? '&' : '?'}token=${encodeURIComponent(authToken)}`
-    : plainWsUrl;
+  // Browser sockets authenticate with the Secure/HttpOnly session cookie.
+  // Never copy the long-lived browser pass into a URL: URLs leak into proxy
+  // access logs, browser history and diagnostics. HTTP still reads the pass
+  // below while old sessions transition to the cookie-backed path.
+  const wsUrl = options.wsUrl ?? deriveWsUrl(baseUrl, options.origin);
 
   // Late-bound so http can signal transport reachability into a manager that
   // does not exist yet — the alternative is an extra setter on http, which

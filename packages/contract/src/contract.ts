@@ -2041,7 +2041,8 @@ export interface StreamAttachGrant {
   url: string;
   protocol: 'ws';
   mode: 'view' | 'drive';
-  token?: string | null;
+  /** One-shot PTY capability, returned once and never embedded in `url`. */
+  token: string;
   expiresAt: string;
 }
 

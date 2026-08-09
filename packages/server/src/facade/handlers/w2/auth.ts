@@ -24,7 +24,8 @@ import type {
   AuthSignupResult,
 } from '@tm8/contract';
 
-import type { OperationHandler, RequestContext } from '../../../http/types.js';
+import { clearSessionCookie, sessionCookie } from '../../../http/session-cookie.js';
+import { json, type OperationHandler, type RequestContext } from '../../../http/types.js';
 import type { FacadeDeps } from '../../deps.js';
 import type { HandlerRegistry } from '../../registry.js';
 import { claimsFor } from '../../context.js';
@@ -86,7 +87,13 @@ function authLogin(deps: FacadeDeps): OperationHandler {
       account: issued.account,
       session: issued.session,
     };
-    return result;
+    if ((body.kind ?? 'browser') !== 'browser') return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': sessionCookie(issued.token, issued.session.expiresAt),
+      },
+    });
   };
 }
 
@@ -108,7 +115,12 @@ function authLogout(deps: FacadeDeps): OperationHandler {
     }
     await deps.db.rpc(claimsFor(owner, ctx), 'revoke_auth_session', [sessionId]);
     const result: AuthLogoutResult = { sessionId, revoked: true };
-    return result;
+    return json(result, {
+      headers: {
+        'cache-control': 'no-store',
+        'set-cookie': clearSessionCookie(),
+      },
+    });
   };
 }
 
