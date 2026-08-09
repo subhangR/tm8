@@ -1,5 +1,5 @@
 -- =============================================================================
--- 087 — the fifth agent mode, and the edge that records a routed spawn.
+-- 091 — the fifth agent mode, and the edge that records a routed spawn.
 --
 -- Design: docs/features/dreamer-dispatcher/DESIGN.md §4.3 (D2, D4).
 --

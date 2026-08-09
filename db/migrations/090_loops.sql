@@ -1,5 +1,5 @@
 -- =============================================================================
--- 086 — `loop`, the scheduled-work core kind.
+-- 090 — `loop`, the scheduled-work core kind.
 --
 -- Design: docs/features/dreamer-dispatcher/DESIGN.md §4.4 (D6).
 --
@@ -16,7 +16,7 @@
 --
 -- CRUD rides `entities.create`/`entities.patch` through the doors below, the
 -- 056 pattern exactly: zero new catalog rows. The only catalog row this whole
--- feature adds is `execution.dispatch` (087).
+-- feature adds is `execution.dispatch` (091).
 -- =============================================================================
 
 set role tm8_graph_owner;

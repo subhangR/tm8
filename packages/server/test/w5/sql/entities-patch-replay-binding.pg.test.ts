@@ -89,7 +89,7 @@ const PATCH_DOORS = [
   'update_custom_entity',
   'update_document',
   'update_file_entity',
-  // 2026-08-09: migration 086 (loops) added `update_loop`, which carries 038's
+  // 2026-08-09: migration 090 (loops) added `update_loop`, which carries 038's
   // replay binding from birth. Thirteen doors -> fourteen; the detector fired
   // and the list moved to the new exact literals, never to a pattern.
   'update_loop',
