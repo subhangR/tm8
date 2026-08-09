@@ -398,7 +398,28 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 72 -> 73 on 2026-08-05: 077 (anchor-watcher notification fan-out). This
     // lane authored it as 076 in parallel with the reply-delivery lane; both
     // claimed the same free number, so it renumbered to 077 on landing.
-    expect(server.appliedMigrations.length).toBe(73);
+    // 73 -> 74 on 2026-08-07: 080 (channel members, `has_member`). The COUNT
+    // moves by one while the highest number moves by three, and that gap is
+    // deliberate: `public.applied_migrations` keys on FILENAME, so an unused
+    // number costs nothing, while renaming an already-applied file makes it
+    // re-apply — which is why the gap was taken rather than the next number.
+    // WHAT IS ACTUALLY KNOWN about 078/079, since this block is the ledger the
+    // next author will read as fact — and note the DATES, because this is the
+    // kind of claim that goes stale in hours:
+    //   · measured 2026-08-07, when the gap was taken: nothing on :5442 and
+    //     nothing on origin/main was past 077. The reservation was an
+    //     inherited claim with no evidence either way.
+    //   · re-measured 2026-08-09 at review: no longer true. 078 (worktree
+    //     provisioning) is applied in seven databases on :5442, and tm8_stable
+    //     is at 083 — a number in no branch visible from here.
+    // The DECISION still holds, and holds harder: 080 was free then and is free
+    // now, and 078 turned out to be genuinely spoken for. What does NOT hold is
+    // writing a falsifiable measurement into a ledger in the present tense.
+    // Date what you measured, or the next author inherits your claim as fact —
+    // which is exactly what cost the previous lanes a number.
+    // This assertion is on the LENGTH and not on the maximum, which is why a
+    // gap — reserved or merely skipped — cannot make it lie.
+    expect(server.appliedMigrations.length).toBe(74);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

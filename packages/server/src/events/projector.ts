@@ -375,11 +375,18 @@ left join public.custom_entities cev on cev.entity_id = e.id
 where e.id = any($1::uuid[])
 `;
 
-/** Reaction/assignment edges, batched for the whole page. */
+/**
+ * Reaction/assignment/membership edges, batched for the whole page.
+ *
+ * `has_member` rides along rather than becoming a KNOWN_GAP: this query is
+ * already running, already resolves its `dst_id`s into actors below, and a
+ * channel's roster is small. An empty `members` would be the projector saying
+ * a channel has nobody when the graph says otherwise.
+ */
 const EDGE_SQL = `
 select src_id, dst_id, type
   from public.edges
- where type in ('likes','dislikes','stars','assigned_to')
+ where type in ('likes','dislikes','stars','assigned_to','has_member')
    and (dst_id = any($1::uuid[]) or src_id = any($1::uuid[]))
 `;
 
@@ -462,12 +469,19 @@ export class PgEntityProjector implements EntityProjector {
         oldestRequestedAt: isoRequired(row.oldest_requested_at),
       });
     }
+    // Two maps, not one. `assigned_to` and `has_member` are disjoint by
+    // construction — `internal.validate_edge` pins the first to src kind task
+    // and the second to src kind channel (080) — but keeping them apart means
+    // this code says which relation it is holding instead of relying on that.
     const assigneeIds = new Map<string, string[]>();
+    const memberIds = new Map<string, string[]>();
     for (const edge of edges) {
-      if (edge.type !== 'assigned_to') continue;
-      const list = assigneeIds.get(edge.src_id) ?? [];
+      const target =
+        edge.type === 'assigned_to' ? assigneeIds : edge.type === 'has_member' ? memberIds : null;
+      if (!target) continue;
+      const list = target.get(edge.src_id) ?? [];
       list.push(edge.dst_id);
-      assigneeIds.set(edge.src_id, list);
+      target.set(edge.src_id, list);
       actorIds.add(edge.dst_id);
     }
 
@@ -501,8 +515,8 @@ export class PgEntityProjector implements EntityProjector {
     for (const r of rows) {
       out.set(
         r.id,
-        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], viewerReactions.get(r.id) ?? null,
-          attention.get(r.id), unreadCounts),
+        this.summaryOf(r, actors, assigneeIds.get(r.id) ?? [], memberIds.get(r.id) ?? [],
+          viewerReactions.get(r.id) ?? null, attention.get(r.id), unreadCounts),
       );
     }
     return out;
@@ -569,6 +583,7 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    members: readonly string[],
     viewerReaction: EntityCounters['viewerReaction'],
     attention: EntityAttentionSummary | undefined,
     unreadCounts: ReadonlyMap<string, number>,
@@ -597,7 +612,7 @@ export class PgEntityProjector implements EntityProjector {
       deletedAt: iso(r.deleted_at),
       createdBy: actors.get(r.created_by) ?? this.unknownActor(r.created_by),
       counters,
-      state: this.stateOf(r, actors, assignees, unreadCounts),
+      state: this.stateOf(r, actors, assignees, members, unreadCounts),
       // `EntityBadges` fields are all optional, so `{}` is a valid and honest
       // "no badges computed" — unlike `state`, which has required fields and
       // cannot be honestly empty. `restricted` is the one badge derivable from
@@ -764,6 +779,7 @@ export class PgEntityProjector implements EntityProjector {
     r: SummaryRow,
     actors: Map<string, ActorSummary>,
     assignees: readonly string[],
+    members: readonly string[],
     unreadCounts: ReadonlyMap<string, number>,
   ): EntityState {
     switch (r.kind) {
@@ -794,6 +810,7 @@ export class PgEntityProjector implements EntityProjector {
         return {
           kind: 'channel',
           topic: r.channel_topic ?? '',
+          members: members.map((id) => actors.get(id) ?? this.unknownActor(id)),
           // MIRRORS entity-read.ts stateOf, deliberately: this query runs under
           // the caller's claims, so `public.unread_counts` resolves the same
           // viewer it does on the read path. If this stayed 0 while the facade
