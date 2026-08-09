@@ -108,7 +108,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('the projection holds 134 command paths; the registry is an honest subset of them', () => {
+  it('the projection holds 135 command paths; the registry is an honest subset of them', () => {
     // 123 catalog rows − 2 with no command (execution.prompt, bridge.fetchBlob)
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
@@ -127,7 +127,10 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // five command paths, ZERO new catalog rows. Value MEASURED on the merged
     // tree per the merge-train pin rule, not computed.
     // 132 -> 134 (2026-08-09): project contention + task gate (Tier 4 git x graph).
-    expect(COMMAND_PATHS).toHaveLength(134);
+    // 134 -> 135 (2026-08-09): `task import-issue` as an ALIAS over
+    // entities.create (Tier 3 forge) — one command path, zero catalog rows.
+    // Value MEASURED through dist per PIN RULE v3, not computed.
+    expect(COMMAND_PATHS).toHaveLength(135);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

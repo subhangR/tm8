@@ -272,6 +272,14 @@
   gap: 7px;
   flex: 0 0 auto;
 }
+
+/* Linked external state is part of the collapsed card, not the Details
+   disclosure. Only cards carrying facts pay the second line; unlinked task
+   and session row-height parity stays untouched. */
+.cv2-root .pn-tt__badges {
+  min-width: 0;
+  padding: 0 8px 5px 45px;
+}
 .cv2-root .pn-tt .pn-av-group {
   display: inline-flex;
   align-items: center;

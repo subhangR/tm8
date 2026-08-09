@@ -221,11 +221,20 @@ async function refreshOne(
     if (target.number === null) return 'no pull request number recorded';
     const res = await client.pullRequest(target.repo, target.number, signal);
     if (!res.ok) return res.reason === 'rate_limited' ? 'rate_limited' : `${res.reason}: ${res.detail}`;
+    // This door sends no `if-none-match` (an explicit refresh REQUEST means
+    // someone wants the facts re-read), so a 304 here would be the provider
+    // answering a question we did not ask. Treated as "learned nothing" rather
+    // than asserted as a refresh.
+    if (res.notModified === true) return 'provider answered 304 to an unconditional request';
     await db.rpc(claims, 'public.apply_pull_request_facts', [
       target.entityId,
       res.value.title,
       res.value.state,
       res.value.headSha,
+      null,
+      res.value.headRef,
+      res.value.baseRef,
+      res.value.mergeableState,
     ]);
     return 'refreshed';
   }
@@ -233,6 +242,7 @@ async function refreshOne(
   if (target.sha === null) return 'no commit sha recorded';
   const res = await client.commit(target.repo, target.sha, signal);
   if (!res.ok) return res.reason === 'rate_limited' ? 'rate_limited' : `${res.reason}: ${res.detail}`;
+  if (res.notModified === true) return 'provider answered 304 to an unconditional request';
   await db.rpc(claims, 'public.apply_commit_facts', [
     target.entityId,
     res.value.message,

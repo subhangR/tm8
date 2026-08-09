@@ -451,7 +451,10 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // Authored as 078, then renumbered on merge because #71 had landed 078/079.
     // 78 -> 79: 082 (git graph events, provenance and completion gate).
     // 79 -> 80: 083 (per-member credential sessions).
-    expect(server.appliedMigrations.length).toBe(80);
+    // 80 -> 81: 084 (forge observer facts and nudges; authored as 083, then
+    // renumbered because #78 landed 083). MEASURED on the integrated tree per
+    // PIN RULE v3, not derived.
+    expect(server.appliedMigrations.length).toBe(81);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

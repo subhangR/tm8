@@ -50,6 +50,7 @@ export function PanelHeader({
   titleLockReason,
   titlePlaceholder,
   autoFocusTitle,
+  supplemental,
 }: {
   detail: EntityDetail;
   config: KindConfig;
@@ -84,6 +85,8 @@ export function PanelHeader({
   /** "＋ New → Z3 opens, title in inline-edit focus" — true once, for the row
       the create flow just made. */
   autoFocusTitle?: boolean;
+  /** Optional facts directly beneath the identity row. */
+  supplemental?: ReactNode;
 }) {
   const editable = (titleEditable ?? false) && onCommitTitle !== undefined && !detail.deletedAt;
   return (
@@ -121,6 +124,7 @@ export function PanelHeader({
 
         <StatusPillFor detail={detail} config={config} liveness={liveness} />
       </div>
+      {supplemental ? <div className="pn-head__supplemental">{supplemental}</div> : null}
     </div>
   );
 }

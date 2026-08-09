@@ -33,6 +33,8 @@ export interface MaestroTaskTileProps {
    * showing a creator as an assignee would be a lie.
    */
   creator: ActorSummary | null;
+  /** Compact facts that stay visible on the collapsed tile. */
+  badges?: ReactNode;
   actions: ReactNode;
   detailsExpanded: boolean;
   flowOpen: boolean;
@@ -62,6 +64,7 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
     status,
     assignees,
     creator,
+    badges,
     actions,
     detailsExpanded,
     flowOpen,
@@ -195,6 +198,8 @@ export function MaestroTaskTile(props: MaestroTaskTileProps) {
           </button>
         </div>
       </div>
+
+      {badges ? <div className="pn-tt__badges">{badges}</div> : null}
 
       {detailsExpanded ? (
         <div className="pn-tt__meta" onClick={(event) => event.stopPropagation()}>

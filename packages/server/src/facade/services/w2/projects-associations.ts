@@ -29,6 +29,7 @@ import {
 import type { FacadeDeps } from '../../deps.js';
 import { actorOf, iso, isoOrNull, loadActors } from '../../entity-read.js';
 import { ensureProjectWorkingDirectory, listProjectDirectories } from './project-directories.js';
+import { projectForgeFacts } from '../../../tracking/pr-projection.js';
 
 /** `?staleAfterDays=` — absent means "use the module's own default". */
 function positiveInt(raw: string | null, field: string): number | undefined {
@@ -98,6 +99,8 @@ interface CorrectionEdgeRow {
   pr_repo: string | null;
   pr_number: number | null;
   pr_state: string | null;
+  pr_ci_status: string | null;
+  pr_mergeable_state: string | null;
   pr_url: string | null;
   pr_fetched_at: Date | string | null;
   commit_repo: string | null;
@@ -209,6 +212,7 @@ function artifactSummary(row: CorrectionEdgeRow, createdBy: ActorSummary): Entit
         ...(row.pr_url ? { url: row.pr_url } : {}),
         fetchedAt: isoOrNull(row.pr_fetched_at),
         stale: row.pr_fetched_at === null,
+        ...projectForgeFacts(row.pr_ci_status, row.pr_mergeable_state),
       },
     };
   }
@@ -261,6 +265,7 @@ async function loadCorrectionEdge(
                  when 'dislikes' then 'dislike' when 'stars' then 'star' end artifact_viewer_reaction,
             pr.title pr_title, pr.repo pr_repo, pr.number pr_number, pr.state pr_state,
             pr.url pr_url, pr.fetched_at pr_fetched_at,
+            pr.ci_status pr_ci_status, pr.mergeable_state pr_mergeable_state,
             commit_row.repo commit_repo, commit_row.sha commit_sha,
             commit_row.message commit_message, commit_row.committed_at commit_committed_at,
             projection.id project_entity_id, projection.space_id project_space_id,
