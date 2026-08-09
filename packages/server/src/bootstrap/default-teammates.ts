@@ -80,8 +80,56 @@ export async function ensureDefaultTeammates(
     }
   }
 
+  // The Dispatcher (D8). Seeded here because boot is the ONLY path that can:
+  // teammate creation is owner-governed and agents get `forbidden`, so a
+  // dispatcher that does not exist by the time someone calls
+  // `execution.dispatch` can never be brought into being by the thing that
+  // needs it. Keyed by seed name like every row above, so re-running boot over
+  // a space that already has one is a no-op rather than a second dispatcher.
+  if (!byName.has(DISPATCHER_SEED_NAME)) {
+    await q.rpc('public.create_team_member', [
+      spaceId,
+      DISPATCHER_SEED_NAME,
+      null,
+      'Dispatcher',
+      DISPATCHER_PERSONA,
+      DISPATCHER_MODEL,
+      DISPATCHER_AGENT_TOOL,
+      'dispatcher',
+      null,
+      JSON.stringify({}),
+      JSON.stringify({}),
+      null,
+      null,
+      null,
+      `bootstrap:teammate:${spaceId}:dispatcher`,
+    ]);
+    created += 1;
+  }
+
   return { created, updated };
 }
+
+export const DISPATCHER_SEED_NAME = 'Dispatcher';
+
+/**
+ * Model and tool are the launch catalog's default rather than a cheap model.
+ * Routing is a judgement call over the whole roster and the memory graph — the
+ * one job where being wrong is expensive and invisible, because a badly routed
+ * task looks exactly like a correctly routed one until it fails.
+ */
+const DISPATCHER_MODEL = LAUNCH_MODEL_CATALOG[0]?.model ?? 'claude-opus-5';
+const DISPATCHER_AGENT_TOOL = LAUNCH_MODEL_CATALOG[0]?.agentTool ?? 'claude';
+
+const DISPATCHER_PERSONA =
+  'You route work; you never do it. When a dispatch request names a task, read '
+  + 'the roster and the memory graph, pick the existing teammate whose persona and '
+  + 'memories fit it best, attach the memories they will need to the task, and '
+  + 'spawn them on it. Then say on the task anchor who you picked and why you '
+  + 'picked them over the others — that sentence is the only record of your '
+  + 'judgement anyone will ever read. You do not create, edit or delete teammates, '
+  + 'and you do not edit anyone\'s persona or model. If nobody on the roster fits, '
+  + 'say so rather than dispatching badly or doing the task yourself.';
 
 async function updateTeammate(
   q: Querier,

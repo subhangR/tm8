@@ -23,6 +23,7 @@ import {
 } from './migration-inventory.js';
 import {
   ADDITIVE_SCHEMA_DISPOSITIONS,
+  POST_DOSSIER_SCHEMA_DISPOSITIONS,
   FROZEN_SCHEMA_DISPOSITIONS,
   resolveSchema,
   schemaDispositionFor,
@@ -55,6 +56,11 @@ export const ADDITIVE_OPERATION_NAMES = [
   'teamMembers.interactionProfile.setDefault',
   'spaces.interactionProfile.setDefault',
   'execution.liveness',
+] as const satisfies readonly OperationName[];
+
+/** Catalog rows added after the A01-A21 dossier closed. */
+export const POST_DOSSIER_OPERATION_NAMES = [
+  'execution.dispatch',
 ] as const satisfies readonly OperationName[];
 
 export const FROZEN_SCHEMA_OPERATION_NAMES = [
@@ -276,6 +282,11 @@ function helpForOperation(
 
 function verifySchemaReachability(): void {
   assertEqual(Object.keys(ADDITIVE_SCHEMA_DISPOSITIONS), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 schema order');
+  assertEqual(
+    Object.keys(POST_DOSSIER_SCHEMA_DISPOSITIONS),
+    [...POST_DOSSIER_OPERATION_NAMES],
+    'post-dossier schema order',
+  );
   assertEqual(Object.keys(FROZEN_SCHEMA_DISPOSITIONS), [...FROZEN_SCHEMA_OPERATION_NAMES], 'frozen-row schema order');
   for (const disposition of [
     ...Object.values(ADDITIVE_SCHEMA_DISPOSITIONS),
@@ -311,15 +322,15 @@ export async function buildW1ConformanceManifest(): Promise<W1ConformanceManifes
 
   // A21 (execution.liveness) is the +1 on the catalog, GET, read, router and
   // execution-handler axes — the first IMPLEMENTED additive operation.
-  assertEqual(names.length, 127, 'catalog total');
-  assertEqual(V1_OPERATIONS.length, 125, 'v1 total');
+  assertEqual(names.length, 128, 'catalog total');
+  assertEqual(V1_OPERATIONS.length, 126, 'v1 total');
   assertEqual(RESERVED_OPERATIONS.map(({ name }) => name), ['search.query', 'bridge.fetchBlob'], 'reserved operations');
   assertEqual(additive.map(({ name }) => name), [...ADDITIVE_OPERATION_NAMES], 'A01-A21 order');
   assertEqual(new Set(names).size, names.length, 'unique operation names');
   assertEqual(new Set(bindings).size, bindings.length, 'unique method/path bindings');
-  assertEqual(methods, { GET: 47, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 }, 'method accounting');
-  assertEqual(kinds, { read: 50, command: 76, stream: 1 }, 'kind accounting');
-  assertEqual(router.http.length, 126, 'server router HTTP total');
+  assertEqual(methods, { GET: 47, POST: 55, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 }, 'method accounting');
+  assertEqual(kinds, { read: 50, command: 77, stream: 1 }, 'kind accounting');
+  assertEqual(router.http.length, 127, 'server router HTTP total');
   assertEqual(router.ws.length, 1, 'server router WS total');
   // These four are SNAPSHOT self-checks (the frozen W1 registry boundary) and
   // never move with an amendment; A21's live handler shows up only in the

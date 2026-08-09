@@ -76,7 +76,8 @@ describe('launch resource bootstrap', () => {
     expect(first).toEqual({
       spaces: 1,
       projectId: PROJECT_ID,
-      teammatesCreated: LAUNCH_MODEL_CATALOG.length,
+      // +1: the Dispatcher is seeded beside the launch-catalog roster (D8).
+      teammatesCreated: LAUNCH_MODEL_CATALOG.length + 1,
       teammatesUpdated: 1,
     });
     expect(second).toEqual({
@@ -96,8 +97,9 @@ describe('launch resource bootstrap', () => {
         agent_tool: entry.agentTool,
       }));
     }
+    // +1 for the Dispatcher, seeded beside the roster (D8).
     expect(db.calls.filter(({ fn }) => fn === 'public.create_team_member'))
-      .toHaveLength(LAUNCH_MODEL_CATALOG.length);
+      .toHaveLength(LAUNCH_MODEL_CATALOG.length + 1);
     expect(db.calls.some(({ fn, args: callArgs }) =>
       fn === 'public.link_project_w2' && callArgs[0] === SPACE_ID && callArgs[1] === PROJECT_ID,
     )).toBe(true);

@@ -254,7 +254,14 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       },
     });
     registerEventHandlers(registry, { db, config, presence });
-    execution?.register(registry);
+    // The delivery seam again, and narrow for the same reason it is narrow
+    // above: `execution.dispatch` pushes a trusted envelope at a dispatcher's
+    // terminal, which only the delivery role may do. Absent, a dispatch still
+    // stores its request on the task and answers `undelivered`.
+    execution?.register(
+      registry,
+      delivery ? { dispatchDelivery: delivery.messageDelivery } : {},
+    );
   }
 
   const subscriptions = new SubscriptionRegistry();

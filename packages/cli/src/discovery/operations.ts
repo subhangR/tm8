@@ -1042,6 +1042,22 @@ const ROWS: Record<OperationName, Row> = {
       'worktree is not advertised until the node can create and clean one up safely',
     ],
   },
+  'execution.dispatch': {
+    cmd: ['session', 'dispatch'],
+    syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--mutation-id <id>]',
+    sum: 'Hand an entity to the space’s dispatcher, which picks the teammate and spawns',
+    authz: 'space',
+    input: 'bound',
+    side: 'execution',
+    tags: ['dispatch', 'route', 'delegate', 'launch', 'triage'],
+    notes: [
+      'you do NOT name a teammate — choosing one is the dispatcher’s whole job; use `session spawn` when you already know who should do it',
+      'any launchable entity works as the subject; it is derived to a task Server-side (064) exactly as `--task` is',
+      'if no dispatcher session is alive the Server spawns one first and waits for it to settle, so the first dispatch in a space is the slow one',
+      'liveness is probed, never read off `work_sessions.status` — `idle` is a legal live status and a crashed session keeps its last status forever',
+      'the request reaches the dispatcher session id as a trusted envelope AND is stored on the task, so a missed delivery is still recoverable',
+    ],
+  },
   'execution.prompt': {
     cmd: null,
     sum: 'INTERNAL: the audited Server-side delivery of an already-stored message into a live session',
@@ -1557,7 +1573,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:a910725a4cbfdb1e4ff3de3caef7da24edda816a7e9cf9945522d5f2d15b6114';
+  'sha256:897076b03658082ca902060161551663fe1dffb7bcded2f8ed24a86a46bdbc3f';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -167,6 +167,7 @@ describe('W5.C generator proof', () => {
     // 64 -> 65 on 2026-08-01: execution.journal bound its query schema.
     // 65 -> 66 on 2026-08-01: identity.profile.update bound its input DTO.
     // 66 -> 69 on 2026-08-02: auth.signup/login/logout bound their input DTOs.
-    expect(ENTRIES).toHaveLength(69);
+    // 2026-08-09: execution.dispatch — the dispatcher's one new catalog row.
+    expect(ENTRIES).toHaveLength(70);
   });
 });

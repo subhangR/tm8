@@ -1607,6 +1607,37 @@ export interface ExecutionSpawnInput extends CommandContext {
 }
 
 /**
+ * execution.dispatch — POST /v2/execution/dispatch (DESIGN §4.3, D2/D4).
+ *
+ * Route `subjectId` to the space's resident dispatcher, which picks the
+ * teammate and the memories and then spawns. Deliberately carries NO launch
+ * configuration: the moment a caller can name the teammate, it is spawning,
+ * not dispatching.
+ */
+export interface ExecutionDispatchInput extends CommandContext {
+  clientMutationId: string;
+  spaceId: EntityId;
+  /** Any launchable entity; derived to a task server-side via 064. */
+  subjectId: EntityId;
+  /** Free-text steer for the dispatcher, carried in the trusted envelope. */
+  note?: string;
+}
+
+/** What `execution.dispatch` answers with — see the handler for the states. */
+export interface ExecutionDispatchResult {
+  /** The task the subject derived to; the dispatcher's anchor for this request. */
+  taskId: EntityId;
+  /** The dispatcher session the request was delivered to. */
+  dispatcherSessionId: EntityId;
+  /** True when this call had to spawn the dispatcher rather than reuse one. */
+  dispatcherSpawned: boolean;
+  /** The stored request message. Absent only if delivery was not attempted. */
+  requestMessageId?: EntityId;
+  /** Honest delivery outcome; `undelivered` still leaves a durable message. */
+  delivery: 'delivered' | 'undelivered';
+}
+
+/**
  * execution.prompt (R17): PTY delivery, not graph state — the message is
  * injected into the live session's PTY and marked delivered. Targets a
  * work_session entity: POST /v2/entities/:id/commands/prompt.

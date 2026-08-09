@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { LAUNCH_MODEL_CATALOG, getOperation, type OperationName } from '@tm8/contract';
 import { spacesCreate } from '../src/facade/handlers/spaces.js';
+import { DISPATCHER_SEED_NAME } from '../src/bootstrap/default-teammates.js';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import type { ServerConfig } from '../src/http/config.js';
 import type { RequestContext } from '../src/http/types.js';
@@ -108,7 +109,13 @@ describe('spaces.create default teammates', () => {
     const db = new FakeDb();
     const result = await handler(db, true)(request());
 
-    expect(seedNames(db)).toEqual(LAUNCH_MODEL_CATALOG.map((entry) => entry.seedName));
+    // The launch-catalog roster, then the Dispatcher (D8). It is seeded here
+    // and nowhere else: teammate creation is owner-governed, so an agent that
+    // needs a dispatcher can never bring one into being at runtime.
+    expect(seedNames(db)).toEqual([
+      ...LAUNCH_MODEL_CATALOG.map((entry) => entry.seedName),
+      DISPATCHER_SEED_NAME,
+    ]);
     for (const { args } of db.calls.filter(({ fn }) => fn === 'public.create_team_member')) {
       expect(args[0]).toBe(SPACE_ID);
     }

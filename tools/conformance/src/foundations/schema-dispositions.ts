@@ -19,6 +19,8 @@ import {
   EntityFeedQuerySchema,
   ExecutionLivenessSchema,
   ExecutionPromptInputSchema,
+  ExecutionDispatchInputSchema,
+  ExecutionDispatchResultSchema,
   ExecutionSpawnInputSchema,
   FileUploadCompleteInputSchema,
   HandoffListQuerySchema,
@@ -86,6 +88,8 @@ export const SCHEMA_REGISTRY = {
   EntityFeedQuerySchema,
   ExecutionLivenessSchema,
   ExecutionPromptInputSchema,
+  ExecutionDispatchInputSchema,
+  ExecutionDispatchResultSchema,
   ExecutionSpawnInputSchema,
   FileUploadCompleteInputSchema,
   HandoffListQuerySchema,
@@ -159,6 +163,19 @@ export const ADDITIVE_SCHEMA_DISPOSITIONS = {
   'execution.liveness': { requestSchema: null, resultSchema: 'ExecutionLivenessSchema' },
 } as const satisfies Readonly<Partial<Record<OperationName, OperationSchemaDisposition>>>;
 
+/**
+ * Schema dispositions added AFTER the A01-A21 dossier.
+ *
+ * A third map rather than a row on either of the other two, because both of
+ * those have their key order pinned as historical snapshots: FROZEN is the W1
+ * boundary and ADDITIVE is exactly the A01-A21 block, which `generator.ts` also
+ * uses to assert those rows are contiguous IN THE CATALOG. Appending here says
+ * "this came later" instead of quietly restating what the dossier contained.
+ */
+export const POST_DOSSIER_SCHEMA_DISPOSITIONS = {
+  'execution.dispatch': { requestSchema: 'ExecutionDispatchInputSchema', resultSchema: 'ExecutionDispatchResultSchema' },
+} as const satisfies Readonly<Partial<Record<OperationName, OperationSchemaDisposition>>>;
+
 export const FROZEN_SCHEMA_DISPOSITIONS = {
   'attentionRequests.list': { requestSchema: 'AttentionRequestListQuerySchema', resultSchema: 'PageOfAttentionRequestSchema' },
   'attentionRequests.create': { requestSchema: 'CreateAttentionRequestInputSchema', resultSchema: 'AttentionRequestMutationResultSchema' },
@@ -188,5 +205,6 @@ export function resolveSchema(ref: SchemaRef): ZodTypeAny {
 
 export function schemaDispositionFor(operation: OperationName): OperationSchemaDisposition | undefined {
   return (ADDITIVE_SCHEMA_DISPOSITIONS as Partial<Record<OperationName, OperationSchemaDisposition>>)[operation]
+    ?? (POST_DOSSIER_SCHEMA_DISPOSITIONS as Partial<Record<OperationName, OperationSchemaDisposition>>)[operation]
     ?? (FROZEN_SCHEMA_DISPOSITIONS as Partial<Record<OperationName, OperationSchemaDisposition>>)[operation];
 }

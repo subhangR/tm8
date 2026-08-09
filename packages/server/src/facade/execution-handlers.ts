@@ -45,7 +45,11 @@ import {
   type WorkSessionStatus,
 } from '@tm8/execution';
 import { CollabError, SessionJournalRecordSchema } from '@tm8/contract';
+import { dispatchRequestInjection } from '@tm8/prompt';
+import type { W2MessagesHandoffsServiceOptions } from './services/w2/messages-handoffs.js';
 import type {
+  ExecutionDispatchInput,
+  ExecutionDispatchResult,
   ExecutionLiveness,
   ExecutionPromptInput,
   ExecutionSpawnInput,
@@ -768,7 +772,7 @@ export interface ExecutionRuntime {
   promptSettlement: PromptSettlementWaiter;
   spawnService: SpawnService;
   graph: DbGraphPort;
-  register(registry: HandlerRegistry): void;
+  register(registry: HandlerRegistry, options?: RegisterHandlersOptions): void;
   /**
    * Retire sessions this node left behind when it last died. Call ONCE at
    * startup, before serving: a fresh process has an empty PTY map, so any row
@@ -833,7 +837,8 @@ export function createExecutionRuntime(deps: ExecutionRuntimeDeps): ExecutionRun
     promptSettlement,
     spawnService,
     graph,
-    register: (registry) => registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir),
+    register: (registry, options) =>
+      registerHandlers(registry, spawnService, graph, deps.db, owner, pty, sessionCap, deps.dataDir, options),
     reconcileGhosts: async () => {
       // Runs as the loopback OWNER. `work_session_transition` goes through
       // `require_space_member` → `require_identity` with no node-admin bypass,
@@ -1176,6 +1181,98 @@ async function readSessionJournal(
   };
 }
 
+/**
+ * How long `execution.dispatch` waits for a dispatcher it just spawned to
+ * actually own a PTY before giving up on pushing the envelope at it.
+ *
+ * Bounded and short. A spawn that has not produced a terminal in this window is
+ * not necessarily broken — a cold agent CLI can be slow — but this is an HTTP
+ * request, and that request's job is done once the message is durably stored.
+ * Timing out here costs the caller a `delivery: 'undelivered'`, not the work.
+ */
+const DISPATCHER_SETTLE_TIMEOUT_MS = 15_000;
+const DISPATCHER_SETTLE_POLL_MS = 250;
+
+/**
+ * The durable half of a dispatch request — what a human reads on the task, and
+ * what the dispatcher re-reads if it wakes without having received the push.
+ * Plain prose on purpose: the trusted envelope is the machine-addressed copy.
+ */
+function dispatchRequestBody(input: ExecutionDispatchInput, taskId: string): string {
+  const lines = [
+    `Dispatch requested for this task (subject \`${input.subjectId}\`, anchor \`${taskId}\`).`,
+    '',
+    'Pick the teammate, attach the memories they need to this task, spawn them on it, and reply here with who and why.',
+  ];
+  if (input.note) lines.push('', `Requester note: ${input.note}`);
+  return lines.join('\n');
+}
+
+/**
+ * The live dispatcher session for a space, or null.
+ *
+ * PROBES; never reads `work_sessions.status`, which is the column this function
+ * exists to distrust. A session that died with its node keeps whatever status
+ * it had forever — nothing is left running to write a new one — and `idle` is a
+ * perfectly legal status for a session that IS alive and simply waiting for
+ * input. So neither `running` nor `idle` nor their absence answers the
+ * question. The PTY map does, because it IS the terminals.
+ *
+ * Scoped under the caller's claims, so a live dispatcher the caller cannot read
+ * is invisible rather than leaked — the posture `execution.liveness` takes.
+ */
+async function findLiveDispatcherSession(
+  db: Db,
+  claims: DbClaims,
+  spaceId: string,
+  pty: PtyHostService,
+): Promise<string | null> {
+  const live = pty.liveSessionIds();
+  if (live.length === 0) return null;
+  const rows = await db.query<{ id: string }>(
+    claims,
+    `select ws.entity_id::text id
+       from public.work_sessions ws
+       join public.entities e on e.id = ws.entity_id
+      where e.space_id = $1
+        and e.deleted_at is null
+        and ws.mode = 'dispatcher'
+        and ws.entity_id = any($2::uuid[])
+      order by ws.created_at desc
+      limit 1`,
+    [spaceId, live],
+  );
+  return rows[0]?.id ?? null;
+}
+
+/** Wait for a freshly spawned session to actually own a terminal. */
+async function awaitDispatcherSettlement(pty: PtyHostService, sessionId: string): Promise<boolean> {
+  const deadline = Date.now() + DISPATCHER_SETTLE_TIMEOUT_MS;
+  for (;;) {
+    if (pty.liveSessionIds().includes(sessionId)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, DISPATCHER_SETTLE_POLL_MS));
+  }
+}
+
+/**
+ * The delivery seam `execution.dispatch` pushes its envelope through.
+ *
+ * Structurally the messages seam's `messageDelivery`, and optional for the same
+ * reason: it carries the second database identity (`tm8_delivery_worker`) that
+ * `tm8_app` provably cannot assume, so a node without that role configured must
+ * still be able to dispatch. Without it the request message is still stored on
+ * the task and the result says `undelivered` — a degraded mode the caller can
+ * SEE, rather than a silent one.
+ */
+export type DispatchDelivery = NonNullable<
+  W2MessagesHandoffsServiceOptions['messageDelivery']
+>;
+
+export interface RegisterHandlersOptions {
+  readonly dispatchDelivery?: DispatchDelivery;
+}
+
 function registerHandlers(
   registry: HandlerRegistry,
   spawnService: SpawnService,
@@ -1185,6 +1282,7 @@ function registerHandlers(
   pty: PtyHostService,
   sessionCap: number,
   dataDir: string | undefined,
+  options: RegisterHandlersOptions = {},
 ): void {
   /**
    * A21 — execution.liveness (C-1). The ONE authority on "is there a live
@@ -1396,11 +1494,192 @@ function registerHandlers(
 
     const result = await rethrowing(() => spawnService.spawn(claims, request));
 
+    /**
+     * `dispatched_by` provenance (§4.3), written by the SERVER rather than
+     * asked of the dispatcher.
+     *
+     * The dispatcher spawning this session is, at this moment, the one actor
+     * guaranteed to be busy doing something else — and a provenance edge an
+     * agent must remember to write is an edge that is missing precisely when
+     * the routing went wrong and you want to know who chose. The spawner's
+     * session id is server-authoritative (it comes off the pinned credential,
+     * never the body), so no caller can forge itself a dispatcher lineage.
+     *
+     * Best-effort on purpose: the session is already spawned and running by
+     * here. A failed edge write must not turn a live spawn into a 5xx.
+     */
+    const spawnerSessionId =
+      ctx.identity.kind === 'bearer' ? ctx.identity.workSessionId ?? null : null;
+    if (spawnerSessionId) {
+      try {
+        const spawner = await db.query<{ mode: string | null }>(
+          claims,
+          'select mode from public.work_sessions where entity_id = $1',
+          [spawnerSessionId],
+        );
+        if (spawner[0]?.mode === 'dispatcher') {
+          await db.tx(claims, async (q) => {
+            await q.rpc('write_edge', [
+              result.sessionId,
+              spawnerSessionId,
+              'dispatched_by',
+              JSON.stringify({}),
+              envelope.actorId ?? null,
+              `${envelope.clientMutationId ?? result.sessionId}:dispatched-by`,
+            ]);
+          });
+        }
+      } catch {
+        // Provenance is worth attempting, never worth failing a live spawn for.
+      }
+    }
+
     // 201: a spawn creates a work_session.
     return json(
       await assembleCommandResult(db, claims, result.commandResult, owner.identityId),
       { status: 201 },
     );
+  });
+
+  /**
+   * execution.dispatch (§4.3, D2/D4) — "someone should do this; you work out
+   * who".
+   *
+   * Resolution is server-side for one reason: a client doing it would have to
+   * reimplement the liveness rule, and every client that has tried has reached
+   * for `work_sessions.status` and been wrong. See `findLiveDispatcherSession`.
+   *
+   * The order below is the failure-cost order, not a narrative one. The task is
+   * derived and the request STORED before anything is pushed at a terminal,
+   * because a stored request with no delivery is recoverable (the dispatcher
+   * reads its anchor when it next wakes) while a delivered request with no
+   * durable row is not. `delivery` is reported, never thrown on.
+   */
+  registry.register('execution.dispatch', async (ctx) => {
+    const input = ctx.body as ExecutionDispatchInput;
+    const owner = await resolveOwner();
+    const envelope = commandEnvelope(ctx);
+    const claims = claimsFor(owner, ctx, envelope);
+
+    // Any launchable entity, exactly as execution.spawn treats taskIds — a task
+    // passes through untouched.
+    const [taskId] = await rethrowing(() =>
+      resolveAssignmentAnchors(db, claims, input.spaceId, [input.subjectId]),
+    );
+    if (!taskId) {
+      throw fail('upstream_unavailable', `could not derive a task for ${input.subjectId}`);
+    }
+
+    let dispatcherSessionId = await findLiveDispatcherSession(db, claims, input.spaceId, pty);
+    let dispatcherSpawned = false;
+
+    if (!dispatcherSessionId) {
+      // Agents can never seed teammates (that is boot's job), so a space with
+      // no dispatcher teammate is a configuration fact to report, not a thing
+      // to fix by inventing a persona.
+      const teammates = await db.query<{ id: string }>(
+        claims,
+        `select tm.entity_id::text id
+           from public.team_members tm
+           join public.entities e on e.id = tm.entity_id
+          where e.space_id = $1 and e.deleted_at is null and tm.mode = 'dispatcher'
+          order by tm.created_at
+          limit 1`,
+        [input.spaceId],
+      );
+      const teammateId = teammates[0]?.id;
+      if (!teammateId) {
+        throw fail(
+          'not_found',
+          'this space has no dispatcher teammate; it is seeded at boot and cannot be created at runtime',
+        );
+      }
+      const spawned = await rethrowing(() =>
+        spawnService.spawn(claims, {
+          spaceId: input.spaceId,
+          teamMemberId: teammateId,
+          parentSessionId: null,
+          projectId: null,
+          mode: 'dispatcher',
+          model: null,
+          agentTool: null,
+          reasoningEffort: null,
+          accessMode: null,
+          title: 'Dispatcher',
+          promptExtra: null,
+          clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatcher-spawn`,
+        }),
+      );
+      dispatcherSessionId = spawned.sessionId;
+      dispatcherSpawned = true;
+      await awaitDispatcherSettlement(pty, dispatcherSessionId);
+    }
+
+    // Stored on the TASK, addressed at the SESSION. Both, deliberately: the
+    // anchor is where a human (and the dispatcher's own next wake) can find the
+    // request, and the session id is the only address that cannot silently miss
+    // a live session.
+    const posted = await db.tx(claims, async (q) =>
+      q.rpc<{ messageIds: string[] }>('w2_post_message_batch', [
+        [taskId],
+        dispatchRequestBody(input, taskId),
+        null,
+        [],
+        [],
+        null,
+        envelope.actorId ?? null,
+        `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
+      ]),
+    );
+    const requestMessageId = posted.messageIds[0];
+
+    // Narrowed once, here: every branch above either assigned it or threw.
+    const sessionId: string = dispatcherSessionId;
+
+    let delivered = false;
+    const seam = options.dispatchDelivery;
+    if (seam && requestMessageId) {
+      const content = dispatchRequestInjection({
+        messageId: requestMessageId,
+        taskId,
+        subjectId: input.subjectId,
+        requesterActorId: envelope.actorId ?? owner.identityId,
+        requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
+        destinationSessionId: sessionId,
+        note: input.note ?? null,
+      });
+      try {
+        const reservation = await seam.reserve({
+          messageId: requestMessageId,
+          targetWorkSessionId: sessionId,
+          content,
+          mode: 'send',
+          requestId: ctx.requestId,
+        });
+        if (reservation) {
+          await seam.adapter.dispatch({
+            ...reservation,
+            content,
+            requestId: ctx.requestId,
+            principal: seam.principalFor(reservation),
+          });
+          delivered = true;
+        }
+      } catch {
+        // The durable row already exists; an adapter failure downgrades the
+        // report, it does not roll back the dispatch.
+        delivered = false;
+      }
+    }
+
+    const result: ExecutionDispatchResult = {
+      taskId,
+      dispatcherSessionId: sessionId,
+      dispatcherSpawned,
+      ...(requestMessageId ? { requestMessageId } : {}),
+      delivery: delivered ? 'delivered' : 'undelivered',
+    };
+    return json(result, { status: 202 });
   });
 
   /**

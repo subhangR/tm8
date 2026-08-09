@@ -36,7 +36,8 @@ import type {
   EntityContextQuery, EntityContextView, EntityCounters, EntityDetail,
   EntityFeedPage, EntityFeedQuery, EntityKind, EntityKindCreateInput,
   EntityKindDef, EntityKindUpdateInput, EntityStaleness, EntityState, EntitySummary, ErrorCode,
-  ErrorDetails, ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
+  ErrorDetails, ExecutionDispatchInput, ExecutionDispatchResult,
+  ExecutionPromptInput, ExecutionResumeInput, ExecutionSpawnInput,
   ExecutionStreamsAttachInput, ExecutionTerminateInput, FeedItem, FeedPolicy,
   FileAttachment, FileUploadCompleteInput, FileUploadGrant, FileUploadInitInput,
   GraphQuery, GraphResult, GrantPointsInput, HandoffListQuery, HandoffView,
@@ -1660,6 +1661,37 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   title: z.string().optional(),
   promptExtra: z.string().nullable().optional(),
   memoryIds: z.array(SpawnUuidSchema).max(32).optional(),
+}).strict();
+
+/**
+ * execution.dispatch — hand an entity to the space's dispatcher (§4.3).
+ *
+ * Three fields and no launch configuration is the whole design: choosing the
+ * teammate, the model and the memories IS the dispatcher's job, so a caller
+ * that could pass `teamMemberId` here would be doing the dispatching itself
+ * and calling it a dispatch. `subjectId` is any launchable entity — it is
+ * mapped through `derive_task_for_entity` (064) server-side, exactly as
+ * `execution.spawn.taskIds` is.
+ */
+export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z.object({
+  ...commandContextShape,
+  clientMutationId: z.string().min(1),
+  spaceId: SpawnUuidSchema,
+  subjectId: SpawnUuidSchema,
+  note: z.string().max(4000).optional(),
+}).strict();
+
+/**
+ * `delivery` is reported rather than thrown on. A dispatch whose envelope did
+ * not reach the PTY still left a durable request message on the task, so the
+ * work is recoverable; answering 5xx would tell the caller nothing happened.
+ */
+export const ExecutionDispatchResultSchema: z.ZodType<ExecutionDispatchResult> = z.object({
+  taskId: EntityIdSchema,
+  dispatcherSessionId: EntityIdSchema,
+  dispatcherSpawned: z.boolean(),
+  requestMessageId: EntityIdSchema.optional(),
+  delivery: z.enum(['delivered', 'undelivered']),
 }).strict();
 
 export const ExecutionPromptInputSchema: z.ZodType<ExecutionPromptInput> = z.object({

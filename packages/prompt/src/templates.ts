@@ -175,6 +175,40 @@ export function dispatcherBootstrapControl(f: DispatcherBootstrapControlFacts): 
   ].join('\n');
 }
 
+// -- dispatch request (§4.3) --------------------------------------------------
+
+export interface DispatchRequestFacts {
+  messageId?: string | null;
+  taskId: string;
+  subjectId: string;
+  /** Who asked for the dispatch. */
+  requesterActorId?: string | null;
+  requesterActorKind?: string | null;
+  destinationSessionId: string;
+  /** The requester's free-text steer, already length-bounded by the contract. */
+  note?: string | null;
+}
+
+/**
+ * What a dispatcher is woken with. A control block, not a task assignment: the
+ * dispatcher is not being told to do this task, it is being told to route it,
+ * and conflating the two is the exact failure the persona spends its length
+ * guarding against. The note is UNTRUSTED — it came from a request body — so it
+ * rides in the same escaped-data envelope every other caller-supplied string does.
+ */
+export function dispatchRequestInjection(f: DispatchRequestFacts): string {
+  const control = [
+    `<trusted_control type="tm8.session-input" version="1" kind="dispatch_request" message_id="${attr(f.messageId)}">`,
+    `  <from actor_id="${attr(f.requesterActorId)}" actor_kind="${attr(f.requesterActorKind)}" />`,
+    `  <to session_id="${attr(f.destinationSessionId)}" />`,
+    `  <dispatch task_id="${attr(f.taskId)}" subject_id="${attr(f.subjectId)}" />`,
+    '  <rule>Route this task: pick the teammate, attach the memories they need to the task, spawn them on it, and report who and why on the task anchor. Do not do the task yourself.</rule>',
+    '</trusted_control>',
+  ].join('\n');
+  if (f.note == null || f.note === '') return control;
+  return `${control}\n${untrustedData({ type: 'dispatch-note', body: f.note })}`;
+}
+
 // -- §14.3 task assignment ----------------------------------------------------
 
 export interface TaskAssignmentFacts {
