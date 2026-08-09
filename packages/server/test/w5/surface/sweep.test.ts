@@ -679,6 +679,9 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // normally rather than 400.
   'credentials.delete',
   'entities.commands.linkCommit',
+  // 2026-08-10 (files consolidation): projects.files.read validates its `path`
+  // query in-handler; the sweep supplies none, so the 400 is handler-reached.
+  'projects.files.read',
   'entities.commands.linkPr',
   'entityKinds.update',
   'interactionProfiles.activate',
