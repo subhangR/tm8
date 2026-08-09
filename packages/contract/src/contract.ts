@@ -1727,6 +1727,79 @@ export interface ProjectCreateInput extends CommandContext {
   ensureWorkingDir?: boolean;
 }
 
+// --- browser-originated project folder upload ------------------------------
+
+/** Frozen deployment-independent ceilings carried by every folder grant. */
+export const PROJECT_FOLDER_UPLOAD_MAX_FILES = 1_000;
+export const PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES = 2_000;
+export const PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES = 1024 * 1024 * 1024;
+export const PROJECT_FOLDER_UPLOAD_MAX_PATH_BYTES = 1_024;
+
+/**
+ * A source entry selected in the browser. `relativePath` always uses `/` and
+ * is relative to the selected folder; an absolute client path has no field in
+ * this contract. Hidden names are ordinary names. Symlinks have no member in
+ * this union and are therefore rejected rather than dereferenced.
+ */
+export type ProjectFolderUploadEntry =
+  | {
+      kind: 'directory';
+      relativePath: string;
+    }
+  | {
+      kind: 'file';
+      relativePath: string;
+      sizeBytes: number;
+      checksumSha256: string;
+      mime: string;
+    };
+
+/** POST /v2/spaces/:spaceId/project-folder-uploads */
+export interface ProjectFolderUploadInitInput extends CommandContext {
+  clientMutationId: string;
+  projectName: string;
+  /** Absolute path selected from the SERVER directory browser. */
+  destinationParent: string;
+  /** One new child name beneath destinationParent, never a path. */
+  rootName: string;
+  /** Off by default: importing bytes does not imply execution trust. */
+  trust?: ProjectTrustLevel;
+  entries: ProjectFolderUploadEntry[];
+}
+
+export interface ProjectFolderUploadFileGrant extends FileUploadGrant {
+  relativePath: string;
+}
+
+export interface ProjectFolderUploadGrant {
+  folderUploadId: string;
+  expiresAt: string;
+  maxFiles: number;
+  maxDirectories: number;
+  maxTotalBytes: number;
+  maxPathBytes: number;
+  files: ProjectFolderUploadFileGrant[];
+}
+
+export interface ProjectFolderUploadCompleteInput extends CommandContext {
+  clientMutationId: string;
+}
+
+export interface ProjectFolderUploadAbortInput extends CommandContext {
+  clientMutationId: string;
+}
+
+/** Confirmation returned after the root exists and its project is linked. */
+export interface ProjectFolderUploadResult {
+  folderUploadId: string;
+  spaceId: SpaceId;
+  project: ProjectResource;
+  rootName: string;
+  fileCount: number;
+  directoryCount: number;
+  totalBytes: number;
+}
+
 /** One local branch in a project's working directory. */
 export interface ProjectBranch {
   name: string;
