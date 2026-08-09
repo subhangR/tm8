@@ -91,6 +91,7 @@ import {
   type ProjectResource,
   type ReactionInput,
   type ResolveEntityAttentionInput,
+  type ContentionReport,
   type ExecutionGitCheckpointInput,
   type ExecutionGitCommitInput,
   type ExecutionGitMergeInput,
@@ -381,6 +382,9 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
         params: { workSessionId },
         query: { last: opts?.last },
       });
+    },
+    projectContention(projectId: string): Promise<ContentionReport> {
+      return http.call<ContentionReport>('projects.contention', { params: { projectId } });
     },
     gitStatus(workSessionId: EntityId): Promise<SessionGitStatus> {
       return http.call<SessionGitStatus>('execution.gitStatus', { params: { workSessionId } });

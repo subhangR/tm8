@@ -210,6 +210,14 @@ export const VIEW_ART = {
   ],
   /** The hash, shared with the `channel` kind ON PURPOSE — it is that list. */
   channels: KIND_ART.channel,
+  /** A branch: trunk with a fork, node dots at the tips (Git UI wave). */
+  git: [
+    'M5.2 5.4a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z',
+    'M5.2 13.8a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z',
+    'M11.6 6.6a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z',
+    'M5.2 5.4v5.2',
+    'M11.6 6.6c0 2.6-2.2 2.6-4 3.4',
+  ],
   /**
    * A gear, drawn as a real toothed outline rather than as radial ticks
    * around a circle. The tick version is the shape a sun/brightness control

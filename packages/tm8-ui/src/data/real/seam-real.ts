@@ -54,6 +54,7 @@ import {
   type Page,
   type ProjectBranchTopology,
   type ProjectResource,
+  type ContentionReport,
   type SessionGitDiff,
   type SessionGitStatus,
   type SessionJournalPage,
@@ -294,6 +295,7 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
     launch: (workSessionId: EntityId): Promise<SessionLaunchRecord> => ops.launch(workSessionId),
     transcript: (workSessionId: EntityId, opts?: TranscriptOpts): Promise<SessionTranscriptPage> =>
       ops.transcript(workSessionId, opts),
+    projectContention: (projectId: string): Promise<ContentionReport> => ops.projectContention(projectId),
     gitStatus: (workSessionId: EntityId): Promise<SessionGitStatus> => ops.gitStatus(workSessionId),
     gitDiff: (workSessionId: EntityId, opts?: GitDiffOpts): Promise<SessionGitDiff> =>
       ops.gitDiff(workSessionId, opts),

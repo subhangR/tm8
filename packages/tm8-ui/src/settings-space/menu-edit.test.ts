@@ -81,10 +81,11 @@ describe('reorder', () => {
 
   it('moves an item inside its group without touching siblings', () => {
     // Home ships ONE item since revision 5, so the sibling-preserving move is
-    // asserted where there are siblings to preserve: the Tracking group.
+    // asserted where there are siblings to preserve: the Tracking group
+    // (which leads with the Git view row since the Git UI wave).
     const d = moveItem(startDraft(BASE), 'tracking', 0, 2);
     const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
-    expect(tracking?.items.map((i) => i.ref)).toEqual(['pull_request', 'worktree', 'project']);
+    expect(tracking?.items.map((i) => i.ref)).toEqual(['project', 'pull_request', 'git', 'worktree']);
   });
 
   it('an out-of-range index is a no-op, not a crash or a dropped row', () => {
@@ -115,7 +116,7 @@ describe('remove', () => {
   it('removes an item', () => {
     const d = removeItem(startDraft(BASE), 'tracking', 1);
     const tracking = draftConfig(d).groups.find((g) => g.id === 'tracking');
-    expect(tracking?.items.map((i) => i.ref)).toEqual(['project', 'worktree']);
+    expect(tracking?.items.map((i) => i.ref)).toEqual(['git', 'pull_request', 'worktree']);
   });
 
   it('removes a caret child without removing its parent', () => {

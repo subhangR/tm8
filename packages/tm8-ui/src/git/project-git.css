@@ -1,0 +1,160 @@
+/* ==========================================================================
+   PROJECT GIT SCREEN — topology + worktree lanes + contention warnings.
+
+   Tokens only (hex-ban); `.cv2-root`-scoped. Contention speaks `--pn-block`
+   — the same red the conflict banner, the CI-red chip and the gate refusal
+   use, because all four mean "merging now goes wrong". See GIT-UI.md.
+   ========================================================================== */
+
+.cv2-root .pn-project-git {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-4);
+  padding: var(--pn-space-4);
+  background: var(--pn-paper);
+  color: var(--pn-ink-2);
+  font-size: var(--pn-fs-sm);
+}
+
+.cv2-root .pn-project-git__head {
+  display: flex;
+  align-items: center;
+  gap: var(--pn-space-3);
+}
+
+.cv2-root .pn-project-git__title {
+  margin: 0;
+  font-size: var(--pn-fs-h3);
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-project-git__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pn-space-3);
+  padding: var(--pn-space-4);
+  background: var(--pn-surface);
+  border: 1px solid var(--pn-line);
+}
+
+.cv2-root .pn-project-git__card-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pn-space-3);
+  flex-wrap: wrap;
+}
+
+.cv2-root .pn-project-git__name {
+  font-weight: 600;
+  color: var(--pn-ink);
+}
+
+.cv2-root .pn-project-git__dir {
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-4);
+  overflow-wrap: anywhere;
+}
+
+.cv2-root .pn-project-git__subhead {
+  margin: var(--pn-space-2) 0 0;
+  font-size: var(--pn-fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-project-git__lane-list,
+.cv2-root .pn-project-git__pairs,
+.cv2-root .pn-project-git__pair-paths {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cv2-root .pn-project-git__lane-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+  padding: 2px 0;
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-project-git__branch {
+  font-family: var(--pn-mono);
+  color: var(--pn-ink);
+  white-space: nowrap;
+}
+
+.cv2-root .pn-project-git__link {
+  font: inherit;
+  font-family: var(--pn-mono);
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-brand);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.cv2-root .pn-project-git__link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.cv2-root .pn-project-git__link:disabled {
+  color: var(--pn-ink-3);
+  cursor: default;
+}
+
+.cv2-root .pn-project-git__pair {
+  border: 1px solid var(--pn-block);
+  background: var(--pn-block-soft);
+  padding: var(--pn-space-3);
+  margin-top: var(--pn-space-2);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-project-git__pair-title {
+  margin: 0 0 var(--pn-space-2);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pn-space-2);
+}
+
+.cv2-root .pn-project-git__pair-paths {
+  padding-left: var(--pn-space-4);
+  font-family: var(--pn-mono);
+}
+
+.cv2-root .pn-project-git__btn {
+  font: inherit;
+  font-size: var(--pn-fs-micro);
+  color: var(--pn-ink-2);
+  background: transparent;
+  border: 1px solid var(--pn-line);
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.cv2-root .pn-project-git__btn:hover {
+  color: var(--pn-ink);
+  border-color: var(--pn-ink-3);
+}
+
+.cv2-root .pn-project-git__note {
+  margin: 0;
+  color: var(--pn-ink-3);
+  font-size: var(--pn-fs-micro);
+}
+
+.cv2-root .pn-project-git__error {
+  margin: 0;
+  color: var(--pn-block);
+  font-size: var(--pn-fs-micro);
+}
