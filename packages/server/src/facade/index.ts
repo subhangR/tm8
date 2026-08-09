@@ -66,6 +66,7 @@ import { registerW2ProjectFilesHandlers } from './handlers/w2/project-files.js';
 import { registerW2ProjectsAssociationsHandlers } from './handlers/w2/projects-associations.js';
 import { registerW2SavedViewsActionsHandlers } from './handlers/w2/saved-views-actions.js';
 import { registerContentionHandlers } from './services/contention.js';
+import { registerExecutionGitHandlers } from './services/execution-git.js';
 import { registerW2ServerConnectionHandlers } from './handlers/w2/server-connections.js';
 import {
   registerCredentialHandlers,
@@ -160,6 +161,11 @@ export function registerFacadeHandlers(
   registerW2ProjectsAssociationsHandlers(registry, facade);
   // Tier 4 git×graph: the read-only file-contention map over active worktrees.
   registerContentionHandlers(registry, facade);
+  // Git UI wave: the session git rail — status/diff reads and the #76 verbs
+  // (checkpoint/rollback/commit/merge-from-base) behind the facade, resolved
+  // to the session's worktree server-side. Registered unconditionally: the
+  // worktree path comes from the graph, not from a dataDir this node may lack.
+  registerExecutionGitHandlers(registry, facade);
   // Voice reads its LiveKit deployment off the already-resolved config rather
   // than the environment: one place decides what this node is pointed at.
   registerVoiceHandlers(registry, facade, deps.config.livekit);

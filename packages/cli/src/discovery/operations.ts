@@ -1244,6 +1244,68 @@ const ROWS: Record<OperationName, Row> = {
       'the manifest is returned as-written, unvalidated, so a document from an older or newer build still renders instead of failing closed',
     ],
   },
+  // ── the session git rail (Git UI wave) ──────────────────────────────────
+  // All six are deliberately `cmd: null`: the CLI already runs these verbs
+  // LOCALLY through `@tm8/execution/worktree` (`tm8 session checkpoint`,
+  // `tm8 session rollback`, `tm8 worktree stage|commit|merge|status`) with
+  // catalog-zero graph writes. The HTTP operations exist for surfaces that
+  // have no machine to run git on — the browser. A second CLI spelling of the
+  // same verb would give one action two names with different failure modes.
+  'execution.gitStatus': {
+    cmd: null,
+    sum: "Read a session worktree's live git status: branch, dirty counts, ahead/behind its base",
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'status', 'branch', 'dirty', 'ahead', 'behind', 'worktree'],
+    reason: 'cli_runs_git_locally',
+    notes: ['a session with no worktree answers `available:false` with a named reason, never an error'],
+  },
+  'execution.gitDiff': {
+    cmd: null,
+    sum: 'Read what a session changed: working tree vs the merge-base of its base ref, digest always complete, diff text byte-capped',
+    authz: 'entity',
+    input: 'none',
+    tags: ['git', 'diff', 'numstat', 'changes', 'worktree', 'review'],
+    reason: 'cli_runs_git_locally',
+    notes: ['the numstat digest is never cut; `diffTruncated` says when the unified text was'],
+  },
+  'execution.gitCheckpoint': {
+    cmd: null,
+    sum: "Commit a session worktree's entire work-in-progress to its own branch and return the oid as the checkpoint ref",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'checkpoint', 'commit', 'undo', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitRollback': {
+    cmd: null,
+    sum: 'Restore a session worktree to a checkpoint ref; untracked deletions gate on force',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'rollback', 'undo', 'reset', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitCommit': {
+    cmd: null,
+    sum: 'Stage (optionally) and commit exactly what is staged in a session worktree',
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'commit', 'stage', 'worktree'],
+    reason: 'cli_runs_git_locally',
+  },
+  'execution.gitMerge': {
+    cmd: null,
+    sum: "Merge the session's base ref forward into its branch; a conflict returns the conflicted paths with the worktree restored clean",
+    authz: 'entity',
+    input: 'bound',
+    side: 'execution',
+    tags: ['git', 'merge', 'base', 'conflict', 'worktree'],
+    reason: 'cli_runs_git_locally',
+    notes: ['session branch → base is deliberately absent at every layer: landing on base goes through a PR'],
+  },
   'execution.transcript': {
     cmd: ['session', 'transcript'],
     syn: 'tm8 session transcript <work-session-id> [--last <count>]',

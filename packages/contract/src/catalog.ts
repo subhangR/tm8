@@ -166,6 +166,19 @@ export const OPERATIONS = [
   // build doing the reading rather than the launch being inspected. Pairs with
   // `execution.journal` on one debug surface: told, then did.
   { name: 'execution.launch',         method: 'GET',   path: '/v2/work-sessions/:workSessionId/launch',     kind: 'read',    status: 'v1' },
+  // The session git rail (Git UI wave): the #76 verbs behind the facade so a
+  // BROWSER can drive them — the CLI runs argv git on its own machine; a
+  // browser has no machine. The worktree path is resolved server-side from
+  // the graph (`in_worktree` edge → `public.worktrees` row); no request ever
+  // names a filesystem path, `execution.journal`'s discipline. Reads cap
+  // their output (digest+partial, the transcript precedent); a session with
+  // no worktree answers `available:false` with a named reason, never a 500.
+  { name: 'execution.gitStatus',      method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/status',      kind: 'read',    status: 'v1' },
+  { name: 'execution.gitDiff',        method: 'GET',   path: '/v2/work-sessions/:workSessionId/git/diff',        kind: 'read',    status: 'v1' },
+  { name: 'execution.gitCheckpoint',  method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/checkpoint',  kind: 'command', status: 'v1' },
+  { name: 'execution.gitRollback',    method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/rollback',    kind: 'command', status: 'v1' },
+  { name: 'execution.gitCommit',      method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/commit',      kind: 'command', status: 'v1' },
+  { name: 'execution.gitMerge',       method: 'POST',  path: '/v2/work-sessions/:workSessionId/git/merge',       kind: 'command', status: 'v1' },
 
   // custom entity kinds (T-L4, R7–R9)
   { name: 'entityKinds.list',        method: 'GET',    path: '/v2/spaces/:spaceId/entity-kinds',            kind: 'read',    status: 'v1' },
