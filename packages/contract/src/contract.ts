@@ -1382,8 +1382,11 @@ export interface UpdateSpaceInput extends CommandContext {
 // W0 dossier: Space menu and shared settings revision
 // ---------------------------------------------------------------------------
 
-/** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings';
+/** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view.
+ * `files` added 2026-08-10 (same R4 posture) for the dedicated Files explorer —
+ * a VIEW, distinct from the `file` KIND row (owner ruling R9, task 019fe5d6:
+ * entity files and the file browser are different and both stay reachable). */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'files' | 'settings';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a

@@ -1630,7 +1630,8 @@ export const UpdateSpaceInputSchema: z.ZodType<UpdateSpaceInput> = z.object({
 // Space menu and shared settings revision (W0 dossier A01-A03/A20)
 // ---------------------------------------------------------------------------
 
-export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'settings']);
+// `files` widened 2026-08-10 in lockstep with the MenuViewRef type (R4 posture).
+export const MenuViewRefSchema = z.enum(['dashboard', 'feed', 'inbox', 'workspace', 'graph', 'channels', 'files', 'settings']);
 // `worktree` un-excluded 2026-07-31 in lockstep with the MenuKindRef type:
 // menu-visible, still not menu-creatable (creation stays with the saga).
 // `channel` un-excluded 2026-08-01, same lockstep — it became a collection

@@ -36,6 +36,8 @@ describe('the shipped default menu', () => {
   it('puts Files, Spells and Collections in Library as plain kind rows', () => {
     const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
     expect(library?.items).toEqual([
+      // Revision 8: the Files EXPLORER view row (distinct from the `file` kind).
+      { type: 'view', ref: 'files' },
       { type: 'kind', ref: 'file' },
       { type: 'kind', ref: 'spell' },
       { type: 'kind', ref: 'collection' },
@@ -85,7 +87,7 @@ describe('the shipped default menu', () => {
       expect(presentation.icon.length, ref).toBeGreaterThan(0);
     }
     expect(Object.keys(VIEW_PRESENTATION).sort()).toEqual(
-      ['channels', 'dashboard', 'feed', 'graph', 'inbox', 'settings', 'workspace'].sort(),
+      ['channels', 'dashboard', 'feed', 'files', 'graph', 'inbox', 'settings', 'workspace'].sort(),
     );
   });
 });
