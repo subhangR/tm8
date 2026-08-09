@@ -68,7 +68,7 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
     expect(rows[0]?.items).toEqual([]);
   });
 
-  it('names the three 059 kinds so the features stay reachable from the rail', async () => {
+  it('names every kind added after the original menu so the features stay reachable', async () => {
     const rows = await db.query<{ refs: string[] }>(
       `select array_agg(distinct leaf->>'ref') as refs
          from jsonb_array_elements(internal.w1_default_menu_payload()->'groups') g,
@@ -81,7 +81,10 @@ describeDb('default-menu seeder parity (the 059 lesson)', () => {
         where leaf->>'type' = 'kind'`,
     );
     expect(rows[0]?.refs).toEqual(
-      expect.arrayContaining(['memory', 'artifact', 'worktree']),
+      expect.arrayContaining([
+        'memory', 'artifact', 'worktree',
+        'file', 'spell', 'collection',
+      ]),
     );
   });
 });

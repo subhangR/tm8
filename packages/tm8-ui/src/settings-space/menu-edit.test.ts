@@ -232,7 +232,8 @@ describe('capacity — the caps are the RAIL’s caps, cross-checked not copied'
     // control carrying its own number. That number has to come from the model.
     let d = startDraft(BASE);
     const free = availableKindRefs(d);
-    expect(free.length).toBeGreaterThanOrEqual(MENU_CAPS.children - 4);
+    const initialCapacity = childCapacity(d, 'workspace', 0);
+    expect(free.length).toBeGreaterThanOrEqual(MENU_CAPS.children - initialCapacity.used);
     for (const ref of free) {
       if (childCapacity(d, 'workspace', 0).full) break;
       d = addChild(d, 'workspace', 0, { type: 'kind', ref } as never);

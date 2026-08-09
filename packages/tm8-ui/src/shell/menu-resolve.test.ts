@@ -18,10 +18,11 @@ describe('the shipped default menu', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('encodes the WLT §2 diagram: Home · Workspace · Tracking · Collab · Voice · Settings', () => {
+  it('encodes the shipped group spine, including the Library destinations', () => {
     expect(SHIPPED_DEFAULT_MENU.groups.map((g) => g.label)).toEqual([
       'Home',
       'Workspace',
+      'Library',
       'Tracking',
       'Collab',
       // Revision 5 (2026-08-01) — the Channels label is GONE: channels moved
@@ -29,6 +30,15 @@ describe('the shipped default menu', () => {
       // its own label because there is no `voice` MenuViewRef to move.
       'Voice',
       'Settings',
+    ]);
+  });
+
+  it('puts Files, Spells and Collections in Library as plain kind rows', () => {
+    const library = SHIPPED_DEFAULT_MENU.groups.find((group) => group.id === 'library');
+    expect(library?.items).toEqual([
+      { type: 'kind', ref: 'file' },
+      { type: 'kind', ref: 'spell' },
+      { type: 'kind', ref: 'collection' },
     ]);
   });
 
