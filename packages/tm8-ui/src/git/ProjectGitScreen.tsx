@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   isCollabError,
   type ContentionReport,
@@ -9,6 +9,8 @@ import {
 import type { Seam } from '../data/seam';
 import { Pill } from '../kit';
 import { BranchTopologyList } from '../projects';
+import { BlameView } from './BlameView';
+import { FileHistoryBrowser } from './FileHistoryBrowser';
 import './project-git.css';
 
 /**
@@ -132,13 +134,13 @@ export function ProjectGitScreen({ seam, spaceId, onOpenEntity }: ProjectGitScre
         </button>
       </div>
       {state.projects.map((row) => (
-        <ProjectGitCard key={row.project.id} row={row} onOpenEntity={onOpenEntity} />
+        <ProjectGitCard key={row.project.id} seam={seam} row={row} onOpenEntity={onOpenEntity} />
       ))}
     </div>
   );
 }
 
-function ProjectGitCard({ row, onOpenEntity }: { row: ProjectGitState; onOpenEntity?: ((id: string) => void) | undefined }) {
+function ProjectGitCard({ seam, row, onOpenEntity }: { seam: Seam; row: ProjectGitState; onOpenEntity?: ((id: string) => void) | undefined }) {
   const { project, branches, contention } = row;
   return (
     <section className="pn-project-git__card" data-testid="project-git-card" aria-label={project.name}>
@@ -159,6 +161,9 @@ function ProjectGitCard({ row, onOpenEntity }: { row: ProjectGitState; onOpenEnt
       ) : (
         <BranchTopologyList topology={branches.topology} />
       )}
+
+      {/* -- file inspector: history + blame (Tier 1 #8/#10) ------------------ */}
+      <FileInspector seam={seam} projectId={project.id} onOpenEntity={onOpenEntity} />
 
       {/* -- worktree lanes + contention -------------------------------------- */}
       {contention.phase === 'loading' ? (
@@ -239,6 +244,84 @@ function ContentionBlock({ report, onOpenEntity }: { report: ContentionReport; o
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * THE FILE INSPECTOR — one path picker feeding the two Tier 1 reads. The path
+ * is submitted, not live-typed, so a keystroke is never a git invocation; an
+ * empty picker renders an explanation, never a blank region. The History and
+ * Blame bodies own their reads and their honesty (see their headers).
+ */
+function FileInspector({
+  seam,
+  projectId,
+  onOpenEntity,
+}: {
+  seam: Seam;
+  projectId: string;
+  onOpenEntity?: ((id: string) => void) | undefined;
+}) {
+  const [draft, setDraft] = useState('');
+  const [path, setPath] = useState<string | null>(null);
+  const [mode, setMode] = useState<'history' | 'blame'>('history');
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = draft.trim();
+    setPath(trimmed === '' ? null : trimmed);
+  };
+
+  return (
+    <div className="pn-file-inspector" data-testid="file-inspector">
+      <h3 className="pn-project-git__subhead">File history &amp; blame</h3>
+      <form className="pn-file-inspector__controls" onSubmit={submit}>
+        <input
+          type="text"
+          className="pn-file-inspector__path"
+          data-testid="file-inspector-path"
+          placeholder="path inside the repository, e.g. packages/server/src/index.ts"
+          aria-label="Repository path to inspect"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <button type="submit" className="pn-project-git__btn" data-testid="file-inspector-load">
+          inspect
+        </button>
+        <div role="tablist" aria-label="Inspection mode" className="pn-file-inspector__modes">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'history'}
+            className="pn-project-git__btn"
+            data-testid="file-inspector-mode-history"
+            onClick={() => setMode('history')}
+          >
+            history
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'blame'}
+            className="pn-project-git__btn"
+            data-testid="file-inspector-mode-blame"
+            onClick={() => setMode('blame')}
+          >
+            blame
+          </button>
+        </div>
+      </form>
+      {path === null ? (
+        <p className="pn-project-git__note" data-testid="file-inspector-idle">
+          Name a path and press inspect — revisions and blame exist per file, so there is nothing to
+          show until a file is chosen.
+        </p>
+      ) : mode === 'history' ? (
+        <FileHistoryBrowser seam={seam} projectId={projectId} path={path} onOpenEntity={onOpenEntity} />
+      ) : (
+        <BlameView seam={seam} projectId={projectId} path={path} onOpenEntity={onOpenEntity} />
       )}
     </div>
   );

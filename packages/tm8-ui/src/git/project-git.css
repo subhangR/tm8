@@ -158,3 +158,27 @@
   color: var(--pn-block);
   font-size: var(--pn-fs-micro);
 }
+
+/* -- file inspector (Tier 1 history + blame) -------------------------------- */
+.pn-file-inspector { display: grid; gap: 8px; min-width: 0; }
+.pn-file-inspector__controls { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+.pn-file-inspector__path {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box; /* no global border-box reset in this package — overflow is a live failure mode */
+  font: inherit;
+  padding: 4px 8px;
+}
+.pn-file-inspector__modes { display: inline-flex; gap: 4px; }
+.pn-file-inspector__modes [aria-selected='true'] { font-weight: 600; text-decoration: underline; }
+
+.pn-file-history__list, .pn-blame__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; min-width: 0; }
+.pn-file-history__row { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; min-width: 0; }
+.pn-file-history__row--selected { outline: 1px solid currentColor; outline-offset: 2px; }
+.pn-file-history__subject { overflow-wrap: anywhere; min-width: 0; }
+
+.pn-blame__hunk { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; min-width: 0; }
+.pn-blame__range { white-space: nowrap; }
+.pn-blame__summary { overflow-wrap: anywhere; min-width: 0; }
+.pn-attribution { display: inline-flex; gap: 4px; align-items: baseline; }
