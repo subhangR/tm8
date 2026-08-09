@@ -327,7 +327,11 @@ describe('CredentialSessionLauncher — acceptance criterion 3: the fixed comman
     // `codex login --device-auth` in particular must never decay to bare
     // `codex login`, which opens a loopback listener nobody can reach.
     expect(CREDENTIAL_LOGIN_COMMANDS).toEqual({
-      anthropic: 'claude setup-token',
+      // `claude auth login`, not `claude setup-token` — setup-token PRINTS a
+      // token and never persists a login, so the `claude auth status` finish
+      // probe could never see a completed flow (R4 amendment, measured on
+      // Utho prod 2026-08-09).
+      anthropic: 'claude auth login',
       openai: 'codex login --device-auth',
       github: 'gh auth login --web --hostname github.com --git-protocol https --skip-ssh-key',
     });

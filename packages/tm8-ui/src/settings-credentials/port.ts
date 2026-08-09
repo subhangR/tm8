@@ -91,10 +91,12 @@ export function verdictOf(
     return 'unknown';
   }
   if (!entry.connected) return 'disconnected';
-  // Connected with no login is anthropic's PERMANENT shape (R4) — `claude
-  // setup-token` holds `user:inference` and not `user:profile`, so no name is
-  // ever learnable. It gets its own verdict so the screen can omit the field
-  // entirely instead of drawing an empty one, a spinner, or "unknown user".
+  // Connected with no login is a legal shape: rows minted under the original
+  // R4 verb (`claude setup-token`, `user:inference` only) never learned a
+  // name. Post-amendment `claude auth login` grants `user:profile`, so new
+  // anthropic rows carry an email — but this verdict stays, so the screen can
+  // omit the field for old rows instead of drawing an empty one, a spinner,
+  // or "unknown user".
   return entry.login === null ? 'connected-unnamed' : 'connected-named';
 }
 

@@ -37,10 +37,15 @@ Each is recorded with its reasoning in doc 11.
 - **R3 — Disconnect terminates.** Revoke first, then the credential session, then that
   account's live agent sessions carrying the provider. The dialog says plainly that vendor-side
   rotation is the real revocation.
-- **R4 — the Claude card can never say "Connected as <email>".** `claude setup-token` requests
-  inference scope only; `claude auth login` requests six scopes including `org:create_api_key`.
-  Storing a credential that can mint further credentials is materially worse on a node with no
-  cross-user isolation. The cost is permanent: no profile scope, so no email, ever.
+- **R4 (AMENDED 2026-08-09, sub-doc 15 §G) — the table runs `claude auth login`.** The original
+  ruling picked `claude setup-token` for its narrower scope (inference only, vs six scopes
+  including `org:create_api_key`). The premise failed at completion, which the ruling's
+  measurements never reached: `setup-token` PRINTS a token and persists no login, so the
+  `claude auth status` finish probe could never see a completed flow — the Connect card was
+  structurally unable to end "signed in", and one printed token leaked into a task description
+  (the S15 incident). `auth login` persists a probe-visible login; the wider grant is the
+  accepted price. Its `user:profile` scope means the card now reads "Connected as <email>";
+  pre-amendment rows keep `login: null` and the "Connected — inference access" copy.
 - **R6 — `account_agent_credentials.provider` is `('anthropic','openai')` and no more.**
   A provider is admitted by *measuring* its login flow, not by widening a CHECK. GitHub stays
   string-shaped in 079's `account_git_credentials` on the deployed line.

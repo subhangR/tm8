@@ -377,10 +377,39 @@ describe('AC6 — success is never inferred from a clean exit', () => {
     expect(probe.connected).toBe(true);
     expect(probe.status).toBe('active');
     expect(probe.authMethod).toBe('claude.ai');
-    // R4: `claude setup-token` requests user:inference only, so it can never
-    // learn an email. NULL here is correct and permanent, and the card must
-    // read "Connected — inference access", never "Connected as null".
+    // This fixture's stdout carries no `email` field, so the parser must pass
+    // NULL through rather than invent a name. (Post-R4-amendment, `claude auth
+    // login` grants `user:profile` and a real probe answer carries `email` —
+    // see the passthrough test below.)
     expect(probe.login).toBeNull();
+  });
+
+  it('passes the email through when the login persisted one (R4 amendment)', async () => {
+    // The REAL logged-in shape, captured from `claude auth status` (2.1.220)
+    // after `claude auth login` — the verb the table now runs. `user:profile`
+    // is in its grant, so `email` is present and must land in `login`.
+    const run: CommandRunner = async () =>
+      outcome({
+        stdout: JSON.stringify({
+          loggedIn: true,
+          authMethod: 'claude.ai',
+          apiProvider: 'firstParty',
+          email: 'member@example.test',
+          orgId: 'org_1',
+          orgName: 'Example Org',
+          subscriptionType: 'max',
+        }),
+      });
+    const probe = await runCredentialProbe({
+      provider: 'anthropic',
+      env: { HOME: '/x' },
+      cwd: '/x',
+      run,
+    });
+    expect(probe.connected).toBe(true);
+    expect(probe.status).toBe('active');
+    expect(probe.login).toBe('member@example.test');
+    expect(probe.authMethod).toBe('claude.ai');
   });
 
   it('does not accept the STRING "false" as truthy', async () => {

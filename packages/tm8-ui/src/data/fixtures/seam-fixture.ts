@@ -1813,9 +1813,10 @@ export function createFixtureSeam(): FixtureSeam {
      *    line and is reachable from no local git object, so the github entry's
      *    `connected` is UNKNOWN here, not measured false. A fixture reporting
      *    'present' would let a screen that renders "Not connected" look right.
-     *  - anthropic is connected with `login: null` FOREVER (R4) — `claude
-     *    setup-token`'s scopes exclude `user:profile`, so there is no name to
-     *    learn, ever.
+     *  - anthropic is connected with `login: null` — the shape of a row minted
+     *    under the original R4 verb (`claude setup-token`, no `user:profile`).
+     *    Post-amendment logins carry an email, but the null-login shape stays
+     *    legal and a screen must keep rendering it without "Connected as null".
      *  - openai is genuinely not connected: the one true negative, so a screen
      *    that draws all three the same way has something to be wrong about.
      */
