@@ -58,8 +58,14 @@ describe('W1 adopted catalog target', () => {
     // TOLD at spawn: its manifest, its env var NAMES and its two prompts.
     // 126 -> 127 (2026-08-02): projects.directories.list (GET read) — the
     // root-confined node-local folder browser for Space project onboarding.
-    expect(OPERATIONS).toHaveLength(127);
-    expect(V1_OPERATIONS).toHaveLength(125);
+    // 127 -> 131 (2026-08-07): the credentials.* family (Tier B per-member
+    // vendor credentials, sub-doc 11 §D) — `credentials.status` (GET read),
+    // `credentials.delete` (DELETE command), and the two
+    // `credentials.loginSessions.*` POST commands. All four are v1 and all four
+    // are human-only (R2): an agent bearer token carries its OWNER'S full
+    // identity, so an unguarded `status` would read their login metadata.
+    expect(OPERATIONS).toHaveLength(131);
+    expect(V1_OPERATIONS).toHaveLength(129);
     expect(RESERVED_OPERATIONS.map((operation) => operation.name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
@@ -75,12 +81,12 @@ describe('W1 adopted catalog target', () => {
       DELETE: count('method', 'DELETE'),
       PUT: count('method', 'PUT'),
       WS: count('method', 'WS'),
-    }).toEqual({ GET: 47, POST: 54, PATCH: 10, DELETE: 8, PUT: 7, WS: 1 });
+    }).toEqual({ GET: 48, POST: 56, PATCH: 10, DELETE: 9, PUT: 7, WS: 1 });
     expect({
       read: count('kind', 'read'),
       command: count('kind', 'command'),
       stream: count('kind', 'stream'),
-    }).toEqual({ read: 50, command: 76, stream: 1 });
+    }).toEqual({ read: 51, command: 79, stream: 1 });
   });
 });
 

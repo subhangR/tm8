@@ -21,6 +21,7 @@ export type SettingsSectionId =
   | 'invites'
   | 'axes'
   | 'models'
+  | 'credentials'
   | 'projects'
   | 'menu'
   | 'kinds'
@@ -56,6 +57,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
      will look, and the section itself states its real scope rather than
      letting its neighbours imply one. */
   { id: 'models', label: 'Models', heading: 'Models' },
+  /* Agent credentials — the viewer's OWN logins, built in
+     `settings-credentials/` and injected through `sections`. It sits beside
+     Models because both answer "what can I launch with", and directly after it
+     because a model you cannot authenticate against is not a thing you can
+     launch. Like `projects` and `kinds` it is externally owned, so an
+     unsupplied section renders the shell's honest not-mounted state rather
+     than a blank pane. */
+  { id: 'credentials', label: 'Agent credentials', heading: 'Agent credentials', externallyOwned: true },
   { id: 'projects', label: 'Linked projects', heading: 'Linked projects', externallyOwned: true },
   { id: 'menu', label: 'Menu', heading: 'Menu' },
   { id: 'kinds', label: 'Custom kinds', heading: 'Custom kinds', externallyOwned: true },

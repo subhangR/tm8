@@ -846,8 +846,19 @@ function agentBinDirCandidates(parentEnv: NodeJS.ProcessEnv): string[] {
   return dirs;
 }
 
-/** Append any candidate bin dir that exists and is not already on `path`. */
-function withAgentBinDirs(path: string, parentEnv: NodeJS.ProcessEnv): string {
+/**
+ * Append any candidate bin dir that exists and is not already on `path`.
+ *
+ * EXPORTED for `composeCredentialEnv`, which builds a login terminal's
+ * environment from scratch and shares nothing else with `composeEnv`. The PATH
+ * problem is genuinely identical for both — a login terminal that cannot find
+ * `claude`, `codex` or `gh` dies with 127 in exactly the same way an agent does,
+ * for exactly the same reason (the launchd unit's PATH is the bare
+ * `/usr/bin:/bin:/usr/sbin:/sbin`). Sharing the discovery list is not the same
+ * as sharing the environment: this function decides where a binary is FOUND and
+ * never what a process is TRUSTED with.
+ */
+export function withAgentBinDirs(path: string, parentEnv: NodeJS.ProcessEnv): string {
   const present = new Set(path.split(':').filter((p) => p !== ''));
   const additions = agentBinDirCandidates(parentEnv).filter(
     (dir) => !present.has(dir) && existsSync(dir),

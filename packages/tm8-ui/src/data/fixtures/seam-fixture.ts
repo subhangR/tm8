@@ -75,6 +75,7 @@ import {
   type PatchMessageInput,
   type PatchTaskInput,
   type PostMessageInput,
+  type CredentialsStatusView,
   type ProjectResource,
   type ReactionInput,
   type SessionJournalPage,
@@ -104,7 +105,9 @@ import {
   fixtureDetails,
   fixtureHandoffsBySession,
   fixtureSummaries,
+  sessionCredentialLogin,
   sessionLive,
+  sessionStale,
 } from '../../fixtures';
 
 export const FIXTURE_NODE_BOOT_ID = 'boot-fixture-1';
@@ -431,6 +434,49 @@ export function createFixtureSeam(): FixtureSeam {
   const tick = (): string => new Date(FIXTURE_BASE_MS + ++tickN * 1000).toISOString();
   let idN = 0;
   const nextId = (kind: string): string => `fx-${kind.replace(/^c:/, 'c-')}-${++idN}`;
+
+  /**
+   * The three providers, drawn so that ALL THREE honest-degradation states are
+   * on screen at once and a screen cannot pass by collapsing two of them.
+   * Mutable, because `disconnect` writes to it.
+   */
+  const credentialsState: CredentialsStatusView = {
+    providers: [
+      // Connected, and its login is null FOREVER — not pending, not unknown.
+      {
+        provider: 'anthropic',
+        connected: true,
+        login: null,
+        authMethod: 'oauth',
+        status: 'active',
+        connectedAt: FIXTURE_NOW,
+        lastVerifiedAt: FIXTURE_NOW,
+      },
+      // The one true negative — so "not connected" has something real to mean.
+      {
+        provider: 'openai',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+      },
+      // `connected: false` here is UNKNOWN, not measured — see gitCredentialStore.
+      {
+        provider: 'github',
+        connected: false,
+        login: null,
+        authMethod: null,
+        status: null,
+        connectedAt: null,
+        lastVerifiedAt: null,
+      },
+    ],
+    // 'absent' is the fixture's default deliberately: it is the state of the
+    // deployed staging line, and the one a screen gets wrong silently.
+    gitCredentialStore: 'absent',
+  };
 
   // Out-of-the-box liveness truth (C-5): sessionLive is the ONLY live PTY;
   // sessionStale stays running-per-record but absent from the live set.
@@ -1632,6 +1678,79 @@ export function createFixtureSeam(): FixtureSeam {
         }
         emit(s.spaceId, { type: 'entity.upsert', entity: clone(s) }, input);
         return commandResult(s);
+      },
+    },
+
+    /**
+     * CREDENTIALS — the fixture's answer models the HONEST-DEGRADATION
+     * contract, not a happy path, because those states are the ones a careless
+     * screen collapses:
+     *
+     *  - `gitCredentialStore: 'absent'` — 079 ships on the deployed staging
+     *    line and is reachable from no local git object, so the github entry's
+     *    `connected` is UNKNOWN here, not measured false. A fixture reporting
+     *    'present' would let a screen that renders "Not connected" look right.
+     *  - anthropic is connected with `login: null` FOREVER (R4) — `claude
+     *    setup-token`'s scopes exclude `user:profile`, so there is no name to
+     *    learn, ever.
+     *  - openai is genuinely not connected: the one true negative, so a screen
+     *    that draws all three the same way has something to be wrong about.
+     */
+    credentials: {
+      async status() {
+        return clone(credentialsState);
+      },
+
+      async disconnect(provider) {
+        const entry = credentialsState.providers.find((p) => p.provider === provider);
+        if (entry) {
+          entry.connected = false;
+          entry.login = null;
+          entry.authMethod = null;
+          entry.status = 'revoked';
+          entry.connectedAt = null;
+          entry.lastVerifiedAt = null;
+        }
+        // A PARTIAL disconnect is the fixture's default for anthropic, because
+        // it is the NORMAL outcome (R3) and the one a screen is most likely to
+        // render as either a clean tick or a red error. `revoked: true` stands
+        // alongside a non-empty `failures` and neither cancels the other.
+        return {
+          provider,
+          revoked: true,
+          terminatedCredentialSessionIds: [],
+          terminatedAgentSessionIds: provider === 'anthropic' ? [sessionLive.id] : [],
+          failures:
+            provider === 'anthropic'
+              ? [{ step: 'agentSession' as const, sessionId: sessionStale.id, reason: 'session did not acknowledge terminate' }]
+              : [],
+        };
+      },
+
+      async startLogin(spaceId, provider) {
+        return {
+          workSessionId: sessionCredentialLogin.id,
+          spaceId,
+          provider,
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+          command: `${provider} login`,
+        };
+      },
+
+      async finishLogin(workSessionId) {
+        return {
+          workSessionId,
+          provider: 'github' as const,
+          // The correct-and-expected split (R5): a verified GitHub login has
+          // nowhere to be written on a line without 079, so `connected: true`
+          // with `stored: false` is a right answer, not a failure.
+          connected: true,
+          login: 'ada',
+          authMethod: 'oauth',
+          status: 'active' as const,
+          stored: false,
+          terminated: true,
+        };
       },
     },
 

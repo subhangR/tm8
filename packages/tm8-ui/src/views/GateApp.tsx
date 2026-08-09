@@ -52,6 +52,7 @@ import { GraphScreen } from '../graph';
 import { AddServerDialog, LOCAL_SERVER, type AddServerInput, type UiServer } from '../servers';
 import { ChannelView } from './ChannelView';
 import { SettingsShell, settingsPortFromSeam } from '../settings-space';
+import { CredentialsSection, credentialsPortFromSeam } from '../settings-credentials';
 import { nodeKeyOf } from '../data/launch-cache';
 import { readLastTarget, writeLastTarget } from './last-place';
 import { NewSpaceProjectDialog, type ProjectOnboardingPort } from '../projects';
@@ -363,6 +364,16 @@ export function GateApp(props: GateAppProps = {}) {
     [data.seam, data.spaceId],
   );
 
+  // The credentials section's own adapter, built the same way and on the same
+  // pair. It is a SECOND port rather than four more methods on the settings
+  // one because `settings-credentials/` is a separate module meeting the shell
+  // at its `sections` slot — the seam that lets two lanes mount into one screen
+  // without editing each other's files.
+  const credentialsPort = useMemo(
+    () => (data.spaceId ? credentialsPortFromSeam(data.seam, data.spaceId) : null),
+    [data.seam, data.spaceId],
+  );
+
   const reasons = useMemo<DetailReasons>(
     () => ({
       presenceHollow: presenceHollowReason,
@@ -588,7 +599,26 @@ export function GateApp(props: GateAppProps = {}) {
                the whole module sat built and unmounted in settings-space/.
                Sections another module owns (projects/kinds) keep their honest
                not-mounted state inside the shell itself. */
-            <SettingsShell port={settingsPort} nodeKey={nodeKeyOf(activeServer.routeBaseUrl)} />
+            <SettingsShell
+              port={settingsPort}
+              nodeKey={nodeKeyOf(activeServer.routeBaseUrl)}
+              /* Agent credentials, injected through the shell's section slot.
+                 The screen and this mount ship in the same commit on purpose —
+                 four surfaces in this repo are built, tested and unreachable
+                 because that did not happen. */
+              sections={
+                credentialsPort
+                  ? {
+                      credentials: (
+                        <CredentialsSection
+                          port={credentialsPort}
+                          serverBaseUrl={activeServer.routeBaseUrl}
+                        />
+                      ),
+                    }
+                  : undefined
+              }
+            />
           ) : data.ready &&
             activeTarget?.type === 'view' &&
             activeTarget.ref !== 'workspace' ? (

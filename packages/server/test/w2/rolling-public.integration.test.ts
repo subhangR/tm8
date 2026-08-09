@@ -518,7 +518,10 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 65 -> 66: identity.profile.update (Identity v2 Stage 0).
     // 66 -> 69 (2026-08-02): auth.signup/login/logout (Identity v2 Stage 1);
     // auth.session.get is a GET and binds nothing.
-    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(69);
+    // 69 -> 72 (2026-08-07): the three credentials.* command bodies are
+    //   BOUND rather than listed unbound — strictness is a security control
+    //   here, since no credential DTO declares actorId (finding D2).
+    expect(Object.keys(INPUT_SCHEMAS)).toHaveLength(72);
 
     // DERIVED, and the load-bearing half of this test. The count above cannot
     // catch a new command operation that forgets a schema — it passes as long
@@ -657,10 +660,15 @@ describe.sequential('W2.I02 real production public surface', () => {
     // a red pin) and `identity.profile.update` (which reconciled it).
     // 120/118 -> 126/122 (2026-08-02): the four auth.* rows, all implemented.
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 126, implemented: 124 });
+    // 127/124 -> 130/128 (2026-08-07): the four credentials.* rows, all
+    //   MOUNTED — the seam is wired in main.ts, so they answer rather than 501.
+    //   `operations` counts HTTP ROUTES (130), not catalog rows (131); the WS
+    //   row has no HTTP binding. Read out of the failure rather than assumed.
+    expect(health).toMatchObject({ ok: true, operations: 130, implemented: 128 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(harness.production.server.registry.size).toBe(124);
+    // 124 -> 128 (2026-08-07): the four credentials.* operations.
+    expect(harness.production.server.registry.size).toBe(128);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -675,7 +683,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 122 -> 124 (2026-08-02): `execution.launch`.
-    expect(registered.size + residual.length).toBe(124);
+    // 124 -> 128 (2026-08-07): the four credentials.* operations.
+    expect(registered.size + residual.length).toBe(128);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

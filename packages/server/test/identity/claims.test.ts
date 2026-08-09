@@ -21,7 +21,20 @@ function byName(bindings: ClaimBinding[]): Record<string, string> {
 }
 
 describe('claim set (R2/T-L11)', () => {
-  it('emits exactly the four settings 002 RLS helpers read', async () => {
+  /**
+   * FIVE since 082 (architect ruling R11), not four.
+   *
+   * The pin moved ON PURPOSE and the reason is recorded rather than assumed:
+   * `tm8.auth_kind` carries the auth session's server-resolved kind, and it
+   * passes the test that keeps membership OUT of the claims — an auth session's
+   * kind is IMMUTABLE for the life of the session, so the staleness window that
+   * disqualifies a membership list does not exist for it.
+   *
+   * It stays an EXACT SET rather than relaxing to "at least these": the whole
+   * job of this pin is to make widening the trusted surface cost a decision. A
+   * sixth name must move this line again, and must answer "is it immutable?".
+   */
+  it('emits exactly the five settings the RLS helpers and 082 read', async () => {
     const h = makeHarness();
     const owner = await h.service.bootstrapOwner();
     h.join(owner.identityId, SPACE_A);
@@ -33,8 +46,27 @@ describe('claim set (R2/T-L11)', () => {
         CLAIM_NAMES.actorId,
         CLAIM_NAMES.nodeAdmin,
         CLAIM_NAMES.requestId,
+        CLAIM_NAMES.authKind,
       ].sort(),
     );
+  });
+
+  /**
+   * The kind is FORWARDED, never invented. An omitted kind binds the REFUSING
+   * value: `internal.require_human_auth_kind()` fails closed, and a helpful
+   * default here would defeat it one layer above where the migration cannot see
+   * it.
+   */
+  it('binds an empty auth_kind when the caller did not state one', async () => {
+    const h = makeHarness();
+    const owner = await h.service.bootstrapOwner();
+    const claims = await h.service.buildClaims({ accountId: owner.id });
+
+    expect(byName(toClaimBindings(claims, 'req_1'))[CLAIM_NAMES.authKind]).toBe('');
+    expect(byName(toClaimBindings(claims, 'req_1', 'browser'))[CLAIM_NAMES.authKind]).toBe(
+      'browser',
+    );
+    expect(byName(toClaimBindings(claims, 'req_1', 'agent'))[CLAIM_NAMES.authKind]).toBe('agent');
   });
 
   it('never binds membership or can_act_as into Postgres', async () => {
@@ -55,7 +87,11 @@ describe('claim set (R2/T-L11)', () => {
     expect(names).not.toContain('tm8.can_act_as');
     expect(names).not.toContain('tm8.acting_as');
     expect(names).not.toContain('tm8.account_id');
-    expect(names).toHaveLength(4);
+    // Five since 082/R11 — see the exact-set pin above. The four `not.toContain`
+    // assertions are the load-bearing half of this test and are untouched: what
+    // must never appear here is a value that can GO STALE, and `auth_kind`
+    // cannot.
+    expect(names).toHaveLength(5);
 
     // The server-side facts survive — the facade gates capabilities with them.
     expect(claims.memberIds).toEqual([member.id]);
@@ -138,7 +174,12 @@ describe('claim set (R2/T-L11)', () => {
     expect(values[CLAIM_NAMES.identityId]).toBe('');
     expect(values[CLAIM_NAMES.actorId]).toBe('');
     expect(values[CLAIM_NAMES.nodeAdmin]).toBe('off');
-    expect(Object.keys(values)).toHaveLength(4);
+    // "No identity" must also mean "NOT HUMAN". The anonymous shape binds the
+    // refusing value explicitly rather than leaving the claim unbound, for the
+    // same reason the other three are bound: an unbound claim could in
+    // principle be inherited from an earlier statement on the connection.
+    expect(values[CLAIM_NAMES.authKind]).toBe('');
+    expect(Object.keys(values)).toHaveLength(5);
     // No bypass claim exists to find.
     expect(Object.keys(values).some((n) => /bypass|service_role|superuser/.test(n))).toBe(false);
   });

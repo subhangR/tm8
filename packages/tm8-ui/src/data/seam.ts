@@ -68,6 +68,11 @@ import type {
   CreateSpaceInput,
   CreateSpaceResult,
   CreateTaskInput,
+  CredentialProviderName,
+  CredentialsDeleteResult,
+  CredentialsLoginSessionFinishResult,
+  CredentialsLoginSessionStartResult,
+  CredentialsStatusView,
   Cursor,
   DurableWorkspaceEvent,
   EdgeView,
@@ -444,6 +449,37 @@ export interface Seam {
      * refuses any field the contract does not name.
      */
     resume(id: EntityId, input: ExecutionResumeInput): Promise<CommandResult>;
+  };
+
+  /**
+   * -- per-member agent credentials (the four `credentials.*` catalog ops) ---
+   *
+   * HUMAN-ONLY BY RULING R2, enforced server-side on `ctx.identity.authKind`
+   * (allowlist `browser` | `cli`). A browser session is on the allowed side,
+   * which is why this block exists on the seam at all; nothing here weakens or
+   * routes around that guard, and `status` is human-only too, deliberately.
+   *
+   * It is a TOP-LEVEL block rather than a member of `commands` because it is
+   * mixed read/write about the VIEWER's own account — it names no subject and
+   * no space except when opening a terminal, so filing the read under
+   * `commands` would have been the only alternative and a worse lie.
+   */
+  credentials: {
+    /** The merged view + `gitCredentialStore`, its own completeness report. */
+    status(): Promise<CredentialsStatusView>;
+    /**
+     * Disconnect, which TERMINATES (R3). `revoked: true` with a non-empty
+     * `failures` is the NORMAL partial outcome, not a contradiction — a
+     * credential can be revoked while a session it opened refuses to die.
+     */
+    disconnect(provider: CredentialProviderName): Promise<CredentialsDeleteResult>;
+    /** Opens the login PTY. The answer names a work_session to host. */
+    startLogin(
+      spaceId: SpaceId,
+      provider: CredentialProviderName,
+    ): Promise<CredentialsLoginSessionStartResult>;
+    /** Harvests what the terminal achieved. `connected` and `stored` differ. */
+    finishLogin(workSessionId: EntityId): Promise<CredentialsLoginSessionFinishResult>;
   };
 
   // -- liveness (Delta 2, LLD C-1 / §9) --------------------------------------

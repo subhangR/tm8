@@ -110,6 +110,16 @@ describe('one identity path (R2 / claims contract)', () => {
   // named anyway: the cost of naming a claim that is not yet bound in TypeScript
   // is zero, and it is the difference between this guard noticing a future
   // binding and being surprised by it.
+  //
+  // `auth_kind` (082, architect ruling R11) is NAMED here rather than added to
+  // the allowlist below, and that is the STRONGER of the two options.
+  // Allowlisting would say "this file may also bind it"; naming it says
+  // "exactly one file may bind it, and that file must be db/client.ts" — the
+  // same rule every other caller-identity claim lives under. It carries the
+  // auth session's SERVER-RESOLVED kind (browser / cli / agent), which
+  // `internal.require_human_auth_kind()` reads to keep an agent holding its
+  // owner's full identity out of `credentials.*`. A second file binding it
+  // would be exactly the founding defect this guard exists to catch.
   // ---------------------------------------------------------------------------
   const CALLER_IDENTITY_CLAIMS = [
     'identity_id',
@@ -118,6 +128,7 @@ describe('one identity path (R2 / claims contract)', () => {
     'request_id',
     'acting_as',
     'client_mutation_id',
+    'auth_kind',
   ] as const;
 
   const CLAIMS_BINDER = join(SRC, 'db', 'client.ts');

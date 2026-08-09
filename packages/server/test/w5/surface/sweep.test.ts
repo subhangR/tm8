@@ -294,9 +294,14 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // execution.journal, identity.profile.update. The first three landed
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
-    expect(SURFACE).toHaveLength(123);
-    expect(rows).toHaveLength(123);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(123);
+    // 2026-08-07: this pin was ALREADY RED on the base of the credentials
+    // branch — it read 123 while the surface was 124 — so previous-plus-four
+    // would have carried that pre-existing error forward. 128 is READ OUT OF
+    // THE FAILURE, which is also 123 + 1 (the unreconciled row) + 4 (the
+    // credentials.* family).
+    expect(SURFACE).toHaveLength(128);
+    expect(rows).toHaveLength(128);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(128);
   });
 
   /**
@@ -633,6 +638,16 @@ const HANDLER_AUTHORED_400: readonly string[] = [
   // 2026-08-02: auth.logout with a bare {} and no bearer session names nothing
   // to revoke — a handler-reached invalid_input, not a :166 gate rejection.
   'auth.logout',
+  // 2026-08-07: credentials.delete reads `:provider` off the PATH and checks it
+  // against the fixed three-value list BEFORE the value can name a directory.
+  // The sweep supplies a synthetic path param, so the refusal is correct and
+  // is handler-reached — the body schema (an optional clientMutationId) accepts
+  // the sweep's `{}` fine, so this is not a :166 gate rejection.
+  // The other three credentials.* operations are absent from this list on
+  // purpose: the sweep authenticates as the loopback auto-owner, whose
+  // `authKind` is `browser`, so the R2 guard ADMITS it and they answer
+  // normally rather than 400.
+  'credentials.delete',
   'entities.commands.linkCommit',
   'entities.commands.linkPr',
   'entityKinds.create',
