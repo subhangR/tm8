@@ -58,6 +58,12 @@ export type {
 
 export * from './spawn/index.js';
 export * from './worktree/index.js';
+export {
+  readBranchTopology,
+  type BranchTopology,
+  type BranchTopologyEntry,
+  type BranchTopologyOptions,
+} from './git/branch-topology.js';
 
 // Agent transcript digest — reads the agent's OWN native JSONL (claude
 // ~/.claude/projects, codex ~/.codex/sessions) and normalizes both dialects to

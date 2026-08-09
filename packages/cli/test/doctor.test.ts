@@ -163,7 +163,8 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
     // 124 -> 126: `worktree list|status`, both ALIASES over existing
     // operations. The command-path count moves and the CATALOG does not, which
     // is the very distinction this assertion is here to watch.
-    expect(COMMAND_PATHS).toHaveLength(126);
+    // 126 -> 127: `project branches`.
+    expect(COMMAND_PATHS).toHaveLength(127);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

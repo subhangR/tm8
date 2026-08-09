@@ -1,15 +1,15 @@
 {
   "schemaVersion": "tm8.conformance.w1.v1",
-  "catalogDigest": "sha256:8bd14e1574ae5d8f85a971d06893815d16c73aaa97eb158d9df9c8a7081a3430",
+  "catalogDigest": "sha256:391f5ee638dc2dc5cc53842e07602ef0d103c1a369862709d9bb5b4eeed2f716",
   "catalog": {
-    "total": 128,
-    "v1": 126,
+    "total": 129,
+    "v1": 127,
     "reserved": 2,
-    "http": 127,
+    "http": 128,
     "ws": 1,
-    "registerableV1Http": 125,
+    "registerableV1Http": 126,
     "methods": {
-      "GET": 48,
+      "GET": 49,
       "POST": 54,
       "PATCH": 10,
       "DELETE": 8,
@@ -17,12 +17,12 @@
       "WS": 1
     },
     "kinds": {
-      "read": 51,
+      "read": 52,
       "command": 76,
       "stream": 1
     },
-    "uniqueNames": 128,
-    "uniqueBindings": 128
+    "uniqueNames": 129,
+    "uniqueBindings": 129
   },
   "reservedOperations": [
     "search.query",
@@ -652,6 +652,13 @@
         "operation": "projects.get",
         "method": "GET",
         "path": "/v2/projects/:projectId",
+        "status": "registered",
+        "source": "server-router"
+      },
+      {
+        "operation": "projects.branches.list",
+        "method": "GET",
+        "path": "/v2/projects/:projectId/branches",
         "status": "registered",
         "source": "server-router"
       },
@@ -1300,7 +1307,7 @@
         "projects.unlink"
       ]
     },
-    "unimplementedV1Http": 97
+    "unimplementedV1Http": 98
   },
   "schemas": {
     "additive": {
@@ -2530,6 +2537,23 @@
         "intentTags": [
           "projects",
           "get"
+        ],
+        "inputSchemaRef": null,
+        "resultSchemaRef": null,
+        "invocationSyntax": null,
+        "actionDiscoverable": true,
+        "reason": null,
+        "publicComposite": null
+      },
+      {
+        "operation": "projects.branches.list",
+        "noun": "project",
+        "exposure": "public",
+        "helpRef": "tm8://help/operation/projects.branches.list",
+        "intentTags": [
+          "projects",
+          "branches",
+          "list"
         ],
         "inputSchemaRef": null,
         "resultSchemaRef": null,

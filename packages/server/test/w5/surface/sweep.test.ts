@@ -287,7 +287,7 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     expect(server.database.name).toMatch(/^tm8_w1_w5c_/);
   });
 
-  it('sweeps exactly the 125 v1 non-WS operations, derived from the catalog', () => {
+  it('sweeps exactly the 126 v1 non-WS operations, derived from the catalog', () => {
     // 98 -> 114 on 2026-07-31: the consolidation wave (serverConnections,
     // artifacts, attention, voice et al) grew the v1 non-WS surface.
     // 118 -> 122 on 2026-08-02: auth.signup/login/logout/session.get (Stage 1).
@@ -296,10 +296,11 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // without this pin moving; the fourth reconciled it.
     // 122 -> 123 on 2026-08-02: execution.launch.
     // The 123 literal was ALREADY red at 124 when this lane arrived (the
-    // onboarding read landed without moving it); 125 adds execution.transcript.
-    expect(SURFACE).toHaveLength(125);
-    expect(rows).toHaveLength(125);
-    expect(new Set(rows.map((r) => r.op)).size).toBe(125);
+    // onboarding read landed without moving it); 125 adds execution.transcript,
+    // and 126 adds projects.branches.list.
+    expect(SURFACE).toHaveLength(126);
+    expect(rows).toHaveLength(126);
+    expect(new Set(rows.map((r) => r.op)).size).toBe(126);
   });
 
   /**

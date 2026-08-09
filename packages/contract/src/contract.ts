@@ -1473,6 +1473,50 @@ export interface ProjectCreateInput extends CommandContext {
   ensureWorkingDir?: boolean;
 }
 
+/** One local branch in a project's working directory. */
+export interface ProjectBranch {
+  name: string;
+  /** Tip commit oid. */
+  head: string;
+  /** Tip commit date, ISO-8601. */
+  lastCommitAt: string;
+  subject: string;
+  /** Configured upstream (`origin/feat/x`), or null when there is none. */
+  upstream: string | null;
+  /** Commits on this branch that the default branch does not have. */
+  ahead: number;
+  /** Commits on the default branch that this branch does not have. */
+  behind: number;
+  isDefault: boolean;
+  /** Checked out in the project's working directory right now. */
+  isCurrent: boolean;
+  /** `ahead === 0` — the default branch already contains all of it. */
+  merged: boolean;
+  /** No commit newer than `staleAfterDays`. */
+  stale: boolean;
+}
+
+/**
+ * GET /v2/projects/:projectId/branches — branch topology for a project's
+ * working directory, read with argv-only git. A READ: nothing here checks
+ * anything out or writes a ref.
+ *
+ * `defaultBranchSource` ships WITH `defaultBranch` because `main` is a
+ * convention, not a rule. A consumer rendering "12 behind main" needs to know
+ * whether the trunk came from the remote's own HEAD or was guessed from
+ * whatever happened to be checked out.
+ */
+export interface ProjectBranchTopology {
+  projectId: ProjectId;
+  workingDir: string;
+  defaultBranch: string;
+  defaultBranchSource: 'origin_head' | 'local_conventional' | 'current_branch';
+  branches: ProjectBranch[];
+  /** True when the branch cap cut the list short — the read is bounded. */
+  truncated: boolean;
+  staleAfterDays: number;
+}
+
 /** One selectable child in the node-local project directory browser. */
 export interface ProjectDirectoryEntry {
   name: string;

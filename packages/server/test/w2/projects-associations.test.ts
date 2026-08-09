@@ -2,8 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+import { runGit } from '@tm8/execution';
 import {
   EdgeCorrectionResultSchema,
+  ProjectBranchTopologySchema,
   ProjectDirectoryListingSchema,
   ProjectResourceSchema,
   getOperation,
@@ -130,6 +132,7 @@ describe('W2.G06 projects and association correction facade', () => {
   it('exports one registration seam for the project operations', () => {
     expect(registered(new FakeDb()).implemented()).toEqual([
       'projects.associations.correct',
+      'projects.branches.list',
       'projects.create',
       'projects.directories.list',
       'projects.get',
@@ -306,6 +309,97 @@ describe('W2.G06 projects and association correction facade', () => {
     ]) {
       expect(g03).toContain(`function public.${signature}`);
       expect(g06).not.toContain(`function public.${signature}`);
+    }
+  });
+});
+
+describe('projects.branches.list — the working directory comes from the ROW', () => {
+  /** A real repository: the claim is about what git actually answers. */
+  async function repoWithBranches(): Promise<{ dir: string; cleanup: () => Promise<void> }> {
+    const scratch = await mkdtemp(join(tmpdir(), 'tm8-branch-topology-facade-'));
+    const dir = join(scratch, 'repo');
+    const author = ['-c', 'user.email=t@t', '-c', 'user.name=t'];
+    const run = async (args: string[], cwd: string): Promise<void> => {
+      const res = await runGit(args, { cwd });
+      if (res.code !== 0) throw new Error(`git ${args.join(' ')}: ${res.stderr}`);
+    };
+    await run(['init', '-b', 'main', dir], scratch);
+    await writeFile(join(dir, 'README.md'), 'hello\n');
+    await run(['add', '.'], dir);
+    await run([...author, 'commit', '-m', 'initial'], dir);
+    await run(['checkout', '-b', 'feat/one'], dir);
+    await writeFile(join(dir, 'a.txt'), 'a\n');
+    await run(['add', '.'], dir);
+    await run([...author, 'commit', '-m', 'feature'], dir);
+    await run(['checkout', 'main'], dir);
+    return { dir, cleanup: () => rm(scratch, { recursive: true, force: true }) };
+  }
+
+  function dbFor(workingDir: string): FakeDb {
+    const db = new FakeDb();
+    db.queryImpl = async <R,>() => [{ ...PROJECT_ROW, working_dir: workingDir }] as R[];
+    return db;
+  }
+
+  it('reads the project row, runs git there, and answers the contract shape', async () => {
+    const { dir, cleanup } = await repoWithBranches();
+    try {
+      const topology = await handler(registered(dbFor(dir)), 'projects.branches.list')(
+        request('projects.branches.list', { params: { projectId: IDS.project } }),
+      );
+      expect(ProjectBranchTopologySchema.safeParse(topology).success).toBe(true);
+      expect(topology).toMatchObject({
+        projectId: IDS.project,
+        workingDir: dir,
+        defaultBranch: 'main',
+        truncated: false,
+      });
+      const branches = (topology as { branches: { name: string; ahead: number }[] }).branches;
+      expect(branches.map((b) => b.name).sort()).toEqual(['feat/one', 'main']);
+      expect(branches.find((b) => b.name === 'feat/one')).toMatchObject({ ahead: 1, behind: 0 });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('names a working directory that is not a repository as invalid_input, not internal', async () => {
+    // Otherwise the operator goes looking for a bug in tm8 when the real fact
+    // is that THEIR project points at a directory git does not manage.
+    const scratch = await mkdtemp(join(tmpdir(), 'tm8-branch-topology-empty-'));
+    try {
+      await expect(
+        handler(registered(dbFor(scratch)), 'projects.branches.list')(
+          request('projects.branches.list', { params: { projectId: IDS.project } }),
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_input' });
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('is not_found for an unknown project, so no git runs at all', async () => {
+    const db = new FakeDb();
+    db.queryImpl = async <R,>() => [] as R[];
+    await expect(
+      handler(registered(db), 'projects.branches.list')(
+        request('projects.branches.list', { params: { projectId: IDS.project } }),
+      ),
+    ).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('refuses a non-positive staleAfterDays instead of silently defaulting', async () => {
+    const { dir, cleanup } = await repoWithBranches();
+    try {
+      await expect(
+        handler(registered(dbFor(dir)), 'projects.branches.list')(
+          request('projects.branches.list', {
+            params: { projectId: IDS.project },
+            query: 'staleAfterDays=0',
+          }),
+        ),
+      ).rejects.toMatchObject({ code: 'invalid_input' });
+    } finally {
+      await cleanup();
     }
   });
 });
