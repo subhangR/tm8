@@ -161,7 +161,13 @@ export class W2ProjectFilesService {
   readonly attachFile: OperationHandler = async (ctx) => {
     const projectId = requireUuidParam(ctx, 'projectId');
     const input = ctx.body as ProjectFileAttachInput;
-    const { workingDir, claims, viewerIdentityId } = await this.project(ctx, projectId);
+    const { workingDir, claims, viewerIdentityId } = await this.project(ctx, projectId, input.spaceId);
+    // Attaching is not just another read: it copies bytes from the node into a
+    // graph-owned blob and mints/updates graph state. Keep the coarse node
+    // privilege for that write even though list/read no longer need it.
+    if (claims.nodeAdmin !== true) {
+      throw new CollabError('forbidden', 'node-admin access is required to attach project files');
+    }
     const file = await resolveProjectFile(workingDir, input.path, this.maxSizeBytes);
 
     const envelope = commandEnvelope(ctx);
@@ -288,12 +294,17 @@ export class W2ProjectFilesService {
   }
 
   /**
-   * Resolve the project's configured directory under the caller's own claims,
-   * so an unreadable project is `not_found` before any filesystem work starts.
-   * Node-admin is required on top: reading node-local bytes into a Space is at
-   * least as privileged as browsing the node's directories.
+   * Resolve the project's configured directory through the same
+   * projects -> space_projects scope edge used by execution.spawn. The
+   * space_projects SELECT policy applies internal.is_space_member, so omitting
+   * scopeSpaceId for list/read means "any linked Space this caller can read";
+   * attach supplies its destination Space and must be linked there exactly.
+   *
+   * The joined lookup intentionally makes an unlinked project and a missing
+   * project the same not_found answer. A projects-only probe followed by a
+   * separate link check would disclose which project ids exist on this node.
    */
-  private async project(ctx: RequestContext, projectId: string): Promise<{
+  private async project(ctx: RequestContext, projectId: string, scopeSpaceId?: string): Promise<{
     workingDir: string;
     claims: DbClaims;
     viewerIdentityId: string;
@@ -306,16 +317,27 @@ export class W2ProjectFilesService {
       identityId: viewerIdentityId,
       nodeAdmin: viewerIdentityId === owner.identityId ? owner.isNodeAdmin : false,
     };
-    if (claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to read project files');
-    }
     const rows = await this.deps.db.query<WorkingDirRow>(
       claims,
-      `select working_dir from public.projects where id = $1`,
-      [projectId],
+      `select p.working_dir
+         from public.projects p
+         join public.space_projects sp
+           on sp.project_id = p.id
+        where p.id = $1
+          and ($2::uuid is null or sp.space_id = $2)
+        order by sp.space_id
+        limit 1`,
+      [projectId, scopeSpaceId ?? null],
     );
     const row = rows[0];
-    if (!row) throw new CollabError('not_found', `no such project: ${projectId}`);
+    if (!row) {
+      throw new CollabError(
+        'not_found',
+        scopeSpaceId
+          ? `project ${projectId} is not linked to this space`
+          : `project ${projectId} is not linked to a readable space`,
+      );
+    }
     return { workingDir: row.working_dir, claims, viewerIdentityId };
   }
 }
