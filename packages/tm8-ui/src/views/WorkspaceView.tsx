@@ -520,6 +520,9 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               teammates={data.launch.teammates}
               projects={data.launch.projects}
               profiles={data.launch.profiles}
+              /* Undefined until the kind is hydrated, and the sheet draws that
+                 as "unknown" rather than "none" — see the picker's comment. */
+              memories={data.launch.memories}
               capacity={data.launch.capacity}
               onCancel={() => props.onLaunchCancel?.()}
               onLaunch={(config) => props.onLaunchSubmit?.(config)}

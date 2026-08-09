@@ -211,6 +211,22 @@ export function GateApp(props: GateAppProps = {}) {
      is stateless about outcomes by design. */
   const [launchRefusal, setLaunchRefusal] = useState<{ cause: string; detail: string } | null>(null);
 
+  /*
+   * Read memories only when a launch is actually being configured (D3a).
+   *
+   * NOT AT BOOT: the sheet is the one surface that offers them, and hydrating a
+   * whole kind on every boot for a picker most launches never open is a query
+   * bought for nobody. `ensureKind` guards on its own cache, so re-opening the
+   * sheet costs nothing.
+   *
+   * Until it lands `data.launch.memories` is undefined, and the sheet draws
+   * that as UNKNOWN rather than as an empty space — the two are different
+   * facts and only one of them is a measurement.
+   */
+  useEffect(() => {
+    if (launch.subjectId) data.ensureKind('memory');
+  }, [launch.subjectId, data]);
+
   /* GraphScreen takes its launch sources as a PROP (its data port is
      deliberately narrow), so the shell builds them here — from the same hook
      every other screen uses, so its Run config cannot be the one that shows

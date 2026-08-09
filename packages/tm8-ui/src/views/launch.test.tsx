@@ -16,7 +16,7 @@ import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
 import type { NavPort } from '../shell/nav-port';
 import { teamMemberForge } from '../fixtures';
-import { LAUNCH_CAPACITY, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
+import { LAUNCH_CAPACITY, LAUNCH_MEMORIES, LAUNCH_PROFILES, LAUNCH_PROJECTS, LAUNCH_TEAMMATES } from './launch-fixtures';
 
 const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) =>
   render(
@@ -305,4 +305,87 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     );
   });
 
+});
+
+// ---------------------------------------------------------------------------
+
+/**
+ * THE MEMORY PICKER (D3a, `memoryIds`).
+ *
+ * Two things here are easy to get wrong and expensive to notice later:
+ *
+ * 1. ABSENT IS NOT EMPTY. `memories === undefined` means nobody has read the
+ *    kind into this client; `memories === []` means the space has none. Only
+ *    the second is a measurement, and a picker that renders them the same way
+ *    reports a fact nobody established.
+ * 2. THE CAP IS THE CONTRACT'S. `memoryIds` is `max(32)` (schemas.ts:1662).
+ *    Enforced at the pick, not at the launch, so the 33rd is refused with a
+ *    reason instead of the node rejecting a launch already committed to.
+ */
+describe('the memory picker hands ids to spawn without becoming a manager', () => {
+  const openPicker = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = {}) => {
+    const view = renderSheet({ memories: LAUNCH_MEMORIES, ...props });
+    fireEvent.click(view.getByLabelText('Change picked memories'));
+    return view;
+  };
+
+  it('says the list is UNKNOWN when memories were never read, not empty', () => {
+    // The prop is omitted entirely — the boot-time state before `ensureKind`.
+    const { getByText, queryByLabelText } = renderSheet();
+    expect(getByText(/have not been read into this client/i)).toBeTruthy();
+    expect(getByText(/unknown, not empty/i)).toBeTruthy();
+    // …and there is nothing to open, because there is nothing to choose from.
+    expect(queryByLabelText('Change picked memories')).toBeNull();
+  });
+
+  it('says the SPACE is empty when the read happened and found none', () => {
+    const { getByText } = openPicker({ memories: [] });
+    expect(getByText(/This space has no memories yet/i)).toBeTruthy();
+  });
+
+  it('carries picked ids into onLaunch, and omits the field when none picked', () => {
+    const launches: Array<Record<string, unknown>> = [];
+    const { getByText, getByRole } = openPicker({
+      onLaunch: (config) => launches.push(config as unknown as Record<string, unknown>),
+    });
+
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    // An absent field and an empty array are not the same statement.
+    expect(launches[0] && 'memoryIds' in launches[0]).toBe(false);
+
+    fireEvent.click(getByText('tokens.css is verbatim — a byte-equality test guards it'));
+    fireEvent.click(getByText('The fixture seam drops fields it does not know'));
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect(launches[1]?.memoryIds).toEqual(['ent-mem-tokens', 'ent-mem-disputed']);
+  });
+
+  it('toggles a pick off again — it is a set, not a one-way door', () => {
+    const launches: Array<Record<string, unknown>> = [];
+    const { getByText, getByRole } = openPicker({
+      onLaunch: (config) => launches.push(config as unknown as Record<string, unknown>),
+    });
+    const row = getByText('tokens.css is verbatim — a byte-equality test guards it');
+    fireEvent.click(row);
+    fireEvent.click(row);
+    fireEvent.click(getByRole('button', { name: /Launch/ }));
+    expect(launches[0] && 'memoryIds' in launches[0]).toBe(false);
+  });
+
+  it('announces a SET, not a single choice, and shows each mark before the pick', () => {
+    const { getAllByRole, getByText } = openPicker();
+    // checkbox, never radio: a radiogroup would announce single-choice.
+    expect(getAllByRole('checkbox')).toHaveLength(3);
+    // A disputed claim cannot be picked without its mark being visible.
+    expect(getByText(/disputed · data\/fixtures/)).toBeTruthy();
+    // The SCOPE rides along — a true statement about the wrong subject is the
+    // failure the scope line exists to prevent.
+    expect(getByText(/unflagged · packages\/tm8-ui\/src\/styles\/tokens\.css/)).toBeTruthy();
+  });
+
+  it('is a picker and not a manager — no authoring controls anywhere in it', () => {
+    const { queryByTestId, queryByText } = openPicker();
+    expect(queryByTestId('memory-add')).toBeNull();
+    expect(queryByTestId('memory-forget')).toBeNull();
+    expect(queryByText(/remember something/i)).toBeNull();
+  });
 });

@@ -1,5 +1,5 @@
-import type { LaunchCapacity, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
-export type { LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
+import type { LaunchCapacity, LaunchMemory, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
+export type { LaunchMemory, LaunchProfile, LaunchProject, LaunchTeammate } from '../domain/launch';
 
 /**
  * Launch-sheet fixture data (D51: "fixtures grow accordingly — profiles in the
@@ -70,3 +70,42 @@ export const LAUNCH_PROFILES: readonly LaunchProfile[] = [
  * derived at the render site instead.
  */
 export const LAUNCH_CAPACITY: LaunchCapacity = { slotsFree: 5, slotsTotal: 8 };
+
+/**
+ * Memories for the spawn-time picker (D3a).
+ *
+ * The set is chosen so the picker's honesty states are all reachable: an
+ * unflagged claim, a disputed one (pickable, and the mark must be visible
+ * BEFORE the pick), and a superseded one — which the working set drops but an
+ * explicit pick does NOT, since `execution-handlers.ts:167` injects a memory
+ * the caller named by id. A fixture of three clean memories would render a
+ * picker in which none of that can be seen.
+ */
+export const LAUNCH_MEMORIES: readonly LaunchMemory[] = [
+  {
+    id: 'ent-mem-tokens',
+    statement: 'tokens.css is verbatim — a byte-equality test guards it',
+    subjectScope: 'packages/tm8-ui/src/styles/tokens.css on this branch',
+    mark: 'unflagged',
+    injectedWhenPicked: true,
+    detail: 'Nothing is marked against this memory. Unflagged is not verified.',
+  },
+  {
+    id: 'ent-mem-disputed',
+    statement: 'The fixture seam drops fields it does not know',
+    subjectScope: 'data/fixtures/seam-fixture.ts as of this revision',
+    mark: 'disputed',
+    injectedWhenPicked: true,
+    detail: '2 open disputes against this memory — evidence contradicts it.',
+  },
+  {
+    id: 'ent-mem-superseded',
+    statement: 'Panels have a border-box reset',
+    subjectScope: 'the panel stack as of an earlier revision',
+    mark: 'superseded',
+    // TRUE, and deliberately unlike the working set: naming an id is a
+    // different request from inheriting a persona's set.
+    injectedWhenPicked: true,
+    detail: 'A newer memory supersedes this one.',
+  },
+];
