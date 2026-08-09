@@ -297,6 +297,8 @@ export function createRealSeam(options: RealSeamOptions): RealSeam {
       complete: (uploadId, input) => ops.fileUploadComplete(uploadId, input),
       abort: (uploadId, input) => ops.fileUploadAbort(uploadId, input),
       downloadHref: (fileEntityId) => ops.fileDownloadHref(fileEntityId),
+      browse: (spaceId, projectId, path) => ops.fileBrowse(spaceId, projectId, path),
+      read: (spaceId, projectId, path) => ops.fileRead(spaceId, projectId, path),
     },
 
     // -- commands ------------------------------------------------------------

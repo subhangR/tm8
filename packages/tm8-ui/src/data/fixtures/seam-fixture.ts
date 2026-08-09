@@ -46,6 +46,7 @@ import {
   type EdgeView,
   type EntityContent,
   type EntityDetail,
+  type FileBrowseEntry,
   type EntityFeedPage,
   type EntityId,
   type EntityKindDef,
@@ -135,6 +136,32 @@ const CAPS_FULL: EntityDetail['capabilities'] = {
 
 const NO_CONNECTIONS: EntityDetail['connections'] = {
   outgoing: [], incoming: [], unresolvedHardDependencyCount: 0,
+};
+
+/**
+ * A stand-in project working directory for the Files browser (FILES-DESIGN
+ * §5.1). Keyed by directory path; '' is the project root.
+ *
+ * `.env` is present and MASKED on purpose. The fixture must reproduce the
+ * honest-degradation shape, not a tidy one: a screen that only ever sees
+ * readable files will render masking wrongly and no test would notice.
+ */
+const FIXTURE_TREE: Record<string, FileBrowseEntry[]> = {
+  '': [
+    { name: 'src', kind: 'dir', sizeBytes: null, modifiedAt: FIXTURE_NOW, mimeType: null, masked: false, maskReason: null, symlink: false },
+    { name: '.env', kind: 'file', sizeBytes: 82, modifiedAt: FIXTURE_NOW, mimeType: 'text/plain', masked: true, maskReason: 'secret-pattern', symlink: false },
+    { name: 'README.md', kind: 'file', sizeBytes: 214, modifiedAt: FIXTURE_NOW, mimeType: 'text/markdown', masked: false, maskReason: null, symlink: false },
+  ],
+  src: [
+    { name: 'index.ts', kind: 'file', sizeBytes: 48, modifiedAt: FIXTURE_NOW, mimeType: 'text/x-typescript', masked: false, maskReason: null, symlink: false },
+  ],
+};
+
+/** `null` means the fixture refuses the read; `undefined` means no such file. */
+const FIXTURE_FILE_TEXT: Record<string, string | null> = {
+  'README.md': '# demo-project\n\nA stand-in working directory.\n',
+  'src/index.ts': 'export const answer = 42;\n',
+  '.env': null,
 };
 
 /** Detail-only extras kept beside the summary; hierarchy is recomputed live. */
@@ -1304,6 +1331,55 @@ export function createFixtureSeam(): FixtureSeam {
        */
       downloadHref(fileEntityId) {
         return bindPath('files.download', { fileEntityId });
+      },
+      /**
+       * A small in-memory tree standing in for a project working directory
+       * (FILES-DESIGN §5.1). It deliberately carries the shapes a screen is
+       * most likely to render wrongly — a MASKED entry, a directory, and a
+       * read that REFUSES — so a fixture-driven surface has to face them
+       * rather than only ever seeing a happy path.
+       */
+      async browse(_spaceId, projectId, path = '') {
+        const node = FIXTURE_TREE[path];
+        if (!node) throw new CollabError('not_found', `no such directory: ${path || '.'}`);
+        return {
+          root: { projectId, name: 'demo-project', trust: 'trusted' },
+          path,
+          parentPath:
+            path === '' ? null : path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '',
+          entries: clone(node),
+          totalEntries: node.length,
+          truncated: false,
+        };
+      },
+      async read(_spaceId, _projectId, path) {
+        const text = FIXTURE_FILE_TEXT[path];
+        if (text === undefined) {
+          return {
+            path, mimeType: null, sizeBytes: 0, encoding: 'none' as const,
+            text: null, base64: null,
+            refusal: { reason: 'not-a-file' as const, detail: 'no such file in this project' },
+          };
+        }
+        if (text === null) {
+          return {
+            path, mimeType: null, sizeBytes: 0, encoding: 'none' as const,
+            text: null, base64: null,
+            refusal: {
+              reason: 'secret-pattern' as const,
+              detail: 'this file is withheld by the secret-name policy',
+            },
+          };
+        }
+        return {
+          path,
+          mimeType: path.endsWith('.ts') ? 'text/x-typescript' : 'text/plain',
+          sizeBytes: text.length,
+          encoding: 'utf8' as const,
+          text,
+          base64: null,
+          refusal: null,
+        };
       },
     },
 

@@ -196,11 +196,18 @@ function grantingServer(uploadId = UPLOAD): void {
 }
 
 describe('the file module and the cardinality of `file upload`', () => {
-  it('claims exactly three paths — upload, upload abort, download', () => {
+  // 3 -> 5 (2026-08-09): `file browse` and `file view` read the node's REAL
+  // filesystem inside a linked project (FILES-DESIGN §3). They stay separate
+  // from `file download` on purpose: `download` takes a file ENTITY ID and
+  // answers an uploaded blob's raw bytes, `view` takes a PATH and answers a
+  // structured view. One command could not honestly serve both.
+  it('claims exactly five paths — upload, upload abort, download, browse, view', () => {
     expect(FILE_COMMANDS.map((c) => c.path.join(' ')).sort()).toEqual([
+      'file browse',
       'file download',
       'file upload',
       'file upload abort',
+      'file view',
     ]);
   });
 

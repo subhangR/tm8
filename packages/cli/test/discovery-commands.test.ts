@@ -116,7 +116,7 @@ describe('the registry is composed from per-noun modules, and agrees with the pr
     // = 116 rows that have one; `files.uploadInit` + `files.uploadComplete` share
     // `file upload` and `artifacts.create` + `artifacts.publish` share
     // `artifact publish` ⇒ 113 DISTINCT paths.
-    expect(COMMAND_PATHS).toHaveLength(124);
+    expect(COMMAND_PATHS).toHaveLength(126);
     const registered = COMMANDS.filter((c) => isCommandPath(c.path));
     expect(registered.length).toBeLessThanOrEqual(COMMAND_PATHS.length);
     expect(registered.length).toBeGreaterThan(0);

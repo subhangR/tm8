@@ -1162,8 +1162,13 @@ export interface UpdateSpaceInput extends CommandContext {
 // W0 dossier: Space menu and shared settings revision
 // ---------------------------------------------------------------------------
 
-/** `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view. */
-export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings';
+/**
+ * `graph` added 2026-07-29 (additive union widening, R4) for the ◉ Graph view.
+ * `files` added 2026-08-09, same R4 posture, for the Files browser — it reads
+ * the node's real filesystem, so no `kind` ref could ever name it (a kind ref
+ * lists ENTITIES, and the browser mints none). FILES-DESIGN §5.3.
+ */
+export type MenuViewRef = 'dashboard' | 'feed' | 'inbox' | 'workspace' | 'graph' | 'channels' | 'settings' | 'files';
 /**
  * tm8: `worktree` became menu-VISIBLE 2026-07-31 (additive union widening,
  * same R4 posture as `graph`). Menu presence is list navigation only — a
@@ -2061,6 +2066,95 @@ export type FileUploadAbortInput = CommandContext;
  * the asymmetric bridge — is RESERVED for Phase 2 and must answer an honest
  * 501 until built (DEV-13).
  */
+
+// --- files browser — the node's real filesystem (FILES-DESIGN) --------------
+
+/**
+ * GET /v2/spaces/:spaceId/projects/:projectId/files?path=<relative>
+ *
+ * Lists ONE directory inside a linked project's `workingDir`. Never recursive:
+ * a recursive read of a repo carrying `node_modules` is unbounded work for a
+ * single request (FILES-DESIGN §4.3). `path` empty or absent means the root.
+ *
+ * These reads mint NO entity. A `file` entity is a REFERENCE to a file whose
+ * truth lives on disk, and browsing creates no references (§1.1).
+ */
+export interface FileBrowseQuery {
+  path?: string;
+}
+
+/** Why an entry's bytes are withheld. Never a silent empty body (§5.1). */
+export type FileRefusalReason =
+  | 'secret-pattern'
+  | 'too-large'
+  | 'binary-not-previewable'
+  | 'not-a-file'
+  | 'outside-root'
+  | 'unreadable';
+
+export interface FileRefusal {
+  reason: FileRefusalReason;
+  detail: string;
+}
+
+export interface FileBrowseEntry {
+  name: string;
+  kind: 'dir' | 'file' | 'other';
+  /** null for directories, and for anything whose size could not be measured. */
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+  mimeType: string | null;
+  /**
+   * The entry is LISTED but its content is refused. Masking hides bytes, never
+   * existence — a tree with silent holes teaches the reader a lie (§4.2).
+   */
+  masked: boolean;
+  maskReason?: FileRefusalReason | null;
+  /** True when the entry itself is a symlink, whether or not it escapes. */
+  symlink: boolean;
+}
+
+export interface FileBrowseRoot {
+  projectId: ProjectId;
+  name: string;
+  trust: ProjectTrustLevel;
+}
+
+export interface FileBrowseView {
+  root: FileBrowseRoot;
+  /** Normalised, relative, POSIX-separated. Empty string at the project root. */
+  path: string;
+  /** null at the root — there is nowhere above the jail to go. */
+  parentPath: string | null;
+  entries: FileBrowseEntry[];
+  /** True count on disk, which may exceed `entries.length` when truncated. */
+  totalEntries: number;
+  truncated: boolean;
+}
+
+/** GET /v2/spaces/:spaceId/projects/:projectId/files/content?path=<relative> */
+export interface FileReadQuery {
+  path: string;
+}
+
+/**
+ * One file's content, or an honest refusal. `encoding` says which field carries
+ * it: 'utf8' fills `text`, 'base64' fills `base64`, 'none' means `refusal` is
+ * set and both are null.
+ *
+ * Text rides a JSON FIELD, never an inline document on the app origin — nothing
+ * from a project's disk is handed to the browser as something it might execute
+ * (§4.4).
+ */
+export interface FileReadView {
+  path: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  encoding: 'utf8' | 'base64' | 'none';
+  text: string | null;
+  base64: string | null;
+  refusal: FileRefusal | null;
+}
 
 // --- W0 amendment DTOs -------------------------------------------------------
 

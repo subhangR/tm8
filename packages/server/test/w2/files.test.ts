@@ -137,11 +137,17 @@ afterEach(async () => {
 });
 
 describe('W2.G07 file facade and blob store', () => {
-  it('registers exactly the four v1 file operations and leaves bridge.fetchBlob reserved', async () => {
+  // 4 -> 6 (2026-08-09): `files.browse` and `files.read`, the Files browser's
+  // reads over the node's REAL filesystem (FILES-DESIGN §5.1). They share
+  // nothing with the blob lifecycle — no upload slot, no blob store, no entity
+  // — and are registered from a separate service for exactly that reason.
+  it('registers exactly the six v1 file operations and leaves bridge.fetchBlob reserved', async () => {
     const dataDir = await tempDataDir();
     const registry = configuredRegistry(new FakeDb(), dataDir);
     expect(registry.implemented()).toEqual([
+      'files.browse',
       'files.download',
+      'files.read',
       'files.uploadAbort',
       'files.uploadComplete',
       'files.uploadInit',

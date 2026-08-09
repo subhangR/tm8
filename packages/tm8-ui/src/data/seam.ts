@@ -80,6 +80,8 @@ import type {
   ExecutionSpawnInput,
   ExecutionResumeInput,
   ExecutionTerminateInput,
+  FileBrowseView,
+  FileReadView,
   FileUploadAbortInput,
   FileUploadCompleteInput,
   FileUploadGrant,
@@ -387,6 +389,23 @@ export interface Seam {
      * href is only as good as the viewer's session.
      */
     downloadHref(fileEntityId: EntityId): string;
+    /**
+     * Amendment 6 (2026-08-09, Files browser). Two reads over the node's REAL
+     * filesystem, root-jailed to a project linked to the space
+     * (FILES-DESIGN §5.1).
+     *
+     * These are NOT the blob lifecycle above and must not be mistaken for it:
+     * `downloadHref` addresses an uploaded blob by FILE ENTITY ID, while these
+     * address a PATH inside a project and mint no entity at all. A surface
+     * using one where it meant the other would silently read the wrong thing.
+     *
+     * `read` answers a DTO rather than a URL — deliberately the opposite of
+     * `downloadHref` — because a project's bytes must never reach the browser
+     * as a document on the app origin (§4.4). Text rides a JSON field and the
+     * UI renders it into a `<pre>`.
+     */
+    browse(spaceId: SpaceId, projectId: string, path?: string): Promise<FileBrowseView>;
+    read(spaceId: SpaceId, projectId: string, path: string): Promise<FileReadView>;
   };
 
   // -- commands (contract input types VERBATIM; the caller supplies

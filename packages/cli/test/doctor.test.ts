@@ -160,7 +160,7 @@ describe('doctor registers as a LOCAL command, never as a catalog operation', ()
    */
   it('is ABSENT from the operation catalog, and the catalog count is unmoved', () => {
     expect(isCommandPath(['doctor'])).toBe(false);
-    expect(COMMAND_PATHS).toHaveLength(124);
+    expect(COMMAND_PATHS).toHaveLength(126);
   });
 
   it('is reachable through run() and never reports "unknown command"', async () => {

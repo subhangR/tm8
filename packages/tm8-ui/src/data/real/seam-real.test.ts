@@ -291,8 +291,14 @@ describe('seam-real: prepare-not-wire is a type-level property', () => {
     // member that answers a URL rather than a DTO, because `files.download`
     // answers raw bytes and a browser reaches those through `href`/`src`.
     // Locked here so the file group cannot grow a verb in silence.
+    // Amendment 6 (2026-08-09, Files browser): `browse` and `read` — two reads
+    // over the node's REAL filesystem, root-jailed to a project linked to the
+    // space. They are NOT the blob lifecycle: `downloadHref` addresses an
+    // uploaded blob by FILE ENTITY ID, these address a PATH inside a project
+    // and mint no entity. The lock and the verbs move in ONE commit, which is
+    // what this list exists to force.
     expect(Object.keys(seam.files).sort()).toEqual([
-      'abort', 'complete', 'downloadHref', 'putBytes', 'uploadInit',
+      'abort', 'browse', 'complete', 'downloadHref', 'putBytes', 'read', 'uploadInit',
     ]);
     for (const m of ['openSpace', 'closeSpace', 'dispose', 'onEvent', 'onConnection', 'getConnection',
       'onResync', 'identity', 'spaces', 'menu', 'query', 'entityKinds', 'entity', 'children',

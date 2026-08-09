@@ -114,7 +114,7 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  it('keeps the exact 128 = 126 v1 + 2 reserved, 127 HTTP + 1 WS boundary', () => {
+  it('keeps the exact 130 = 128 v1 + 2 reserved, 129 HTTP + 1 WS boundary', () => {
     // A21 (execution.liveness), then voice.token.create, are the +1s on every axis they touch.
     // The six artifacts rows (create/publish/revisions.list/preview.start/export/restore) are
     // the latest +6 on OPERATIONS and V1: +4 POST commands, +2 GET reads.
@@ -123,19 +123,22 @@ describe('W2.G15 catalog and production-handler accounting', () => {
     // 121 -> 126 (2026-08-02): auth.signup/login/logout/session.get (Identity v2 Stage 1).
     // 126 -> 127 (2026-08-02): execution.launch, one GET read.
     // 127 -> 128 (2026-08-07): execution.transcript, one GET read.
-    expect(OPERATIONS).toHaveLength(128);
-    expect(V1_OPERATIONS).toHaveLength(126);
+    // 128 -> 130 (2026-08-09): files.browse + files.read, two GET reads — the
+    // Files browser over the node's real filesystem (FILES-DESIGN §5.1).
+    // Measured off the built catalog, not derived as previous-plus-two.
+    expect(OPERATIONS).toHaveLength(130);
+    expect(V1_OPERATIONS).toHaveLength(128);
     expect(RESERVED_OPERATIONS.map(({ name }) => name)).toEqual([
       'search.query',
       'bridge.fetchBlob',
     ]);
-    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(127);
+    expect(OPERATIONS.filter(({ method }) => method !== 'WS')).toHaveLength(129);
     expect(OPERATIONS.filter(({ method }) => method === 'WS')).toEqual([
       expect.objectContaining({ name: 'events.subscribe', path: '/v2/ws', status: 'v1' }),
     ]);
     expect(OPERATIONS.filter(
       ({ method, status }) => method !== 'WS' && status === 'v1',
-    )).toHaveLength(125);
+    )).toHaveLength(127);
   });
 
   it('mechanically partitions every mounted handler and every residual v1 HTTP operation', () => {

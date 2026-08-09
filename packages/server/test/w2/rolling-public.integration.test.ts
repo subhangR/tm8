@@ -238,12 +238,24 @@ const ONBOARDING_NET_NEW_OPERATIONS = [
   'projects.directories.list',
 ] as const;
 
+/**
+ * The Files browser (2026-08-09, FILES-DESIGN §5.1): two reads over the node's
+ * REAL filesystem, root-jailed to a project linked to the space. They mint no
+ * entity and touch no blob store, which is why they are their own tranche
+ * rather than an extension of the `files.*` upload lifecycle.
+ */
+const FILES_BROWSER_NET_NEW_OPERATIONS = [
+  'files.browse',
+  'files.read',
+] as const;
+
 const EXPECTED_TRANCHE_V3_FACADE_OPERATIONS: readonly string[] = [
   ...EXPECTED_TRANCHE_V2_FACADE_OPERATIONS,
   ...TRANCHE_V3_NET_NEW_OPERATIONS,
   ...CONSOLIDATION_NET_NEW_OPERATIONS,
   ...IDENTITY_V2_NET_NEW_OPERATIONS,
   ...ONBOARDING_NET_NEW_OPERATIONS,
+  ...FILES_BROWSER_NET_NEW_OPERATIONS,
 ].sort();
 
 /** Substituted for every `:param` so one probe covers any catalog path shape. */
@@ -365,14 +377,16 @@ describe('W2.I02 tranche-v2 public composition', () => {
     // 107 -> 108 on 2026-08-01: `spaces.counts` joined the facade tranche.
     // 108 -> 109: `identity.profile.update` (Identity v2 Stage 0).
     // 109 -> 113 (2026-08-02): the four auth.* operations (Stage 1).
-    expect(registry.size).toBe(114);
+    // 114 -> 116 (2026-08-09): `files.browse` + `files.read`.
+    expect(registry.size).toBe(116);
     expect(registry.size).toBe(
       TRANCHE_V1_FACADE_OPERATIONS.length
         + G02_NET_NEW_OPERATIONS.length
         + TRANCHE_V3_NET_NEW_OPERATIONS.length
         + CONSOLIDATION_NET_NEW_OPERATIONS.length
         + IDENTITY_V2_NET_NEW_OPERATIONS.length
-        + ONBOARDING_NET_NEW_OPERATIONS.length,
+        + ONBOARDING_NET_NEW_OPERATIONS.length
+        + FILES_BROWSER_NET_NEW_OPERATIONS.length,
     );
     expect(registry.has('search.query')).toBe(false);
     expect(registry.has('bridge.fetchBlob')).toBe(false);
@@ -658,10 +672,14 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 120/118 -> 126/122 (2026-08-02): the four auth.* rows, all implemented.
     // 126/122 -> 127/124 (2026-08-02): `execution.launch`, mounted.
     // 127/124 -> 128/125 (2026-08-07): `execution.transcript`, mounted.
-    expect(health).toMatchObject({ ok: true, operations: 127, implemented: 125 });
+    // 128/125 -> 130/127 (2026-08-09): `files.browse` + `files.read`, mounted.
+    // NOTE `operations` counts HTTP ROUTES, not catalog rows, so it trails
+    // OPERATIONS.length by the single WS row: 130 rows -> 129 routes.
+    expect(health).toMatchObject({ ok: true, operations: 129, implemented: 127 });
     // 118 -> 122 (2026-08-02): the four auth.* operations (Stage 1).
     // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
-    expect(harness.production.server.registry.size).toBe(125);
+    // 125 -> 127 (2026-08-09): `files.browse`, `files.read`.
+    expect(harness.production.server.registry.size).toBe(127);
 
     // Residual honesty, derived from the live catalog rather than a literal.
     // This is now ZERO: every registerable v1 HTTP operation is mounted, and the
@@ -676,7 +694,8 @@ describe.sequential('W2.I02 real production public surface', () => {
     // 114 -> 116: `execution.resume` + `spaces.counts`.
     // 116 -> 118: `execution.journal` + `identity.profile.update`.
     // 122 -> 125 (2026-08-07): `execution.launch`, `execution.transcript`.
-    expect(registered.size + residual.length).toBe(125);
+    // 125 -> 127 (2026-08-09): `files.browse`, `files.read`.
+    expect(registered.size + residual.length).toBe(127);
     expect(residual).not.toContain('search.query');
     expect(residual).not.toContain('bridge.fetchBlob');
 

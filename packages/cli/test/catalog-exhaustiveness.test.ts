@@ -34,7 +34,7 @@ import { isExitCode } from '../src/exit.js';
 // 126 -> 127 (2026-08-02): execution.launch — a session's spawn-time configuration.
 // 127 -> 128 (2026-08-09): execution.transcript — what the agent actually said.
 // Re-pinned to the MEASURED OPERATIONS.length, not to previous-plus-one.
-const EXPECTED_ROWS = 128;
+const EXPECTED_ROWS = 130;
 
 const params = (name: OperationName): Record<string, string> =>
   Object.fromEntries(pathParamNames(name).map((p) => [p, `x_${p}`]));
@@ -42,7 +42,7 @@ const params = (name: OperationName): Record<string, string> =>
 describe('the catalog itself is the shape W4 was briefed on', () => {
   it('128 rows = 126 v1 + 2 reserved, 127 HTTP + 1 WS', () => {
     expect(OPERATIONS.length).toBe(EXPECTED_ROWS);
-    expect(V1_OPERATIONS.length).toBe(126);
+    expect(V1_OPERATIONS.length).toBe(128);
     expect(RESERVED_OPERATIONS.map((o) => o.name).sort()).toEqual(['bridge.fetchBlob', 'search.query']);
     expect(OPERATIONS.filter((o) => o.method === 'WS')).toHaveLength(1);
   });
@@ -118,9 +118,9 @@ describe('every row resolves through the client and the error mapping', () => {
     expect(resolved.size).toBe(EXPECTED_ROWS);
     // 127 HTTP rows produced an honest 8; the single WS row produced usage 2
     // without a request. Both are resolutions; neither is a fall-through.
-    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(127);
+    expect([...resolved.values()].filter((c) => c === 8)).toHaveLength(129);
     expect([...resolved.entries()].filter(([, c]) => c === 2)).toEqual([['events.subscribe', 2]]);
-    expect(requested).toHaveLength(127);
+    expect(requested).toHaveLength(129);
   });
 
   it('a success on EVERY row is returned, not mistaken for drift', async () => {
@@ -153,7 +153,7 @@ describe('every row resolves through the client and the error mapping', () => {
         expect(data.echoed, op.name).toContain(bindPath(op.name, params(op.name)));
       }
     }
-    expect(httpRows).toBe(127);
+    expect(httpRows).toBe(129);
   });
 });
 

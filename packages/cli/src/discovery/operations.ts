@@ -885,6 +885,32 @@ const ROWS: Record<OperationName, Row> = {
     tags: ['fetch', 'blob', 'get'],
     notes: ['answers with raw bytes, so it is mutually exclusive with structured output'],
   },
+  'files.browse': {
+    cmd: ['file', 'browse'],
+    syn: 'tm8 file browse --space <space-id> --project <project-id> [--path <relative-path>]',
+    sum: 'List ONE directory inside a linked project working directory on the node',
+    authz: 'space',
+    input: 'none',
+    tags: ['browse', 'filesystem', 'list'],
+    notes: [
+      'reads the REAL filesystem, not the graph: it mints no entity and returns no file entity ids',
+      'never recursive — one directory per call, so no single request can be made unbounded',
+      'root-jailed to the project working directory; a symlink that escapes it is refused by name',
+      'secret-named files are LISTED but their bytes are withheld, so the tree never lies by omission',
+    ],
+  },
+  'files.read': {
+    cmd: ['file', 'view'],
+    syn: 'tm8 file view --space <space-id> --project <project-id> --path <relative-path>',
+    sum: 'Read one file content from a linked project working directory on the node',
+    authz: 'space',
+    input: 'none',
+    tags: ['fetch', 'filesystem', 'view'],
+    notes: [
+      'answers a structured view, NOT raw bytes — unlike `file download`, which reads an uploaded blob',
+      'a withheld file answers a NAMED refusal (secret-pattern, too-large, binary-not-previewable, outside-root), never a silent empty body',
+    ],
+  },
   'bridge.fetchBlob': {
     cmd: null,
     sum: 'Cross-node blob fetch over the asymmetric Phase-2 bridge — RESERVED, and deliberately never a public command',
@@ -1570,7 +1596,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:8bd14e1574ae5d8f85a971d06893815d16c73aaa97eb158d9df9c8a7081a3430';
+  'sha256:d1dfcd3a46cdf92f38e17786c7cd4dd4415eed5d281a3a26a4952af462e42935';
 
 export const GRAMMAR_VERSION = '2';
 

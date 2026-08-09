@@ -295,7 +295,7 @@ describe('CLASS SWEEP: every flag the projection publishes can actually be recei
     // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
     // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
     // 127 -> 128 (2026-08-07): execution.transcript (public, with a command).
-    expect(rows.length).toBe(128);
+    expect(rows.length).toBe(130);
     expect(rows.filter((r) => r.syntax !== null).length).toBeGreaterThan(90);
     const result = sweep(rows);
     expect(result.valueProbes).toBeGreaterThan(100);

@@ -40,6 +40,8 @@ import {
   type CommandContext,
   type CommandResult,
   type CompleteTaskInput,
+  type FileBrowseView,
+  type FileReadView,
   type CreateEdgeInput,
   type CreateEntityInput,
   type CreateSpaceInput,
@@ -486,6 +488,35 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
      */
     fileDownloadHref(fileEntityId: EntityId): string {
       return `${http.baseUrl}${bindPath('files.download', { fileEntityId })}`;
+    },
+
+    /**
+     * The Files browser (FILES-DESIGN §5.1). Reads the node's REAL filesystem
+     * inside a project linked to the space — NOT the blob store and NOT the
+     * graph: neither call mints or names a file entity.
+     *
+     * `path` is sent even when empty, because '' is the meaningful value for
+     * "the project root"; omitting it would make the root indistinguishable
+     * from a missing argument.
+     */
+    fileBrowse(spaceId: SpaceId, projectId: string, path = ''): Promise<FileBrowseView> {
+      return http.call<FileBrowseView>('files.browse', {
+        params: { spaceId, projectId },
+        query: { path },
+      });
+    },
+
+    /**
+     * Answers a DTO, deliberately NOT an href like `fileDownloadHref`: a
+     * project's bytes must never reach the browser as a document on the app
+     * origin (§4.4). A withheld file arrives as a NAMED `refusal` inside a 200,
+     * so a caller can tell "you may not read this" from a transport failure.
+     */
+    fileRead(spaceId: SpaceId, projectId: string, path: string): Promise<FileReadView> {
+      return http.call<FileReadView>('files.read', {
+        params: { spaceId, projectId },
+        query: { path },
+      });
     },
 
     /** Answers `MessageBatchResult` — the seam's union member, passed through. */

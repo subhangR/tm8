@@ -405,6 +405,99 @@ function renderUploaded(dto: unknown): string {
 }
 
 /**
+ * `file browse` / `file view` — the node's REAL filesystem, root-jailed to a
+ * project linked to the space (FILES-DESIGN §3).
+ *
+ * These read DISK, not the graph. They mint no entity and answer no file entity
+ * id, which is why `file view` is a separate command from `file download`:
+ * `download` reads an uploaded BLOB by entity id, `view` reads a PATH inside a
+ * project. Collapsing them into one command would have to lie about one of the
+ * two, since they take different identifiers and answer different shapes.
+ */
+async function fileBrowse(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('file browse', cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const projectId = requireArg(
+    cmd.options.value('project'), 'file browse', '--project <project-id>',
+  );
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'files.browse', {
+    params: { spaceId, projectId },
+    query: { path: cmd.options.value('path') ?? '' },
+  });
+  cmd.out.data(data, renderBrowse);
+  return EXIT_OK;
+}
+
+async function fileView(cmd: CommandContext): Promise<ExitCode> {
+  refuseMutationId('file view', cmd.options.value('mutation-id'));
+  const spaceId = requireSpace(cmd.ctx);
+  const projectId = requireArg(
+    cmd.options.value('project'), 'file view', '--project <project-id>',
+  );
+  const path = requireArg(cmd.options.value('path'), 'file view', '--path <relative-path>');
+  const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'files.read', {
+    params: { spaceId, projectId },
+    query: { path },
+  });
+  cmd.out.data(data, renderView);
+  return EXIT_OK;
+}
+
+interface BrowseEntryShape {
+  name: string;
+  kind: string;
+  sizeBytes: number | null;
+  masked: boolean;
+  symlink: boolean;
+}
+interface BrowseShape {
+  path: string;
+  entries: BrowseEntryShape[];
+  totalEntries: number;
+  truncated: boolean;
+}
+interface ViewShape {
+  path: string;
+  sizeBytes: number;
+  encoding: string;
+  text: string | null;
+  refusal: { reason: string; detail: string } | null;
+}
+
+function renderBrowse(data: unknown): string {
+  const view = data as BrowseShape;
+  const lines = view.entries.map((entry) => {
+    const marker = entry.kind === 'dir' ? '/' : '';
+    // A masked entry is SHOWN, with the withholding stated. Omitting it would
+    // teach the reader that the file does not exist (FILES-DESIGN §4.2).
+    const notes = [
+      entry.symlink ? '-> symlink' : '',
+      entry.masked ? '[withheld: secret-pattern]' : '',
+    ].filter(Boolean).join(' ');
+    const size = entry.kind === 'dir' || entry.sizeBytes === null ? '' : `${entry.sizeBytes}`;
+    return `  ${entry.name}${marker}\t${size}\t${notes}`.trimEnd();
+  });
+  const header = `${view.path === '' ? '.' : view.path} (${view.totalEntries} entries)`;
+  const footer = view.truncated
+    ? `  … showing ${view.entries.length} of ${view.totalEntries}; narrow the path to see the rest`
+    : '';
+  return [header, ...lines, footer].filter(Boolean).join('\n');
+}
+
+function renderView(data: unknown): string {
+  const view = data as ViewShape;
+  if (view.refusal) {
+    // Named, never a silent empty body — the caller can tell "withheld" from
+    // "empty file" without guessing.
+    return `${view.path}: withheld (${view.refusal.reason}) — ${view.refusal.detail}`;
+  }
+  if (view.encoding === 'base64') {
+    return `${view.path}: ${view.sizeBytes} bytes of binary media; not rendered as text`;
+  }
+  return view.text ?? '';
+}
+
+/**
  * The array `commands/registry.ts` imports and spreads. `file upload` appears
  * ONCE even though it performs two durable operations.
  */
@@ -412,4 +505,6 @@ export const FILE_COMMANDS: CommandModule[] = [
   { path: ['file', 'upload'], run: fileUpload },
   { path: ['file', 'upload', 'abort'], run: fileUploadAbort },
   { path: ['file', 'download'], run: fileDownload },
+  { path: ['file', 'browse'], run: fileBrowse },
+  { path: ['file', 'view'], run: fileView },
 ];

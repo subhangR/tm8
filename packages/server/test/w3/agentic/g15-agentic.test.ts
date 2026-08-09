@@ -31,7 +31,12 @@ import {
 // already gone stale on the tree (several amendments landed without moving
 // it); re-derived 2026-08-01 alongside identity.profile.update.
 // Re-derived 2026-08-07 alongside execution.transcript — the catalog is now 128 rows.
-const CATALOG_DIGEST = 'sha256:8bd14e1574ae5d8f85a971d06893815d16c73aaa97eb158d9df9c8a7081a3430';
+// Re-derived 2026-08-09 alongside files.browse + files.read — now 130 rows.
+// NOTE this literal is one of THREE copies: the others are
+// `packages/cli/src/discovery/operations.ts` and the generated
+// `tools/conformance/generated/w1-conformance-manifest.json`. Moving one and
+// not the others leaves a red that is easy to misattribute to the catalog.
+const CATALOG_DIGEST = 'sha256:d1dfcd3a46cdf92f38e17786c7cd4dd4415eed5d281a3a26a4952af462e42935';
 const FILLER_ID = '00000000-0000-4000-8000-000000000001';
 
 interface DiscoveredOperation {
@@ -102,7 +107,7 @@ describe('G15 reserved and residual honesty, via generated discovery only', () =
     // 125 -> 126 (2026-08-02): execution.launch.
     // The 126 literal was ALREADY red at 127 when this lane arrived (the
     // onboarding read landed without moving it); 128 adds execution.transcript.
-    expect(root.catalog.total).toBe(128);
+    expect(root.catalog.total).toBe(130);
     expect(root.catalog.reserved).toBe(2);
     expect(root.nouns.length).toBeGreaterThan(0);
 

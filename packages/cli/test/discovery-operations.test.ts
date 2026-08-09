@@ -48,7 +48,7 @@ import { createOutput } from '../src/output.js';
 
 // 121 -> 126 (2026-08-02): auth.* Identity v2 Stage 1 (4 ops, all public, all with commands).
 // 126 -> 127 (2026-08-02): execution.launch (public, with a command).
-const EXPECTED_ROWS = 128;
+const EXPECTED_ROWS = 130;
 
 const MANIFEST_PATH = fileURLToPath(
   new URL('../../../tools/conformance/generated/w1-conformance-manifest.json', import.meta.url),
@@ -156,7 +156,7 @@ describe('the exposure histogram is the one the catalog freeze specifies', () =>
   it('124 public, 1 composite, 1 internal, 2 reserved', () => {
     const histogram = { public: 0, composite: 0, internal: 0, reserved: 0 };
     for (const d of DISCOVERY) histogram[d.exposure]++;
-    expect(histogram).toEqual({ public: 124, composite: 1, internal: 1, reserved: 2 });
+    expect(histogram).toEqual({ public: 126, composite: 1, internal: 1, reserved: 2 });
   });
 });
 

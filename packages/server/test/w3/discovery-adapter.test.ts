@@ -17,12 +17,14 @@ describe('W3 evaluator-owned generated discovery adapter', () => {
         // -> {127/124/126/122} (2026-08-02: the four auth.* rows, Stage 1).
         // -> {127/125/126/124} (2026-08-02: execution.launch + onboarding read).
         // -> {128/126/127/125} (2026-08-07: execution.transcript).
-        total: 128,
-        v1: 126,
+        // -> {130/128/129/127} (2026-08-09: files.browse + files.read, the
+        // Files browser's two reads over the node's real filesystem).
+        total: 130,
+        v1: 128,
         reserved: 2,
-        http: 127,
+        http: 129,
         ws: 1,
-        registerableV1Http: 125,
+        registerableV1Http: 127,
       },
       nouns: expect.arrayContaining([
         { noun: 'edge', operationCount: 4 },

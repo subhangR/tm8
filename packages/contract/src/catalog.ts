@@ -117,6 +117,10 @@ export const OPERATIONS = [
   { name: 'files.uploadComplete',    method: 'POST',   path: '/v2/files/uploads/:uploadId/complete',        kind: 'command', status: 'v1' },
   { name: 'files.uploadAbort',       method: 'POST',   path: '/v2/files/uploads/:uploadId/abort',           kind: 'command', status: 'v1' },
   { name: 'files.download',          method: 'GET',    path: '/v2/files/:fileEntityId/download',            kind: 'read',    status: 'v1' },
+  // files browser — the node's REAL filesystem, root-jailed to a linked project
+  // (FILES-DESIGN §3). Reads only: they mint no entity and touch no blob store.
+  { name: 'files.browse',            method: 'GET',    path: '/v2/spaces/:spaceId/projects/:projectId/files',         kind: 'read', status: 'v1' },
+  { name: 'files.read',              method: 'GET',    path: '/v2/spaces/:spaceId/projects/:projectId/files/content', kind: 'read', status: 'v1' },
   // cross-node blob fetch over the asymmetric bridge — Phase 2, honest 501 (DEV-13)
   { name: 'bridge.fetchBlob',        method: 'GET',    path: '/v2/bridge/blobs/:fileEntityId',              kind: 'read',    status: 'reserved' },
 
