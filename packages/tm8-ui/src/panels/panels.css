@@ -1394,9 +1394,6 @@
   color: var(--pn-ink-4);
   cursor: pointer;
 }
-/* NEEDS YOU wears the wait ramp: "an agent is blocked on you" is a different
-   class of fact from "here are your open items". */
-.cv2-root .lp__eyebrow--attention { color: var(--pn-wait); }
 .cv2-root .lp__collapsed {
   appearance: none;
   border: 0;

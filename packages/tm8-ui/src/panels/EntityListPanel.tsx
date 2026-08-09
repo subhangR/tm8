@@ -1751,7 +1751,8 @@ function Band({
 }) {
   const rows = filter === null ? NO_ROWS : props.rowsFor(filter, sort);
   const page = filter === null ? undefined : props.pageStateOf?.(filter, sort);
-  const { attention, rest } = splitAttention(matching(rows, query ?? ''), props, config);
+  const visible = matching(rows, query ?? '');
+  const attentionIds = attentionIdsOf(visible, props, config);
 
   if (label && collapsed) {
     // A collapsed section reduces to ONE clickable line pinned at the bottom —
@@ -1765,32 +1766,22 @@ function Band({
 
   return (
     <>
-      {/* NEEDS ATTENTION sorts above the ordinary band. It is its own amber band
-          because an explicit request for human attention is a
-          different class of fact from "these are your open items". */}
-      {attention.length > 0 ? (
-        <>
-          <div className="lp__eyebrow lp__eyebrow--attention">{`NEEDS ATTENTION · ${attention.length}`}</div>
-          {/* Same tree class as the main band — a control-card kind must not
-              render its NEEDS-YOU rows as gapped cards and its ordinary rows
-              as an attached column. */}
-          <div className={treeClass(config)} role="list">
-            {attention.map((row) => (
-              <div key={row.id} className="lp__branch" role="listitem">
-                <Tile row={row} props={props} config={config} attention />
-              </div>
-            ))}
-          </div>
-        </>
-      ) : null}
-
+      {/* USER RULING — attention is marked IN PLACE, never hoisted.
+          Needing attention used to promote a row into its own flat band above
+          the list. That band pulled the row OUT of the set `buildTileTree`
+          arranges, and a tree only nests a row whose parent is also in that
+          set — so flagging one parent session re-rooted every child it had and
+          the hierarchy the user was reading fell apart. The row is the same
+          row; being flagged is a fact ABOUT it, not a reason to move it. The
+          amber tile treatment and its `Needs attention` label already say so
+          without disturbing the shape around it. */}
       {label ? (
         <button type="button" className="lp__eyebrow" onClick={onToggle}>
-          {`${label.toUpperCase()} · ${rest.length}`}
+          {`${label.toUpperCase()} · ${visible.length}`}
         </button>
       ) : null}
 
-      {rest.length === 0 && attention.length === 0 ? (
+      {visible.length === 0 ? (
         /*
          * A filter that hides every row and says nothing looks identical to a
          * list that failed to load (A1a's ask). The states get different
@@ -1815,7 +1806,7 @@ function Band({
           />
         )
       ) : (
-        <TreeRows rows={rest} props={props} config={config} />
+        <TreeRows rows={visible} props={props} config={config} attentionIds={attentionIds} />
       )}
 
       {/* PAGING IS THE BAND'S, because the query is the band's. Rendered after
@@ -1885,22 +1876,21 @@ function LoadMoreSentinel({ loading, onReach }: { loading: boolean; onReach: () 
  * (currently session liveness); that predicate remains dormant without its
  * authoritative liveness source.
  */
-function splitAttention(
+function attentionIdsOf(
   rows: readonly EntitySummary[],
   props: EntityListPanelProps,
   config: KindConfig,
-): { attention: EntitySummary[]; rest: EntitySummary[] } {
+): ReadonlySet<string> {
   const predicate = config.list.needsAttentionGroup;
 
-  const attention: EntitySummary[] = [];
-  const rest: EntitySummary[] = [];
+  const marked = new Set<string>();
   for (const row of rows) {
     const derivedAttention = Boolean(
       predicate && props.livenessOf && predicate(toRowFacts(row), props.livenessOf(row.id)),
     );
-    (row.badges.attention || derivedAttention ? attention : rest).push(row);
+    if (row.badges.attention || derivedAttention) marked.add(row.id);
   }
-  return { attention, rest };
+  return marked;
 }
 
 /**
@@ -1914,10 +1904,13 @@ function TreeRows({
   rows,
   props,
   config,
+  attentionIds,
 }: {
   rows: readonly EntitySummary[];
   props: EntityListPanelProps;
   config: KindConfig;
+  /** Rows to mark amber where they stand. Absent ⇒ nothing is flagged. */
+  attentionIds?: ReadonlySet<string>;
 }) {
   /**
    * Collapsed, not expanded: rows remain visible by default (the existing
@@ -1970,6 +1963,7 @@ function TreeRows({
           depth={node.depth}
           props={props}
           config={config}
+          attention={attentionIds?.has(node.row.id) ?? false}
           childCount={node.children.length}
           expanded={!isCollapsed}
           onToggleChildren={hasChildren ? () => toggle(node.row.id) : undefined}

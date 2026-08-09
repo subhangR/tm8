@@ -420,13 +420,27 @@ const sessionLiveTreatment = (live: SessionLiveness): LiveTreatment => {
 };
 
 /**
- * 'NEEDS YOU' grouping — designed-but-dormant per R8. The predicate is real
- * and the group renders whenever it fires; no server detection exists in this
- * program, so on real data it stays quiet. It consumes the seam verdict and
- * the row's own recorded status — it derives neither.
+ * 'NEEDS YOU' grouping — designed-but-dormant per R8.
+ *
+ * This was written as `live === 'live' && row.status === 'idle'`, and it stayed
+ * quiet for the wrong reason: `statusOf` used to answer 'not-running' for every
+ * idle session, so the conjunction was UNREACHABLE. Dormancy was an accident of
+ * a defect, not a property of the predicate. The moment idle was correctly
+ * admitted to the live side, this fired on every quiet session at once — the
+ * whole list banded as NEEDS ATTENTION, and because the attention band renders
+ * flat, the session hierarchy disappeared with it.
+ *
+ * 'idle' means the PTY produced no output recently. That is QUIET, not BLOCKED.
+ * An autonomous worker between turns is idle and wants nothing; an agent
+ * genuinely waiting on a human is idle too, and nothing on this row tells the
+ * two apart. A badge that fires on both is not a signal.
+ *
+ * So the grouping stays dormant DELIBERATELY now, and the only thing that can
+ * raise it is an explicit server-side fact — `summary.badges.attention`, which
+ * the call site already ORs in. When a real detector ships, give it a field on
+ * ListRowFacts and test THAT here; do not re-derive attention from liveness.
  */
-const sessionNeedsAttention = (row: ListRowFacts, live: SessionLiveness): boolean =>
-  live === 'live' && row.status === 'idle';
+const sessionNeedsAttention = (_row: ListRowFacts, _live: SessionLiveness): boolean => false;
 
 // ---------------------------------------------------------------------------
 // The rows
