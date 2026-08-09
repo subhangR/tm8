@@ -1798,17 +1798,35 @@ export function createFixtureSeam(): FixtureSeam {
        * `execution.dispatch` — the fixture mirror of the resident-dispatcher
        * saga (DESIGN §4.3).
        *
-       * IT MODELS THE PARTS A UI CAN GET WRONG, and no more:
-       *   · a dispatcher session may have to be SPAWNED first, so
-       *     `dispatcherSpawned` is sometimes true and a surface that ignores it
-       *     cannot claim "reused the existing dispatcher";
+       * IT MODELS THE PARTS A UI CAN GET WRONG:
+       *   · a dispatcher may have to be SPAWNED first, so `dispatcherSpawned`
+       *     is sometimes true and a surface that ignores it cannot claim it
+       *     "reused the existing dispatcher";
        *   · the answer is a DELIVERY VERDICT, not a session — dispatch is
        *     asynchronous by construction and there is nothing to open;
-       *   · `undelivered` is a real, non-exceptional outcome that still leaves
-       *     a durable message, so it is reachable here rather than being a
-       *     failure path only a broken node could produce.
+       *   · the request MESSAGE IS REALLY STORED, anchored to the derived task.
+       *     `requestMessageId` therefore resolves to an entity that exists.
        *
-       * It deliberately does NOT invent the dispatcher's decision: no teammate
+       * RESIDENCY IS DECIDED BY LIVENESS, NOT BY STORED STATUS — §5's hazard,
+       * stated as a rule the design repeats twice: "never trust
+       * `work_sessions.status` for is-the-dispatcher-alive; sessions die in
+       * 40ms with a NULL exit_code, so probe, don't read." A fixture that
+       * matched on `state.status === 'running'` would reproduce exactly the bug
+       * the design forbids, and would do it invisibly, so it reads the same
+       * liveness snapshot the rest of this seam serves.
+       *
+       * WHAT IT DOES NOT MODEL, said plainly rather than implied: `delivery` is
+       * always `'delivered'` here. A fixture session becomes live the moment it
+       * is inserted — there is no boot latency to lose a request to — so the
+       * `'undelivered'` branch is NOT reachable through this seam. On a real
+       * node it happens when the dispatcher has not settled or has died between
+       * resolution and delivery, and the request is stored anyway. An earlier
+       * revision of this comment claimed the branch was reachable while the
+       * code returned `'delivered'` unconditionally; that claim was false and
+       * is corrected here rather than made true by inventing a failure mode
+       * this seam has no honest way to produce.
+       *
+       * It deliberately does NOT invent the dispatcher's DECISION: no teammate
        * is chosen and no session is spawned for the work, because on a real
        * node that happens later, in another agent, and a fixture that faked it
        * would let a surface render a launch that never happened.
@@ -1830,10 +1848,14 @@ export function createFixtureSeam(): FixtureSeam {
                 dueDate: null, assignees: [], acceptance: { total: 0, completed: 0 },
               },
             });
+        const live = new Set(livenessBySpace.get(input.spaceId)?.liveEntityIds ?? []);
         const existing = [...summaries.values()].find(
           (row) => row.spaceId === input.spaceId
             && row.state.kind === 'work_session'
-            && row.title.startsWith('dispatcher'),
+            && row.title.startsWith('dispatcher')
+            // LIVENESS, not `state.status` — see the docblock. A dispatcher row
+            // that is merely recorded as running is not a dispatcher.
+            && live.has(row.id),
         );
         const dispatcher = existing ?? insertSummary({
           id: nextId('ws'),
@@ -1858,11 +1880,40 @@ export function createFixtureSeam(): FixtureSeam {
           setLiveness(input.spaceId, [...(snap?.liveEntityIds ?? []), dispatcher.id], snap?.nodeBootId);
           emit(dispatcher.spaceId, { type: 'entity.upsert', entity: clone(dispatcher) }, input);
         }
+        /*
+         * THE DURABLE REQUEST, stored for real. The handler posts the dispatch
+         * request as a message on the derived task, and it survives whether or
+         * not delivery lands — that is what makes `undelivered` a non-fatal
+         * outcome. Minting a bare id here (the previous behaviour) handed
+         * callers an identifier that resolved to nothing.
+         */
+        const request = insertSummary({
+          id: nextId('msg'),
+          kind: 'message',
+          title: input.note ?? `dispatch request \u00b7 ${task.title}`,
+          spaceId: task.spaceId,
+          parentId: task.id,
+          state: {
+            kind: 'message', anchorId: task.id, rootMessageId: null,
+            author: viewerActor, messageBatchId: null, editedAt: null,
+          },
+        });
+        extras.set(request.id, {
+          content: {
+            kind: 'message',
+            body: input.note ?? `Dispatch requested for ${task.title}.`,
+            mentions: [], attachments: [],
+          },
+          connections: clone(NO_CONNECTIONS),
+          capabilities: { ...CAPS_FULL },
+        });
+        emit(task.spaceId, { type: 'entity.upsert', entity: clone(request) }, input);
+
         return {
           taskId: task.id,
           dispatcherSessionId: dispatcher.id,
           dispatcherSpawned: existing === undefined,
-          requestMessageId: nextId('msg'),
+          requestMessageId: request.id,
           delivery: 'delivered',
         };
       },
