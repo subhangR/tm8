@@ -243,7 +243,7 @@ describe('useRowLifecycle — assign: the edge writes', () => {
 describe('useRowLifecycle — setValue: the content patch', () => {
   it('patches ONE field, sparsely, guarded by the CACHED version', async () => {
     const h = harness({ version: 7 });
-    h.lifecycle.setValue(TASK, 'priority', 'high', 'Priority');
+    h.lifecycle.setValue(TASK, { priority: 'high' }, 'Priority');
     await flush();
 
     expect(h.seam.commands.patchEntity).toHaveBeenCalledWith(TASK, {
@@ -258,9 +258,27 @@ describe('useRowLifecycle — setValue: the content patch', () => {
     expect(h.seam.entity).not.toHaveBeenCalled();
   });
 
+  /**
+   * A `ValueOption` may carry companion keys (`ValueOption.also` — a
+   * teammate's `agentTool` moves with its `model`). They must ride the SAME
+   * patch: two patches means two versions, so the second earns a
+   * `version_conflict` against the first and the pair lands half-applied.
+   */
+  it('sends companion keys in ONE patch, not a second write', async () => {
+    const h = harness({ version: 7 });
+    h.lifecycle.setValue(TASK, { model: 'gpt-5-codex', agentTool: 'codex' }, 'Model');
+    await flush();
+
+    expect(h.seam.commands.patchEntity).toHaveBeenCalledTimes(1);
+    expect(h.seam.commands.patchEntity).toHaveBeenCalledWith(TASK, {
+      expectedVersion: 7,
+      content: { model: 'gpt-5-codex', agentTool: 'codex' },
+    });
+  });
+
   it('refuses rather than guessing when the version is not loaded', async () => {
     const h = harness();
-    h.lifecycle.setValue(TASK, 'priority', 'high', 'Priority');
+    h.lifecycle.setValue(TASK, { priority: 'high' }, 'Priority');
     await flush();
 
     expect(h.seam.commands.patchEntity).not.toHaveBeenCalled();
@@ -276,7 +294,7 @@ describe('useRowLifecycle — setValue: the content patch', () => {
    */
   it('titles its failure with the control LABEL, not the wire field name', async () => {
     const h = harness({ version: 7, fail: new Error('version_conflict') });
-    h.lifecycle.setValue(TASK, 'priority', 'high', 'Priority');
+    h.lifecycle.setValue(TASK, { priority: 'high' }, 'Priority');
     await flush();
 
     expect(h.notices[0]!.title).toBe('Priority could not be changed');
@@ -285,7 +303,7 @@ describe('useRowLifecycle — setValue: the content patch', () => {
 
   it('surfaces a 409 rather than retrying it — the user chose against a state', async () => {
     const h = harness({ version: 7, fail: new Error('version_conflict: entity moved') });
-    h.lifecycle.setValue(TASK, 'priority', 'high', 'Priority');
+    h.lifecycle.setValue(TASK, { priority: 'high' }, 'Priority');
     await flush();
 
     expect(h.seam.commands.patchEntity).toHaveBeenCalledTimes(1);

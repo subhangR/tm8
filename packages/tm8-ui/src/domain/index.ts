@@ -65,6 +65,7 @@ export {
   kindBySlug,
   kindOfSlug,
   slugOfKind,
+  valueOptionsOf,
 } from './registry';
 
 export { KIND_ART, VIEW_ART, type KindArt } from './kind-art';

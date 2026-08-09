@@ -37,9 +37,11 @@ import type {
   SortSpec,
   StateControl,
   ValueControl,
+  ValueOption,
 } from './types';
 import { CUSTOM_KIND_FALLBACK } from './types';
 import { KIND_ART } from './kind-art';
+import { modelValueOptions } from './launch';
 import type { SessionLiveness } from '../data/seam';
 
 /** WLT §2.1 reserved words — never a kind slug. */
@@ -125,6 +127,53 @@ const TASK_PRIORITY_CONTROL: ValueControl = {
     { id: 'high', label: 'HIGH', tone: 'block' },
     { id: 'urgent', label: 'URGENT', tone: 'block' },
   ],
+};
+
+/**
+ * Resolve a `ValueControl`'s vocabulary, whichever shape it declared.
+ *
+ * THE ONE PLACE THAT KNOWS `options` IS A UNION. A call site that reached for
+ * `control.options` directly would work for task priority and silently draw an
+ * empty select for any thunk-valued control, so the union is resolved here and
+ * the panels never see it.
+ */
+export function valueOptionsOf(control: ValueControl): readonly ValueOption[] {
+  return typeof control.options === 'function' ? control.options() : control.options;
+}
+
+/**
+ * The teammate model picker — the ONE control behind "there is no option to
+ * edit the model of a teammate".
+ *
+ * REGISTRY DATA, AND NOTHING ELSE, which is the whole claim this row makes.
+ * The picker, its three refusals, the `canEdit` gate, the version guard and the
+ * 409 notice are the machinery task priority already ships; a teammate was
+ * missing the row, not the mechanism. It drew `model` as a read-only
+ * `field-grid` cell in the panel blocks below and offered no way to change it,
+ * while the whole write path existed underneath: `update_team_member` takes
+ * `p_model`/`p_agent_tool` and COALESCEs (`db/migrations/007_rpc_catalog.sql`),
+ * and the facade reads them straight off the patch content
+ * (`entities-commands-tracking.ts`, case `'team_member'`).
+ *
+ * THE SERVER STILL DECIDES WHO. `canEdit` is kind-based
+ * (`facade/entity-read.ts` puts `team_member` in the editable set), but the RPC
+ * refuses anyone who is not the owning member or a space admin. That refusal
+ * arrives as a notice, exactly like a version conflict — the honest posture,
+ * and the reason an AGENT cannot quietly re-model a persona through this seam.
+ *
+ * A THUNK because the model vocabulary is per-node and user-editable; see
+ * `ValueControl.options` and `modelValueOptions`.
+ */
+const TEAMMATE_MODEL_CONTROL: ValueControl = {
+  source: 'model',
+  label: 'Model',
+  /* Real, and reachable: `create_team_member` takes `p_model` as nullable and
+     the bootstrap roster is the only thing that always fills it, so a teammate
+     created any other way genuinely has no model and gets DEFAULT_MODEL at
+     spawn. Saying so beats snapping the select to whichever model sorts first
+     and claiming a record the row does not carry. */
+  emptyLabel: 'no model',
+  options: () => modelValueOptions(),
 };
 
 /**
@@ -710,6 +759,12 @@ const ROWS: readonly KindConfig[] = [
       tile: { badges: [{ source: 'entityActor' }, { source: 'owner' }, { source: 'agentTool' }, { source: 'model' }, { source: 'liveWork' }] },
       inlineEdit: { title: true },
       tree: { by: 'hierarchy', guideLines: true },
+      /* The picker and the `model` BADGE two lines up paint the same fact, and
+         the badge is where a user reads it today — D67's "the picker and the
+         badge cannot disagree" holds here by construction rather than by
+         matching copy, because both read `state.model` and this control writes
+         that same field back under its own name. */
+      valueControls: [TEAMMATE_MODEL_CONTROL],
     }),
     panel: {
       archetype: 'profile',
