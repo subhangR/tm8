@@ -27,7 +27,7 @@ import { CUSTOM_KIND_FALLBACK } from './types';
  * `SHIPPED_DEFAULT_MENU` never round-trips through `spaces.menu.update`
  * (that command is a §10.7 deferred seam amendment).
  */
-export const SHIPPED_DEFAULT_MENU_REVISION = 6;
+export const SHIPPED_DEFAULT_MENU_REVISION = 7;
 
 /**
  * WLT §2, encoded literally:
@@ -108,9 +108,12 @@ export const SHIPPED_DEFAULT_MENU: MenuConfig = {
       id: 'tracking',
       label: 'Tracking',
       items: [
-        // Git UI wave (2026-08-09): the project git screen — topology,
-        // worktree lanes and contention, elevated out of Settings to live
-        // beside the git-adjacent kinds it surveys.
+        // Revision 7 (2026-08-09, Git UI wave): the project git screen —
+        // topology, worktree lanes and contention — leads the group it
+        // surveys. Migration 089 is the server twin: it registers the view,
+        // reteaches `internal.w1_default_menu_payload()`, and upgrades
+        // byte-equivalent legacy defaults (customized menus untouched — the
+        // ref stays offerable through the menu editor's free view refs).
         { type: 'view', ref: 'git' },
         { type: 'kind', ref: 'project' },
         { type: 'kind', ref: 'pull_request' },
