@@ -260,7 +260,7 @@ onInput: (data) => pty.write(sessionId, data)   // fires regardless of grant mod
 
 // pty-ws-server.ts, required — rejection at upgrade time (point 2), gating at input time (point 3):
 handleUpgrade: async (req) => {
-  const grant = await grantLookup.resolve(tokenFromUrl(req));
+  const grant = await grantLookup.consume(hash(grantFromProtocolOffer(req)));
   if (!grant || grant.expired) return rejectUpgrade(req);   // new: reject before any socket exists
   ...
 },
@@ -270,9 +270,9 @@ onInput: (data) => {
 }
 ```
 
-`grant` is resolved from the token presented in the connection URL, hashed and looked up against the row `grant_stream_attach` already wrote (now with a real, non-null `tokenHash`, §2.6 point 1). Confirmed during this pass (the code brief had flagged `PtyHostService` as unread, §E4): `PtyHostService.write(sessionId, data)` (`packages/execution/src/pty/PtyHostService.ts:420-424`) is pure PTY plumbing with no concept of grants or modes — it just writes to the process. This confirms `pty-ws-server.ts` is the only place that can know about the grant and gate on it; no lower-layer change is needed. What *is* needed, honestly: a new DB-backed dependency threaded into a component that structurally has none today (point 2) — that is the actual size of this MUST-FIX.
+`grant` is atomically consumed by exact token hash, session, mode and optional browser identity. Confirmed during this pass (the code brief had flagged `PtyHostService` as unread, §E4): `PtyHostService.write(sessionId, data)` (`packages/execution/src/pty/PtyHostService.ts:420-424`) is pure PTY plumbing with no concept of grants or modes — it just writes to the process. This confirms `pty-ws-server.ts` is the only place that can know about the grant and gate on it; no lower-layer change is needed.
 
-**Security note (browser transport constraint):** browsers cannot set custom headers on a WebSocket upgrade, so the plaintext grant token must ride the PTY WS upgrade URL as a query parameter — the first place tm8 puts a live bearer-equivalent secret into a URL. The 15-minute grant TTL bounds the exposure but log retention routinely exceeds it, so the gateway relay's and the hosted Server's access-log middleware **must redact the `token` query param** before writing any request log line (§11 item 14, observability).
+**Security note (implemented carrier):** browsers can offer WebSocket subprotocol values. The client offers the short-lived grant as `tm8-grant.<tm8g_…>` and the server selects only `tm8-pty-v1`, so the bearer is absent from the URL and 101 response. Access logs must omit request arguments and protocol headers.
 
 ---
 
@@ -777,7 +777,7 @@ One bounded fix pass, applied against the adversarial review's 6 findings plus t
 - **R2 (MAJOR, §2.6 PTY re-scope)** — applied. §2.6 point 2 now names the real addition (`grantLookup` dependency, `Db` threaded through `main.ts:237`'s composition, upgrade-time rejection as the actual enforcement point) instead of "an unwired parameter finally being wired."
 - **R3 (MAJOR, §3.6 direct non-loopback Servers)** — applied. Host allowlist/Origin/CORS now scoped to "any non-loopback Server," not gateway-only; the config renamed `NonLoopbackTransportConfig`; direct non-loopback browser access is explicitly not banned.
 - **R4 (MINOR, assertion vs. HMAC)** — applied. §2.2.1 adopts shared HMAC-per-hosted-Server as the first-cut keying model; the asymmetric-assertion machinery is removed from the main line and kept only as a one-sentence upgrade path. §3.1.1's flow diagram and UNCERTAIN #2 updated to match; UNCERTAIN #2 is now marked resolved rather than open.
-- **R5 (MINOR, token in PTY upgrade URL)** — applied. §2.6 adds an explicit log-redaction requirement for the `token` query param, tied to §11 item 14.
+- **R5 (MINOR, PTY credential carrier)** — superseded by implementation. §2.6 now uses a one-shot grant in an unselected subprotocol offer, eliminating URL-query credential logging rather than relying on redaction.
 - **R6 (MINOR, OPEN #2 wording)** — applied. OPEN #2 now says "define a new success-ack frame (the contract's first)" instead of "add a flag."
 - **C1 (coordinator, §6d vs. WLT §5.6 fixed-at-capture)** — applied. §6d now names the runtime-flip behavior as an explicit WLT amendment (constant → runtime-computed, still discrete `{0,48}`) rather than silently reinterpreting the existing clause.
 - **C2 (coordinator, §1.4/§1.5 retryable-vs-code semantics)** — applied. `contract_version_unsupported` moved off `upstream_unavailable` onto `not_implemented` (already outside `RETRYABLE_BY_DEFAULT`), so the error *code* itself — not just the `retryable` flag — tells a naively-coded retry loop not to retry a permanent condition.

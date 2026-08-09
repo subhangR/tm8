@@ -36,6 +36,12 @@
  * being emitted as a replacement char.
  */
 
+import {
+  PTY_GRANT_PROTOCOL_PREFIX,
+  PTY_WS_PROTOCOL,
+  type StreamAttachGrant,
+} from '@tm8/contract';
+
 import { parseControlFrame } from './ptyProtocol.js';
 
 export interface ReplayInfo {
@@ -47,17 +53,25 @@ type ReplayHandler = (id: string, data: string, info: ReplayInfo) => void;
 type ExitHandler = (id: string, exitCode?: number | null) => void;
 type SizeHandler = (id: string, size: { cols: number; rows: number; live?: boolean }) => void;
 type ReattachHandler = (id: string) => void;
+export type PtyGrantProvider = (id: string) => Promise<StreamAttachGrant>;
 
 const _sockets = new Map<string, WebSocket>();
 /** Same-origin route prefix for the tm8 node that owns each session's PTY. */
 const _serverBaseUrls = new Map<string, string>();
 /**
- * Per-session bearer reader. Browser WebSockets cannot set Authorization, so
- * the server accepts the same per-server pass in the grant URL. Keep a reader,
- * not a snapshotted token: a reconnect after an account transition must use
- * the pass that is current then, never the principal that first opened it.
+ * Per-session bearer reader retained only for authenticated HTTP support
+ * routes such as clipboard upload. WebSockets never read it and never put a
+ * long-lived credential in a URL; PTY connects use `_grantProviders` below.
  */
 const _authTokenReaders = new Map<string, () => string | null>();
+/** Fresh, one-shot capability minter. Called for every connect and reconnect. */
+const _grantProviders = new Map<string, PtyGrantProvider>();
+/** The server-authorized mode of the current/future connection. */
+const _attachModes = new Map<string, 'view' | 'drive'>();
+/** Async grant requests in flight; prevents reconnect/wake stampedes. */
+const _connecting = new Set<string>();
+/** Invalidates a late grant response after close/reopen of the same id. */
+const _connectGenerations = new Map<string, number>();
 const _pendingSends = new Map<string, { frames: Array<string | Uint8Array>; bytes: number }>();
 /** Fail-closed after queue overflow until a socket successfully opens. */
 const _overflowLatched = new Set<string>();
@@ -194,15 +208,65 @@ function _scheduleReconnect(id: string): void {
  * with `ws: true`), so this works identically in dev and against the built
  * bundle the server serves itself.
  */
-function _ptyUrl(id: string, offset: number): string {
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+function _ptyUrl(id: string, offset: number, grantedUrl?: string): string {
   const serverBaseUrl = _serverBaseUrls.get(id) ?? '';
-  const authToken = _authTokenReaders.get(id)?.() ?? null;
-  const authQuery = authToken ? `&token=${encodeURIComponent(authToken)}` : '';
-  return `${proto}//${window.location.host}${serverBaseUrl}/v2/ws?sessionId=${encodeURIComponent(id)}&offset=${offset}${authQuery}`;
+  const localPath = grantedUrl ?? `/v2/ws?sessionId=${encodeURIComponent(id)}`;
+  const absolute = /^https?:\/\//i.test(localPath) || /^wss?:\/\//i.test(localPath);
+  const pageOrigin = window.location.origin
+    || `${window.location.protocol}//${window.location.host}`;
+  const raw = absolute
+    ? localPath
+    : `${pageOrigin}${serverBaseUrl}${localPath.startsWith('/') ? localPath : `/${localPath}`}`;
+  const url = new URL(raw);
+  if (url.protocol === 'http:') url.protocol = 'ws:';
+  else if (url.protocol === 'https:') url.protocol = 'wss:';
+  if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+    throw new Error('PTY grant URL must use http(s) or ws(s)');
+  }
+  // A grant-bearing URL is a server defect and must not be dialled. Deleting
+  // it would hide the leak in logs/history; refusal makes the invariant loud.
+  if (url.searchParams.has('token') || url.href.includes('tm8g_') || url.href.includes('tm8s_')) {
+    throw new Error('PTY grant URL contains credential material');
+  }
+  url.searchParams.set('offset', String(offset));
+  return url.href;
 }
 
-function _ensureSocket(id: string): WebSocket {
+function _openSocket(id: string, grant?: StreamAttachGrant): WebSocket {
+  const offset = _received.get(id) ?? 0;
+  let ws: WebSocket;
+  if (grant) {
+    if (
+      grant.workSessionId !== id ||
+      (grant.mode !== 'view' && grant.mode !== 'drive') ||
+      typeof grant.token !== 'string' ||
+      grant.token.length === 0 ||
+      Date.parse(grant.expiresAt) <= Date.now()
+    ) {
+      throw new Error('invalid or expired PTY attach grant');
+    }
+    _attachModes.set(id, grant.mode);
+    if (grant.mode === 'view') {
+      // Nothing typed while a drive request was awaiting its answer may be
+      // replayed after the server narrowed the result to view.
+      _pendingSends.delete(id);
+    }
+    ws = new WebSocket(_ptyUrl(id, offset, grant.url), [
+      PTY_WS_PROTOCOL,
+      `${PTY_GRANT_PROTOCOL_PREFIX}${grant.token}`,
+    ]);
+  } else {
+    // Loopback/dev compatibility. Production wires a grant provider.
+    ws = new WebSocket(_ptyUrl(id, offset));
+  }
+  ws.binaryType = 'arraybuffer';
+
+  _wireSocket(id, ws, grant !== undefined);
+  _sockets.set(id, ws);
+  return ws;
+}
+
+function _ensureSocket(id: string): WebSocket | undefined {
   const existing = _sockets.get(id);
   if (
     existing &&
@@ -212,21 +276,43 @@ function _ensureSocket(id: string): WebSocket {
     return existing;
   }
 
-  // Resume from the last RAW offset we authoritatively consumed (0 on a first
-  // connect). A reconnect is indistinguishable from a first connect at this
-  // layer — the server's `attached` ack decides whether a reset is needed.
-  const offset = _received.get(id) ?? 0;
-  const ws = new WebSocket(_ptyUrl(id, offset));
-  ws.binaryType = 'arraybuffer';
+  const provider = _grantProviders.get(id);
+  if (!provider) return _openSocket(id);
+  if (_connecting.has(id)) return undefined;
+
+  _connecting.add(id);
+  const generation = _connectGenerations.get(id) ?? 0;
+  void provider(id)
+    .then((grant) => {
+      _connecting.delete(id);
+      if (
+        !_activeSessions.has(id) ||
+        _suspended.has(id) ||
+        (_connectGenerations.get(id) ?? 0) !== generation
+      ) return;
+      _openSocket(id, grant);
+    })
+    .catch(() => {
+      _connecting.delete(id);
+      if (_activeSessions.has(id) && !_suspended.has(id)) _scheduleReconnect(id);
+    });
+  return undefined;
+}
+
+function _wireSocket(id: string, ws: WebSocket, requirePublicProtocol: boolean): void {
 
   ws.onopen = () => {
+    if (requirePublicProtocol && ws.protocol !== PTY_WS_PROTOCOL) {
+      ws.close(1002, 'unexpected PTY subprotocol');
+      return;
+    }
     _reconnectAttempts.set(id, 0);
     // A successful open is the only thing that clears the fail-closed latch.
     // The overflowing queue itself was already discarded; this just permits
     // input produced after the reconnect to flow again.
     _overflowLatched.delete(id);
     const pending = _pendingSends.get(id);
-    if (pending) {
+    if (pending && _attachModes.get(id) === 'drive') {
       for (const frame of pending.frames) ws.send(frame);
       _pendingSends.delete(id);
     }
@@ -318,6 +404,9 @@ function _ensureSocket(id: string): WebSocket {
       _pendingSends.delete(id);
       _overflowLatched.delete(id);
       _serverBaseUrls.delete(id);
+      _grantProviders.delete(id);
+      _attachModes.delete(id);
+      _connecting.delete(id);
       if (!alreadyExited) {
         for (const h of _exitHandlers) h(id, null);
       }
@@ -340,8 +429,6 @@ function _ensureSocket(id: string): WebSocket {
     }
   };
 
-  _sockets.set(id, ws);
-  return ws;
 }
 
 let _wakeListenersRegistered = false;
@@ -434,6 +521,9 @@ function _enqueuePending(id: string, frame: string | Uint8Array): void {
 }
 
 function _sendFrame(id: string, frame: string | Uint8Array): void {
+  // Server enforcement is authoritative; this client-side gate keeps a
+  // view-only tab from even queuing input/resize while disconnected.
+  if (_attachModes.get(id) === 'view') return;
   const ws = _sockets.get(id);
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(frame);
@@ -448,6 +538,8 @@ export const ptyTransport = {
     id: string,
     serverBaseUrl = '',
     getAuthToken?: () => string | null,
+    getGrant?: PtyGrantProvider,
+    requestedMode: 'view' | 'drive' = 'drive',
   ): void {
     _registerWakeListeners();
     // The selected server is represented by a same-origin route prefix. Keep
@@ -456,6 +548,11 @@ export const ptyTransport = {
     _serverBaseUrls.set(id, serverBaseUrl.replace(/\/$/, ''));
     if (getAuthToken) _authTokenReaders.set(id, getAuthToken);
     else _authTokenReaders.delete(id);
+    if (getGrant) _grantProviders.set(id, getGrant);
+    else _grantProviders.delete(id);
+    _attachModes.set(id, requestedMode);
+    _connectGenerations.set(id, (_connectGenerations.get(id) ?? 0) + 1);
+    _connecting.delete(id);
     _activeSessions.add(id);
     // A fresh attach is never born suspended (a prior use of this id may have
     // left the flag set), and starts its offset accounting at 0.
@@ -489,6 +586,10 @@ export const ptyTransport = {
     _overflowLatched.delete(id);
     _serverBaseUrls.delete(id);
     _authTokenReaders.delete(id);
+    _grantProviders.delete(id);
+    _attachModes.delete(id);
+    _connecting.delete(id);
+    _connectGenerations.set(id, (_connectGenerations.get(id) ?? 0) + 1);
     const ws = _sockets.get(id);
     if (ws) {
       _sockets.delete(id);

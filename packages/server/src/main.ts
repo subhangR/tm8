@@ -59,10 +59,13 @@ import { createVoiceWebhookRoute } from './http/voice-webhook.js';
 import { InMemoryVoiceRosterStore } from './voice/roster.js';
 import {
   createPtyAttachAuthorizer,
+  createPtyAuditLogger,
   createPtyWsServer,
   isPtyUpgrade,
   type PtyAttachAuthorizer,
 } from './pty/index.js';
+import { readTm8SessionCookie } from './http/session-cookie.js';
+import { WsAdmissionController } from './http/ws-admission.js';
 
 export interface BootstrapOptions {
   readonly config?: ServerConfig;
@@ -174,7 +177,17 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   const identityResolver: IdentityResolver | undefined = db
     ? async (headers, context) => {
         const header = headers.authorization;
-        const raw = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+        const authorization = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+        const cookie = readTm8SessionCookie(headers) ?? '';
+        // Authorization remains the CLI/agent carrier. A browser cookie is the
+        // only credential a native WebSocket can send without putting a secret
+        // in its URL. If both are present, they must name the same token: a
+        // stale cookie plus a new Authorization pass must not silently choose a
+        // principal and leave the other credential live in the request.
+        if (authorization && cookie && authorization !== cookie) {
+          throw new CollabError('unauthenticated', 'conflicting authentication credentials');
+        }
+        const raw = authorization || cookie;
         if (raw.startsWith(TOKEN_PREFIX)) {
           const session = await resolveBearerIdentity(db, raw);
           return {
@@ -205,7 +218,7 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
         // kind here would duplicate that control in the wrong file and break
         // local development for no gain.
         return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
-      }
+    }
     : undefined;
 
   /**
@@ -379,15 +392,10 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
       })
     : undefined;
 
-  /** Browser sockets carry a pass in the grant URL because they cannot set headers. */
+  /** Browser sockets authenticate with the Secure HttpOnly session cookie. */
   const resolveSocketIdentity = async (req: IncomingMessage): Promise<RequestIdentity> => {
-    const url = new URL(req.url ?? '/', 'http://tm8.invalid');
-    const token = url.searchParams.get('token');
-    const headers = token
-      ? { ...req.headers, authorization: `Bearer ${token}` }
-      : req.headers;
     const resolver = identityResolver ?? autoOwnerResolver;
-    const identity = await resolver(headers, {
+    const identity = await resolver(req.headers, {
       remoteAddress: req.socket.remoteAddress,
       disableAutoOwner: config.disableAutoOwner === true,
     });
@@ -397,8 +405,20 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     return identity;
   };
 
+  /**
+   * PTY grants are bearer capabilities and therefore work for the CLI without
+   * a browser cookie. When a cookie is present, resolve it so the database can
+   * additionally require the grant's exact subject identity.
+   */
+  const resolveOptionalSocketIdentityId = async (req: IncomingMessage): Promise<string | undefined> => {
+    if (!readTm8SessionCookie(req.headers) && req.headers.authorization === undefined) return undefined;
+    return (await resolveSocketIdentity(req)).identityId;
+  };
+
+  const wsAdmission = new WsAdmissionController();
   const ws = createWsServer({
     registry: subscriptions,
+    admission: wsAdmission,
     authorize: resolveSocketIdentity,
     ...(control ? { onClientMessage: (conn, text) => void control.handle(conn, text) } : {}),
     onDisconnect: (connId) => {
@@ -425,28 +445,31 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
   /**
    * PTY attach authorization (Identity v2 Stage 1, trap 5).
    *
-   * Identity: browsers cannot set headers on a WebSocket, so a bearer caller
-   * appends `&token=tm8s_…` to the grant URL; header auth works for
-   * non-browser clients; no credential resolves to the loopback auto-owner,
-   * exactly like every HTTP request (T-L7 — one resolver, one arm).
+   * Identity: the short-lived capability is offered in Sec-WebSocket-Protocol
+   * and never echoed; an optional Secure cookie binds browser uses to the exact
+   * verified identity. Non-browser clients need no long-lived credential on
+   * the socket because the one-shot grant already carries that authority.
    *
    * Authorization lives in pty/attach-authz.ts, and the policy is not restated
-   * here or anywhere else in TypeScript: it CALLS `public.grant_stream_attach`,
-   * the same function `execution.streams.attach` goes through, and enforces the
-   * view-versus-drive answer it gives. Being able to SEE the entity is only the
-   * first of the three tests — it was, wrongly, the only one until this lane.
+   * here or anywhere else in TypeScript: it atomically CALLS
+   * `public.consume_stream_attach`, binding hash + session + mode + optional
+   * browser identity in the same replay-protected database update.
    */
+  const ptyAuditLogger = createPtyAuditLogger();
   const ptyAuthorize: PtyAttachAuthorizer | undefined = db
     ? createPtyAttachAuthorizer({
         db,
-        resolveIdentityId: async (req) => (await resolveSocketIdentity(req)).identityId,
+        resolveIdentityId: resolveOptionalSocketIdentityId,
+        logger: ptyAuditLogger,
       })
     : undefined;
 
   const ptyWs = execution
     ? createPtyWsServer({
         pty: execution.pty,
+        admission: wsAdmission,
         ...(ptyAuthorize ? { authorize: ptyAuthorize } : {}),
+        logger: ptyAuditLogger,
       })
     : undefined;
   const upgrades: UpgradeTarget = ptyWs

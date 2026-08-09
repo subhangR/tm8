@@ -34,7 +34,10 @@ import {
  * in practice it is a `net.Socket`, so `setNoDelay` is probed rather than
  * assumed.
  */
-export type WsSocket = Duplex & { setNoDelay?: (noDelay?: boolean) => unknown };
+export type WsSocket = Duplex & {
+  setNoDelay?: (noDelay?: boolean) => unknown;
+  writableLength?: number;
+};
 
 /** Anything the event stream can push a JSON text frame at. */
 export interface EventSink {
@@ -55,17 +58,33 @@ export interface WsConnectionOptions {
   heartbeatMs?: number;
   /** Missed heartbeats tolerated before eviction. */
   missedPongLimit?: number;
+  /** No application frame in either direction for this long closes the slot. */
+  idleTimeoutMs?: number;
+  /** Hard lifetime, regardless of activity; clients reconnect with cursors. */
+  absoluteTimeoutMs?: number;
+  /** Maximum bytes already queued in Node plus the next encoded frame. */
+  maxBufferedBytes?: number;
+  /** Event control messages are deliberately small JSON documents. */
+  maxControlBytes?: number;
+  /** Inbound application-frame rate ceiling. */
+  maxMessagesPerWindow?: number;
+  messageWindowMs?: number;
+  now?: () => number;
 }
 
 export const DEFAULT_HEARTBEAT_MS = 30_000;
 export const DEFAULT_MISSED_PONG_LIMIT = 2;
+export const DEFAULT_WS_IDLE_TIMEOUT_MS = 15 * 60_000;
+export const DEFAULT_WS_ABSOLUTE_TIMEOUT_MS = 8 * 60 * 60_000;
+export const DEFAULT_WS_MAX_BUFFERED_BYTES = 1024 * 1024;
+export const DEFAULT_WS_MAX_CONTROL_BYTES = 64 * 1024;
 
 export class WsConnection implements EventSink {
   readonly id = randomUUID();
   readonly identity: RequestIdentity;
 
   private readonly socket: WsSocket;
-  private readonly decoder = new FrameDecoder();
+  private readonly decoder: FrameDecoder;
   private readonly messageHandlers: ((text: string) => void)[] = [];
   private readonly closeHandlers: ((code: number, reason: string) => void)[] = [];
 
@@ -73,6 +92,17 @@ export class WsConnection implements EventSink {
   private readonly missedPongLimit: number;
   private heartbeat: NodeJS.Timeout | null = null;
   private missedPongs = 0;
+  private idleTimer: NodeJS.Timeout | null = null;
+  private absoluteTimer: NodeJS.Timeout | null = null;
+  private readonly idleTimeoutMs: number;
+  private readonly absoluteTimeoutMs: number;
+  private readonly maxBufferedBytes: number;
+  private readonly maxControlBytes: number;
+  private readonly maxMessagesPerWindow: number;
+  private readonly messageWindowMs: number;
+  private readonly now: () => number;
+  private rateWindowStartedAt: number;
+  private rateMessages = 0;
 
   /** `open` → `closing` (close frame sent) → `closed` (socket gone). */
   private state: 'open' | 'closing' | 'closed' = 'open';
@@ -86,6 +116,15 @@ export class WsConnection implements EventSink {
     this.identity = identity;
     this.heartbeatMs = opts.heartbeatMs ?? DEFAULT_HEARTBEAT_MS;
     this.missedPongLimit = opts.missedPongLimit ?? DEFAULT_MISSED_PONG_LIMIT;
+    this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_WS_IDLE_TIMEOUT_MS;
+    this.absoluteTimeoutMs = opts.absoluteTimeoutMs ?? DEFAULT_WS_ABSOLUTE_TIMEOUT_MS;
+    this.maxBufferedBytes = opts.maxBufferedBytes ?? DEFAULT_WS_MAX_BUFFERED_BYTES;
+    this.maxControlBytes = opts.maxControlBytes ?? DEFAULT_WS_MAX_CONTROL_BYTES;
+    this.decoder = new FrameDecoder(this.maxControlBytes);
+    this.maxMessagesPerWindow = opts.maxMessagesPerWindow ?? 200;
+    this.messageWindowMs = opts.messageWindowMs ?? 10_000;
+    this.now = opts.now ?? Date.now;
+    this.rateWindowStartedAt = this.now();
 
     socket.setNoDelay?.(true);
     socket.on('data', (chunk: Buffer) => this.onData(chunk));
@@ -93,6 +132,7 @@ export class WsConnection implements EventSink {
     socket.on('close', () => this.finish(this.closeCode, this.closeReason));
 
     this.startHeartbeat();
+    this.startLifetimeTimers();
   }
 
   get isOpen(): boolean {
@@ -101,7 +141,7 @@ export class WsConnection implements EventSink {
 
   send(text: string): void {
     if (this.state !== 'open') return;
-    this.socket.write(encodeTextFrame(text));
+    if (this.writeBounded(encodeTextFrame(text))) this.touchIdle();
   }
 
   /** Begin the closing handshake: send a close frame, then end the socket. */
@@ -111,6 +151,7 @@ export class WsConnection implements EventSink {
     this.closeCode = code;
     this.closeReason = reason;
     this.stopHeartbeat();
+    this.stopLifetimeTimers();
     this.socket.write(encodeCloseFrame(code, reason));
     this.socket.end();
   }
@@ -147,6 +188,17 @@ export class WsConnection implements EventSink {
     for (const frame of frames) {
       switch (frame.opcode) {
         case OPCODE.text: {
+          if (frame.payload.length > this.maxControlBytes) {
+            this.close(CLOSE_CODE.messageTooBig, 'control message too large');
+            this.destroy();
+            return;
+          }
+          if (!this.consumeRate()) {
+            this.close(CLOSE_CODE.policyViolation, 'message rate exceeded');
+            this.destroy();
+            return;
+          }
+          this.touchIdle();
           const text = frame.payload.toString('utf8');
           for (const cb of this.messageHandlers) cb(text);
           break;
@@ -202,6 +254,62 @@ export class WsConnection implements EventSink {
     }
   }
 
+  private writeBounded(frame: Buffer): boolean {
+    if ((this.socket.writableLength ?? 0) + frame.length > this.maxBufferedBytes) {
+      this.close(CLOSE_CODE.policyViolation, 'slow consumer');
+      this.destroy();
+      return false;
+    }
+    try {
+      if (this.socket.write(frame) === false) {
+        this.close(CLOSE_CODE.policyViolation, 'slow consumer');
+        this.destroy();
+        return false;
+      }
+      return true;
+    } catch {
+      this.destroy();
+      return false;
+    }
+  }
+
+  private consumeRate(): boolean {
+    const now = this.now();
+    if (now - this.rateWindowStartedAt >= this.messageWindowMs) {
+      this.rateWindowStartedAt = now;
+      this.rateMessages = 0;
+    }
+    this.rateMessages += 1;
+    return this.rateMessages <= this.maxMessagesPerWindow;
+  }
+
+  private startLifetimeTimers(): void {
+    this.touchIdle();
+    const absolute = setTimeout(() => {
+      this.close(CLOSE_CODE.goingAway, 'absolute timeout');
+      this.destroy();
+    }, this.absoluteTimeoutMs);
+    absolute.unref?.();
+    this.absoluteTimer = absolute;
+  }
+
+  private touchIdle(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    const timer = setTimeout(() => {
+      this.close(CLOSE_CODE.goingAway, 'idle timeout');
+      this.destroy();
+    }, this.idleTimeoutMs);
+    timer.unref?.();
+    this.idleTimer = timer;
+  }
+
+  private stopLifetimeTimers(): void {
+    if (this.idleTimer !== null) clearTimeout(this.idleTimer);
+    if (this.absoluteTimer !== null) clearTimeout(this.absoluteTimer);
+    this.idleTimer = null;
+    this.absoluteTimer = null;
+  }
+
   private destroy(): void {
     this.stopHeartbeat();
     this.socket.destroy();
@@ -213,6 +321,7 @@ export class WsConnection implements EventSink {
     if (this.state === 'closed') return;
     this.state = 'closed';
     this.stopHeartbeat();
+    this.stopLifetimeTimers();
     for (const cb of this.closeHandlers) cb(code, reason);
   }
 }

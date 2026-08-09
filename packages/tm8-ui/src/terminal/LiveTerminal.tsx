@@ -10,6 +10,7 @@ import { uploadClipboardImage } from './clipboardUpload.js';
 import { copyToClipboardOrWarn } from './domUtils.js';
 import { notifyUser } from './notifications.js';
 import { ptyTransport } from './pty/ptyTransport.js';
+import { mintPtyAttachGrant } from './pty/ptyGrant.js';
 import { readActivePass } from '../auth/pass-store';
 import { registerTerminal } from './pty/runtime.js';
 import {
@@ -435,13 +436,15 @@ export const LiveTerminal = forwardRef<LiveTerminalHandle, LiveTerminalProps>(fu
     const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(container);
 
-    // Browser WebSockets cannot set an Authorization header. Read the active
-    // server pass for every attach/reconnect so the PTY uses the same identity
-    // path as HTTP and never keeps a snapshotted previous principal.
+    // Mint a fresh one-shot capability for every connect/reconnect. The HTTP
+    // mint may use the active pass while older browser sessions transition to
+    // the Secure cookie; the WebSocket itself receives only the scoped grant.
     ptyTransport.openSession(
       sessionId,
       serverBaseUrl,
       () => readActivePass()?.token ?? null,
+      (id) => mintPtyAttachGrant(id, serverBaseUrl, readOnlyRef.current ? 'view' : 'drive'),
+      readOnlyRef.current ? 'view' : 'drive',
     );
     scheduleResize();
 

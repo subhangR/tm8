@@ -476,11 +476,11 @@ describe('session terminate', () => {
 
 const GRANT = {
   workSessionId: SESSION,
-  url: `/v2/ws?sessionId=${SESSION}`,
+  url: `/v2/ws?sessionId=${SESSION}&mode=view`,
   protocol: 'ws',
   mode: 'view',
-  token: null,
-  expiresAt: '2026-07-27T00:00:00.000Z',
+  token: `tm8g_${'a'.repeat(43)}`,
+  expiresAt: '2030-01-01T00:00:00.000Z',
 };
 
 describe('session attach', () => {
@@ -542,6 +542,7 @@ describe('session attach', () => {
     expect(r.code).toBe(0);
     expect(r.stdout).toContain(SESSION);
     expect(r.stdout).toContain('/v2/ws?sessionId=');
+    expect(r.stdout).not.toContain(GRANT.token);
   });
 
   it('renders an honest 501 faithfully and exits 8', async () => {
