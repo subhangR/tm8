@@ -19,6 +19,12 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import {
+  DREAMER_LOOP_TITLE,
+  DREAMER_SEED_NAME,
+  ensureDefaultTeammates,
+} from '../../src/bootstrap/default-teammates.js';
+import type { Querier } from '../../src/db/types.js';
 import { createW1ScratchDatabase, migrationFiles, type W1ScratchDatabase } from './w1-pg.js';
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
@@ -326,5 +332,79 @@ describe('the due-loop query the executor runs', () => {
     expect(ids).toContain(due);
     expect(ids).not.toContain(future);
     expect(ids).not.toContain(disabled);
+  });
+});
+
+/**
+ * P5's seeding, against the REAL doors (D7/D8).
+ *
+ * The unit tests for this run against a fake that records calls, which proves
+ * the seeder was ASKED to create a loop and nothing about whether the arguments
+ * it passed are ones `create_loop` accepts — argument-order and same-space
+ * mistakes both survive a call-recording fake perfectly. This runs it for real.
+ */
+describe('bootstrap seeds the Dreamer and its daily loop', () => {
+  /** ensureDefaultTeammates needs a Querier; the scratch pool provides one. */
+  async function seedInto(spaceId: string): Promise<{ loopsCreated?: number; created: number }> {
+    return database.transaction(async (client) => {
+      await client.query('set local role tm8_app');
+      await client.query(
+        `select set_config('tm8.identity_id',$1,true),set_config('tm8.actor_id','',true),
+                set_config('tm8.node_admin','false',true),set_config('tm8.request_id','req-seed',true)`,
+        [fixture.identityId],
+      );
+      const q: Querier = {
+        query: async <R>(sql: string, params: readonly unknown[] = []): Promise<R[]> =>
+          (await client.query(sql, [...params])).rows as R[],
+        rpc: async <T>(fn: string, args: readonly unknown[] = []): Promise<T> => {
+          const placeholders = args.map((_, i) => `$${i + 1}`).join(',');
+          const rows = await client.query(`select ${fn}(${placeholders}) result`, [...args]);
+          return rows.rows[0].result as T;
+        },
+      };
+      return ensureDefaultTeammates(q, spaceId);
+    });
+  }
+
+  it('creates the Dreamer and an ENABLED daily loop pointed at it', async () => {
+    const result = await seedInto(fixture.spaceId);
+    expect(result.loopsCreated).toBe(1);
+
+    const rows = await database.query<{
+      title: string; schedule: string; enabled: boolean;
+      team_member_id: string; next_run_at: Date | null; dreamer: string;
+    }>(
+      `select l.title, l.schedule, l.enabled, l.team_member_id::text, l.next_run_at,
+              t.name dreamer
+         from public.loops l
+         join public.entities e on e.id = l.entity_id
+         join public.team_members t on t.entity_id = l.team_member_id
+        where e.space_id = $1 and l.title = $2`,
+      [fixture.spaceId, DREAMER_LOOP_TITLE],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.schedule).toBe('every 1d');
+    // Seeded ENABLED on purpose (D8): a cleanup pass that ships disabled is one
+    // nobody ever turns on, and the graph rots in exactly the untended spaces.
+    expect(rows[0]!.enabled).toBe(true);
+    // Named runner, not a null — this loop is the Dreamer's, not the
+    // dispatcher's to route.
+    expect(rows[0]!.dreamer).toBe(DREAMER_SEED_NAME);
+    // Scheduled, not waiting for a human to save it once.
+    expect(rows[0]!.next_run_at).not.toBeNull();
+  });
+
+  it('is idempotent — a second boot pass adds neither a teammate nor a loop', async () => {
+    const again = await seedInto(fixture.spaceId);
+    expect(again.loopsCreated).toBe(0);
+    expect(again.created).toBe(0);
+
+    const count = await database.query<{ n: string }>(
+      `select count(*)::text n from public.loops l
+         join public.entities e on e.id = l.entity_id
+        where e.space_id = $1 and l.title = $2`,
+      [fixture.spaceId, DREAMER_LOOP_TITLE],
+    );
+    expect(count[0]!.n).toBe('1');
   });
 });

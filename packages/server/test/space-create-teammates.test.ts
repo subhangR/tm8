@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { LAUNCH_MODEL_CATALOG, getOperation, type OperationName } from '@tm8/contract';
 import { spacesCreate } from '../src/facade/handlers/spaces.js';
-import { DISPATCHER_SEED_NAME } from '../src/bootstrap/default-teammates.js';
+import { DISPATCHER_SEED_NAME, DREAMER_SEED_NAME } from '../src/bootstrap/default-teammates.js';
 import type { Db, DbClaims, Querier } from '../src/db/types.js';
 import type { ServerConfig } from '../src/http/config.js';
 import type { RequestContext } from '../src/http/types.js';
@@ -42,6 +42,10 @@ class FakeDb implements Db {
   failTeammates = false;
 
   async query<R>(_claims: DbClaims, sql: string): Promise<R[]> {
+    // No loop yet, and no Dreamer row to attach one to — this fake never
+    // reflects its own inserts back, so the loop seeder correctly declines
+    // rather than minting a loop that names nobody.
+    if (sql.includes('join public.loops')) return [] as R[];
     if (sql.includes('join public.team_members')) return [] as R[];
     if (sql.includes('from public.spaces s')) return [SPACE_ROW] as R[];
     throw new Error(`unexpected query: ${sql}`);
@@ -114,6 +118,7 @@ describe('spaces.create default teammates', () => {
     // needs a dispatcher can never bring one into being at runtime.
     expect(seedNames(db)).toEqual([
       ...LAUNCH_MODEL_CATALOG.map((entry) => entry.seedName),
+      DREAMER_SEED_NAME,
       DISPATCHER_SEED_NAME,
     ]);
     for (const { args } of db.calls.filter(({ fn }) => fn === 'public.create_team_member')) {

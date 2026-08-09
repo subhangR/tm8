@@ -15,6 +15,9 @@ class SeedDb implements Db {
   async query<R>(_claims: DbClaims, sql: string): Promise<R[]> {
     if (sql.includes('from public.spaces')) return [{ id: SPACE_ID }] as R[];
     if (sql.includes('from public.projects')) return (this.project ? [this.project] : []) as R[];
+    // The Dreamer's loop lookup (D8). Empty = "not seeded yet", so the seeder
+    // proceeds; the create call is what these tests count.
+    if (sql.includes('join public.loops')) return [] as R[];
     if (sql.includes('join public.team_members')) return this.teammates as R[];
     throw new Error(`unexpected query: ${sql}`);
   }
@@ -76,8 +79,9 @@ describe('launch resource bootstrap', () => {
     expect(first).toEqual({
       spaces: 1,
       projectId: PROJECT_ID,
-      // +1: the Dispatcher is seeded beside the launch-catalog roster (D8).
-      teammatesCreated: LAUNCH_MODEL_CATALOG.length + 1,
+      // +2: the Dreamer and the Dispatcher are seeded beside the
+      // launch-catalog roster (D8).
+      teammatesCreated: LAUNCH_MODEL_CATALOG.length + 2,
       teammatesUpdated: 1,
     });
     expect(second).toEqual({
@@ -97,9 +101,9 @@ describe('launch resource bootstrap', () => {
         agent_tool: entry.agentTool,
       }));
     }
-    // +1 for the Dispatcher, seeded beside the roster (D8).
+    // +2 for the Dreamer and the Dispatcher, seeded beside the roster (D8).
     expect(db.calls.filter(({ fn }) => fn === 'public.create_team_member'))
-      .toHaveLength(LAUNCH_MODEL_CATALOG.length + 1);
+      .toHaveLength(LAUNCH_MODEL_CATALOG.length + 2);
     expect(db.calls.some(({ fn, args: callArgs }) =>
       fn === 'public.link_project_w2' && callArgs[0] === SPACE_ID && callArgs[1] === PROJECT_ID,
     )).toBe(true);
