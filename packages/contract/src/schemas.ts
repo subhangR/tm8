@@ -66,7 +66,7 @@ import type {
   PreviewInteractionProfileInput, ProfileValidationIssue, ProfileValidationView,
   ProjectBranch, ProjectBranchTopology,
   ProjectCreateInput, ProjectDefaults, ProjectDirectoryEntry, ProjectDirectoryListing,
-  ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing,
+  ProjectFileAttachInput, ProjectFileEntry, ProjectFileListing, ProjectFileReadResult,
   ProjectFolderUploadAbortInput, ProjectFolderUploadCompleteInput,
   ProjectFolderUploadEntry, ProjectFolderUploadFileGrant, ProjectFolderUploadGrant,
   ProjectFolderUploadInitInput, ProjectFolderUploadResult,
@@ -1891,6 +1891,17 @@ export const ProjectFileListingSchema: z.ZodType<ProjectFileListing> = z.object(
   files: z.array(ProjectFileEntrySchema),
   truncated: z.boolean(),
   maxSizeBytes: z.number().int().positive(),
+}).strict();
+
+export const ProjectFileReadResultSchema: z.ZodType<ProjectFileReadResult> = z.object({
+  projectId: z.string().min(1),
+  path: z.string().min(1),
+  name: z.string().min(1),
+  mime: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  encoding: z.enum(['utf8', 'base64']),
+  content: z.string(),
+  truncated: z.boolean(),
 }).strict();
 
 export const ProjectFileAttachInputSchema: z.ZodType<ProjectFileAttachInput> = z.object({
