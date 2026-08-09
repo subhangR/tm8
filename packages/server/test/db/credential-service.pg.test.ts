@@ -43,6 +43,7 @@ import {
 } from '../../src/credentials/agent-credential-home.js';
 import {
   assertNoGitHubTokenEnv,
+  captureGitHubToken,
   runCredentialProbe,
   type CommandOutcome,
   type CommandRunner,
@@ -465,6 +466,17 @@ describe('AC5 — the GitHub finish step (finding D6)', () => {
     expect(() => assertNoGitHubTokenEnv({ HOME: '/x' })).not.toThrow();
   });
 
+  it('extracts only from the isolated hosts store and never from token env', async () => {
+    const token = `ghp_${'T'.repeat(36)}`;
+    const run: CommandRunner = async (argv) =>
+      argv.includes('token') ? outcome({ stdout: `${token}\n` }) : outcome({ exitCode: 1 });
+    await expect(captureGitHubToken({ env: { HOME: '/x' }, cwd: '/x', run }))
+      .resolves.toBe(token);
+    await expect(
+      captureGitHubToken({ env: { HOME: '/x', GH_TOKEN: token }, cwd: '/x', run }),
+    ).rejects.toThrow(/D6/);
+  });
+
   it('refuses through runCredentialProbe as well, BEFORE any command runs', async () => {
     const calls: string[][] = [];
     const run: CommandRunner = async (argv) => {
@@ -540,7 +552,12 @@ function serviceFor(
   options: {
     run?: CommandRunner;
     now?: () => number;
-    storeGitCredential?: W2CredentialSessionsService['finish'] extends never ? never : undefined;
+    storeGitCredential?: (input: {
+      claims: DbClaims;
+      login: string;
+      provider: 'github';
+      token: string;
+    }) => Promise<void>;
   } = {},
 ): W2CredentialSessionsService {
   return new W2CredentialSessionsService({
@@ -553,6 +570,7 @@ function serviceFor(
     env: {},
     ...(options.run ? { probeRunner: options.run } : {}),
     ...(options.now ? { now: options.now } : {}),
+    ...(options.storeGitCredential ? { storeGitCredential: options.storeGitCredential } : {}),
   });
 }
 
@@ -877,23 +895,29 @@ describe('the probe runs in the SAME environment the terminal ran in', () => {
     expect(rows).toHaveLength(0);
   });
 
-  it('does not persist a GitHub credential on this branch, and says so', async () => {
-    // The storage split is by SHAPE: a GitHub token is string-shaped and
-    // belongs in 079's already-shipped `account_git_credentials`, which is
-    // reachable from no local git object. The seam is injected and absent here
-    // rather than duplicated or faked.
+  it('captures and persists GitHub as a STRING, never in the file-shaped index', async () => {
     const pty = fakePty();
+    const token = `ghp_${'S'.repeat(36)}`;
     const run: CommandRunner = async (argv) =>
       argv.includes('api')
         ? outcome({ stdout: 'alice\n' })
+        : argv.includes('token')
+          ? outcome({ stdout: `${token}\n` })
         : outcome({ stdout: 'github.com\n  ✓ Logged in to github.com account alice (keyring)' });
-    const service = serviceFor(pty.pty, { run });
+    const stored: Array<{ login: string; provider: string; token: string }> = [];
+    const service = serviceFor(pty.pty, {
+      run,
+      storeGitCredential: async (input) => {
+        stored.push({ login: input.login, provider: input.provider, token: input.token });
+      },
+    });
     const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
     const started = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
     const finished = await service.finish({ workSessionId: started.workSessionId }, principal);
 
     expect(finished.probe.connected).toBe(true);
-    expect(finished.stored).toBe(false);
+    expect(finished.stored).toBe(true);
+    expect(stored).toEqual([{ login: 'alice', provider: 'github', token }]);
     // And it never lands in the FILE-shaped table, whose CHECK admits only the
     // two file-shaped providers (R6).
     const rows = await database.query(

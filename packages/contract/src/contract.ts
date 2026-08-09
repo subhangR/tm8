@@ -1012,7 +1012,7 @@ export interface AuthSessionGetResult {
  *
  * Wider than what `account_agent_credentials` will store, and DELIBERATELY so
  * (R6): that table's CHECK admits only the two FILE-shaped providers, while a
- * GitHub token is string-shaped and belongs in 079's `account_git_credentials`.
+ * GitHub token is string-shaped and belongs in 093's `account_git_credentials`.
  * `credential_sessions.provider` carries all three because the terminal can run
  * `gh auth login` regardless of where its output lands. A provider is admitted
  * by measuring its login flow, never by widening a constraint.
@@ -1046,8 +1046,8 @@ export interface CredentialConnectionView {
  * completeness.
  *
  * The two credential stores are split by SHAPE, so this reads two tables and
- * one of them MAY NOT EXIST: `account_git_credentials` ships in migration 079
- * on the deployed staging line and is reachable from no local git object.
+ * one of them MAY NOT EXIST during a rolling upgrade:
+ * `account_git_credentials` ships on main in migration 093.
  * `gitCredentialStore` therefore reports what actually happened rather than
  * letting an absent table read as "not connected" — a missing table and a
  * member who has not connected GitHub are different facts, and collapsing them

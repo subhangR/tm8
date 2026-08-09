@@ -409,7 +409,12 @@ function LoginTerminalPanel({
       </span>
 
       {isLiveTerminalEnabled() ? (
-        <LiveTerminal sessionId={login.workSessionId} serverBaseUrl={serverBaseUrl} live />
+        <LiveTerminal
+          sessionId={login.workSessionId}
+          serverBaseUrl={serverBaseUrl}
+          live
+          autoFocus
+        />
       ) : (
         /* `placeholder` is a STRING, not children — TerminalHost renders no
            children at all, and passing them would have silently drawn an empty

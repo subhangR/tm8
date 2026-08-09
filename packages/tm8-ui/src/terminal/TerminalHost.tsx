@@ -26,11 +26,14 @@ export function TerminalHost({
   placeholder,
   hostRef,
   ariaLabel = 'Terminal',
+  onPointerDown,
 }: {
   placeholder?: string;
   /** Where the pool will reparent the xterm element at integration. */
   hostRef?: React.Ref<HTMLDivElement>;
   ariaLabel?: string;
+  /** Interactive terminals use this to reclaim xterm's hidden textarea. */
+  onPointerDown?: React.PointerEventHandler<HTMLDivElement>;
 }) {
   const hintId = useId();
   return (
@@ -42,6 +45,7 @@ export function TerminalHost({
         aria-label={ariaLabel}
         aria-describedby={hintId}
         data-testid="terminal-host"
+        onPointerDown={onPointerDown}
       >
         {placeholder ? (
           <p className="term-host__ghost" data-testid="terminal-host-placeholder">

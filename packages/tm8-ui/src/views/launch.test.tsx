@@ -10,7 +10,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, renderHook, within } from '@testing-library/react';
-import type { EntityId } from '@tm8/contract';
+import type { CredentialsStatusView, EntityId } from '@tm8/contract';
 import { LaunchSheet } from './LaunchSheet';
 import { useLaunchSheet } from './useLaunchSheet';
 import { PanelStack } from '../shell/PanelStack';
@@ -36,6 +36,25 @@ const renderSheet = (props: Partial<React.ComponentProps<typeof LaunchSheet>> = 
       />
     </div>,
   );
+
+function credentialStatus(input: {
+  store?: 'present' | 'absent';
+  connected?: boolean;
+  login?: string | null;
+} = {}): CredentialsStatusView {
+  return {
+    providers: [{
+      provider: 'github',
+      connected: input.connected ?? false,
+      login: input.login ?? null,
+      authMethod: null,
+      status: input.connected ? 'active' : null,
+      connectedAt: null,
+      lastVerifiedAt: null,
+    }],
+    gitCredentialStore: input.store ?? 'present',
+  };
+}
 
 describe('OBLIGATION 1 — Esc must not pop the panel under an open sheet', () => {
   const makeNav = (stack: string[]): NavPort & { popped: number } => {
@@ -412,6 +431,41 @@ describe('the sheet anatomy (T5-5 / D51)', () => {
     fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'node' } });
     fireEvent.click(getByText('Launch ▸'));
     expect(onLaunch.mock.calls[2]?.[0]).toMatchObject({ credentialSource: 'node' });
+  });
+
+  it('shows the configured GitHub login and how the selected source treats it', async () => {
+    const loadCredentialStatus = vi.fn(async () => credentialStatus({
+      connected: true,
+      login: 'octocat',
+    }));
+    const { findByTestId, getByTestId } = renderSheet({ loadCredentialStatus });
+    const identity = await findByTestId('launch-github-identity');
+
+    expect(identity.textContent).toContain('@octocat');
+    expect(identity.textContent).toContain('wins in Auto');
+    expect(getByTestId('launch-credential-source').textContent).toContain('GitHub @octocat');
+
+    fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'member' } });
+    expect(identity.textContent).toContain('isolated to your member account');
+    fireEvent.change(getByTestId('launch-credential-source'), { target: { value: 'node' } });
+    expect(identity.textContent).toContain('your @octocat connection is not injected');
+  });
+
+  it('distinguishes measured no-login from an unmeasurable GitHub store', async () => {
+    const measured = renderSheet({
+      loadCredentialStatus: async () => credentialStatus({ store: 'present', connected: false }),
+    });
+    const measuredIdentity = await measured.findByTestId('launch-github-identity');
+    fireEvent.change(measured.getByTestId('launch-credential-source'), { target: { value: 'member' } });
+    expect(measuredIdentity.textContent).toContain('none · node fallback is blocked');
+    measured.unmount();
+
+    const unknown = renderSheet({
+      loadCredentialStatus: async () => credentialStatus({ store: 'absent', connected: false }),
+    });
+    expect((await unknown.findByTestId('launch-github-identity')).textContent)
+      .toContain('GitHub identity unknown');
+    expect(unknown.queryByText(/no personal GitHub connection/)).toBeNull();
   });
 
   it('sends only an explicit active profile selection', () => {
