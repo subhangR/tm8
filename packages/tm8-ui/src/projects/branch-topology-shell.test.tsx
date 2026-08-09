@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * THE FOUR-LINKS TEST for the branch-topology section: declaration (seam
- * Amendment 5) → data (fixtures/branches) → implementation (fixture seam) →
+ * Amendment 6) → data (fixtures/branches) → implementation (fixture seam) →
  * CALL can each be green while the feature is dead, because nobody asserted
  * the shell's `projects` slot actually mounts the section and the section's
  * port actually reaches a seam. So this test drives the REAL SettingsShell

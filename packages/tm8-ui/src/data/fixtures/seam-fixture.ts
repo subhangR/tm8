@@ -955,7 +955,7 @@ export function createFixtureSeam(): FixtureSeam {
       return clone([...FIXTURE_PROJECTS]);
     },
     /**
-     * Amendment 5. `opts` are honoured HERE too, not only on the wire — a
+     * Amendment 6. `opts` are honoured HERE too, not only on the wire — a
      * fixture that ignored `limit` would let a caller's bound go unexercised
      * and still pass. `staleAfterDays` re-derives `stale` from the fixed
      * fixture dates (never Date.now()), so a caller's threshold visibly

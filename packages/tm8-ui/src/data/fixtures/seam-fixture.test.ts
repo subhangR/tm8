@@ -173,7 +173,7 @@ describe('fixture seam — reads', () => {
   });
 });
 
-describe('fixture seam — projectBranches (seam Amendment 5)', () => {
+describe('fixture seam — projectBranches (seam Amendment 6)', () => {
   it('answers schema-valid topology for the fixture project and not_found for others', async () => {
     const seam = await openSeam();
 
