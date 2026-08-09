@@ -15,6 +15,8 @@ export function registerW2ProjectsAssociationsHandlers(
     'projects.directories.list': service.listProjectDirectories,
     'projects.get': service.getProject,
     'projects.branches.list': service.listBranches,
+    'projects.file.history': service.fileHistory,
+    'projects.file.blame': service.fileBlame,
     'projects.update': service.updateProject,
     'projects.link': service.linkProject,
     'projects.unlink': service.unlinkProject,
