@@ -1792,6 +1792,7 @@ export const ProjectFolderUploadInitInputSchema: z.ZodType<ProjectFolderUploadIn
     'rootName must be one directory name',
   ),
   trust: ProjectTrustLevelSchema.optional(),
+  mode: z.enum(['create', 'merge']).optional(),
   entries: z.array(ProjectFolderUploadEntrySchema)
     .max(PROJECT_FOLDER_UPLOAD_MAX_FILES + PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES),
 }).strict();
@@ -1833,6 +1834,7 @@ export const ProjectFolderUploadResultSchema: z.ZodType<ProjectFolderUploadResul
   fileCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
   directoryCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_DIRECTORIES),
   totalBytes: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_TOTAL_BYTES),
+  replacedCount: z.number().int().nonnegative().max(PROJECT_FOLDER_UPLOAD_MAX_FILES),
 }).strict();
 
 export const ProjectBranchSchema: z.ZodType<ProjectBranch> = z.object({

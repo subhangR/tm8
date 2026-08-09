@@ -989,39 +989,39 @@ const ROWS: Record<OperationName, Row> = {
   },
   'projects.folderUploads.init': {
     cmd: null,
-    sum: 'Freeze a relative-path manifest for a browser folder import and hand back raw-byte grants',
+    sum: 'Freeze a browser folder-upload manifest and issue per-file byte grants',
     authz: 'space',
     input: 'bound',
-    tags: ['file', 'folder', 'upload', 'import', 'project'],
-    reason: 'not_implemented',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
     notes: [
-      'browser-originated lifecycle: the node never reads a path on the browser machine',
-      'a CLI caller already holds the node filesystem — link the directory as a project instead',
+      'the browser-originated half of R7 folder import; a CLI caller already holds the node filesystem and links a directory as a project directly',
     ],
   },
   'projects.folderUploads.complete': {
     cmd: null,
-    sum: 'Materialize a completed folder import beneath a server-authorized destination',
+    sum: 'Materialize a staged folder upload as a project working directory and link it to the Space',
     authz: 'space',
     input: 'bound',
-    tags: ['file', 'folder', 'upload', 'import', 'project'],
-    reason: 'not_implemented',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
     notes: [
-      'verifies size and sha256 for every entry before writes; cleans its newly reserved root on failure',
+      "mode 'merge' replaces matching paths in place and reports replacedCount (R8); 'create' reserves a new root exclusively",
     ],
   },
   'projects.folderUploads.abort': {
     cmd: null,
-    sum: 'Abort a folder import and remove its staged bytes',
+    sum: 'Abort a pending folder upload and release its staged bytes',
     authz: 'space',
     input: 'bound',
-    tags: ['file', 'folder', 'upload', 'import', 'project'],
-    reason: 'not_implemented',
+    tags: ['file', 'folder', 'upload', 'project', 'import'],
+    reason: 'ui_project_browser_only',
     notes: [
-      'idempotent teardown of the staging area reserved by init',
+      'staged blobs and the frozen manifest are removed; nothing was materialized yet',
     ],
   },
 
+  // ── files ────────────────────────────────────────────────────────────────
   // ── files ────────────────────────────────────────────────────────────────
   'files.uploadInit': {
     cmd: ['file', 'upload'],
@@ -1765,7 +1765,7 @@ function exposureFor(operation: OperationName): Exposure {
  * value to paste here.
  */
 export const CATALOG_DIGEST =
-  'sha256:4aaecf286c6e7ef358359adfec979233080997442c97e88cfd485847c7c7545b';
+  'sha256:e169fda4c4b4fd7cfdee7a854c3a0fb5068165c695bca188fd797728717d50bf';
 
 export const GRAMMAR_VERSION = '2';
 

@@ -1767,6 +1767,12 @@ export interface ProjectFolderUploadInitInput extends CommandContext {
   rootName: string;
   /** Off by default: importing bytes does not imply execution trust. */
   trust?: ProjectTrustLevel;
+  /**
+   * 'create' (default) reserves a NEW root and refuses an existing one.
+   * 'merge' re-uploads into an EXISTING root (R8): matching paths are
+   * replaced, new paths added, and the result reports `replacedCount`.
+   */
+  mode?: 'create' | 'merge';
   entries: ProjectFolderUploadEntry[];
 }
 
@@ -1801,6 +1807,8 @@ export interface ProjectFolderUploadResult {
   fileCount: number;
   directoryCount: number;
   totalBytes: number;
+  /** Files that already existed and were replaced in place (R8; 0 for mode 'create'). */
+  replacedCount: number;
 }
 
 /** One local branch in a project's working directory. */
