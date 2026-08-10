@@ -291,7 +291,8 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
         } as T;
       }
       expect(name).toBe('w2_record_session_message_routes');
-      expect(args).toEqual([[IDS.message], null]);
+      // Third arg: pokeSessionIds — null when the caller named none (099).
+      expect(args).toEqual([[IDS.message], null, null]);
       return [{
         targetMessageId: IDS.message,
         targetWorkSessionId: IDS.targetSession,
@@ -713,7 +714,8 @@ describe('W2.G04 message, delivery, and handoff facade', () => {
         return { messageBatchId: 'reply-batch-1', messageIds: [IDS.message] } as T;
       }
       expect(name).toBe('w2_record_session_message_routes');
-      expect(args).toEqual([[IDS.message], IDS.anchor]);
+      // Third arg: pokeSessionIds — null when the caller named none (099).
+      expect(args).toEqual([[IDS.message], IDS.anchor, null]);
       return [] as T;
     };
     const registry = new HandlerRegistry();

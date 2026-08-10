@@ -381,6 +381,12 @@ export class W2MessagesHandoffsService {
     const requestedAnchorIds = uniqueIds(input.anchorIds, 'anchorIds');
     const mentionIds = uniqueIds(input.mentionIds ?? [], 'mentionIds');
     const attachmentIds = uniqueIds(input.attachmentIds ?? [], 'attachmentIds');
+    // @tag pokes: sessions to WAKE without anchoring the message on them —
+    // the only route to a session from a threaded reply, where a second
+    // anchor is impossible (019: a reply has exactly one anchor). Validated
+    // in the routes RPC (live work_session, same space), delivered through
+    // the same 072/076 route rows as every other session copy.
+    const pokeSessionIds = uniqueIds(input.pokeSessionIds ?? [], 'pokeSessionIds');
     if (!input.replyToMessageId && requestedAnchorIds.length === 0) {
       throw new CollabError('invalid_input', 'anchorIds must not be empty');
     }
@@ -415,6 +421,7 @@ export class W2MessagesHandoffsService {
       const routeResult = await q.rpc<SessionReplyRoute[]>('w2_record_session_message_routes', [
         result.messageIds,
         input.replyToMessageId ? anchorIds[0] : input.conversationAnchorId ?? null,
+        pokeSessionIds.length > 0 ? pokeSessionIds : null,
       ]);
       const routes = Array.isArray(routeResult) ? routeResult : [];
       const messages = await loadMessageViewsByIds(q, result.messageIds, viewerIdentityId);

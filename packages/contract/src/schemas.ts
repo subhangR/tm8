@@ -1494,6 +1494,7 @@ const PostMessageWireInputSchema: z.ZodType<PostMessageWireInput> = z.object({
   parentMessageId: EntityIdSchema.nullable().optional(),
   mentionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
   attachmentIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
+  pokeSessionIds: uniqueArray(EntityIdSchema, 0, 16).optional(),
 }).strict();
 
 export const PostMessageInputSchema: z.ZodType<PostMessageInput, z.ZodTypeDef, PostMessageWireInput> =
@@ -2012,6 +2013,7 @@ export const ExecutionSpawnInputSchema: z.ZodType<ExecutionSpawnInput> = z.objec
   teamMemberId: SpawnUuidSchema,
   parentSessionId: SpawnUuidSchema.optional(),
   taskIds: z.array(SpawnUuidSchema).optional(),
+  forceNewTask: z.boolean().optional(),
   projectId: SpawnUuidSchema.nullable().optional(),
   workdir: SpawnWorkdirSchema.optional(),
   confirmUntrusted: z.literal(true).optional(),
@@ -2044,6 +2046,7 @@ export const ExecutionDispatchInputSchema: z.ZodType<ExecutionDispatchInput> = z
   clientMutationId: z.string().min(1),
   spaceId: SpawnUuidSchema,
   subjectId: SpawnUuidSchema,
+  forceNewTask: z.boolean().optional(),
   note: z.string().max(4000).optional(),
 }).strict();
 
