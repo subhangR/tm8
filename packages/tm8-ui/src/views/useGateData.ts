@@ -349,8 +349,25 @@ export interface GateData {
   viewerActor: ActorSummary | null;
   menu: ResolvedMenu;
   connection: ConnectionState;
-  /** Set when the first read failed — an unreachable node, honestly held. */
+  /** Set when the first read failed — the reason, honestly held. */
   bootError: string | null;
+  /**
+   * The node's own error CODE for that failure, or `null` when the failure
+   * carried none (a synthesized boot state, or a throw that is not a
+   * `CollabError`).
+   *
+   * `bootError` alone cannot tell a REFUSAL from an OUTAGE, and the two call
+   * for opposite things from the reader. `upstream_unavailable` is the node not
+   * answering — transient, nothing to do but wait, and the boot loop's retry
+   * genuinely does clear it. `forbidden` is the node having answered and said
+   * no: waiting does not clear that, and telling someone it will is worse than
+   * saying nothing, because they wait.
+   *
+   * Not hypothetical. A Space whose reads refused with `forbidden: not a member
+   * of this space` was reported as "can't reach the tm8 node", by a reader
+   * copying the only headline this shell would show them.
+   */
+  bootErrorCode: string | null;
   /**
    * The active server ANSWERED the boot read with `unauthenticated`. A node
    * that refuses the credential is a different fact from a node that cannot be
@@ -808,6 +825,10 @@ export function useGateData(options: GateOptions): GateData {
   const seededIds = useRef(new Map<string, string[]>());
 
   const [bootError, setBootError] = useState<string | null>(null);
+  // Set from the SAME error as `bootError`, at every site, so the message and
+  // the code can never describe two different failures. See the field's
+  // docblock for why the code has to survive the trip.
+  const [bootErrorCode, setBootErrorCode] = useState<string | null>(null);
   const [authRequired, setAuthRequired] = useState(false);
 
   // Fetch the viewer's spaces. Opening and hydrating the selected space
@@ -846,9 +867,11 @@ export function useGateData(options: GateOptions): GateData {
             setBootError(
               'this node has no spaces yet — the workspace has nothing to open. Create a space, then reload.',
             );
+            setBootErrorCode(null);
             return;
           }
           setBootError(null);
+          setBootErrorCode(null);
           // THE SPACE THIS BROWSER LAST HAD OPEN ON THIS NODE WINS.
           //
           // `first.id` alone meant every remount landed on the node's first
@@ -882,6 +905,7 @@ export function useGateData(options: GateOptions): GateData {
             error instanceof CollabError && error.code === 'unauthenticated';
           setAuthRequired(unauthenticated);
           setBootError(String((error as { message?: string })?.message ?? error));
+          setBootErrorCode(error instanceof CollabError ? error.code : null);
           await new Promise<void>((resolve) => {
             if (unauthenticated) {
               unsubscribe = subscribeToSession(() => {
@@ -913,6 +937,7 @@ export function useGateData(options: GateOptions): GateData {
 
     setReady(false);
     setBootError(null);
+    setBootErrorCode(null);
     // Row claims and row cache have the same lifetime. Keeping a claim across
     // this reset would make the new space render an unhydrated key forever;
     // clearing only the claim would reintroduce duplicate in-flight reads.
@@ -968,12 +993,14 @@ export function useGateData(options: GateOptions): GateData {
           await hydrate(spaceId);
           if (!cancelled) {
             setBootError(null);
+            setBootErrorCode(null);
             setReady(true);
           }
           return;
         } catch (error: unknown) {
           if (cancelled) return;
           setBootError(String((error as { message?: string })?.message ?? error));
+          setBootErrorCode(error instanceof CollabError ? error.code : null);
           await new Promise<void>((resolve) => {
             delayHandle = setTimeout(resolve, bootRetryDelayMs(attempt, error));
           });
@@ -1003,6 +1030,7 @@ export function useGateData(options: GateOptions): GateData {
       ? current.map((candidate) => candidate.id === space.id ? space : candidate)
       : [...current, space]);
     setBootError(null);
+    setBootErrorCode(null);
     setSpaceId(space.id);
   }, []);
 
@@ -1856,6 +1884,7 @@ export function useGateData(options: GateOptions): GateData {
       menu,
       connection,
       bootError,
+      bootErrorCode,
       authRequired,
       liveIds,
       livenessOf,
@@ -1883,7 +1912,7 @@ export function useGateData(options: GateOptions): GateData {
       domain,
       pull: (id: string) => void pull(id),
     }),
-    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
+    [ready, spaceId, spaces, members, viewerActor, menu, connection, bootError, bootErrorCode, authRequired, liveIds, livenessOf, rowsFor, boardFor, pageStateOf, loadMore, countsFor, refreshCounts, detailOf, refetchDetail, connectionsOf, activity, messagePulses, graph, launch, ensureKind, selectSpace, acceptSpace, spawn, postAndRefresh, messagesByAnchor, reconcileCommand, seam, domain, pull],
   );
 
   return data;

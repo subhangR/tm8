@@ -868,10 +868,11 @@ export function GateApp(props: GateAppProps = {}) {
             /* GAP-1 (data-wiring handover): with the real seam now the
                default, an unreachable node is a NORMAL state and must be
                STATED — never a spinner that resolves for nobody, never a
-               silent fall-back to fixtures. Two distinct honest states share
-               this card: a node that could not be read (boot keeps retrying
-               in the background), and a node that answered with zero spaces
-               (nothing to retry — there is nothing to open). */
+               silent fall-back to fixtures. THREE distinct honest states share
+               this card: a node that could not be reached (boot keeps retrying
+               in the background), a node that answered with zero spaces
+               (nothing to retry — there is nothing to open), and a node that
+               answered this Space's reads with a REFUSAL. */
             data.bootError.startsWith('this node has no spaces') ? (
               <div className="shell-boot" role="alert">
                 <strong>No spaces on this node.</strong>
@@ -881,6 +882,31 @@ export function GateApp(props: GateAppProps = {}) {
                     Create Space & add project
                   </button>
                 ) : <div>{data.bootError}</div>}
+              </div>
+            ) : data.bootErrorCode === 'forbidden' ? (
+              /* A REFUSAL IS AN ANSWER, AND IT MUST NOT WEAR THE OUTAGE'S
+                 HEADLINE. `forbidden` used to render as "can't reach the tm8
+                 node … this clears itself the moment the node answers", and the
+                 node had already answered: waiting changes nothing. The reader
+                 is then told the exact opposite of what to do — wait on a card
+                 that will never clear, instead of switching Space or asking for
+                 access. Reported verbatim as a node-reachability bug, which is
+                 how a Space that refused `spaces.settings` stayed misdiagnosed.
+
+                 `forbidden` ONLY, deliberately. It is the one code that means
+                 "the node answered about THIS Space, and said no"; every other
+                 non-transport failure is somebody else's sentence to write, and
+                 claiming them here would trade one wrong headline for another.
+
+                 The tab bar above this card is live, so "open a different
+                 Space" is an instruction the reader can act on right here.
+                 Boot keeps retrying underneath, which is why this promises
+                 nothing about waiting but still heals the moment access lands. */
+              <div className="shell-boot" role="alert">
+                <strong>The node refused this Space.</strong>
+                <div>{data.bootError}</div>
+                <div>The workspace is empty because the read was refused — not because there is nothing in it.</div>
+                <div>Waiting will not clear this. Open a different Space above, or ask a Space admin for access to this one.</div>
               </div>
             ) : (
               <div className="shell-boot" role="alert">

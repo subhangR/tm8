@@ -177,6 +177,117 @@ describe('W2.G01 identity and Spaces handler seam', () => {
     });
   });
 
+  /**
+   * The same guarantee as the test above, for the six reads that check
+   * membership HERE rather than in `handlers/spaces.ts` — and the one that
+   * shipped without it.
+   *
+   * All six passed `owner.identityId` to the check, so each asked "is the NODE
+   * OWNER a member of this Space?" on behalf of whoever called. On a node whose
+   * owner belongs to every Space that is invisible; on the first Space somebody
+   * ELSE creates it refuses all six for every real member — `spaces.settings`
+   * included, which is a boot read, so the Space cannot be opened at all. The
+   * refusal reaching the browser is `forbidden: not a member of this space`,
+   * addressed to the member who owns it.
+   *
+   * The fake answers the membership query for the CALLER only, which is what a
+   * Space the node owner does not belong to looks like from inside the handler.
+   */
+  it('checks membership against the caller on every gated G01 read, not the node owner', async () => {
+    const bearerIdentity = 'identity-tarkesh';
+    const gatedReads = [
+      ['spaces.settings', { spaceId: SPACE_ID }],
+      ['spaces.members.list', { spaceId: SPACE_ID }],
+      ['spaces.invites.list', { spaceId: SPACE_ID }],
+      ['spaces.taskAxes.list', { spaceId: SPACE_ID }],
+      ['spaces.leaderboard', { spaceId: SPACE_ID }],
+      ['spaces.awards', { spaceId: SPACE_ID }],
+    ] as const;
+
+    for (const [opName, params] of gatedReads) {
+      const db = new FakeDb(async (sql, queryParams) => {
+        if (sql.includes('from public.members membership')) {
+          // The node owner is not in this Space. Nobody else's identity is
+          // either — only the caller's.
+          return queryParams[1] === bearerIdentity
+            ? [{ entity_id: MEMBER_ID, role: 'owner' }]
+            : [];
+        }
+        if (sql.includes('from public.spaces s')) {
+          return [{
+            id: SPACE_ID,
+            name: 'Tharak',
+            description: '',
+            github_repo: null,
+            created_at: '2026-08-09T17:33:50.899Z',
+            member_count: '1',
+            unread_total: '0',
+            default_channel_id: CHANNEL_ID,
+            default_interaction_profile_id: null,
+            settings_revision: 1,
+          }];
+        }
+        if (sql.includes('from public.space_menu_configs')) {
+          return [{
+            schema_version: 1,
+            revision: 1,
+            payload: {
+              schemaVersion: 1,
+              groups: [{ id: 'main', label: 'Main', items: [{ type: 'view', ref: 'settings' }] }],
+            },
+          }];
+        }
+        return [];
+      });
+
+      await expect(
+        registryFor(db).get(opName)!(context(opName, {
+          params,
+          identity: {
+            kind: 'bearer',
+            identityId: bearerIdentity,
+            token: 'tm8s_tarkesh.secret',
+            nodeAdmin: false,
+          },
+        })),
+      ).resolves.toBeDefined();
+
+      expect(db.queryCalls[0]?.sql).toContain('from public.members membership');
+      expect(db.queryCalls[0]?.params).toEqual([SPACE_ID, bearerIdentity]);
+    }
+  });
+
+  /**
+   * The same defect read from the other side. `spaces.invites.list` wants an
+   * ADMIN, and asking for the node owner's role meant a plain member of a Space
+   * the node owner administers cleared an admin-only gate. The role that
+   * matters is the caller's.
+   */
+  it('refuses an admin-only G01 read on the caller’s own role, not the node owner’s', async () => {
+    const bearerIdentity = 'identity-tarkesh';
+    const db = new FakeDb(async (sql, params) => {
+      if (sql.includes('from public.members membership')) {
+        // The caller is a plain member; the node owner administers the Space.
+        return params[1] === bearerIdentity
+          ? [{ entity_id: MEMBER_ID, role: 'member' }]
+          : [{ entity_id: MEMBER_ID, role: 'admin' }];
+      }
+      return [];
+    });
+
+    await expect(
+      registryFor(db).get('spaces.invites.list')!(context('spaces.invites.list', {
+        params: { spaceId: SPACE_ID },
+        identity: {
+          kind: 'bearer',
+          identityId: bearerIdentity,
+          token: 'tm8s_tarkesh.secret',
+          nodeAdmin: false,
+        },
+      })),
+    ).rejects.toMatchObject({ code: 'forbidden', message: 'space administrator role required' });
+  });
+
   it('requires clientMutationId before every G01 command reaches an RPC', async () => {
     const db = new FakeDb();
     const registry = registryFor(db);
