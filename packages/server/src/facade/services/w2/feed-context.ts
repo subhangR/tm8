@@ -101,6 +101,24 @@ export const FEED_SCOPE_PREDICATES: Readonly<Record<FeedScope, readonly FeedVia[
   direct_v1: Object.freeze(['anchored', 'replies', 'subject'] as const),
   /** A work session's chat: its thread, plus what it authored and caused. */
   session_chat_v1: Object.freeze(['anchored', 'authored', 'caused', 'replies'] as const),
+  /**
+   * A channel read as THREAD ROOTS — `direct_v1` minus `replies`.
+   *
+   * `direct_v1` unions roots and replies and orders the result by time, which
+   * is why a channel reads flat: a reply is drawn wherever it happens to fall
+   * in the timeline rather than under the message it answers. Dropping the one
+   * predicate is the whole of it — a reply is still stored, still readable, and
+   * still reachable through `messages.list?rootMessageId=`, which has returned
+   * roots-with-reply-counts since it was written. It simply stops being
+   * rendered as a peer of the message it replies to.
+   *
+   * A SEPARATE SCOPE RATHER THAN A NARROWED `direct_v1`. The task Discussion
+   * tab and every other hub read `direct_v1` and want replies inline; changing
+   * it in place would silently restructure surfaces this ticket never looked
+   * at. The two scopes disagree deliberately, and the disagreement is the
+   * feature.
+   */
+  channel_threads_v1: Object.freeze(['anchored', 'subject'] as const),
 });
 
 /**
@@ -115,11 +133,21 @@ export const FEED_SCOPE_ANCHOR_KINDS: Readonly<Record<FeedScope, 'any' | readonl
   Object.freeze({
     direct_v1: 'any',
     session_chat_v1: Object.freeze(['work_session'] as const),
+    channel_threads_v1: Object.freeze(['channel'] as const),
   });
 
-/** Anchor kind → the scope `default` resolves to for it. */
+/**
+ * Anchor kind → the scope `default` resolves to for it.
+ *
+ * A channel defaults to roots-only, so a client that asks for nothing in
+ * particular gets the threaded reading. Naming the scope explicitly still
+ * works and still wins; this only decides what `default` MEANS, which is the
+ * one place a kind may shape a read without the caller knowing.
+ */
 function defaultScopeFor(anchorKind: string): FeedScope {
-  return anchorKind === 'work_session' ? 'session_chat_v1' : 'direct_v1';
+  if (anchorKind === 'work_session') return 'session_chat_v1';
+  if (anchorKind === 'channel') return 'channel_threads_v1';
+  return 'direct_v1';
 }
 
 /**

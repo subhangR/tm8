@@ -321,7 +321,17 @@ describe.sequential('W2.G13 migration 030 and the versioned feed scope', () => {
   it('adds NOTHING to the shared schema but its own two functions', async () => {
     const without = await createW1ScratchDatabase('w2_g13_no030');
     try {
-      without.apply(migrationFiles().filter((file) => file !== '030_w2_feed_context.sql'));
+      // 097 is the SECOND writer of these same two functions — it restates them
+      // whole with `create or replace` to add `channel_threads_v1` to both
+      // lookup tables. So proving "030 contributes exactly two functions and no
+      // shared-schema change" means withholding every migration that defines
+      // them, not just 030; leaving 097 in would recreate both and make `gained`
+      // empty for a reason that has nothing to do with what this test asserts.
+      const SCOPE_REGISTRY_MIGRATIONS = [
+        '030_w2_feed_context.sql',
+        '097_channel_threads_feed_scope.sql',
+      ];
+      without.apply(migrationFiles().filter((file) => !SCOPE_REGISTRY_MIGRATIONS.includes(file)));
       const before = await catalogOf(without);
       const after = await catalogOf(database);
 
@@ -380,7 +390,9 @@ describe.sequential('W2.G13 migration 030 and the versioned feed scope', () => {
       `select c.scope, c.kind, internal.w2_feed_scope_applicable(c.scope, c.kind) ok
          from (values ('direct_v1','task'),('direct_v1','work_session'),('direct_v1','channel'),
                       ('session_chat_v1','work_session'),('session_chat_v1','task'),
-                      ('session_chat_v1','channel'),('direct_v2','task'),('raw','task'))
+                      ('session_chat_v1','channel'),('direct_v2','task'),('raw','task'),
+                      ('channel_threads_v1','channel'),('channel_threads_v1','task'),
+                      ('channel_threads_v1','work_session'))
               c(scope, kind)`,
     );
     expect(rows.map((row) => [row.scope, row.kind, row.ok])).toEqual([
@@ -392,10 +404,18 @@ describe.sequential('W2.G13 migration 030 and the versioned feed scope', () => {
       ['session_chat_v1', 'channel', false],
       ['direct_v2', 'task', false],
       ['raw', 'task', false],
+      // Narrow on purpose: a roots-only reading is a CHANNEL's reading. Asking
+      // for it elsewhere is a caller naming something that does not exist, and
+      // the frozen answer is `feed_scope_not_applicable` rather than an empty
+      // feed that lets a broken query ship.
+      ['channel_threads_v1', 'channel', true],
+      ['channel_threads_v1', 'task', false],
+      ['channel_threads_v1', 'work_session', false],
     ]);
     // The facade's own applicability table says exactly the same thing.
     expect(FEED_SCOPE_ANCHOR_KINDS.direct_v1).toBe('any');
     expect(FEED_SCOPE_ANCHOR_KINDS.session_chat_v1).toEqual(['work_session']);
+    expect(FEED_SCOPE_ANCHOR_KINDS.channel_threads_v1).toEqual(['channel']);
   });
 });
 
@@ -424,6 +444,28 @@ describe.sequential('W2.G13 feed scope branches on the full chain', () => {
       // sorted — not two rows the client has to deduplicate.
       [fixture.sessionMessageId, ['anchored', 'authored']],
     ]);
+  });
+
+  it('channel_threads_v1 is direct_v1 minus replies — the root survives, the reply does not', async () => {
+    const rows = await page(fixture.identityMember, fixture.taskId, 'channel_threads_v1');
+
+    // Same anchor, same fixture, one predicate fewer. THIS IS THE WHOLE
+    // FEATURE: a reply stops being drawn as a peer of the message it answers.
+    expect(rows.map((row) => [row.item_id, row.via])).toEqual([
+      [fixture.subjectActivityId, ['subject']],
+      [fixture.rootMessageId, ['anchored']],
+    ]);
+
+    // Stated as its own assertion because "the reply is gone" is the claim a
+    // future reader will want to see refuted directly, not inferred from a
+    // deep-equal above.
+    expect(rows.map((row) => row.item_id)).not.toContain(fixture.replyMessageId);
+
+    // NOT HIDDEN, ONLY UNFLATTENED: `direct_v1` over the identical anchor and
+    // the identical viewer still returns it. Nothing was deleted, and no RLS
+    // decision changed — the reply is one `messages.list?rootMessageId=` away.
+    const flat = await page(fixture.identityMember, fixture.taskId, 'direct_v1');
+    expect(flat.map((row) => row.item_id)).toContain(fixture.replyMessageId);
   });
 
   it('direct_v1 on a work_session anchor is a different, narrower feed', async () => {

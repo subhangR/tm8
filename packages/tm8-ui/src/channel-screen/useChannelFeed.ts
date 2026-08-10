@@ -36,6 +36,29 @@ import {
 } from './channel-tags';
 import type { ChannelPostInput, ChannelRefusal } from './feed-model';
 
+/**
+ * THREAD ROOTS, not every message.
+ *
+ * `direct_v1` is `['anchored','replies','subject']`, and those first two
+ * partition a channel's messages on `root_message_id is null` — so unioning
+ * them and ordering by time is precisely what made a channel read FLAT: a
+ * reply was drawn wherever it landed in the timeline rather than under the
+ * message it answers. `channel_threads_v1` is the same scope minus `replies`.
+ *
+ * NOTHING IS HIDDEN. A reply is still stored, still RLS-covered, and still
+ * read through `messages.list?rootMessageId=` — the branch read that has
+ * returned roots-with-reply-counts since it was written. It stops being drawn
+ * as a PEER of its parent, which is the entire point.
+ *
+ * NAMED RATHER THAN LEFT TO `default`. The server resolves `default` for a
+ * channel to this same scope, so omitting it would behave identically today.
+ * It is named because BOTH reads here must agree — `reload` and `loadEarlier`
+ * page the same list, and a keyset cursor is fingerprinted over its scope, so
+ * two spellings would mean the second page rejects the first page's cursor.
+ * One constant makes that a compile-time fact rather than a convention.
+ */
+const CHANNEL_FEED_SCOPE = 'channel_threads_v1' as const;
+
 /** A trusted, non-scratch project is what @tag needs before it can spawn. */
 export interface ChannelFeedProject {
   id: string;
@@ -145,7 +168,7 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     setError(null);
     setRefusal(null);
     try {
-      const next = await seam.feed(channelId, { scope: 'direct_v1' });
+      const next = await seam.feed(channelId, { scope: CHANNEL_FEED_SCOPE });
       // The server pages newest-first; a chat reads oldest-to-newest with the
       // latest at the bottom, so the page is re-sorted before it ever paints.
       setPage({ ...next, items: chronological(next.items) });
@@ -182,7 +205,7 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
   const loadEarlier = useCallback(async (cursor: Cursor) => {
     setLoadingEarlier(true);
     try {
-      const older = await seam.feed(channelId, { cursor, scope: 'direct_v1' });
+      const older = await seam.feed(channelId, { cursor, scope: CHANNEL_FEED_SCOPE });
       setPage((current) => current
         ? {
             ...current,

@@ -431,7 +431,11 @@ describe('W2.G13 registration seam', () => {
 
 describe('W2.G13 versioned named scope (dossier M1/M3)', () => {
   it('freezes the scope→predicate registry as a closed, server-owned map', () => {
-    expect(Object.keys(FEED_SCOPE_PREDICATES).sort()).toEqual(['direct_v1', 'session_chat_v1']);
+    expect(Object.keys(FEED_SCOPE_PREDICATES).sort()).toEqual([
+      'channel_threads_v1',
+      'direct_v1',
+      'session_chat_v1',
+    ]);
     expect(FEED_SCOPE_PREDICATES.direct_v1).toEqual(['anchored', 'replies', 'subject']);
     expect(FEED_SCOPE_PREDICATES.session_chat_v1).toEqual([
       'anchored',
@@ -439,6 +443,10 @@ describe('W2.G13 versioned named scope (dossier M1/M3)', () => {
       'caused',
       'replies',
     ]);
+    // `direct_v1` minus `replies` — a reply stops being drawn as a PEER of the
+    // message it answers. It is still stored and still reachable through
+    // `messages.list?rootMessageId=`; only the flattening goes away.
+    expect(FEED_SCOPE_PREDICATES.channel_threads_v1).toEqual(['anchored', 'subject']);
     // Canonical (deduped AND sorted) so the cursor fingerprint and the SQL
     // assembly can never be fed two different spellings of one predicate set.
     for (const predicates of Object.values(FEED_SCOPE_PREDICATES)) {
@@ -451,6 +459,21 @@ describe('W2.G13 versioned named scope (dossier M1/M3)', () => {
     expect(resolveFeedScope('default', 'work_session')).toBe('session_chat_v1');
     expect(resolveFeedScope('direct_v1', 'work_session')).toBe('direct_v1');
     expect(() => resolveFeedScope('session_chat_v1', 'task')).toThrowError(
+      /feed_scope_not_applicable|not applicable/,
+    );
+
+    // A channel defaults to roots-only, so a client that asks for nothing in
+    // particular gets the threaded reading.
+    expect(resolveFeedScope(undefined, 'channel')).toBe('channel_threads_v1');
+    expect(resolveFeedScope('default', 'channel')).toBe('channel_threads_v1');
+    // Naming a scope explicitly still wins — `default` only decides the
+    // fallback, it never overrides a caller who said what they wanted.
+    expect(resolveFeedScope('direct_v1', 'channel')).toBe('direct_v1');
+    // And the new scope is narrow: it answers for a channel and nothing else.
+    expect(() => resolveFeedScope('channel_threads_v1', 'task')).toThrowError(
+      /feed_scope_not_applicable|not applicable/,
+    );
+    expect(() => resolveFeedScope('channel_threads_v1', 'work_session')).toThrowError(
       /feed_scope_not_applicable|not applicable/,
     );
   });

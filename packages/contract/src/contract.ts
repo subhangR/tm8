@@ -467,6 +467,19 @@ export interface MessageView extends EntitySummary {
   state: Extract<CoreEntityState, { kind: 'message' }>;
   content: Extract<CoreEntityContent, { kind: 'message' }>;
   replyCount: number; replies?: Page<MessageView>; pending?: boolean;
+  /**
+   * The thread footer's other two facts — "· 2h ago · Bhargav, Opus 5".
+   *
+   * `lastReplyAt` is null on a root with no replies: there IS no last reply,
+   * which is a different fact from not having looked. `replyParticipants` are
+   * the distinct authors of the branch, ordered by their first reply so a
+   * facepile does not reshuffle between reads. Both ride the same grouped query
+   * as `replyCount`, so a root that carries one carries all three.
+   *
+   * Optional because a MessageView is also built client-side for an optimistic
+   * echo, where no branch has been read.
+   */
+  lastReplyAt?: string | null; replyParticipants?: ActorSummary[];
 }
 
 export interface ActivityItem { id: string; entityId?: EntityId | null; actor?: ActorSummary | null;
@@ -2689,7 +2702,7 @@ export interface HandoffView {
   updatedAt: string;
 }
 
-export type FeedScope = 'direct_v1' | 'session_chat_v1';
+export type FeedScope = 'direct_v1' | 'session_chat_v1' | 'channel_threads_v1';
 export type FeedVia = 'subject' | 'anchored' | 'authored' | 'replies' | 'caused';
 
 export interface EntityFeedQuery {
