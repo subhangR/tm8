@@ -2361,7 +2361,14 @@ function registerHandlers(
       subjectId: input.subjectId,
       dispatcherSessionId,
       note: input.note ?? null,
-      requesterActorId: envelope.actorId ?? owner.identityId,
+      // The ACTOR bound on this transaction, never the identity. `owner.identityId`
+      // is an `id_…` string (identity/ids.ts) and `w2_post_message_batch`'s
+      // `p_actor_id` is a uuid, so that fallback made every dispatch from a caller
+      // who named no actor — which is every browser call — die at 22P02
+      // "invalid input syntax for type uuid". Null is the correct absence: SQL then
+      // resolves the caller's per-space member itself (see context.ts's header),
+      // which is exactly what `execution.spawn` passes.
+      requesterActorId: claims.actorId ?? null,
       requesterActorKind: ctx.identity.kind === 'bearer' ? 'team_member' : 'member',
       requestId: ctx.requestId,
       clientMutationId: `${envelope.clientMutationId ?? input.clientMutationId}:dispatch-request`,
