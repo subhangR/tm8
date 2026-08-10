@@ -467,6 +467,34 @@ describe('projects.folderUploads security corrections', () => {
     )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
   });
 
+  it('C1: a node-admin SESSION is admitted even though it is not the node owner', async () => {
+    // The gate's authority is `public.accounts.is_node_admin`, carried on the
+    // session the node verified by token hash — not "are you the loopback owner
+    // account". Reading the second as the first refused every signed-in human
+    // on the node, including the ones an operator had just granted the flag,
+    // and folder import was `forbidden` for everybody in production.
+    const registry = configuredWithOwner(stagingDb(), true);
+    const grant = await handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', {
+        params: { spaceId: SPACE },
+        body: initBody(),
+        identity: { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: true },
+      }),
+    ) as ProjectFolderUploadGrant;
+    expect(grant.folderUploadId).toEqual(expect.any(String));
+  });
+
+  it('C1: a bearer WITHOUT the node-admin flag is still forbidden, owner or not', async () => {
+    const registry = configuredWithOwner(stagingDb(), true);
+    await expect(handler(registry, 'projects.folderUploads.init')(
+      request('projects.folderUploads.init', {
+        params: { spaceId: SPACE },
+        body: initBody(),
+        identity: { kind: 'bearer', identityId: 'a-signed-in-human', nodeAdmin: false },
+      }),
+    )).rejects.toMatchObject({ code: 'forbidden', message: expect.stringMatching(/node-admin/i) });
+  });
+
   it('C2: traversal/absolute rootName and secret entry names refuse BEFORE any filesystem probe', async () => {
     const db = stagingDb();
     const { registry } = configured(db);

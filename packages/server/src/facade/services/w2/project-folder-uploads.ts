@@ -126,7 +126,7 @@ export class W2ProjectFolderUploadService {
   readonly init: OperationHandler = async (ctx) => {
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const input = ctx.body as ProjectFolderUploadInitInput;
-    const { claims, viewerIdentityId } = await this.requestClaims(ctx);
+    const { claims, viewerIdentityId, nodeAdmin } = await this.requestClaims(ctx);
 
     // C2 (Lane 3): PURE validation first — nothing below may touch the
     // filesystem until every name in the request has been refused or cleared,
@@ -155,7 +155,7 @@ export class W2ProjectFolderUploadService {
     // in-roots destination is node-admin only, matching the createProject
     // ensureWorkingDir precedent. Provisional policy until an owner approves
     // a server-managed import root for ordinary members.
-    requireNodeAdmin(claims);
+    requireNodeAdmin(nodeAdmin);
 
     // Containment BEFORE the first probe of the target: a lexically
     // out-of-jail parent is forbidden without any filesystem access, so the
@@ -252,10 +252,10 @@ export class W2ProjectFolderUploadService {
 
   readonly complete: OperationHandler = async (ctx) => {
     const folderUploadId = requireUuidParam(ctx, 'folderUploadId');
-    const { claims, viewerIdentityId } = await this.requestClaims(ctx);
+    const { claims, viewerIdentityId, nodeAdmin } = await this.requestClaims(ctx);
     // C1: gate BEFORE the session is even looked up — a non-admin cannot
     // probe which folderUploadIds exist.
-    requireNodeAdmin(claims);
+    requireNodeAdmin(nodeAdmin);
     const state = await this.loadState(folderUploadId, viewerIdentityId);
 
     if (new Date(state.expiresAt).getTime() <= this.now().getTime()) {
@@ -330,21 +330,45 @@ export class W2ProjectFolderUploadService {
 
   readonly abort: OperationHandler = async (ctx) => {
     const folderUploadId = requireUuidParam(ctx, 'folderUploadId');
-    const { claims, viewerIdentityId } = await this.requestClaims(ctx);
-    requireNodeAdmin(claims);
+    const { claims, viewerIdentityId, nodeAdmin } = await this.requestClaims(ctx);
+    requireNodeAdmin(nodeAdmin);
     const state = await this.loadState(folderUploadId, viewerIdentityId);
     await this.release(claims, state);
     return { patches: [] } satisfies CommandResult;
   };
 
+  /**
+   * TWO ANSWERS, BECAUSE THEY ARE TWO QUESTIONS.
+   *
+   * `claims.nodeAdmin` is an RLS POSTURE — "may this transaction see past the
+   * policies?" — and it stays narrow on purpose: only a request that resolved
+   * to the node owner itself gets it, so a member's import can never read
+   * another space's rows. Every other service in this lane says the same thing
+   * the same way.
+   *
+   * `nodeAdmin` is an AUTHORIZATION FACT — "is this person a node
+   * administrator?" — and its authority is `public.accounts.is_node_admin`,
+   * read off the session the node verified by token hash. `claimsFor` already
+   * carries it; this returns it unflattened.
+   *
+   * Reading the posture as the fact is what broke folder import: the flag is
+   * false for EVERY signed-in human except whoever happens to be the loopback
+   * owner account, so `requireNodeAdmin` refused every import on the node with
+   * `forbidden` — including for accounts an operator had explicitly granted
+   * `is_node_admin`, which is the exact grant the refusal claims to want. The
+   * C1 comment names `createProject`'s `ensureWorkingDir` as its precedent, and
+   * that precedent is `internal.require_node_admin()`, i.e. the accounts
+   * column. This makes the two agree.
+   */
   private async requestClaims(
     ctx: RequestContext,
-  ): Promise<{ claims: DbClaims; viewerIdentityId: string }> {
+  ): Promise<{ claims: DbClaims; viewerIdentityId: string; nodeAdmin: boolean }> {
     const owner = await this.deps.owner();
     const viewerIdentityId = requireAuthenticatedIdentity(ctx, owner.identityId);
     const base = claimsFor(owner, ctx, commandEnvelope(ctx));
     return {
       viewerIdentityId,
+      nodeAdmin: base.nodeAdmin === true,
       claims: {
         ...base,
         identityId: viewerIdentityId,
@@ -420,8 +444,8 @@ export class W2ProjectFolderUploadService {
   }
 }
 
-function requireNodeAdmin(claims: DbClaims): void {
-  if (claims.nodeAdmin !== true) {
+function requireNodeAdmin(nodeAdmin: boolean): void {
+  if (!nodeAdmin) {
     throw new CollabError('forbidden', "node-admin access is required to import a folder onto the node's disk");
   }
 }

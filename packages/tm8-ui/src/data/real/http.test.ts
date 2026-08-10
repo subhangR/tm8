@@ -102,7 +102,7 @@ describe('http: envelope unwrap', () => {
 });
 
 describe('http: server-granted raw upload', () => {
-  it('PUTs bytes only to the grant URL with the grant bearer token', async () => {
+  it('PUTs bytes to the grant URL with the grant in ITS OWN header, never in Authorization', async () => {
     const f = fakeFetch(() => ({ status: 204, raw: '' }));
     const http = createHttpClient({ fetch: f.fetch, baseUrl: 'http://example.test/' });
     const bytes = new Blob(['hello'], { type: 'text/plain' });
@@ -110,17 +110,45 @@ describe('http: server-granted raw upload', () => {
     expect(f.last().method).toBe('PUT');
     expect(f.last().url).toBe('http://example.test/v2/files/uploads/upload-1/content');
     expect(f.last().rawBody).toBe(bytes);
+    // The browser will attach `__Host-tm8-session` to this same-origin PUT no
+    // matter what we do. A grant in `authorization` therefore arrives as a
+    // SECOND, DIFFERENT credential and the node refuses the pair outright —
+    // which is how every browser upload came to report "Sign in again before
+    // uploading files" to a viewer who was signed in.
     expect(f.last().headers).toEqual({
-      authorization: 'Bearer grant-secret',
+      'x-tm8-upload-token': 'grant-secret',
+      'x-tm8-client': 'tm8-ui',
+    });
+    expect(f.last().headers.authorization).toBeUndefined();
+  });
+
+  it('sends the viewer pass in Authorization so cookie and header name ONE principal', async () => {
+    const f = fakeFetch(() => ({ status: 204, raw: '' }));
+    const http = createHttpClient({
+      fetch: f.fetch,
+      baseUrl: 'http://example.test/',
+      getAuthToken: () => 'tm8s_session.pass',
+    });
+    await http.putGrantedBytes('/v2/files/uploads/upload-1/content', 'grant-secret', new Blob(['x']));
+    expect(f.last().headers).toEqual({
+      authorization: 'Bearer tm8s_session.pass',
+      'x-tm8-upload-token': 'grant-secret',
       'x-tm8-client': 'tm8-ui',
     });
   });
 
   it('omits the S6 header on an absolute grant URL — that store is not our node', async () => {
     const f = fakeFetch(() => ({ status: 204, raw: '' }));
-    const http = createHttpClient({ fetch: f.fetch, baseUrl: 'http://example.test/' });
+    const http = createHttpClient({
+      fetch: f.fetch,
+      baseUrl: 'http://example.test/',
+      getAuthToken: () => 'tm8s_session.pass',
+    });
     await http.putGrantedBytes('https://blobs.example/put/abc', 'grant-secret', new Blob(['x']));
     expect(f.last().url).toBe('https://blobs.example/put/abc');
+    // A foreign store has no tm8 identity to preserve and no cookie of ours to
+    // collide with: there the grant IS the credential, in the header a
+    // presigned PUT expects — and our viewer's pass must NOT be sent offsite.
     expect(f.last().headers).toEqual({ authorization: 'Bearer grant-secret' });
   });
 
