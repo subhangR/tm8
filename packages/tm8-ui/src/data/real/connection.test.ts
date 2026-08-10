@@ -463,14 +463,17 @@ describe('connection: backoff — 0.5s → 8s cap, jittered', () => {
     expect(Math.max(...delays)).toBeLessThanOrEqual(8_000);
   });
 
-  it('resets the backoff after a successful open', () => {
+  it('resets the backoff after a socket SURVIVES, not merely after it opens', () => {
     const h = mk();
     h.conn.openSpace('sp-1');
     h.pool.last().drop();
     h.clock.advance(400);
     h.pool.last().drop();
     h.clock.advance(800);
-    h.pool.last().openIt();          // success resets the attempt counter
+    h.pool.last().openIt();
+    // Opening is not working. The counter is forgiven only once the connection
+    // has lasted `stableAfterMs`.
+    h.clock.advance(30_000);
 
     const before = h.pool.sockets.length;
     h.pool.last().drop();
@@ -478,6 +481,42 @@ describe('connection: backoff — 0.5s → 8s cap, jittered', () => {
     expect(h.pool.sockets.length).toBe(before);
     h.clock.advance(1);
     expect(h.pool.sockets.length).toBe(before + 1);
+  });
+
+  it('KEEPS BACKING OFF while a socket opens and is dropped again', () => {
+    /*
+     * THE DEFECT THIS PINS. `handleOpen` used to zero `reconnectAttempt` the
+     * instant the socket opened. A node that accepts a socket and then drops it
+     * — auth churn, an eviction, a proxy idle-timeout — therefore reset the
+     * counter on every open, so the delay never grew and the client retried
+     * every ~500ms indefinitely. The UI mirrored that as a live/polling strobe
+     * roughly twice a second, which is what the bug was reported as.
+     *
+     * Each cycle here opens the socket and drops it well inside
+     * `stableAfterMs`, so the backoff must keep climbing.
+     */
+    const h = mk();
+    h.conn.openSpace('sp-1');
+
+    const delays: number[] = [];
+    for (let i = 0; i < 4; i += 1) {
+      h.pool.last().openIt();
+      h.pool.last().drop();          // dropped long before it is stable
+      const before = h.pool.sockets.length;
+      let waited = 0;
+      while (h.pool.sockets.length === before && waited < 20_000) {
+        h.clock.advance(1);
+        waited += 1;
+      }
+      delays.push(waited);
+    }
+
+    // Strictly increasing: the flap is no longer forgiven.
+    expect(delays[1]).toBeGreaterThan(delays[0]!);
+    expect(delays[2]).toBeGreaterThan(delays[1]!);
+    expect(delays[3]).toBeGreaterThan(delays[2]!);
+    // And the old behaviour — a constant ~375ms retry forever — is gone.
+    expect(delays.every((d) => d === delays[0])).toBe(false);
   });
 });
 

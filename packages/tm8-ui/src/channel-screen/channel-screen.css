@@ -978,6 +978,23 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-composer__send:hover:not(:disabled) { background: var(--pn-brand-2); }
 
+/*
+ * The degraded advisory sits BESIDE a live Send, so it is deliberately quiet:
+ * secondary ink, no border, no colour of its own. Nothing about what the user
+ * can do has changed, and a loud treatment here is what made a working
+ * connection read as a broken one.
+ */
+.chs-composer__degraded {
+  align-self: center;
+  flex: none;
+  padding-right: var(--pn-space-2);
+  color: var(--pn-ink-3);
+  font-family: var(--pn-ui);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: help;
+}
+
 .chs-composer__send:disabled {
   background: var(--pn-active);
   color: var(--pn-ink-4);

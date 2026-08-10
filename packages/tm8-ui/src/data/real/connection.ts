@@ -87,6 +87,16 @@ export interface ConnectionConfig {
   idleProbeAfterMs: number;
   /** How often the watchdog looks at the silence clock while the socket is open. */
   idleCheckIntervalMs: number;
+  /**
+   * How long a socket must STAY open before the reconnect backoff is forgiven.
+   *
+   * Opening is not the same as working: a socket the node accepts and then
+   * drops (auth churn, an eviction, a proxy idle-timeout) would otherwise reset
+   * the attempt counter on every open, so the backoff never grows and the
+   * client hot-loops the node at `backoffBaseMs` forever — while the UI strobes
+   * live/polling in time with it.
+   */
+  stableAfterMs: number;
 }
 
 export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
@@ -98,6 +108,9 @@ export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   pollLimit: 200,
   idleProbeAfterMs: 90_000,
   idleCheckIntervalMs: 45_000,
+  // Comfortably longer than a flap and far shorter than a real session, so a
+  // genuine reconnection still gets its fast first retry back.
+  stableAfterMs: 30_000,
 };
 
 export interface ConnectionDeps {
@@ -189,6 +202,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   let phase: ConnectionState = { phase: 'connecting' };
   let disconnectedAtMs: number | null = null;
   let reconnectAttempt = 0;
+  let stableTimer: unknown = null;
   let reconnectTimer: unknown = null;
   let transportOk = true;
   let disposed = false;
@@ -365,7 +379,17 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   function handleOpen(): void {
     if (disposed || socket === null) return;
     connecting = false;
-    reconnectAttempt = 0;
+    /*
+     * The backoff is forgiven by SURVIVAL, not by opening. A socket that opens
+     * and is dropped again resets nothing, so repeated flapping keeps backing
+     * off instead of retrying every `backoffBaseMs` forever. `handleClose`
+     * cancels this, so only a connection that actually lasted counts.
+     */
+    if (stableTimer !== null) timers.clearTimeout(stableTimer);
+    stableTimer = timers.setTimeout(() => {
+      stableTimer = null;
+      reconnectAttempt = 0;
+    }, cfg.stableAfterMs);
     stopPollers();
 
     const spaces = [...open];
@@ -418,6 +442,10 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
   function handleClose(): void {
     socket = null;
     connecting = false;
+    if (stableTimer !== null) {
+      timers.clearTimeout(stableTimer);
+      stableTimer = null;
+    }
     stopIdleWatchdog();
     if (disposed) return;
     for (const spaceId of open) stopAccelerate(spaceId);
@@ -602,6 +630,7 @@ export function createConnectionManager(deps: ConnectionDeps): ConnectionManager
       stopIdleWatchdog();
       for (const spaceId of open) stopAccelerate(spaceId);
       if (reconnectTimer !== null) { timers.clearTimeout(reconnectTimer); reconnectTimer = null; }
+      if (stableTimer !== null) { timers.clearTimeout(stableTimer); stableTimer = null; }
       socket?.close();
       socket = null;
       open.clear();
