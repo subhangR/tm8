@@ -244,6 +244,7 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(f.taskId)}" parent_message_id="none" />`,
+    '  <instruction>Report milestones and your final outcome as messages on the task anchor — they are delivered to the sessions attached to this task. Answer a specific incoming message with the message reply verb so its sender is woken.</instruction>',
     '  <delivery transport="spawn_initial_turn" stored="true" attempt="1" status_source="work_session" />',
     '</trusted_control>',
   ].join('\n');
@@ -317,6 +318,7 @@ export function incomingMessageInjection(f: IncomingMessageFacts): string {
     ...context,
     `  <thread parent_message_id="${attr(f.threadParentMessageId)}" root_message_id="${attr(f.threadRootMessageId ?? f.sourceMessageId)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/reply" context_message_id="${attr(f.messageId)}" anchor_id="${attr(f.sourceAnchorId)}" parent_message_id="${attr(f.sourceMessageId)}" />`,
+    '  <instruction>Acknowledge via the reply target now if acting on this takes time, and always answer with a reply when done — the sender is woken only by your reply, and silence reads as a dropped delivery.</instruction>',
     `  <delivery transport="pty" stored="true" attempt="${attr(f.deliveryAttemptNo)}" status_source="session_message_deliveries" />`,
     '</trusted_control>',
   ].join('\n');

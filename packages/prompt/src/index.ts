@@ -216,7 +216,9 @@ const WORKER_IDENTITY_INSTRUCTION =
   'has not happened. When an incoming message envelope carries a `<reply>` element, ' +
   'answer with `tm8 message reply <context_message_id> "<body>"` — the reply verb ' +
   'derives the thread and anchor from that message id, so your answer lands where ' +
-  'the question was asked. Completion needs a verified result and a durable receipt — ' +
+  'the question was asked and wakes its sender. Acknowledge an incoming message with ' +
+  'a brief reply before acting on it when the work will take time; never leave a ' +
+  'sender waiting on silence. Completion needs a verified result and a durable receipt — ' +
   'your process exiting is not completion: close out with one `tm8 message send` ' +
   'on the anchor stating outcome, entity ids touched, decisions and why, open ' +
   'questions, and next-session pointers.';
@@ -234,7 +236,9 @@ const COORDINATOR_IDENTITY_INSTRUCTION =
   'scratch explicitly. A spawned work session is an anchor like any other, so ' +
   '`tm8 message send --to <work-session-id> "<body>"` is how you brief it and how it ' +
   'answers you — there is no private child-result channel and nothing else delivers ' +
-  'on your behalf. Hand off the shared anchor context to your workers yourself, once, ' +
+  'on your behalf. A message on a task your session created or works is also ' +
+  'delivered to you, so a worker\'s report on its task anchor arrives without being ' +
+  'addressed to you. Hand off the shared anchor context to your workers yourself, once, ' +
   'in each brief: a coordinator who does removes every worker\'s duplicate ' +
   'orientation reads. Verify each unit against its success criteria, and record state ' +
   'through the owning domain command rather than announcing it.';
@@ -253,7 +257,10 @@ const COORDINATED_WORKER_IDENTITY_INSTRUCTION =
   'or block, send `tm8 message send --to <anchor-entity-id> "<body>"` on the ' +
   'assignment anchor carrying outcome, verification, blockers, the entities or ' +
   'artifacts you touched, decisions and why, open questions, and next-session ' +
-  'pointers. Do not go idle after finishing.';
+  'pointers. Answer any message your coordinator sends you with ' +
+  '`tm8 message reply <context_message_id> "<body>"` — a reply wakes the ' +
+  'coordinator\'s session directly, and going quiet reads as a dropped delivery. ' +
+  'Do not go idle after finishing.';
 
 const COORDINATED_COORDINATOR_IDENTITY_INSTRUCTION =
   'You are a sub-coordinator in a hierarchical multi-agent team. A parent coordinator ' +
