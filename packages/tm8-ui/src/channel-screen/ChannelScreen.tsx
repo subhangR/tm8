@@ -188,7 +188,7 @@ export function ChannelScreen({
   const setReplyTo = replyState ? replyState.onChange : setLocalReplyTo;
 
   const groups = useMemo(() => groupByOperation(page?.items ?? []), [page]);
-  const plan = useMemo(() => planRows(groups, newSinceItemId), [groups, newSinceItemId]);
+  const plan = useMemo(() => planRows(groups, newSinceItemId, threads), [groups, newSinceItemId, threads]);
   const loadedMessages = useMemo(() => new Map(
     (page?.items ?? [])
       .filter((item): item is Extract<FeedItem, { itemKind: 'message' }> => item.itemKind === 'message')
@@ -493,6 +493,7 @@ const CLUSTER_WINDOW_MS = 7 * 60 * 1000;
 function planRows(
   groups: ReturnType<typeof groupByOperation>,
   newSinceItemId: string | null,
+  threads = false,
 ): RowPlan[] {
   const out: RowPlan[] = [];
   let previous: FeedItem | null = null;
@@ -504,7 +505,7 @@ function planRows(
     const clustered = !dayLabel
       && newSinceItemId !== first.itemId
       && group.kind === 'single'
-      && continuesRun(previous, group.item);
+      && continuesRun(previous, group.item, threads);
     out.push({ group, clustered, dayLabel, firstId: first.itemId });
     previousDay = day ?? previousDay;
     previous = group.kind === 'operation' ? group.items[group.items.length - 1] : group.item;
@@ -512,12 +513,22 @@ function planRows(
   return out;
 }
 
-function continuesRun(previous: FeedItem | null, current: FeedItem): boolean {
+function continuesRun(previous: FeedItem | null, current: FeedItem, threads: boolean): boolean {
   if (!previous || previous.itemKind !== 'message' || current.itemKind !== 'message') return false;
   const a = previous.message;
   const b = current.message;
   if (a.state.redactedAt || b.state.redactedAt) return false;
-  if (b.parentId || b.state.rootMessageId || b.state.editedAt || b.pending) return false;
+  /*
+   * The reply-target guard exists because a reply's byline area carries its
+   * ParentPreview, and collapsing the row would hide it. In THREADS MODE that
+   * fact is gone twice over: the feed is roots-only (no `rootMessageId` ever)
+   * and ParentPreview is not drawn — while `parentId` on a channel message is
+   * the ENTITY parent (the channel itself, in fixture and anchor-parented
+   * data), which read here as "this is a reply" and stopped every root from
+   * ever clustering into an author run.
+   */
+  if (!threads && (b.parentId || b.state.rootMessageId)) return false;
+  if (b.state.editedAt || b.pending) return false;
   if (current.delivery.length > 0) return false;
   const authorA = a.state.author?.id ?? a.createdBy?.id ?? null;
   const authorB = b.state.author?.id ?? b.createdBy?.id ?? null;

@@ -438,6 +438,46 @@ describe('the host-sequenced thread read (ChannelChatSurface + useChannelFeed)',
   });
 });
 
+describe('author-run clustering in threads mode', () => {
+  it('clusters consecutive roots by one author — the entity parentId is not a reply fact there', () => {
+    // `parentId` on a channel message is the ENTITY parent (the channel), and
+    // it froze clustering: every root repeated its byline (Lane D's report).
+    const first = msg({ id: 'msg-a', parentId: ANCHOR, createdAt: '2026-07-29T11:24:00.000Z' } as Partial<MessageView>);
+    const second = msg({ id: 'msg-b', parentId: ANCHOR, createdAt: '2026-07-29T11:26:00.000Z' } as Partial<MessageView>);
+    const items = [messageItem({ itemId: 'f-a' }, first), messageItem({ itemId: 'f-b' }, second)];
+    const view = render(<ChannelScreen {...base} page={feedPage(items)} />);
+    // One byline for the run of two.
+    expect(screen.getAllByText('alex')).toHaveLength(1);
+
+    // Threads OFF (session grammar): the guard is untouched — a message with
+    // a parent fact never clusters, so both bylines repeat.
+    view.rerender(
+      <ChannelScreen anchorId={ANCHOR} anchorNoun="this session" page={feedPage(items)} />,
+    );
+    expect(screen.getAllByText('alex')).toHaveLength(2);
+  });
+
+  it('a clustered root keeps its thread footer — clustering hides the byline, never the branch', () => {
+    const first = msg({ id: 'msg-a', createdAt: '2026-07-29T11:24:00.000Z' });
+    const second = msg({
+      id: 'msg-b',
+      createdAt: '2026-07-29T11:26:00.000Z',
+      replyCount: 2,
+      lastReplyAt: '2026-07-29T13:00:00.000Z',
+      replyParticipants: [NOOR],
+    });
+    render(
+      <ChannelScreen
+        {...base}
+        page={feedPage([messageItem({ itemId: 'f-a' }, first), messageItem({ itemId: 'f-b' }, second)])}
+        onOpenThread={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByText('alex')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /open thread · 2 replies/i })).toBeTruthy();
+  });
+});
+
 describe('footer helpers', () => {
   it('replyTimeAgo grades now/minutes/hours/days against an explicit clock', () => {
     const now = '2026-07-29T12:00:00.000Z';
