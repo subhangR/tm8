@@ -453,6 +453,20 @@ describe('AC6 — success is never inferred from a clean exit', () => {
     expect(probe.connected).toBe(true);
     expect(probe.login).toBe('a@b.test');
   });
+
+  it('reads the deployed Codex text status as connected', async () => {
+    // Captured from `codex login status` on the production node, 2026-08-10.
+    const run: CommandRunner = async () =>
+      outcome({ exitCode: 0, stdout: 'Logged in using ChatGPT\n' });
+    const probe = await runCredentialProbe({
+      provider: 'openai',
+      env: { HOME: '/x' },
+      cwd: '/x',
+      run,
+    });
+    expect(probe.connected).toBe(true);
+    expect(probe.status).toBe('active');
+  });
 });
 
 describe('AC5 — the GitHub finish step (finding D6)', () => {
@@ -644,6 +658,7 @@ describe('AC4 / AC8 — start, the cap, the TTL and the one-per-pair rule', () =
     expect(env).not.toHaveProperty('GH_TOKEN');
     expect(Object.keys(env).sort()).toEqual([
       'GH_CONFIG_DIR',
+      'GH_PROMPT_DISABLED',
       'HOME',
       'LANG',
       'PATH',
@@ -752,18 +767,66 @@ describe('AC4 / AC8 — start, the cap, the TTL and the one-per-pair rule', () =
     expect(service.liveSessionIds()).toEqual([]);
   });
 
-  it('sweeps a session whose PTY died on its own, without waiting for the TTL', async () => {
+  it('harvests GitHub when its login command exits before the user presses Finish', async () => {
     const pty = fakePty();
-    const service = serviceFor(pty.pty);
+    const token = `ghp_${'H'.repeat(36)}`;
+    const stored: Array<{ login: string; provider: string; token: string }> = [];
+    const run: CommandRunner = async (argv) =>
+      argv.includes('api')
+        ? outcome({ stdout: 'alice\n' })
+        : argv.includes('token')
+          ? outcome({ stdout: `${token}\n` })
+          : outcome({ stdout: 'github.com\n  ✓ Logged in to github.com account alice (keyring)' });
+    const service = serviceFor(pty.pty, {
+      run,
+      storeGitCredential: async (input) => {
+        stored.push({ login: input.login, provider: input.provider, token: input.token });
+      },
+    });
     const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
     const started = await service.start({ spaceId: fixture.space, provider: 'github' }, principal);
+
+    // The normal successful OAuth path exits the vendor CLI by itself. The old
+    // sweep stamped finished_at and discarded the registry entry here without
+    // ever probing or storing the credential.
     pty.live.delete(started.workSessionId);
     expect(await service.sweepNow()).toBe(1);
+    expect(stored).toEqual([{ login: 'alice', provider: 'github', token }]);
     const [row] = await database.query<{ finished_at: Date | null }>(
       `select finished_at from public.credential_sessions where work_session_id = $1`,
       [started.workSessionId],
     );
     expect(row!.finished_at).not.toBeNull();
+  });
+
+  it.each([
+    ['anthropic', JSON.stringify({ loggedIn: true, authMethod: 'claude.ai' })],
+    ['openai', 'Logged in using ChatGPT'],
+  ] as const)('harvests the file-shaped %s credential on natural CLI exit', async (provider, stdout) => {
+    const pty = fakePty();
+    const run: CommandRunner = async () => outcome({ stdout });
+    const service = serviceFor(pty.pty, { run });
+    const principal = { claims: humanClaims(fixture.aliceIdentity), identityId: 'pr2-alice' };
+    const started = await service.start({ spaceId: fixture.space, provider }, principal);
+    pty.live.delete(started.workSessionId);
+
+    expect(await service.sweepNow()).toBe(1);
+    const [stored] = await database.query<{ status: string }>(
+      `select status from public.account_agent_credentials
+        where account_id = (select id from public.accounts where identity_id = $1)
+          and provider = $2`,
+      [fixture.aliceIdentity, provider],
+    );
+    expect(stored?.status).toBe('active');
+
+    // This suite intentionally shares its scratch database. Leave the accounts
+    // in the disconnected state required by the later negative tests.
+    await database.query(
+      `delete from public.account_agent_credentials
+        where account_id = (select id from public.accounts where identity_id = $1)
+          and provider = $2`,
+      [fixture.aliceIdentity, provider],
+    );
   });
 
   it('CAP: refuses once the credential cap is reached, with its own error', async () => {

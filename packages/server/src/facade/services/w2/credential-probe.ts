@@ -19,13 +19,12 @@
  *
  *   anthropic  `claude auth status`  → JSON `{loggedIn, authMethod, email, orgId}`
  *   github     `gh auth status`      → text, `Logged in to github.com account <login>`
- *   openai     `codex login status`  → NOT YET CAPTURED on any node
+ *   openai     `codex login status`  → text `Logged in using ChatGPT`
  *
- * The openai row is the honest one. Nobody has run that command and recorded
- * its output, so this file does not pretend to parse it: an answer it cannot
- * read is recorded as `stale`, never as success. `stale` is the correct verdict
- * — a credential may well exist on disk, we simply cannot confirm it — and it
- * is a status `account_agent_credentials` already models.
+ * OpenAI's text form was measured on the deployed Codex CLI on 2026-08-10.
+ * Unknown future output is still recorded as `stale`, never as success: a
+ * credential may well exist on disk, but an answer this build cannot read is
+ * not evidence that it can safely inject it.
  */
 import { execFile } from 'node:child_process';
 
@@ -268,18 +267,13 @@ async function readGithubProbe(
   };
 }
 
+/** The deployed text success form, with room for the CLI to name an account. */
+const CODEX_LOGGED_IN_RE = /\blogged in(?: using| as)?\b/i;
+
 /**
- * `codex login status` — output NOT YET CAPTURED on any node.
- *
- * So this reads OPTIMISTICALLY for a positive signal and PESSIMISTICALLY for
- * everything else: anything it cannot positively read is `stale`. It never
- * returns `connected: true` on the strength of an exit code, which is the
- * shortcut a not-yet-measured format invites.
- *
- * When someone finally captures the real output, replace the heuristic below
- * with a parse and DELETE this paragraph. Until then the honest answer to
- * "is openai connected?" is "there may be a credential; we could not confirm
- * it", and `stale` is exactly that.
+ * `codex login status` — JSON when available, otherwise the measured text
+ * success sentence. Everything else is `stale`; an exit code alone never
+ * establishes that a usable credential exists.
  */
 function readOpenAiProbe(outcome: CommandOutcome): ProbeResult {
   const base = { provider: 'openai' as const, authMethod: null, login: null };
@@ -313,7 +307,7 @@ function readOpenAiProbe(outcome: CommandOutcome): ProbeResult {
     // unknown, and failing to parse an unknown format is expected.
   }
 
-  if (outcome.exitCode === 0 && /Logged in|logged in/.test(text)) {
+  if (outcome.exitCode === 0 && CODEX_LOGGED_IN_RE.test(text)) {
     const email = /([\w.+-]+@[\w-]+\.[\w.-]+)/.exec(text)?.[1] ?? null;
     return {
       provider: 'openai',

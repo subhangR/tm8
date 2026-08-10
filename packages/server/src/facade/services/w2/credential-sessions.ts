@@ -351,6 +351,22 @@ export class W2CredentialSessionsService {
       );
     }
 
+    return this.harvest(entry, principal);
+  }
+
+  /**
+   * Stop one login command, probe the isolated credential home, persist a
+   * positive result, and only then close the lifecycle row.
+   *
+   * Kept as one operation because both the explicit HTTP finish and the
+   * registry sweep must perform the same harvest. Closing a PTY-less row
+   * without probing it loses a successful OAuth login forever: vendor CLIs
+   * normally exit by themselves after writing their credential.
+   */
+  private async harvest(
+    entry: RegistryEntry,
+    principal: CredentialPrincipal,
+  ): Promise<FinishedCredentialSession> {
     // Terminate BEFORE probing. The vendor CLIs write their credential file on
     // completion and the process may still hold a partially written one; and a
     // live `claude`/`gh` holding the config directory can race the probe's read.
@@ -443,12 +459,12 @@ export class W2CredentialSessionsService {
   }
 
   /**
-   * Finish every registry entry that is expired or has lost its PTY.
+   * Harvest every registry entry that is expired or has lost its PTY.
    *
    * Both predicates, not just expiry: a terminal whose process died on its own
-   * (the member typed `exit`, or the CLI crashed) is finished immediately
-   * rather than held until its TTL, so the one-live-per-pair slot comes back at
-   * once and Connect works on the second click.
+   * (including the normal successful OAuth exit) is probed immediately rather
+   * than held until its TTL. A positive probe is persisted before the lifecycle
+   * row is closed, so background cleanup cannot erase a completed login.
    */
   async sweepNow(): Promise<number> {
     const now = this.now();
@@ -458,23 +474,30 @@ export class W2CredentialSessionsService {
       const gone = !this.launcher.hasLiveTerminal(entry.workSessionId);
       if (!expired && !gone) continue;
 
-      // Terminate first, so `finished_at` is never stamped on a row whose PTY
-      // is still streaming. R7's single lifecycle writer — the PTY-exit path —
-      // then writes `work_sessions.status` on its own.
-      if (expired) this.launcher.terminate(entry.workSessionId);
-
       try {
-        await this.finishRow(entry.principal, entry.workSessionId);
+        // `harvest` terminates first even when the PTY is already gone. The
+        // resulting `not_found` outcome simply makes `terminated=false`; the
+        // isolated credential home remains available to the probe.
+        await this.harvest(entry, entry.principal);
       } catch (error) {
-        // Best-effort by design. A row this node cannot finish is picked up by
-        // the member's own reclaim next time they connect, and the amended cap
-        // predicate ages it out regardless.
-        this.logger?.warn?.('credential sweep could not finish a row', {
+        this.logger?.warn?.('credential sweep could not harvest a login', {
           workSessionId: entry.workSessionId,
           error: error instanceof Error ? error.message : String(error),
         });
+
+        // Harvesting is best-effort, but cleanup still has to release the
+        // one-live-per-provider slot. Preserve the previous sweep guarantee if
+        // a vendor probe or encrypted store write fails.
+        try {
+          await this.finishRow(entry.principal, entry.workSessionId);
+        } catch (finishError) {
+          this.logger?.warn?.('credential sweep could not finish a row', {
+            workSessionId: entry.workSessionId,
+            error: finishError instanceof Error ? finishError.message : String(finishError),
+          });
+        }
+        this.registry.delete(entry.workSessionId);
       }
-      this.registry.delete(entry.workSessionId);
       swept += 1;
     }
     return swept;
