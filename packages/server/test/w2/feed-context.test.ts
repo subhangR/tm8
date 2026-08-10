@@ -435,6 +435,8 @@ describe('W2.G13 versioned named scope (dossier M1/M3)', () => {
       'channel_threads_v1',
       'direct_v1',
       'session_chat_v1',
+      'task_discussion_v1',
+      'thread_v1',
     ]);
     expect(FEED_SCOPE_PREDICATES.direct_v1).toEqual(['anchored', 'replies', 'subject']);
     expect(FEED_SCOPE_PREDICATES.session_chat_v1).toEqual([
@@ -447,6 +449,23 @@ describe('W2.G13 versioned named scope (dossier M1/M3)', () => {
     // message it answers. It is still stored and still reachable through
     // `messages.list?rootMessageId=`; only the flattening goes away.
     expect(FEED_SCOPE_PREDICATES.channel_threads_v1).toEqual(['anchored', 'subject']);
+    // The derivation reading (098). `thread_v1` has NO `anchored`: a reply
+    // anchors on the channel, never on its root (019:423), so `anchored` on a
+    // message anchor is the documented empty-feed trap.
+    expect(FEED_SCOPE_PREDICATES.thread_v1).toEqual([
+      'derived_session',
+      'derived_task',
+      'subject',
+      'thread',
+    ]);
+    // `direct_v1` + `derived_thread`, confined to tasks — never `direct_v1`
+    // edited in place.
+    expect(FEED_SCOPE_PREDICATES.task_discussion_v1).toEqual([
+      'anchored',
+      'derived_thread',
+      'replies',
+      'subject',
+    ]);
     // Canonical (deduped AND sorted) so the cursor fingerprint and the SQL
     // assembly can never be fed two different spellings of one predicate set.
     for (const predicates of Object.values(FEED_SCOPE_PREDICATES)) {
@@ -455,9 +474,31 @@ describe('W2.G13 versioned named scope (dossier M1/M3)', () => {
   });
 
   it('resolves `default` from the anchor kind and refuses an inapplicable named scope', () => {
-    expect(resolveFeedScope(undefined, 'task')).toBe('direct_v1');
+    // 098: a task defaults to its Discussion joined to the thread it was
+    // derived from; `direct_v1` remains nameable for the pre-derivation read.
+    expect(resolveFeedScope(undefined, 'task')).toBe('task_discussion_v1');
+    expect(resolveFeedScope('default', 'task')).toBe('task_discussion_v1');
+    expect(resolveFeedScope('direct_v1', 'task')).toBe('direct_v1');
+    expect(resolveFeedScope(undefined, 'doc')).toBe('direct_v1');
     expect(resolveFeedScope('default', 'work_session')).toBe('session_chat_v1');
     expect(resolveFeedScope('direct_v1', 'work_session')).toBe('direct_v1');
+    // 098: a message anchor's `direct_v1` is near-empty by construction
+    // (019:423 — a reply anchors on the channel, never on its root), so
+    // `default` on a message means the thread.
+    expect(resolveFeedScope(undefined, 'message')).toBe('thread_v1');
+    expect(resolveFeedScope('default', 'message')).toBe('thread_v1');
+    expect(() => resolveFeedScope('thread_v1', 'task')).toThrowError(
+      /feed_scope_not_applicable|not applicable/,
+    );
+    expect(() => resolveFeedScope('thread_v1', 'channel')).toThrowError(
+      /feed_scope_not_applicable|not applicable/,
+    );
+    expect(() => resolveFeedScope('task_discussion_v1', 'message')).toThrowError(
+      /feed_scope_not_applicable|not applicable/,
+    );
+    expect(() => resolveFeedScope('task_discussion_v1', 'channel')).toThrowError(
+      /feed_scope_not_applicable|not applicable/,
+    );
     expect(() => resolveFeedScope('session_chat_v1', 'task')).toThrowError(
       /feed_scope_not_applicable|not applicable/,
     );
@@ -583,8 +624,9 @@ describe('W2.G13 entities.feed page assembly', () => {
     const { run } = feedOn(stub);
     const page = await run();
     expect(EntityFeedPageSchema.parse(page)).toBeTruthy();
-    expect(page.resolvedScope).toBe('direct_v1');
-    expect(page.predicates).toEqual(['anchored', 'replies', 'subject']);
+    // 098: a task's `default` resolves to its derivation-joined Discussion.
+    expect(page.resolvedScope).toBe('task_discussion_v1');
+    expect(page.predicates).toEqual(['anchored', 'derived_thread', 'replies', 'subject']);
 
     const message = page.items[0]!;
     expect(message.itemKind).toBe('message');
@@ -931,15 +973,16 @@ describe('W2.G13 feed `around` anchoring', () => {
     expect(decoded.k[2]).toBe(page.items[0]!.itemId);
     expect(decoded.k[0]).toBe(feedCursorFingerprint({
       entityId: IDS.task,
-      scope: 'direct_v1',
+      // 098: the unscoped request above resolved `default` on a task anchor.
+      scope: 'task_discussion_v1',
       order: 'newest',
-      predicates: FEED_SCOPE_PREDICATES.direct_v1,
+      predicates: FEED_SCOPE_PREDICATES.task_discussion_v1,
     }));
 
     // And it round-trips: the same feed accepts it rather than rejecting its own
     // token, which is the failure `handoffs.list` actually shipped.
     await expect(
-      feedOn(stubWithLead).run(`scope=direct_v1&cursor=${encodeURIComponent(page.previousCursor!)}`),
+      feedOn(stubWithLead).run(`scope=task_discussion_v1&cursor=${encodeURIComponent(page.previousCursor!)}`),
     ).resolves.toBeTruthy();
   });
 });

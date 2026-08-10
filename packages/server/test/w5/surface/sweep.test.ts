@@ -462,7 +462,13 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // before the channel-threads work went near it. 097 (channel_threads_v1
     // feed scope) is the second. Re-measured with the command above rather
     // than incremented, which is how the 096 miss would have been caught.
-    expect(server.appliedMigrations.length).toBe(92);
+    // 92 -> 93 on 2026-08-10: 098 (thread_v1 + task_discussion_v1 feed
+    // scopes, Threads Lane B). Measured on this branch by the command above.
+    // Lane C's 099 pins 93 on ITS branch for the same reason; the agreed
+    // protocol is that whichever lane merges SECOND re-measures the merged
+    // tree (94) and bumps this line — do not resolve the conflict by keeping
+    // either 93.
+    expect(server.appliedMigrations.length).toBe(93);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

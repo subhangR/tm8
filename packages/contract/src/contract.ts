@@ -2702,8 +2702,22 @@ export interface HandoffView {
   updatedAt: string;
 }
 
-export type FeedScope = 'direct_v1' | 'session_chat_v1' | 'channel_threads_v1';
-export type FeedVia = 'subject' | 'anchored' | 'authored' | 'replies' | 'caused';
+export type FeedScope =
+  | 'direct_v1'
+  | 'session_chat_v1'
+  | 'channel_threads_v1'
+  | 'thread_v1'
+  | 'task_discussion_v1';
+export type FeedVia =
+  | 'subject'
+  | 'anchored'
+  | 'authored'
+  | 'replies'
+  | 'caused'
+  | 'thread'
+  | 'derived_thread'
+  | 'derived_task'
+  | 'derived_session';
 
 export interface EntityFeedQuery {
   scope?: 'default' | FeedScope;

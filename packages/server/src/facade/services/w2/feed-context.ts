@@ -119,6 +119,33 @@ export const FEED_SCOPE_PREDICATES: Readonly<Record<FeedScope, readonly FeedVia[
    * feature.
    */
   channel_threads_v1: Object.freeze(['anchored', 'subject'] as const),
+  /**
+   * A thread ROOT read as the whole conversation it started — its branch, the
+   * activity about it, and the WORK it spawned.
+   *
+   * `thread` is the branch itself (`root_message_id = $1`); a reply anchors on
+   * the CHANNEL, never on its root (019:416/:423), which is why `anchored` on a
+   * message anchor is the documented empty-feed trap and is absent here.
+   * `derived_task` and `derived_session` are the derivation reading: a message
+   * on a task derived from this root, and activity about-or-caused-by a session
+   * working such a task, appear IN the thread. The agent posting them never
+   * names a thread — it reports on its assignment anchor with the same
+   * `message send` every agent uses, and the READ follows the `derived_from`
+   * edge back. One row, two surfaces; nothing is written twice.
+   */
+  thread_v1: Object.freeze(['derived_session', 'derived_task', 'subject', 'thread'] as const),
+  /**
+   * `direct_v1` plus `derived_thread`: a task's Discussion, joined to the
+   * thread it was derived from.
+   *
+   * A SEPARATE SCOPE RATHER THAN A WIDENED `direct_v1`, for 097's reason run
+   * the other way: a scope's meaning is a versioned artefact, and editing
+   * `direct_v1` in place would restructure every non-task hub that reads it.
+   * `derived_from`'s src is DB-constrained to `task` (064), so only a task can
+   * gain rows from the extra predicate — which is why the scope is confined to
+   * task anchors instead of pretending to be general.
+   */
+  task_discussion_v1: Object.freeze(['anchored', 'derived_thread', 'replies', 'subject'] as const),
 });
 
 /**
@@ -134,6 +161,8 @@ export const FEED_SCOPE_ANCHOR_KINDS: Readonly<Record<FeedScope, 'any' | readonl
     direct_v1: 'any',
     session_chat_v1: Object.freeze(['work_session'] as const),
     channel_threads_v1: Object.freeze(['channel'] as const),
+    thread_v1: Object.freeze(['message'] as const),
+    task_discussion_v1: Object.freeze(['task'] as const),
   });
 
 /**
@@ -147,6 +176,13 @@ export const FEED_SCOPE_ANCHOR_KINDS: Readonly<Record<FeedScope, 'any' | readonl
 function defaultScopeFor(anchorKind: string): FeedScope {
   if (anchorKind === 'work_session') return 'session_chat_v1';
   if (anchorKind === 'channel') return 'channel_threads_v1';
+  // A message's `direct_v1` is near-empty BY CONSTRUCTION — a reply anchors on
+  // the channel, never on its root (019:423) — so `default` on a message means
+  // the thread. A task defaults to its Discussion joined to the thread it was
+  // derived from; a caller naming `direct_v1` still gets the pre-derivation
+  // reading.
+  if (anchorKind === 'message') return 'thread_v1';
+  if (anchorKind === 'task') return 'task_discussion_v1';
   return 'direct_v1';
 }
 
@@ -179,6 +215,40 @@ const FEED_VIA_SQL: Readonly<Record<FeedVia, string>> = Object.freeze({
     `select 'activity', a.id, a.created_at, 'caused'
        from public.activity a
       where a.work_session_id = $1`,
+  thread:
+    `select 'message', m.entity_id, m.created_at, 'thread'
+       from public.messages m
+      where m.root_message_id = $1`,
+  // The thread the task was derived from: the root itself plus its branch.
+  // `derived_from` is task -> source entity (064), so `src_id = $1` reads the
+  // TASK side of the edge. A task derived from a non-message entity matches no
+  // message row and the branch is honestly empty.
+  derived_thread:
+    `select 'message', m.entity_id, m.created_at, 'derived_thread'
+       from public.messages m
+       join public.edges d on d.type = 'derived_from' and d.src_id = $1
+      where m.root_message_id = d.dst_id or m.entity_id = d.dst_id`,
+  // Messages anchored on tasks derived from this root — the agent's reports,
+  // read back into the thread through the edge 064 already writes.
+  derived_task:
+    `select 'message', m.entity_id, m.created_at, 'derived_task'
+       from public.messages m
+       join public.edges d on d.type = 'derived_from' and d.dst_id = $1
+                          and d.src_id = m.anchor_id`,
+  // A session working a derived task, visible in the thread. TWO routes into
+  // `activity` on purpose: spawn writes `created`/`restored` ABOUT the session
+  // entity with `work_session_id` NULL (043/048/062 call `record_activity`
+  // with the session as p_entity), while recorder-stamped rows carry
+  // `work_session_id` and a different `entity_id`. Either alone misses half
+  // the session's story; `execution.transition` writes no activity at all, so
+  // status flips surface only through whichever of these rows exists.
+  derived_session:
+    `select 'activity', a.id, a.created_at, 'derived_session'
+       from public.activity a
+       join public.edges w on w.type = 'working_on'
+                          and (w.src_id = a.work_session_id or w.src_id = a.entity_id)
+       join public.edges d on d.type = 'derived_from' and d.src_id = w.dst_id
+                          and d.dst_id = $1`,
 });
 
 /**
@@ -631,7 +701,10 @@ async function hydrate(
   };
 }
 
-const FEED_VIA_VALUES: readonly string[] = ['subject', 'anchored', 'authored', 'replies', 'caused'];
+const FEED_VIA_VALUES: readonly string[] = [
+  'subject', 'anchored', 'authored', 'replies', 'caused',
+  'thread', 'derived_thread', 'derived_task', 'derived_session',
+];
 
 function viaOf(raw: readonly string[]): FeedVia[] {
   const known = raw.filter((value): value is FeedVia => FEED_VIA_VALUES.includes(value));

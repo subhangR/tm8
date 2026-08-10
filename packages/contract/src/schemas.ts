@@ -2361,7 +2361,7 @@ export const HandoffViewSchema: z.ZodType<HandoffView> = z.object({
 });
 
 export const EntityFeedQuerySchema: z.ZodType<EntityFeedQuery> = z.object({
-  scope: z.enum(['default', 'direct_v1', 'session_chat_v1', 'channel_threads_v1']).optional(),
+  scope: z.enum(['default', 'direct_v1', 'session_chat_v1', 'channel_threads_v1', 'thread_v1', 'task_discussion_v1']).optional(),
   order: z.enum(['newest', 'oldest']).optional(),
   around: z.string().regex(/^(message|activity):[^:]+$/).optional() as z.ZodType<`message:${string}` | `activity:${string}` | undefined>,
   cursor: CursorSchema.optional(),
@@ -2386,7 +2386,7 @@ const feedItemBaseShape = {
   itemId: z.string().min(1),
   createdAt: IsoTimestamp,
   sortId: z.string().min(1),
-  via: uniqueArray(z.enum(['subject', 'anchored', 'authored', 'replies', 'caused']), 1),
+  via: uniqueArray(z.enum(['subject', 'anchored', 'authored', 'replies', 'caused', 'thread', 'derived_thread', 'derived_task', 'derived_session']), 1),
   actor: ActorSummarySchema.nullable(),
   sourceWorkSessionId: EntityIdSchema.nullable(),
   anchor: EntitySummarySchema.nullable(),
@@ -2409,8 +2409,8 @@ export const FeedItemSchema: z.ZodType<FeedItem> = z.lazy(() => z.discriminatedU
 ]));
 
 export const EntityFeedPageSchema: z.ZodType<EntityFeedPage> = z.lazy(() => z.object({
-  resolvedScope: z.enum(['direct_v1', 'session_chat_v1', 'channel_threads_v1']),
-  predicates: uniqueArray(z.enum(['subject', 'anchored', 'authored', 'replies', 'caused']), 1),
+  resolvedScope: z.enum(['direct_v1', 'session_chat_v1', 'channel_threads_v1', 'thread_v1', 'task_discussion_v1']),
+  predicates: uniqueArray(z.enum(['subject', 'anchored', 'authored', 'replies', 'caused', 'thread', 'derived_thread', 'derived_task', 'derived_session']), 1),
   items: z.array(FeedItemSchema),
   nextCursor: CursorSchema.nullable(),
   previousCursor: CursorSchema.nullable().optional(),
@@ -2469,7 +2469,7 @@ export const ToolDiscoveryPolicySchema: z.ZodType<ToolDiscoveryPolicy> = z.objec
 }).strict();
 
 export const FeedPolicySchema: z.ZodType<FeedPolicy> = z.object({
-  scope: z.enum(['direct_v1', 'session_chat_v1', 'channel_threads_v1']),
+  scope: z.enum(['direct_v1', 'session_chat_v1', 'channel_threads_v1', 'thread_v1', 'task_discussion_v1']),
   pageSize: z.number().int().min(1).max(100),
   bodyExcerptBytes: z.number().int().min(0).max(4096),
 }).strict();
