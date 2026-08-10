@@ -175,6 +175,17 @@ describe('verbs — real when the port carries them, disabled-with-reason when n
     expect(btn.title).toBe(EXPLORER_REASONS.FOLDER_IMPORT_UNAVAILABLE);
   });
 
+  it('importFolderBlockedReason ⇒ Import folder is DISABLED with the TRUTHFUL role reason, not the not-served one', async () => {
+    render(
+      <FilesExplorerScreen
+        port={stubPort({ importFolderBlockedReason: EXPLORER_REASONS.FOLDER_IMPORT_FORBIDDEN })}
+      />,
+    );
+    const btn = (await screen.findByRole('button', { name: 'Import folder' })) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe(EXPLORER_REASONS.FOLDER_IMPORT_FORBIDDEN);
+  });
+
   it('with importFolder present a directory pick becomes ONE import per top folder and reports replacedCount (R8)', async () => {
     const importStart = vi.fn(
       (
@@ -209,6 +220,30 @@ describe('verbs — real when the port carries them, disabled-with-reason when n
     await waitFor(() =>
       expect(onNotice).toHaveBeenCalledWith(expect.stringContaining('2 existing files replaced')),
     );
+  });
+
+  it('a successful import RELOADS the roots rail — the linked project must appear without a remount', async () => {
+    let rootsCalls = 0;
+    const port = stubPort({
+      roots: async () => {
+        rootsCalls += 1;
+        return rootsCalls > 1 ? [libraryRoot, projectRoot] : [libraryRoot];
+      },
+      upload: undefined,
+      importFolder: {
+        start: () => ({
+          result: Promise.resolve({ projectName: 'proj', fileCount: 1, replacedCount: 0, merged: false }),
+          cancel: () => {},
+        }),
+      },
+    });
+    render(<FilesExplorerScreen port={port} />);
+    const input = (await screen.findByTestId('fx-dir-input')) as HTMLInputElement;
+    const f1 = new File(['1'], 'x.txt');
+    Object.defineProperty(f1, 'webkitRelativePath', { value: 'proj/x.txt' });
+    Object.defineProperty(input, 'files', { value: [f1] });
+    fireEvent.change(input);
+    await waitFor(() => expect(rootsCalls).toBeGreaterThan(1));
   });
 });
 

@@ -10,6 +10,7 @@ import type {
 } from '@tm8/contract';
 
 import {
+  FOLDER_CONNECT_FORBIDDEN,
   NewSpaceProjectDialog,
   newOnboardingMutationIds,
   onboardSpaceProject,
@@ -174,5 +175,44 @@ describe('Space and node-local project onboarding', () => {
       clientMutationId: ids.memory,
       content: expect.objectContaining({ measuredAt: ids.measuredAt }),
     }));
+  });
+
+  it('a resolved NON-ADMIN viewer is refused up front: truthful notice, Browse and submit disabled, no saga committed', async () => {
+    const p = port();
+    const view = render(
+      <NewSpaceProjectDialog
+        open
+        nodeLabel="local node"
+        viewerIsNodeAdmin={false}
+        port={p}
+        onDismiss={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+    view.getByText(FOLDER_CONNECT_FORBIDDEN);
+    expect((view.getByRole('button', { name: 'Browse folders' }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(view.getByLabelText('Space name'), { target: { value: 'Studio' } });
+    fireEvent.change(view.getByLabelText('Project name'), { target: { value: 'Website' } });
+    expect(
+      (view.getByRole('button', { name: 'Create Space & add project' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // The half-onboarded-Space failure mode: nothing durable may have run.
+    expect(p.directories).not.toHaveBeenCalled();
+    expect(p.createSpace).not.toHaveBeenCalled();
+  });
+
+  it('an UNRESOLVED viewer standing keeps the flow available — the server stays the backstop', async () => {
+    const p = port();
+    const view = render(
+      <NewSpaceProjectDialog
+        open
+        nodeLabel="local node"
+        port={p}
+        onDismiss={() => {}}
+        onCreated={() => {}}
+      />,
+    );
+    expect(view.queryByText(FOLDER_CONNECT_FORBIDDEN)).toBeNull();
+    expect((view.getByRole('button', { name: 'Browse folders' }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

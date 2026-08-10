@@ -123,9 +123,24 @@ const STAGE_LABEL: Record<OnboardingStage, string> = {
   memory: 'Recording memory',
 };
 
+/**
+ * Truthful early refusal: the server's `projects.create` is node-admin-only,
+ * so a non-admin must not be walked into a saga that commits a Space and then
+ * refuses its project — that is how orphaned, project-less Spaces are made.
+ */
+export const FOLDER_CONNECT_FORBIDDEN =
+  'Connecting a local folder creates a project on the node’s disk, which needs node-admin rights on this node. Ask an owner to run this setup or to grant your account node-admin.';
+
 export interface NewSpaceProjectDialogProps {
   open: boolean;
   nodeLabel: string;
+  /**
+   * The viewer's node-admin standing when the host has resolved it; `false`
+   * disables the connect flow with the truthful reason. Unknown
+   * (undefined/null) keeps the flow available — the server remains the
+   * backstop, and a failed enhancement read must not lock the door.
+   */
+  viewerIsNodeAdmin?: boolean | null;
   port: ProjectOnboardingPort;
   onDismiss(): void;
   onCreated(space: SpaceSummary): void;
@@ -193,8 +208,11 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
     setBrowserOpen(false);
   };
 
+  const folderBlocked = props.viewerIsNodeAdmin === false;
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (folderBlocked) return;
     if (!spaceName.trim() || !projectName.trim() || !workingDir) return;
     const stableIds = ids.current ?? newOnboardingMutationIds();
     ids.current = stableIds;
@@ -303,8 +321,9 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
               <span>Local folder on {props.nodeLabel}</span>
               <div className="project-onboard__folder-row">
                 <code>{workingDir || 'No folder selected'}</code>
-                <button type="button" className="project-onboard__button" onClick={() => void browse()} disabled={busy || lockedForRetry}>Browse folders</button>
+                <button type="button" className="project-onboard__button" onClick={() => void browse()} disabled={busy || lockedForRetry || folderBlocked}>Browse folders</button>
               </div>
+              {folderBlocked ? <p className="project-onboard__error" role="alert">{FOLDER_CONNECT_FORBIDDEN}</p> : null}
               {ensureWorkingDir ? <small>This folder will be created when you submit.</small> : null}
             </div>
             <label className="project-onboard__trust">
@@ -321,7 +340,7 @@ export function NewSpaceProjectDialog(props: NewSpaceProjectDialogProps) {
               <button
                 type="submit"
                 className="project-onboard__button project-onboard__button--primary"
-                disabled={busy || !spaceName.trim() || !projectName.trim() || !workingDir}
+                disabled={busy || folderBlocked || !spaceName.trim() || !projectName.trim() || !workingDir}
               >
                 {busy && currentStage ? `${STAGE_LABEL[currentStage]}…` : lockedForRetry ? 'Retry' : 'Create Space & add project'}
               </button>

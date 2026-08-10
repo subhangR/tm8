@@ -416,8 +416,17 @@ export class W2ProjectsAssociationsService {
     const input = ctx.body as ProjectCreateInput;
     const envelope = commandEnvelope(ctx);
     const claims = claimsFor(owner, ctx, envelope);
-    if (input.ensureWorkingDir && claims.nodeAdmin !== true) {
-      throw new CollabError('forbidden', 'node-admin access is required to create a project directory');
+    // `create_project` is node-admin-only in the DB (007's require_node_admin),
+    // for BOTH branches — not just the mkdir one. Refusing here keeps the
+    // refusal truthful and early instead of surfacing the raw plpgsql
+    // 'node admin required' after the directory branch has already run.
+    if (claims.nodeAdmin !== true) {
+      throw new CollabError(
+        'forbidden',
+        input.ensureWorkingDir
+          ? 'node-admin access is required to create a project directory'
+          : 'node-admin access is required to create a project',
+      );
     }
     const workingDir = input.ensureWorkingDir
       ? await ensureProjectWorkingDirectory(input.workingDir)

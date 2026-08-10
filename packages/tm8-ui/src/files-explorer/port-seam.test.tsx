@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { createFixtureSeam } from '../data';
-import { LIBRARY_ROOT_ID, filesExplorerPortFromSeam } from './port';
+import { EXPLORER_REASONS, LIBRARY_ROOT_ID, filesExplorerPortFromSeam } from './port';
 
 async function portAndSpace() {
   const seam = createFixtureSeam();
@@ -57,6 +57,60 @@ describe('the explorer port over a real fixture seam', () => {
     expect(port.importFolder).toBeUndefined();
     expect(port.createFolder).toBeUndefined();
     expect(port.move).toBeUndefined();
+  });
+
+  it('a resolved NON-ADMIN viewer withholds importFolder with the truthful reason — only when the seam serves the ops', async () => {
+    const { seam, spaceId } = await portAndSpace();
+
+    // Ops absent (this fixture): absence keeps the not-served reason path;
+    // the role reason would be a lie about what this node can do.
+    const withoutOps = filesExplorerPortFromSeam(seam, spaceId, false);
+    expect(withoutOps.importFolder).toBeUndefined();
+    expect(withoutOps.importFolderBlockedReason).toBeUndefined();
+
+    const served = {
+      ...seam,
+      projectFolderUploads: {
+        init: async () => {
+          throw new Error('unused');
+        },
+        complete: async () => {
+          throw new Error('unused');
+        },
+        abort: async () => {
+          throw new Error('unused');
+        },
+      },
+      projectSetup: {
+        directories: async () => {
+          throw new Error('unused');
+        },
+        createSpace: async () => {
+          throw new Error('unused');
+        },
+        createProject: async () => {
+          throw new Error('unused');
+        },
+        linkProject: async () => {
+          throw new Error('unused');
+        },
+      },
+    };
+
+    // Ops present + viewer known non-admin: withheld UP FRONT with the
+    // truthful copy — never an enabled picker that refuses after selection.
+    const blocked = filesExplorerPortFromSeam(served as never, spaceId, false);
+    expect(blocked.importFolder).toBeUndefined();
+    expect(blocked.importFolderBlockedReason).toBe(EXPLORER_REASONS.FOLDER_IMPORT_FORBIDDEN);
+
+    // Ops present + admin, or an UNRESOLVED viewer: capability stays, and
+    // the in-flow authorize remains the server-truth backstop.
+    const admin = filesExplorerPortFromSeam(served as never, spaceId, true);
+    expect(admin.importFolder).toBeDefined();
+    expect(admin.importFolderBlockedReason).toBeUndefined();
+    const unknown = filesExplorerPortFromSeam(served as never, spaceId, null);
+    expect(unknown.importFolder).toBeDefined();
+    expect(unknown.importFolderBlockedReason).toBeUndefined();
   });
 
   it('project roots surface when the seam lists projects; each is read-only', async () => {

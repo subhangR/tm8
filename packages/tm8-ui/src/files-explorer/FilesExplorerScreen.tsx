@@ -104,21 +104,25 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
   );
 
   // -- roots ---------------------------------------------------------------
-  useEffect(() => {
-    let alive = true;
+  // Reloadable, not mount-only: a successful folder import links a NEW
+  // project root, and a rail that reads roots once renders that success as
+  // silence — the connected project stays missing until a full remount.
+  const rootsSeq = useRef(0);
+  const loadRoots = useCallback(() => {
+    const seq = ++rootsSeq.current;
     port
       .roots()
       .then((r) => {
-        if (!alive) return;
+        if (rootsSeq.current !== seq) return;
         setRoots(r);
         setRootsError(null);
         setActiveRootId((current) => current ?? r[0]?.id ?? null);
       })
-      .catch(() => alive && setRootsError('Could not load the file roots. Retry.'));
-    return () => {
-      alive = false;
-    };
+      .catch(() => rootsSeq.current === seq && setRootsError('Could not load the file roots. Retry.'));
   }, [port]);
+  useEffect(() => {
+    loadRoots();
+  }, [loadRoots]);
 
   // -- listing ---------------------------------------------------------------
   const refresh = useCallback(() => {
@@ -172,7 +176,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
       }
       if (foldered.length === 0) return;
       if (!port.importFolder) {
-        onNotice?.(EXPLORER_REASONS.FOLDER_IMPORT_UNAVAILABLE);
+        onNotice?.(port.importFolderBlockedReason ?? EXPLORER_REASONS.FOLDER_IMPORT_UNAVAILABLE);
         return;
       }
       // One import per top-level folder; re-import merges and replaces (R8).
@@ -197,6 +201,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
                 : `Imported ${rootName} as a linked project.`,
             );
             refresh();
+            loadRoots();
           })
           .catch((error: unknown) => {
             onNotice?.(
@@ -211,7 +216,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [upload, port, onNotice, refresh],
+    [upload, port, onNotice, refresh, loadRoots],
   );
 
   const existingNames = useMemo(() => {
@@ -528,7 +533,7 @@ export function FilesExplorerScreen({ port, onNotice }: FilesExplorerScreenProps
                 type="button"
                 className="fx-tool"
                 disabled
-                title={EXPLORER_REASONS.FOLDER_IMPORT_UNAVAILABLE}
+                title={port.importFolderBlockedReason ?? EXPLORER_REASONS.FOLDER_IMPORT_UNAVAILABLE}
               >
                 Import folder
               </button>
