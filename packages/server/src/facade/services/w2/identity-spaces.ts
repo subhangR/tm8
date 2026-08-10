@@ -12,7 +12,7 @@ import {
   type TaskAxis,
 } from '@tm8/contract';
 
-import type { Querier } from '../../../db/types.js';
+import type { DbClaims, Querier } from '../../../db/types.js';
 import type { OperationHandler } from '../../../http/types.js';
 import { claimsFor, commandEnvelope, limitOf, requireUuidParam } from '../../context.js';
 import type { FacadeDeps } from '../../deps.js';
@@ -196,12 +196,47 @@ function toTaskAxis(row: TaskAxisRow): TaskAxis {
   };
 }
 
+/**
+ * THE MEMBERSHIP CHECK IS ABOUT THE CALLER, AND IT TAKES THE CLAIMS TO SAY SO.
+ *
+ * It used to take a bare `identityId`, and all six call sites handed it
+ * `owner.identityId` — the loopback AUTO-OWNER, not whoever is calling. Every
+ * one of them then asked "is the node owner a member of this space?" on behalf
+ * of a caller who is somebody else, which is wrong in both directions:
+ *
+ * - a genuine member of a space the node owner does not belong to was refused
+ *   `forbidden: not a member of this space` — including that space's own
+ *   owner, and including `spaces.settings`, which the workspace boot cannot
+ *   complete without. The whole space was unopenable for everyone in it. It
+ *   only looked fine on this node's first space, where the node owner happens
+ *   to be a member too;
+ * - the `'admin'` form read the NODE OWNER's role in the space, so where the
+ *   node owner is a space admin, any plain member cleared an admin-only gate
+ *   (`spaces.invites.list`).
+ *
+ * Taking `DbClaims` — the same object bound to this very transaction — makes
+ * the two agree by construction: the row this reads is filtered by RLS through
+ * `internal.identity_id()`, which is `claims.identityId` and nothing else. A
+ * caller cannot be checked as one identity and read as another.
+ */
+function viewerIdentityOf(claims: DbClaims): string {
+  const identityId = claims.identityId;
+  // Unreachable through `claimsFor`, which refuses an anonymous request before
+  // it can get here. Stated anyway: an absent identity must never fall through
+  // to a query that binds it as null — a null `identity_id` matches no member
+  // row, so the refusal would come back as `forbidden` and blame membership
+  // for what is a missing credential.
+  if (!identityId) throw new CollabError('unauthenticated', 'authentication is required');
+  return identityId;
+}
+
 async function requireMembership(
   q: Querier,
   spaceId: string,
-  identityId: string,
+  claims: DbClaims,
   required: 'member' | 'admin' = 'member',
 ): Promise<MembershipRow> {
+  const identityId = viewerIdentityOf(claims);
   const rows = await q.query<MembershipRow>(
     `select membership.entity_id, membership.role
        from public.members membership
@@ -294,8 +329,9 @@ export class W2IdentitySpacesService {
   readonly spacesSettings: OperationHandler = async (ctx) => {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      await requireMembership(q, spaceId, owner.identityId);
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
       const spaces = await q.query<SettingsSpaceRow>(
         `select ${SPACE_COLUMNS}, s.default_channel_id,
                 s.default_interaction_profile_id, s.settings_revision
@@ -345,8 +381,9 @@ export class W2IdentitySpacesService {
   readonly spacesMembersList: OperationHandler = async (ctx) => {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      await requireMembership(q, spaceId, owner.identityId);
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
       return loadMembers(q, spaceId);
     });
   };
@@ -354,8 +391,9 @@ export class W2IdentitySpacesService {
   readonly spacesInvitesList: OperationHandler = async (ctx) => {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      await requireMembership(q, spaceId, owner.identityId, 'admin');
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims, 'admin');
       return loadInvites(q, spaceId);
     });
   };
@@ -419,8 +457,9 @@ export class W2IdentitySpacesService {
   readonly spacesTaskAxesList: OperationHandler = async (ctx) => {
     const owner = await this.deps.owner();
     const spaceId = requireUuidParam(ctx, 'spaceId');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      await requireMembership(q, spaceId, owner.identityId);
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
       return loadTaskAxes(q, spaceId);
     });
   };
@@ -483,8 +522,9 @@ export class W2IdentitySpacesService {
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const limit = limitOf(ctx.query.get('limit'), 50);
     const cursor = ctx.query.get('cursor');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      await requireMembership(q, spaceId, owner.identityId);
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
       const params: unknown[] = [spaceId];
       let cursorSql = '';
       if (cursor) {
@@ -536,8 +576,9 @@ export class W2IdentitySpacesService {
     const spaceId = requireUuidParam(ctx, 'spaceId');
     const limit = limitOf(ctx.query.get('limit'), 50);
     const cursor = ctx.query.get('cursor');
-    return this.deps.db.tx(claimsFor(owner, ctx), async (q) => {
-      await requireMembership(q, spaceId, owner.identityId);
+    const claims = claimsFor(owner, ctx);
+    return this.deps.db.tx(claims, async (q) => {
+      await requireMembership(q, spaceId, claims);
       const params: unknown[] = [spaceId];
       let cursorSql = '';
       if (cursor) {
@@ -566,7 +607,11 @@ export class W2IdentitySpacesService {
         pageRows.flatMap((row) => [row.recipient_id, row.actor_id]),
       );
       const summaryIds = pageRows.flatMap((row) => [row.recipient_id, row.ref_id ?? '']);
-      const summaries = await loadEntitySummariesByIds(q, summaryIds, owner.identityId);
+      // The viewer projection on these summaries (unread, own reaction) is the
+      // CALLER's, for the same reason the membership check above is: passing
+      // the node owner's identity here handed every caller a stranger's read
+      // state.
+      const summaries = await loadEntitySummariesByIds(q, summaryIds, viewerIdentityOf(claims));
       const summaryById = new Map(summaries.map((summary) => [summary.id, summary]));
       const items: PointEventView[] = pageRows.map((row) => ({
         id: row.id,
