@@ -23,6 +23,8 @@ import type {
   EntityFeedPage,
   EntityId,
   ExecutionSpawnInput,
+  MessageView,
+  Page,
   PostMessageInput,
   SpaceId,
 } from '@tm8/contract';
@@ -36,6 +38,29 @@ import {
 } from './channel-tags';
 import type { ChannelPostInput, ChannelRefusal } from './feed-model';
 
+/**
+ * THREAD ROOTS, not every message.
+ *
+ * `direct_v1` is `['anchored','replies','subject']`, and those first two
+ * partition a channel's messages on `root_message_id is null` — so unioning
+ * them and ordering by time is precisely what made a channel read FLAT: a
+ * reply was drawn wherever it landed in the timeline rather than under the
+ * message it answers. `channel_threads_v1` is the same scope minus `replies`.
+ *
+ * NOTHING IS HIDDEN. A reply is still stored, still RLS-covered, and still
+ * read through `messages.list?rootMessageId=` — the branch read that has
+ * returned roots-with-reply-counts since it was written. It stops being drawn
+ * as a PEER of its parent, which is the entire point.
+ *
+ * NAMED RATHER THAN LEFT TO `default`. The server resolves `default` for a
+ * channel to this same scope, so omitting it would behave identically today.
+ * It is named because BOTH reads here must agree — `reload` and `loadEarlier`
+ * page the same list, and a keyset cursor is fingerprinted over its scope, so
+ * two spellings would mean the second page rejects the first page's cursor.
+ * One constant makes that a compile-time fact rather than a convention.
+ */
+const CHANNEL_FEED_SCOPE = 'channel_threads_v1' as const;
+
 /** A trusted, non-scratch project is what @tag needs before it can spawn. */
 export interface ChannelFeedProject {
   id: string;
@@ -46,8 +71,9 @@ export interface ChannelFeedProject {
 
 export interface ChannelFeedPort {
   /** The seam slice the feed reads through. `entity` is required because the
-      @tag picker resolves candidates through `loadChannelTagOptions`. */
-  seam: Pick<Seam, 'feed' | 'onEvent' | 'query' | 'liveness' | 'entity' | 'files'>;
+      @tag picker resolves candidates through `loadChannelTagOptions`;
+      `messages` is the thread pane's branch read. */
+  seam: Pick<Seam, 'feed' | 'onEvent' | 'query' | 'liveness' | 'entity' | 'files' | 'messages'>;
   spaceId: SpaceId;
   /** Live session ids — the @tag picker's session options come from these. */
   liveIds: readonly EntityId[];
@@ -56,6 +82,19 @@ export interface ChannelFeedPort {
       session it just started. */
   spawn: (input: ExecutionSpawnInput) => Promise<EntityId>;
   projects: readonly ChannelFeedProject[];
+}
+
+/**
+ * The open branch, owned HERE because reads are host-sequenced: the pane
+ * renders what this hook read, never fetches. `replies === undefined` means
+ * the branch read has not completed — a different fact from a measured zero.
+ */
+export interface ChannelFeedThread {
+  root: MessageView;
+  replies?: Page<MessageView>;
+  loading: boolean;
+  loadingMore: boolean;
+  error: string | null;
 }
 
 export interface ChannelFeed {
@@ -70,6 +109,10 @@ export interface ChannelFeed {
   reload: () => Promise<void>;
   loadEarlier: (cursor: Cursor) => Promise<void>;
   post: (input: ChannelPostInput) => Promise<void>;
+  thread: ChannelFeedThread | null;
+  openThread: (root: MessageView) => void;
+  closeThread: () => void;
+  loadMoreReplies: (cursor: Cursor) => Promise<void>;
 }
 
 export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): ChannelFeed {
@@ -80,6 +123,12 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
   const [refusal, setRefusal] = useState<ChannelRefusal | null>(null);
   const [mentionOptions, setMentionOptions] = useState<ComposerMentionOption[]>([]);
   const [attachEntityOptions, setAttachEntityOptions] = useState<ComposerMentionOption[]>([]);
+  const [thread, setThread] = useState<ChannelFeedThread | null>(null);
+  /* The reload path refreshes an open branch without re-running on every
+     thread state change — reload's identity must depend only on the channel
+     and the seam, or the event subscription churns. */
+  const threadRef = useRef<ChannelFeedThread | null>(null);
+  threadRef.current = thread;
   const mutationSequence = useRef(0);
 
   const { seam, spaceId, liveIds, postMessage, spawn, projects } = port;
@@ -140,15 +189,52 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     };
   }, [channelId, liveIds, seam, spaceId, liveSessionKey, readMentionOptions]);
 
+  /**
+   * THE BRANCH READ — `messages.list?rootMessageId=`, keyset-paginated
+   * OLDEST-FIRST by the server (a conversation reads in the order it
+   * happened; no client re-sort). Guarded on the root id so a stale response
+   * can never land in a thread opened after it.
+   */
+  const readBranch = useCallback(async (root: MessageView) => {
+    try {
+      const branch = await seam.messages(channelId, { rootMessageId: root.id });
+      setThread((current) => current && current.root.id === root.id
+        ? { ...current, replies: branch, loading: false, error: null }
+        : current);
+    } catch (thrown: unknown) {
+      setThread((current) => current && current.root.id === root.id
+        ? { ...current, loading: false, error: errorMessage(thrown, 'The thread could not be read.') }
+        : current);
+    }
+  }, [channelId, seam]);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
     setRefusal(null);
     try {
-      const next = await seam.feed(channelId, { scope: 'direct_v1' });
+      const next = await seam.feed(channelId, { scope: CHANNEL_FEED_SCOPE });
       // The server pages newest-first; a chat reads oldest-to-newest with the
       // latest at the bottom, so the page is re-sorted before it ever paints.
       setPage({ ...next, items: chronological(next.items) });
+      /*
+       * An open thread rides every reload: the ROOT's rollup (replyCount,
+       * participants, last-reply time) refreshes from the new page, and the
+       * branch re-reads so a reply another client just posted appears without
+       * closing and reopening the pane.
+       */
+      const openRoot = threadRef.current?.root;
+      if (openRoot) {
+        const fresh = next.items.find(
+          (item) => item.itemKind === 'message' && item.message.id === openRoot.id,
+        );
+        if (fresh && fresh.itemKind === 'message') {
+          setThread((current) => current && current.root.id === openRoot.id
+            ? { ...current, root: fresh.message }
+            : current);
+        }
+        void readBranch(openRoot);
+      }
     } catch (thrown: unknown) {
       const code = errorCode(thrown);
       if (code === 'forbidden' || code === 'not_found') {
@@ -164,10 +250,12 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     } finally {
       setLoading(false);
     }
-  }, [channelId, seam]);
+  }, [channelId, seam, readBranch]);
 
   useEffect(() => {
     setPage(undefined);
+    // A thread belongs to its channel; switching channels closes it.
+    setThread(null);
     void reload();
   }, [channelId, reload]);
 
@@ -182,7 +270,7 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
   const loadEarlier = useCallback(async (cursor: Cursor) => {
     setLoadingEarlier(true);
     try {
-      const older = await seam.feed(channelId, { cursor, scope: 'direct_v1' });
+      const older = await seam.feed(channelId, { cursor, scope: CHANNEL_FEED_SCOPE });
       setPage((current) => current
         ? {
             ...current,
@@ -246,6 +334,39 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     await reload();
   }, [channelId, seam, spaceId, projects, spawn, postMessage, reload, readMentionOptions]);
 
+  const openThread = useCallback((root: MessageView) => {
+    setThread({ root, replies: undefined, loading: true, loadingMore: false, error: null });
+    void readBranch(root);
+  }, [readBranch]);
+
+  const closeThread = useCallback(() => setThread(null), []);
+
+  const loadMoreReplies = useCallback(async (cursor: Cursor) => {
+    const current = threadRef.current;
+    if (!current?.replies) return;
+    const rootId = current.root.id;
+    setThread((t) => t && t.root.id === rootId ? { ...t, loadingMore: true } : t);
+    try {
+      const next = await seam.messages(channelId, { rootMessageId: rootId, cursor });
+      setThread((t) => {
+        if (!t || t.root.id !== rootId || !t.replies) return t;
+        const seen = new Set(t.replies.items.map((m) => m.id));
+        return {
+          ...t,
+          loadingMore: false,
+          replies: {
+            items: [...t.replies.items, ...next.items.filter((m) => !seen.has(m.id))],
+            nextCursor: next.nextCursor,
+          },
+        };
+      });
+    } catch (thrown: unknown) {
+      setThread((t) => t && t.root.id === rootId
+        ? { ...t, loadingMore: false, error: errorMessage(thrown, 'More replies could not be read.') }
+        : t);
+    }
+  }, [channelId, seam]);
+
   return {
     page,
     loading,
@@ -258,6 +379,10 @@ export function useChannelFeed(port: ChannelFeedPort, channelId: EntityId): Chan
     reload,
     loadEarlier,
     post,
+    thread,
+    openThread,
+    closeThread,
+    loadMoreReplies,
   };
 }
 

@@ -107,6 +107,15 @@ export function ChannelView({
 
   const detail = data.detailOf(channelId);
   const content = channelContent(detail);
+  /* Threads are REGISTRY DATA on the kind row, never a kind literal here.
+     Before the detail read lands the kind is unknown, so no thread
+     affordances are claimed — they appear with the detail. The breadcrumb's
+     glyph comes from the same row (`chip.glyph`), for the same reason. */
+  const kindRow = detail ? getKind(detail.kind) : null;
+  const threadsEnabled = kindRow?.panel.threads === true;
+  const anchorTitle = detail
+    ? `${kindRow?.chip?.glyph ?? ''}${detail.title}`
+    : 'this channel';
   const tabs = useMemo(
     () => content.autoTabs.filter((tab) => tab.key !== FEED_KEY),
     [content.autoTabs],
@@ -268,6 +277,12 @@ export function ChannelView({
                   onStartAttachmentUpload={feed.startAttachmentUpload}
                   onLoadEarlier={feed.loadEarlier}
                   onOpenEntity={(id) => setSelectedId(id)}
+                  threads={threadsEnabled}
+                  anchorTitle={anchorTitle}
+                  thread={feed.thread}
+                  onOpenThread={feed.openThread}
+                  onCloseThread={feed.closeThread}
+                  onLoadMoreReplies={feed.loadMoreReplies}
                 />
               )
             ) : (

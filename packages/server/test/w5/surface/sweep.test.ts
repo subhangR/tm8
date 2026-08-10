@@ -456,7 +456,20 @@ describe('W5.C schema-valid stub sweep — all 98 v1 non-WS operations', () => {
     // 095 — production-lineage 093 credentials + 094 Loops menu (main #145)
     // plus this wave's 095 file upload slot sweep. Measured by
     // `ls db/migrations/*.sql | wc -l`, never previous-plus-one.
-    expect(server.appliedMigrations.length).toBe(90);
+    // 90 -> 92 on 2026-08-10, and it is TWO steps for two unrelated reasons.
+    // 096 (Files menu view) landed without touching this pin, so a clean tree
+    // already measured 91 against a pinned 90 — this line was failing on main
+    // before the channel-threads work went near it. 097 (channel_threads_v1
+    // feed scope) is the second. Re-measured with the command above rather
+    // than incremented, which is how the 096 miss would have been caught.
+    // 92 -> 94 on 2026-08-10, resolved AT THE MERGE. Lane B (098, thread_v1 +
+    // task_discussion_v1) and Lane C (099, thread spawn derivation) each
+    // measured 93 correctly on their own branch and each said so in a comment
+    // agreeing that whoever landed second would re-measure the MERGED tree.
+    // This is that re-measurement: `ls db/migrations/*.sql | wc -l` = 94.
+    // Keeping either branch's 93 would have been the previous-plus-one error
+    // the comment above warns against, arrived at by two correct measurements.
+    expect(server.appliedMigrations.length).toBe(94);
     expect(server.appliedMigrations).toEqual([...server.appliedMigrations].sort());
     expect(server.appliedMigrations.every((f) => /^\d{3}_[a-z0-9_]+\.sql$/.test(f))).toBe(true);
   });

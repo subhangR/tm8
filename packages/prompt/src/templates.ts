@@ -224,6 +224,14 @@ export interface TaskAssignmentFacts {
   body: string;
   truncated?: boolean;
   fetchRef?: string | null;
+  /**
+   * When the task was DERIVED from a thread message (064/099): the thread's
+   * root message id, rendered into <source>/<thread> so the assignment names
+   * the live thread it came from rather than pretending it has no origin.
+   */
+  threadRootMessageId?: string | null;
+  /** The channel the thread is anchored on; pairs with the root id. */
+  threadChannelId?: string | null;
 }
 
 export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
@@ -231,9 +239,9 @@ export function taskAssignmentInjection(f: TaskAssignmentFacts): string {
     `<trusted_control type="tm8.session-input" version="1" kind="task_assignment" message_id="${attr(f.messageId)}" message_batch_id="none" delivery_attempt_id="none">`,
     `  <from actor_id="${attr(f.senderActorId)}" actor_kind="${attr(f.senderActorKind)}" source_session_id="${attr(f.sourceSessionId)}" attribution="${f.senderAttribution ?? 'recorded_only'}" />`,
     `  <to session_id="${attr(f.destinationSessionId)}" />`,
-    `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="none" />`,
+    `  <source anchor_id="${attr(f.taskId)}" anchor_kind="task" message_id="${attr(f.threadRootMessageId)}"${f.threadChannelId ? ` channel_id="${attr(f.threadChannelId)}"` : ''} />`,
     '  <context />',
-    '  <thread parent_message_id="none" root_message_id="none" />',
+    `  <thread parent_message_id="none" root_message_id="${attr(f.threadRootMessageId)}" />`,
     `  <task id="${attr(f.taskId)}" version="${attr(f.taskVersion)}" />`,
     `  <reply available="true" operation="messages.post" command_ref="tm8://help/message/send" anchor_id="${attr(f.taskId)}" parent_message_id="none" />`,
     '  <delivery transport="spawn_initial_turn" stored="true" attempt="1" status_source="work_session" />',

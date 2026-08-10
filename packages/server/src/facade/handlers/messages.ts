@@ -29,6 +29,8 @@ import {
   ENTITY_COLUMNS,
   ENTITY_FROM,
   MICROS,
+  iso,
+  loadActors,
   type EntityRow,
 } from '../entity-read.js';
 
@@ -46,14 +48,50 @@ export async function toMessageViews(
   const summaries = await assembleSummaries(q, rows, viewerIdentityId);
   const byId = new Map(summaries.map((s) => [s.id, s]));
 
-  const replyCounts = await q.query<{ root_message_id: string; count: string }>(
-    `select root_message_id, count(*)::text as count
-       from public.messages
+  /*
+   * ONE grouped read serves the whole thread footer.
+   *
+   * The count has always come from here. `lastReplyAt` and the distinct reply
+   * authors ride the SAME `group by` rather than arriving as two more
+   * round-trips: a `Querier` is one pooled client and cannot run statements
+   * concurrently, so a second query here would be strictly serial latency for
+   * data the first one is already standing on. `messages_root_created_idx` is
+   * `(root_message_id, created_at, entity_id)` — it leads with the grouping
+   * column and carries the timestamp, so `max(created_at)` is answered from the
+   * index.
+   *
+   * Authors are ordered by their FIRST reply so the facepile is stable across
+   * reads: `min(created_at)` per author, not `array_agg(distinct …)`, whose
+   * order Postgres does not promise.
+   */
+  const replyStats = await q.query<{
+    root_message_id: string;
+    count: string;
+    last_reply_at: string;
+    author_ids: string[];
+  }>(
+    `select root_message_id,
+            count(*)::text as count,
+            ${MICROS('max(created_at)')} as last_reply_at,
+            (select array_agg(author_id order by first_at)
+               from (select author_id, min(created_at) first_at
+                       from public.messages inner_m
+                      where inner_m.root_message_id = m.root_message_id
+                      group by author_id) authors) as author_ids
+       from public.messages m
       where root_message_id = any($1::uuid[])
       group by root_message_id`,
     [rows.map((r) => r.id)],
   );
-  const counts = new Map(replyCounts.map((r) => [r.root_message_id, Number(r.count)]));
+  const stats = new Map(replyStats.map((r) => [r.root_message_id, r]));
+
+  /*
+   * The facepile names PEOPLE, so it needs actor summaries, not raw ids — and
+   * one author is typically in several threads on a page, so they are loaded
+   * once for the whole batch rather than per root.
+   */
+  const replyAuthorIds = [...new Set(replyStats.flatMap((r) => r.author_ids ?? []))];
+  const replyActors = await loadActors(q, replyAuthorIds);
 
   const views: MessageView[] = [];
   for (const row of rows) {
@@ -62,11 +100,18 @@ export async function toMessageViews(
     const state = summary.state;
     const content = contentOf(row);
     if (state.kind !== 'message' || content.kind !== 'message') continue;
+    const stat = stats.get(row.id);
     views.push({
       ...summary,
       state,
       content,
-      replyCount: counts.get(row.id) ?? 0,
+      replyCount: stat ? Number(stat.count) : 0,
+      // `null` on an unreplied root is the honest spelling: there is no last
+      // reply, which is a different fact from "we did not look".
+      lastReplyAt: stat ? iso(stat.last_reply_at) : null,
+      replyParticipants: (stat?.author_ids ?? [])
+        .map((id) => replyActors.get(id))
+        .filter((actor): actor is NonNullable<typeof actor> => actor !== undefined),
     });
   }
   return views;

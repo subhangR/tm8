@@ -36,6 +36,27 @@ describe('Chat responsive and preference gates', () => {
     expect(listbox).toMatch(/overflow-y:\s*auto/);
   });
 
+  it('collapses an open thread to replace the feed below the width threshold, breadcrumb taking over', () => {
+    // The three-column split cannot survive a narrow container: an open
+    // thread REPLACES the feed, and the `← #channel` breadcrumb becomes the
+    // one way back. jsdom cannot evaluate container queries, so this pins the
+    // RULES — the collapse is CSS, and losing any of these lines silently
+    // re-opens the 180px-sliver-beside-180px-pane failure.
+    const collapse = /@container \(max-width: 640px\)\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '';
+    expect(collapse).toMatch(/\.chs-root\[data-thread-open='true'\] \.chs-main\s*\{[^}]*display:\s*none/);
+    expect(collapse).toMatch(/\.chs-root\[data-thread-open='true'\] \.chs-thread\s*\{[^}]*flex:\s*1 1 auto/);
+    // The breadcrumb SHOWS collapsed and the ✕ hides — one wired fact, one
+    // visible control at every width.
+    expect(collapse).toMatch(/\.chs-thread__back\s*\{[^}]*display:\s*inline-flex/);
+    expect(collapse).toMatch(/\.chs-thread__close\s*\{[^}]*display:\s*none/);
+    // At full width the pane is a bounded aside column, never unfloored.
+    const pane = /\.chs-thread\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(pane).toMatch(/flex:\s*0 0 clamp\(/);
+    expect(pane).toMatch(/min-width:\s*0/);
+    const back = /\.chs-thread__back\s*\{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(back).toMatch(/display:\s*none/);
+  });
+
   it('gives the arrow-key highlight a visible treatment', () => {
     // Without this rule ↑/↓ move an invisible cursor and Enter commits a row
     // the user cannot see — the keyboard navigation depends on it entirely.

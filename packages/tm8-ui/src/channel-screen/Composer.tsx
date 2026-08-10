@@ -52,6 +52,16 @@ export interface ComposerProps {
   sessionExited?: boolean;
   replyTo: MessageView | null;
   onCancelReply: () => void;
+  /**
+   * THE THREAD COMPOSER'S ONE EXTRA FACT: everything it stores is a reply in
+   * this branch. With no explicit `replyTo` the parent is the root itself;
+   * arming `replyTo` on a message inside the branch targets that message
+   * instead. Every reply-only restriction (no session/team @tags, no
+   * workspace-entity anchors — a reply has exactly ONE anchor, its parent's)
+   * applies to the whole branch, not only to armed replies. The CHANNEL
+   * composer never sets this: it posts roots only, `parentMessageId` null.
+   */
+  threadRoot?: MessageView | null;
   /** Production hosts control this from the member+session draft store. */
   draft?: string;
   onDraftChange?: (body: string) => void;
@@ -90,6 +100,7 @@ export function Composer({
   sessionExited = false,
   replyTo,
   onCancelReply,
+  threadRoot = null,
   draft,
   onDraftChange,
   uncertainSubmission = null,
@@ -131,9 +142,10 @@ export function Composer({
    * broken". Each whitespace-separated word is a valid starting point so a
    * surname or the second word of a session title still reaches its row.
    */
+  const composingReply = Boolean(replyTo || threadRoot);
   const mentionQuery = mentionSearch.trim().toLowerCase();
   const availableMentionOptions = (mentionOptions ?? [])
-    .filter((option) => !replyTo || !option.route)
+    .filter((option) => !composingReply || !option.route)
     .filter((option) => {
       if (!mentionQuery) return true;
       const display = option.display.toLowerCase();
@@ -313,19 +325,22 @@ export function Composer({
       const mentionIds = selectedMentions.flatMap((mention) =>
         mention.kind === 'member' || mention.kind === 'team_member' ? [mention.id] : []);
       const tagTargetIds = selectedMentions.flatMap((mention) => mention.route ? [mention.id] : []);
-      if (replyTo && tagTargetIds.length) {
+      /* Lane C's poke-on-reply proposal (pokeSessionIds) lands HERE when its
+         server half and ruling arrive; until then the refusal below is the
+         truth of the wire for every reply, thread-composed or armed. */
+      if (composingReply && tagTargetIds.length) {
         throw new Error('Team and session @Tags are available only on top-level channel messages');
       }
       /* A reply has exactly ONE anchor — its parent's. The server enforces
          this; refusing here keeps the draft beside a reason instead of a
          round-trip rejection. */
-      if (replyTo && attachedEntities.length) {
+      if (composingReply && attachedEntities.length) {
         throw new Error('Attached workspace entities are available only on top-level messages — a reply stays on its parent’s anchor');
       }
       await onPost({
         anchorIds: [...new Set([anchorId, ...attachedEntities.map((item) => item.id)])],
         body,
-        parentMessageId: replyTo?.id ?? null,
+        parentMessageId: replyTo?.id ?? threadRoot?.id ?? null,
         ...(attachmentIds.length ? { attachmentIds } : {}),
         ...(mentionIds.length ? { mentionIds: [...new Set(mentionIds)] } : {}),
         ...(tagTargetIds.length ? { tagTargetIds: [...new Set(tagTargetIds)] } : {}),

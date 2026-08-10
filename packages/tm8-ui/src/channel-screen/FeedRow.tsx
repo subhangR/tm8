@@ -12,6 +12,8 @@ import {
   deliverySummaryLine,
   mentionIdInHref,
   mentionKey,
+  participantNames,
+  replyTimeAgo,
   safeDeliveryReason,
   type FeedGroup,
 } from './feed-model';
@@ -50,6 +52,24 @@ export interface FeedRowHandlers {
   /** Loaded-page index for bounded reply previews; no recursive fetches here. */
   loadedMessages?: ReadonlyMap<EntityId, MessageView>;
   onFocusMessage?: (id: EntityId) => void;
+  /**
+   * THREADS MODE — a registry fact (`panel.threads` on the kind row), never a
+   * kind literal. When true: a root with replies draws a persistent thread
+   * footer, ↩ opens the branch instead of arming an inline reply, and
+   * ParentPreview is not drawn (the feed is roots-only, and in the thread
+   * pane the parent is pinned at the top by construction). When false the
+   * session surface's flat grammar is untouched.
+   */
+  threads?: boolean;
+  /** Opens the branch. `threads` true without this ⇒ visible refusal (R7). */
+  onOpenThread?: (root: MessageView) => void;
+  /**
+   * The thread pane's pinned root. A reply whose parent IS the pinned root
+   * draws no ParentPreview — the parent is on screen by construction. A reply
+   * to some OTHER message in the branch keeps its preview: that relationship
+   * is not pinned anywhere.
+   */
+  pinnedParentId?: EntityId;
 }
 
 export function FeedRowGroup({
@@ -158,8 +178,37 @@ function RowActions({
   return (
     <div className="chs-actions">
       {canSendAgain(item.delivery) ? <SendAgain item={item} handlers={handlers} /> : null}
-      <ReplyButton message={item.message} onReply={handlers.onReply} />
+      {/* Threads mode: a reply is COMPOSED IN THE BRANCH, so ↩ opens the
+          thread — same gesture as the footer, reachable on unreplied roots. */}
+      {handlers.threads ? (
+        <OpenThreadButton message={item.message} onOpenThread={handlers.onOpenThread} />
+      ) : (
+        <ReplyButton message={item.message} onReply={handlers.onReply} />
+      )}
     </div>
+  );
+}
+
+function OpenThreadButton({
+  message,
+  onOpenThread,
+}: {
+  message: MessageView;
+  onOpenThread?: (root: MessageView) => void;
+}) {
+  const who = message.state.author?.displayName ?? message.createdBy?.displayName ?? 'this message';
+  if (!onOpenThread) {
+    return <DisabledIconControl label={`Reply in thread to ${who}`} glyph="↩" reason={NOT_WIRED_REASON} />;
+  }
+  return (
+    <button
+      type="button"
+      className="chs-iconbtn"
+      aria-label={`Reply in thread to ${who}`}
+      onClick={() => onOpenThread(message)}
+    >
+      <span aria-hidden>↩</span>
+    </button>
   );
 }
 
@@ -189,11 +238,17 @@ function MessageContent({
      * recovered from cache" is the same law one level down.
      */
     return (
-      <p className="chs-tomb" data-testid="chs-tombstone">
-        {`⌀ message${author?.displayName ? ` from ${author.displayName}` : ''} redacted · ${clockTime(
-          message.state.redactedAt,
-        )} — replies keep their place`}
-      </p>
+      <>
+        <p className="chs-tomb" data-testid="chs-tombstone">
+          {`⌀ message${author?.displayName ? ` from ${author.displayName}` : ''} redacted · ${clockTime(
+            message.state.redactedAt,
+          )} — replies keep their place`}
+        </p>
+        {/* "Replies keep their place" must stay TRUE in a roots-only feed:
+            with the branch hidden behind the root, a redacted root without a
+            footer would orphan every reply under it. */}
+        <ThreadFooter message={message} handlers={handlers} />
+      </>
     );
   }
 
@@ -228,7 +283,21 @@ function MessageContent({
 
       <LinkedSessions item={item} anchorId={anchorId} onOpenEntity={handlers.onOpenEntity} />
 
-      {parentMessageId ? (
+      {/* NOT drawn in threads mode. ParentPreview existed because replies
+          were drawn where their parent wasn't; a roots-only feed has no such
+          row, and in the thread pane the parent is pinned at the top by
+          construction. The session surface (threads off) still draws replies
+          inline and keeps it.
+
+          INSIDE A PANE (`pinnedParentId` set) the preview renders ONLY for a
+          parent that is actually ON the branch: `MessageView.parentId` is the
+          ENTITY parent, which fixture data (and any anchor-parented message)
+          points at the CHANNEL — previewing that as "in reply to <channel>"
+          under every row was the first thing the browser run showed. */}
+      {parentMessageId && !handlers.threads
+        && parentMessageId !== handlers.pinnedParentId
+        && (handlers.pinnedParentId === undefined
+          || handlers.loadedMessages?.get(parentMessageId) != null) ? (
         <ParentPreview
           id={parentMessageId}
           parent={handlers.loadedMessages?.get(parentMessageId) ?? null}
@@ -240,7 +309,81 @@ function MessageContent({
       <MessageBody message={message} onOpenEntity={handlers.onOpenEntity} />
 
       {summary && delivery.length > 1 ? <TargetList summary={summary} rows={delivery} /> : null}
+
+      <ThreadFooter message={message} handlers={handlers} />
     </>
+  );
+}
+
+/**
+ * THE THREAD FOOTER — `▸ N replies · <facepile> · <relative time>`, drawn on
+ * a root whose branch is non-empty.
+ *
+ * PERSISTENT, NOT HOVER: an unseen thread is a lost thread. The whole line is
+ * ONE click target that opens the branch. A root with `replyCount === 0`
+ * renders no footer at all — zero replies is a fact the row already states by
+ * saying nothing.
+ *
+ * All three facts ride the feed item (`replyCount`, `replyParticipants`,
+ * `lastReplyAt` — one grouped query server-side, so a root that carries one
+ * carries all three); no read happens here. Absent rollup fields (an
+ * optimistic echo) degrade to the count alone rather than a dash.
+ */
+function ThreadFooter({
+  message,
+  handlers,
+}: {
+  message: MessageView;
+  handlers: FeedRowHandlers;
+}) {
+  if (!handlers.threads || message.replyCount === 0) return null;
+  const count = `${message.replyCount} ${message.replyCount === 1 ? 'reply' : 'replies'}`;
+  const names = participantNames(message.replyParticipants ?? []);
+  const faces = (message.replyParticipants ?? []).slice(0, 3);
+  const content = (
+    <>
+      <span aria-hidden className="chs-thread-footer__glyph">▸</span>
+      <span className="chs-thread-footer__count">{count}</span>
+      {faces.length ? (
+        <span className="chs-thread-footer__faces" aria-hidden>
+          {faces.map((actor) => (
+            <Avatar
+              key={actor.id}
+              actorId={actor.id}
+              provenance={actor.isAgent ? 'agent' : 'human'}
+              label={actor.displayName}
+              size={15}
+              src={actor.avatar ?? null}
+            />
+          ))}
+        </span>
+      ) : null}
+      {names ? <span className="chs-thread-footer__names">{names}</span> : null}
+      {message.lastReplyAt ? (
+        <span className="chs-thread-footer__when">{replyTimeAgo(message.lastReplyAt)}</span>
+      ) : null}
+    </>
+  );
+  if (!handlers.onOpenThread) {
+    return (
+      <div className="chs-thread-footer" data-testid="chs-thread-footer">
+        <DisabledAction label={`Open thread · ${count}`} reason={NOT_WIRED_REASON}>
+          {content}
+        </DisabledAction>
+      </div>
+    );
+  }
+  return (
+    <div className="chs-thread-footer" data-testid="chs-thread-footer">
+      <button
+        type="button"
+        className="chs-thread-footer__open"
+        aria-label={`Open thread · ${count}`}
+        onClick={() => handlers.onOpenThread?.(message)}
+      >
+        {content}
+      </button>
+    </div>
   );
 }
 

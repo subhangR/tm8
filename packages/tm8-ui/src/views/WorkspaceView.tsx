@@ -393,6 +393,8 @@ export function WorkspaceView(props: WorkspaceViewProps) {
               channelId={id}
               connection={data.connection}
               onOpenEntity={(entityId) => openEntity(entityId)}
+              threads={getKind(detail.kind).panel.threads === true}
+              anchorTitle={`${getKind(detail.kind).chip.glyph}${detail.title}`}
             />
           ) : detail ? (
             <LazySessionChatSurface

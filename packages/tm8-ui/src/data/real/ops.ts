@@ -109,7 +109,7 @@ import {
   type WorkInput,
 } from '@tm8/contract';
 import type { HttpClient, QueryParams } from './http';
-import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, PageOpts, TranscriptOpts } from '../seam';
+import type { BranchTopologyOpts, ConnectionOpts, FeedOpts, IdentityView, JournalOpts, LivenessSnapshot, MessageListOpts, PageOpts, TranscriptOpts } from '../seam';
 
 /**
  * `GET /v2/spaces/:spaceId/events` response (server `DurableEventPage`,
@@ -384,8 +384,11 @@ export function createOps(http: HttpClient, options: OpsOptions = {}) {
       return http.call<Page<ActivityItem>>('entities.activity', { params: { id }, query: pageQuery(opts) });
     },
 
-    messages(anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>> {
-      return http.call<Page<MessageView>>('messages.list', { params: { anchorId }, query: pageQuery(opts) });
+    messages(anchorId: EntityId, opts?: MessageListOpts): Promise<Page<MessageView>> {
+      return http.call<Page<MessageView>>('messages.list', {
+        params: { anchorId },
+        query: { ...pageQuery(opts), rootMessageId: opts?.rootMessageId },
+      });
     },
 
     handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>> {

@@ -136,11 +136,13 @@ control vanish or go inert, with the single documented exception of `onSwitchToT
   files that must already exist as entities; nothing in the seam creates one from a local file. The
   composer's `＋` renders **disabled-with-reason** with that exact fact. S22 (upload failure states)
   is unbuildable until an executor exists. **Not a decision — a gap.**
-- **GAP-2 · parent-message hydration.** `MessageView.state.rootMessageId` gives the parent's ID and
-  nothing else, and this surface holds only the page it was handed — so the oracle's parent
-  *excerpt* is available only when the parent happens to be on that page. Rather than a
-  sometimes-excerpt that silently degrades, the row renders the relationship, which is always true.
-  Closing this needs either a parent-hydration read or a host-side lookup passed in as a prop.
+- **GAP-2 · parent-message hydration — RETIRED 2026-08-10 (threads slice 2), deleted rather than
+  fixed.** The gap existed because replies were drawn where their parent wasn't. The channel feed is
+  now THREAD ROOTS ONLY (`channel_threads_v1`) and a reply is read in its thread pane, where the
+  parent is **pinned at the top by construction** — there is nothing left to hydrate. `ParentPreview`
+  no longer renders in threads mode; it survives solely for the session surface (threads off), which
+  still draws replies inline and still holds only the page it was handed. If session chat is ever
+  threaded, delete the component.
 - **GAP-3 · fixture `feed()` returns `nextCursor: null` always** (`seam-fixture.ts:590`). So S08/S09/S10
   paging cannot be exercised against fixtures — the component's paging is proven by unit test with a
   synthetic cursor, **not** against the fixture seam. Extending the fixture dataset is `src/fixtures/`
