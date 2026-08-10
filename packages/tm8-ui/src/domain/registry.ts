@@ -776,7 +776,15 @@ const ROWS: readonly KindConfig[] = [
      * host ever passed an `onAction`. It is wired now (`views/useEntityVerbs`),
      * so the channel that is open is the parent of what it creates.
      */
-    panel: { archetype: 'hub', composition: 'chat', primaries: ['edit', 'add-child'] },
+    /**
+     * `threads: true` — a channel reads as THREAD ROOTS (`channel_threads_v1`)
+     * and opens each branch in a thread pane (slice 2 of the Slack-threads
+     * programme). Registry data rather than a kind check in the surface: the
+     * session chat mounts the SAME ChannelScreen and must keep its flat,
+     * replies-inline read (threading sessions is explicitly out of scope —
+     * channels end-to-end first).
+     */
+    panel: { archetype: 'hub', composition: 'chat', threads: true, primaries: ['edit', 'add-child'] },
     palette: { createLabel: 'New channel' },
   },
 

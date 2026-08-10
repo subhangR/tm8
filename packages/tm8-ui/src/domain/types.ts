@@ -782,6 +782,14 @@ export interface PanelConfig {
    * arm; this flag states the same reason structurally for chat surfaces.
    */
   composition?: 'chat';
+  /**
+   * The kind's chat surface reads THREAD ROOTS and opens a reply branch in a
+   * side pane (the Slack-thread model). REGISTRY DATA, not a kind literal: the
+   * hosts that mount a chat surface pass this through, and the surface itself
+   * never asks what kind its anchor is. Absent ⇒ the flat conversation the
+   * session surface draws, replies inline where they landed.
+   */
+  threads?: boolean;
   z4?: { immersive?: boolean };
 }
 

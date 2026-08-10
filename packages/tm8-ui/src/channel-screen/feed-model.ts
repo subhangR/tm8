@@ -1,4 +1,5 @@
 import type {
+  ActorSummary,
   DeliverySummary,
   EntityId,
   EntitySummary,
@@ -434,6 +435,38 @@ function linkMentions(line: string, mentions: readonly Mention[], inlined: Set<s
 /** A display name is a NAME, never markup — `a_b_c` must not come out italic. */
 function escapeInlineMarkdown(text: string): string {
   return text.replace(/([\\`*_[\]<>])/g, '\\$1');
+}
+
+/**
+ * The thread footer's relative time — "now", "5m ago", "2h ago", "3d ago".
+ *
+ * `now` is a parameter so the value is testable; the render instant is the
+ * default. A private twin of this lives in `panels/bodies/HubBody.tsx` (and a
+ * third in `graph/GraphView.tsx`) — that file's own comment defers the
+ * shared-utility question to whoever owns the next copy, which is this one:
+ * flagged, not solved, because unifying three private helpers means touching
+ * two other lanes' files for a cosmetic dedup.
+ */
+export function replyTimeAgo(iso: string, now?: string): string {
+  const end = now ? Date.parse(now) : Date.now();
+  const mins = Math.max(0, Math.round((end - Date.parse(iso)) / 60_000));
+  if (mins < 1) return 'now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+/**
+ * The facepile's caption: first two participants by name, the rest counted.
+ * Participants arrive ordered by FIRST reply (the server promises the order),
+ * so the caption is as stable as the branch it describes.
+ */
+export function participantNames(actors: readonly ActorSummary[]): string {
+  const names = actors.map((actor) => actor.displayName).filter(Boolean);
+  if (names.length === 0) return '';
+  if (names.length <= 2) return names.join(', ');
+  return `${names[0]}, ${names[1]} +${names.length - 2}`;
 }
 
 /** `HH:MM` in the viewer's locale — the oracle's rail time (hero line 91). */

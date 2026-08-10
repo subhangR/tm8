@@ -22,6 +22,14 @@ export interface ChannelChatSurfaceProps {
   connection: ConnectionState;
   /** Opening an entity from the feed pushes it onto the host's panel stack. */
   onOpenEntity?: (id: EntityId) => void;
+  /**
+   * REGISTRY DATA passed through by the host (`getKind(kind).panel.threads`)
+   * — the surface never asks what kind its anchor is. True ⇒ thread footers,
+   * roots-only composer, and the thread pane column.
+   */
+  threads?: boolean;
+  /** The breadcrumb's word for this anchor — "#design-review". */
+  anchorTitle?: string;
 }
 
 export function ChannelChatSurface({
@@ -29,6 +37,8 @@ export function ChannelChatSurface({
   channelId,
   connection,
   onOpenEntity,
+  threads = false,
+  anchorTitle,
 }: ChannelChatSurfaceProps) {
   const feed = useChannelFeed(port, channelId);
 
@@ -57,6 +67,12 @@ export function ChannelChatSurface({
       onStartAttachmentUpload={feed.startAttachmentUpload}
       onLoadEarlier={feed.loadEarlier}
       onOpenEntity={onOpenEntity}
+      threads={threads}
+      anchorTitle={anchorTitle}
+      thread={feed.thread}
+      onOpenThread={feed.openThread}
+      onCloseThread={feed.closeThread}
+      onLoadMoreReplies={feed.loadMoreReplies}
     />
   );
 }

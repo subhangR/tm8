@@ -593,9 +593,26 @@ export function createFixtureSeam(): FixtureSeam {
     if (s.state.kind !== 'message') throw new CollabError('invariant_violation', `${s.id} is not a message`);
     const content = extrasOf(s.id).content;
     if (content.kind !== 'message') throw new CollabError('invariant_violation', `${s.id} content is not a message`);
-    const replyCount = [...summaries.values()]
-      .filter((m) => m.state.kind === 'message' && m.state.rootMessageId === s.id).length;
-    return { ...s, state: s.state, content, replyCount };
+    // The thread-footer rollup, same shape as the server's grouped query: a
+    // root that carries one of these carries all three. Participants are
+    // ordered by their FIRST reply so a facepile never reshuffles between
+    // reads of unchanged data.
+    const replies = [...summaries.values()]
+      .filter((m) => m.state.kind === 'message' && m.state.rootMessageId === s.id)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const participants = new Map<string, ActorSummary>();
+    for (const reply of replies) {
+      const author = (reply.state.kind === 'message' ? reply.state.author : null) ?? reply.createdBy;
+      if (author && !participants.has(author.id)) participants.set(author.id, author);
+    }
+    return {
+      ...s,
+      state: s.state,
+      content,
+      replyCount: replies.length,
+      lastReplyAt: replies.length ? replies[replies.length - 1].createdAt : null,
+      replyParticipants: [...participants.values()],
+    };
   }
 
   /** Strictly increasing per space; the client's dedupe/order key. */
@@ -1090,8 +1107,15 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async messages(anchorId, opts): Promise<Page<MessageView>> {
       requireSummary(anchorId);
+      // `rootMessageId` reads the branch under a root, oldest-first, exactly
+      // like the server. WITHOUT it this fixture still returns every message
+      // on the anchor (roots AND replies) where the server returns roots
+      // only — pre-existing divergence, left alone because the Discussion
+      // surfaces read it that way; the thread pane always passes the filter.
       const rows = [...summaries.values()]
         .filter((s) => s.state.kind === 'message' && s.state.anchorId === anchorId && s.deletedAt === null)
+        .filter((s) => opts?.rootMessageId === undefined
+          || (s.state.kind === 'message' && s.state.rootMessageId === opts.rootMessageId))
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map(toMessageView);
       return clone(pageOf(rows, opts));
@@ -1298,8 +1322,15 @@ export function createFixtureSeam(): FixtureSeam {
     },
     async feed(id, opts?: FeedOpts): Promise<EntityFeedPage> {
       const anchor = requireSummary(id);
+      // `channel_threads_v1` is `direct_v1` minus `replies`: THREAD ROOTS
+      // ONLY. The fixture honours the partition the server enforces —
+      // otherwise the roots-only channel read would go unexercised here and
+      // still pass, exactly the unfiltered-read failure the connections
+      // fixture comment above records.
+      const rootsOnly = opts?.scope === 'channel_threads_v1';
       const items: FeedItem[] = [...summaries.values()]
         .filter((s) => s.state.kind === 'message' && s.state.anchorId === id && s.deletedAt === null)
+        .filter((s) => !rootsOnly || (s.state.kind === 'message' && s.state.rootMessageId === null))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .map((s) => {
           const view = toMessageView(s);
@@ -1324,7 +1355,9 @@ export function createFixtureSeam(): FixtureSeam {
         });
       return clone({
         resolvedScope: opts?.scope ?? 'direct_v1',
-        predicates: ['anchored' as const],
+        predicates: rootsOnly
+          ? ['anchored' as const, 'subject' as const]
+          : ['anchored' as const],
         items,
         nextCursor: null,
       });

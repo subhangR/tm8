@@ -223,6 +223,12 @@ export interface PageOpts {
   limit?: number;
 }
 
+/** `messages.list` paging plus the one filter that read has always accepted. */
+export interface MessageListOpts extends PageOpts {
+  /** Read the branch under this root instead of the anchor's thread roots. */
+  rootMessageId?: EntityId;
+}
+
 /**
  * `entities.connections` paging PLUS the two filters that route has always
  * accepted (`?type=`/`?types=`, `?direction=`).
@@ -399,8 +405,15 @@ export interface Seam {
   connections(id: EntityId, opts?: ConnectionOpts): Promise<Page<EdgeView>>;
   /** Activity tab. */
   activity(id: EntityId, opts?: PageOpts): Promise<Page<ActivityItem>>;
-  /** Discussion tab. */
-  messages(anchorId: EntityId, opts?: PageOpts): Promise<Page<MessageView>>;
+  /**
+   * Discussion tab, and — with `rootMessageId` — a thread's branch.
+   * `?rootMessageId=` switches the server read from "thread roots" to
+   * "replies under a root", keyset-paginated OLDEST-FIRST (a conversation is
+   * read in the order it happened, unlike a feed). The cursor is opaque and
+   * fingerprinted over (anchorId, rootMessageId); never mix cursors across
+   * the two shapes of this read.
+   */
+  messages(anchorId: EntityId, opts?: MessageListOpts): Promise<Page<MessageView>>;
   handoffs(workSessionId: EntityId, opts?: PageOpts): Promise<Page<HandoffView>>;
   /**
    * The session's `tm8` CLI command journal — the DEBUG surface's only read.

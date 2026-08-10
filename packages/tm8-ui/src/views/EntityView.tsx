@@ -550,6 +550,8 @@ export function EntityView(props: EntityViewProps) {
           channelId={selectedId}
           connection={data.connection}
           onOpenEntity={(id) => setAux({ sort: 'entity', id: id as EntityId })}
+          threads={getKind(detail.kind).panel.threads === true}
+          anchorTitle={`${getKind(detail.kind).chip.glyph}${detail.title}`}
         />
       ) : detail ? (
         <LazySessionChatSurface

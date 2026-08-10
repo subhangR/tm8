@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Cursor, EntityFeedPage, EntityId, FeedItem, MessageView } from '@tm8/contract';
+import type { Cursor, EntityFeedPage, EntityId, FeedItem, MessageView, Page } from '@tm8/contract';
 import type { ConnectionState } from '../data/seam';
 import { DisabledAction, NOT_WIRED_REASON } from '../panels/honesty/DisabledWithReason';
 import { HollowInline } from '../panels/honesty/HollowValue';
@@ -7,6 +7,7 @@ import { Composer, type ComposerProps } from './Composer';
 import type { ComposerMentionOption } from './Composer';
 import type { ChatAttachmentUploadTask } from './chat-attachments';
 import { FeedRowGroup } from './FeedRow';
+import { ThreadPane } from './ThreadPane';
 import { groupByOperation, type ChannelPostInput, type ChannelRefusal } from './feed-model';
 import './channel-screen.css';
 
@@ -91,6 +92,33 @@ export interface ChannelScreenProps {
    */
   onSwitchToTerminal?: () => void;
   /**
+   * THREADS MODE — a registry fact (`panel.threads` on the kind row), passed
+   * through by the host exactly like `anchorNoun`: naming a kind's grammar is
+   * registry knowledge, and this component never asks what kind its anchor
+   * is. When true, the feed is THREAD ROOTS (`channel_threads_v1`), a root
+   * with replies draws the persistent thread footer, the channel composer
+   * posts roots only (`parentMessageId` always null), and an open thread
+   * renders as a column beside the feed. When absent, the session surface's
+   * flat conversation — replies inline, `replyState` armed on the one
+   * composer — is byte-for-byte what it was.
+   */
+  threads?: boolean;
+  /** The breadcrumb's word for this anchor — "#design-review". */
+  anchorTitle?: string;
+  /** The open branch. The HOST owns this state; reads stay host-sequenced. */
+  thread?: {
+    root: MessageView;
+    replies?: Page<MessageView>;
+    loading?: boolean;
+    loadingMore?: boolean;
+    error?: string | null;
+  } | null;
+  /** Opens a root's branch. `threads` without this ⇒ footers refuse visibly. */
+  onOpenThread?: (root: MessageView) => void;
+  onCloseThread?: () => void;
+  /** Pages the branch FORWARD on its `nextCursor` (oldest-first read). */
+  onLoadMoreReplies?: (cursor: Cursor) => Promise<void> | void;
+  /**
    * The session has gone quiet and may be waiting for a human.
    *
    * WHY CHAT NEEDS ITS OWN. The terminal surface has shown this since R8
@@ -128,6 +156,12 @@ export function ChannelScreen({
   onLoadEarlier,
   onOpenEntity,
   onSwitchToTerminal,
+  threads = false,
+  anchorTitle,
+  thread = null,
+  onOpenThread,
+  onCloseThread,
+  onLoadMoreReplies,
   needsAttention = false,
   attentionDetail,
 }: ChannelScreenProps) {
@@ -142,7 +176,15 @@ export function ChannelScreen({
   } | null>(null);
   const [newItemCount, setNewItemCount] = useState(0);
   const [localReplyTo, setLocalReplyTo] = useState<MessageView | null>(null);
-  const replyTo = replyState ? replyState.value : localReplyTo;
+  /*
+   * THE COMPOSER SPLIT. In threads mode the channel composer posts ROOTS
+   * ONLY — the reply-target state is pinned to null here rather than merely
+   * left unarmed, so no code path (a stale host `replyState`, a future
+   * handler) can thread a `parentMessageId` through the channel composer.
+   * Replies are composed in the thread pane, which owns its own target.
+   */
+  const armedReplyTo = replyState ? replyState.value : localReplyTo;
+  const replyTo = threads ? null : armedReplyTo;
   const setReplyTo = replyState ? replyState.onChange : setLocalReplyTo;
 
   const groups = useMemo(() => groupByOperation(page?.items ?? []), [page]);
@@ -252,7 +294,11 @@ export function ChannelScreen({
   }
 
   return (
-    <section className="chs-root" data-testid="chs-root">
+    <section
+      className="chs-root"
+      data-testid="chs-root"
+      data-thread-open={threads && thread ? 'true' : undefined}
+    >
       {needsAttention ? (
         <div className="chs-needs-you" role="status" aria-live="polite" data-testid="chs-needs-you">
           <span className="chs-needs-you__label">⚠ needs you</span>
@@ -274,6 +320,11 @@ export function ChannelScreen({
           ) : null}
         </div>
       ) : null}
+      {/* The three-column split's inner half: feed+composer is one column,
+          the thread pane the next — the same aside-beside-a-feed shape as
+          `chv-split`/`chv-aside`, solved here so both hosts inherit it. */}
+      <div className="chs-columns">
+        <div className="chs-main">
       <div
         ref={feedElement}
         className="chs-feed"
@@ -359,6 +410,8 @@ export function ChannelScreen({
                   onReply={setReplyTo}
                   onFocusMessage={focusMessage}
                   loadedMessages={loadedMessages}
+                  threads={threads}
+                  onOpenThread={onOpenThread}
                 />
               </Fragment>
             ))}
@@ -390,6 +443,30 @@ export function ChannelScreen({
               ? 'Chat is connecting.'
               : 'Chat is connected.'}
       </p>
+        </div>
+
+        {threads && thread ? (
+          <ThreadPane
+            anchorId={anchorId}
+            anchorTitle={anchorTitle ?? anchorNoun}
+            root={thread.root}
+            replies={thread.replies}
+            loading={thread.loading ?? false}
+            loadingMore={thread.loadingMore ?? false}
+            error={thread.error ?? null}
+            onRetry={onOpenThread ? () => onOpenThread(thread.root) : undefined}
+            connection={connection}
+            sessionExited={sessionExited}
+            onPost={onPost}
+            onLoadMore={onLoadMoreReplies}
+            onClose={onCloseThread}
+            onOpenEntity={onOpenEntity}
+            onStartAttachmentUpload={onStartAttachmentUpload}
+            mentionOptions={mentionOptions}
+            uncertainSubmission={uncertainSubmission}
+          />
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -479,6 +556,8 @@ function FeedRowGroupWithMark({
   onReply,
   onFocusMessage,
   loadedMessages,
+  threads,
+  onOpenThread,
 }: {
   mark: boolean;
   group: ReturnType<typeof groupByOperation>[number];
@@ -489,6 +568,8 @@ function FeedRowGroupWithMark({
   onReply: (m: MessageView) => void;
   onFocusMessage: (id: EntityId) => void;
   loadedMessages: ReadonlyMap<EntityId, MessageView>;
+  threads?: boolean;
+  onOpenThread?: (root: MessageView) => void;
 }) {
   return (
     <>
@@ -510,6 +591,8 @@ function FeedRowGroupWithMark({
           onReply,
           onFocusMessage,
           loadedMessages,
+          threads,
+          onOpenThread,
           onPost: onPost
             ? (body, parentMessageId) => void onPost({ anchorIds: [anchorId], body, parentMessageId })
             : undefined,

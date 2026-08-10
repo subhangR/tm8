@@ -465,6 +465,82 @@ export const messageAgentNullProvenance = summary({
   },
 });
 
+/**
+ * THREADS (slice 2) — a CHANNEL-anchored root with a real branch, plus an
+ * unreplied root, so the fixture seam exercises both footer states and the
+ * thread pane. Before these, no fixture message was anchored on a channel at
+ * all (HANDOVER GAP-3's first evidence), so the roots-only channel read and
+ * the branch read had nothing real to return.
+ */
+export const channelThreadRoot = summary({
+  id: 'msg-chan-root',
+  kind: 'message',
+  title: 'Do we ship the thread pane behind the registry flag first?',
+  parentId: channelDesign.id,
+  createdAt: T.morning,
+  activityAt: T.recent,
+  createdBy: ada,
+  state: {
+    kind: 'message',
+    anchorId: channelDesign.id,
+    rootMessageId: null,
+    author: ada,
+    messageBatchId: null,
+  },
+});
+
+export const channelThreadReply1 = summary({
+  id: 'msg-chan-reply-1',
+  kind: 'message',
+  title: 'Yes — registry row only, the surface never asks the kind.',
+  parentId: channelDesign.id,
+  createdAt: T.staleEdge,
+  activityAt: T.staleEdge,
+  createdBy: forge,
+  state: {
+    kind: 'message',
+    anchorId: channelDesign.id,
+    rootMessageId: channelThreadRoot.id,
+    author: forge,
+    messageBatchId: null,
+  },
+});
+
+export const channelThreadReply2 = summary({
+  id: 'msg-chan-reply-2',
+  kind: 'message',
+  title: 'Agreed. Footer stays persistent — an unseen thread is a lost thread.',
+  parentId: channelDesign.id,
+  createdAt: T.recent,
+  activityAt: T.recent,
+  createdBy: ada,
+  state: {
+    kind: 'message',
+    anchorId: channelDesign.id,
+    rootMessageId: channelThreadRoot.id,
+    author: ada,
+    messageBatchId: null,
+  },
+});
+
+/** A root with NO replies — the no-footer state, beside the footered one. */
+export const channelThreadQuietRoot = summary({
+  id: 'msg-chan-quiet',
+  kind: 'message',
+  title: 'Standup moves to 09:30 tomorrow.',
+  parentId: channelDesign.id,
+  createdAt: T.recent,
+  activityAt: T.recent,
+  createdBy: forge,
+  state: {
+    kind: 'message',
+    anchorId: channelDesign.id,
+    rootMessageId: null,
+    author: forge,
+    messageBatchId: null,
+  },
+});
+
 export const memberAda = summary({
   id: 'ent-member-ada',
   kind: 'member',
@@ -747,7 +823,9 @@ export const fixtureSummaries: EntitySummary[] = [
   taskUuidTitle, taskGuideLines, taskBlocked, taskTombstone,
   sessionLive, sessionStale, sessionExited, sessionFailed, sessionCredentialLogin,
   docLayoutSpec, docChapterShell, docChapterCmin, docChapterFloors, docChapterResponsive,
-  messageInThread, messageAgentNullProvenance, memberAda, teamMemberForge,
+  messageInThread, messageAgentNullProvenance,
+  channelThreadRoot, channelThreadReply1, channelThreadReply2, channelThreadQuietRoot,
+  memberAda, teamMemberForge,
   teamMemberScout,
   memoryTokens, memoryDisputed, memorySuperseded,
   loopDreamer, loopFailing,

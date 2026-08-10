@@ -8,6 +8,7 @@
  */
 export { ChannelScreen, type ChannelScreenProps } from './ChannelScreen';
 export { Composer, type ComposerProps } from './Composer';
+export { ThreadPane, type ThreadPaneProps } from './ThreadPane';
 export {
   canSendAgain,
   clockTime,
