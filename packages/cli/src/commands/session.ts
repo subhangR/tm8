@@ -416,6 +416,14 @@ async function sessionSpawn(cmd: CommandContext): Promise<ExitCode> {
       workdir === 'worktree' && baseRef !== undefined ? { mode: workdir, baseRef } : { mode: workdir };
   }
   if (cmd.options.bool('confirm-untrusted')) body.confirmUntrusted = true;
+  /*
+   * Launching a non-task subject REUSES the newest open task already derived
+   * from it — which is what "continue this thread's work" wants and what
+   * "start a second, separate piece of work here" must not get. This flag is
+   * the only way to say the latter, so without it the capability exists in the
+   * schema and is unreachable from the one surface an agent actually has.
+   */
+  if (cmd.options.bool('force-new-task')) body.forceNewTask = true;
   // A human-principal question the SERVER owns: supplying this as an agent or
   // through `--as` is refused there, not pre-judged here.
   if (profileId !== undefined) body.interactionProfileId = profileId;
@@ -468,6 +476,8 @@ async function sessionDispatch(cmd: CommandContext): Promise<ExitCode> {
   };
   const note = cmd.options.value('note');
   if (note !== undefined) body.note = note;
+  // Same reuse-versus-fresh choice as `spawn` — see the note there.
+  if (cmd.options.bool('force-new-task')) body.forceNewTask = true;
   if (cmd.ctx.actor) body.actorId = cmd.ctx.actor.value;
 
   const data = await observedInvoke<unknown>(clientFor(cmd.ctx), 'execution.dispatch', { body });

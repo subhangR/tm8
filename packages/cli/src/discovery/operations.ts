@@ -1200,7 +1200,7 @@ const ROWS: Record<OperationName, Row> = {
   // ── execution ────────────────────────────────────────────────────────────
   'execution.spawn': {
     cmd: ['session', 'spawn'],
-    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--mutation-id <id>]',
+    syn: 'tm8 session spawn [--space <space-id>] --teammate <team-member-id> [--task <task-id>...] [--memory <memory-id>...] [--launch-project <project-resource-id>] [--workdir project|scratch|worktree] [--base-ref <ref>] [--mode worker|coordinator|coordinated-worker|coordinated-coordinator|dispatcher] [--access-mode safe|acceptEdits|auto|plan|fullAccess] [--interaction-profile <active-profile-id>] [--context <text-source>] [--confirm-untrusted] [--force-new-task] [--mutation-id <id>]',
     sum: 'Start a server-hosted work session for a Teammate',
     authz: 'space',
     input: 'bound',
@@ -1217,7 +1217,7 @@ const ROWS: Record<OperationName, Row> = {
   },
   'execution.dispatch': {
     cmd: ['session', 'dispatch'],
-    syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--mutation-id <id>]',
+    syn: 'tm8 session dispatch <subject-entity-id> [--space <space-id>] [--note <text>] [--force-new-task] [--mutation-id <id>]',
     sum: 'Hand an entity to the space’s dispatcher, which picks the teammate and spawns',
     authz: 'space',
     input: 'bound',
