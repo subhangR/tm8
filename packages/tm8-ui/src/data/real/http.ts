@@ -28,6 +28,7 @@ import {
   ERROR_STATUS,
   TM8_CLIENT_HEADER,
   TM8_CLIENT_HEADER_VALUE,
+  TM8_UPLOAD_TOKEN_HEADER,
   bindPath,
   getOperation,
   type CommandErrorCode,
@@ -305,14 +306,32 @@ export function createHttpClient(options: HttpOptions = {}): HttpClient {
       ? uploadUrl
       : `${baseUrl}${uploadUrl.startsWith('/') ? uploadUrl : `/${uploadUrl}`}`;
     const guard = armTimeout(UPLOAD_TIMEOUT_MS);
+    // THE GRANT DOES NOT GO IN `Authorization` ON OUR OWN NODE — that header is
+    // the viewer's, and this is the one request in the app that used to take it
+    // away from them. The browser attaches the `__Host-tm8-session` cookie to
+    // this same-origin PUT whether we like it or not, so a grant in
+    // `Authorization` reaches the node as a second, different credential and
+    // the identity path refuses the pair outright: every browser upload came
+    // back `unauthenticated`, rendered as "Sign in again before uploading
+    // files" to a viewer who was signed in. The capability gets its own header
+    // (`TM8_UPLOAD_TOKEN_HEADER`) and `Authorization` carries the same pass
+    // every other call sends, so cookie and header name one principal.
+    //
+    // A FOREIGN store has no tm8 identity to preserve and no cookie of ours to
+    // collide with; there the grant IS the credential, in the header a
+    // presigned PUT expects.
+    const authToken = getAuthToken?.() ?? null;
     let res: Response;
     try {
       res = await doFetch(url, {
         method: 'PUT',
-        headers: {
-          authorization: `Bearer ${token}`,
-          ...(foreign ? {} : { [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE }),
-        },
+        headers: foreign
+          ? { authorization: `Bearer ${token}` }
+          : {
+              [TM8_UPLOAD_TOKEN_HEADER]: token,
+              [TM8_CLIENT_HEADER]: TM8_CLIENT_HEADER_VALUE,
+              ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
+            },
         body,
         signal: guard.signal,
       });

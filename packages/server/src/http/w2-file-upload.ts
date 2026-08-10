@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { CollabError } from '@tm8/contract';
+import { CollabError, TM8_UPLOAD_TOKEN_HEADER } from '@tm8/contract';
 
 import type { DbClaims } from '../db/types.js';
 import type { FacadeDeps } from '../facade/deps.js';
 import type { W2BlobStore } from '../files/w2-blob-store.js';
+import { TOKEN_PREFIX } from '../identity/crypto.js';
 import { sendWireError } from './errors.js';
 import { supportClaims } from './support-claims.js';
 import type { RequestIdentity } from './types.js';
@@ -44,12 +45,39 @@ export type W2FileUploadRoute = (
   context: W2FileUploadRouteContext,
 ) => Promise<boolean>;
 
-function bearerToken(req: IncomingMessage): string {
+/**
+ * The grant token, from the header that means "which upload slot".
+ *
+ * `x-tm8-upload-token` is the carrier. `Authorization` is the LEGACY one and is
+ * still honoured, because the identity on this route may legitimately come from
+ * nowhere else: on a loopback auto-owner node the CLI has no session to send,
+ * so a grant in `Authorization` is the only credential in the request and there
+ * is nothing for it to conflict with.
+ *
+ * What the fallback must NOT do is read a tm8 SESSION token as a grant. A
+ * caller that authenticates with `Authorization: Bearer tm8s_…` and forgets the
+ * grant header is missing its capability, not presenting a bad one — hashing
+ * the session pass into `w2_authorize_file_upload` would answer `forbidden` and
+ * send whoever debugs it looking at the upload slot instead of at the client.
+ */
+function grantToken(req: IncomingMessage): string {
+  const explicit = req.headers[TM8_UPLOAD_TOKEN_HEADER];
+  const supplied = Array.isArray(explicit) ? explicit[0] : explicit;
+  if (typeof supplied === 'string' && supplied.trim() !== '') {
+    return supplied.trim().replace(/^Bearer\s+/i, '');
+  }
   const header = req.headers.authorization;
   if (typeof header !== 'string' || !/^Bearer\s+\S+$/i.test(header)) {
     throw new CollabError('unauthenticated', 'a FileUploadGrant bearer token is required');
   }
-  return header.replace(/^Bearer\s+/i, '');
+  const legacy = header.replace(/^Bearer\s+/i, '');
+  if (legacy.startsWith(TOKEN_PREFIX)) {
+    throw new CollabError(
+      'unauthenticated',
+      `a FileUploadGrant bearer token is required in ${TM8_UPLOAD_TOKEN_HEADER}`,
+    );
+  }
+  return legacy;
 }
 
 /**
@@ -58,6 +86,15 @@ function bearerToken(req: IncomingMessage): string {
  * It returns `false` for every other path/method. A handled request owns its
  * response, including errors, so the shared server never feeds raw bytes into
  * the JSON body reader and never discovers this support path as an operation.
+ *
+ * TWO credentials, and they answer different questions. `context.identity` is
+ * WHO — resolved upstream from the session cookie or an `Authorization` pass,
+ * exactly as for every catalog operation, because `w2_authorize_file_upload`
+ * runs under that caller's claims. `TM8_UPLOAD_TOKEN_HEADER` is WHICH SLOT —
+ * a capability the node minted at `uploadInit`, verified here by hash. Carrying
+ * the capability in `Authorization` (as this route originally required) makes
+ * the two indistinguishable to the identity path and costs the caller its
+ * identity; see the header's docblock in the contract.
  */
 export function createW2FileUploadRoute(options: W2FileUploadRouteOptions): W2FileUploadRoute {
   return async (req, res, context) => {
@@ -74,7 +111,7 @@ export function createW2FileUploadRoute(options: W2FileUploadRouteOptions): W2Fi
 
     try {
       claims = await supportClaims(options.deps, context.identity, context.requestId);
-      const token = bearerToken(req);
+      const token = grantToken(req);
       tokenHash = createHash('sha256').update(token, 'utf8').digest('hex');
       leaseId = randomUUID();
       authorize = await options.deps.db.rpc<RawAuthorizeResult>(

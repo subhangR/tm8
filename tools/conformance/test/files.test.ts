@@ -8,7 +8,13 @@
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
-import { bindPath, FileUploadGrantSchema, type EntityDetail, type FileUploadGrant } from '@tm8/contract';
+import {
+  bindPath,
+  FileUploadGrantSchema,
+  TM8_UPLOAD_TOKEN_HEADER,
+  type EntityDetail,
+  type FileUploadGrant,
+} from '@tm8/contract';
 import { api, BASE_URL, isWireError, rawRequest } from '../src/client.js';
 import { buildWorld, expectValid, type World } from '../src/world.js';
 
@@ -59,7 +65,12 @@ describe('files.* blob lifecycle (AM-2 §2)', () => {
     const put = await fetch(new URL(grant.uploadUrl, BASE_URL), {
       method: 'PUT',
       body: bytes,
-      headers: { 'content-type': 'application/octet-stream', ...(grant.token ? { authorization: `Bearer ${grant.token}` } : {}) },
+      // The grant names the SLOT, not the caller — `authorization` stays free
+      // for whatever credential the deployment under test authenticates with.
+      headers: {
+        'content-type': 'application/octet-stream',
+        ...(grant.token ? { [TM8_UPLOAD_TOKEN_HEADER]: grant.token } : {}),
+      },
     });
     expect(put.status, 'byte PUT must succeed').toBeLessThan(300);
 

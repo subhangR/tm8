@@ -51,7 +51,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
-import { SHA256_HEX_RE, WireErrorBodySchema, type OperationName } from '@tm8/contract';
+import {
+  SHA256_HEX_RE,
+  TM8_UPLOAD_TOKEN_HEADER,
+  WireErrorBodySchema,
+  type OperationName,
+} from '@tm8/contract';
 import { requireSpace } from '../context.js';
 import { ApiError, ProtocolError, TransportError } from '../errors.js';
 import { CliError, EXIT_OK, EXIT_USAGE, type ExitCode } from '../exit.js';
@@ -176,7 +181,15 @@ async function transferBytes(
 ): Promise<void> {
   const url = new URL(grant.uploadUrl, cmd.ctx.baseUrl.value);
   const headers: Record<string, string> = { 'content-type': DEFAULT_MIME };
-  if (grant.token) headers.authorization = `Bearer ${grant.token}`;
+  // The grant is a capability over one slot, not a principal, so it travels in
+  // its own header and `authorization` keeps carrying the SESSION — the same
+  // pass `Tm8Client` sends on `uploadInit` one call earlier. Sending the grant
+  // as the Authorization pass (what this did until the two headers were split)
+  // silently downgrades the caller to whatever the node falls back to, which on
+  // a node with `TM8_DISABLE_AUTO_OWNER` is anonymous: `uploadInit` succeeds and
+  // the very next PUT answers `unauthenticated`.
+  if (grant.token) headers[TM8_UPLOAD_TOKEN_HEADER] = grant.token;
+  if (cmd.ctx.token) headers.authorization = `Bearer ${cmd.ctx.token}`;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), cmd.ctx.timeoutMs ?? 60_000);

@@ -48,3 +48,25 @@ export const TM8_CLIENT_HEADER = 'x-tm8-client';
 
 /** Default label for the browser UI. Any non-empty value satisfies the gate. */
 export const TM8_CLIENT_HEADER_VALUE = 'tm8-ui';
+
+/**
+ * The `FileUploadGrant.token` carrier on the raw-byte PUT.
+ *
+ * A grant token is a CAPABILITY over one upload slot, not a principal — but it
+ * used to ride in `Authorization`, the one header that already means "who is
+ * calling". On a node that trusts a session cookie the two collide head-on: the
+ * browser attaches its `__Host-tm8-session` cookie to the same-origin PUT, the
+ * client attaches the grant to `Authorization`, and the node's identity path
+ * sees two different credentials naming two different principals and refuses
+ * the request outright (`conflicting authentication credentials`). Every
+ * browser upload on such a node failed, and the user-visible wording — "Sign in
+ * again before uploading files" — pointed at the one thing that was not wrong.
+ *
+ * Giving the capability its own header separates the two questions the PUT has
+ * to answer: `Authorization`/cookie say WHO, this header says WHICH SLOT.
+ *
+ * The node still accepts a grant in `Authorization` so an older client keeps
+ * working on a node that can resolve its identity some other way (the CLI on a
+ * loopback auto-owner node) — see `w2-file-upload.ts`.
+ */
+export const TM8_UPLOAD_TOKEN_HEADER = 'x-tm8-upload-token';

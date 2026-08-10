@@ -17,6 +17,7 @@
  *    precise-looking error for a code we do not understand is a lie with a
  *    stack trace attached.
  */
+import { TM8_UPLOAD_TOKEN_HEADER } from '@tm8/contract';
 import {
   CollabError,
   type CommandErrorCode,
@@ -174,7 +175,12 @@ export class TmClient {
     try {
       res = await fetch(url, {
         method: 'PUT',
-        headers: { authorization: `Bearer ${token}` },
+        // The grant is a capability over one slot, not a principal, so it does
+        // NOT go in `authorization`: this client authenticates with the
+        // `__Host-tm8-session` cookie, the browser attaches it to this
+        // same-origin PUT regardless, and a node that receives two different
+        // credentials refuses the pair rather than pick one.
+        headers: { [TM8_UPLOAD_TOKEN_HEADER]: token },
         body,
       });
     } catch (cause) {

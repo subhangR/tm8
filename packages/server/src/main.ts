@@ -41,8 +41,7 @@ import { createClipboardStore } from './files/clipboard-store.js';
 import { createLoopbackOwnerResolver } from './identity/loopback.js';
 import { createTrackingObserverJob } from './tracking/observer.js';
 import { createCommitRecorderJob } from './tracking/commit-recorder.js';
-import { TOKEN_PREFIX } from './identity/crypto.js';
-import { resolveBearerIdentity } from './identity/pg-auth.js';
+import { createSessionIdentityResolver } from './http/identity-resolver.js';
 import {
   loadConfig,
   resolveClipboardDir,
@@ -172,55 +171,11 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<Bootstrapp
     : undefined;
 
   /**
-   * ONE identity path for every transport. A valid tm8 session is resolved
-   * independently of transport; every non-session request passes through the
-   * guarded local-only owner arm before the database owner is attached.
+   * ONE identity path for every transport — the rule lives in
+   * `http/identity-resolver.ts` so a test can reach it; this is the wiring.
    */
   const identityResolver: IdentityResolver | undefined = db
-    ? async (headers, context) => {
-        const header = headers.authorization;
-        const authorization = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
-        const cookie = readTm8SessionCookie(headers) ?? '';
-        // Authorization remains the CLI/agent carrier. A browser cookie is the
-        // only credential a native WebSocket can send without putting a secret
-        // in its URL. If both are present, they must name the same token: a
-        // stale cookie plus a new Authorization pass must not silently choose a
-        // principal and leave the other credential live in the request.
-        if (authorization && cookie && authorization !== cookie) {
-          throw new CollabError('unauthenticated', 'conflicting authentication credentials');
-        }
-        const raw = authorization || cookie;
-        if (raw.startsWith(TOKEN_PREFIX)) {
-          const session = await resolveBearerIdentity(db, raw);
-          return {
-            kind: 'bearer',
-            identityId: session.identityId,
-            nodeAdmin: session.isNodeAdmin,
-            accountId: session.accountId,
-            sessionId: session.sessionId,
-            ...(session.workSessionId ? { workSessionId: session.workSessionId } : {}),
-            token: raw,
-            ...(session.actingAsTeamMemberId ? { actorId: session.actingAsTeamMemberId } : {}),
-            // 082 / R11. Taken straight off the verified session row, which
-            // `resolveBearerIdentity` looked up by TOKEN HASH — so it is a
-            // server fact, not a client assertion. This is the only thing that
-            // distinguishes a human from an agent carrying that human's full
-            // identity (sub-doc 14, channel C7).
-            authKind: session.kind,
-          };
-        }
-
-        const fallback = await autoOwnerResolver(headers, context);
-        if (fallback.kind === 'anonymous') return fallback;
-        const resolved = await owner!();
-        // The auto-owner is the person at the node's own UI — a browser session
-        // in everything but the token. It is never an agent: an agent always
-        // arrives with a bearer credential on the branch above. The auto-owner
-        // path's own exposure is gated by TM8_DISABLE_AUTO_OWNER; refusing it a
-        // kind here would duplicate that control in the wrong file and break
-        // local development for no gain.
-        return { kind: 'auto-owner', identityId: resolved.identityId, authKind: 'browser' };
-    }
+    ? createSessionIdentityResolver({ db, owner: owner! })
     : undefined;
 
   /**

@@ -47,6 +47,7 @@ interface Captured {
   method: string;
   path: string;
   authorization: string | undefined;
+  uploadToken: string | undefined;
   body: unknown;
   bytes: Buffer;
 }
@@ -82,6 +83,7 @@ beforeAll(async () => {
         method: req.method ?? '',
         path: url.pathname,
         authorization: req.headers.authorization,
+        uploadToken: req.headers['x-tm8-upload-token'] as string | undefined,
         body: parsed,
         bytes,
       };
@@ -284,8 +286,29 @@ describe('tm8 file upload — one command, two durable operations, two mutation 
     await invoke(['file', 'upload', path]);
     const put = requests[1];
     expect(put?.method).toBe('PUT');
-    expect(put?.authorization).toBe('Bearer grant-token');
+    // The grant is a CAPABILITY over one slot, so it rides in its own header.
+    // It spent its first life in `authorization`, where it displaced the
+    // caller's session: `uploadInit` ran as the operator and the PUT one line
+    // later ran as whoever the node falls back to — nobody, on a node with
+    // TM8_DISABLE_AUTO_OWNER, which is every deployed one.
+    expect(put?.uploadToken).toBe('grant-token');
     expect(Buffer.compare(put?.bytes ?? Buffer.alloc(0), payload)).toBe(0);
+  });
+
+  it('keeps the SESSION in Authorization across all three stages of the composition', async () => {
+    grantingServer();
+    const path = join(scratch, 'blob.bin');
+    writeFileSync(path, Buffer.from('x'));
+    await invoke(['file', 'upload', path], { token: 'tm8s_cli.pass' });
+    // init, PUT, complete — one principal for the whole composition. A stage
+    // that authenticates as someone else is a stage that can be refused on its
+    // own, which is exactly the shape this bug had.
+    expect(requests.map((r) => r.authorization)).toEqual([
+      'Bearer tm8s_cli.pass',
+      'Bearer tm8s_cli.pass',
+      'Bearer tm8s_cli.pass',
+    ]);
+    expect(requests[1]?.uploadToken).toBe('grant-token');
   });
 
   it('sends --attach-to as the completion targets, on the FINAL stage', async () => {

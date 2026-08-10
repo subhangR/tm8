@@ -133,9 +133,13 @@ describe('Channel message and attachment adapters', () => {
       name: 'proof.png', mime: 'image/png', sizeBytes: 6,
       checksumSha256: '0'.repeat(64), clientMutationId: 'cm-upload:init',
     }));
+    // The grant names the SLOT, in its own header — `authorization` belongs to
+    // the viewer, and a browser attaches its session cookie to this same-origin
+    // PUT regardless, so a grant there reaches the node as a second, competing
+    // credential and the whole request is refused.
     expect(calls[1]).toMatchObject({
       url: '/v2/files/uploads/upload-1/content',
-      init: { method: 'PUT', headers: { authorization: 'Bearer grant-token' } },
+      init: { method: 'PUT', headers: { 'x-tm8-upload-token': 'grant-token' } },
     });
     expect(JSON.parse(String(calls[2].init?.body))).toEqual({
       clientMutationId: 'cm-upload:complete', targets: ['channel-1'],
