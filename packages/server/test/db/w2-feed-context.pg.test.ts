@@ -330,6 +330,7 @@ describe.sequential('W2.G13 migration 030 and the versioned feed scope', () => {
       const SCOPE_REGISTRY_MIGRATIONS = [
         '030_w2_feed_context.sql',
         '097_channel_threads_feed_scope.sql',
+        '098_thread_derivation_feed_scopes.sql',
       ];
       without.apply(migrationFiles().filter((file) => !SCOPE_REGISTRY_MIGRATIONS.includes(file)));
       const before = await catalogOf(without);
@@ -392,7 +393,10 @@ describe.sequential('W2.G13 migration 030 and the versioned feed scope', () => {
                       ('session_chat_v1','work_session'),('session_chat_v1','task'),
                       ('session_chat_v1','channel'),('direct_v2','task'),('raw','task'),
                       ('channel_threads_v1','channel'),('channel_threads_v1','task'),
-                      ('channel_threads_v1','work_session'))
+                      ('channel_threads_v1','work_session'),
+                      ('thread_v1','message'),('thread_v1','task'),('thread_v1','channel'),
+                      ('task_discussion_v1','task'),('task_discussion_v1','message'),
+                      ('task_discussion_v1','channel'))
               c(scope, kind)`,
     );
     expect(rows.map((row) => [row.scope, row.kind, row.ok])).toEqual([
@@ -411,11 +415,21 @@ describe.sequential('W2.G13 migration 030 and the versioned feed scope', () => {
       ['channel_threads_v1', 'channel', true],
       ['channel_threads_v1', 'task', false],
       ['channel_threads_v1', 'work_session', false],
+      // 098: the derivation pair is narrow the same way — a thread is a
+      // MESSAGE's reading, a derivation-joined Discussion is a TASK's.
+      ['thread_v1', 'message', true],
+      ['thread_v1', 'task', false],
+      ['thread_v1', 'channel', false],
+      ['task_discussion_v1', 'task', true],
+      ['task_discussion_v1', 'message', false],
+      ['task_discussion_v1', 'channel', false],
     ]);
     // The facade's own applicability table says exactly the same thing.
     expect(FEED_SCOPE_ANCHOR_KINDS.direct_v1).toBe('any');
     expect(FEED_SCOPE_ANCHOR_KINDS.session_chat_v1).toEqual(['work_session']);
     expect(FEED_SCOPE_ANCHOR_KINDS.channel_threads_v1).toEqual(['channel']);
+    expect(FEED_SCOPE_ANCHOR_KINDS.thread_v1).toEqual(['message']);
+    expect(FEED_SCOPE_ANCHOR_KINDS.task_discussion_v1).toEqual(['task']);
   });
 });
 
