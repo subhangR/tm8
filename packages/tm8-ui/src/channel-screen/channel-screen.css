@@ -21,6 +21,16 @@
  * composer's top edge, the refusal card); soft hairlines SEPARATE repeated
  * siblings. Feed rows get NEITHER — whitespace and the hover tint carry the
  * row boundary; day dividers are the only ruled lines inside the feed.
+ *
+ * VISUAL PASS (Lane D): four deliberate moves on top of the above —
+ *   1. hierarchy: message text at full --pn-ink, metadata at ink-3/ink-4, so
+ *      a row reads name → text → meta in that order at a glance;
+ *   2. measure: `.chs-text` capped at 70ch — the row stays full-width, the
+ *      TEXT column does not;
+ *   3. rhythm: 14px opens an author group, 2px inside a run, 20px opens a
+ *      day — three visibly different gaps, three levels of grouping;
+ *   4. the composer is its own @container so its narrow layout answers to
+ *      the composer's width (thread pane vs channel column), not the root's.
  */
 
 .chs-root {
@@ -32,6 +42,9 @@
   color: var(--pn-ink-2);
   font-family: var(--pn-ui);
   container-type: inline-size;
+  /* The reading surface's own top edge — the hub above it has no bottom rule,
+     and without this the feed scrolls straight into the hub's chips. */
+  border-top: 1px solid var(--pn-line);
 }
 
 /* --- "needs you" ----------------------------------------------------------
@@ -81,7 +94,7 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  padding: 10px 12px 8px;
+  padding: var(--pn-space-4) var(--pn-space-4) var(--pn-space-3);
 }
 
 /* The bottom anchor: history grows upward from the composer, so a short feed
@@ -105,15 +118,18 @@
   contain-intrinsic-size: auto var(--chs-measured-row-size, 72px);
 }
 
+/* RHYTHM: a new author (or a new thread root) opens a group — 14px above it.
+   Follow rows inside a run sit at 2px so the run reads as one utterance.
+   Activity rows are connective tissue and take an in-between 8px. */
 .chs-row {
   position: relative;
-  margin-top: 10px;
+  margin-top: 14px;
   border-radius: var(--pn-r-sm);
-  padding: 1px 6px;
+  padding: 2px 8px;
 }
 
-.chs-row--follow { margin-top: 0; }
-.chs-row--activity { margin-top: 6px; }
+.chs-row--follow { margin-top: 2px; }
+.chs-row--activity { margin-top: 8px; }
 .chs-row:first-child { margin-top: 0; }
 
 .chs-row:hover,
@@ -121,7 +137,7 @@
 
 .chs-row__grid {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   padding: 1px 0;
 }
 
@@ -138,9 +154,9 @@
 
 .chs-gutter__time {
   font-family: var(--pn-mono);
-  font-size: 9px;
-  color: var(--pn-ink-4);
-  line-height: 18px;
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
+  line-height: 20px;
   white-space: nowrap;
 }
 
@@ -155,27 +171,29 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 /* --- hover actions -------------------------------------------------------- */
 
 .chs-actions {
   position: absolute;
-  /* Below the row, slightly overlapping it, aligned to the BODY column
-     (row padding 6px + gutter 38px + gap 10px = 54px) — a top-anchored
-     overlay covered the previous message's last line. */
-  top: calc(100% - 6px);
-  left: 54px;
+  /* Straddling the row's TOP-RIGHT corner, the chat convention: the hovered
+     row's own headroom absorbs the overlay, and it no longer covers the
+     reply footer or the next row's byline (which are interactive; the
+     previous placement sat exactly on them). Message text is left-aligned
+     and measure-capped, so a row's top-right corner is reliably empty. */
+  top: -12px;
+  right: 10px;
   z-index: 2;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 0 2px;
+  padding: 1px 3px;
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   background: var(--pn-card);
-  box-shadow: var(--pn-sh-pop);
+  box-shadow: var(--pn-sh-md);
   opacity: 0;
   pointer-events: none;
 }
@@ -191,33 +209,37 @@
 .chs-byline {
   display: flex;
   align-items: baseline;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
 }
 
 .chs-byline__who {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: var(--pn-track-tight);
   color: var(--pn-ink);
 }
 
-/* Provenance as TEXT beside the avatar's shape — never shape alone. */
+/* Provenance as TEXT beside the avatar's shape — never shape alone. A soft
+   tinted badge instead of a hairline box: it must be legible at a glance
+   without out-shouting the author's name it qualifies. */
 .chs-byline__kind {
   font-family: var(--pn-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.05em;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--pn-info);
-  border: 1px solid var(--pn-line-2);
+  background: var(--pn-info-soft);
   border-radius: var(--pn-r-xs);
-  padding: 0 4px;
+  padding: 0.5px 5px;
 }
 
 .chs-byline__time,
 .chs-byline__edited {
   font-family: var(--pn-mono);
-  font-size: 9px;
-  color: var(--pn-ink-4);
+  font-size: 9.5px;
+  color: var(--pn-ink-3);
 }
 
 .chs-byline__gap { flex: 1; }
@@ -232,8 +254,16 @@
   margin: 0;
   font-family: var(--pn-ui);
   font-size: 13px;
-  line-height: 1.5;
-  color: var(--pn-ink-2);
+  line-height: 1.55;
+  /* Full ink: the message is the primary content of this screen, and it must
+     sit a clear step above its own metadata (ink-3/ink-4), which body-at-ink-2
+     never did. */
+  color: var(--pn-ink);
+  /* Measure cap. On a wide panel an uncapped chat line runs past 100
+     characters and the eye loses the return sweep; ~70ch is the widest a
+     13px line stays effortless. The row itself stays full-width (hover tint,
+     actions), only the text column is bounded. */
+  max-width: 70ch;
   text-wrap: pretty;
   user-select: text;
   overflow-wrap: anywhere;
@@ -562,9 +592,9 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-day {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 2px 6px 6px;
+  gap: 12px;
+  margin-top: var(--pn-space-5);
+  padding: var(--pn-space-1) 8px var(--pn-space-2);
 }
 
 .chs-day:first-child { margin-top: 0; }
@@ -580,8 +610,10 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-day__label {
   flex: none;
   font-family: var(--pn-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
   color: var(--pn-ink-3);
 }
 
@@ -628,18 +660,18 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 28px 20px;
+  padding: var(--pn-space-8) var(--pn-space-5);
   text-align: center;
 }
 
-.chs-empty__glyph { font-size: 18px; color: var(--pn-ink-4); }
-.chs-empty__headline { margin: 0; font-size: 13px; font-weight: 600; color: var(--pn-ink-2); }
+.chs-empty__glyph { font-size: 22px; color: var(--pn-ink-4); }
+.chs-empty__headline { margin: 0; font-size: 13.5px; font-weight: 600; color: var(--pn-ink); }
 
 .chs-empty__note {
   margin: 0;
   max-width: 42ch;
-  font-size: 11.5px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.55;
   color: var(--pn-ink-3);
   text-wrap: pretty;
 }
@@ -691,11 +723,12 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 /* At the TOP of the feed (D2), above "load earlier ↑": the rule sits under
    the line, marking the paging boundary it describes. */
 .chs-provenance {
-  margin: 0 0 4px;
-  padding-bottom: 6px;
+  margin: 0 0 var(--pn-space-2);
+  padding-bottom: var(--pn-space-2);
   border-bottom: 1px solid var(--pn-line);
   font-family: var(--pn-mono);
   font-size: 9px;
+  letter-spacing: 0.02em;
   color: var(--pn-ink-4);
 }
 
@@ -707,12 +740,18 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
      this element's top edge with `bottom: 100%`. Without this the popover
      resolves against a distant ancestor and lands nowhere near the composer. */
   position: relative;
+  /* Its OWN query container: the composer lives at two very different widths
+     (the channel column and the ~360px thread pane), and the narrow-composer
+     rules below must answer to the composer's width, not the root's — inside
+     the thread pane the root is wide while the composer is not, and the
+     un-wrapped row used to push Send past the pane's edge. */
+  container-type: inline-size;
   border-top: 1px solid var(--pn-line);
   background: var(--pn-surface);
-  padding: 9px 12px;
+  padding: var(--pn-space-3) var(--pn-space-4) 10px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 8px;
 }
 
 .chs-composer__row {
@@ -767,8 +806,8 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 .chs-mention-picker {
   position: absolute;
   bottom: 100%;
-  left: 12px;   /* matches .chs-composer's 12px side padding */
-  right: 12px;
+  left: 16px;   /* matches .chs-composer's 16px side padding */
+  right: 16px;
   /* Anchored left and capped, rather than stretched edge to edge: a name and
      its one-line reason belong together, and a full-width row strands the
      reason a screen away from the name it explains. `right` stays set so the
@@ -892,35 +931,52 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
 
 .chs-composer__input {
   flex: 1;
+  /* Shrinkable below its placeholder's min-content width — without this the
+     flex row overflows narrow hosts (the thread pane) instead of shrinking —
+     but floored well above zero: a verbose disabled-with-reason beside it
+     must wrap its own text, not squeeze the textarea into a one-column
+     sliver. Composers narrower than the wrap threshold stack instead. */
+  min-width: 200px;
   height: 46px;
   resize: none;
-  background: var(--pn-surface);
+  /* Card on surface: the input is the one fillable thing here and reads as a
+     well; surface-on-surface made it vanish into its own chrome. */
+  background: var(--pn-card);
   border: 1px solid var(--pn-line-2);
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   color: var(--pn-ink);
   font-family: var(--pn-ui);
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
-  padding: 7px 10px;
+  padding: 7px 11px;
   outline: none;
   box-sizing: border-box;
 }
 
-.chs-composer__input:focus { border-color: var(--pn-brand); }
+.chs-composer__input::placeholder { color: var(--pn-ink-3); }
+
+.chs-composer__input:focus {
+  border-color: var(--pn-brand);
+  box-shadow: 0 0 0 3px var(--pn-brand-soft);
+}
 
 .chs-composer__send {
   min-height: 44px;
   flex: none;
-  padding: 0 16px;
+  padding: 0 18px;
   border: none;
-  border-radius: var(--pn-r-sm);
+  border-radius: var(--pn-r-md);
   background: var(--pn-brand);
   color: var(--pn-paper);
   font-family: var(--pn-ui);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 700;
+  letter-spacing: 0.01em;
   cursor: pointer;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
 }
+
+.chs-composer__send:hover:not(:disabled) { background: var(--pn-brand-2); }
 
 .chs-composer__send:disabled {
   background: var(--pn-active);
@@ -1097,26 +1153,213 @@ button.chs-session-chip:hover { border-color: var(--pn-brand); color: var(--pn-b
   .chs-ref-chip,
   .chs-attachment,
   .chs-mention-inline,
-  .chs-parent__jump
+  .chs-parent__jump,
+  .chs-thread-footer__open,
+  .chs-thread__close,
+  .chs-thread__back
 ):focus-visible {
   outline: 3px solid var(--pn-brand);
   outline-offset: 2px;
 }
 
+/* --- the thread split (slice 2) -------------------------------------------
+ *
+ * The channel's three-column shape, inner half: feed+composer is one column,
+ * the open thread the next — same aside-beside-a-feed pattern as
+ * `chv-split`/`chv-aside` and the WorkspaceGrid side tracks, solved at THIS
+ * container so both hosts (route and panel) inherit one collapse behaviour.
+ */
+
+.chs-columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.chs-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chs-thread {
+  flex: 0 0 clamp(280px, 42cqw, 420px);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* `--pn-line` BOUNDS a component — this hairline is the pane's edge. */
+  border-left: 1px solid var(--pn-line);
+  background: var(--pn-card);
+}
+
+.chs-thread__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid var(--pn-line);
+  background: var(--pn-surface);
+}
+/* The breadcrumb is the COLLAPSED escape hatch; at full width the feed is
+   beside the pane and ✕ is the dismiss. One wired fact, one visible control. */
+.chs-thread__back { display: none; }
+.chs-thread__title {
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-2);
+}
+.chs-thread__close {
+  margin-left: auto;
+  min-width: 32px;
+  min-height: 32px;
+  border: none;
+  border-radius: var(--pn-r-sm);
+  background: transparent;
+  color: var(--pn-ink-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.chs-thread__close:hover { background: var(--pn-hover); color: var(--pn-ink); }
+
+.chs-thread__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--pn-space-3) var(--pn-space-3) var(--pn-space-2);
+}
+
+.chs-thread__root { flex: none; }
+
+.chs-thread__divider {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: var(--pn-space-2) 0 var(--pn-space-1);
+  font-family: var(--pn-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: var(--pn-track-label);
+  text-transform: uppercase;
+  color: var(--pn-ink-3);
+}
+/* The soft hairline SEPARATES repeated siblings — root above, branch below. */
+.chs-thread__divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--pn-x-hairline-soft, var(--pn-line));
+}
+
+.chs-thread__empty {
+  margin: var(--pn-space-2) 0;
+  font-size: 12px;
+  color: var(--pn-ink-3);
+}
+
+.chs-thread__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: var(--pn-space-2) 0;
+  padding: 6px 10px;
+  border: 1px solid var(--pn-block, var(--pn-line));
+  border-radius: var(--pn-r-sm);
+  background: var(--pn-block-soft, transparent);
+  font-size: 12px;
+  color: var(--pn-block, inherit);
+}
+
+/* --- the thread footer ----------------------------------------------------
+ *
+ * PERSISTENT, not hover — an unseen thread is a lost thread. The whole line
+ * is one click target.
+ */
+
+.chs-thread-footer { margin-top: 4px; }
+.chs-thread-footer__open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--pn-r-sm);
+  background: none;
+  padding: 2px 8px 2px 3px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--pn-brand);
+  cursor: pointer;
+  transition: background-color var(--pn-dur-fast) var(--pn-ease-standard);
+}
+.chs-thread-footer__open:hover {
+  background: var(--pn-brand-soft);
+  border-color: var(--pn-brand-soft);
+}
+.chs-thread-footer__glyph { font-size: 9px; color: var(--pn-brand-2); }
+.chs-thread-footer__count { font-weight: 700; }
+.chs-thread-footer__faces {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.chs-thread-footer__names,
+.chs-thread-footer__when { color: var(--pn-ink-3); }
+.chs-thread-footer__when { font-family: var(--pn-mono); font-size: 9.5px; }
+
+/* Below the collapse threshold an open thread REPLACES the feed — a channel
+   and its thread do not fit side by side, and a 180px feed sliver beside a
+   180px pane serves neither. The breadcrumb takes over from ✕ as the one
+   way back to the channel. */
+@container (max-width: 640px) {
+  .chs-root[data-thread-open='true'] .chs-main { display: none; }
+  .chs-root[data-thread-open='true'] .chs-thread { flex: 1 1 auto; border-left: none; }
+  .chs-thread__back {
+    display: inline-flex;
+    align-items: center;
+    border: none;
+    background: none;
+    padding: 4px 6px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--pn-brand);
+    cursor: pointer;
+  }
+  .chs-thread__close { display: none; }
+}
+
 @container (max-width: 440px) {
-  .chs-feed { padding-inline: 6px; }
+  .chs-feed { padding-inline: 8px; }
   .chs-gutter { width: 30px; }
   .chs-byline { flex-wrap: wrap; }
   .chs-message-meta { flex-wrap: wrap; }
   .chs-parent__jump { flex-wrap: wrap; }
   .chs-targets__row { flex-wrap: wrap; }
-  /* No hover on touch: actions stay reachable as a permanent overlay —
-     bottom-anchored like the pointer state; 30px gutter shifts the body
-     column to 6 + 30 + 10 = 46px. */
-  .chs-actions { opacity: 1; pointer-events: auto; top: calc(100% - 6px); left: 46px; right: auto; }
+  /* No hover on touch: actions stay reachable as a permanent overlay,
+     anchored to the row's top-right like the pointer state. */
+  .chs-actions { opacity: 1; pointer-events: auto; top: -12px; right: 8px; left: auto; }
   .chs-artifact { grid-template-columns: auto minmax(0, 1fr); }
   .chs-artifact .chs-linkbtn { grid-column: 1 / -1; justify-self: start; }
   .chs-composer { padding-inline: 8px; }
+}
+
+/* The composer is its own query container (see `.chs-composer`), so this
+   answers to the COMPOSER's width — which is narrow both on a small screen
+   and inside the thread pane on a large one. The textarea takes the full
+   width on top and the controls drop to a row beneath it. 520 = the widest
+   composer whose single row could still squeeze the textarea under its
+   200px floor (3 × 44px icons + Send + gaps + padding). */
+@container (max-width: 520px) {
   .chs-composer__row { flex-wrap: wrap; align-items: center; }
   .chs-composer__input { order: -1; flex-basis: 100%; width: 100%; }
   .chs-composer__send { margin-left: auto; }
