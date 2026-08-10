@@ -1303,6 +1303,15 @@ export interface PostMessageInput extends CommandContext {
   parentMessageId?: EntityId | null;
   mentionIds?: EntityId[];
   attachmentIds?: EntityId[];
+  /**
+   * Work sessions to WAKE with this message without making them anchors of it
+   * — the @tag poke on a threaded reply, where a second anchor is impossible
+   * (a reply has exactly one anchor, equal to its parent's). Each id must be a
+   * live work_session in the message's space; the copy is delivered through
+   * the 072/076 route table with the thread root on the envelope, so the poked
+   * session reads and answers the thread it was tagged into.
+   */
+  pokeSessionIds?: EntityId[];
 }
 
 /** Accepted only at the versioned input migration boundary. */
@@ -2084,6 +2093,13 @@ export interface ExecutionSpawnInput extends CommandContext {
   /** Tasks the session works on — become `working_on` edges. */
   taskIds?: EntityId[];
   /**
+   * When a `taskIds` entry is a non-task entity, mint a NEW derived task for
+   * it even when an open one exists — the "start a different piece of work
+   * here" gesture. Ignored for ids that already name tasks (the 064 fast
+   * path). Default false = reuse the one open derivation.
+   */
+  forceNewTask?: boolean;
+  /**
    * AM-2 §1: typed project reference (replaces the untyped `projectRef`).
    * The project must be linked to `spaceId` and pass its trust gate.
    * Omitted/null = a projectless scratch session in a server-managed temp dir.
@@ -2133,6 +2149,13 @@ export interface ExecutionDispatchInput extends CommandContext {
   spaceId: EntityId;
   /** Any launchable entity; derived to a task server-side via 064. */
   subjectId: EntityId;
+  /**
+   * Mint a NEW derived task for `subjectId` even when an open one exists —
+   * "start a different piece of work in this thread". Without it, one open
+   * derivation is reused, and SEVERAL open derivations refuse with their ids
+   * so a client must name one rather than let the server guess.
+   */
+  forceNewTask?: boolean;
   /** Free-text steer for the dispatcher, carried in the trusted envelope. */
   note?: string;
 }

@@ -139,6 +139,11 @@ interface TaskRow {
   priority: string;
   work_status: string;
   acceptance_criteria: unknown;
+  /** Set when the task was derived from a thread message (064/099): the
+   * thread's root message and the channel it lives on, for the prompt
+   * envelope's <source>/<thread> elements. */
+  thread_root_message_id: string | null;
+  thread_channel_id: string | null;
 }
 
 interface SkillRow {
@@ -384,10 +389,26 @@ export class DbGraphPort implements GraphPort {
         taskIds.length === 0
           ? []
           : await q.query<TaskRow>(
+              // The lateral join carries a THREAD-derived task's origin into
+              // the prompt envelope: when the task was derived (064/099) from
+              // a message, the agent is told the thread root and its channel
+              // so it can read the LIVE thread rather than a stale snapshot.
+              // `derived_from` targets thread roots since 099; the coalesce
+              // covers pre-099 rows whose dst may be a reply.
               `select t.entity_id, e.version, t.title, t.description, t.priority, t.work_status,
-                      t.acceptance_criteria
+                      t.acceptance_criteria,
+                      dm.root_id as thread_root_message_id,
+                      dm.anchor_id as thread_channel_id
                  from public.tasks t
                  join public.entities e on e.id = t.entity_id
+                 left join lateral (
+                   select coalesce(m.root_message_id, m.entity_id) as root_id,
+                          m.anchor_id
+                     from public.edges d
+                     join public.messages m on m.entity_id = d.dst_id
+                    where d.src_id = t.entity_id and d.type = 'derived_from'
+                    limit 1
+                 ) dm on true
                 where t.entity_id = any($1::uuid[])
                   and e.space_id = $2 and e.deleted_at is null`,
               [taskIds, input.spaceId],
@@ -427,6 +448,8 @@ export class DbGraphPort implements GraphPort {
             priority: t.priority,
             workStatus: t.work_status,
             acceptanceCriteria: Array.isArray(t.acceptance_criteria) ? t.acceptance_criteria : [],
+            threadRootMessageId: t.thread_root_message_id ?? null,
+            threadChannelId: t.thread_channel_id ?? null,
           })),
         skills: resolution.skills,
         droppedSkills: resolution.dropped,
@@ -1389,6 +1412,7 @@ async function resolveAssignmentAnchors(
   claims: DbClaims,
   spaceId: string,
   subjectIds: readonly string[],
+  forceNewTask = false,
 ): Promise<string[]> {
   const anchors: string[] = [];
   for (const subjectId of subjectIds) {
@@ -1396,8 +1420,10 @@ async function resolveAssignmentAnchors(
       claims,
       'public.derive_task_for_entity',
       // p_actor_id is null: resolve_actor derives it from the claims, the same
-      // convention createWorkSession uses.
-      [spaceId, subjectId, null],
+      // convention createWorkSession uses. p_force_new mints a fresh derived
+      // task past the reuse branch (099) — the "new task in this thread"
+      // gesture; a subject that already IS a task ignores it (fast path).
+      [spaceId, subjectId, null, forceNewTask],
     );
     const taskId = derived?.taskId;
     if (typeof taskId !== 'string') {
@@ -2212,7 +2238,9 @@ function registerHandlers(
     // `resolveAssignmentAnchors` — a task passes through untouched.
     const taskIds = input.taskIds?.length
       ? await rethrowing(() =>
-          resolveAssignmentAnchors(db, claims, input.spaceId, input.taskIds ?? []),
+          resolveAssignmentAnchors(
+            db, claims, input.spaceId, input.taskIds ?? [], input.forceNewTask ?? false,
+          ),
         )
       : undefined;
 
@@ -2310,7 +2338,9 @@ function registerHandlers(
     // Any launchable entity, exactly as execution.spawn treats taskIds — a task
     // passes through untouched.
     const [taskId] = await rethrowing(() =>
-      resolveAssignmentAnchors(db, claims, input.spaceId, [input.subjectId]),
+      resolveAssignmentAnchors(
+        db, claims, input.spaceId, [input.subjectId], input.forceNewTask ?? false,
+      ),
     );
     if (!taskId) {
       throw fail('upstream_unavailable', `could not derive a task for ${input.subjectId}`);

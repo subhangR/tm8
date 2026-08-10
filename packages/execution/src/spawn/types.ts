@@ -219,6 +219,15 @@ export interface TaskContext {
   priority: string;
   workStatus: string;
   acceptanceCriteria: unknown[];
+  /**
+   * Set when the task was derived from a thread message (064/099): the thread
+   * root and the channel it is anchored on. Rendered into the assignment
+   * envelope's <source>/<thread> elements so the agent can read the LIVE
+   * thread (`tm8 message list <channel> --root <root>`) instead of trusting a
+   * snapshot in the task body.
+   */
+  threadRootMessageId?: string | null;
+  threadChannelId?: string | null;
 }
 
 /**

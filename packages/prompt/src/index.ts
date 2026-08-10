@@ -114,6 +114,9 @@ export interface PromptManifest {
         priority?: string | undefined;
         workStatus?: string | undefined;
         acceptanceCriteria?: readonly unknown[] | undefined;
+        /** Thread-derived tasks (064/099): the live thread's root and channel. */
+        threadRootMessageId?: string | null | undefined;
+        threadChannelId?: string | null | undefined;
       }>
     | undefined;
   coordinator?: { sessionId?: string; displayName?: string } | null | undefined;
@@ -807,6 +810,8 @@ export function composePrompt(
       sourceSessionId: null,
       destinationSessionId: sessionId ?? 'none',
       body,
+      threadRootMessageId: task.threadRootMessageId ?? null,
+      threadChannelId: task.threadChannelId ?? null,
     }));
   }
   if (tasks.length === 0) {
